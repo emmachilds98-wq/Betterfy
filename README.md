@@ -30,7 +30,9 @@ The **⚙ button** in the top-right corner opens Settings — appearance
 (system/light/dark), an accent colour (24 presets plus hue/depth/brightness
 sliders, and per-region toggles for where it applies), compact rows, and
 remembered filters. It's reachable from the landing screen, before you've
-even connected Spotify, and stays in the same place once you're in.
+even connected Spotify, and stays in the same place once you're in. A
+**⟳ button** appears next to it once your library is loaded, to re-sync
+from Spotify without a full disconnect.
 
 ## Why it uses Last.fm and Discogs
 
