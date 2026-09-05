@@ -6,8 +6,11 @@ import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { api } from './spotify.mjs';
-import { removeFrom, addTo, undo, history, devices, playTrack, pause, log } from './actions.mjs';
+import { removeFrom, addTo, undo, historyGrouped, devices, playTrack, pause, log, transaction } from './actions.mjs';
 import { findOrCreate } from './write.mjs';
+import { refuse } from './guard.mjs';
+import { trackKey } from './norm.mjs';
+import { buildProfiles, rank, topTags } from './profile.mjs';
 
 const PORT = 8787;
 const readJson = f => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
@@ -25,7 +28,84 @@ const reload = () => {
   lib = readJson('library.json'); cfg = readJson('playlists.config.json');
   dupes = readJson('report-dupes.json'); misfile = readJson('report-misfile.json');
   discover = readJson('report-discover.json');
+  model = null;                       // rebuilt from the new library on demand
+  invalidateIndex();
+  dropped.clear();
 };
+
+/* ---------------- keeping the local copy true ---------------- */
+
+// v1 mutated Spotify and left `lib` at whatever the last snapshot said, so
+// every count went stale the moment you filed anything. These apply the same
+// change locally, so the UI stays correct without a two-minute re-snapshot.
+
+const playlistById = id => lib.playlists.find(p => p.id === id);
+
+// Tracks we have dropped locally, kept so an undo can put the real record
+// back rather than a stub. Bounded: this is a review session, not a cache.
+const dropped = new Map();
+const remember = t => { if (t?.id) { dropped.set(t.id, t); if (dropped.size > 5000) dropped.delete(dropped.keys().next().value); } };
+
+/** Any copy of a track we hold — in a playlist, in liked songs, or just dropped. */
+function knownTrack(id) {
+  for (const p of lib.playlists) { const t = p.tracks.find(x => x.id === id); if (t) return t; }
+  return lib.liked.find(t => t?.id === id) ?? dropped.get(id) ?? null;
+}
+
+function localAdd(playlistId, trackIds) {
+  const p = playlistById(playlistId);
+  if (!p) return;
+  invalidateIndex();
+  for (const id of trackIds) {
+    if (p.tracks.some(t => t.id === id)) continue;
+    const t = knownTrack(id);
+    if (t) p.tracks.push({ ...t, added_at: new Date().toISOString() });
+  }
+}
+
+function localRemove(playlistId, trackIds) {
+  const p = playlistById(playlistId);
+  if (!p) return;
+  invalidateIndex();
+  const drop = new Set(trackIds);
+  for (const t of p.tracks) if (drop.has(t.id)) remember(t);
+  p.tracks = p.tracks.filter(t => !drop.has(t.id));
+  // A duplicate pair that no longer exists shouldn't keep being counted.
+  if (dupes?.within) dupes.within = dupes.within.filter(w =>
+    w.playlistId !== playlistId || !w.options.some(o => drop.has(o.id)));
+}
+
+function localUnlike(trackId) {
+  invalidateIndex();
+  remember(lib.liked.find(t => t?.id === trackId));
+  lib.liked = lib.liked.filter(t => t?.id !== trackId);
+}
+
+function localRelike(trackId) {
+  invalidateIndex();
+  if (lib.liked.some(t => t?.id === trackId)) return;
+  const t = dropped.get(trackId);
+  if (t) lib.liked.unshift(t);
+}
+
+/** A track that has been moved or filed is no longer a pending misfile. */
+function localResolveMisfile(trackId) {
+  if (misfile?.misfiled) misfile.misfiled = misfile.misfiled.filter(x => x.id !== trackId);
+}
+
+/** Mirror an undone transaction back into the local copy, newest step first. */
+function localUndo(row) {
+  for (const step of [...row.steps].reverse()) {
+    if (step.op === 'add') localRemove(step.playlistId, step.trackIds);
+    else if (step.op === 'remove') localAdd(step.playlistId, step.trackIds);
+    else if (step.op === 'unlike') step.trackIds.forEach(localRelike);
+    else if (step.op === 'create-playlist') {
+      invalidateIndex();
+      lib.playlists = lib.playlists.filter(p => p.id !== step.playlistId);
+      if (cfg?.playlists) delete cfg.playlists[step.playlistId];
+    }
+  }
+}
 
 /* ---------------- derived views ---------------- */
 
@@ -80,6 +160,108 @@ function backlog(limit = 400) {
   return { total: rows.length, targets, rows: rows.slice(0, limit) };
 }
 
+/* ---------------- search and add ---------------- */
+
+// The filing model is built on first use rather than at boot: it needs the tag
+// file, which is optional, and a search is the only thing that wants it here.
+let model = null;
+function filingModel() {
+  if (model !== null) return model;
+  try {
+    const tags = JSON.parse(readFileSync('tags-lastfm.json', 'utf8'));
+    const targets = new Set(Object.entries(cfg?.playlists ?? {}).filter(([, v]) => v.target).map(([id]) => id));
+    const { profiles, idf } = buildProfiles(lib, tags, targets, id => cfg.playlists[id]?.axis ?? null);
+    model = { tags, profiles, idf };
+  } catch {
+    model = false;                 // no tags yet — search still works, unranked
+  }
+  return model;
+}
+
+const shapeSearchHit = t => ({
+  id: t.id,
+  name: t.name,
+  artists: (t.artists ?? []).map(a => ({ id: a.id, name: a.name })),
+  album: t.album?.name,
+  albumType: t.album?.album_type,
+  released: t.album?.release_date,
+  duration_ms: t.duration_ms,
+  isrc: t.external_ids?.isrc,
+  popularity: t.popularity,
+  art: t.album?.images?.at(-1)?.url ?? null,
+});
+
+// Search compares every hit against the whole library, so the identity keys
+// are built once and reused until something changes underneath.
+let index = null;
+const invalidateIndex = () => { index = null; };
+
+function libraryIndex() {
+  if (index) return index;
+  const byId = new Map(), byKey = new Map();
+  for (const p of lib.playlists) {
+    for (const t of p.tracks) {
+      if (!t?.id) continue;
+      if (!byId.has(t.id)) byId.set(t.id, []);
+      byId.get(t.id).push(p.name);
+      const k = trackKey(t);
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k).push({ id: t.id, playlist: p.name, album: t.album, released: t.released });
+    }
+  }
+  index = { byId, byKey, liked: new Set(lib.liked.filter(t => t?.id).map(t => t.id)) };
+  return index;
+}
+
+/**
+ * Where a search hit already lives. Two kinds of answer, and the difference
+ * matters: the same id is the same entry, while the same trackKey under a
+ * different id is another pressing of a record you already own — exactly the
+ * duplicate you would otherwise add without noticing.
+ */
+function alreadyHave(track) {
+  const ix = libraryIndex();
+  return {
+    exact: [...new Set(ix.byId.get(track.id) ?? [])],
+    samesong: (ix.byKey.get(trackKey(track)) ?? [])
+      .filter(x => x.id !== track.id)
+      .map(({ playlist, album, released }) => ({ playlist, album, released })),
+    liked: ix.liked.has(track.id),
+  };
+}
+
+function targetList() {
+  return Object.entries(cfg?.playlists ?? {})
+    .filter(([, v]) => v.target)
+    .map(([id, v]) => ({ id, name: v.name, axis: v.axis }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Rank filing destinations for a track we do not own yet. */
+function suggestFor(track) {
+  const m = filingModel();
+  if (!m) return { suggest: [], tags: [] };
+  const best = rank(track, m.tags, m.profiles, m.idf, { top: 3 });
+  const targets = targetList();
+  return {
+    tags: topTags(track, m.tags, m.idf),
+    suggest: best.map(b => ({
+      id: b.id, name: b.name, score: +b.score.toFixed(3),
+      axis: targets.find(t => t.id === b.id)?.axis ?? null,
+    })),
+  };
+}
+
+async function search(q) {
+  if (!q?.trim()) return { rows: [], targets: targetList() };
+  const r = await api(`/search?q=${encodeURIComponent(q.trim())}&type=track&limit=20`);
+  const rows = (r.tracks?.items ?? []).filter(t => t?.id).map(t => {
+    const shaped = shapeSearchHit(t);
+    return { ...shaped, have: alreadyHave(shaped), ...suggestFor(shaped) };
+  });
+  return { rows, targets: targetList(), ranked: !!filingModel() };
+}
+
 /* ---------------- routing ---------------- */
 
 const json = (res, code, body) => {
@@ -103,45 +285,80 @@ const ROUTES = {
   'GET /api/misfile':   async () => misfile ?? { misfiled: [], placed: [], homeless: [], clusters: [] },
   'GET /api/discover':  async () => discover ?? [],
   'GET /api/playlists': async () => Object.entries(cfg?.playlists ?? {}).map(([id, v]) => ({ id, ...v })),
-  'GET /api/history':   async () => history(),
+  'GET /api/history':   async () => historyGrouped(),
   'GET /api/devices':   async () => devices(),
+  'GET /api/search':    async (_b, url) => search(url.searchParams.get('q')),
 
   'POST /api/play':     async b => playTrack(b.trackId, b.deviceId),
   'POST /api/pause':    async () => { await pause(); return { ok: true }; },
 
   'POST /api/file':     async b => {
     const name = cfg?.playlists?.[b.playlistId]?.name ?? b.playlistId;
-    return addTo(b.playlistId, name, [b.trackId], b.reason ?? 'filed from inbox');
+    // A track added from search is not in the library yet, so the client sends
+    // the record along with it and the local copy learns it here.
+    if (b.track) remember(b.track);
+    const r = await transaction(`file into ${name}`, () =>
+      addTo(b.playlistId, name, [b.trackId], b.reason ?? 'filed from inbox'));
+    localAdd(b.playlistId, [b.trackId]);
+    localResolveMisfile(b.trackId);
+    return r;
   },
   'POST /api/remove':   async b => {
     const name = cfg?.playlists?.[b.playlistId]?.name ?? b.playlistId;
-    return removeFrom(b.playlistId, name, b.trackIds, b.reason ?? 'removed in review');
+    const r = await transaction(`remove from ${name}`, () =>
+      removeFrom(b.playlistId, name, b.trackIds, b.reason ?? 'removed in review'));
+    localRemove(b.playlistId, b.trackIds);
+    return r;
   },
   'POST /api/move':     async b => {
-    // Two logged steps, add first: if the add fails the track is still filed
-    // somewhere rather than lost between playlists.
+    // One transaction, so undo puts the track back in a single step. Add
+    // first: if the remove then fails the track is still filed somewhere
+    // rather than lost between playlists.
     const from = cfg?.playlists?.[b.fromId]?.name ?? b.fromId;
     const to = cfg?.playlists?.[b.toId]?.name ?? b.toId;
-    await addTo(b.toId, to, [b.trackId], `moved from ${from}`);
-    await removeFrom(b.fromId, from, [b.trackId], `moved to ${to}`);
+    await transaction(`move ${from} → ${to}`, async () => {
+      await addTo(b.toId, to, [b.trackId], `moved from ${from}`);
+      await removeFrom(b.fromId, from, [b.trackId], `moved to ${to}`);
+    });
+    localAdd(b.toId, [b.trackId]);
+    localRemove(b.fromId, [b.trackId]);
+    localResolveMisfile(b.trackId);
     return { from, to };
   },
   'POST /api/unlike':   async b => {
-    await api(`/me/tracks?ids=${b.trackId}`, { method: 'DELETE' });
-    log({ op: 'unlike', trackIds: [b.trackId], undoable: true });
+    await transaction('unlike', async () => {
+      await api(`/me/tracks?ids=${b.trackId}`, { method: 'DELETE' });
+      log({ op: 'unlike', trackIds: [b.trackId], undoable: true });
+    });
+    localUnlike(b.trackId);
     return { ok: true };
   },
   'POST /api/newPlaylist': async b => {
     const me = await api('/me');
-    const pl = await findOrCreate(me.id, b.name, b.description ?? '');
-    if (b.trackIds?.length) await addTo(pl.id, b.name, b.trackIds, 'new playlist from cluster');
-    log({ op: 'create-playlist', playlistId: pl.id, playlistName: b.name });
-    return { id: pl.id, created: pl.created };
+    return transaction(`create ${b.name}`, async () => {
+      const pl = await findOrCreate(me.id, b.name, b.description ?? '');
+      if (pl.created) log({ op: 'create-playlist', playlistId: pl.id, playlistName: b.name, undoable: true });
+      // Register it locally so it is a filing destination straight away —
+      // but findOrCreate also returns playlists that already existed.
+      if (!lib.playlists.some(p => p.id === pl.id)) {
+        lib.playlists.push({ id: pl.id, name: b.name, description: b.description ?? '', tracks: [] });
+        invalidateIndex();
+      }
+      cfg.playlists ??= {};
+      cfg.playlists[pl.id] ??= { name: b.name, axis: 'genre', target: false, tracks: 0 };
+      if (b.trackIds?.length) await addTo(pl.id, b.name, b.trackIds, 'new playlist from cluster');
+      localAdd(pl.id, b.trackIds ?? []);
+      return { id: pl.id, created: pl.created };
+    });
   },
   'POST /api/undo':     async b => {
-    const entry = history(500).find(h => h.at === b.at);
+    const entry = historyGrouped(500).find(h => h.at === b.at);
     if (!entry) throw new Error('No such action in the log');
-    return undo(entry);
+    if (!entry.undoable) throw new Error('That action cannot be undone');
+    // The grouped row carries the transaction; undo reverses every step in it.
+    const r = await undo(entry.steps[0]);
+    localUndo(entry);
+    return r;
   },
   'POST /api/refresh':  async b => {
     // Re-run a pipeline step in a child process, then reload the reports.
@@ -159,6 +376,9 @@ const ROUTES = {
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const key = `${req.method} ${url.pathname}`;
+
+  const bad = refuse(req, PORT);
+  if (bad) return json(res, 403, { error: `Refused: ${bad}.` });
 
   if (ROUTES[key]) {
     try {

@@ -115,6 +115,21 @@
   .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
   .empty{color:var(--ink-3); padding:34px 0; text-align:center}
 
+  /* ---- find ---- */
+  .searchbar{display:flex; gap:8px; margin-bottom:18px}
+  .searchbar input{flex:1; font-size:15px; padding:10px 13px}
+  .hit{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:12px 15px;
+       display:flex; gap:14px; align-items:flex-start}
+  .hit img{width:44px; height:44px; border-radius:3px; flex:none; background:var(--surface-3); object-fit:cover}
+  .hit .body{flex:1; min-width:0}
+  .hit .ttl{font-weight:600}
+  .hit .sub{color:var(--ink-2); font-size:13px}
+  .have{display:inline-flex; align-items:center; gap:6px; font-size:12px; border-radius:4px;
+        padding:3px 9px; margin-top:7px}
+  .have.own{background:var(--ok-soft); color:var(--ok)}
+  .have.dupe{background:var(--warn-soft); color:var(--warn)}
+  .dests{display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; align-items:center}
+
   /* ---- toast ---- */
   .toast{position:fixed; right:18px; bottom:18px; background:var(--ink); color:var(--ground);
          padding:10px 15px; border-radius:7px; font-size:13px; display:flex; gap:12px; align-items:center; z-index:20; max-width:420px}
@@ -127,6 +142,7 @@
   <div class="brand">Better<span>fy</span></div>
   <div class="who" id="who">loading…</div>
   <button class="nav" data-v="home"     aria-current="true">Overview</button>
+  <button class="nav" data-v="find">Find &amp; add</button>
   <button class="nav" data-v="inbox">Inbox <span class="c" id="c-inbox"></span></button>
   <button class="nav" data-v="dupes">Duplicates <span class="c" id="c-dupes"></span></button>
   <button class="nav" data-v="cross">Cross-filed <span class="c" id="c-cross"></span></button>
@@ -346,6 +362,44 @@ function vDiscover() {
       </div>`).join('') || '<div class="empty">No discovery run yet.</div>'}</div>`;
 }
 
+function vFind() {
+  const r = data.find;
+  const q = S.q ?? '';
+  const results = !r ? '' : (r.rows.length ? `
+    <div class="rows">${r.rows.map((t, i) => {
+      const owned = t.have.exact.length || t.have.liked;
+      const dupe = !owned && t.have.samesong.length;
+      return `<div class="hit">
+        ${t.art ? `<img src="${esc(t.art)}" alt="">` : '<div style="width:44px;height:44px;border-radius:3px;background:var(--surface-3);flex:none"></div>'}
+        <div class="body">
+          <div class="ttl">${esc(t.name)}</div>
+          <div class="sub">${esc(t.artists.map(a => a.name).join(', '))} · ${esc(t.album ?? '')} · <span class="mono">${esc((t.released ?? '').slice(0,4))}</span> · <span class="mono">${mmss(t.duration_ms)}</span></div>
+          ${owned ? `<div class="have own">Already yours${t.have.exact.length ? ' — in ' + esc(t.have.exact.slice(0,3).join(', ')) : ' — liked'}</div>` : ''}
+          ${dupe ? `<div class="have dupe">You already have this record in ${esc(t.have.samesong[0].playlist)} — ${esc(t.have.samesong[0].album ?? 'another release')}</div>` : ''}
+          ${t.tags?.length ? `<div class="tagrow">${t.tags.slice(0,5).map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>` : ''}
+          <div class="dests">
+            ${t.suggest.slice(0,2).map(sg =>
+              `<button class="b sm p" data-addto="${esc(sg.id)}" data-addi="${i}">+ ${esc(sg.name)} <span class="mono">${(sg.score*100).toFixed(0)}%</span></button>`).join('')}
+            <select data-addsel="${i}"><option value="">File into…</option>
+              ${r.targets.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+            <button class="b sm" data-dplay="${esc(t.id)}">Play</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}</div>`
+    : '<div class="empty">Nothing found.</div>');
+
+  return `<h1>Find &amp; add</h1>
+    <p class="lede">Search Spotify and file straight into a playlist. Anything you already own is
+      marked${r && !r.ranked ? '' : ', and destinations are ranked the same way the Inbox ranks them'}.
+      ${r && !r.ranked ? 'Run <span class="mono">npm run enrich</span> to get ranked suggestions.' : ''}</p>
+    <form class="searchbar" id="findForm">
+      <input type="search" id="q" placeholder="Artist, track, or both" value="${esc(q)}" autofocus>
+      <button class="b p" type="submit">Search</button>
+    </form>
+    ${S.finding ? '<div class="empty">Searching…</div>' : results}`;
+}
+
 function vHistory() {
   const h = data.history ?? [];
   return `<h1>History</h1>
@@ -354,13 +408,13 @@ function vHistory() {
       <div class="row">
         <div class="main">
           <div class="ttl">${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span></div>
-          <div class="sub mono">${esc(x.at)} · ${(x.trackIds ?? []).length} track(s) · ${esc(x.reason ?? '')}</div>
+          <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))} · ${(x.trackIds ?? []).length} track(s)${x.steps.length > 1 ? ` · ${x.steps.length} steps` : ''}${x.reason ? ' · ' + esc(x.reason) : ''}</div>
         </div>
         <div class="acts">${x.undoable ? `<button class="b sm" data-undo="${esc(x.at)}">Undo</button>` : ''}</div>
       </div>`).join('') || '<div class="empty">Nothing changed yet.</div>'}</div>`;
 }
 
-const VIEWS = { home:vHome, inbox:vInbox, dupes:vDupes, cross:vCross, misfile:vMisfile, new:vNew, discover:vDiscover, history:vHistory };
+const VIEWS = { home:vHome, find:vFind, inbox:vInbox, dupes:vDupes, cross:vCross, misfile:vMisfile, new:vNew, discover:vDiscover, history:vHistory };
 
 function render() {
   $('#main').innerHTML = VIEWS[view]();
@@ -445,6 +499,9 @@ $('#main').addEventListener('click', async e => {
     return;
   }
 
+  const add = e.target.closest('[data-addto]');
+  if (add) return addHit(+add.dataset.addi, add.dataset.addto);
+
   const dp = e.target.closest('[data-dplay]');
   if (dp) { try { const r = await api('play', { trackId: dp.dataset.dplay }); toast('Playing on ' + r.device); }
             catch (err) { toast(err.message); } return; }
@@ -456,7 +513,35 @@ $('#main').addEventListener('click', async e => {
 
 $('#main').addEventListener('change', e => {
   if (e.target.id === 'anyPl' && e.target.value) fileCurrent(e.target.value);
+  const sel = e.target.closest('[data-addsel]');
+  if (sel && sel.value) { addHit(+sel.dataset.addsel, sel.value); sel.value = ''; }
 });
+
+$('#main').addEventListener('submit', async e => {
+  if (e.target.id !== 'findForm') return;
+  e.preventDefault();
+  S.q = $('#q').value;
+  S.finding = true; render();
+  try { data.find = await api('search?q=' + encodeURIComponent(S.q)); }
+  catch (err) { toast('Search failed: ' + err.message); data.find = { rows: [], targets: [] }; }
+  S.finding = false; render();
+  $('#q')?.focus();
+});
+
+/** File a search result. The track goes with it — the server has never seen it. */
+async function addHit(i, playlistId) {
+  const t = data.find?.rows[i];
+  if (!t) return;
+  const name = data.find.targets.find(x => x.id === playlistId)?.name ?? 'that playlist';
+  if (t.have.exact.includes(name)) return toast(`Already in ${name}.`);
+  try {
+    await api('file', { playlistId, trackId: t.id, track: t, reason: 'added from search' });
+    const h = await api('history');
+    toast(`Added \u201c${t.name}\u201d to ${name}.`, h[0]?.at);
+    t.have.exact = [...t.have.exact, name];
+    render();
+  } catch (err) { toast('Failed: ' + err.message); }
+}
 
 async function fileCurrent(playlistId) {
   const t = data.backlog.rows[S.inboxAt ?? 0]; if (!t) return;

@@ -1,6 +1,17 @@
-// Dump the full library to library.json. Run: node snapshot.mjs
-import { writeFileSync } from 'node:fs';
+// Dump the library to library.json. Run: node snapshot.mjs
+//
+// Incremental by default. Spotify gives every playlist a snapshot_id that
+// changes whenever its contents do, so a playlist whose id still matches the
+// last run is copied across untouched instead of being paged through again.
+// On a large library that is the difference between minutes and seconds.
+// Pass --full to re-read everything regardless.
+import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { api, paged } from './spotify.mjs';
+
+const FULL = process.argv.includes('--full');
+const previous = existsSync('library.json')
+  ? JSON.parse(readFileSync('library.json', 'utf8')) : null;
+const before = new Map((previous?.playlists ?? []).map(p => [p.id, p]));
 
 const FIELDS = 'next,items(added_at,item(id,name,popularity,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type,total_tracks),artists(id,name)))';
 
@@ -28,21 +39,43 @@ const owned = playlists.filter(p => p.owner?.id === me.id);
 console.error(`playlists: ${playlists.length} (${owned.length} owned, ${playlists.length - owned.length} followed)\n`);
 
 const detailed = [];
+let reused = 0;
 for (const [i, p] of owned.entries()) {
+  const cached = before.get(p.id);
+  const label = `  [${String(i + 1).padStart(2)}/${owned.length}] ${p.name}`;
+
+  // Unchanged contents: keep the tracks, but take the current name and flags,
+  // which can change without touching snapshot_id.
+  if (!FULL && cached?.snapshot_id && cached.snapshot_id === p.snapshot_id) {
+    detailed.push({
+      ...cached,
+      name: p.name, description: p.description,
+      public: p.public, collaborative: p.collaborative,
+    });
+    reused++;
+    console.error(`${label} — ${cached.tracks.length} (unchanged)`);
+    continue;
+  }
+
   let items = [];
   try {
     items = await paged(`/playlists/${p.id}/items?limit=100&fields=${encodeURIComponent(FIELDS)}`);
   } catch (e) {
     console.error(`  !! ${p.name}: ${String(e.message).split('\n')[0]}`);
+    // Don't let a transient failure silently empty a playlist in the snapshot.
+    if (cached) { detailed.push(cached); continue; }
   }
   const tracks = items.filter(i => i.item?.id).map(i => ({ added_at: i.added_at, ...track(i.item) }));
   detailed.push({
     id: p.id, name: p.name, description: p.description,
     public: p.public, collaborative: p.collaborative,
-    total: p.items?.total, tracks,
+    snapshot_id: p.snapshot_id,
+    total: p.tracks?.total ?? p.items?.total ?? tracks.length,
+    tracks,
   });
-  console.error(`  [${String(i + 1).padStart(2)}/${owned.length}] ${p.name} — ${tracks.length}`);
+  console.error(`${label} — ${tracks.length}`);
 }
+console.error(`\n${reused} playlists unchanged since the last snapshot, ${owned.length - reused} re-read`);
 
 const saved = await paged('/me/tracks?limit=50');
 console.error(`\nliked songs: ${saved.length}`);
@@ -78,3 +111,4 @@ writeFileSync('library.json', JSON.stringify({
 
 const n = detailed.reduce((s, p) => s + p.tracks.length, 0);
 console.error(`\nwrote library.json — ${detailed.length} playlists, ${n} filed tracks`);
+if (reused && !FULL) console.error('(run with --full to re-read every playlist)');
