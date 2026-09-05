@@ -26,13 +26,32 @@ your suggestions may start thin. The **Playlists** view shows your tag coverage
 and can fill the gaps in your browser given a free
 [Last.fm key](https://www.last.fm/api/account/create).
 
-The **⚙ button** in the top-right corner opens Settings — appearance
-(system/light/dark), an accent colour (24 presets plus hue/depth/brightness
-sliders, and per-region toggles for where it applies), compact rows, and
-remembered filters. It's reachable from the landing screen, before you've
-even connected Spotify, and stays in the same place once you're in. A
-**⟳ button** appears next to it once your library is loaded, to re-sync
-from Spotify without a full disconnect.
+### Staying on the current version
+
+GitHub Pages caches the page for about ten minutes, and a tab you left open
+keeps whatever it loaded — so an old Betterfy can sit in front of you looking
+perfectly normal. Two things fix that, both reachable **before you connect
+anything**:
+
+- **Check for updates**, next to *Connect Spotify* on the very first screen
+  (and the ⬇ button in the top-right corner, from any screen). It fetches the
+  published page over the network and compares its build stamp with the one
+  you're running, then tells you either that you're current or that a newer
+  build exists.
+- Every load runs that check quietly in the background. If a newer build is
+  published, a bar appears offering **Update now** — never forced, because a
+  reload halfway through filing would lose your place. Updating clears the
+  caches and reloads; your Spotify sign-in and synced library survive it.
+
+The build you're running is printed under the buttons on the landing screen and
+at the foot of the rail once you're in.
+
+The corner buttons, in order: **⬇ Check for updates**, **⟳ Re-sync library**
+(only once a library is loaded — this one re-reads Spotify, not the page), and
+**⚙ Settings** — appearance (system/light/dark), an accent colour (24 presets
+plus hue/depth/brightness sliders, and per-region toggles for where it
+applies), compact rows, and remembered filters. Settings is reachable from the
+landing screen too.
 
 ## Why it uses Last.fm and Discogs
 
@@ -87,10 +106,12 @@ print what they would do and stop; add `--apply` to commit.
 
 ### The local app (`npm start`)
 
-The rail has two utility buttons at the bottom: **Refresh** re-fetches the
-current data from the server (fast — seconds, not minutes; for a full
-Spotify re-sync use the Refresh section on Overview instead), and
-**Settings** opens a panel with:
+**Refresh** sits at the top right of Overview — the first page you land on —
+and again in the rail. Both re-fetch the current data from the server, which
+takes seconds. A full Spotify re-read is the separate *Re-read from Spotify*
+section further down Overview, and takes minutes.
+
+Next to Refresh in the rail, **Settings** opens a panel with:
 
 - **Appearance** — System / Light / Dark.
 - **Accent colour** — 24 preset swatches, plus hue, depth (saturation) and
@@ -134,6 +155,13 @@ guess, and everything downstream reads the file, not the rules.
 - **Shuffle spaces artists rather than randomising.** Uniform random clumps; the
   greedy max-spacing interleave takes the artist with the most tracks left,
   skipping any used within a cooldown window.
+- **The mark is a sorted list that is also a play button.** Five stacked bars
+  whose widths grow then shrink, so their right edge forms a play triangle. In
+  the app it is inline SVG and re-tints to whichever accent colour you pick; at
+  favicon size the gaps close up and it degrades into the triangle alone, which
+  is the point. `npm run build:icons` re-renders `docs/icon-*.png`,
+  `apple-touch-icon.png` and the maskable icon from that same geometry — no
+  image editor, and no chance of the files drifting from the markup.
 
 ## Files
 
@@ -146,6 +174,7 @@ guess, and everything downstream reads the file, not the rules.
 | `actions.mjs` | every library mutation, with the undo log |
 | `server.mjs` + `ui/` | the local app |
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
+| `make-icons.mjs` | renders the logo to the PNG sizes browsers and phones ask for |
 
 `build-web.mjs` bundles `norm`, `credits` and `profile` verbatim into the page,
 so the browser and local builds score identically and cannot drift apart. It

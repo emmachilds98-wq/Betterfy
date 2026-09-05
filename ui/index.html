@@ -4,18 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Betterfy</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23D9502B'/><rect x='8' y='9.6' width='16' height='3.6' rx='1.8' fill='white'/><rect x='8' y='14.5' width='11' height='3.6' rx='1.8' fill='white'/><rect x='8' y='19.4' width='6' height='3.6' rx='1.8' fill='white'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><linearGradient id='t' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%23EC663E'/><stop offset='1' stop-color='%23C7421E'/></linearGradient><rect width='32' height='32' rx='9' fill='url(%23t)'/><g fill='white'><rect x='7.75' y='4.9' width='7' height='3.4' rx='1.7' opacity='.92'/><rect x='7.75' y='9.6' width='12' height='3.4' rx='1.7' opacity='.97'/><rect x='7.75' y='14.3' width='16.5' height='3.4' rx='1.7'/><rect x='7.75' y='19' width='12' height='3.4' rx='1.7' opacity='.97'/><rect x='7.75' y='23.7' width='7' height='3.4' rx='1.7' opacity='.92'/></g></svg>">
+<meta name="theme-color" content="#D9502B">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
   :root{
     --ground:#F1F3F6; --surface:#FFFFFF; --surface-2:#F7F8FA; --surface-3:#EDEFF4;
     --ink:#141821; --ink-2:#4E586A; --ink-3:#798394;
     --line:#DCE1E8; --line-2:#C7CEDA;
-    --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4;
+    --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4; --accent-lift:#EC663E;
     --ok:#1F7F58; --ok-soft:#E3F2EA;
     --warn:#9A6B0E; --warn-soft:#F8EFD9;
     --info:#2C5FA8; --info-soft:#E4EDF9;
     --idle:#98A2B3; --r:7px;
+    --shadow:0 1px 2px rgba(16,20,28,.05); --shadow-2:0 4px 16px rgba(16,20,28,.09);
     /* Per-element accent hooks — Settings can point any of these at a
        neutral fallback instead of the chosen accent, region by region. */
     --nav-accent:var(--accent); --btn-accent:var(--accent); --btn-ink:var(--accent-ink);
@@ -26,17 +28,19 @@
     --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
     --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
     --line:#252B35; --line-2:#333B48;
-    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
+    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15; --accent-lift:#FF9068;
     --ok:#4FBE8B; --ok-soft:#12261D; --warn:#D9A83E; --warn-soft:#2A2113;
     --info:#7FA9E8; --info-soft:#15202F; --idle:#5C6675;
+    --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-2:0 4px 18px rgba(0,0,0,.45);
   }}
   :root[data-theme="dark"]{
     --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
     --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
     --line:#252B35; --line-2:#333B48;
-    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
+    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15; --accent-lift:#FF9068;
     --ok:#4FBE8B; --ok-soft:#12261D; --warn:#D9A83E; --warn-soft:#2A2113;
     --info:#7FA9E8; --info-soft:#15202F; --idle:#5C6675;
+    --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-2:0 4px 18px rgba(0,0,0,.45);
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -49,7 +53,7 @@
   aside{background:var(--surface); border-right:1px solid var(--line); padding:20px 0; display:flex; flex-direction:column; gap:2px; position:sticky; top:0; height:100vh; overflow:auto}
   .brand{display:flex; align-items:center; gap:9px; font-family:Archivo,sans-serif; font-weight:800; font-size:20px; letter-spacing:-.03em; padding:0 20px 4px}
   .brand span{color:var(--accent)}
-  .mark{width:24px; height:24px; flex:none}
+  .mark{width:26px; height:26px; flex:none; filter:drop-shadow(0 1px 3px rgba(0,0,0,.14))}
   .who{padding:0 20px 16px; font-size:11.5px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace}
   .nav{appearance:none; border:0; background:none; font:inherit; text-align:left; cursor:pointer;
        padding:8px 20px; color:var(--ink-2); display:flex; justify-content:space-between; gap:8px; border-left:2px solid transparent}
@@ -64,8 +68,14 @@
   .lede{color:var(--ink-2); margin:0 0 22px; max-width:72ch}
   h2{font-family:Archivo,sans-serif; font-weight:700; font-size:16px; letter-spacing:-.015em; margin:26px 0 10px}
 
+  /* Page header: title on the left, the actions that apply to the whole page
+     on the right — so Refresh is on screen the moment the app opens. */
+  .pagehead{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap}
+  .pagehead .acts{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+
   .meters{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:11px}
-  .meter{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:13px 15px; display:flex; flex-direction:column; gap:2px}
+  .meter{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:13px 15px;
+         display:flex; flex-direction:column; gap:2px; box-shadow:var(--shadow)}
   .meter .n{font-family:"IBM Plex Mono",monospace; font-size:25px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
   .meter .l{font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
   .meter .d{font-size:12px; color:var(--ink-2)}
@@ -73,7 +83,7 @@
   .meter.click{cursor:pointer} .meter.click:hover{border-color:var(--line-2)}
 
   /* ---- inbox card ---- */
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:22px 24px}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:22px 24px; box-shadow:var(--shadow)}
   .prog{height:4px; background:var(--surface-3); border-radius:2px; overflow:hidden; margin-bottom:18px}
   .prog i{display:block; height:100%; background:var(--progress-accent)}
   .now .t{font-family:Archivo,sans-serif; font-weight:700; font-size:23px; letter-spacing:-.02em; margin:0; text-wrap:balance}
@@ -92,12 +102,16 @@
   .rowbtns{display:flex; gap:8px; margin-top:16px; flex-wrap:wrap}
 
   button.b{appearance:none; font:inherit; font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
-           background:var(--surface); color:var(--ink); border-radius:6px; padding:8px 13px}
+           background:var(--surface); color:var(--ink); border-radius:6px; padding:8px 13px;
+           transition:border-color .12s ease, background .12s ease, transform .08s ease}
   button.b:hover{border-color:var(--ink-3)}
-  button.b.p{background:var(--btn-accent); border-color:var(--btn-accent); color:var(--btn-ink)}
+  button.b:active{transform:translateY(1px)}
+  button.b.p{background:var(--btn-accent); border-color:var(--btn-accent); color:var(--btn-ink); box-shadow:var(--shadow)}
+  button.b.p:hover{filter:brightness(1.06)}
   button.b.g{background:var(--ok); border-color:var(--ok); color:#fff}
   button.b.sm{font-size:12px; padding:5px 10px; font-weight:500}
   button.b:disabled{opacity:.5; cursor:default}
+  button.b:disabled:hover{filter:none; border-color:var(--line-2)}
   select,input[type=search]{font:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--line-2);
     border-radius:6px; background:var(--surface); color:var(--ink); max-width:100%}
   :focus-visible{outline:2px solid var(--hover-accent); outline-offset:2px}
@@ -135,7 +149,8 @@
   .util:hover{border-color:var(--hover-accent); color:var(--ink)}
   .util[aria-expanded="true"]{background:var(--surface-2); color:var(--ink)}
   .util .ico{font-size:13px; line-height:1}
-  .util.spin .ico{display:inline-block; animation:spin .6s linear infinite}
+  .ico{display:inline-block}
+  .spin .ico{animation:spin .6s linear infinite}
   .util:disabled{opacity:.6; cursor:default}
   @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -175,13 +190,28 @@
 </style>
 </head>
 <body>
+<!-- The tile gradient, defined once and pointed at by every copy of the mark. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;overflow:hidden">
+  <defs>
+    <linearGradient id="bfTile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color:var(--accent-lift)"/>
+      <stop offset="1" style="stop-color:var(--accent)"/>
+    </linearGradient>
+  </defs>
+</svg>
 <aside>
   <div class="brand">
+    <!-- Five bars whose widths grow then shrink: a sorted list whose right edge
+         is a play triangle. It collapses to the triangle alone at favicon size. -->
     <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="9" style="fill:var(--accent)"/>
-      <rect x="8" y="9.6" width="16" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
-      <rect x="8" y="14.5" width="11" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
-      <rect x="8" y="19.4" width="6" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
+      <rect width="32" height="32" rx="9" style="fill:url(#bfTile) var(--accent)"/>
+      <g style="fill:var(--accent-ink)">
+        <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" opacity=".92"/>
+        <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" opacity=".97"/>
+        <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" opacity=".97"/>
+        <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" opacity=".92"/>
+      </g>
     </svg>
     Better<span>fy</span>
   </div>
@@ -310,6 +340,9 @@ function applyTheme() {
   root.setProperty('--accent-soft', dark
     ? hsl(hue, Math.min(depth,80), Math.max(brightness-38,12))
     : hsl(hue, Math.min(depth,85), Math.min(brightness+40,95)));
+  // Top stop of the logo tile's gradient — a lift, not a second hue, so the
+  // mark stays one colour however far the sliders are pushed.
+  root.setProperty('--accent-lift', hsl(hue, Math.min(depth+6,100), Math.min(brightness+9,92)));
   root.setProperty('--accent-ink', brightness >= 55 ? '#161A21' : '#FFFFFF');
 
   const r = T.regions;
@@ -386,17 +419,23 @@ function initSettingsPanel() {
 
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (T.mode === 'system') applyTheme(); });
 
-  $('#btnRefresh').onclick = async () => {
-    const btn = $('#btnRefresh');
-    btn.disabled = true; btn.classList.add('spin');
-    try {
-      data = await loadAll();
-      if (view === 'history') data.history = await api('history');
-      await refresh();
-      toast('Refreshed.');
-    } catch (e) { toast('Refresh failed: ' + e.message); }
-    finally { btn.disabled = false; btn.classList.remove('spin'); }
-  };
+  $('#btnRefresh').onclick = () => reloadData($('#btnRefresh'));
+}
+
+/**
+ * Re-read everything the server already holds — seconds, not the minutes a
+ * Spotify re-snapshot takes. Reachable from the rail and from the top of the
+ * first page, so it never has to be hunted for.
+ */
+async function reloadData(btn) {
+  if (btn) { btn.disabled = true; btn.classList.add('spin'); }
+  try {
+    data = await loadAll();
+    if (view === 'history') data.history = await api('history');
+    await refresh();
+    toast('Refreshed.');
+  } catch (e) { toast('Refresh failed: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.classList.remove('spin'); } }
 }
 
 applyTheme();
@@ -428,14 +467,19 @@ function vHome() {
     ['tracks','Unique tracks', S.tracks,    'Across '+S.playlists+' playlists','ok',null],
     ['placements','Placements',S.placements,'Total filings','',null],
   ];
-  return `<h1>Overview</h1>
-    <p class="lede">Snapshot taken ${esc((S.captured ?? '').slice(0,10))}. Nothing changes until you act, and every change can be undone.</p>
+  return `<div class="pagehead">
+      <div>
+        <h1>Overview</h1>
+        <p class="lede">Snapshot taken ${esc((S.captured ?? '').slice(0,10))}. Nothing changes until you act, and every change can be undone.</p>
+      </div>
+      <div class="acts"><button class="b p" id="headRefresh"><span class="ico">⟳</span> Refresh</button></div>
+    </div>
     <div class="meters">${m.map(([k,l,n,d,c,go]) =>
       `<div class="meter ${c} ${go?'click':''}" ${go?`data-go="${go}"`:''}>
          <span class="l">${esc(l)}</span><span class="n">${(n??0).toLocaleString()}</span><span class="d">${esc(d)}</span></div>`).join('')}
     </div>
-    <h2>Refresh</h2>
-    <p class="lede">Re-read Spotify and recompute. Snapshot takes a couple of minutes.</p>
+    <h2>Re-read from Spotify</h2>
+    <p class="lede">Refresh above reloads what the server already has, in seconds. These go back to Spotify itself and recompute — a full snapshot takes a couple of minutes.</p>
     <div class="rowbtns">
       <button class="b" data-step="snapshot">Re-read library</button>
       <button class="b" data-step="dupes">Recompute duplicates</button>
@@ -637,6 +681,7 @@ document.querySelector('aside').onclick = async e => {
 };
 
 $('#main').addEventListener('click', async e => {
+  const hr = e.target.closest('#headRefresh'); if (hr) return reloadData(hr);
   const go = e.target.closest('[data-go]'); if (go) { view = go.dataset.go; return render(); }
   const cmin = e.target.closest('[data-cmin]');
   if (cmin) { S.crossMin = +cmin.dataset.cmin; if (T.rememberFilters) { T.crossMin = S.crossMin; saveTheme(); } return render(); }
