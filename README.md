@@ -52,6 +52,14 @@ nowhere near as legible as each other.
 
 The local app (`npm start`) is still laid out for a desktop browser.
 
+**If sign-in says "too many requests".** Spotify rate-limits its accounts
+service per app rather than per listener, so a busy few minutes can refuse
+anyone's sign-in with a 429. Betterfy now waits it out rather than making it
+worse: a rate-limited refresh leaves you signed in and offers *Try again*
+instead of dropping you back at the sign-in screen, and reopening the
+home-screen app never re-sends an authorization code it has already used. Give
+it a minute and tap *Try again*.
+
 ### Staying on the current version
 
 GitHub Pages caches the page for about ten minutes, and a tab you left open

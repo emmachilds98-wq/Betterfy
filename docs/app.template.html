@@ -1018,32 +1018,90 @@ async function beginAuth() {
   });
 }
 
+/* Spotify rate-limits accounts.spotify.com per app rather than per listener, so
+ * a busy few minutes can hand any one of us a 429 on sign-in. Two things make
+ * that survivable: never treat "too many requests" as "you are signed out",
+ * and never answer a 429 with more requests. Note also that the accounts
+ * service replies to a 429 in plain text, not the JSON error object the docs
+ * describe, so the body has to be parsed defensively. */
+const RATE_LIMITED = 'Spotify is handling too many requests right now. Wait a minute, then try again.';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/** A 429/5xx/offline failure; the sign-in itself is still good. */
+const retryable = e => !!e?.retryable;
+const authError = (msg, status) => Object.assign(new Error(msg), {
+  status, retryable: status === 429 || status >= 500 || status === 0,
+});
+
+async function tokenRequest(params) {
+  let wait = 1000;
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await fetch('https://accounts.spotify.com/api/token', {
+        method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
+        body:new URLSearchParams({ ...params, client_id:clientId() }),
+      });
+    } catch {
+      if (attempt >= 2) throw authError('Could not reach Spotify. Check your connection and try again.', 0);
+      await sleep(wait); wait *= 2; continue;
+    }
+    const body = await res.json().catch(() => null);
+    if (res.ok) return body;
+    if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+      // Retry-After is in seconds and Spotify can ask for minutes or hours.
+      // Wait out a short one; anything longer is reported, never slept through.
+      const after = (+res.headers.get('retry-after') || 0) * 1000;
+      if (after <= 10000) { await sleep(Math.max(wait, after)); wait *= 2; continue; }
+    }
+    throw authError(res.status === 429 ? RATE_LIMITED
+      : (body?.error_description || body?.error?.message || body?.error || `Spotify answered ${res.status}.`),
+      res.status);
+  }
+}
+
 async function exchange(code) {
   const verifier = localStorage.getItem('bf_verifier');
-  if (!verifier) throw new Error('Sign-in could not be completed — the browser lost the security code. Click Connect Spotify again.');
-  const r = await fetch('https://accounts.spotify.com/api/token', {
-    method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
-    body:new URLSearchParams({ grant_type:'authorization_code', code, redirect_uri:REDIRECT,
-                               client_id:clientId(), code_verifier:verifier }),
-  });
-  const t = await r.json();
-  localStorage.removeItem('bf_verifier');
-  if (!r.ok) throw new Error(t.error_description || t.error || 'token exchange failed');
-  t.expires_at = Date.now() + t.expires_in * 1000;
-  localStorage.setItem('bf_tok', JSON.stringify(t));
-  return t;
+  if (!verifier) throw new Error('Sign-in could not be completed — the browser lost the security code. Tap Connect Spotify again.');
+  try {
+    const t = await tokenRequest({ grant_type:'authorization_code', code, redirect_uri:REDIRECT,
+                                   code_verifier:verifier });
+    t.expires_at = Date.now() + t.expires_in * 1000;
+    localStorage.setItem('bf_tok', JSON.stringify(t));
+    return t;
+  } finally {
+    // The code is spent either way, so the verifier that goes with it is too.
+    localStorage.removeItem('bf_verifier');
+  }
 }
+
+// One refresh at a time. Every stale-token caller used to post its own, so a
+// screenful of parallel requests asked the rate-limited endpoint for the same
+// token several times over.
+let refreshing = null;
 
 async function token() {
   const t = JSON.parse(localStorage.getItem('bf_tok') || 'null');
   if (!t) return null;
   if (Date.now() < t.expires_at - 60000) return t.access_token;
-  const r = await fetch('https://accounts.spotify.com/api/token', {
-    method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
-    body:new URLSearchParams({ grant_type:'refresh_token', refresh_token:t.refresh_token, client_id:clientId() }),
-  });
-  const f = await r.json();
-  if (!r.ok) { localStorage.removeItem('bf_tok'); return null; }
+  if (!refreshing) refreshing = refresh(t).finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+async function refresh(t) {
+  let f;
+  try {
+    f = await tokenRequest({ grant_type:'refresh_token', refresh_token:t.refresh_token });
+  } catch (e) {
+    // A rate limit or a dropped connection means "later", not "sign in again".
+    // Throwing away the saved token here is what sent people back to the
+    // sign-in screen — where signing in asked the same rate-limited endpoint
+    // for another token, and got the same 429 back.
+    if (retryable(e)) throw e;
+    localStorage.removeItem('bf_tok');
+    return null;
+  }
+  // Spotify only sometimes issues a new refresh token; keep the old one otherwise.
   const merged = { ...t, ...f, expires_at: Date.now() + f.expires_in*1000 };
   localStorage.setItem('bf_tok', JSON.stringify(merged));
   return merged.access_token;
@@ -1055,9 +1113,16 @@ async function sp(path, opts = {}) {
   for (let i = 0; ; i++) {
     const res = await fetch(url, { ...opts, headers:{ authorization:'Bearer ' + await token(),
       'content-type':'application/json', ...opts.headers } });
-    if (res.status === 429 && i < 5) { await new Promise(r => setTimeout(r, (+res.headers.get('retry-after')||2)*1000)); continue; }
+    if (res.status === 429 && i < 5) {
+      // Honour Retry-After when it is there, and back off rather than asking
+      // again on a fixed two-second beat when it is not.
+      const after = (+res.headers.get('retry-after') || 0) * 1000;
+      await sleep(Math.min(Math.max(after, 1000 * 2 ** i), 30000));
+      continue;
+    }
     if (res.status === 204) return null;
     const body = await res.json().catch(() => null);
+    if (res.status === 429) throw authError(RATE_LIMITED, 429);
     if (!res.ok) throw new Error(`${res.status} ${body?.error?.message ?? ''}`);
     return body;
   }
@@ -2167,8 +2232,20 @@ function stage(msg, pct) {
     <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>`;
 }
 
+/** A wall for a failure that is nobody's fault and will pass: no "start over"
+ *  button, because signing in again is exactly what must not happen here. */
+function blocked(msg, retry) {
+  $('#app').hidden = true; $('#land').hidden = false;
+  $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
+    <p class="tagline">${esc(msg)}</p>
+    <button class="b p" id="landRetry">Try again</button>`;
+  $('#landRetry').onclick = retry;
+}
+
 async function start(force) {
-  const t = await token();
+  let t;
+  try { t = await token(); }
+  catch (e) { blocked(e.message, () => start(force)); return; }
   if (!t) { $('#land').hidden = false; $('#app').hidden = true; return; }
   try {
     stage('Reading your library…', 0.02);
@@ -2191,6 +2268,7 @@ async function start(force) {
     view = 'home'; S.inboxAt = 0; render();
     window.scrollTo(0, 0);
   } catch (e) {
+    if (retryable(e)) { blocked(e.message, () => start(force)); return; }
     $('#land').hidden = false; $('#app').hidden = true;
     $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
       <p class="tagline">${esc(e.message)}</p>
@@ -2229,9 +2307,25 @@ const FRIENDLY = {
     history.replaceState({},'',REDIRECT);
     return;
   }
-  if (q.get('code')) {
-    try { await exchange(q.get('code')); history.replaceState({},'',REDIRECT); }
-    catch (e) { $('#land').hidden = false; toast(e.message); return; }
+  const code = q.get('code');
+  if (code) {
+    // Take the code out of the address bar *before* posting it, and remember
+    // that it has been posted. A home-screen app is reopened at the URL it was
+    // last on, and iOS discards the page behind it freely — so a page still
+    // carrying ?code= sent that same, already-spent code to Spotify again on
+    // every reopen. Enough of those in a row is what earned the 429.
+    history.replaceState({}, '', REDIRECT);
+    if (localStorage.getItem('bf_code_used') !== code) {
+      localStorage.setItem('bf_code_used', code);
+      try { await exchange(code); }
+      catch (e) {
+        // The code is spent, so retrying means signing in from the top —
+        // worth offering for a rate limit, which passes on its own.
+        if (retryable(e)) blocked(e.message, () => beginAuth());
+        else { $('#land').hidden = false; toast(e.message); }
+        return;
+      }
+    }
   }
   start(false);
 })();
