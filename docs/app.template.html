@@ -1107,22 +1107,58 @@ async function refresh(t) {
   return merged.access_token;
 }
 
-/* ---------- Spotify ---------- */
+/* ---------- Spotify ----------
+ * Reading a large library cold is hundreds of calls, and Spotify's limit is a
+ * rolling window rather than a per-call one — fire them off as fast as the
+ * network allows and you will find it. So every call is paced, the pace slackens
+ * as soon as Spotify pushes back, and it tightens again once it stops. */
+const MIN_GAP = 70, MAX_GAP = 1200;
+let gap = MIN_GAP;   // ms between calls
+let nextAt = 0;      // earliest moment the next call may leave
+
+/** Set while a sync is on screen, so a pause can say so instead of looking hung. */
+let onHold = null;
+
+async function pace() {
+  const now = Date.now();
+  const at = Math.max(now, nextAt);
+  nextAt = at + gap;
+  if (at > now) await sleep(at - now);
+}
+
+/** Sit out a rate limit, counting down rather than going quiet. */
+async function hold(ms) {
+  const until = Date.now() + ms;
+  for (let left = ms; left > 0; left = until - Date.now()) {
+    onHold?.(Math.ceil(left / 1000));
+    await sleep(Math.min(1000, left));
+  }
+  onHold?.(0);
+}
+
 async function sp(path, opts = {}) {
   const url = path.startsWith('http') ? path : 'https://api.spotify.com/v1' + path;
   for (let i = 0; ; i++) {
+    await pace();
     const res = await fetch(url, { ...opts, headers:{ authorization:'Bearer ' + await token(),
       'content-type':'application/json', ...opts.headers } });
-    if (res.status === 429 && i < 5) {
-      // Honour Retry-After when it is there, and back off rather than asking
-      // again on a fixed two-second beat when it is not.
+    if (res.status === 429) {
+      // Retry-After is in seconds, and it is not a suggestion: coming back
+      // early spends an attempt and earns another 429. Waiting the whole time
+      // is what actually gets a big library read.
       const after = (+res.headers.get('retry-after') || 0) * 1000;
-      await sleep(Math.min(Math.max(after, 1000 * 2 ** i), 30000));
-      continue;
+      const wait = after || Math.min(2000 * 2 ** i, 60000);
+      gap = Math.min(gap * 2, MAX_GAP);
+      if (i < 8 && wait <= 600000) { await hold(wait); continue; }
+      // Spotify sometimes asks for far longer than anyone will sit and watch.
+      // Say how long, so it reads as a wait rather than a dead end.
+      throw authError(after > 600000
+        ? `Spotify has asked for a longer pause — about ${Math.round(after / 60000)} minutes. Come back then and tap Try again; it picks up where it stopped.`
+        : RATE_LIMITED, 429);
     }
+    gap = Math.max(MIN_GAP, gap * 0.9);
     if (res.status === 204) return null;
     const body = await res.json().catch(() => null);
-    if (res.status === 429) throw authError(RATE_LIMITED, 429);
     if (!res.ok) throw new Error(`${res.status} ${body?.error?.message ?? ''}`);
     return body;
   }
@@ -1139,6 +1175,8 @@ const idb = {
     r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => ok(r.result); r.onerror = () => bad(r.error); }),
   async get(k){ const d = await this.open(); return new Promise(ok => { const r = d.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); }); },
   async set(k,v){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete = () => ok(); }); },
+  async del(k){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').delete(k); tx.oncomplete = () => ok(); }); },
+  async keys(){ const d = await this.open(); return new Promise(ok => { const r = d.transaction('kv').objectStore('kv').getAllKeys(); r.onsuccess = () => ok(r.result ?? []); r.onerror = () => ok([]); }); },
   async clear(){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').clear(); tx.oncomplete = () => ok(); }); },
 };
 
@@ -1156,23 +1194,83 @@ const shapeTrack = t => t && ({
   art:artOf(t), duration_ms:t.duration_ms, isrc:t.external_ids?.isrc, popularity:t.popularity,
 });
 
-async function syncLibrary(onProgress) {
+/* Reading a whole library takes hundreds of calls and several minutes on a
+ * phone, and a phone will interrupt it: a rate limit, a locked screen, iOS
+ * reclaiming the page behind you. So each finished piece is banked as it
+ * lands and the read picks up from there — otherwise every interruption
+ * throws the lot away, and trying again spends the same call budget to fail
+ * in the same place. Bumped whenever FIELDS or shapeTrack changes, so banked
+ * pieces from an older shape are re-read rather than kept forever. */
+const SHAPE = 1;
+const PART = id => 'part:' + id;
+const PART_LIFE = 24 * 3600 * 1000;
+
+async function bankedParts() {
+  const out = {};
+  const fresh = Date.now() - PART_LIFE;
+  for (const k of await idb.keys()) {
+    if (typeof k !== 'string' || !k.startsWith('part:')) continue;
+    const v = await idb.get(k);
+    if (v?.shape === SHAPE && v.at > fresh) out[k] = v; else await idb.del(k);
+  }
+  return out;
+}
+
+async function dropParts() {
+  for (const k of await idb.keys()) if (typeof k === 'string' && k.startsWith('part:')) await idb.del(k);
+}
+
+async function syncLibrary(force, onProgress) {
   const me = await sp('/me');
   const pls = await paged('/me/playlists?limit=50');
   const owned = pls.filter(p => p.owner?.id === me.id);
+
+  const banked = await bankedParts();
+  // Spotify stamps every playlist with a snapshot id that changes the moment
+  // its contents do, so a playlist that has not moved since the last complete
+  // read costs nothing to "read" again.
+  const held = {};
+  if (!force) for (const p of (await idb.get('library'))?.playlists ?? [])
+    if (p.snapshot_id && p.shape === SHAPE) held[p.id] = p;
+
   const playlists = [];
   for (const [i, p] of owned.entries()) {
-    onProgress?.(`${p.name}`, i / (owned.length + 1));
+    onProgress?.(p.name, i / (owned.length + 1));
+    const kept = banked[PART(p.id)]?.playlist ?? held[p.id];
+    if (kept?.snapshot_id === p.snapshot_id) { playlists.push(kept); continue; }
     let items = [];
-    try { items = await paged(`/playlists/${p.id}/items?limit=100&fields=${encodeURIComponent(FIELDS)}`); } catch {}
-    playlists.push({ id:p.id, name:p.name, tracks: items.filter(x => x.item?.id)
-      .map(x => ({ added_at:x.added_at, ...shapeTrack(x.item) })) });
+    try {
+      items = await paged(`/playlists/${p.id}/items?limit=100&fields=${encodeURIComponent(FIELDS)}`);
+    } catch (e) {
+      // A playlist Spotify will not hand over is skipped, as it always was.
+      // A rate limit is not that: recording it as empty would quietly lose
+      // every track in it, so let it stop the read — the banked parts keep.
+      if (retryable(e)) throw e;
+    }
+    const entry = { id:p.id, name:p.name, snapshot_id:p.snapshot_id, shape:SHAPE,
+                    tracks: items.filter(x => x.item?.id)
+                      .map(x => ({ added_at:x.added_at, ...shapeTrack(x.item) })) };
+    playlists.push(entry);
+    await idb.set(PART(p.id), { shape:SHAPE, at:Date.now(), playlist:entry });
   }
-  onProgress?.('liked songs', 0.95);
-  const saved = await paged('/me/tracks?limit=50');
+
+  // Liked songs come back fifty at a time with no snapshot id of their own, so
+  // they are banked by page instead — every tenth, which is often enough to be
+  // worth resuming and rare enough not to rewrite the pile on every page.
+  const liked = banked[PART('liked')]?.liked ?? { rows: [], next: '/me/tracks?limit=50' };
+  for (let page = 0; liked.next; page++) {
+    onProgress?.('liked songs', 0.95);
+    const box = await sp(liked.next);
+    liked.rows.push(...(box?.items ?? []).filter(i => (i.track ?? i.item)?.id)
+      .map(i => ({ added_at:i.added_at, ...shapeTrack(i.track ?? i.item) })));
+    liked.next = box?.next ?? null;
+    if (!liked.next || page % 10 === 9) await idb.set(PART('liked'), { shape:SHAPE, at:Date.now(), liked });
+  }
+
   const lib = { captured_at:new Date().toISOString(), user:{ id:me.id, name:me.display_name },
-                playlists, liked: saved.map(i => ({ added_at:i.added_at, ...shapeTrack(i.track ?? i.item) })) };
+                playlists, liked: liked.rows };
   await idb.set('library', lib);
+  await dropParts();
   return lib;
 }
 
@@ -2250,7 +2348,14 @@ async function start(force) {
   try {
     stage('Reading your library…', 0.02);
     LIB = force ? null : await idb.get('library');
-    if (!LIB) LIB = await syncLibrary((name, pct) => stage(`Reading ${name}…`, pct));
+    if (!LIB) {
+      let at = 0.02;
+      onHold = secs => stage(secs
+        ? `Spotify asked for a pause — carrying on in ${secs}s. Leave this open.`
+        : 'Carrying on…', at);
+      try { LIB = await syncLibrary(force, (name, pct) => { at = pct; stage(`Reading ${name}…`, pct); }); }
+      finally { onHold = null; }
+    }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
       const raw = await fetch('tags.json?v=__BUILD__').then(r => r.json());

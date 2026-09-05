@@ -52,6 +52,16 @@ nowhere near as legible as each other.
 
 The local app (`npm start`) is still laid out for a desktop browser.
 
+**The first read on a new device takes a while.** iOS gives a home-screen app
+its own storage, separate from Safari's — so adding Betterfy to your Home
+Screen means signing in again and reading the whole library again, several
+hundred calls for a large one. That read is paced to stay under Spotify's
+limit, and it is banked as it goes: a rate limit, a locked screen or iOS
+reclaiming the page behind you costs only the piece in flight, and opening the
+app again picks up where it stopped rather than starting over. Playlists are
+matched on the snapshot id Spotify stamps them with, so every read after the
+first only fetches what has actually changed.
+
 **If sign-in says "too many requests".** Spotify rate-limits its accounts
 service per app rather than per listener, so a busy few minutes can refuse
 anyone's sign-in with a 429. Betterfy now waits it out rather than making it
