@@ -133,19 +133,9 @@
   <p class="tagline">Find the duplicates, catch what's filed in the wrong playlist, and empty the liked-songs backlog you've been ignoring since 2021.</p>
 
   <button class="b p big" id="connect">Connect Spotify</button>
-  <p class="lede" style="margin-top:12px; font-size:13px">Runs entirely in this browser. Your library never reaches a server — there isn't one.</p>
-  <div class="note" style="margin-top:18px">
-    <b>Setting this up?</b> This exact string must be saved as a Redirect URI on the Spotify app,
-    or sign-in fails with “redirect_uri: Not matching configuration”.
-    <div class="field" style="align-items:center">
-      <input id="redirectShow2" class="mono" size="46" readonly onclick="this.select()">
-      <button class="b sm" id="copyRedirect">Copy</button>
-    </div>
-    <p style="margin:8px 0 0; font-size:12.5px; color:var(--ink-3)">
-      In the Spotify dashboard you must click <b>Add</b> next to the field <i>and then</i> <b>Save</b> at the
-      bottom — adding without saving is the usual cause. Build <span class="mono">__BUILD__</span>.
-    </p>
-  </div>
+  <p class="lede" style="margin-top:12px; font-size:13px">
+    Runs entirely in this browser. Your library never leaves it, and nobody else can see what you do here.
+  </p>
 
   <div class="feat">
     <div><b>Duplicates that matter</b><p>Matches on ISRC, so a remaster and a re-issue are caught while a remix or extended mix is left alone.</p></div>
@@ -154,32 +144,40 @@
     <div><b>Cross-filing left alone</b><p>A track in five playlists is usually deliberate. It's surfaced for you, never removed automatically.</p></div>
   </div>
 
-  <div class="note">
-    <b>Spotify limits new apps to 25 authorised users.</b> If sign-in fails, either ask the owner of this
-    page to add your Spotify account email under User Management, or use your own app below — takes two minutes
-    and has no limit.
+  <!-- Setup panel: only for whoever administers the Spotify app. Hidden unless
+       the page is opened with ?setup — friends never need to see any of it. -->
+  <div id="setupPanel" hidden>
+    <h2>Setup</h2>
+    <div class="note">
+      This exact string must be saved as a Redirect URI on the Spotify app, and saved with
+      <b>Add</b> then <b>Save</b> — adding without saving looks identical until sign-in fails.
+      <div class="field" style="align-items:center">
+        <input id="redirectShow2" class="mono" size="46" readonly onclick="this.select()">
+        <button class="b sm" id="copyRedirect">Copy</button>
+      </div>
+    </div>
+    <details>
+      <summary>Use a different Spotify app</summary>
+      <p class="lede" style="font-size:13px; margin-top:10px">
+        Create one at <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a>,
+        tick <b>Web API</b>, add the redirect URI above, then paste the client ID. Stored only in this
+        browser; no secret is needed.
+      </p>
+      <p class="mono" style="font-size:12px; color:var(--ink-3)" id="redirectShow"></p>
+      <div class="field">
+        <input id="ownId" placeholder="Client ID" size="34" autocomplete="off">
+        <button class="b" id="saveId">Save</button>
+        <button class="b sm" id="clearId">Use default</button>
+      </div>
+    </details>
   </div>
 
-  <details>
-    <summary>Use my own Spotify app</summary>
-    <p class="lede" style="font-size:13px; margin-top:10px">
-      Create an app at <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a>,
-      tick <b>Web API</b>, and add this exact redirect URI:
-    </p>
-    <p class="mono" style="font-size:12.5px; background:var(--surface-3); padding:8px 11px; border-radius:5px; word-break:break-all" id="redirectShow"></p>
-    <p class="lede" style="font-size:13px">Then paste the client ID. It's stored only in this browser. No secret needed — this uses PKCE.</p>
-    <div class="field">
-      <input id="ownId" placeholder="Client ID" size="34" autocomplete="off">
-      <button class="b" id="saveId">Save</button>
-      <button class="b sm" id="clearId">Use default</button>
-    </div>
-  </details>
-
-  <h2>Why it needs Last.fm for genres</h2>
+  <h2>Where the genres come from</h2>
   <p class="lede" style="font-size:13.5px">
-    Spotify's API no longer returns genre data of any kind — <span class="mono">audio-features</span> is gone and
-    artist objects carry no genres field. Genre signal comes from Last.fm artist tags, precomputed and shipped with
-    this page. <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">Source on GitHub</a>.
+    Spotify no longer tells anyone the genre of a track, so Betterfy uses Last.fm's artist tags instead —
+    the labels listeners actually apply to music. Those ship with the page, and you can top them up for your
+    own artists from the Playlists screen.
+    <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">Source on GitHub</a>.
   </p>
 
   <h2>Data sources</h2>
@@ -202,7 +200,10 @@
     <button class="nav" data-v="cross">Cross-filed <span class="c" id="c-cross"></span></button>
     <button class="nav" data-v="misfile">Misfiles <span class="c" id="c-misfile"></span></button>
     <button class="nav" data-v="new">New playlists <span class="c" id="c-new"></span></button>
+    <button class="nav" data-v="discover">Discover</button>
+    <button class="nav" data-v="shuffle">Shuffle</button>
     <button class="nav" data-v="lists">Playlists <span class="c" id="c-lists"></span></button>
+    <button class="nav" data-v="history">History</button>
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
@@ -475,6 +476,44 @@ function toast(msg, undoFn) {
   clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, undoFn ? 9000 : 3200);
 }
 
+/* ---------- action log: every library change, reversible ---------- */
+async function logAction(entry) {
+  const log = (await idb.get('actions')) ?? [];
+  log.push({ at: new Date().toISOString(), ...entry });
+  await idb.set('actions', log.slice(-500));
+}
+const getLog = async () => ((await idb.get('actions')) ?? []).slice().reverse();
+
+async function undoAction(at) {
+  const log = (await idb.get('actions')) ?? [];
+  const e = log.find(x => x.at === at);
+  if (!e) throw new Error('Not in the log any more');
+  if (e.op === 'remove') {
+    await addTracks(e.playlistId, e.trackIds);
+    // put each track back at the index it came from, rather than at the end
+    for (const [id, idxs] of Object.entries(e.positions ?? {})) {
+      for (const target of idxs) {
+        const now = await playlistIds(e.playlistId);
+        const from = now.indexOf(id);
+        if (from >= 0 && from !== target)
+          await plCall(e.playlistId, 'PUT', { range_start:from, insert_before:target, range_length:1 });
+      }
+    }
+  } else if (e.op === 'add') {
+    await delTracks(e.playlistId, e.trackIds);
+  } else if (e.op === 'unlike') {
+    await sp('/me/tracks?ids=' + e.trackIds.join(','), { method:'PUT' });
+  } else throw new Error(`Cannot undo "${e.op}"`);
+  await logAction({ op:'undo', of:at, playlistId:e.playlistId, trackIds:e.trackIds });
+}
+
+async function playlistIds(id) {
+  const out = [];
+  let page = await sp(`/playlists/${id}/items?limit=100&fields=next,items(item(id))`);
+  while (page) { for (const i of page.items) if (i.item?.id) out.push(i.item.id); if (!page.next) break; page = await sp(page.next); }
+  return out;
+}
+
 const chunk = (a,n) => Array.from({length:Math.ceil(a.length/n)},(_,i)=>a.slice(i*n,i*n+n));
 async function plCall(id, method, body) {
   for (const seg of ['items','tracks']) {
@@ -606,6 +645,171 @@ function vNew() {
       <button class="b sm p" data-cluster="${i}">Create with ${x.size} tracks</button></div></div>`).join('') || '<div class="empty">No clusters.</div>'}</div>`;
 }
 
+/* ---------- shuffle: spacing, not randomness ---------- */
+const rnd = a => { for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+const artistOf = t => t.artists?.[0]?.name ?? '?';
+
+/**
+ * Uniform random clumps: with 200 tracks you routinely get the same artist
+ * twice within three slots. This repeatedly takes the artist with the most
+ * tracks still unplaced, skipping any used within a cooldown window, which
+ * also stops a prolific artist bunching at the tail.
+ */
+function spacedShuffle(items) {
+  const buckets = new Map();
+  for (const t of items) { const k = artistOf(t); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(t); }
+  for (const v of buckets.values()) rnd(v);
+  const cooldown = Math.max(1, Math.min(buckets.size-1, Math.floor(buckets.size/3), 12));
+  const out = [], recentA = [], recentAl = [];
+  while (out.length < items.length) {
+    const avail = [...buckets.entries()].filter(([,v]) => v.length);
+    let pool = avail.filter(([k]) => !recentA.includes(k));
+    if (!pool.length) pool = avail;
+    const max = Math.max(...pool.map(([,v]) => v.length));
+    let top = pool.filter(([,v]) => v.length === max);
+    const fresh = top.filter(([,v]) => !recentAl.includes(v.at(-1).album));
+    if (fresh.length) top = fresh;
+    const [key, list] = top[Math.floor(Math.random()*top.length)];
+    const t = list.pop(); out.push(t);
+    recentA.push(key); if (recentA.length > cooldown) recentA.shift();
+    recentAl.push(t.album); if (recentAl.length > 4) recentAl.shift();
+  }
+  return out;
+}
+function shuffleStats(order) {
+  const last = new Map(); const gaps = []; let adjacent = 0, within3 = 0;
+  order.forEach((t,i) => { const k = artistOf(t);
+    if (last.has(k)) { const g = i-last.get(k); gaps.push(g); if (g===1) adjacent++; if (g<=3) within3++; }
+    last.set(k,i); });
+  return { adjacent, within3, minGap: gaps.length?Math.min(...gaps):'—',
+           avgGap: gaps.length?(gaps.reduce((a,b)=>a+b,0)/gaps.length).toFixed(1):'—' };
+}
+
+function vShuffle() {
+  const pls = LIB.playlists.filter(p => p.tracks.length >= 8).sort((a,b) => b.tracks.length - a.tracks.length);
+  const sel = S.shufPl ?? pls[0]?.id;
+  const p = LIB.playlists.find(x => x.id === sel);
+  const tracks = p ? dedupe(p.tracks) : [];
+  const order = tracks.length ? spacedShuffle(tracks) : [];
+  const good = order.length ? shuffleStats(order) : null;
+  const naive = tracks.length ? shuffleStats(rnd([...tracks])) : null;
+  S.shufOrder = order;
+  return `<h1>Shuffle</h1>
+    <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
+    <div class="rowbtns" style="margin-bottom:16px">
+      <select id="shufPl">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
+      <button class="b p" id="shufApply" ${order.length?'':'disabled'}>Create shuffled playlist</button>
+      <button class="b" id="shufPlay" ${order.length?'':'disabled'}>Create and play</button>
+    </div>
+    ${good ? `<div class="meters" style="margin-bottom:18px">
+      <div class="meter"><span class="l">Tracks</span><span class="n">${order.length}</span><span class="d">${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?`, ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</span></div>
+      <div class="meter warn"><span class="l">Random: closest repeat</span><span class="n">${naive.minGap}</span><span class="d">${naive.within3} pairs within 3 slots</span></div>
+      <div class="meter ok"><span class="l">Spaced: closest repeat</span><span class="n">${good.minGap}</span><span class="d">${good.within3} pairs within 3 slots</span></div>
+      <div class="meter"><span class="l">Average gap</span><span class="n">${good.avgGap}</span><span class="d">was ${naive.avgGap} at random</span></div>
+    </div>
+    <h2>Order</h2>
+    <div class="rows">${order.slice(0,40).map((t,i) => `<div class="row"><div class="main">
+      <div class="ttl"><span class="mono" style="color:var(--ink-3)">${String(i+1).padStart(3,'0')}</span> ${esc(t.name)}</div>
+      <div class="sub">${esc(artistOf(t))}</div></div></div>`).join('')}</div>` : '<div class="empty">Pick a playlist.</div>'}`;
+}
+
+/* ---------- discovery: new by construction ---------- */
+async function runDiscovery(seedPlaylistId) {
+  const key = localStorage.getItem('bf_lfm');
+  if (!key) { toast('Discovery needs a Last.fm key — add one under Playlists.'); return; }
+  const lfm = p => fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({ ...p, api_key:key, format:'json' })).then(r => r.json());
+
+  const ownedArtist = new Set(), ownedTrack = new Set();
+  const own = t => { for (const a of t?.artists ?? []) ownedArtist.add(norm(a.name));
+                     if (t?.name) ownedTrack.add(norm(t.artists?.[0]?.name ?? '') + '|' + norm(t.name)); };
+  for (const p of LIB.playlists) p.tracks.forEach(own);
+  LIB.liked.forEach(own);
+
+  const src = seedPlaylistId ? LIB.playlists.find(p => p.id === seedPlaylistId) : null;
+  const pool = src ? src.tracks : LIB.playlists.flatMap(p => p.tracks);
+  const freq = new Map();
+  for (const t of pool) for (const a of t.artists ?? []) freq.set(a.name, (freq.get(a.name) ?? 0) + 1);
+  const seeds = [...freq].sort((a,b) => b[1]-a[1]).slice(0, 40).map(([name], i) => ({ name, w: 1 - i/60 }));
+  if (!seeds.length) { toast('Nothing to seed from.'); return; }
+
+  const cand = new Map();
+  for (const [i, s] of seeds.entries()) {
+    stage(`Finding artists like ${s.name}…`, i / (seeds.length + 8));
+    try {
+      const r = await lfm({ method:'artist.getsimilar', artist:s.name, autocorrect:'1', limit:'50' });
+      for (const a of r.similarartists?.artist ?? []) {
+        if (ownsAnyOf(a.name, ownedArtist)) continue;          // the hard filter
+        const c = cand.get(a.name) ?? { name:a.name, score:0, via:[] };
+        c.score += (+a.match || 0) * s.w;
+        if (c.via.length < 3) c.via.push(s.name);
+        cand.set(a.name, c);
+      }
+    } catch {}
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  const ranked = [...cand.values()].sort((a,b) => b.score - a.score);
+  const out = [];
+  for (const c of ranked) {
+    if (out.length >= 30) break;
+    stage(`Checking ${c.name}…`, 0.8 + out.length/40);
+    let top;
+    try { top = await lfm({ method:'artist.gettoptracks', artist:c.name, limit:'4' }); } catch { continue; }
+    await new Promise(r => setTimeout(r, 200));
+    for (const t of top.toptracks?.track ?? []) {
+      if (ownedTrack.has(norm(c.name) + '|' + norm(t.name))) continue;
+      out.push({ artist:c.name, track:t.name, via:c.via }); break;
+    }
+  }
+
+  stage('Finding them on Spotify…', 0.95);
+  for (const o of out) {
+    try {
+      const r = await sp(`/search?q=${encodeURIComponent(`artist:${o.artist} track:${o.track}`)}&type=track&limit=1`);
+      const hit = r.tracks?.items?.[0];
+      if (hit) { o.id = hit.id; o.album = hit.album?.name; o.released = hit.album?.release_date; }
+    } catch {}
+  }
+  S.discover = out.filter(o => o.id);
+  S.discoverFrom = src?.name ?? 'your whole library';
+  $('#land').hidden = true; $('#app').hidden = false;
+  view = 'discover'; render();
+}
+
+function vDiscover() {
+  const d = S.discover ?? [];
+  const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
+  const hasKey = !!localStorage.getItem('bf_lfm');
+  return `<h1>Discover</h1>
+    <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.</p>
+    ${hasKey ? '' : '<div class="note">Discovery needs a free Last.fm key. Add one under <b>Playlists</b>.</div>'}
+    <div class="rowbtns" style="margin-bottom:16px">
+      <select id="discPl"><option value="">Seed from my whole library</option>
+        ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>Seed from ${esc(p.name)}</option>`).join('')}</select>
+      <button class="b p" id="discRun" ${hasKey?'':'disabled'}>Find new music</button>
+    </div>
+    ${d.length ? `<h2>${d.length} new tracks <span class="mono" style="font-size:13px;color:var(--ink-3)">from ${esc(S.discoverFrom)}</span></h2>` : ''}
+    <div class="rows">${d.map(x => `<div class="row"><div class="main">
+      <div class="ttl">${esc(x.track)} <span class="sub">— ${esc(x.artist)}</span></div>
+      <div class="sub mono">${esc((x.released??'').slice(0,4))} · via ${esc((x.via??[]).join(', '))}</div>
+    </div><div class="acts">
+      <button class="b sm" data-dplay="${esc(x.id)}">Play</button>
+      <button class="b sm" data-like="${esc(x.id)}">Like</button>
+      <a class="b sm" style="text-decoration:none" href="https://open.spotify.com/track/${esc(x.id)}" target="_blank" rel="noopener">Open</a>
+    </div></div>`).join('') || (d.length===0 && hasKey ? '<div class="empty">Pick a seed and hit Find new music.</div>' : '')}</div>`;
+}
+
+function vHistory() {
+  const h = S.history ?? [];
+  return `<h1>History</h1>
+    <p class="lede">Every change Betterfy made to your Spotify library, newest first. Removals record their position, so undo puts a track back where it was rather than at the end.</p>
+    <div class="rows">${h.map(x => `<div class="row"><div class="main">
+      <div class="ttl">${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span></div>
+      <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))} · ${(x.trackIds??[]).length} track(s)${x.reason?' · '+esc(x.reason):''}</div>
+    </div><div class="acts">${['remove','add','unlike'].includes(x.op) ? `<button class="b sm" data-undo="${esc(x.at)}">Undo</button>` : ''}</div></div>`).join('')
+      || '<div class="empty">Nothing changed yet.</div>'}</div>`;
+}
+
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
 function vLists() {
   const rows = Object.entries(CFG).map(([id,v]) => ({ id, ...v })).sort((a,b) => b.tracks - a.tracks);
@@ -677,7 +881,8 @@ async function enrichMissing() {
   render();
 }
 
-const VIEWS = { home:vHome, inbox:vInbox, dupes:vDupes, cross:vCross, misfile:vMisfile, new:vNew, lists:vLists };
+const VIEWS = { home:vHome, inbox:vInbox, dupes:vDupes, cross:vCross, misfile:vMisfile,
+                new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists, history:vHistory };
 function render() {
   $('#main').innerHTML = VIEWS[view]();
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
@@ -690,7 +895,51 @@ function render() {
 
 /* ---------- events ---------- */
 document.addEventListener('click', async e => {
-  const nav = e.target.closest('.nav'); if (nav) { view = nav.dataset.v; return render(); }
+  const nav = e.target.closest('.nav');
+  if (nav) { view = nav.dataset.v; if (view === 'history') S.history = await getLog(); return render(); }
+
+  if (e.target.id === 'shufApply' || e.target.id === 'shufPlay') {
+    const btn = e.target, playIt = btn.id === 'shufPlay';
+    const src = LIB.playlists.find(p => p.id === (S.shufPl ?? LIB.playlists[0].id));
+    const order = S.shufOrder ?? [];
+    if (!order.length) return;
+    btn.disabled = true; btn.textContent = 'Working…';
+    try {
+      const name = `🔀 ${src.name}`;
+      const mine = await paged('/me/playlists?limit=50');
+      let pl = mine.find(p => p.name === name && p.owner?.id === LIB.user.id);
+      if (!pl) pl = await sp('/me/playlists', { method:'POST',
+        body:JSON.stringify({ name, public:false, description:`Spaced shuffle of "${src.name}". Play with Spotify shuffle OFF.` }) });
+      // PUT replaces wholesale, so re-shuffling the same playlist doesn't pile up
+      await plCall(pl.id, 'PUT', { uris: order.slice(0,100).map(t => 'spotify:track:'+t.id) });
+      for (const part of chunk(order.slice(100), 100)) await plCall(pl.id, 'POST', { uris: part.map(t => 'spotify:track:'+t.id) });
+      await logAction({ op:'shuffle', playlistId:pl.id, playlistName:name, trackIds:order.map(t=>t.id), reason:`from ${src.name}` });
+      if (playIt) {
+        const d = await sp('/me/player/devices');
+        const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
+        if (!dev) toast(`Created "${name}" — no open Spotify device to play on.`);
+        else {
+          await sp(`/me/player/shuffle?state=false&device_id=${dev.id}`, { method:'PUT' });
+          await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body:JSON.stringify({ context_uri:`spotify:playlist:${pl.id}` }) });
+          toast(`Playing "${name}" on ${dev.name}, Spotify shuffle off.`);
+        }
+      } else toast(`Created "${name}" — ${order.length} tracks. Play it with Spotify shuffle OFF.`);
+    } catch (err) { toast('Failed: ' + err.message); }
+    render(); return;
+  }
+
+  if (e.target.id === 'discRun') return runDiscovery(S.discSeed || null);
+
+  const like = e.target.closest('[data-like]');
+  if (like) { try { await sp('/me/tracks?ids='+like.dataset.like, { method:'PUT' });
+      await logAction({ op:'add-liked', trackIds:[like.dataset.like], reason:'from discovery' });
+      like.textContent = 'Liked'; like.disabled = true; toast('Added to your Liked Songs.'); }
+    catch (err) { toast('Failed: '+err.message); } return; }
+
+  const un = e.target.closest('[data-undo]');
+  if (un) { un.disabled = true;
+    try { await undoAction(un.dataset.undo); toast('Restored.'); S.history = await getLog(); render(); }
+    catch (err) { toast('Undo failed: '+err.message); un.disabled = false; } return; }
   const go = e.target.closest('[data-go]'); if (go) { view = go.dataset.go; return render(); }
   const cmin = e.target.closest('[data-cmin]'); if (cmin) { S.crossMin = +cmin.dataset.cmin; return render(); }
   const mfb = e.target.closest('[data-mfb]'); if (mfb) { S.mfBand = mfb.dataset.mfb; return render(); }
@@ -701,23 +950,50 @@ document.addEventListener('click', async e => {
   const keep = e.target.closest('[data-keep]');
   if (keep) {
     const drop = keep.dataset.drop.split(',').filter(Boolean), pl = keep.dataset.pl;
-    try { await delTracks(pl, drop);
-      toast(`Removed ${drop.length}.`, () => addTracks(pl, drop));
+    const plName = CFG[pl]?.name ?? pl;
+    try {
+      const before = await playlistIds(pl);
+      const positions = {};
+      before.forEach((id, i) => { if (drop.includes(id)) (positions[id] ??= []).push(i); });
+      await delTracks(pl, drop);
+      await logAction({ op:'remove', playlistId:pl, playlistName:plName, trackIds:drop, positions, reason:'duplicate' });
+      const at = (await getLog())[0]?.at;
+      toast(`Removed ${drop.length} from ${plName}.`, () => undoAction(at));
       R.within = R.within.filter(c => !(c.playlistId===pl && c.options.some(o=>drop.includes(o.id)))); render(); }
     catch (err) { toast('Failed: '+err.message); }
     return;
   }
   const x = e.target.closest('[data-xpl]');
-  if (x) { try { await delTracks(x.dataset.xpl, [x.dataset.xtr]);
-      x.classList.add('cut'); toast('Removed from that playlist.', () => addTracks(x.dataset.xpl, [x.dataset.xtr])); }
-    catch (err) { toast('Failed: '+err.message); } return; }
+  if (x) {
+    const pl = x.dataset.xpl, tr = x.dataset.xtr, plName = CFG[pl]?.name ?? pl;
+    try {
+      const before = await playlistIds(pl);
+      const positions = {}; before.forEach((id,i) => { if (id === tr) (positions[id] ??= []).push(i); });
+      await delTracks(pl, [tr]);
+      await logAction({ op:'remove', playlistId:pl, playlistName:plName, trackIds:[tr], positions, reason:'cross-file trim' });
+      const at = (await getLog())[0]?.at;
+      x.classList.add('cut');
+      toast(`Removed from ${plName}.`, () => undoAction(at));
+    } catch (err) { toast('Failed: '+err.message); } return; }
 
   const mv = e.target.closest('[data-mvto]');
-  if (mv) { mv.disabled = true;
-    try { await addTracks(mv.dataset.mvto, [mv.dataset.mvtr]); await delTracks(mv.dataset.mvfrom, [mv.dataset.mvtr]);
-      toast('Moved.', async () => { await addTracks(mv.dataset.mvfrom,[mv.dataset.mvtr]); await delTracks(mv.dataset.mvto,[mv.dataset.mvtr]); });
-      mv.closest('.row').remove(); }
-    catch (err) { toast('Failed: '+err.message); mv.disabled = false; } return; }
+  if (mv) {
+    mv.disabled = true;
+    const { mvto:to, mvfrom:from, mvtr:tr } = mv.dataset;
+    const toName = CFG[to]?.name ?? to, fromName = CFG[from]?.name ?? from;
+    try {
+      // Add first: if the removal then fails the track is still filed somewhere
+      // rather than lost between playlists.
+      await addTracks(to, [tr]);
+      await logAction({ op:'add', playlistId:to, playlistName:toName, trackIds:[tr], reason:`moved from ${fromName}` });
+      const before = await playlistIds(from);
+      const positions = {}; before.forEach((id,i) => { if (id === tr) (positions[id] ??= []).push(i); });
+      await delTracks(from, [tr]);
+      await logAction({ op:'remove', playlistId:from, playlistName:fromName, trackIds:[tr], positions, reason:`moved to ${toName}` });
+      const at = (await getLog())[0]?.at;
+      toast(`Moved to ${toName}.`, () => undoAction(at));
+      mv.closest('.row').remove();
+    } catch (err) { toast('Failed: '+err.message); mv.disabled = false; } return; }
 
   const dp = e.target.closest('[data-dplay]');
   if (dp) { try { toast('Playing on ' + await playTrack(dp.dataset.dplay)); } catch (err) { toast(err.message); } return; }
@@ -744,6 +1020,8 @@ document.addEventListener('click', async e => {
 
 document.addEventListener('change', async e => {
   if (e.target.id === 'anyPl' && e.target.value) return fileCurrent(e.target.value);
+  if (e.target.id === 'shufPl') { S.shufPl = e.target.value; return render(); }
+  if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
 
   // Axis / target edits are per-viewer and persist on this device.
   const ax = e.target.closest('[data-ax]'), tg = e.target.closest('[data-tg]');
@@ -766,18 +1044,28 @@ document.addEventListener('change', async e => {
 
 async function fileCurrent(playlistId) {
   const t = R.backlog[S.inboxAt]; if (!t) return;
-  try { await addTracks(playlistId, [t.id]);
-    toast(`Filed “${t.title}”.`, () => delTracks(playlistId, [t.id]));
-    R.backlog.splice(S.inboxAt, 1); render(); }
-  catch (e) { toast('Failed: '+e.message); }
+  const name = CFG[playlistId]?.name ?? playlistId;
+  try {
+    await addTracks(playlistId, [t.id]);
+    await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'filed from inbox' });
+    const at = (await getLog())[0]?.at;
+    toast(`Filed “${t.title}” into ${name}.`, () => undoAction(at));
+    R.backlog.splice(S.inboxAt, 1); render();
+  } catch (e) { toast('Failed: '+e.message); }
 }
 async function inboxAct(a) {
   const t = R.backlog[S.inboxAt]; if (!t) return;
   if (a === 'play') { try { toast('Playing on ' + await playTrack(t.id)); } catch(e){ toast(e.message); } return; }
   if (a === 'skip') { S.inboxAt = Math.min(S.inboxAt+1, R.backlog.length-1); return render(); }
-  if (a === 'unlike') { try { await sp('/me/tracks?ids='+t.id, { method:'DELETE' });
-      toast(`Unliked “${t.title}”.`, () => sp('/me/tracks?ids='+t.id, { method:'PUT' }));
-      R.backlog.splice(S.inboxAt,1); render(); } catch(e){ toast('Failed: '+e.message); } }
+  if (a === 'unlike') {
+    try {
+      await sp('/me/tracks?ids='+t.id, { method:'DELETE' });
+      await logAction({ op:'unlike', trackIds:[t.id], reason:'from inbox' });
+      const at = (await getLog())[0]?.at;
+      toast(`Unliked “${t.title}”.`, () => undoAction(at));
+      R.backlog.splice(S.inboxAt,1); render();
+    } catch(e){ toast('Failed: '+e.message); }
+  }
 }
 document.addEventListener('keydown', e => {
   if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
@@ -838,9 +1126,27 @@ async function start(force) {
   }
 }
 
+// Spotify's raw error codes mean nothing to someone who just wanted to sort
+// their playlists, so say what to actually do about each.
+const FRIENDLY = {
+  access_denied: 'Sign-in was cancelled, or this Spotify account has not been given access yet. Ask whoever sent you the link, then try again.',
+  invalid_client: 'The app is not configured correctly yet. Let the person who sent you this link know.',
+  invalid_scope: 'Spotify refused one of the permissions. Try again, and accept all of them.',
+  server_error: 'Spotify had a problem. Try again in a moment.',
+};
+
 (async () => {
   const q = new URLSearchParams(location.search);
-  if (q.get('error')) { $('#land').hidden = false; toast('Spotify said: ' + q.get('error')); history.replaceState({},'',REDIRECT); return; }
+  if (q.get('setup') !== null) { $('#setupPanel').hidden = false; localStorage.setItem('bf_setup','1'); }
+  else if (localStorage.getItem('bf_setup')) $('#setupPanel').hidden = false;
+
+  if (q.get('error')) {
+    const code = q.get('error');
+    $('#land').hidden = false;
+    toast(FRIENDLY[code] ?? `Sign-in failed (${code}). Try again.`);
+    history.replaceState({},'',REDIRECT);
+    return;
+  }
   if (q.get('code')) {
     try { await exchange(q.get('code')); history.replaceState({},'',REDIRECT); }
     catch (e) { $('#land').hidden = false; toast(e.message); return; }
