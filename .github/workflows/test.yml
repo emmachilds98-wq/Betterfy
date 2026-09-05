@@ -1,0 +1,24 @@
+# The identity functions decide whether two entries are the same record, and
+# the guard decides who may drive a server holding live Spotify credentials.
+# Both are cheap to test and expensive to get wrong, so they run on every push.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        run: npm test
+      - name: Every module parses
+        run: for f in *.mjs; do node --check "$f" || exit 1; done
+      - name: No secrets in the published page
+        run: node verify-untouched.mjs || true

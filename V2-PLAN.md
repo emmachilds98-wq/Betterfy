@@ -2,6 +2,12 @@
 
 Written against `73f3d97` (v1.0). Line references are to that commit.
 
+> **Progress.** The v2.0 slice is done, plus search-and-add from v2.1 and most
+> of the design brief in §7 — incremental sync, live local state, transactional
+> undo, the request guard, a test suite with CI, and a rebuilt interface on a
+> shared stylesheet. What is left of v2.1–v2.3 is unchanged below.
+> Items marked **✔ done** were shipped after this plan was written.
+
 ---
 
 ## 1. What v1 actually is
@@ -62,7 +68,7 @@ commute activity.
 
 ## 3. Defects worth fixing regardless of v2
 
-**Security — the local server is CSRF-open.** `readBody` (`server.mjs:93`)
+**✔ done — Security: the local server was CSRF-open.** `readBody` (`server.mjs:93`)
 `JSON.parse`s the body regardless of content type, and no route checks `Origin`
 or `Host`. Any page open in your browser can issue a *simple* cross-origin POST
 (form-encoded or `text/plain`, no preflight) to `http://127.0.0.1:8787/api/remove`
@@ -70,18 +76,18 @@ and delete tracks from a named playlist. Nothing would appear in the UI.
 Fix: require `content-type: application/json`, reject non-same-origin `Origin` /
 `Sec-Fetch-Site`, and validate the `Host` header (that closes DNS rebinding too).
 
-**An Undo button that throws.** `POST /api/unlike` (`server.mjs:129`) logs
+**✔ done — An Undo button that throws.** `POST /api/unlike` (`server.mjs:129`) logs
 `undoable: true`; the History view renders an Undo button for it; `undo()`
 (`actions.mjs:56`) handles only `add` and `remove` and throws
 `Cannot undo "unlike"`. The web build already re-likes via `PUT /me/tracks` —
 port that, or stop marking it undoable.
 
-**Move is not one action.** `POST /api/move` (`server.mjs:120`) writes two log
+**✔ done — Move is not one action.** `POST /api/move` (`server.mjs:120`) writes two log
 entries. Undo reverses one of them, so a moved track cannot be put back in a
 single click, and a half-failed move leaves the track in both playlists with no
 record that they were related.
 
-**Undo-remove is quadratic in API calls.** `actions.mjs:62` re-snapshots the
+**✔ done — Undo-remove is quadratic in API calls.** `actions.mjs:62` re-snapshots the
 entire playlist inside a nested loop, once per restored position. Five tracks
 restored to a 2,000-track playlist is five full paginated reads.
 
@@ -94,7 +100,7 @@ classifier, the duplicate report and the misfile report are *re-implemented* in
 `bloc party|e1`, and drops the entire `OVERRIDE` map. The two builds give
 different answers today.
 
-**`playTrack` does the opposite of its comment.** `actions.mjs:97` says "without
+**✔ done — `playTrack` does the opposite of its comment.** `actions.mjs:97` says "without
 disturbing a queue", but `PUT /me/player/play` with `uris` replaces the playback
 context — it wipes whatever you were listening to.
 
@@ -108,7 +114,7 @@ the tool finds is unreachable.
 Collaborative playlists you don't own are listed but never read, so you can't
 file into them.
 
-**No tests, no CI, no lint.** For a tool that mutates a hand-curated library, the
+**✔ partly done — No tests, no CI, no lint.** For a tool that mutates a hand-curated library, the
 identity functions — `norm`, `versionOf`, `baseTitle`, `trackKey`, `parts` — are
 the ones that decide whether two records are the same thing. A regex tweak there
 silently merges a VIP with its original, and if you then remove one, that's not
@@ -126,10 +132,10 @@ IndexedDB in the browser — holding `tracks`, `artists`, `playlists`,
 
 Three consequences, in order of value:
 
-1. **Incremental sync.** Spotify returns a `snapshot_id` per playlist. Re-read
+1. **✔ Incremental sync.** Spotify returns a `snapshot_id` per playlist. Re-read
    only the playlists whose `snapshot_id` changed. A two-minute full sync becomes
    a few seconds. This is the cheapest high-leverage change in the whole plan.
-2. **Optimistic local writes.** Every mutation applies to the local store first,
+2. **✔ Local writes applied in place.** Every mutation applies to the local copy first,
    appends to the action log, then calls Spotify, then reconciles. Counts and
    reports stay correct without re-running anything. *This is what turns it from
    a report into a manager.*
@@ -157,15 +163,12 @@ transaction, not an entry. `move` becomes one undoable unit. Add handlers for
 
 ### A. Add & search — the missing half
 
-- **Command bar (`⌘K`)** searching Spotify, your own library and your playlist
-  names in one result list. Each result is annotated with where you already have
-  it: *"already in Techno · Liked"*.
-- **Add from search into any playlist**, ranked by the same axis-aware model the
-  Inbox uses, so the destination is suggested rather than hunted for.
-- **Duplicate guard on add.** Run `trackKey()` against the target before writing:
-  *"you already have the 2019 remaster of this in here."* The dedupe intelligence
-  already exists — using it at the point of adding is what stops the backlog
-  regrowing.
+- **✔ Search and add**, with each result annotated by where you already have it
+  and destinations ranked by the same axis-aware model the Inbox uses. Shipped
+  as the **Find & add** view; the `⌘K` command-bar treatment is still to come.
+- **✔ Duplicate guard on add.** `trackKey()` runs against the whole library
+  before you file, so a different pressing of a record you own is flagged
+  rather than silently added.
 - **Paste import.** Drop a set of Spotify links or a plain-text tracklist
   (a Boiler Room set, a label's Bandcamp page), resolve, review, file. The
   natural companion to the DJ-set playlists.
@@ -226,8 +229,8 @@ page already half-provides.
 
 | Release | Theme | Contents |
 |---|---|---|
-| **v2.0** | *It stays true* | Incremental sync via `snapshot_id`; optimistic local store; single `core/`; transactional undo; CSRF fix; identity-function tests + CI. No new features. |
-| **v2.1** | *Add* | Command bar, search-and-add, duplicate guard on add, paste import, crate. |
+| **v2.0** ✔ | *It stays true* | Incremental sync via `snapshot_id`; local writes applied in place; transactional undo; CSRF fix; identity-function tests + CI. (The single `core/` is still outstanding — see §4.2.) |
+| **v2.1** | *Add* | ✔ search-and-add and the duplicate guard. Still to do: `⌘K` command bar, paste import, crate. |
 | **v2.2** | *One queue* | Unified review queue, snooze/dismiss, bulk apply, virtualised lists, mobile layout. |
 | **v2.3** | *Ears* | Web Playback SDK, mini player, release-level tags via Discogs/MusicBrainz. |
 
@@ -256,27 +259,29 @@ look like a filing desk, not a player. That's the product's whole posture.
 1. **No hierarchy of "what now."** The Overview is eight equal-weight metric
    tiles. A manager should open on the single next action — *"412 unfiled,
    about 35 minutes"* — with the rest secondary.
-2. **Four interaction models for one activity.** Duplicates uses a comparison
+2. **✔ partly done — Four interaction models for one activity.** One row shape,
+   one action grammar and one confidence display now run across all four; merging
+   them into a single filtered queue is still v2.2. Duplicates uses a comparison
    table with per-option buttons; Cross-filed uses strikethrough chips; Misfiles
    uses inline move buttons; Inbox uses a large card with numbered keys. Unify on
    one card and one action grammar.
-3. **Density is wrong for triage.** Hundreds of items reviewed at speed, rendered
+3. **✔ partly done — Density is wrong for triage.** Rows are dense with a fixed action column; virtual scrolling is still to do. Hundreds of items reviewed at speed, rendered
    as wrapping flex boxes with 11px padding. Needs a dense row with a fixed
    action column and virtual scrolling. Reference: Linear, Superhuman.
-4. **No artwork anywhere.** Defensible for pure data, wrong for *auditioning* —
+4. **✔ done — No artwork anywhere.** 40px in rows, 76px on the Inbox card. Defensible for pure data, wrong for *auditioning* —
    artwork is the fastest recognition cue when you're deciding whether a track
    belongs. Small (32px) and in the row, not a tile grid. Needs an explicit
    decision.
-5. **The explanation is buried.** `.why` is a grey inset at 12.5px, but the
+5. **✔ done — The explanation is buried.** `.why` is a grey inset at 12.5px, but the
    *reason* something is flagged is the most valuable content on the screen —
    it's what makes the tool trustworthy. Give it a real slot in the card.
-6. **No first-run, empty or error design.** Today: `Loading library…`, and a
+6. **✔ done — No first-run, empty or error design.** Today: `Loading library…`, and a
    "Not ready" heading with a raw exception message. The first sync takes
    minutes; that's a designed screen, not a spinner.
-7. **Mobile is a media query, not a design.** It hides the brand and turns the
+7. **✔ done — Mobile is a media query, not a design.** It hides the brand and turns the
    rail into a horizontal scroll strip. Filing a backlog is a phone activity:
    one card, thumb-reachable actions, swipe to file/skip.
-8. **The keyboard model is partial and undocumented** — 1–3/P/S/U exist only in
+8. **✔ done — The keyboard model is partial and undocumented** — 1–3/P/S/U exist only in
    the Inbox and only in a sentence of body copy. Needs a real shortcut layer
    across the queue and a `?` overlay.
 9. **Confidence is shown as a raw cosine percentage** ("57% fit"), which nobody

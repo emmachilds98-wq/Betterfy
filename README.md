@@ -67,15 +67,26 @@ interrupted and it continues from where it stopped.
 ## Use
 
 ```bash
+npm run snapshot     # re-read the library (incremental — see below)
 npm run dupes        # duplicates, split into within-playlist vs cross-filed
 npm run misfile      # possible misfiles + where the unfiled backlog should go
 npm run discover -- --like "Jungle & Breaks"   # new music, excluding all you own
 npm run shuffle -- "Techno" --play             # spaced shuffle, played on your device
 npm run consolidate  # maintain one playlist holding every unique track
+npm test             # identity and request-guard tests
 ```
+
+`npm run snapshot` only re-reads playlists whose contents actually changed —
+Spotify's per-playlist `snapshot_id` says which — so a re-sync takes seconds
+rather than minutes. `npm run snapshot:full` forces a complete re-read.
 
 Everything is **dry-run by default**. Commands that change your Spotify library
 print what they would do and stop; add `--apply` to commit.
+
+In the local app, changes apply to the in-memory library as well as to Spotify,
+so the counts stay correct as you work — you don't need to re-snapshot to see
+where you are. Related changes are grouped: a move is an add and a remove, and
+**Undo reverses the whole thing in one step**.
 
 ## How the filing model works
 
@@ -118,11 +129,21 @@ guess, and everything downstream reads the file, not the rules.
 | `snapshot.mjs` | dumps the whole library to `library.json` |
 | `actions.mjs` | every library mutation, with the undo log |
 | `server.mjs` + `ui/` | the local app |
+| `ui/theme.css` | the design system, shared by both front ends |
+| `guard.mjs` | who may talk to the local server |
+| `test/` | identity, restore-planning and request-guard tests |
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
 
 `build-web.mjs` bundles `norm`, `credits` and `profile` verbatim into the page,
-so the browser and local builds score identically and cannot drift apart. It
-refuses to build if a secret appears in the output.
+so the two builds *score* identically. Everything else the browser build does —
+axis classification, the duplicate report, the misfile report — is currently a
+second implementation inside `docs/app.template.html`, and the two have already
+drifted apart. Collapsing them into one shared module is the next structural
+job; see `V2-PLAN.md`.
+
+`ui/theme.css` is the single stylesheet: the local app links it and the browser
+build inlines it, so the two cannot drift apart visually. `build-web.mjs` refuses
+to build if a secret appears in the output, or if no client ID is supplied.
 
 ## Data sources, and what they're worth
 
@@ -138,6 +159,18 @@ Tempo and musical key data by [GetSongBPM](https://getsongbpm.com).
 
 Generated files (`library.json`, `tags-lastfm.json`, `.tokens.json`, reports) are
 gitignored — they're yours, not the project's.
+
+## Security
+
+The local server holds live Spotify credentials on a fixed loopback port, so it
+refuses anything that did not come from its own page: the `Host` header must be
+one it serves (which closes DNS rebinding), a cross-site `Origin` or
+`Sec-Fetch-Site` is rejected, and writes must be `application/json` — a content
+type a plain form post cannot send. `guard.mjs` holds the checks and
+`test/guard.test.mjs` covers them.
+
+Tokens live in `.tokens.json` on your own machine and are gitignored. Nothing is
+sent anywhere except Spotify, Last.fm, Discogs and MusicBrainz.
 
 ## Licence
 

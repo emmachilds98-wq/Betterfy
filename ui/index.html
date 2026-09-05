@@ -6,144 +6,62 @@
 <title>Betterfy</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🎛️</text></svg>">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<style>
-  :root{
-    --ground:#F1F3F6; --surface:#FFFFFF; --surface-2:#F7F8FA; --surface-3:#EDEFF4;
-    --ink:#141821; --ink-2:#4E586A; --ink-3:#798394;
-    --line:#DCE1E8; --line-2:#C7CEDA;
-    --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4;
-    --ok:#1F7F58; --ok-soft:#E3F2EA;
-    --warn:#9A6B0E; --warn-soft:#F8EFD9;
-    --info:#2C5FA8; --info-soft:#E4EDF9;
-    --idle:#98A2B3; --r:7px;
-  }
-  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
-    --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
-    --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
-    --line:#252B35; --line-2:#333B48;
-    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
-    --ok:#4FBE8B; --ok-soft:#12261D; --warn:#D9A83E; --warn-soft:#2A2113;
-    --info:#7FA9E8; --info-soft:#15202F; --idle:#5C6675;
-  }}
-  :root[data-theme="dark"]{
-    --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
-    --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
-    --line:#252B35; --line-2:#333B48;
-    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
-    --ok:#4FBE8B; --ok-soft:#12261D; --warn:#D9A83E; --warn-soft:#2A2113;
-    --info:#7FA9E8; --info-soft:#15202F; --idle:#5C6675;
-  }
-  *{box-sizing:border-box}
-  html,body{height:100%}
-  body{margin:0; background:var(--ground); color:var(--ink); font-size:14px; line-height:1.5;
-       font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased;
-       display:grid; grid-template-columns:212px 1fr}
-  [hidden]{display:none!important}
-
-  /* ---- rail ---- */
-  aside{background:var(--surface); border-right:1px solid var(--line); padding:20px 0; display:flex; flex-direction:column; gap:2px; position:sticky; top:0; height:100vh; overflow:auto}
-  .brand{font-family:Archivo,sans-serif; font-weight:800; font-size:20px; letter-spacing:-.03em; padding:0 20px 4px}
-  .brand span{color:var(--accent)}
-  .who{padding:0 20px 16px; font-size:11.5px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace}
-  .nav{appearance:none; border:0; background:none; font:inherit; text-align:left; cursor:pointer;
-       padding:8px 20px; color:var(--ink-2); display:flex; justify-content:space-between; gap:8px; border-left:2px solid transparent}
-  .nav:hover{background:var(--surface-2); color:var(--ink)}
-  .nav[aria-current="true"]{color:var(--ink); font-weight:600; border-left-color:var(--accent); background:var(--surface-2)}
-  .nav .c{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3); font-weight:500}
-  .railfoot{margin-top:auto; padding:14px 20px 0; border-top:1px solid var(--line); font-size:11.5px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace}
-
-  /* ---- main ---- */
-  main{padding:26px 30px 60px; max-width:1080px; min-width:0}
-  h1{font-family:Archivo,sans-serif; font-weight:800; font-size:27px; letter-spacing:-.024em; margin:0 0 4px; text-wrap:balance}
-  .lede{color:var(--ink-2); margin:0 0 22px; max-width:72ch}
-  h2{font-family:Archivo,sans-serif; font-weight:700; font-size:16px; letter-spacing:-.015em; margin:26px 0 10px}
-
-  .meters{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:11px}
-  .meter{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:13px 15px; display:flex; flex-direction:column; gap:2px}
-  .meter .n{font-family:"IBM Plex Mono",monospace; font-size:25px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
-  .meter .l{font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
-  .meter .d{font-size:12px; color:var(--ink-2)}
-  .meter.act .n{color:var(--accent)} .meter.warn .n{color:var(--warn)} .meter.ok .n{color:var(--ok)}
-  .meter.click{cursor:pointer} .meter.click:hover{border-color:var(--line-2)}
-
-  /* ---- inbox card ---- */
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:22px 24px}
-  .prog{height:4px; background:var(--surface-3); border-radius:2px; overflow:hidden; margin-bottom:18px}
-  .prog i{display:block; height:100%; background:var(--accent)}
-  .now .t{font-family:Archivo,sans-serif; font-weight:700; font-size:23px; letter-spacing:-.02em; margin:0; text-wrap:balance}
-  .now .a{color:var(--ink-2); font-size:15px; margin:2px 0 0}
-  .now .m{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); margin-top:6px; display:flex; gap:14px; flex-wrap:wrap}
-  .tagrow{display:flex; gap:5px; flex-wrap:wrap; margin-top:12px}
-  .tag{font-size:11.5px; background:var(--surface-3); color:var(--ink-2); border-radius:20px; padding:2px 10px}
-  .picks{display:flex; flex-direction:column; gap:7px; margin-top:18px}
-  .pick{display:flex; align-items:center; gap:11px; border:1px solid var(--line); border-radius:var(--r);
-        background:var(--surface); padding:10px 13px; cursor:pointer; font:inherit; color:var(--ink); text-align:left; width:100%}
-  .pick:hover{border-color:var(--accent); background:var(--accent-soft)}
-  .pick .k{font-family:"IBM Plex Mono",monospace; font-size:11px; width:19px; height:19px; flex:none; display:grid; place-items:center;
-           border:1px solid var(--line-2); border-radius:4px; color:var(--ink-3)}
-  .pick .nm{font-weight:600} .pick .ax{font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em}
-  .pick .sc{margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3)}
-  .rowbtns{display:flex; gap:8px; margin-top:16px; flex-wrap:wrap}
-
-  button.b{appearance:none; font:inherit; font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
-           background:var(--surface); color:var(--ink); border-radius:6px; padding:8px 13px}
-  button.b:hover{border-color:var(--ink-3)}
-  button.b.p{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
-  button.b.g{background:var(--ok); border-color:var(--ok); color:#fff}
-  button.b.sm{font-size:12px; padding:5px 10px; font-weight:500}
-  button.b:disabled{opacity:.5; cursor:default}
-  select,input[type=search]{font:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--line-2);
-    border-radius:6px; background:var(--surface); color:var(--ink); max-width:100%}
-  :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
-
-  /* ---- lists ---- */
-  .rows{display:flex; flex-direction:column; gap:7px}
-  .row{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:11px 14px;
-       display:flex; gap:14px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap}
-  .row .main{min-width:0; flex:1}
-  .row .ttl{font-weight:600}
-  .row .sub{color:var(--ink-2); font-size:13px}
-  .row .acts{display:flex; gap:6px; flex-wrap:wrap}
-  .mono{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums}
-  .why{font-size:12.5px; color:var(--ink-2); background:var(--surface-3); border-radius:5px; padding:4px 9px; display:inline-block; margin-top:6px}
-  table.cmp{border-collapse:collapse; font-size:12.5px; margin-top:8px; width:100%}
-  table.cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:0 10px 3px 0}
-  table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
-  table.cmp .differs{color:var(--accent); font-weight:600}
-  .chip{font-size:12px; border:1px solid var(--line); border-radius:20px; padding:3px 10px; background:var(--surface); color:var(--ink-2); cursor:pointer; font-family:inherit}
-  .chip:hover{border-color:var(--line-2); color:var(--ink)}
-  .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
-  .empty{color:var(--ink-3); padding:34px 0; text-align:center}
-
-  /* ---- toast ---- */
-  .toast{position:fixed; right:18px; bottom:18px; background:var(--ink); color:var(--ground);
-         padding:10px 15px; border-radius:7px; font-size:13px; display:flex; gap:12px; align-items:center; z-index:20; max-width:420px}
-  .toast button{appearance:none; border:0; background:none; color:var(--accent); font:inherit; font-weight:700; cursor:pointer; padding:0}
-  @media (max-width:820px){ body{grid-template-columns:1fr} aside{position:static; height:auto; flex-direction:row; overflow-x:auto; align-items:center} .brand,.who,.railfoot{display:none} }
-</style>
+<link rel="stylesheet" href="/theme.css">
 </head>
-<body>
+<body class="shell">
 <aside>
   <div class="brand">Better<span>fy</span></div>
-  <div class="who" id="who">loading…</div>
-  <button class="nav" data-v="home"     aria-current="true">Overview</button>
+  <div class="who" id="who">connecting…</div>
+  <button class="nav" data-v="home" aria-current="true">Overview</button>
+  <button class="nav" data-v="find">Find &amp; add</button>
+  <div class="navgap"></div>
   <button class="nav" data-v="inbox">Inbox <span class="c" id="c-inbox"></span></button>
   <button class="nav" data-v="dupes">Duplicates <span class="c" id="c-dupes"></span></button>
-  <button class="nav" data-v="cross">Cross-filed <span class="c" id="c-cross"></span></button>
   <button class="nav" data-v="misfile">Misfiles <span class="c" id="c-misfile"></span></button>
+  <button class="nav" data-v="cross">Cross-filed <span class="c" id="c-cross"></span></button>
   <button class="nav" data-v="new">New playlists <span class="c" id="c-new"></span></button>
+  <div class="navgap"></div>
   <button class="nav" data-v="discover">Discover <span class="c" id="c-disc"></span></button>
   <button class="nav" data-v="history">History</button>
-  <div class="railfoot" id="foot"></div>
+  <div class="railfoot">
+    <span id="foot"></span>
+    <button id="showKeys">Keyboard <kbd>?</kbd></button>
+  </div>
 </aside>
 
-<main id="main"><div class="empty">Loading library…</div></main>
-<div class="toast" id="toast" hidden></div>
+<main id="main">
+  <div class="boot"><div class="in">
+    <h1>Reading your library</h1>
+    <p class="lede" id="bootsay">Opening the snapshot…</p>
+  </div></div>
+</main>
+
+<div class="undobar" id="undobar" hidden></div>
+
+<div class="sheet" id="keysheet" hidden><div class="in">
+  <h2>Keyboard</h2>
+  <div class="keys">
+    <kbd>1</kbd><span>File to the first suggestion</span>
+    <kbd>2</kbd><span>File to the second</span>
+    <kbd>3</kbd><span>File to the third</span>
+    <kbd>P</kbd><span>Play the track on your Spotify device</span>
+    <kbd>S</kbd><span>Skip — leave it unfiled for now</span>
+    <kbd>U</kbd><span>Unlike it</span>
+    <kbd>/</kbd><span>Jump to Find &amp; add</span>
+    <kbd>Z</kbd><span>Undo the last change</span>
+    <kbd>?</kbd><span>This list</span>
+  </div>
+  <div class="rowbtns"><button class="b" id="closeKeys">Close</button></div>
+</div></div>
 
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const mmss = ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`;
+const num = n => (n ?? 0).toLocaleString();
+
+/** Roughly how long a filing session is: about eight seconds a track. */
+const mins = n => n < 60 ? 'a couple of minutes' : `about ${Math.round(n * 8 / 60)} minutes`;
 
 const api = async (path, body) => {
   const r = await fetch('/api/' + path, body ? {
@@ -154,40 +72,97 @@ const api = async (path, body) => {
   return j;
 };
 
-let S = {}, view = 'home', data = {};
-let toastT;
-function toast(msg, undoAt) {
-  const el = $('#toast');
-  el.innerHTML = esc(msg) + (undoAt ? ' <button id="undo">Undo</button>' : '');
+let S = { inboxAt:0, crossMin:3, mfBand:'high' }, view = 'home', data = {};
+
+/* ---------------- feedback ---------------- */
+
+// Undo stays until it is used or dismissed. An undo for a destructive change
+// on a nine-second timer is a change you cannot actually take back.
+let lastUndoAt = null;
+function say(msg, undoAt) {
+  const el = $('#undobar');
+  lastUndoAt = undoAt ?? null;
+  el.innerHTML = `<span class="msg">${esc(msg)}</span>` +
+    (undoAt ? '<button id="undoBtn">Undo <kbd>Z</kbd></button>' : '') +
+    '<button class="x" id="dismiss" aria-label="Dismiss">✕</button>';
   el.hidden = false;
-  if (undoAt) $('#undo').onclick = async () => {
-    try { await api('undo', { at: undoAt }); toast('Restored.'); await refresh(); }
-    catch (e) { toast('Undo failed: ' + e.message); }
-  };
-  clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, undoAt ? 9000 : 3500);
+  $('#dismiss').onclick = () => { el.hidden = true; lastUndoAt = null; };
+  if (undoAt) $('#undoBtn').onclick = undoLast;
+  if (!undoAt) setTimeout(() => { if (!lastUndoAt) el.hidden = true; }, 4000);
+}
+
+async function undoLast() {
+  if (!lastUndoAt) return say('Nothing to undo.');
+  const at = lastUndoAt;
+  lastUndoAt = null;
+  try {
+    await api('undo', { at });
+    say('Put back.');
+    data = await loadAll();
+    await refresh();
+  } catch (e) { say('Undo failed: ' + e.message); }
+}
+
+const art = (url, big) => url
+  ? `<img class="art${big?' lg':''}" src="${esc(url)}" alt="" loading="lazy">`
+  : `<div class="art${big?' lg':''} ph">♪</div>`;
+
+/** Cosine similarity as three steps, which is all anyone can act on. */
+function conf(score) {
+  const s = score >= .55 ? 3 : score >= .35 ? 2 : 1;
+  const word = ['thin', 'likely', 'strong'][s - 1];
+  return `<span class="conf s${s}" title="${(score*100).toFixed(0)}% tag overlap">
+    <span class="meter"><i></i><i></i><i></i></span><span class="t">${word}</span></span>`;
 }
 
 /* ---------------- views ---------------- */
 
 function vHome() {
-  const m = [
-    ['backlog','Unfiled',      S.backlog,   'Liked but in no playlist','act','inbox'],
+  const filed = S.tracks ?? 0, todo = S.backlog ?? 0;
+  const pct = filed + todo ? filed / (filed + todo) * 100 : 100;
+  const cells = [
     ['exact','Exact repeats',  S.exact,     'Same recording twice in one playlist','act','dupes'],
     ['clash','Version clashes',S.clash,     'Two different cuts, one playlist','warn','dupes'],
     ['misfiled','Misfiles',    S.misfiled,  'Fit another playlist far better','warn','misfile'],
     ['crossFiled','Cross-filed',S.crossFiled,'In more than one playlist','','cross'],
     ['clusters','New playlists',S.clusters, 'Clusters with no home','','new'],
-    ['tracks','Unique tracks', S.tracks,    'Across '+S.playlists+' playlists','ok',null],
-    ['placements','Placements',S.placements,'Total filings','',null],
+    ['placements','Placements',S.placements,'Total filings across '+num(S.playlists)+' playlists','',null],
   ];
+
   return `<h1>Overview</h1>
-    <p class="lede">Snapshot taken ${esc((S.captured ?? '').slice(0,10))}. Nothing changes your Spotify library until you act on it here, and every change can be undone.</p>
-    <div class="meters">${m.map(([k,l,n,d,c,go]) =>
-      `<div class="meter ${c} ${go?'click':''}" ${go?`data-go="${go}"`:''}>
-         <span class="l">${esc(l)}</span><span class="n">${(n??0).toLocaleString()}</span><span class="d">${esc(d)}</span></div>`).join('')}
+    <p class="lede">Snapshot taken ${esc((S.captured ?? '').slice(0,10))}. Nothing here touches your
+      Spotify library until you act on it, and every change can be undone.</p>
+
+    <div class="lead">
+      <div>
+        <span class="lbl">Liked but in no playlist</span>
+        <span class="n">${num(todo)}</span>
+        <p class="say">${todo
+          ? `That is ${mins(todo)} of filing. The Inbox suggests a home for each one and remembers where you were.`
+          : 'Nothing is waiting. Your whole library is filed.'}</p>
+        <div class="bar">
+          <i class="filed" style="width:${pct.toFixed(2)}%"></i>
+          <i class="todo" style="width:${(100-pct).toFixed(2)}%"></i>
+        </div>
+        <div class="barkey">
+          <span><i style="background:var(--signal)"></i>${num(filed)} filed</span>
+          <span><i style="background:var(--accent)"></i>${num(todo)} waiting</span>
+        </div>
+      </div>
+      <div class="go">
+        ${todo ? '<button class="b p" data-go="inbox">Start filing</button>' : ''}
+        <button class="b" data-go="find">Find &amp; add</button>
+      </div>
     </div>
+
+    <div class="strip">${cells.map(([k,l,n,d,c,go]) => `
+      <${go?'button':'div'} class="cell ${c}" ${go?`data-go="${go}"`:''}>
+        <span class="lbl">${esc(l)}</span><span class="n">${num(n)}</span><span class="d">${esc(d)}</span>
+      </${go?'button':'div'}>`).join('')}
+    </div>
+
     <h2>Refresh</h2>
-    <p class="lede">Re-read Spotify and recompute. Snapshot takes a couple of minutes.</p>
+    <p class="lede">Re-reads only the playlists that actually changed, so this is quick.</p>
     <div class="rowbtns">
       <button class="b" data-step="snapshot">Re-read library</button>
       <button class="b" data-step="dupes">Recompute duplicates</button>
@@ -197,201 +172,314 @@ function vHome() {
 
 function vInbox() {
   const b = data.backlog;
-  if (!b || !b.rows.length) return `<h1>Inbox</h1><div class="empty">Nothing unfiled. </div>`;
-  const i = Math.min(S.inboxAt ?? 0, b.rows.length - 1);
+  if (!b || !b.rows.length) return `<h1>Inbox</h1>
+    <div class="empty"><b>Nothing unfiled</b>Every liked song sits in a playlist.</div>`;
+
+  const i = Math.min(S.inboxAt, b.rows.length - 1);
   const t = b.rows[i];
   const opts = b.targets.slice().sort((x,y) => x.name.localeCompare(y.name));
 
   return `<h1>Inbox</h1>
-    <p class="lede">${b.total.toLocaleString()} liked tracks sit in no playlist. Keys: <b>1–3</b> file to a suggestion, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.</p>
-    <div class="card">
-      <div class="prog"><i style="width:${(i / b.rows.length * 100).toFixed(2)}%"></i></div>
-      <div class="now">
-        <p class="t">${esc(t.title)}</p>
-        <p class="a">${esc(t.artist)}</p>
-        <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0,4))}</span>
-          <span>${mmss(t.dur)}</span><span>liked ${esc(t.added)}</span></div>
-        ${t.tags.length ? `<div class="tagrow">${t.tags.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>` : ''}
+    <p class="lede"><b>${num(b.total)}</b> liked tracks sit in no playlist — ${mins(b.total)} of filing.</p>
+    <div class="deck">
+      <span class="prog"><i style="width:${(i / b.rows.length * 100).toFixed(2)}%"></i></span>
+      <div class="body">
+        <div class="now">
+          ${art(t.art, true)}
+          <div>
+            <p class="t">${esc(t.title)}</p>
+            <p class="a">${esc(t.artist)}</p>
+            <div class="m">
+              <span>${esc(t.album ?? '')}</span><em>·</em>
+              <span>${esc((t.released ?? '').slice(0,4))}</span><em>·</em>
+              <span>${mmss(t.dur)}</span><em>·</em>
+              <span>liked ${esc(t.added)}</span>
+            </div>
+            ${t.tags.length ? `<div class="tagrow" style="margin-top:10px">${t.tags.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>` : ''}
+          </div>
+        </div>
+
+        ${t.suggest.length
+          ? `<div class="picks">${t.suggest.slice(0,3).map((s,n) => `
+              <button class="pick" data-file="${esc(s.id)}">
+                <kbd>${n+1}</kbd>
+                <span><span class="nm">${esc(s.name)}</span> <span class="ax">${esc(s.axis ?? '')}</span></span>
+                ${conf(s.score)}
+              </button>`).join('')}</div>`
+          : `<p class="why" style="margin-top:16px">No confident suggestion — either no Last.fm tags
+               for this artist, or it genuinely fits nothing you have. File it by hand below, or
+               skip and it stays in your liked songs.</p>`}
+
+        <div class="rowbtns">
+          <button class="b" data-act="play">Play <kbd>P</kbd></button>
+          <button class="b q" data-act="skip">Skip <kbd>S</kbd></button>
+          <button class="b q" data-act="unlike">Unlike <kbd>U</kbd></button>
+          <select id="anyPl" style="margin-left:auto"><option value="">File somewhere else…</option>
+            ${opts.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+        </div>
+        <div class="m" style="margin-top:14px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-3)">
+          ${i + 1} of ${num(b.rows.length)} loaded · ${num(b.total)} total
+        </div>
       </div>
-      ${t.suggest.length
-        ? `<div class="picks">${t.suggest.slice(0,3).map((s,n) =>
-            `<button class="pick" data-file="${esc(s.id)}"><span class="k">${n+1}</span>
-               <span class="nm">${esc(s.name)}</span><span class="ax">${esc(s.axis ?? '')}</span>
-               <span class="sc">${(s.score*100).toFixed(0)}% fit</span></button>`).join('')}</div>`
-        : `<p class="why">No confident suggestion — no Last.fm tags for this artist, or it fits nothing you have.</p>`}
-      <div class="rowbtns">
-        <button class="b p" data-act="play">Play (P)</button>
-        <button class="b" data-act="skip">Skip (S)</button>
-        <button class="b" data-act="unlike">Unlike (U)</button>
-        <select id="anyPl"><option value="">File somewhere else…</option>
-          ${opts.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
-      </div>
-      <div class="m" style="margin-top:14px">${i + 1} of ${b.rows.length} loaded · ${b.total.toLocaleString()} total</div>
     </div>`;
+}
+
+function vFind() {
+  const r = data.find, q = S.q ?? '';
+  const body = S.finding
+    ? '<div class="empty">Searching Spotify…</div>'
+    : !r
+      ? `<div class="empty"><b>Search Spotify</b>Find a track and file it straight into a playlist.
+           Anything you already own is flagged before you add it twice.</div>`
+      : !r.rows.length
+        ? '<div class="empty"><b>Nothing found</b>Try the artist and the track together.</div>'
+        : `<div class="rows">${r.rows.map((t, i) => {
+            const owned = t.have.exact.length || t.have.liked;
+            const dupe = !owned && t.have.samesong.length;
+            return `<div class="row">
+              ${art(t.art)}
+              <div class="main">
+                <div class="ttl">${esc(t.name)}</div>
+                <div class="sub">${esc(t.artists.map(a => a.name).join(', '))} · ${esc(t.album ?? '')} ·
+                  <span class="mono">${esc((t.released ?? '').slice(0,4))}</span> ·
+                  <span class="mono">${mmss(t.duration_ms)}</span></div>
+                ${owned ? `<div style="margin-top:6px"><span class="pill ok">✓ ${t.have.exact.length
+                    ? 'In ' + esc(t.have.exact.slice(0,2).join(', ')) : 'Liked'}</span></div>` : ''}
+                ${dupe ? `<div style="margin-top:6px"><span class="pill warn">You own this record already —
+                    ${esc(t.have.samesong[0].album ?? 'another release')} in ${esc(t.have.samesong[0].playlist)}</span></div>` : ''}
+              </div>
+              <div class="acts">
+                ${t.suggest.slice(0,2).map(sg =>
+                  `<button class="b sm p" data-addto="${esc(sg.id)}" data-addi="${i}">+ ${esc(sg.name)}</button>`).join('')}
+                <select data-addsel="${i}"><option value="">File into…</option>
+                  ${r.targets.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+                <button class="b sm q" data-dplay="${esc(t.id)}">Play</button>
+              </div>
+            </div>`;
+          }).join('')}</div>`;
+
+  return `<h1>Find &amp; add</h1>
+    <p class="lede">Search Spotify and file straight into a playlist. Destinations are ranked the same
+      way the Inbox ranks them${r && r.ranked === false ? ' — once you have genre tags. Run <span class="mono">npm run enrich</span> to fetch them' : ''}.</p>
+    <form class="rowbtns" id="findForm" style="margin:0 0 18px">
+      <input type="search" id="q" placeholder="Artist, track, or both" value="${esc(q)}"
+             style="flex:1; min-width:220px; font-size:15px; padding:9px 12px" autofocus>
+      <button class="b p" type="submit">Search</button>
+    </form>
+    ${body}`;
 }
 
 function cmpTable(o) {
   const d = f => new Set(o.map(x => x[f])).size > 1;
   const [dD,dT,dR,dI] = ['dur','albumType','released','isrc'].map(d);
-  return `<table class="cmp"><thead><tr><th>Length</th><th>Release</th><th>Date</th><th>ISRC</th><th>Album</th></tr></thead>
+  return `<div class="tblwrap"><table class="cmp">
+    <thead><tr><th>Length</th><th>Release</th><th>Date</th><th>ISRC</th><th>Album</th></tr></thead>
     <tbody>${o.map(x => `<tr>
       <td class="mono ${dD?'differs':''}">${esc(x.dur)}</td>
       <td class="${dT?'differs':''}">${esc(x.albumType ?? '—')}</td>
       <td class="mono ${dR?'differs':''}">${esc((x.released ?? '').slice(0,10))}</td>
       <td class="mono ${dI?'differs':''}">${esc(x.isrc ?? '—')}</td>
-      <td>${esc(x.album)}</td></tr>`).join('')}</tbody></table>`;
+      <td>${esc(x.album)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 function vDupes() {
-  const w = (data.dupes?.within ?? []);
+  const w = data.dupes?.within ?? [];
   const exact = w.filter(x => x.verdict === 'same-recording');
   const clash = w.filter(x => x.verdict !== 'same-recording');
-  const sec = (title, list, note) => `
-    <h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:13px">${list.length}</span></h2>
+
+  const sec = (title, list, note, empty) => `
+    <h2>${esc(title)} <span class="n">${num(list.length)}</span></h2>
     <p class="lede">${note}</p>
-    <div class="rows">${list.slice(0, 60).map((c) => `
-      <div class="row">
+    ${list.length ? `<div class="rows">${list.slice(0, 60).map(c => {
+      // Label each option by whatever actually distinguishes it, so two buttons
+      // never both read "Keep 5:42".
+      const differs = f => new Set(c.options.map(o => o[f])).size === c.options.length;
+      const by = differs('dur') ? o => o.dur
+               : differs('album') ? o => o.album
+               : differs('released') ? o => (o.released ?? '').slice(0,4)
+               : o => o.albumType ?? o.id.slice(0,4);
+      return `<div class="row tall">
+        ${art(c.art)}
         <div class="main">
-          <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
-          <div class="sub mono">${esc(c.playlist)}</div>
+          <div class="ttl">${esc(c.title)}</div>
+          <div class="sub">${esc(c.artist ?? '')} · in ${esc(c.playlist)}</div>
           <div class="why">${esc(c.why)}</div>
           ${cmpTable(c.options)}
         </div>
         <div class="acts">
           ${c.options.map(o => `<button class="b sm" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}"
-             data-drop="${esc(c.options.filter(z=>z.id!==o.id).map(z=>z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
+             data-drop="${esc(c.options.filter(z=>z.id!==o.id).map(z=>z.id).join(','))}"
+             title="Keep this copy and remove the other">Keep ${esc(by(o))}</button>`).join('')}
         </div>
-      </div>`).join('')}</div>`;
-  return `<h1>Duplicates</h1>
-    <p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — see Cross-filed.</p>
-    ${sec('Same recording', exact, 'Both copies share an ISRC: the same master issued on two releases. Removing one loses nothing.')}
-    ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.')}`;
-}
+      </div>`;
+    }).join('')}</div>` : `<div class="empty">${empty}</div>`}`;
 
-function vCross() {
-  const a = (data.dupes?.across ?? []).filter(x => x.placements.length >= (S.crossMin ?? 3));
-  return `<h1>Cross-filed</h1>
-    <p class="lede">Tracks in several playlists. Usually deliberate — nothing is preselected. Click a playlist to remove the track from just that one.</p>
-    <div class="rowbtns" style="margin-bottom:14px">
-      ${[2,3,4,5,6].map(n => `<button class="b sm ${(S.crossMin??3)===n?'p':''}" data-cmin="${n}">${n}+ playlists</button>`).join('')}
-    </div>
-    <div class="rows">${a.slice(0,80).map(c => `
-      <div class="row">
-        <div class="main">
-          <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
-          ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>'
-            : c.mixedReleases ? '<div class="why">Same song, different pressings across these playlists.</div>' : ''}
-          <div class="acts" style="margin-top:8px">${c.placements.map(p =>
-            `<button class="chip" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
-        </div>
-      </div>`).join('') || '<div class="empty">Nothing at this threshold.</div>'}</div>`;
+  return `<h1>Duplicates</h1>
+    <p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. The same
+      track in several playlists is treated as deliberate — see Cross-filed.</p>
+    ${sec('Same recording', exact,
+      'Both copies share an ISRC: one master issued on two releases. Removing either loses nothing.',
+      'No exact repeats. Nothing is filed twice in the same playlist.')}
+    ${sec('Version clashes', clash,
+      'Genuinely different cuts sitting in one playlist. Values that differ are marked.',
+      'No version clashes.')}`;
 }
 
 function vMisfile() {
   const all = data.misfile?.misfiled ?? [];
-  const band = S.mfBand ?? 'high';
+  const band = S.mfBand;
   const counts = { high:0, medium:0, low:0 };
   for (const x of all) counts[x.confidence] = (counts[x.confidence] ?? 0) + 1;
   const m = all.filter(x => x.confidence === band);
+
   return `<h1>Misfiles</h1>
-    <p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b> — a genre playlist is only ever compared with other genre playlists. Start with high confidence; the lower bands get increasingly speculative.</p>
-    <div class="rowbtns" style="margin-bottom:14px">
+    <p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b> —
+      a genre playlist is only ever compared with other genre playlists. Start at high confidence; the
+      lower bands get increasingly speculative.</p>
+    <div class="rowbtns" style="margin:0 0 16px">
       ${['high','medium','low'].map(b =>
-        `<button class="b sm ${band===b?'p':''}" data-mfb="${b}">${b} (${counts[b] ?? 0})</button>`).join('')}
+        `<button class="b sm ${band===b?'p':''}" data-mfb="${b}">${b} <span class="mono">${counts[b] ?? 0}</span></button>`).join('')}
     </div>
-    <div class="rows">${m.slice(0,80).map(x => `
-      <div class="row">
+    ${m.length ? `<div class="rows">${m.slice(0,80).map(x => `
+      <div class="row tall">
+        ${art(x.art)}
         <div class="main">
-          <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
-          <div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore*100).toFixed(0)}% fit</span> · ${esc(x.tags.slice(0,4).join(', '))}</div>
+          <div class="ttl">${esc(x.title)}</div>
+          <div class="sub">${esc(x.artist ?? '')} · ${esc(x.tags.slice(0,3).join(', '))}</div>
+          <div class="why">Currently in <b>${esc(x.current)}</b> · fit ${conf(x.currentScore)}</div>
         </div>
-        <div class="acts">${x.suggest.filter(s => s.id).slice(0,2).map(s =>
-          `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(s.id)}">→ ${esc(s.name)} <span class="mono">${(s.score*100).toFixed(0)}%</span></button>`).join('')}
-          <button class="b sm" data-dplay="${esc(x.id)}">Play</button>
+        <div class="acts">
+          ${x.suggest.filter(s => s.id).slice(0,2).map(s =>
+            `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}"
+               data-mvto="${esc(s.id)}">→ ${esc(s.name)}</button>`).join('')}
+          <button class="b sm q" data-dplay="${esc(x.id)}">Play</button>
         </div>
-      </div>`).join('') || '<div class="empty">Nothing in this band.</div>'}</div>`;
+      </div>`).join('')}</div>`
+    : `<div class="empty"><b>Nothing in this band</b>Try a lower confidence band, or recompute filing.</div>`}`;
+}
+
+function vCross() {
+  const a = (data.dupes?.across ?? []).filter(x => x.placements.length >= S.crossMin);
+  return `<h1>Cross-filed</h1>
+    <p class="lede">Tracks in several playlists at once. Usually deliberate, so nothing is preselected —
+      click a playlist to take the track out of just that one.</p>
+    <div class="rowbtns" style="margin:0 0 16px">
+      ${[2,3,4,5,6].map(n => `<button class="b sm ${S.crossMin===n?'p':''}" data-cmin="${n}">${n}+ playlists</button>`).join('')}
+    </div>
+    ${a.length ? `<div class="rows">${a.slice(0,80).map(c => `
+      <div class="row tall">
+        ${art(c.art)}
+        <div class="main">
+          <div class="ttl">${esc(c.title)}</div>
+          <div class="sub">${esc(c.artist ?? '')}</div>
+          ${c.mixedRecordings ? '<div class="why">These are <b>different recordings</b> across the playlists.</div>'
+            : c.mixedReleases ? '<div class="why">Same song, <b>different pressings</b> across the playlists.</div>' : ''}
+          <div class="tagrow" style="margin-top:8px">${c.placements.map(p =>
+            `<button class="chip" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}"
+               title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
+        </div>
+        <div class="acts"><span class="pill act">${c.placements.length} playlists</span></div>
+      </div>`).join('')}</div>`
+    : '<div class="empty"><b>Nothing at this threshold</b>Try a lower number.</div>'}`;
 }
 
 function vNew() {
   const c = data.misfile?.clusters ?? [];
   return `<h1>New playlists</h1>
-    <p class="lede">Groups in the unfiled backlog that fit none of your existing playlists. Each is a category you may be missing.</p>
-    <div class="rows">${c.map((x,i) => `
+    <p class="lede">Groups inside the unfiled backlog that fit none of your existing playlists.
+      Each one is a category you may be missing.</p>
+    ${c.length ? `<div class="rows">${c.map((x,i) => `
       <div class="row">
         <div class="main">
           <div class="ttl">${x.size} tracks · ${esc(x.tags.slice(0,4).join(', '))}</div>
           <div class="sub">${esc(x.tracks.slice(0,4).join(' · '))}</div>
         </div>
         <div class="acts">
-          <input type="search" id="nm${i}" placeholder="Playlist name" value="${esc(x.tags[0] ?? '')}">
+          <input type="text" id="nm${i}" placeholder="Playlist name" value="${esc(x.tags[0] ?? '')}">
           <button class="b sm p" data-cluster="${i}">Create</button>
         </div>
-      </div>`).join('') || '<div class="empty">No clusters — run “Recompute filing”.</div>'}</div>`;
+      </div>`).join('')}</div>`
+    : '<div class="empty"><b>No clusters</b>Run “Recompute filing” on the Overview to look for them.</div>'}`;
 }
 
 function vDiscover() {
   const d = data.discover ?? [];
   return `<h1>Discover</h1>
-    <p class="lede">Every artist and track you already own is subtracted before ranking, so nothing here recycles your library. Run <span class="mono">npm run discover</span> to refresh.</p>
-    <div class="rows">${d.map(x => `
+    <p class="lede">Every artist and track you already own is subtracted before ranking, so nothing
+      here recycles your library. Refresh it with <span class="mono">npm run discover</span>.</p>
+    ${d.length ? `<div class="rows">${d.map(x => `
       <div class="row">
         <div class="main">
-          <div class="ttl">${esc(x.track)} <span class="sub">— ${esc(x.artist)}</span></div>
-          <div class="sub mono">${esc((x.released ?? '').slice(0,4))} · via ${esc((x.via ?? []).join(', '))}</div>
+          <div class="ttl">${esc(x.track)}</div>
+          <div class="sub">${esc(x.artist)} · <span class="mono">${esc((x.released ?? '').slice(0,4))}</span>
+            · via ${esc((x.via ?? []).join(', '))}</div>
         </div>
         <div class="acts">
-          <button class="b sm" data-dplay="${esc(x.spotify)}">Play</button>
-          <a class="b sm" style="text-decoration:none" href="https://open.spotify.com/track/${esc(x.spotify)}" target="_blank" rel="noopener">Open</a>
+          <button class="b sm q" data-dplay="${esc(x.spotify)}">Play</button>
+          <a class="b sm" href="https://open.spotify.com/track/${esc(x.spotify)}" target="_blank" rel="noopener">Open</a>
         </div>
-      </div>`).join('') || '<div class="empty">No discovery run yet.</div>'}</div>`;
+      </div>`).join('')}</div>`
+    : '<div class="empty"><b>No discovery run yet</b>Run <span class="mono">npm run discover</span> to build a list.</div>'}`;
 }
 
 function vHistory() {
   const h = data.history ?? [];
   return `<h1>History</h1>
-    <p class="lede">Every change this tool made to your Spotify library, newest first.</p>
-    <div class="rows">${h.map(x => `
+    <p class="lede">Every change Betterfy has made to your Spotify library, newest first. A move is one
+      row, not two — undoing it puts the track back where it was.</p>
+    ${h.length ? `<div class="rows">${h.map(x => `
       <div class="row">
         <div class="main">
-          <div class="ttl">${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span></div>
-          <div class="sub mono">${esc(x.at)} · ${(x.trackIds ?? []).length} track(s) · ${esc(x.reason ?? '')}</div>
+          <div class="ttl">${esc(x.op)} ${x.playlistName ? `<span class="sub">${esc(x.playlistName)}</span>` : ''}</div>
+          <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))} · ${(x.trackIds ?? []).length} track(s)${
+            x.steps?.length > 1 ? ` · ${x.steps.length} steps` : ''}${x.reason ? ' · ' + esc(x.reason) : ''}</div>
         </div>
         <div class="acts">${x.undoable ? `<button class="b sm" data-undo="${esc(x.at)}">Undo</button>` : ''}</div>
-      </div>`).join('') || '<div class="empty">Nothing changed yet.</div>'}</div>`;
+      </div>`).join('')}</div>`
+    : '<div class="empty"><b>Nothing changed yet</b>Betterfy has not touched your library.</div>'}`;
 }
 
-const VIEWS = { home:vHome, inbox:vInbox, dupes:vDupes, cross:vCross, misfile:vMisfile, new:vNew, discover:vDiscover, history:vHistory };
+const VIEWS = { home:vHome, find:vFind, inbox:vInbox, dupes:vDupes, cross:vCross,
+                misfile:vMisfile, new:vNew, discover:vDiscover, history:vHistory };
 
 function render() {
   $('#main').innerHTML = VIEWS[view]();
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
+  if (view === 'find') $('#q')?.focus();
 }
 
 async function refresh() {
   S = { ...S, ...await api('summary') };
-  $('#c-inbox').textContent = S.backlog ?? '';
-  $('#c-dupes').textContent = (S.exact ?? 0) + (S.clash ?? 0);
-  $('#c-cross').textContent = S.crossFiled ?? '';
-  $('#c-misfile').textContent = S.misfiled ?? '';
-  $('#c-new').textContent = S.clusters ?? '';
-  $('#c-disc').textContent = (data.discover ?? []).length || '';
-  $('#foot').textContent = `${S.playlists} playlists · ${(S.tracks ?? 0).toLocaleString()} tracks`;
+  const set = (id, n) => { const el = $(id); if (el) el.textContent = n ? num(n) : ''; };
+  set('#c-inbox', S.backlog); set('#c-dupes', (S.exact ?? 0) + (S.clash ?? 0));
+  set('#c-cross', S.crossFiled); set('#c-misfile', S.misfiled);
+  set('#c-new', S.clusters); set('#c-disc', (data.discover ?? []).length);
+  $('#foot').textContent = `${num(S.playlists)} playlists · ${num(S.tracks)} tracks`;
   render();
 }
 
 /* ---------------- events ---------------- */
 
 document.querySelector('aside').onclick = async e => {
+  if (e.target.closest('#showKeys')) { $('#keysheet').hidden = false; return; }
   const b = e.target.closest('.nav'); if (!b) return;
   view = b.dataset.v;
   if (view === 'history') data.history = await api('history');
   render();
 };
 
+$('#closeKeys').onclick = () => { $('#keysheet').hidden = true; };
+$('#keysheet').onclick = e => { if (e.target.id === 'keysheet') $('#keysheet').hidden = true; };
+
 $('#main').addEventListener('click', async e => {
-  const go = e.target.closest('[data-go]'); if (go) { view = go.dataset.go; return render(); }
+  const go = e.target.closest('[data-go]');
+  if (go) { view = go.dataset.go; if (view === 'history') data.history = await api('history'); return render(); }
+
   const cmin = e.target.closest('[data-cmin]'); if (cmin) { S.crossMin = +cmin.dataset.cmin; return render(); }
-  const mfb = e.target.closest('[data-mfb]'); if (mfb) { S.mfBand = mfb.dataset.mfb; return render(); }
+  const mfb = e.target.closest('[data-mfb]');   if (mfb)  { S.mfBand = mfb.dataset.mfb; return render(); }
+
+  const add = e.target.closest('[data-addto]');
+  if (add) return addHit(+add.dataset.addi, add.dataset.addto);
 
   const mv = e.target.closest('[data-mvto]');
   if (mv) {
@@ -399,114 +487,192 @@ $('#main').addEventListener('click', async e => {
     try {
       const r = await api('move', { trackId: mv.dataset.mvtr, fromId: mv.dataset.mvfrom, toId: mv.dataset.mvto });
       const h = await api('history');
-      toast(`Moved to ${r.to}.`, h[0]?.at);
-      mv.closest('.row').remove();
-    } catch (err) { toast('Failed: ' + err.message); mv.disabled = false; }
+      say(`Moved to ${r.to}.`, h[0]?.at);
+      mv.closest('.row').classList.add('gone');
+      await refreshCounts();
+    } catch (err) { say('Failed: ' + err.message); mv.disabled = false; }
     return;
   }
 
   const step = e.target.closest('[data-step]');
-  if (step) { step.disabled = true; step.textContent = 'Working…';
-    try { await api('refresh', { step: step.dataset.step }); data = await loadAll(); toast('Refreshed.'); await refresh(); }
-    catch (err) { toast('Failed: ' + err.message); render(); } return; }
+  if (step) {
+    const was = step.textContent;
+    step.disabled = true; step.textContent = 'Working…';
+    try { await api('refresh', { step: step.dataset.step }); data = await loadAll(); say('Refreshed.'); await refresh(); }
+    catch (err) { say('Failed: ' + err.message); step.disabled = false; step.textContent = was; }
+    return;
+  }
 
-  const file = e.target.closest('[data-file]');
-  if (file) return fileCurrent(file.dataset.file);
-
-  const act = e.target.closest('[data-act]');
-  if (act) return inboxAct(act.dataset.act);
+  const file = e.target.closest('[data-file]'); if (file) return fileCurrent(file.dataset.file);
+  const act = e.target.closest('[data-act]');   if (act)  return inboxAct(act.dataset.act);
 
   const keep = e.target.closest('[data-keep]');
   if (keep) {
     const drop = keep.dataset.drop.split(',').filter(Boolean);
-    try { const r = await api('remove', { playlistId: keep.dataset.pl, trackIds: drop, reason: 'duplicate' });
-      const h = await api('history'); toast(`Removed ${r.removed}.`, h[0]?.at);
-      data.dupes = await api('dupes'); await refresh(); }
-    catch (err) { toast('Failed: ' + err.message); }
+    keep.disabled = true;
+    try {
+      const r = await api('remove', { playlistId: keep.dataset.pl, trackIds: drop, reason: 'duplicate' });
+      const h = await api('history');
+      say(`Removed ${r.removed}.`, h[0]?.at);
+      keep.closest('.row').classList.add('gone');
+      data.dupes = await api('dupes');
+      await refreshCounts();
+    } catch (err) { say('Failed: ' + err.message); keep.disabled = false; }
     return;
   }
 
   const x = e.target.closest('[data-xpl]');
   if (x) {
-    try { await api('remove', { playlistId: x.dataset.xpl, trackIds: [x.dataset.xtr], reason: 'cross-file trim' });
-      const h = await api('history'); toast('Removed from that playlist.', h[0]?.at);
-      x.classList.add('cut'); }
-    catch (err) { toast('Failed: ' + err.message); }
+    try {
+      await api('remove', { playlistId: x.dataset.xpl, trackIds: [x.dataset.xtr], reason: 'cross-file trim' });
+      const h = await api('history');
+      say('Removed from that playlist.', h[0]?.at);
+      x.classList.add('cut');
+      await refreshCounts();
+    } catch (err) { say('Failed: ' + err.message); }
     return;
   }
 
   const cl = e.target.closest('[data-cluster]');
   if (cl) {
-    const i = +cl.dataset.cluster;
-    const name = $('#nm' + i).value.trim();
-    if (!name) return toast('Give it a name first.');
-    try { await api('newPlaylist', { name }); toast(`Created "${name}".`); await refresh(); }
-    catch (err) { toast('Failed: ' + err.message); }
+    const name = $('#nm' + cl.dataset.cluster).value.trim();
+    if (!name) return say('Give it a name first.');
+    cl.disabled = true;
+    try { await api('newPlaylist', { name }); say(`Created “${name}”.`); await refresh(); }
+    catch (err) { say('Failed: ' + err.message); cl.disabled = false; }
     return;
   }
 
   const dp = e.target.closest('[data-dplay]');
-  if (dp) { try { const r = await api('play', { trackId: dp.dataset.dplay }); toast('Playing on ' + r.device); }
-            catch (err) { toast(err.message); } return; }
+  if (dp) {
+    try { const r = await api('play', { trackId: dp.dataset.dplay }); say('Playing on ' + r.device + ' — this replaces what was playing.'); }
+    catch (err) { say(err.message); }
+    return;
+  }
 
   const u = e.target.closest('[data-undo]');
-  if (u) { try { await api('undo', { at: u.dataset.undo }); toast('Restored.'); data.history = await api('history'); render(); }
-           catch (err) { toast('Undo failed: ' + err.message); } return; }
+  if (u) { lastUndoAt = u.dataset.undo; return undoLast(); }
 });
 
 $('#main').addEventListener('change', e => {
   if (e.target.id === 'anyPl' && e.target.value) fileCurrent(e.target.value);
+  const sel = e.target.closest('[data-addsel]');
+  if (sel && sel.value) { addHit(+sel.dataset.addsel, sel.value); sel.value = ''; }
 });
 
+$('#main').addEventListener('submit', async e => {
+  if (e.target.id !== 'findForm') return;
+  e.preventDefault();
+  S.q = $('#q').value;
+  S.finding = true; render();
+  try { data.find = await api('search?q=' + encodeURIComponent(S.q)); }
+  catch (err) { say('Search failed: ' + err.message); data.find = { rows: [], targets: [] }; }
+  S.finding = false; render();
+});
+
+/** Refresh the rail counts without rebuilding the view under the user. */
+async function refreshCounts() {
+  S = { ...S, ...await api('summary') };
+  const set = (id, n) => { const el = $(id); if (el) el.textContent = n ? num(n) : ''; };
+  set('#c-inbox', S.backlog); set('#c-dupes', (S.exact ?? 0) + (S.clash ?? 0));
+  set('#c-cross', S.crossFiled); set('#c-misfile', S.misfiled); set('#c-new', S.clusters);
+  $('#foot').textContent = `${num(S.playlists)} playlists · ${num(S.tracks)} tracks`;
+}
+
+/** File a search result. The track travels with it — the server has not seen it. */
+async function addHit(i, playlistId) {
+  const t = data.find?.rows[i];
+  if (!t) return;
+  const name = data.find.targets.find(x => x.id === playlistId)?.name ?? 'that playlist';
+  if (t.have.exact.includes(name)) return say(`Already in ${name}.`);
+  try {
+    await api('file', { playlistId, trackId: t.id, track: t, reason: 'added from search' });
+    const h = await api('history');
+    say(`Added “${t.name}” to ${name}.`, h[0]?.at);
+    t.have.exact = [...t.have.exact, name];
+    render();
+    await refreshCounts();
+  } catch (err) { say('Failed: ' + err.message); }
+}
+
 async function fileCurrent(playlistId) {
-  const t = data.backlog.rows[S.inboxAt ?? 0]; if (!t) return;
+  const t = data.backlog.rows[S.inboxAt];
+  if (!t) return;
   try {
     await api('file', { playlistId, trackId: t.id, reason: 'filed from inbox' });
     const h = await api('history');
-    toast(`Filed “${t.title}”.`, h[0]?.at);
-    data.backlog.rows.splice(S.inboxAt ?? 0, 1);
+    const name = data.backlog.targets.find(x => x.id === playlistId)?.name ?? 'the playlist';
+    say(`Filed “${t.title}” into ${name}.`, h[0]?.at);
+    data.backlog.rows.splice(S.inboxAt, 1);
+    data.backlog.total--;
     render();
-  } catch (err) { toast('Failed: ' + err.message); }
+    await refreshCounts();
+  } catch (err) { say('Failed: ' + err.message); }
 }
 
 async function inboxAct(a) {
-  const i = S.inboxAt ?? 0;
-  const t = data.backlog.rows[i]; if (!t) return;
-  if (a === 'play') { try { const r = await api('play', { trackId: t.id }); toast('Playing on ' + r.device); }
-                      catch (e) { toast(e.message); } return; }
+  const i = S.inboxAt;
+  const t = data.backlog?.rows[i];
+  if (!t) return;
+  if (a === 'play') {
+    try { const r = await api('play', { trackId: t.id }); say('Playing on ' + r.device + ' — this replaces what was playing.'); }
+    catch (e) { say(e.message); }
+    return;
+  }
   if (a === 'skip') { S.inboxAt = Math.min(i + 1, data.backlog.rows.length - 1); return render(); }
   if (a === 'unlike') {
-    try { await api('unlike', { trackId: t.id }); toast(`Unliked “${t.title}”.`);
-      data.backlog.rows.splice(i, 1); render(); }
-    catch (e) { toast('Failed: ' + e.message); }
+    try {
+      await api('unlike', { trackId: t.id });
+      const h = await api('history');
+      say(`Unliked “${t.title}”.`, h[0]?.at);
+      data.backlog.rows.splice(i, 1);
+      data.backlog.total--;
+      render();
+      await refreshCounts();
+    } catch (e) { say('Failed: ' + e.message); }
   }
 }
 
 document.addEventListener('keydown', e => {
-  if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
-  const t = data.backlog?.rows[S.inboxAt ?? 0]; if (!t) return;
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.key === 'Escape') { $('#keysheet').hidden = true; return; }
+  if (e.key === '?') { $('#keysheet').hidden = !$('#keysheet').hidden; return; }
+  if (e.key === '/') { e.preventDefault(); view = 'find'; return render(); }
+  if (e.key.toLowerCase() === 'z' && lastUndoAt) { e.preventDefault(); return undoLast(); }
+
+  if (view !== 'inbox') return;
+  const t = data.backlog?.rows[S.inboxAt];
+  if (!t) return;
   if (['1','2','3'].includes(e.key)) { const s = t.suggest[+e.key - 1]; if (s) fileCurrent(s.id); }
   if (e.key.toLowerCase() === 'p') inboxAct('play');
   if (e.key.toLowerCase() === 's') inboxAct('skip');
   if (e.key.toLowerCase() === 'u') inboxAct('unlike');
 });
 
+/* ---------------- boot ---------------- */
+
 async function loadAll() {
-  const [backlog, dupes, misfile, discover] = await Promise.all([
+  const [backlog, dupes, misfile, discover, history] = await Promise.all([
     api('backlog').catch(() => null), api('dupes').catch(() => null),
     api('misfile').catch(() => null), api('discover').catch(() => []),
+    api('history').catch(() => []),
   ]);
-  return { backlog, dupes, misfile, discover };
+  return { backlog, dupes, misfile, discover, history };
 }
 
 (async () => {
   try {
     data = await loadAll();
-    S.inboxAt = 0;
     await refresh();
     $('#who').textContent = 'local · 127.0.0.1';
   } catch (e) {
-    $('#main').innerHTML = `<h1>Not ready</h1><p class="lede">${esc(e.message)}</p>`;
+    $('#main').innerHTML = `<div class="boot"><div class="in">
+      <h1>Not ready yet</h1>
+      <p class="lede">${esc(e.message)}</p>
+      <p class="lede">If this is a fresh install, run <span class="mono">npm run setup</span> first —
+        it authorises Spotify and takes the first snapshot.</p>
+      <button class="b p" onclick="location.reload()">Try again</button>
+    </div></div>`;
   }
 })();
 </script>

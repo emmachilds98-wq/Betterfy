@@ -10,6 +10,7 @@
   "scripts": {
     "auth": "node auth.mjs",
     "snapshot": "node snapshot.mjs",
+    "snapshot:full": "node snapshot.mjs --full",
     "enrich": "node enrich-lastfm.mjs",
     "axes": "node axes.mjs",
     "dupes": "node dupes.mjs",
@@ -20,7 +21,8 @@
     "build:review": "node build-review.mjs",
     "start": "node server.mjs",
     "setup": "node auth.mjs && node snapshot.mjs && node enrich-lastfm.mjs && node axes.mjs",
-    "build:web": "node build-web.mjs"
+    "build:web": "node build-web.mjs",
+    "test": "node --test test/*.test.mjs"
   },
   "license": "MIT"
 }
