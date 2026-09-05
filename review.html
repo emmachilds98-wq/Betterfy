@@ -2,157 +2,132 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
   :root{
-    --ground:#F1F3F6; --surface:#FFFFFF; --surface-2:#F7F8FA;
+    --ground:#F1F3F6; --surface:#FFFFFF; --surface-2:#F7F8FA; --surface-3:#EDEFF4;
     --ink:#141821; --ink-2:#4E586A; --ink-3:#798394;
     --line:#DCE1E8; --line-2:#C7CEDA;
     --accent:#D9502B; --accent-ink:#FFFFFF; --accent-soft:#FBEAE4;
     --ok:#1F7F58; --ok-soft:#E3F2EA;
     --warn:#9A6B0E; --warn-soft:#F8EFD9;
+    --info:#2C5FA8; --info-soft:#E4EDF9;
     --idle:#98A2B3;
-    --shadow:0 1px 2px rgba(20,24,33,.06),0 4px 14px rgba(20,24,33,.05);
     --r:7px;
   }
   @media (prefers-color-scheme:dark){
     :root:not([data-theme="light"]){
-      --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A;
+      --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
       --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
       --line:#252B35; --line-2:#333B48;
       --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
       --ok:#4FBE8B; --ok-soft:#12261D;
       --warn:#D9A83E; --warn-soft:#2A2113;
+      --info:#7FA9E8; --info-soft:#15202F;
       --idle:#5C6675;
-      --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
     }
   }
   :root[data-theme="dark"]{
-    --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A;
+    --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
     --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
     --line:#252B35; --line-2:#333B48;
     --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
     --ok:#4FBE8B; --ok-soft:#12261D;
     --warn:#D9A83E; --warn-soft:#2A2113;
+    --info:#7FA9E8; --info-soft:#15202F;
     --idle:#5C6675;
-    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
   }
 
   *{box-sizing:border-box}
   body{
     background:var(--ground); color:var(--ink);
     font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-    font-size:14px; line-height:1.5; margin:0;
-    -webkit-font-smoothing:antialiased;
+    font-size:14px; line-height:1.5; margin:0; -webkit-font-smoothing:antialiased;
   }
-  .wrap{max-width:1180px; margin:0 auto; padding:28px 22px 120px}
+  .wrap{max-width:1200px; margin:0 auto; padding:28px 22px 110px}
 
-  /* ---------- masthead ---------- */
   header.top{display:flex; flex-wrap:wrap; align-items:flex-end; gap:18px; justify-content:space-between; margin-bottom:22px}
-  h1{
-    font-family:Archivo,system-ui,sans-serif; font-weight:800; font-size:29px;
-    letter-spacing:-.024em; margin:0; text-wrap:balance;
-  }
-  .sub{color:var(--ink-2); margin:5px 0 0; max-width:62ch}
-  .stamp{
-    font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11px;
-    color:var(--ink-3); text-align:right; line-height:1.7; white-space:nowrap;
-  }
+  h1{font-family:Archivo,system-ui,sans-serif; font-weight:800; font-size:29px; letter-spacing:-.024em; margin:0; text-wrap:balance}
+  .sub{color:var(--ink-2); margin:5px 0 0; max-width:64ch}
+  .stamp{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3); text-align:right; line-height:1.7}
 
-  /* ---------- meters ---------- */
-  .meters{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:26px}
-  .meter{
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
-    padding:13px 15px; display:flex; flex-direction:column; gap:3px;
-  }
+  .meters{display:grid; grid-template-columns:repeat(auto-fit,minmax(178px,1fr)); gap:12px; margin-bottom:26px}
+  .meter{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:13px 15px; display:flex; flex-direction:column; gap:3px}
   .meter .n{font-family:"IBM Plex Mono",monospace; font-size:26px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
   .meter .l{font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
   .meter .d{font-size:12px; color:var(--ink-2)}
-  .meter.act .n{color:var(--accent)}
-  .meter.jud .n{color:var(--warn)}
+  .meter.act .n{color:var(--accent)} .meter.jud .n{color:var(--warn)}
 
-  /* ---------- tabs ---------- */
-  nav.tabs{display:flex; gap:2px; border-bottom:1px solid var(--line); margin-bottom:18px; flex-wrap:wrap}
-  .tab{
-    appearance:none; background:none; border:0; border-bottom:2px solid transparent;
-    font:inherit; font-weight:600; color:var(--ink-3); cursor:pointer;
-    padding:9px 14px; margin-bottom:-1px; border-radius:var(--r) var(--r) 0 0;
-  }
+  nav.tabs{display:flex; gap:2px; border-bottom:1px solid var(--line); margin-bottom:16px; flex-wrap:wrap}
+  .tab{appearance:none; background:none; border:0; border-bottom:2px solid transparent; font:inherit; font-weight:600;
+       color:var(--ink-3); cursor:pointer; padding:9px 14px; margin-bottom:-1px; border-radius:var(--r) var(--r) 0 0}
   .tab:hover{color:var(--ink); background:var(--surface-2)}
   .tab[aria-selected="true"]{color:var(--ink); border-bottom-color:var(--accent)}
   .tab .c{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3); margin-left:6px}
 
-  .lede{color:var(--ink-2); margin:0 0 16px; max-width:74ch}
+  .lede{color:var(--ink-2); margin:0 0 14px; max-width:78ch}
   .lede b{color:var(--ink); font-weight:600}
 
-  /* ---------- rows ---------- */
   .rows{display:flex; flex-direction:column; gap:8px}
-  .row{
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
-    display:grid; grid-template-columns:3px 1fr auto; align-items:stretch;
-    overflow:hidden;
-  }
+  .row{background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+       display:grid; grid-template-columns:3px 1fr auto; overflow:hidden}
   .stripe{background:var(--idle)}
   .row[data-state="act"] .stripe{background:var(--accent)}
   .row[data-state="done"] .stripe{background:var(--ok)}
   .body{padding:12px 15px; min-width:0}
-  .ctrl{
-    padding:12px 15px; border-left:1px solid var(--line); background:var(--surface-2);
-    display:flex; flex-direction:column; gap:6px; justify-content:center; min-width:186px;
-  }
-  .where{
-    font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:500;
-    letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); margin-bottom:3px;
-  }
+  .ctrl{padding:12px 15px; border-left:1px solid var(--line); background:var(--surface-2);
+        display:flex; flex-direction:column; gap:6px; justify-content:center; min-width:190px}
+  .head{display:flex; align-items:baseline; gap:9px; flex-wrap:wrap}
   .title{font-weight:600; letter-spacing:-.005em}
   .artist{color:var(--ink-2)}
-  .releases{display:flex; flex-direction:column; gap:4px; margin-top:9px}
-  .rel{
-    display:flex; align-items:center; gap:9px; font-size:12.5px;
-    border:1px solid var(--line); border-radius:5px; padding:5px 9px; cursor:pointer;
-    background:var(--surface); color:var(--ink-2);
-  }
-  .rel:hover{border-color:var(--line-2)}
-  .rel input{margin:0; accent-color:var(--accent)}
-  .rel.on{border-color:var(--ok); background:var(--ok-soft); color:var(--ink)}
-  .rel .al{font-weight:500; color:var(--ink)}
-  .rel .dt{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3); margin-left:auto; font-variant-numeric:tabular-nums}
+  .where{font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:500; letter-spacing:.06em;
+         text-transform:uppercase; color:var(--ink-3); margin-bottom:3px}
+  .why{margin-top:7px; font-size:12.5px; color:var(--ink-2); background:var(--surface-3);
+       border-radius:5px; padding:5px 9px; display:inline-block}
 
-  .chips{display:flex; flex-wrap:wrap; gap:5px; margin-top:9px}
-  .chip{
-    font-size:12px; border:1px solid var(--line); border-radius:20px; padding:3px 11px;
-    background:var(--surface); color:var(--ink-2); cursor:pointer; font-family:inherit;
-  }
+  /* version comparison table */
+  .cmp{width:100%; margin-top:9px; border-collapse:collapse; font-size:12.5px}
+  .cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3);
+          font-weight:600; padding:0 9px 4px 0; white-space:nowrap}
+  .cmp td{padding:5px 9px 5px 0; border-top:1px solid var(--line); vertical-align:top}
+  .cmp tr.pick td{background:var(--ok-soft)}
+  .cmp .mono{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; white-space:nowrap}
+  .cmp .differs{color:var(--accent); font-weight:600}
+  .cmp .al{color:var(--ink-2); max-width:30ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block}
+  .cmp label{display:flex; align-items:center; gap:6px; cursor:pointer}
+  .cmp input{accent-color:var(--ok); margin:0}
+
+  /* placement chips, grouped by axis */
+  .axgrp{display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-top:7px}
+  .axlbl{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.07em; text-transform:uppercase;
+         color:var(--ink-3); font-weight:600; min-width:52px}
+  .chip{font-size:12px; border:1px solid var(--line); border-radius:20px; padding:3px 11px;
+        background:var(--surface); color:var(--ink-2); cursor:pointer; font-family:inherit; display:inline-flex; gap:6px; align-items:center}
   .chip:hover{border-color:var(--line-2); color:var(--ink)}
   .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
+  .chip .pr{font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--ink-3)}
+  .chip.cut .pr{color:var(--accent)}
+  .flag{font-size:11px; font-weight:600; border-radius:4px; padding:2px 7px; background:var(--info-soft); color:var(--info)}
+  .flag.warn{background:var(--warn-soft); color:var(--warn)}
 
-  button.act{
-    appearance:none; font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
-    border:1px solid var(--line-2); background:var(--surface); color:var(--ink);
-    border-radius:5px; padding:6px 11px; text-align:center;
-  }
+  button.act{appearance:none; font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
+             border:1px solid var(--line-2); background:var(--surface); color:var(--ink);
+             border-radius:5px; padding:6px 11px; text-align:center}
   button.act:hover{border-color:var(--ink-3)}
   button.act[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
   button.act.keep[aria-pressed="true"]{background:var(--ok); border-color:var(--ok); color:#fff}
+  button.act.sm{font-size:11.5px; padding:4px 9px; font-weight:500}
   :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 
   .filters{display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; align-items:center}
   .filters .lbl{font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; margin-right:3px}
   .more{margin-top:14px; text-align:center}
 
-  /* ---------- dock ---------- */
-  .dock{
-    position:fixed; left:0; right:0; bottom:0; background:var(--surface);
-    border-top:1px solid var(--line); box-shadow:var(--shadow); z-index:9;
-  }
-  .dock .in{
-    max-width:1180px; margin:0 auto; padding:11px 22px;
-    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
-  }
+  .dock{position:fixed; left:0; right:0; bottom:0; background:var(--surface); border-top:1px solid var(--line); z-index:9}
+  .dock .in{max-width:1200px; margin:0 auto; padding:11px 22px; display:flex; align-items:center; gap:16px; flex-wrap:wrap}
   .tally{font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--ink-2); font-variant-numeric:tabular-nums}
   .tally b{color:var(--ink); font-weight:600}
   .dot{width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:5px}
   .save{margin-left:auto; font-size:12px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace}
-  .hint{background:var(--warn-soft); color:var(--warn); border:1px solid transparent; border-radius:5px; padding:3px 9px; font-size:12px; font-weight:500}
-  @media (prefers-reduced-motion:no-preference){ .row{transition:border-color .12s} }
-  @media (max-width:700px){
+  .hint{background:var(--warn-soft); color:var(--warn); border-radius:5px; padding:3px 9px; font-size:12px; font-weight:500}
+  @media (max-width:760px){
     .row{grid-template-columns:3px 1fr}
     .ctrl{border-left:0; border-top:1px solid var(--line); flex-direction:row; flex-wrap:wrap; grid-column:2}
   }
@@ -162,222 +137,224 @@
   <header class="top">
     <div>
       <h1>Library Filing Desk</h1>
-      <p class="sub">Duplicate and cross-filing decisions for 83 playlists. Nothing here touches Spotify — choices are saved for Claude to apply on your say-so.</p>
+      <p class="sub">Duplicate and cross-filing decisions across 83 playlists. Nothing here touches Spotify — choices are saved for Claude to apply when you say so.</p>
     </div>
-    <div class="stamp" id="stamp">library snapshot<br>7,554 unique tracks</div>
+    <div class="stamp" id="stamp"></div>
   </header>
 
   <div class="meters" id="meters"></div>
-
   <nav class="tabs" role="tablist" id="tabs"></nav>
   <p class="lede" id="lede"></p>
   <div id="panel"></div>
 </div>
 
-<div class="dock">
-  <div class="in">
-    <span class="tally" id="tally"></span>
-    <span class="hint" id="hint" hidden></span>
-    <span class="save" id="save">local only</span>
-  </div>
-</div>
+<div class="dock"><div class="in">
+  <span class="tally" id="tally"></span>
+  <span class="hint" id="hint" hidden></span>
+  <span class="save" id="save">local only</span>
+</div></div>
 
 <script id="data" type="application/json">__DATA__</script>
 <script>
 (() => {
-  const DATA = JSON.parse(document.getElementById('data').textContent);
-  const { same, diff, across } = DATA;
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const exact = D.within.filter(w => w.verdict === 'same-recording');
+  const clash = D.within.filter(w => w.verdict !== 'same-recording');
+  const across = D.across;
 
-  // decision state, keyed by case id
   const state = new Map();
-  let db = null, tab = 'same', shown = { same: 400, diff: 400, across: 60 };
-  let acrossMin = 3;
+  let db = null, tab = 'exact';
+  const shown = { exact: 400, clash: 400, across: 60 };
+  let acrossMin = 3, acrossOnly = 'all';
 
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-  /* ---------- meters ---------- */
+  document.getElementById('stamp').innerHTML =
+    `${D.tracks.toLocaleString()} unique tracks<br>${D.placements.toLocaleString()} placements`;
+
   const meters = [
-    { n: same.length,   l: 'Exact repeats', d: 'Same release added twice in one playlist', cls: 'act' },
-    { n: diff.length,   l: 'Version clashes', d: 'Two releases of one track in one playlist', cls: 'jud' },
-    { n: across.length, l: 'Cross-filed',    d: 'Sitting in more than one playlist', cls: '' },
-    { n: DATA.playlists, l: 'Playlists',     d: 'Untouched until you decide', cls: '' },
+    { n: exact.length, l: 'Same recording', d: 'Identical ISRC, filed twice in one playlist', cls:'act' },
+    { n: clash.length, l: 'Version clashes', d: 'Two different cuts in one playlist', cls:'jud' },
+    { n: across.length, l: 'Cross-filed', d: 'One track, several playlists', cls:'' },
+    { n: across.filter(a => a.mixedReleases).length, l: 'Mixed pressings', d: 'Cross-filed as different releases', cls:'' },
   ];
   document.getElementById('meters').innerHTML = meters.map(m =>
-    `<div class="meter ${m.cls}"><span class="l">${esc(m.l)}</span><span class="n">${m.n.toLocaleString()}</span><span class="d">${esc(m.d)}</span></div>`
-  ).join('');
+    `<div class="meter ${m.cls}"><span class="l">${esc(m.l)}</span><span class="n">${m.n.toLocaleString()}</span><span class="d">${esc(m.d)}</span></div>`).join('');
 
-  /* ---------- tabs ---------- */
   const TABS = [
-    { k:'same',   t:'Exact repeats', c:same.length,
-      lede:'The same release sits in one playlist twice. No judgement needed — <b>Remove</b> drops the second copy and leaves every other playlist alone.' },
-    { k:'diff',   t:'Version clashes', c:diff.length,
-      lede:'One track, two different releases, both in the same playlist. Pick which pressing to keep — a single, an album cut, a reissue — or keep both if they are genuinely different records to you.' },
+    { k:'exact', t:'Same recording', c:exact.length,
+      lede:'Both copies share an <b>ISRC</b> — the recording industry identifier. They are the same master, just issued on two releases, so there is nothing to lose by dropping one. Only the playlist named on each row is affected.' },
+    { k:'clash', t:'Version clashes', c:clash.length,
+      lede:'Genuinely different cuts of one song sitting in the same playlist. The table shows exactly what differs — <b>length, release type, date and ISRC</b> — with differing values marked. Pick the cut you want, or keep both if you use them differently.' },
     { k:'across', t:'Cross-filed', c:across.length,
-      lede:'Tracks living in several playlists. This is usually deliberate, so <b>nothing is preselected</b>. Click a playlist to mark the track for removal from just that one.' },
+      lede:'Tracks living in several playlists. Usually deliberate, so <b>nothing is preselected</b>. Click any playlist to drop the track from just that one, or use the shortcuts to trim by axis.' },
   ];
   const tabsEl = document.getElementById('tabs');
-  tabsEl.innerHTML = TABS.map(t =>
-    `<button class="tab" role="tab" data-k="${t.k}" aria-selected="${t.k===tab}">${esc(t.t)}<span class="c">${t.c}</span></button>`
-  ).join('');
-  tabsEl.addEventListener('click', e => {
-    const b = e.target.closest('.tab'); if (!b) return;
-    tab = b.dataset.k;
-    [...tabsEl.children].forEach(x => x.setAttribute('aria-selected', x.dataset.k === tab));
-    render();
-  });
+  tabsEl.innerHTML = TABS.map(t => `<button class="tab" role="tab" data-k="${t.k}" aria-selected="${t.k===tab}">${esc(t.t)}<span class="c">${t.c}</span></button>`).join('');
+  tabsEl.onclick = e => { const b = e.target.closest('.tab'); if (!b) return;
+    tab = b.dataset.k; [...tabsEl.children].forEach(x => x.setAttribute('aria-selected', x.dataset.k===tab)); render(); };
 
-  /* ---------- persistence ---------- */
   async function persist(id, value) {
     if (value === null) state.delete(id); else state.set(id, value);
     tally();
     if (!db) return;
     try {
       const ref = db.doc('decisions/' + id);
-      if (value === null) await ref.delete();
-      else await ref.set({ ...value, id, at: new Date().toISOString() });
+      if (value === null) await ref.delete(); else await ref.set({ ...value, id, at: new Date().toISOString() });
       flash('saved');
-    } catch (err) {
-      flash(err && err.code === 'not_granted' ? 'view only' : 'save failed');
-    }
+    } catch (e) { flash(e && e.code === 'not_granted' ? 'view only' : 'save failed'); }
   }
-  let flashT;
-  function flash(msg) {
-    const el = document.getElementById('save');
-    el.textContent = msg; clearTimeout(flashT);
-    flashT = setTimeout(() => { el.textContent = db ? 'saved to this page' : 'local only'; }, 1600);
-  }
+  let ft; const flash = m => { const el = document.getElementById('save'); el.textContent = m;
+    clearTimeout(ft); ft = setTimeout(() => el.textContent = db ? 'saved to this page' : 'local only', 1600); };
 
   function tally() {
-    const n = { same:0, diff:0, across:0 };
-    for (const [k, v] of state) if (v) n[v.kind] = (n[v.kind] ?? 0) + 1;
     const drops = [...state.values()].reduce((s,v) => s + (v.drop?.length ?? 0), 0);
     document.getElementById('tally').innerHTML =
-      `<span class="dot" style="background:var(--ok)"></span><b>${state.size}</b> decisions &nbsp;·&nbsp; ` +
-      `${n.same} exact &nbsp; ${n.diff} version &nbsp; ${n.across} cross-filed &nbsp;·&nbsp; ` +
-      `<b>${drops}</b> track${drops===1?'':'s'} marked for removal`;
-    const h = document.getElementById('hint');
-    h.hidden = state.size > 0;
-    h.textContent = 'Nothing decided yet';
+      `<span class="dot" style="background:var(--ok)"></span><b>${state.size}</b> decisions &nbsp;·&nbsp; <b>${drops}</b> removal${drops===1?'':'s'} queued`;
+    const h = document.getElementById('hint'); h.hidden = state.size > 0; h.textContent = 'Nothing decided yet';
   }
 
-  /* ---------- renderers ---------- */
+  /* ---------- within-playlist rows ---------- */
   function rowWithin(c, i, kind) {
     const id = kind + '-' + i;
     const st = state.get(id);
-    const decided = !!st;
-    const all = [c.keep, ...c.drop];
-    const keepId = st?.keepId ?? (kind === 'same' ? c.keep.id : null);
     const keepBoth = st?.action === 'keep';
+    const keepId = st?.keepId ?? (kind === 'exact' ? c.keep.id : null);
+    const opts = c.options;
 
-    const rels = kind === 'diff' ? `<div class="releases">${all.map(r => `
-        <label class="rel ${keepId===r.id && !keepBoth ? 'on' : ''}">
-          <input type="radio" name="${id}" value="${esc(r.id)}" ${keepId===r.id && !keepBoth ? 'checked' : ''}>
-          <span class="al">${esc(r.album ?? '—')}</span>
-          <span class="dt">${esc((r.released ?? '').slice(0,10))}</span>
-        </label>`).join('')}</div>`
-      : `<div class="releases"><div class="rel"><span class="al">${esc(c.keep.album ?? '—')}</span><span class="dt">${esc((c.keep.released ?? '').slice(0,10))}</span></div></div>`;
+    // mark the columns that actually differ, so the eye goes straight to them
+    const diff = f => new Set(opts.map(o => o[f])).size > 1;
+    const dD = diff('dur'), dT = diff('albumType'), dR = diff('released'), dI = diff('isrc');
 
-    return `<div class="row" data-state="${decided ? 'done' : (kind==='same'?'act':'')}" data-id="${id}">
+    const table = `<table class="cmp"><thead><tr>
+        <th>${kind === 'clash' ? 'Keep' : ''}</th><th>Length</th><th>Release</th><th>Date</th><th>ISRC</th><th>Album</th>
+      </tr></thead><tbody>${opts.map(o => `
+        <tr class="${keepId===o.id && !keepBoth ? 'pick' : ''}">
+          <td>${kind === 'clash'
+              ? `<label><input type="radio" name="${id}" value="${esc(o.id)}" ${keepId===o.id&&!keepBoth?'checked':''}></label>`
+              : ''}</td>
+          <td class="mono ${dD?'differs':''}">${esc(o.dur)}</td>
+          <td class="${dT?'differs':''}">${esc(o.albumType ?? '—')}</td>
+          <td class="mono ${dR?'differs':''}">${esc((o.released ?? '').slice(0,10))}</td>
+          <td class="mono ${dI?'differs':''}" title="${esc(o.isrc ?? '')}">${esc(o.isrc ?? '—')}</td>
+          <td><span class="al" title="${esc(o.album)}">${esc(o.album)}</span></td>
+        </tr>`).join('')}</tbody></table>`;
+
+    return `<div class="row" data-state="${st ? 'done' : (kind==='exact'?'act':'')}" data-id="${id}">
       <div class="stripe"></div>
       <div class="body">
         <div class="where">${esc(c.playlist)}</div>
-        <div class="title">${esc(c.title)}</div>
-        <div class="artist">${esc(c.artist ?? '')}</div>
-        ${rels}
+        <div class="head"><span class="title">${esc(c.title)}</span><span class="artist">${esc(c.artist ?? '')}</span></div>
+        <div class="why">${esc(c.why)}</div>
+        ${table}
       </div>
       <div class="ctrl">
-        <button class="act rm" data-do="remove" aria-pressed="${decided && !keepBoth}">Remove duplicate</button>
+        <button class="act" data-do="remove" aria-pressed="${!!st && !keepBoth}">${kind==='exact'?'Remove copy':'Keep selected'}</button>
         <button class="act keep" data-do="keep" aria-pressed="${keepBoth}">Keep both</button>
       </div>
     </div>`;
   }
 
+  /* ---------- cross-filed rows ---------- */
+  const AXES = ['genre','mood','era','event','djset','context','inbox','other'];
   function rowAcross(c, i) {
     const id = 'across-' + i;
     const st = state.get(id);
     const cut = new Set(st?.removeFrom ?? []);
-    return `<div class="row" data-state="${cut.size ? 'done' : ''}" data-id="${id}">
+    const groups = AXES.map(a => [a, c.placements.filter(p => p.axis === a)]).filter(([,v]) => v.length);
+
+    const flags = [
+      c.mixedRecordings ? '<span class="flag warn">different recordings</span>'
+        : c.mixedReleases ? '<span class="flag">different pressings</span>' : '',
+    ].join('');
+
+    return `<div class="row" data-state="${st ? 'done' : ''}" data-id="${id}">
       <div class="stripe"></div>
       <div class="body">
-        <div class="where">in ${c.playlists.length} playlists${c.differentReleases ? ' · different releases' : ''}</div>
-        <div class="title">${esc(c.title)}</div>
-        <div class="artist">${esc(c.artist ?? '')}</div>
-        <div class="chips">${c.playlists.map(p =>
-          `<button class="chip ${cut.has(p) ? 'cut' : ''}" data-pl="${esc(p)}">${esc(p)}</button>`).join('')}</div>
+        <div class="where">in ${c.placements.length} playlists</div>
+        <div class="head"><span class="title">${esc(c.title)}</span><span class="artist">${esc(c.artist ?? '')}</span>${flags}</div>
+        ${groups.map(([ax, ps]) => `<div class="axgrp"><span class="axlbl">${esc(ax)}</span>${
+          ps.map(p => `<button class="chip ${cut.has(p.playlist)?'cut':''}" data-pl="${esc(p.playlist)}">${esc(p.playlist)}${
+            c.mixedReleases ? `<span class="pr">${esc(p.dur)}</span>` : ''}</button>`).join('')
+        }</div>`).join('')}
       </div>
       <div class="ctrl">
-        <button class="act keep" data-do="fine" aria-pressed="${st?.action === 'fine'}">Leave as is</button>
+        <button class="act sm" data-do="genreonly">Keep genre only</button>
+        <button class="act sm" data-do="one">Keep best one</button>
+        <button class="act keep sm" data-do="fine" aria-pressed="${st?.action==='fine'}">Leave as is</button>
       </div>
     </div>`;
   }
 
   function render() {
     const panel = document.getElementById('panel');
-    const t = TABS.find(x => x.k === tab);
-    document.getElementById('lede').innerHTML = t.lede;
+    document.getElementById('lede').innerHTML = TABS.find(x => x.k === tab).lede;
 
-    let list, html, total;
     if (tab === 'across') {
-      list = across.filter(a => a.playlists.length >= acrossMin);
-      total = list.length;
+      let list = across.filter(a => a.placements.length >= acrossMin);
+      if (acrossOnly === 'mixed') list = list.filter(a => a.mixedReleases);
+      if (acrossOnly === 'recordings') list = list.filter(a => a.mixedRecordings);
       const slice = list.slice(0, shown.across);
-      html = `<div class="filters"><span class="lbl">Show tracks in</span>` +
-        [2,3,4,5,6].map(n => `<button class="act" data-min="${n}" aria-pressed="${acrossMin===n}">${n}+ playlists</button>`).join('') +
-        `</div><div class="rows">${slice.map((c,i) => rowAcross(c, across.indexOf(c))).join('')}</div>`;
-      if (total > shown.across) html += `<div class="more"><button class="act" data-more="across">Show more (${total - shown.across} left)</button></div>`;
+      panel.innerHTML =
+        `<div class="filters"><span class="lbl">In</span>` +
+        [2,3,4,5,6].map(n => `<button class="act sm" data-min="${n}" aria-pressed="${acrossMin===n}">${n}+</button>`).join('') +
+        `<span class="lbl" style="margin-left:10px">Show</span>` +
+        [['all','everything'],['mixed','different pressings'],['recordings','different recordings']]
+          .map(([k,t]) => `<button class="act sm" data-only="${k}" aria-pressed="${acrossOnly===k}">${t}</button>`).join('') +
+        `</div><div class="rows">${slice.map(c => rowAcross(c, across.indexOf(c))).join('')}</div>` +
+        (list.length > shown.across ? `<div class="more"><button class="act" data-more="across">Show more (${list.length - shown.across} left)</button></div>` : '');
     } else {
-      list = tab === 'same' ? same : diff;
-      total = list.length;
+      const list = tab === 'exact' ? exact : clash;
       const slice = list.slice(0, shown[tab]);
-      html = `<div class="rows">${slice.map((c,i) => rowWithin(c, i, tab)).join('')}</div>`;
-      if (total > shown[tab]) html += `<div class="more"><button class="act" data-more="${tab}">Show more (${total - shown[tab]} left)</button></div>`;
+      panel.innerHTML = `<div class="rows">${slice.map((c,i) => rowWithin(c, i, tab)).join('')}</div>` +
+        (list.length > shown[tab] ? `<div class="more"><button class="act" data-more="${tab}">Show more (${list.length - shown[tab]} left)</button></div>` : '');
     }
-    panel.innerHTML = html;
   }
 
-  /* ---------- interaction ---------- */
   document.getElementById('panel').addEventListener('click', async e => {
-    const more = e.target.closest('[data-more]');
-    if (more) { shown[more.dataset.more] += 400; render(); return; }
-
-    const min = e.target.closest('[data-min]');
-    if (min) { acrossMin = +min.dataset.min; shown.across = 60; render(); return; }
+    const more = e.target.closest('[data-more]'); if (more) { shown[more.dataset.more] += 400; return render(); }
+    const min = e.target.closest('[data-min]');   if (min) { acrossMin = +min.dataset.min; shown.across = 60; return render(); }
+    const only = e.target.closest('[data-only]'); if (only) { acrossOnly = only.dataset.only; shown.across = 60; return render(); }
 
     const row = e.target.closest('.row'); if (!row) return;
     const id = row.dataset.id;
-    const [kind, idxRaw] = [id.slice(0, id.lastIndexOf('-')), +id.slice(id.lastIndexOf('-') + 1)];
+    const kind = id.slice(0, id.lastIndexOf('-'));
+    const idx = +id.slice(id.lastIndexOf('-') + 1);
 
-    const chip = e.target.closest('.chip');
-    if (chip) {
-      const c = across[idxRaw];
-      const cur = state.get(id);
-      const set = new Set(cur?.removeFrom ?? []);
-      const p = chip.dataset.pl;
-      set.has(p) ? set.delete(p) : set.add(p);
-      await persist(id, set.size
-        ? { kind:'across', artist:c.artist, title:c.title, removeFrom:[...set], drop:[...set] }
-        : null);
-      render(); return;
+    if (kind === 'across') {
+      const c = across[idx];
+      const chip = e.target.closest('.chip');
+      if (chip) {
+        const cur = new Set(state.get(id)?.removeFrom ?? []);
+        const p = chip.dataset.pl; cur.has(p) ? cur.delete(p) : cur.add(p);
+        await persist(id, cur.size ? { kind:'across', artist:c.artist, title:c.title, removeFrom:[...cur], drop:[...cur] } : null);
+        return render();
+      }
+      const btn = e.target.closest('[data-do]'); if (!btn) return;
+      const d = btn.dataset.do;
+      if (d === 'fine') {
+        const on = state.get(id)?.action === 'fine';
+        await persist(id, on ? null : { kind:'across', action:'fine', artist:c.artist, title:c.title, removeFrom:[], drop:[] });
+      } else if (d === 'genreonly') {
+        const rm = c.placements.filter(p => p.axis !== 'genre').map(p => p.playlist);
+        await persist(id, rm.length ? { kind:'across', action:'genre-only', artist:c.artist, title:c.title, removeFrom:rm, drop:rm } : null);
+      } else if (d === 'one') {
+        const keep = c.placements.find(p => p.axis === 'genre') ?? c.placements[0];
+        const rm = c.placements.filter(p => p.playlist !== keep.playlist).map(p => p.playlist);
+        await persist(id, { kind:'across', action:'keep-one', keep:keep.playlist, artist:c.artist, title:c.title, removeFrom:rm, drop:rm });
+      }
+      return render();
     }
 
     const btn = e.target.closest('[data-do]'); if (!btn) return;
-    const doWhat = btn.dataset.do;
-
-    if (kind === 'across') {
-      const c = across[idxRaw];
-      const on = state.get(id)?.action === 'fine';
-      await persist(id, on ? null : { kind:'across', action:'fine', artist:c.artist, title:c.title, removeFrom:[], drop:[] });
-      render(); return;
-    }
-
-    const c = (kind === 'same' ? same : diff)[idxRaw];
-    if (doWhat === 'keep') {
+    const c = (kind === 'exact' ? exact : clash)[idx];
+    if (btn.dataset.do === 'keep') {
       const on = state.get(id)?.action === 'keep';
       await persist(id, on ? null : { kind, action:'keep', playlist:c.playlist, playlistId:c.playlistId, artist:c.artist, title:c.title, drop:[] });
     } else {
       const sel = row.querySelector('input[type=radio]:checked');
       const keepId = sel ? sel.value : c.keep.id;
-      const drop = [c.keep, ...c.drop].filter(r => r.id !== keepId).map(r => r.id);
+      const drop = c.options.filter(o => o.id !== keepId).map(o => o.id);
       await persist(id, { kind, action:'remove', playlist:c.playlist, playlistId:c.playlistId,
                           artist:c.artist, title:c.title, keepId, drop });
     }
@@ -387,10 +364,9 @@
   document.getElementById('panel').addEventListener('change', e => {
     if (e.target.type !== 'radio') return;
     const row = e.target.closest('.row');
-    row.querySelectorAll('.rel').forEach(l => l.classList.toggle('on', l.contains(e.target)));
+    row.querySelectorAll('.cmp tbody tr').forEach(tr => tr.classList.toggle('pick', tr.contains(e.target)));
   });
 
-  /* ---------- boot ---------- */
   render(); tally();
 
   (async () => {
@@ -402,7 +378,7 @@
       const snap = await db.collection('decisions').limit(1000).get();
       for (const d of snap.docs) { const v = d.data(); if (v) state.set(d.id, v); }
       render(); tally();
-    } catch (err) { /* empty store on first open */ }
+    } catch {}
   })();
 })();
 </script>

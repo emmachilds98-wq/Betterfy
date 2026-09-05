@@ -1,14 +1,61 @@
-// Duplicate analysis, split by Emma's rule:
-//   WITHIN one playlist  -> a genuine mistake, safe to offer for removal
-//   ACROSS playlists     -> intentional cross-filing, never auto-touched
+// Duplicate analysis.
+//
+//   WITHIN one playlist -> a mistake, offered for removal
+//   ACROSS playlists    -> deliberate cross-filing, surfaced but never touched
+//
 // Distinct versions (remix / VIP / extended / live) are never merged either way.
+// The classification leans on ISRC: two entries sharing an ISRC are the SAME
+// recording however differently the releases are labelled, and two with
+// different ISRCs are different recordings however identical the titles look.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { trackKey, versionOf } from './norm.mjs';
 
 const lib = JSON.parse(readFileSync('library.json', 'utf8'));
 
-// ---------- 1. within-playlist duplicates: removal candidates ----------
-const withinRows = [];
+const mmss = ms => ms == null ? '—'
+  : `${Math.floor(ms / 60000)}:${String(Math.round(ms % 60000 / 1000)).padStart(2, '0')}`;
+
+/** How two entries of the same song actually differ, in words. */
+function describe(rows) {
+  const isrcs = new Set(rows.map(r => r.isrc).filter(Boolean));
+  const durs = rows.map(r => r.duration_ms).filter(x => x != null);
+  const spread = durs.length > 1 ? Math.max(...durs) - Math.min(...durs) : 0;
+  const types = new Set(rows.map(r => r.albumType).filter(Boolean));
+
+  // Same recording, issued on more than one release.
+  if (isrcs.size === 1 && rows.every(r => r.isrc)) {
+    return {
+      verdict: 'same-recording',
+      why: types.size > 1
+        ? `Identical recording, issued on a ${[...types].join(' and a ')}.`
+        : 'Identical recording on two releases.',
+    };
+  }
+  if (spread > 20000) {
+    return {
+      verdict: 'different-length',
+      why: `Lengths differ by ${mmss(spread)} — likely an edit versus a longer cut.`,
+    };
+  }
+  if (isrcs.size > 1) {
+    return {
+      verdict: 'different-recording',
+      why: spread > 3000
+        ? `Different recordings, ${mmss(spread)} apart in length.`
+        : 'Different recordings of near-identical length — usually a remaster or re-issue.',
+    };
+  }
+  return { verdict: 'unknown', why: 'Same title; no identifier to separate them.' };
+}
+
+const shape = t => ({
+  id: t.id, album: t.album, albumType: t.albumType, released: t.released,
+  duration_ms: t.duration_ms, dur: mmss(t.duration_ms), isrc: t.isrc,
+  popularity: t.popularity, name: t.name,
+});
+
+// ---------- within a playlist ----------
+const within = [];
 for (const p of lib.playlists) {
   const groups = new Map();
   for (const t of p.tracks) {
@@ -19,18 +66,23 @@ for (const p of lib.playlists) {
   }
   for (const [, rows] of groups) {
     if (rows.length < 2) continue;
-    // keep the earliest release, drop the rest
-    const sorted = [...rows].sort((a, b) => (a.released ?? '9999').localeCompare(b.released ?? '9999'));
-    withinRows.push({
+    const shaped = rows.map(shape);
+    const d = describe(shaped);
+    // Default keep: the most popular copy, which is the one Spotify will
+    // surface elsewhere anyway — a better bet than the earliest release.
+    const keep = [...shaped].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))[0];
+    within.push({
       playlist: p.name, playlistId: p.id,
-      artist: sorted[0].artists?.[0]?.name, title: sorted[0].name,
-      keep: { id: sorted[0].id, album: sorted[0].album, released: sorted[0].released },
-      drop: sorted.slice(1).map(t => ({ id: t.id, album: t.album, released: t.released, name: t.name })),
+      artist: rows[0].artists?.[0]?.name, title: rows[0].name,
+      version: versionOf(rows[0].name) || null,
+      verdict: d.verdict, why: d.why,
+      keep, options: shaped,
+      drop: shaped.filter(r => r.id !== keep.id),
     });
   }
 }
 
-// ---------- 2. cross-playlist presence: review only ----------
+// ---------- across playlists ----------
 const where = new Map(), meta = new Map();
 for (const p of lib.playlists)
   for (const t of p.tracks) {
@@ -38,37 +90,50 @@ for (const p of lib.playlists)
     meta.set(t.id, t);
     const k = trackKey(t);
     if (!where.has(k)) where.set(k, []);
-    where.get(k).push({ playlist: p.name, id: t.id, album: t.album, released: t.released });
+    where.get(k).push({ playlist: p.name, playlistId: p.id, ...shape(t) });
   }
 
+const cfg = JSON.parse(readFileSync('playlists.config.json', 'utf8'));
 const across = [...where.entries()]
   .filter(([, rows]) => new Set(rows.map(r => r.playlist)).size > 1)
-  .map(([k, rows]) => {
+  .map(([, rows]) => {
     const t = meta.get(rows[0].id);
+    const byPl = [...new Map(rows.map(r => [r.playlist, r])).values()];
     return {
       artist: t.artists?.[0]?.name, title: t.name, version: versionOf(t.name) || null,
-      playlists: [...new Set(rows.map(r => r.playlist))],
-      releases: [...new Set(rows.map(r => r.album))],
-      differentReleases: new Set(rows.map(r => r.id)).size > 1,
+      placements: byPl.map(r => ({
+        playlist: r.playlist, playlistId: r.playlistId,
+        axis: cfg.playlists[r.playlistId]?.axis ?? 'other',
+        trackId: r.id, album: r.album, albumType: r.albumType, dur: r.dur, isrc: r.isrc,
+      })),
+      // Cross-filed AND holding different releases is the messy case: the same
+      // song present as two different pressings in different playlists.
+      mixedReleases: new Set(rows.map(r => r.id)).size > 1,
+      mixedRecordings: new Set(rows.map(r => r.isrc).filter(Boolean)).size > 1,
     };
-  });
+  })
+  .sort((a, b) => b.placements.length - a.placements.length);
 
-const dropCount = withinRows.reduce((s, r) => s + r.drop.length, 0);
-console.log('=== WITHIN-PLAYLIST DUPLICATES (removal candidates) ===');
-console.log(`${withinRows.length} cases across ${new Set(withinRows.map(r => r.playlist)).size} playlists, ${dropCount} tracks would be dropped\n`);
-for (const r of withinRows) {
-  console.log(`  ${r.playlist}`);
-  console.log(`    ${r.artist} — ${r.title}`);
-  console.log(`      keep  [${r.keep.album}] ${r.keep.released}`);
-  for (const d of r.drop) console.log(`      drop  [${d.album}] ${d.released}`);
+const by = {};
+for (const w of within) by[w.verdict] = (by[w.verdict] ?? 0) + 1;
+console.log('WITHIN-PLAYLIST', within.length, 'cases:', JSON.stringify(by));
+console.log('  tracks that would be dropped:', within.reduce((s, r) => s + r.drop.length, 0));
+console.log('\nACROSS-PLAYLIST', across.length, 'tracks in 2+ playlists');
+console.log('  of which hold different pressings:', across.filter(a => a.mixedReleases).length);
+console.log('  of which are different recordings:', across.filter(a => a.mixedRecordings).length);
+
+console.log('\n--- sample of each verdict ---');
+for (const v of ['same-recording', 'different-length', 'different-recording', 'unknown']) {
+  const ex = within.filter(w => w.verdict === v).slice(0, 3);
+  if (!ex.length) continue;
+  console.log(`\n[${v}]`);
+  for (const e of ex) {
+    console.log(`  ${e.artist} — ${e.title}   (${e.playlist})`);
+    console.log(`     ${e.why}`);
+    for (const o of e.options)
+      console.log(`       ${o.dur.padStart(5)}  ${String(o.albumType ?? '?').padEnd(11)} ${(o.released ?? '').slice(0,10)}  ${o.isrc ?? 'no isrc'}  ${o.album}`);
+  }
 }
 
-console.log('\n\n=== ACROSS PLAYLISTS (yours to choose — nothing auto-removed) ===');
-console.log(`${across.length} tracks sit in more than one playlist`);
-const many = across.filter(a => a.playlists.length >= 5).sort((a,b) => b.playlists.length - a.playlists.length);
-console.log(`${many.length} of them are in 5+ playlists. Top 12:\n`);
-for (const a of many.slice(0, 12))
-  console.log(`  ${a.playlists.length}x  ${a.artist} — ${a.title}\n        ${a.playlists.join(' | ')}`);
-
-writeFileSync('report-dupes.json', JSON.stringify({ within: withinRows, across }, null, 2));
-console.log(`\nwrote report-dupes.json`);
+writeFileSync('report-dupes.json', JSON.stringify({ within, across }, null, 2));
+console.log('\nwrote report-dupes.json');
