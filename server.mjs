@@ -6,7 +6,7 @@ import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { api } from './spotify.mjs';
-import { removeFrom, addTo, undo, history, devices, playTrack, pause, log } from './actions.mjs';
+import { removeFrom, addTo, moveTrack, unlikeTrack, undoTxn, history, devices, playTrack, pause, log, snapshotPlaylist } from './actions.mjs';
 import { findOrCreate } from './write.mjs';
 
 const PORT = 8787;
@@ -26,6 +26,28 @@ const reload = () => {
   dupes = readJson('report-dupes.json'); misfile = readJson('report-misfile.json');
   discover = readJson('report-discover.json');
 };
+
+/* ---------------- incremental local sync ----------------
+ * A mutation goes to Spotify, then the affected slice of the in-memory `lib`
+ * is patched from a small targeted read (one playlist, not the whole
+ * library) so /api/summary and /api/backlog are correct on the very next
+ * request. This replaces the old "stale until you re-run a full snapshot"
+ * behaviour without needing a full store rewrite.
+ */
+
+function trackMeta(id) {
+  for (const t of lib.liked) if (t?.id === id) return t;
+  for (const p of lib.playlists) for (const t of p.tracks) if (t?.id === id) return t;
+  return null;
+}
+
+async function resyncPlaylist(playlistId) {
+  const p = lib.playlists.find(p => p.id === playlistId);
+  if (!p) return;
+  const known = new Map(p.tracks.filter(t => t?.id).map(t => [t.id, t]));
+  const ids = (await snapshotPlaylist(playlistId)).map(t => t.id);
+  p.tracks = ids.map(id => known.get(id) ?? trackMeta(id) ?? { id });
+}
 
 /* ---------------- derived views ---------------- */
 
@@ -111,24 +133,27 @@ const ROUTES = {
 
   'POST /api/file':     async b => {
     const name = cfg?.playlists?.[b.playlistId]?.name ?? b.playlistId;
-    return addTo(b.playlistId, name, [b.trackId], b.reason ?? 'filed from inbox');
+    const r = await addTo(b.playlistId, name, [b.trackId], b.reason ?? 'filed from inbox');
+    await resyncPlaylist(b.playlistId);
+    return r;
   },
   'POST /api/remove':   async b => {
     const name = cfg?.playlists?.[b.playlistId]?.name ?? b.playlistId;
-    return removeFrom(b.playlistId, name, b.trackIds, b.reason ?? 'removed in review');
+    const r = await removeFrom(b.playlistId, name, b.trackIds, b.reason ?? 'removed in review');
+    await resyncPlaylist(b.playlistId);
+    return r;
   },
   'POST /api/move':     async b => {
-    // Two logged steps, add first: if the add fails the track is still filed
-    // somewhere rather than lost between playlists.
     const from = cfg?.playlists?.[b.fromId]?.name ?? b.fromId;
     const to = cfg?.playlists?.[b.toId]?.name ?? b.toId;
-    await addTo(b.toId, to, [b.trackId], `moved from ${from}`);
-    await removeFrom(b.fromId, from, [b.trackId], `moved to ${to}`);
-    return { from, to };
+    const r = await moveTrack(b.fromId, from, b.toId, to, b.trackId);
+    await Promise.all([resyncPlaylist(b.fromId), resyncPlaylist(b.toId)]);
+    return r;
   },
   'POST /api/unlike':   async b => {
-    await api(`/me/tracks?ids=${b.trackId}`, { method: 'DELETE' });
-    log({ op: 'unlike', trackIds: [b.trackId], undoable: true });
+    const meta = trackMeta(b.trackId);
+    await unlikeTrack(b.trackId, meta);
+    lib.liked = lib.liked.filter(t => t.id !== b.trackId);
     return { ok: true };
   },
   'POST /api/newPlaylist': async b => {
@@ -136,12 +161,25 @@ const ROUTES = {
     const pl = await findOrCreate(me.id, b.name, b.description ?? '');
     if (b.trackIds?.length) await addTo(pl.id, b.name, b.trackIds, 'new playlist from cluster');
     log({ op: 'create-playlist', playlistId: pl.id, playlistName: b.name });
+    lib.playlists.push({
+      id: pl.id, name: b.name, description: b.description ?? '',
+      public: false, collaborative: false,
+      tracks: (b.trackIds ?? []).map(id => trackMeta(id) ?? { id }),
+    });
     return { id: pl.id, created: pl.created };
   },
   'POST /api/undo':     async b => {
     const entry = history(500).find(h => h.at === b.at);
     if (!entry) throw new Error('No such action in the log');
-    return undo(entry);
+    const { undone } = await undoTxn(entry.txn ?? entry.at);
+    const touched = new Set();
+    for (const { entry: e } of undone) {
+      if (e.op === 'unlike') lib.liked.unshift(e.trackMeta ?? { id: e.trackIds[0] });
+      if (e.op === 'create-playlist') lib.playlists = lib.playlists.filter(p => p.id !== e.playlistId);
+      if (e.playlistId) touched.add(e.playlistId);
+    }
+    await Promise.all([...touched].map(resyncPlaylist));
+    return { restored: undone.length };
   },
   'POST /api/refresh':  async b => {
     // Re-run a pipeline step in a child process, then reload the reports.
@@ -156,11 +194,34 @@ const ROUTES = {
   },
 };
 
+// This server holds live Spotify tokens and binds only to 127.0.0.1, but any
+// page open in the same browser can still try a same-origin-policy-exempt
+// "simple" cross-origin POST (form-urlencoded or text/plain, no preflight).
+// Block that: require a same-site Origin/Host and a real JSON content-type.
+const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `betterfy.localhost:${PORT}`, `localhost:${PORT}`]);
+
+function trustedOrigin(req) {
+  if (!ALLOWED_HOSTS.has(req.headers.host)) return false;
+  const fetchSite = req.headers['sec-fetch-site'];
+  if (fetchSite && !['same-origin', 'none'].includes(fetchSite)) return false;
+  const origin = req.headers.origin;
+  if (origin) {
+    try { if (!ALLOWED_HOSTS.has(new URL(origin).host)) return false; }
+    catch { return false; }
+  }
+  return true;
+}
+
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const key = `${req.method} ${url.pathname}`;
 
   if (ROUTES[key]) {
+    if (req.method === 'POST') {
+      if (!trustedOrigin(req)) return json(res, 403, { error: 'cross-origin request blocked' });
+      if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json'))
+        return json(res, 415, { error: 'expected application/json' });
+    }
     try {
       const body = req.method === 'POST' ? await readBody(req) : null;
       return json(res, 200, await ROUTES[key](body, url));

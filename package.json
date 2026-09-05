@@ -18,6 +18,7 @@
     "shuffle": "node shuffle.mjs",
     "consolidate": "node consolidate.mjs",
     "build:review": "node build-review.mjs",
+    "test": "node --test",
     "start": "node server.mjs",
     "setup": "node auth.mjs && node snapshot.mjs && node enrich-lastfm.mjs && node axes.mjs",
     "build:web": "node build-web.mjs"
