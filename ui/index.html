@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Betterfy</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🎛️</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23D9502B'/><rect x='8' y='9.6' width='16' height='3.6' rx='1.8' fill='white'/><rect x='8' y='14.5' width='11' height='3.6' rx='1.8' fill='white'/><rect x='8' y='19.4' width='6' height='3.6' rx='1.8' fill='white'/></svg>">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
   :root{
@@ -47,8 +47,9 @@
 
   /* ---- rail ---- */
   aside{background:var(--surface); border-right:1px solid var(--line); padding:20px 0; display:flex; flex-direction:column; gap:2px; position:sticky; top:0; height:100vh; overflow:auto}
-  .brand{font-family:Archivo,sans-serif; font-weight:800; font-size:20px; letter-spacing:-.03em; padding:0 20px 4px}
+  .brand{display:flex; align-items:center; gap:9px; font-family:Archivo,sans-serif; font-weight:800; font-size:20px; letter-spacing:-.03em; padding:0 20px 4px}
   .brand span{color:var(--accent)}
+  .mark{width:24px; height:24px; flex:none}
   .who{padding:0 20px 16px; font-size:11.5px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace}
   .nav{appearance:none; border:0; background:none; font:inherit; text-align:left; cursor:pointer;
        padding:8px 20px; color:var(--ink-2); display:flex; justify-content:space-between; gap:8px; border-left:2px solid transparent}
@@ -175,7 +176,15 @@
 </head>
 <body>
 <aside>
-  <div class="brand">Better<span>fy</span></div>
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="9" style="fill:var(--accent)"/>
+      <rect x="8" y="9.6" width="16" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
+      <rect x="8" y="14.5" width="11" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
+      <rect x="8" y="19.4" width="6" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
+    </svg>
+    Better<span>fy</span>
+  </div>
   <div class="who" id="who">loading…</div>
   <button class="nav" data-v="home"     aria-current="true">Overview</button>
   <button class="nav" data-v="inbox">Inbox <span class="c" id="c-inbox"></span></button>
@@ -420,7 +429,7 @@ function vHome() {
     ['placements','Placements',S.placements,'Total filings','',null],
   ];
   return `<h1>Overview</h1>
-    <p class="lede">Snapshot taken ${esc((S.captured ?? '').slice(0,10))}. Nothing changes your Spotify library until you act on it here, and every change can be undone.</p>
+    <p class="lede">Snapshot taken ${esc((S.captured ?? '').slice(0,10))}. Nothing changes until you act, and every change can be undone.</p>
     <div class="meters">${m.map(([k,l,n,d,c,go]) =>
       `<div class="meter ${c} ${go?'click':''}" ${go?`data-go="${go}"`:''}>
          <span class="l">${esc(l)}</span><span class="n">${(n??0).toLocaleString()}</span><span class="d">${esc(d)}</span></div>`).join('')}
@@ -533,7 +542,7 @@ function vMisfile() {
   for (const x of all) counts[x.confidence] = (counts[x.confidence] ?? 0) + 1;
   const m = all.filter(x => x.confidence === band);
   return `<h1>Misfiles</h1>
-    <p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b> — a genre playlist is only ever compared with other genre playlists. Start with high confidence; the lower bands get increasingly speculative.</p>
+    <p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Start with high confidence — lower bands get increasingly speculative.</p>
     <div class="rowbtns" style="margin-bottom:14px">
       ${['high','medium','low'].map(b =>
         `<button class="b sm ${band===b?'p':''}" data-mfb="${b}">${b} (${counts[b] ?? 0})</button>`).join('')}
@@ -554,7 +563,7 @@ function vMisfile() {
 function vNew() {
   const c = data.misfile?.clusters ?? [];
   return `<h1>New playlists</h1>
-    <p class="lede">Groups in the unfiled backlog that fit none of your existing playlists. Each is a category you may be missing.</p>
+    <p class="lede">Groups in the unfiled backlog that fit none of your existing playlists.</p>
     <div class="rows">${c.map((x,i) => `
       <div class="row">
         <div class="main">
