@@ -169,6 +169,14 @@
     artist objects carry no genres field. Genre signal comes from Last.fm artist tags, precomputed and shipped with
     this page. <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">Source on GitHub</a>.
   </p>
+
+  <h2>Data sources</h2>
+  <p class="lede" style="font-size:13.5px">
+    Track and playlist data from the <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify Web API</a>.
+    Genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a>.
+    Release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a>.
+    Tempo and musical key data from <a href="https://getsongbpm.com" target="_blank" rel="noopener">GetSongBPM</a>.
+  </p>
 </div>
 
 <!-- ============ app ============ -->
@@ -182,6 +190,7 @@
     <button class="nav" data-v="cross">Cross-filed <span class="c" id="c-cross"></span></button>
     <button class="nav" data-v="misfile">Misfiles <span class="c" id="c-misfile"></span></button>
     <button class="nav" data-v="new">New playlists <span class="c" id="c-new"></span></button>
+    <button class="nav" data-v="lists">Playlists <span class="c" id="c-lists"></span></button>
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
@@ -731,7 +740,78 @@ function vNew() {
       <button class="b sm p" data-cluster="${i}">Create with ${x.size} tracks</button></div></div>`).join('') || '<div class="empty">No clusters.</div>'}</div>`;
 }
 
-const VIEWS = { home:vHome, inbox:vInbox, dupes:vDupes, cross:vCross, misfile:vMisfile, new:vNew };
+const AXES = ['genre','mood','era','event','djset','context','inbox'];
+function vLists() {
+  const rows = Object.entries(CFG).map(([id,v]) => ({ id, ...v })).sort((a,b) => b.tracks - a.tracks);
+  const cov = tagCoverage();
+  return `<h1>Playlists</h1>
+    <p class="lede">How each of your playlists is treated. Only <b>genre</b> and <b>mood</b> playlists receive suggestions, and a track is only ever compared against playlists on its own axis — so a metal track in a mood playlist is not flagged as misfiled. Guessed from names; correct anything wrong and it is remembered on this device.</p>
+
+    <h2>Genre data</h2>
+    <p class="lede">${cov.have.toLocaleString()} of ${cov.total.toLocaleString()} artists have genre tags (${cov.pct}%).
+      ${cov.pct < 85 ? 'Suggestions will be thin until this improves.' : ''}
+      Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set; add your own free
+      Last.fm key to fill the gaps for artists it doesn\'t cover.</p>
+    <div class="rowbtns" style="margin-bottom:8px">
+      <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(localStorage.getItem('bf_lfm') || '')}">
+      <button class="b" id="saveLfm">Save key</button>
+      <button class="b p" id="enrich" ${localStorage.getItem('bf_lfm') ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button>
+      <a class="b sm" style="text-decoration:none" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
+    </div>
+
+    <h2>Axes</h2>
+    <div class="rows">${rows.map(p => `
+      <div class="row" style="align-items:center">
+        <div class="main"><div class="ttl">${esc(p.name)}</div>
+          <div class="sub mono">${p.tracks} tracks</div></div>
+        <div class="acts">
+          <select data-ax="${esc(p.id)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2)">
+            <input type="checkbox" data-tg="${esc(p.id)}" ${p.target?'checked':''} ${p.tracks < MIN_FOR_TARGET ? 'disabled title="too few tracks to model"' : ''}>
+            receives suggestions</label>
+        </div>
+      </div>`).join('')}</div>`;
+}
+
+function tagCoverage() {
+  const ids = new Set();
+  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id) ids.add(a.id);
+  for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id) ids.add(a.id);
+  const have = [...ids].filter(id => TAGS[id]?.tags?.length).length;
+  return { total: ids.size, have, missing: ids.size - have, pct: ids.size ? Math.round(100*have/ids.size) : 0 };
+}
+
+/** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
+async function enrichMissing() {
+  const key = localStorage.getItem('bf_lfm');
+  if (!key) return toast('Add a Last.fm key first.');
+  const names = new Map();
+  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
+  for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
+  const todo = [...names];
+  if (!todo.length) return toast('Nothing missing.');
+
+  const cached = (await idb.get('tags_extra')) ?? {};
+  let done = 0;
+  for (const [id, name] of todo) {
+    if (cached[id]) { TAGS[id] = cached[id]; done++; continue; }
+    try {
+      const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
+        method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
+      const tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
+      cached[id] = { tags }; TAGS[id] = { tags };
+    } catch { cached[id] = { tags: [] }; TAGS[id] = { tags: [] }; }
+    if (++done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
+    await new Promise(r => setTimeout(r, 200));   // Last.fm's documented ~5/s
+  }
+  await idb.set('tags_extra', cached);
+  R = buildReports(LIB, CFG, TAGS);
+  $('#land').hidden = true; $('#app').hidden = false;
+  toast(`Tags filled for ${todo.length} artists.`);
+  render();
+}
+
+const VIEWS = { home:vHome, inbox:vInbox, dupes:vDupes, cross:vCross, misfile:vMisfile, new:vNew, lists:vLists };
 function render() {
   $('#main').innerHTML = VIEWS[view]();
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
@@ -739,6 +819,7 @@ function render() {
   $('#c-inbox').textContent = R.backlog.length; $('#c-dupes').textContent = R.within.length;
   $('#c-cross').textContent = R.across.length; $('#c-misfile').textContent = R.misfiled.length;
   $('#c-new').textContent = R.clusters.length || '';
+  $('#c-lists').textContent = LIB.playlists.length;
 }
 
 /* ---------- events ---------- */
@@ -775,6 +856,14 @@ document.addEventListener('click', async e => {
   const dp = e.target.closest('[data-dplay]');
   if (dp) { try { toast('Playing on ' + await playTrack(dp.dataset.dplay)); } catch (err) { toast(err.message); } return; }
 
+  if (e.target.id === 'saveLfm') {
+    const v = $('#lfmKey').value.trim();
+    if (v) { localStorage.setItem('bf_lfm', v); toast('Key saved.'); render(); }
+    else { localStorage.removeItem('bf_lfm'); toast('Key cleared.'); render(); }
+    return;
+  }
+  if (e.target.id === 'enrich') return enrichMissing();
+
   const cl = e.target.closest('[data-cluster]');
   if (cl) {
     const i = +cl.dataset.cluster, name = $('#nm'+i).value.trim();
@@ -787,7 +876,27 @@ document.addEventListener('click', async e => {
   }
 });
 
-document.addEventListener('change', e => { if (e.target.id === 'anyPl' && e.target.value) fileCurrent(e.target.value); });
+document.addEventListener('change', async e => {
+  if (e.target.id === 'anyPl' && e.target.value) return fileCurrent(e.target.value);
+
+  // Axis / target edits are per-viewer and persist on this device.
+  const ax = e.target.closest('[data-ax]'), tg = e.target.closest('[data-tg]');
+  if (ax || tg) {
+    const id = (ax ?? tg).dataset.ax ?? tg.dataset.tg;
+    if (ax) {
+      CFG[id].axis = ax.value;
+      if (!['genre','mood'].includes(ax.value)) CFG[id].target = false;
+    } else {
+      CFG[id].target = tg.checked;
+    }
+    const saved = JSON.parse(localStorage.getItem('bf_axes') || '{}');
+    saved[id] = { axis: CFG[id].axis, target: CFG[id].target };
+    localStorage.setItem('bf_axes', JSON.stringify(saved));
+    R = buildReports(LIB, CFG, TAGS);
+    toast('Updated — suggestions recomputed.');
+    render();
+  }
+});
 
 async function fileCurrent(playlistId) {
   const t = R.backlog[S.inboxAt]; if (!t) return;
@@ -838,12 +947,14 @@ async function start(force) {
     LIB = force ? null : await idb.get('library');
     if (!LIB) LIB = await syncLibrary((name, pct) => stage(`Reading ${name}…`, pct));
     stage('Loading genre tags…', 0.96);
-    TAGS = TAGS ?? await fetch('tags.json').then(r => r.json()).then(raw => {
+    if (!TAGS) {
+      const raw = await fetch('tags.json').then(r => r.json());
+      TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
-      const out = {};
-      for (const [id, tags] of Object.entries(raw)) out[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
-      return out;
-    });
+      for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
+      // anything this viewer has fetched for their own artists wins
+      Object.assign(TAGS, (await idb.get('tags_extra')) ?? {});
+    }
     stage('Working out where everything goes…', 0.99);
     CFG = classify(LIB);
     R = buildReports(LIB, CFG, TAGS);
