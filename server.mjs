@@ -117,6 +117,15 @@ const ROUTES = {
     const name = cfg?.playlists?.[b.playlistId]?.name ?? b.playlistId;
     return removeFrom(b.playlistId, name, b.trackIds, b.reason ?? 'removed in review');
   },
+  'POST /api/move':     async b => {
+    // Two logged steps, add first: if the add fails the track is still filed
+    // somewhere rather than lost between playlists.
+    const from = cfg?.playlists?.[b.fromId]?.name ?? b.fromId;
+    const to = cfg?.playlists?.[b.toId]?.name ?? b.toId;
+    await addTo(b.toId, to, [b.trackId], `moved from ${from}`);
+    await removeFrom(b.fromId, from, [b.trackId], `moved to ${to}`);
+    return { from, to };
+  },
   'POST /api/unlike':   async b => {
     await api(`/me/tracks?ids=${b.trackId}`, { method: 'DELETE' });
     log({ op: 'unlike', trackIds: [b.trackId], undoable: true });

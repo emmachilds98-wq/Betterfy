@@ -288,18 +288,28 @@ function vCross() {
 }
 
 function vMisfile() {
-  const m = data.misfile?.misfiled ?? [];
+  const all = data.misfile?.misfiled ?? [];
+  const band = S.mfBand ?? 'high';
+  const counts = { high:0, medium:0, low:0 };
+  for (const x of all) counts[x.confidence] = (counts[x.confidence] ?? 0) + 1;
+  const m = all.filter(x => x.confidence === band);
   return `<h1>Misfiles</h1>
-    <p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b> — a genre playlist is only ever compared with other genre playlists.</p>
+    <p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b> — a genre playlist is only ever compared with other genre playlists. Start with high confidence; the lower bands get increasingly speculative.</p>
+    <div class="rowbtns" style="margin-bottom:14px">
+      ${['high','medium','low'].map(b =>
+        `<button class="b sm ${band===b?'p':''}" data-mfb="${b}">${b} (${counts[b] ?? 0})</button>`).join('')}
+    </div>
     <div class="rows">${m.slice(0,80).map(x => `
       <div class="row">
         <div class="main">
           <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
-          <div class="sub">in <b>${esc(x.current)}</b> · tags: ${esc(x.tags.join(', '))}</div>
+          <div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore*100).toFixed(0)}% fit</span> · ${esc(x.tags.slice(0,4).join(', '))}</div>
         </div>
-        <div class="acts">${x.suggest.slice(0,2).map(s =>
-          `<button class="b sm" data-move="${esc(x.id)}" data-to="${esc(s.name)}">Move to ${esc(s.name)}</button>`).join('')}</div>
-      </div>`).join('') || '<div class="empty">No misfiles found.</div>'}</div>`;
+        <div class="acts">${x.suggest.filter(s => s.id).slice(0,2).map(s =>
+          `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(s.id)}">→ ${esc(s.name)} <span class="mono">${(s.score*100).toFixed(0)}%</span></button>`).join('')}
+          <button class="b sm" data-dplay="${esc(x.id)}">Play</button>
+        </div>
+      </div>`).join('') || '<div class="empty">Nothing in this band.</div>'}</div>`;
 }
 
 function vNew() {
@@ -381,6 +391,19 @@ document.querySelector('aside').onclick = async e => {
 $('#main').addEventListener('click', async e => {
   const go = e.target.closest('[data-go]'); if (go) { view = go.dataset.go; return render(); }
   const cmin = e.target.closest('[data-cmin]'); if (cmin) { S.crossMin = +cmin.dataset.cmin; return render(); }
+  const mfb = e.target.closest('[data-mfb]'); if (mfb) { S.mfBand = mfb.dataset.mfb; return render(); }
+
+  const mv = e.target.closest('[data-mvto]');
+  if (mv) {
+    mv.disabled = true;
+    try {
+      const r = await api('move', { trackId: mv.dataset.mvtr, fromId: mv.dataset.mvfrom, toId: mv.dataset.mvto });
+      const h = await api('history');
+      toast(`Moved to ${r.to}.`, h[0]?.at);
+      mv.closest('.row').remove();
+    } catch (err) { toast('Failed: ' + err.message); mv.disabled = false; }
+    return;
+  }
 
   const step = e.target.closest('[data-step]');
   if (step) { step.disabled = true; step.textContent = 'Working…';

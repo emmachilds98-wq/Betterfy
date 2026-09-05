@@ -36,16 +36,25 @@ for (const p of lib.playlists) {
     const best = rank(t, tags, profiles, idf, { exclude: p.id, top: 3, axis: axisOf(p.id) });
     if (!best.length) continue;
     if (best[0].score > own * MARGIN && best[0].score > 0.25) {
+      // Confidence tiers. The raw margin test produces a long uncertain tail;
+      // banding it keeps the convincing cases from being buried by the rest.
+      const confidence =
+        own < 0.12 && best[0].score > 0.55 ? 'high'
+        : own < 0.25 && best[0].score > 0.40 ? 'medium'
+        : 'low';
       misfiled.push({
         id: t.id, artist: t.artists?.[0]?.name, title: t.name,
-        current: p.name, currentScore: +own.toFixed(3),
-        suggest: best.map(b => ({ name: b.name, score: +b.score.toFixed(3) })),
+        current: p.name, currentPlaylistId: p.id, currentScore: +own.toFixed(3),
+        confidence,
+        suggest: best.map(b => ({ id: b.id, name: b.name, score: +b.score.toFixed(3) })),
         tags: topTags(t, tags, idf),
       });
     }
   }
 }
-misfiled.sort((a, b) => (b.suggest[0].score - b.currentScore) - (a.suggest[0].score - a.currentScore));
+const RANKC = { high: 0, medium: 1, low: 2 };
+misfiled.sort((a, b) => RANKC[a.confidence] - RANKC[b.confidence]
+  || (b.suggest[0].score - b.currentScore) - (a.suggest[0].score - a.currentScore));
 
 // ---------- 2. the unfiled backlog ----------
 const filed = new Set();
@@ -91,7 +100,9 @@ for (const seed of vecs) {
 clusters.sort((a, b) => b.size - a.size);
 
 // ---------- report ----------
-console.log(`=== POSSIBLE MISFILES: ${misfiled.length} ===`);
+const byConf = { high:0, medium:0, low:0 };
+for (const m of misfiled) byConf[m.confidence]++;
+console.log(`=== POSSIBLE MISFILES: ${misfiled.length} — high ${byConf.high}, medium ${byConf.medium}, low ${byConf.low} ===`);
 for (const m of misfiled.slice(0, 20))
   console.log(`  ${m.artist} — ${m.title}\n     in ${m.current} (${m.currentScore})  ->  ${m.suggest.map(s=>`${s.name} (${s.score})`).join(' / ')}\n     tags: ${m.tags.join(', ')}`);
 
