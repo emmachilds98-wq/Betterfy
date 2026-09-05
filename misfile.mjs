@@ -2,7 +2,8 @@
 //   1. Is anything filed somewhere that fits another playlist much better?
 //   2. Where should the 850 unfiled liked songs go — and what has no home at all?
 import { readFileSync, writeFileSync } from 'node:fs';
-import { loadTags, buildProfiles, rank, topTags, trackVec, applyIdf, cosine } from './profile.mjs';
+import { buildProfiles, rank, topTags, trackVec, applyIdf, cosine } from './profile.mjs';
+import { loadTags } from './tagstore.mjs';
 
 const lib = JSON.parse(readFileSync('library.json', 'utf8'));
 const cfg = JSON.parse(readFileSync('playlists.config.json', 'utf8'));

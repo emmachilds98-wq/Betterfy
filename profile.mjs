@@ -5,13 +5,9 @@
 // members. Tags are IDF-weighted across playlists, otherwise "electronic" —
 // which is true of half this library — would dominate every comparison and
 // every playlist would look like every other one.
-import { readFileSync, existsSync } from 'node:fs';
-
-export function loadTags() {
-  if (!existsSync('tags-lastfm.json'))
-    throw new Error('No tags yet — run: node enrich-lastfm.mjs');
-  return JSON.parse(readFileSync('tags-lastfm.json', 'utf8'));
-}
+// No imports: this module is bundled verbatim into the browser build by
+// build-web.mjs, so it must stay free of anything Node-specific.
+// Tag loading lives in tagstore.mjs (Node) and in the web app (fetch).
 
 // Last.fm tags are user-submitted, so they carry personal-collection cruft
 // ("funk_add_to_lidarr_batch_26", "albums i own", "seen live"). These describe

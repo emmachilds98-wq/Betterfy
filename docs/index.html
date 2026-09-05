@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Betterfy</title>
+<meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🎛️</text></svg>">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --ground:#F1F3F6; --surface:#FFF; --surface-2:#F7F8FA; --surface-3:#EDEFF4;
+    --ink:#141821; --ink-2:#4E586A; --ink-3:#798394;
+    --line:#DCE1E8; --line-2:#C7CEDA;
+    --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4;
+    --ok:#1F7F58; --ok-soft:#E3F2EA; --warn:#9A6B0E; --warn-soft:#F8EFD9;
+    --idle:#98A2B3; --r:7px;
+  }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+    --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
+    --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
+    --line:#252B35; --line-2:#333B48;
+    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
+    --ok:#4FBE8B; --ok-soft:#12261D; --warn:#D9A83E; --warn-soft:#2A2113; --idle:#5C6675;
+  }}
+  :root[data-theme="dark"]{
+    --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
+    --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
+    --line:#252B35; --line-2:#333B48;
+    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
+    --ok:#4FBE8B; --ok-soft:#12261D; --warn:#D9A83E; --warn-soft:#2A2113; --idle:#5C6675;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--ground); color:var(--ink); font-size:14px; line-height:1.5;
+       font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased}
+  [hidden]{display:none!important}
+  a{color:var(--accent)}
+
+  /* ---------- landing ---------- */
+  .land{max-width:760px; margin:0 auto; padding:64px 22px 80px}
+  .logo{font-family:Archivo,sans-serif; font-weight:800; font-size:44px; letter-spacing:-.035em; margin:0}
+  .logo span{color:var(--accent)}
+  .tagline{font-size:18px; color:var(--ink-2); margin:8px 0 28px; max-width:52ch; text-wrap:balance}
+  .land h2{font-family:Archivo,sans-serif; font-weight:700; font-size:15px; letter-spacing:.02em; margin:34px 0 10px}
+  .feat{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:12px; margin:26px 0}
+  .feat div{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px}
+  .feat b{display:block; margin-bottom:3px}
+  .feat p{margin:0; color:var(--ink-2); font-size:13px}
+  .note{background:var(--surface-3); border-radius:var(--r); padding:13px 16px; color:var(--ink-2); font-size:13.5px; margin:16px 0}
+  .note b{color:var(--ink)}
+  details{margin-top:12px} summary{cursor:pointer; font-weight:600; font-size:13.5px}
+  .field{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap}
+
+  /* ---------- app chrome ---------- */
+  .app{display:grid; grid-template-columns:212px 1fr; min-height:100vh}
+  aside{background:var(--surface); border-right:1px solid var(--line); padding:20px 0; display:flex; flex-direction:column; gap:2px; position:sticky; top:0; height:100vh; overflow:auto}
+  .brand{font-family:Archivo,sans-serif; font-weight:800; font-size:20px; letter-spacing:-.03em; padding:0 20px 3px}
+  .brand span{color:var(--accent)}
+  .who{padding:0 20px 16px; font-size:11.5px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace; word-break:break-all}
+  .nav{appearance:none; border:0; background:none; font:inherit; text-align:left; cursor:pointer; padding:8px 20px;
+       color:var(--ink-2); display:flex; justify-content:space-between; gap:8px; border-left:2px solid transparent}
+  .nav:hover{background:var(--surface-2); color:var(--ink)}
+  .nav[aria-current="true"]{color:var(--ink); font-weight:600; border-left-color:var(--accent); background:var(--surface-2)}
+  .nav .c{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3); font-weight:500}
+  .railfoot{margin-top:auto; padding:14px 20px 0; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:8px; align-items:flex-start}
+  main{padding:26px 30px 70px; max-width:1080px; min-width:0}
+
+  h1{font-family:Archivo,sans-serif; font-weight:800; font-size:27px; letter-spacing:-.024em; margin:0 0 4px; text-wrap:balance}
+  h2{font-family:Archivo,sans-serif; font-weight:700; font-size:16px; letter-spacing:-.015em; margin:26px 0 10px}
+  .lede{color:var(--ink-2); margin:0 0 20px; max-width:72ch}
+
+  .meters{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:11px}
+  .meter{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:13px 15px; display:flex; flex-direction:column; gap:2px}
+  .meter .n{font-family:"IBM Plex Mono",monospace; font-size:25px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+  .meter .l{font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+  .meter .d{font-size:12px; color:var(--ink-2)}
+  .meter.act .n{color:var(--accent)} .meter.warn .n{color:var(--warn)} .meter.ok .n{color:var(--ok)}
+  .meter.click{cursor:pointer} .meter.click:hover{border-color:var(--line-2)}
+
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:22px 24px}
+  .prog{height:4px; background:var(--surface-3); border-radius:2px; overflow:hidden; margin-bottom:18px}
+  .prog i{display:block; height:100%; background:var(--accent); transition:width .2s}
+  .now .t{font-family:Archivo,sans-serif; font-weight:700; font-size:23px; letter-spacing:-.02em; margin:0; text-wrap:balance}
+  .now .a{color:var(--ink-2); font-size:15px; margin:2px 0 0}
+  .now .m{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); margin-top:6px; display:flex; gap:14px; flex-wrap:wrap}
+  .tagrow{display:flex; gap:5px; flex-wrap:wrap; margin-top:12px}
+  .tag{font-size:11.5px; background:var(--surface-3); color:var(--ink-2); border-radius:20px; padding:2px 10px}
+  .picks{display:flex; flex-direction:column; gap:7px; margin-top:18px}
+  .pick{display:flex; align-items:center; gap:11px; border:1px solid var(--line); border-radius:var(--r); background:var(--surface);
+        padding:10px 13px; cursor:pointer; font:inherit; color:var(--ink); text-align:left; width:100%}
+  .pick:hover{border-color:var(--accent); background:var(--accent-soft)}
+  .pick .k{font-family:"IBM Plex Mono",monospace; font-size:11px; width:19px; height:19px; flex:none; display:grid; place-items:center; border:1px solid var(--line-2); border-radius:4px; color:var(--ink-3)}
+  .pick .nm{font-weight:600} .pick .ax{font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em}
+  .pick .sc{margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3)}
+  .rowbtns{display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; align-items:center}
+
+  button.b{appearance:none; font:inherit; font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
+           background:var(--surface); color:var(--ink); border-radius:6px; padding:8px 13px}
+  button.b:hover{border-color:var(--ink-3)}
+  button.b.p{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+  button.b.sm{font-size:12px; padding:5px 10px; font-weight:500}
+  button.b.big{font-size:15px; padding:12px 22px}
+  button.b:disabled{opacity:.5; cursor:default}
+  input,select{font:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--line-2); border-radius:6px; background:var(--surface); color:var(--ink); max-width:100%}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+  .rows{display:flex; flex-direction:column; gap:7px}
+  .row{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:11px 14px;
+       display:flex; gap:14px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap}
+  .row .main{min-width:0; flex:1} .row .ttl{font-weight:600} .row .sub{color:var(--ink-2); font-size:13px}
+  .row .acts{display:flex; gap:6px; flex-wrap:wrap}
+  .mono{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums}
+  .why{font-size:12.5px; color:var(--ink-2); background:var(--surface-3); border-radius:5px; padding:4px 9px; display:inline-block; margin-top:6px}
+  table.cmp{border-collapse:collapse; font-size:12.5px; margin-top:8px; width:100%}
+  table.cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:0 10px 3px 0}
+  table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
+  table.cmp .differs{color:var(--accent); font-weight:600}
+  .chip{font-size:12px; border:1px solid var(--line); border-radius:20px; padding:3px 10px; background:var(--surface); color:var(--ink-2); cursor:pointer; font-family:inherit}
+  .chip:hover{border-color:var(--line-2); color:var(--ink)}
+  .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
+  .empty{color:var(--ink-3); padding:34px 0; text-align:center}
+  .toast{position:fixed; right:18px; bottom:18px; background:var(--ink); color:var(--ground); padding:10px 15px;
+         border-radius:7px; font-size:13px; display:flex; gap:12px; align-items:center; z-index:20; max-width:420px}
+  .toast button{appearance:none; border:0; background:none; color:var(--accent); font:inherit; font-weight:700; cursor:pointer; padding:0}
+  @media (max-width:820px){ .app{grid-template-columns:1fr} aside{position:static; height:auto; flex-direction:row; overflow-x:auto; align-items:center} .brand,.who,.railfoot{display:none} }
+</style>
+</head>
+<body>
+
+<!-- ============ landing / connect ============ -->
+<div class="land" id="land">
+  <h1 class="logo">Better<span>fy</span></h1>
+  <p class="tagline">Find the duplicates, catch what's filed in the wrong playlist, and empty the liked-songs backlog you've been ignoring since 2021.</p>
+
+  <button class="b p big" id="connect">Connect Spotify</button>
+  <p class="lede" style="margin-top:12px; font-size:13px">Runs entirely in this browser. Your library never reaches a server — there isn't one.</p>
+
+  <div class="feat">
+    <div><b>Duplicates that matter</b><p>Matches on ISRC, so a remaster and a re-issue are caught while a remix or extended mix is left alone.</p></div>
+    <div><b>Misfiles, by axis</b><p>A genre playlist is only compared with other genre playlists, so a track in a mood playlist isn't wrongly flagged.</p></div>
+    <div><b>Backlog inbox</b><p>Work through liked-but-unfiled tracks one at a time, with a suggested home and one key to file it.</p></div>
+    <div><b>Cross-filing left alone</b><p>A track in five playlists is usually deliberate. It's surfaced for you, never removed automatically.</p></div>
+  </div>
+
+  <div class="note">
+    <b>Spotify limits new apps to 25 authorised users.</b> If sign-in fails, either ask the owner of this
+    page to add your Spotify account email under User Management, or use your own app below — takes two minutes
+    and has no limit.
+  </div>
+
+  <details>
+    <summary>Use my own Spotify app</summary>
+    <p class="lede" style="font-size:13px; margin-top:10px">
+      Create an app at <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a>,
+      tick <b>Web API</b>, and add this exact redirect URI:
+    </p>
+    <p class="mono" style="font-size:12.5px; background:var(--surface-3); padding:8px 11px; border-radius:5px; word-break:break-all" id="redirectShow"></p>
+    <p class="lede" style="font-size:13px">Then paste the client ID. It's stored only in this browser. No secret needed — this uses PKCE.</p>
+    <div class="field">
+      <input id="ownId" placeholder="Client ID" size="34" autocomplete="off">
+      <button class="b" id="saveId">Save</button>
+      <button class="b sm" id="clearId">Use default</button>
+    </div>
+  </details>
+
+  <h2>Why it needs Last.fm for genres</h2>
+  <p class="lede" style="font-size:13.5px">
+    Spotify's API no longer returns genre data of any kind — <span class="mono">audio-features</span> is gone and
+    artist objects carry no genres field. Genre signal comes from Last.fm artist tags, precomputed and shipped with
+    this page. <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">Source on GitHub</a>.
+  </p>
+</div>
+
+<!-- ============ app ============ -->
+<div class="app" id="app" hidden>
+  <aside>
+    <div class="brand">Better<span>fy</span></div>
+    <div class="who" id="who"></div>
+    <button class="nav" data-v="home" aria-current="true">Overview</button>
+    <button class="nav" data-v="inbox">Inbox <span class="c" id="c-inbox"></span></button>
+    <button class="nav" data-v="dupes">Duplicates <span class="c" id="c-dupes"></span></button>
+    <button class="nav" data-v="cross">Cross-filed <span class="c" id="c-cross"></span></button>
+    <button class="nav" data-v="misfile">Misfiles <span class="c" id="c-misfile"></span></button>
+    <button class="nav" data-v="new">New playlists <span class="c" id="c-new"></span></button>
+    <div class="railfoot">
+      <button class="b sm" id="resync">Re-sync library</button>
+      <button class="b sm" id="disconnect">Disconnect</button>
+    </div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* ===================== bundled scoring core ===================== */
+/* ---- norm.mjs ---- */
+// Shared track-identity normalisation.
+// Deliberately conservative: remixes, edits, VIPs and live cuts are treated as
+// DIFFERENT records (they are, for DJing), while cosmetic release noise —
+// remaster tags, feat. credits, punctuation, casing — is stripped.
+
+const COSMETIC = /\s*[-(\[]\s*(\d{4}\s+)?(digital\s+)?remaster(ed)?(\s+\d{4})?( version)?\s*[)\]]?\s*$/i;
+const FEAT     = /\s*[\(\[]?\s*(feat\.?|ft\.?|featuring)\s[^)\]]*[\)\]]?/ig;
+const VERSION  = /\s*[-(\[]\s*([^)\]]*(mix|edit|version|remix|dub|vip|instrumental|live|acoustic|bootleg|rework|flip)[^)\]]*)\s*[)\]]?\s*$/i;
+
+const norm = s => (s ?? '').toLowerCase()
+  .replace(COSMETIC, '')
+  .replace(FEAT, '')
+  .replace(/[’'`]/g, '')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
+const versionOf = s => ((s ?? '').match(VERSION)?.[1] ?? '').trim().toLowerCase();
+const baseTitle = s => norm((s ?? '').replace(VERSION, ''));
+
+/** Identity key that survives re-releases but keeps distinct versions apart. */
+const trackKey = t =>
+  norm(t.artists?.[0]?.name ?? '') + ' :: ' + baseTitle(t.name) + ' :: ' + versionOf(t.name);
+
+/** Collapse a track list to one entry per distinct record, preferring the earliest release. */
+function dedupe(tracks) {
+  const best = new Map();
+  for (const t of tracks) {
+    if (!t?.id) continue;
+    const k = trackKey(t);
+    const cur = best.get(k);
+    if (!cur || (t.released ?? '9999') < (cur.released ?? '9999')) best.set(k, t);
+  }
+  return [...best.values()];
+}
+
+/* ---- credits.mjs ---- */
+// Splitting collaboration credits into individual artists.
+// "Shy FX & T Power" and "dwarde & Tim Reaper" must not slip past an ownership
+// test just because the combined string isn't in the library — otherwise a seed
+// artist re-enters discovery as one half of a duo.
+
+
+const SPLIT = /\s*(?:&|\+|,|\/|\bx\b|\bvs\.?\b|\bversus\b|\bfeat\.?\b|\bft\.?\b|\bwith\b|\bpres\.?\b|\bpresents\b)\s*/i;
+
+/** Every individual artist named in a credit string, normalised. */
+const parts = name => String(name ?? '').split(SPLIT).map(norm).filter(Boolean);
+
+/**
+ * True if the credit is already owned — tested as the WHOLE name first, then
+ * each component. Checking only the components would let a band whose own name
+ * contains a separator ("Chase & Status") slip through as unowned.
+ */
+const ownsAnyOf = (name, owned) =>
+  owned.has(norm(name)) || parts(name).some(p => owned.has(p));
+
+/* ---- profile.mjs ---- */
+// Tag-vector model of the library.
+//
+// Spotify supplies no genre data any more, so a track's genre signal is the
+// union of its artists' Last.fm tags. A playlist is the centroid of its
+// members. Tags are IDF-weighted across playlists, otherwise "electronic" —
+// which is true of half this library — would dominate every comparison and
+// every playlist would look like every other one.
+// No imports: this module is bundled verbatim into the browser build by
+// build-web.mjs, so it must stay free of anything Node-specific.
+// Tag loading lives in tagstore.mjs (Node) and in the web app (fetch).
+
+// Last.fm tags are user-submitted, so they carry personal-collection cruft
+// ("funk_add_to_lidarr_batch_26", "albums i own", "seen live"). These describe
+// the tagger, not the music, and skew a centroid badly at low tag counts.
+const JUNK = /_|^seen live$|^albums? i|^my |^favou?rites?$|^\d+$|^under \d|lidarr|spotify|^check out|^to listen|^love(d)?$|^awesome$|^cool$|^good$|^best|^all$/i;
+const usableTag = t => t.length > 1 && t.length < 32 && !JUNK.test(t);
+
+/** Tag weights for one track, averaged over its credited artists. */
+function trackVec(track, tags) {
+  const v = new Map();
+  const artists = (track.artists ?? []).filter(a => tags[a.id]?.tags?.length);
+  if (!artists.length) return v;
+  for (const a of artists)
+    for (const [tag, count] of tags[a.id].tags) {
+      if (!usableTag(tag)) continue;
+      v.set(tag, (v.get(tag) ?? 0) + count / 100 / artists.length);
+    }
+  return v;
+}
+
+const dot = (a, b) => {
+  let s = 0;
+  const [small, big] = a.size < b.size ? [a, b] : [b, a];
+  for (const [k, x] of small) { const y = big.get(k); if (y) s += x * y; }
+  return s;
+};
+const mag = v => Math.sqrt([...v.values()].reduce((s, x) => s + x * x, 0));
+
+function cosine(a, b) {
+  const m = mag(a) * mag(b);
+  return m ? dot(a, b) / m : 0;
+}
+
+/** Scale a vector by IDF so ubiquitous tags stop drowning out distinctive ones. */
+const applyIdf = (v, idf) => {
+  const out = new Map();
+  for (const [k, x] of v) out.set(k, x * (idf.get(k) ?? 1));
+  return out;
+};
+
+/**
+ * Build per-playlist centroids plus the IDF table.
+ * `targets` limits which playlists are modelled as filing destinations.
+ */
+function buildProfiles(lib, tags, targets, axisOf = null) {
+  // document frequency: how many playlists contain each tag at all
+  const df = new Map();
+  const raw = new Map();
+
+  for (const p of lib.playlists) {
+    if (targets && !targets.has(p.id)) continue;
+    const vecs = p.tracks.map(t => trackVec(t, tags)).filter(v => v.size);
+    if (!vecs.length) continue;
+
+    const c = new Map();
+    for (const v of vecs) for (const [k, x] of v) c.set(k, (c.get(k) ?? 0) + x / vecs.length);
+    raw.set(p.id, { name: p.name, axis: axisOf ? axisOf(p.id) : null, vec: c, n: vecs.length, total: p.tracks.length });
+    for (const k of c.keys()) df.set(k, (df.get(k) ?? 0) + 1);
+  }
+
+  const N = raw.size || 1;
+  const idf = new Map();
+  for (const [k, d] of df) idf.set(k, Math.log(1 + N / d));
+
+  const profiles = new Map();
+  for (const [id, p] of raw) profiles.set(id, { ...p, vec: applyIdf(p.vec, idf) });
+  return { profiles, idf };
+}
+
+/** Rank playlists by fit for one track. */
+function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis = null } = {}) {
+  const v = applyIdf(trackVec(track, tags), idf);
+  if (!v.size) return [];
+  const out = [];
+  for (const [id, p] of profiles) {
+    if (id === exclude) continue;
+    // Only compare like with like: a genre playlist competes with genre
+    // playlists, a mood playlist with mood playlists. Comparing across axes
+    // flags every track in a mood playlist as misfiled, which it is not.
+    if (axis && p.axis && p.axis !== axis) continue;
+    const s = cosine(v, p.vec);
+    if (s > 0) out.push({ id, name: p.name, score: s });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, top);
+}
+
+/** The strongest tags on a track, for explaining a suggestion. */
+function topTags(track, tags, idf, n = 5) {
+  const v = applyIdf(trackVec(track, tags), idf);
+  return [...v].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
+}
+
+/* =============================================================== */
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mmss = ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`;
+
+const DEFAULT_CLIENT_ID = '7e79f50acaf24fb6ae40cb339bdde382';
+const REDIRECT = location.origin + location.pathname;
+const SCOPES = ['playlist-read-private','playlist-read-collaborative','playlist-modify-private',
+  'playlist-modify-public','user-library-read','user-library-modify','user-top-read',
+  'user-read-recently-played','user-read-private','user-read-playback-state','user-modify-playback-state'].join(' ');
+
+const clientId = () => localStorage.getItem('bf_client_id') || DEFAULT_CLIENT_ID;
+
+/* ---------- PKCE ---------- */
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf)))
+  .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+
+async function beginAuth() {
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+  sessionStorage.setItem('bf_verifier', verifier);
+  const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
+    response_type:'code', client_id:clientId(), scope:SCOPES, redirect_uri:REDIRECT,
+    code_challenge_method:'S256', code_challenge:challenge,
+  });
+}
+
+async function exchange(code) {
+  const verifier = sessionStorage.getItem('bf_verifier');
+  const r = await fetch('https://accounts.spotify.com/api/token', {
+    method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams({ grant_type:'authorization_code', code, redirect_uri:REDIRECT,
+                               client_id:clientId(), code_verifier:verifier }),
+  });
+  const t = await r.json();
+  if (!r.ok) throw new Error(t.error_description || t.error || 'token exchange failed');
+  t.expires_at = Date.now() + t.expires_in * 1000;
+  localStorage.setItem('bf_tok', JSON.stringify(t));
+  return t;
+}
+
+async function token() {
+  const t = JSON.parse(localStorage.getItem('bf_tok') || 'null');
+  if (!t) return null;
+  if (Date.now() < t.expires_at - 60000) return t.access_token;
+  const r = await fetch('https://accounts.spotify.com/api/token', {
+    method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams({ grant_type:'refresh_token', refresh_token:t.refresh_token, client_id:clientId() }),
+  });
+  const f = await r.json();
+  if (!r.ok) { localStorage.removeItem('bf_tok'); return null; }
+  const merged = { ...t, ...f, expires_at: Date.now() + f.expires_in*1000 };
+  localStorage.setItem('bf_tok', JSON.stringify(merged));
+  return merged.access_token;
+}
+
+/* ---------- Spotify ---------- */
+async function sp(path, opts = {}) {
+  const url = path.startsWith('http') ? path : 'https://api.spotify.com/v1' + path;
+  for (let i = 0; ; i++) {
+    const res = await fetch(url, { ...opts, headers:{ authorization:'Bearer ' + await token(),
+      'content-type':'application/json', ...opts.headers } });
+    if (res.status === 429 && i < 5) { await new Promise(r => setTimeout(r, (+res.headers.get('retry-after')||2)*1000)); continue; }
+    if (res.status === 204) return null;
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(`${res.status} ${body?.error?.message ?? ''}`);
+    return body;
+  }
+}
+async function paged(path, key) {
+  const out = []; let page = await sp(path);
+  while (page) { const box = key ? page[key] : page; out.push(...(box.items ?? [])); if (!box.next) break; page = await sp(box.next); }
+  return out;
+}
+
+/* ---------- library cache (IndexedDB) ---------- */
+const idb = {
+  open: () => new Promise((ok, bad) => { const r = indexedDB.open('betterfy', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => ok(r.result); r.onerror = () => bad(r.error); }),
+  async get(k){ const d = await this.open(); return new Promise(ok => { const r = d.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); }); },
+  async set(k,v){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete = () => ok(); }); },
+  async clear(){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').clear(); tx.oncomplete = () => ok(); }); },
+};
+
+const FIELDS = 'next,items(added_at,item(id,name,popularity,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type),artists(id,name)))';
+const shapeTrack = t => t && ({
+  id:t.id, name:t.name, artists:(t.artists??[]).map(a=>({id:a.id,name:a.name})),
+  album:t.album?.name, albumType:t.album?.album_type, released:t.album?.release_date,
+  duration_ms:t.duration_ms, isrc:t.external_ids?.isrc, popularity:t.popularity,
+});
+
+async function syncLibrary(onProgress) {
+  const me = await sp('/me');
+  const pls = await paged('/me/playlists?limit=50');
+  const owned = pls.filter(p => p.owner?.id === me.id);
+  const playlists = [];
+  for (const [i, p] of owned.entries()) {
+    onProgress?.(`${p.name}`, i / (owned.length + 1));
+    let items = [];
+    try { items = await paged(`/playlists/${p.id}/items?limit=100&fields=${encodeURIComponent(FIELDS)}`); } catch {}
+    playlists.push({ id:p.id, name:p.name, tracks: items.filter(x => x.item?.id)
+      .map(x => ({ added_at:x.added_at, ...shapeTrack(x.item) })) });
+  }
+  onProgress?.('liked songs', 0.95);
+  const saved = await paged('/me/tracks?limit=50');
+  const lib = { captured_at:new Date().toISOString(), user:{ id:me.id, name:me.display_name },
+                playlists, liked: saved.map(i => ({ added_at:i.added_at, ...shapeTrack(i.track ?? i.item) })) };
+  await idb.set('library', lib);
+  return lib;
+}
+
+/* ---------- axis classification (mirrors axes.mjs) ---------- */
+const EVENT = /\b(drumsheds|fabric|ministry|printworks|warehouse|festival)\b|\d{2}\.\d{2}\s*$/i;
+const DJSET = /^(mix|side|set)(\s*\d+)?$|rekordbox|dj'?ing for|extended .*mix/i;
+const ERA   = /\b(90s|00s|80s|70s|nostalgia|old but gold|retro)\b|^\d{4}$/i;
+const MOOD  = /(chill|mellow|wasted|vibin|groove|sleep|late night|hi energy|high energy|early night|relax|calm|hype|sad|happy)/i;
+const MIN_FOR_TARGET = 12;
+
+function classify(lib) {
+  const cfg = {};
+  for (const p of lib.playlists) {
+    const n = p.name;
+    const axis = EVENT.test(n) ? 'event' : DJSET.test(n) ? 'djset' : ERA.test(n) ? 'era' : MOOD.test(n) ? 'mood' : 'genre';
+    cfg[p.id] = { name:n, axis, tracks:p.tracks.length,
+                  target: (axis === 'genre' || axis === 'mood') && p.tracks.length >= MIN_FOR_TARGET };
+  }
+  const saved = JSON.parse(localStorage.getItem('bf_axes') || '{}');
+  for (const [id, v] of Object.entries(saved)) if (cfg[id]) Object.assign(cfg[id], v);
+  return cfg;
+}
+
+/* ---------- reports (mirrors dupes.mjs / misfile.mjs) ---------- */
+function describe(rows) {
+  const isrcs = new Set(rows.map(r => r.isrc).filter(Boolean));
+  const durs = rows.map(r => r.duration_ms).filter(x => x != null);
+  const spread = durs.length > 1 ? Math.max(...durs) - Math.min(...durs) : 0;
+  const types = new Set(rows.map(r => r.albumType).filter(Boolean));
+  if (isrcs.size === 1 && rows.every(r => r.isrc))
+    return { verdict:'same-recording', why: types.size > 1
+      ? `Identical recording, issued on a ${[...types].join(' and a ')}.` : 'Identical recording on two releases.' };
+  if (spread > 20000) return { verdict:'different-length', why:`Lengths differ by ${mmss(spread)} — likely an edit versus a longer cut.` };
+  if (isrcs.size > 1) return { verdict:'different-recording', why: spread > 3000
+    ? `Different recordings, ${mmss(spread)} apart in length.` : 'Different recordings of near-identical length — usually a remaster or re-issue.' };
+  return { verdict:'unknown', why:'Same title; no identifier to separate them.' };
+}
+
+function buildReports(lib, cfg, tags) {
+  const shape = t => ({ id:t.id, album:t.album, albumType:t.albumType, released:t.released,
+                        duration_ms:t.duration_ms, dur:mmss(t.duration_ms), isrc:t.isrc, popularity:t.popularity, name:t.name });
+  const within = [], where = new Map(), meta = new Map();
+  for (const p of lib.playlists) {
+    const groups = new Map();
+    for (const t of p.tracks) {
+      if (!t?.id) continue;
+      const k = trackKey(t);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(t);
+      meta.set(t.id, t);
+      if (!where.has(k)) where.set(k, []);
+      where.get(k).push({ playlist:p.name, playlistId:p.id, ...shape(t) });
+    }
+    for (const [, rows] of groups) {
+      if (rows.length < 2) continue;
+      const shaped = rows.map(shape);
+      const d = describe(shaped);
+      const keep = [...shaped].sort((a,b) => (b.popularity??0)-(a.popularity??0))[0];
+      within.push({ playlist:p.name, playlistId:p.id, artist:rows[0].artists?.[0]?.name, title:rows[0].name,
+        verdict:d.verdict, why:d.why, keep, options:shaped, drop:shaped.filter(r => r.id !== keep.id) });
+    }
+  }
+  const across = [...where.entries()].filter(([,r]) => new Set(r.map(x=>x.playlist)).size > 1).map(([,rows]) => {
+    const t = meta.get(rows[0].id);
+    const byPl = [...new Map(rows.map(r => [r.playlist, r])).values()];
+    return { artist:t.artists?.[0]?.name, title:t.name,
+      placements: byPl.map(r => ({ playlist:r.playlist, playlistId:r.playlistId, axis:cfg[r.playlistId]?.axis ?? 'other',
+                                   trackId:r.id, dur:r.dur })),
+      mixedReleases: new Set(rows.map(r=>r.id)).size > 1,
+      mixedRecordings: new Set(rows.map(r=>r.isrc).filter(Boolean)).size > 1 };
+  }).sort((a,b) => b.placements.length - a.placements.length);
+
+  const targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id));
+  const axisOf = id => cfg[id]?.axis ?? null;
+  const { profiles, idf } = buildProfiles(lib, tags, targets, axisOf);
+
+  const misfiled = [];
+  for (const p of lib.playlists) {
+    if (!targets.has(p.id)) continue;
+    const home = profiles.get(p.id); if (!home) continue;
+    for (const t of p.tracks) {
+      const v = applyIdf(trackVec(t, tags), idf); if (v.size < 3) continue;
+      const own = cosine(v, home.vec);
+      const best = rank(t, tags, profiles, idf, { exclude:p.id, top:3, axis:axisOf(p.id) });
+      if (!best.length) continue;
+      if (best[0].score > own * 1.6 && best[0].score > 0.25) {
+        const confidence = own < 0.12 && best[0].score > 0.55 ? 'high'
+                         : own < 0.25 && best[0].score > 0.40 ? 'medium' : 'low';
+        misfiled.push({ id:t.id, artist:t.artists?.[0]?.name, title:t.name, current:p.name,
+          currentPlaylistId:p.id, currentScore:+own.toFixed(3), confidence,
+          suggest: best.map(b => ({ id:b.id, name:b.name, score:+b.score.toFixed(3) })), tags: topTags(t, tags, idf) });
+      }
+    }
+  }
+  const RK = { high:0, medium:1, low:2 };
+  misfiled.sort((a,b) => RK[a.confidence]-RK[b.confidence] || (b.suggest[0].score-b.currentScore)-(a.suggest[0].score-a.currentScore));
+
+  const filed = new Set();
+  for (const p of lib.playlists) for (const t of p.tracks) filed.add(t.id);
+  const unfiled = lib.liked.filter(t => t?.id && !filed.has(t.id));
+  const backlog = unfiled.map(t => ({ id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
+    album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms,
+    tags: topTags(t, tags, idf),
+    suggest: rank(t, tags, profiles, idf, { top:3 }).map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null })) }))
+    .sort((a,b) => (b.added??'').localeCompare(a.added??''));
+
+  // clusters with no home
+  const homeless = backlog.filter(b => !b.suggest.length || b.suggest[0].score < 0.30);
+  const vecs = homeless.map(h => ({ h, v: applyIdf(trackVec(unfiled.find(t=>t.id===h.id) ?? {}, tags), idf) })).filter(x => x.v.size >= 3);
+  const clusters = []; const used = new Set();
+  for (const seed of vecs) {
+    if (used.has(seed.h.id)) continue;
+    const members = vecs.filter(x => !used.has(x.h.id) && cosine(seed.v, x.v) > 0.45);
+    if (members.length >= 6) {
+      members.forEach(m => used.add(m.h.id));
+      const tally = new Map();
+      for (const m of members) for (const tg of m.h.tags) tally.set(tg, (tally.get(tg)??0)+1);
+      clusters.push({ size:members.length, ids:members.map(m=>m.h.id),
+        tags:[...tally].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k])=>k),
+        tracks:members.slice(0,8).map(m => `${m.h.artist} — ${m.h.title}`) });
+    }
+  }
+  clusters.sort((a,b) => b.size - a.size);
+  return { within, across, misfiled, backlog, clusters };
+}
+
+/* ===================== UI ===================== */
+let LIB = null, CFG = null, TAGS = null, R = null, view = 'home';
+const S = { inboxAt:0, crossMin:3, mfBand:'high' };
+let toastT;
+function toast(msg, undoFn) {
+  const el = $('#toast');
+  el.innerHTML = esc(msg) + (undoFn ? ' <button id="undoBtn">Undo</button>' : '');
+  el.hidden = false;
+  if (undoFn) $('#undoBtn').onclick = async () => { try { await undoFn(); toast('Restored.'); } catch(e){ toast('Undo failed: '+e.message); } };
+  clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, undoFn ? 9000 : 3200);
+}
+
+const chunk = (a,n) => Array.from({length:Math.ceil(a.length/n)},(_,i)=>a.slice(i*n,i*n+n));
+async function plCall(id, method, body) {
+  for (const seg of ['items','tracks']) {
+    try { return await sp(`/playlists/${id}/${seg}`, { method, body:JSON.stringify(body) }); }
+    catch (e) { if (!/^40[34]/.test(e.message) || seg === 'tracks') throw e; }
+  }
+}
+const addTracks = (id, ids) => Promise.all(chunk(ids,100).map(c => plCall(id,'POST',{ uris:c.map(x=>'spotify:track:'+x) })));
+const delTracks = (id, ids) => plCall(id,'DELETE',{ tracks: ids.map(x=>({ uri:'spotify:track:'+x })) });
+
+async function playTrack(id) {
+  const d = await sp('/me/player/devices');
+  const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
+  if (!dev) throw new Error('No open Spotify device — open Spotify and try again.');
+  await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body:JSON.stringify({ uris:['spotify:track:'+id] }) });
+  return dev.name;
+}
+
+function vHome() {
+  const exact = R.within.filter(x=>x.verdict==='same-recording').length;
+  const clash = R.within.length - exact;
+  const uniq = new Set(); let placements = 0;
+  for (const p of LIB.playlists) for (const t of p.tracks) { uniq.add(t.id); placements++; }
+  const m = [
+    ['Unfiled', R.backlog.length, 'Liked but in no playlist','act','inbox'],
+    ['Exact repeats', exact, 'Same recording twice in one playlist','act','dupes'],
+    ['Version clashes', clash, 'Two different cuts, one playlist','warn','dupes'],
+    ['Misfiles', R.misfiled.length, 'Fit another playlist far better','warn','misfile'],
+    ['Cross-filed', R.across.length, 'In more than one playlist','','cross'],
+    ['New playlists', R.clusters.length, 'Clusters with no home','','new'],
+    ['Unique tracks', uniq.size, `Across ${LIB.playlists.length} playlists`,'ok',null],
+    ['Placements', placements, 'Total filings','',null],
+  ];
+  return `<h1>Overview</h1>
+    <p class="lede">Synced ${esc((LIB.captured_at??'').slice(0,10))}. Everything is computed in this browser; nothing changes your Spotify library until you act on it.</p>
+    <div class="meters">${m.map(([l,n,d,c,go]) =>
+      `<div class="meter ${c} ${go?'click':''}" ${go?`data-go="${go}"`:''}><span class="l">${esc(l)}</span><span class="n">${n.toLocaleString()}</span><span class="d">${esc(d)}</span></div>`).join('')}</div>`;
+}
+
+function vInbox() {
+  const rows = R.backlog;
+  if (!rows.length) return `<h1>Inbox</h1><div class="empty">Nothing unfiled.</div>`;
+  const i = Math.min(S.inboxAt, rows.length-1), t = rows[i];
+  const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
+  return `<h1>Inbox</h1>
+    <p class="lede">${rows.length.toLocaleString()} liked tracks sit in no playlist. Keys: <b>1–3</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.</p>
+    <div class="card">
+      <div class="prog"><i style="width:${(i/rows.length*100).toFixed(2)}%"></i></div>
+      <div class="now">
+        <p class="t">${esc(t.title)}</p><p class="a">${esc(t.artist)}</p>
+        <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span><span>liked ${esc(t.added)}</span></div>
+        ${t.tags.length?`<div class="tagrow">${t.tags.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}</div>`:''}
+      </div>
+      ${t.suggest.length ? `<div class="picks">${t.suggest.slice(0,3).map((s,n)=>
+        `<button class="pick" data-file="${esc(s.id)}"><span class="k">${n+1}</span><span class="nm">${esc(s.name)}</span>
+         <span class="ax">${esc(s.axis??'')}</span><span class="sc">${(s.score*100).toFixed(0)}% fit</span></button>`).join('')}</div>`
+        : `<p class="why">No confident suggestion — no tags for this artist, or it fits nothing you have.</p>`}
+      <div class="rowbtns">
+        <button class="b p" data-act="play">Play (P)</button>
+        <button class="b" data-act="skip">Skip (S)</button>
+        <button class="b" data-act="unlike">Unlike (U)</button>
+        <select id="anyPl"><option value="">File somewhere else…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+      </div>
+      <div class="m" style="margin-top:14px">${i+1} of ${rows.length}</div>
+    </div>`;
+}
+
+function cmpTable(o) {
+  const d = f => new Set(o.map(x=>x[f])).size > 1;
+  const [dD,dT,dR,dI] = ['dur','albumType','released','isrc'].map(d);
+  return `<table class="cmp"><thead><tr><th>Length</th><th>Release</th><th>Date</th><th>ISRC</th><th>Album</th></tr></thead><tbody>
+    ${o.map(x=>`<tr><td class="mono ${dD?'differs':''}">${esc(x.dur)}</td><td class="${dT?'differs':''}">${esc(x.albumType??'—')}</td>
+    <td class="mono ${dR?'differs':''}">${esc((x.released??'').slice(0,10))}</td><td class="mono ${dI?'differs':''}">${esc(x.isrc??'—')}</td>
+    <td>${esc(x.album)}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function vDupes() {
+  const exact = R.within.filter(x=>x.verdict==='same-recording');
+  const clash = R.within.filter(x=>x.verdict!=='same-recording');
+  const sec = (title,list,note) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:13px">${list.length}</span></h2>
+    <p class="lede">${note}</p>
+    <div class="rows">${list.slice(0,60).map(c=>`<div class="row"><div class="main">
+      <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist??'')}</span></div>
+      <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
+    </div><div class="acts">${c.options.map(o=>
+      `<button class="b sm" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z=>z.id!==o.id).map(z=>z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
+    </div></div>`).join('') || '<div class="empty">None.</div>'}</div>`;
+  return `<h1>Duplicates</h1>
+    <p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — see Cross-filed.</p>
+    ${sec('Same recording', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.')}
+    ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.')}`;
+}
+
+function vCross() {
+  const a = R.across.filter(x => x.placements.length >= S.crossMin);
+  return `<h1>Cross-filed</h1>
+    <p class="lede">Tracks in several playlists. Usually deliberate — nothing is preselected. Click a playlist to remove the track from just that one.</p>
+    <div class="rowbtns" style="margin-bottom:14px">${[2,3,4,5,6].map(n=>`<button class="b sm ${S.crossMin===n?'p':''}" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
+    <div class="rows">${a.slice(0,80).map(c=>`<div class="row"><div class="main">
+      <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist??'')}</span></div>
+      ${c.mixedRecordings?'<div class="why">Different recordings across these playlists.</div>':c.mixedReleases?'<div class="why">Same song, different pressings.</div>':''}
+      <div class="acts" style="margin-top:8px">${c.placements.map(p=>
+        `<button class="chip" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
+    </div></div>`).join('') || '<div class="empty">Nothing at this threshold.</div>'}</div>`;
+}
+
+function vMisfile() {
+  const counts = { high:0, medium:0, low:0 };
+  for (const x of R.misfiled) counts[x.confidence]++;
+  const m = R.misfiled.filter(x => x.confidence === S.mfBand);
+  return `<h1>Misfiles</h1>
+    <p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Start with high confidence; lower bands get speculative.</p>
+    <div class="rowbtns" style="margin-bottom:14px">${['high','medium','low'].map(b=>`<button class="b sm ${S.mfBand===b?'p':''}" data-mfb="${b}">${b} (${counts[b]})</button>`).join('')}</div>
+    <div class="rows">${m.slice(0,80).map(x=>`<div class="row"><div class="main">
+      <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist??'')}</span></div>
+      <div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore*100).toFixed(0)}% fit</span> · ${esc(x.tags.slice(0,4).join(', '))}</div>
+    </div><div class="acts">${x.suggest.filter(s=>s.id).slice(0,2).map(s=>
+      `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(s.id)}">→ ${esc(s.name)} <span class="mono">${(s.score*100).toFixed(0)}%</span></button>`).join('')}
+      <button class="b sm" data-dplay="${esc(x.id)}">Play</button></div></div>`).join('') || '<div class="empty">Nothing in this band.</div>'}</div>`;
+}
+
+function vNew() {
+  return `<h1>New playlists</h1>
+    <p class="lede">Groups in your unfiled backlog that fit none of your existing playlists — categories you may be missing.</p>
+    <div class="rows">${R.clusters.map((x,i)=>`<div class="row"><div class="main">
+      <div class="ttl">${x.size} tracks · ${esc(x.tags.slice(0,4).join(', '))}</div>
+      <div class="sub">${esc(x.tracks.slice(0,4).join(' · '))}</div>
+    </div><div class="acts"><input id="nm${i}" placeholder="Playlist name" value="${esc(x.tags[0]??'')}">
+      <button class="b sm p" data-cluster="${i}">Create with ${x.size} tracks</button></div></div>`).join('') || '<div class="empty">No clusters.</div>'}</div>`;
+}
+
+const VIEWS = { home:vHome, inbox:vInbox, dupes:vDupes, cross:vCross, misfile:vMisfile, new:vNew };
+function render() {
+  $('#main').innerHTML = VIEWS[view]();
+  document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
+  const exact = R.within.filter(x=>x.verdict==='same-recording').length;
+  $('#c-inbox').textContent = R.backlog.length; $('#c-dupes').textContent = R.within.length;
+  $('#c-cross').textContent = R.across.length; $('#c-misfile').textContent = R.misfiled.length;
+  $('#c-new').textContent = R.clusters.length || '';
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', async e => {
+  const nav = e.target.closest('.nav'); if (nav) { view = nav.dataset.v; return render(); }
+  const go = e.target.closest('[data-go]'); if (go) { view = go.dataset.go; return render(); }
+  const cmin = e.target.closest('[data-cmin]'); if (cmin) { S.crossMin = +cmin.dataset.cmin; return render(); }
+  const mfb = e.target.closest('[data-mfb]'); if (mfb) { S.mfBand = mfb.dataset.mfb; return render(); }
+
+  const file = e.target.closest('[data-file]'); if (file) return fileCurrent(file.dataset.file);
+  const act = e.target.closest('[data-act]'); if (act) return inboxAct(act.dataset.act);
+
+  const keep = e.target.closest('[data-keep]');
+  if (keep) {
+    const drop = keep.dataset.drop.split(',').filter(Boolean), pl = keep.dataset.pl;
+    try { await delTracks(pl, drop);
+      toast(`Removed ${drop.length}.`, () => addTracks(pl, drop));
+      R.within = R.within.filter(c => !(c.playlistId===pl && c.options.some(o=>drop.includes(o.id)))); render(); }
+    catch (err) { toast('Failed: '+err.message); }
+    return;
+  }
+  const x = e.target.closest('[data-xpl]');
+  if (x) { try { await delTracks(x.dataset.xpl, [x.dataset.xtr]);
+      x.classList.add('cut'); toast('Removed from that playlist.', () => addTracks(x.dataset.xpl, [x.dataset.xtr])); }
+    catch (err) { toast('Failed: '+err.message); } return; }
+
+  const mv = e.target.closest('[data-mvto]');
+  if (mv) { mv.disabled = true;
+    try { await addTracks(mv.dataset.mvto, [mv.dataset.mvtr]); await delTracks(mv.dataset.mvfrom, [mv.dataset.mvtr]);
+      toast('Moved.', async () => { await addTracks(mv.dataset.mvfrom,[mv.dataset.mvtr]); await delTracks(mv.dataset.mvto,[mv.dataset.mvtr]); });
+      mv.closest('.row').remove(); }
+    catch (err) { toast('Failed: '+err.message); mv.disabled = false; } return; }
+
+  const dp = e.target.closest('[data-dplay]');
+  if (dp) { try { toast('Playing on ' + await playTrack(dp.dataset.dplay)); } catch (err) { toast(err.message); } return; }
+
+  const cl = e.target.closest('[data-cluster]');
+  if (cl) {
+    const i = +cl.dataset.cluster, name = $('#nm'+i).value.trim();
+    if (!name) return toast('Give it a name first.');
+    try { const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
+      await addTracks(pl.id, R.clusters[i].ids);
+      toast(`Created “${name}” with ${R.clusters[i].ids.length} tracks.`);
+      R.clusters.splice(i,1); render(); }
+    catch (err) { toast('Failed: '+err.message); }
+  }
+});
+
+document.addEventListener('change', e => { if (e.target.id === 'anyPl' && e.target.value) fileCurrent(e.target.value); });
+
+async function fileCurrent(playlistId) {
+  const t = R.backlog[S.inboxAt]; if (!t) return;
+  try { await addTracks(playlistId, [t.id]);
+    toast(`Filed “${t.title}”.`, () => delTracks(playlistId, [t.id]));
+    R.backlog.splice(S.inboxAt, 1); render(); }
+  catch (e) { toast('Failed: '+e.message); }
+}
+async function inboxAct(a) {
+  const t = R.backlog[S.inboxAt]; if (!t) return;
+  if (a === 'play') { try { toast('Playing on ' + await playTrack(t.id)); } catch(e){ toast(e.message); } return; }
+  if (a === 'skip') { S.inboxAt = Math.min(S.inboxAt+1, R.backlog.length-1); return render(); }
+  if (a === 'unlike') { try { await sp('/me/tracks?ids='+t.id, { method:'DELETE' });
+      toast(`Unliked “${t.title}”.`, () => sp('/me/tracks?ids='+t.id, { method:'PUT' }));
+      R.backlog.splice(S.inboxAt,1); render(); } catch(e){ toast('Failed: '+e.message); } }
+}
+document.addEventListener('keydown', e => {
+  if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
+  const t = R.backlog[S.inboxAt]; if (!t) return;
+  if (['1','2','3'].includes(e.key)) { const s = t.suggest[+e.key-1]; if (s) fileCurrent(s.id); }
+  if (e.key.toLowerCase()==='p') inboxAct('play');
+  if (e.key.toLowerCase()==='s') inboxAct('skip');
+  if (e.key.toLowerCase()==='u') inboxAct('unlike');
+});
+
+/* ---------- boot ---------- */
+$('#redirectShow').textContent = REDIRECT;
+$('#ownId').value = localStorage.getItem('bf_client_id') || '';
+$('#connect').onclick = () => beginAuth();
+$('#saveId').onclick = () => { const v = $('#ownId').value.trim();
+  if (v) { localStorage.setItem('bf_client_id', v); toast('Saved. Now connect.'); } };
+$('#clearId').onclick = () => { localStorage.removeItem('bf_client_id'); $('#ownId').value=''; toast('Using the default app.'); };
+$('#disconnect').onclick = async () => { localStorage.removeItem('bf_tok'); await idb.clear(); location.href = REDIRECT; };
+$('#resync').onclick = () => start(true);
+
+function stage(msg, pct) {
+  $('#app').hidden = true; $('#land').hidden = false;
+  $('#land').innerHTML = `<h1 class="logo">Better<span>fy</span></h1>
+    <p class="tagline">${esc(msg)}</p>
+    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>`;
+}
+
+async function start(force) {
+  const t = await token();
+  if (!t) { $('#land').hidden = false; $('#app').hidden = true; return; }
+  try {
+    stage('Reading your library…', 0.02);
+    LIB = force ? null : await idb.get('library');
+    if (!LIB) LIB = await syncLibrary((name, pct) => stage(`Reading ${name}…`, pct));
+    stage('Loading genre tags…', 0.96);
+    TAGS = TAGS ?? await fetch('tags.json').then(r => r.json()).then(raw => {
+      // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
+      const out = {};
+      for (const [id, tags] of Object.entries(raw)) out[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
+      return out;
+    });
+    stage('Working out where everything goes…', 0.99);
+    CFG = classify(LIB);
+    R = buildReports(LIB, CFG, TAGS);
+    $('#land').hidden = true; $('#app').hidden = false;
+    $('#who').textContent = LIB.user?.name ?? LIB.user?.id ?? '';
+    view = 'home'; S.inboxAt = 0; render();
+  } catch (e) {
+    $('#land').hidden = false; $('#app').hidden = true;
+    $('#land').innerHTML = `<h1 class="logo">Better<span>fy</span></h1>
+      <p class="tagline">${esc(e.message)}</p>
+      <button class="b p" onclick="localStorage.removeItem('bf_tok');location.href='${REDIRECT}'">Start over</button>`;
+  }
+}
+
+(async () => {
+  const q = new URLSearchParams(location.search);
+  if (q.get('error')) { $('#land').hidden = false; toast('Spotify said: ' + q.get('error')); history.replaceState({},'',REDIRECT); return; }
+  if (q.get('code')) {
+    try { await exchange(q.get('code')); history.replaceState({},'',REDIRECT); }
+    catch (e) { $('#land').hidden = false; toast(e.message); return; }
+  }
+  start(false);
+})();
+</script>
+</body>
+</html>
