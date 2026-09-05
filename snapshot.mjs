@@ -13,7 +13,7 @@ const previous = existsSync('library.json')
   ? JSON.parse(readFileSync('library.json', 'utf8')) : null;
 const before = new Map((previous?.playlists ?? []).map(p => [p.id, p]));
 
-const FIELDS = 'next,items(added_at,item(id,name,popularity,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type,total_tracks),artists(id,name)))';
+const FIELDS = 'next,items(added_at,item(id,name,popularity,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type,total_tracks,images),artists(id,name)))';
 
 const track = t => t && ({
   id: t.id,
@@ -25,6 +25,7 @@ const track = t => t && ({
   albumTracks: t.album?.total_tracks,
   trackNo: t.track_number,
   released: t.album?.release_date,
+  art: t.album?.images?.at(-1)?.url,       // smallest image; the rows show it at 40px
   duration_ms: t.duration_ms,
   explicit: t.explicit,
   isrc: t.external_ids?.isrc,              // the recording's global identity

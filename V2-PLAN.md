@@ -2,9 +2,10 @@
 
 Written against `73f3d97` (v1.0). Line references are to that commit.
 
-> **Progress.** The v2.0 slice is done, plus search-and-add from v2.1 —
-> incremental sync, live local state, transactional undo, the request guard,
-> and a test suite with CI. What is left of v2.1–v2.3 is unchanged below.
+> **Progress.** The v2.0 slice is done, plus search-and-add from v2.1 and most
+> of the design brief in §7 — incremental sync, live local state, transactional
+> undo, the request guard, a test suite with CI, and a rebuilt interface on a
+> shared stylesheet. What is left of v2.1–v2.3 is unchanged below.
 > Items marked **✔ done** were shipped after this plan was written.
 
 ---
@@ -258,27 +259,29 @@ look like a filing desk, not a player. That's the product's whole posture.
 1. **No hierarchy of "what now."** The Overview is eight equal-weight metric
    tiles. A manager should open on the single next action — *"412 unfiled,
    about 35 minutes"* — with the rest secondary.
-2. **Four interaction models for one activity.** Duplicates uses a comparison
+2. **✔ partly done — Four interaction models for one activity.** One row shape,
+   one action grammar and one confidence display now run across all four; merging
+   them into a single filtered queue is still v2.2. Duplicates uses a comparison
    table with per-option buttons; Cross-filed uses strikethrough chips; Misfiles
    uses inline move buttons; Inbox uses a large card with numbered keys. Unify on
    one card and one action grammar.
-3. **Density is wrong for triage.** Hundreds of items reviewed at speed, rendered
+3. **✔ partly done — Density is wrong for triage.** Rows are dense with a fixed action column; virtual scrolling is still to do. Hundreds of items reviewed at speed, rendered
    as wrapping flex boxes with 11px padding. Needs a dense row with a fixed
    action column and virtual scrolling. Reference: Linear, Superhuman.
-4. **No artwork anywhere.** Defensible for pure data, wrong for *auditioning* —
+4. **✔ done — No artwork anywhere.** 40px in rows, 76px on the Inbox card. Defensible for pure data, wrong for *auditioning* —
    artwork is the fastest recognition cue when you're deciding whether a track
    belongs. Small (32px) and in the row, not a tile grid. Needs an explicit
    decision.
-5. **The explanation is buried.** `.why` is a grey inset at 12.5px, but the
+5. **✔ done — The explanation is buried.** `.why` is a grey inset at 12.5px, but the
    *reason* something is flagged is the most valuable content on the screen —
    it's what makes the tool trustworthy. Give it a real slot in the card.
-6. **No first-run, empty or error design.** Today: `Loading library…`, and a
+6. **✔ done — No first-run, empty or error design.** Today: `Loading library…`, and a
    "Not ready" heading with a raw exception message. The first sync takes
    minutes; that's a designed screen, not a spinner.
-7. **Mobile is a media query, not a design.** It hides the brand and turns the
+7. **✔ done — Mobile is a media query, not a design.** It hides the brand and turns the
    rail into a horizontal scroll strip. Filing a backlog is a phone activity:
    one card, thumb-reachable actions, swipe to file/skip.
-8. **The keyboard model is partial and undocumented** — 1–3/P/S/U exist only in
+8. **✔ done — The keyboard model is partial and undocumented** — 1–3/P/S/U exist only in
    the Inbox and only in a sentence of body copy. Needs a real shortcut layer
    across the queue and a `?` overlay.
 9. **Confidence is shown as a raw cosine percentage** ("57% fit"), which nobody

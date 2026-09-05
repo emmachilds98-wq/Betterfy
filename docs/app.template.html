@@ -8,28 +8,10 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🎛️</text></svg>">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-  :root{
-    --ground:#F1F3F6; --surface:#FFF; --surface-2:#F7F8FA; --surface-3:#EDEFF4;
-    --ink:#141821; --ink-2:#4E586A; --ink-3:#798394;
-    --line:#DCE1E8; --line-2:#C7CEDA;
-    --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4;
-    --ok:#1F7F58; --ok-soft:#E3F2EA; --warn:#9A6B0E; --warn-soft:#F8EFD9;
-    --idle:#98A2B3; --r:7px;
-  }
-  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
-    --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
-    --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
-    --line:#252B35; --line-2:#333B48;
-    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
-    --ok:#4FBE8B; --ok-soft:#12261D; --warn:#D9A83E; --warn-soft:#2A2113; --idle:#5C6675;
-  }}
-  :root[data-theme="dark"]{
-    --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
-    --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
-    --line:#252B35; --line-2:#333B48;
-    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
-    --ok:#4FBE8B; --ok-soft:#12261D; --warn:#D9A83E; --warn-soft:#2A2113; --idle:#5C6675;
-  }
+/* Shared with the local app — see ui/theme.css. */
+__THEME__
+
+/* Page-specific styles follow and win, since they come later. */
   *{box-sizing:border-box}
   body{margin:0; background:var(--ground); color:var(--ink); font-size:14px; line-height:1.5;
        font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased}

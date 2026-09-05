@@ -129,6 +129,7 @@ guess, and everything downstream reads the file, not the rules.
 | `snapshot.mjs` | dumps the whole library to `library.json` |
 | `actions.mjs` | every library mutation, with the undo log |
 | `server.mjs` + `ui/` | the local app |
+| `ui/theme.css` | the design system, shared by both front ends |
 | `guard.mjs` | who may talk to the local server |
 | `test/` | identity, restore-planning and request-guard tests |
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
@@ -140,7 +141,9 @@ second implementation inside `docs/app.template.html`, and the two have already
 drifted apart. Collapsing them into one shared module is the next structural
 job; see `V2-PLAN.md`.
 
-`build-web.mjs` refuses to build if a secret appears in the output.
+`ui/theme.css` is the single stylesheet: the local app links it and the browser
+build inlines it, so the two cannot drift apart visually. `build-web.mjs` refuses
+to build if a secret appears in the output, or if no client ID is supplied.
 
 ## Data sources, and what they're worth
 

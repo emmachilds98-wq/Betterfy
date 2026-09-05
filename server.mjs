@@ -88,6 +88,11 @@ function localRelike(trackId) {
   if (t) lib.liked.unshift(t);
 }
 
+/** Cover art by track id, for report rows that carry only ids. */
+function artOf(id) {
+  return knownTrack(id)?.art ?? null;
+}
+
 /** A track that has been moved or filed is no longer a pending misfile. */
 function localResolveMisfile(trackId) {
   if (misfile?.misfiled) misfile.misfiled = misfile.misfiled.filter(x => x.id !== trackId);
@@ -147,7 +152,7 @@ function backlog(limit = 400) {
     const s = suggestions.get(t.id);
     return {
       id: t.id, artist: (t.artists ?? []).map(a => a.name).join(', '), title: t.name,
-      album: t.album, released: t.released, added: (t.added_at ?? '').slice(0, 10),
+      album: t.album, released: t.released, added: (t.added_at ?? '').slice(0, 10), art: t.art ?? null,
       dur: t.duration_ms,
       tags: s?.tags ?? [],
       suggest: (s?.suggest ?? []).map(x => ({
@@ -281,8 +286,17 @@ async function readBody(req) {
 const ROUTES = {
   'GET /api/summary':   async () => summary(),
   'GET /api/backlog':   async () => backlog(),
-  'GET /api/dupes':     async () => dupes ?? { within: [], across: [] },
-  'GET /api/misfile':   async () => misfile ?? { misfiled: [], placed: [], homeless: [], clusters: [] },
+  // The report files predate cover art, so it is attached from the library here
+  // rather than by regenerating every report.
+  'GET /api/dupes':     async () => dupes ? {
+    ...dupes,
+    within: dupes.within.map(w => ({ ...w, art: artOf(w.options?.[0]?.id) })),
+    across: dupes.across.map(a => ({ ...a, art: artOf(a.placements?.[0]?.trackId) })),
+  } : { within: [], across: [] },
+  'GET /api/misfile':   async () => misfile ? {
+    ...misfile,
+    misfiled: misfile.misfiled.map(m => ({ ...m, art: artOf(m.id) })),
+  } : { misfiled: [], placed: [], homeless: [], clusters: [] },
   'GET /api/discover':  async () => discover ?? [],
   'GET /api/playlists': async () => Object.entries(cfg?.playlists ?? {}).map(([id, v]) => ({ id, ...v })),
   'GET /api/history':   async () => historyGrouped(),

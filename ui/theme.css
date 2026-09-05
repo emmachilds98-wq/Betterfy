@@ -1,0 +1,397 @@
+/* Betterfy design system.
+ *
+ * One file, shared: ui/index.html links it, and build-web.mjs inlines it into
+ * the GitHub Pages build, so the two front ends cannot drift apart visually
+ * the way their report logic has.
+ *
+ * The reference is studio equipment, not an admin dashboard. This is a tool
+ * for filing jungle, techno and DJ sets — the software that world uses is
+ * dark, dense and labelled like hardware. So: a dark instrument panel by
+ * default, a paper-white catalogue card in light mode, hot vermilion for the
+ * one thing that needs attention (it reads as a peak indicator), and a meter
+ * green for what is already safely filed. Numbers are always monospaced and
+ * tabular, because you scan them in columns.
+ */
+
+/* ---------------------------------------------------------------- tokens */
+
+:root{
+  /* light: a catalogue card */
+  --ground:#EEF1F5;   --surface:#FFFFFF;  --raised:#F7F9FB;  --sunken:#E4E9F0;
+  --ink:#0F1319;      --ink-2:#4A566A;    --ink-3:#7C8899;
+  --line:#DBE1EA;     --line-2:#C2CBD8;
+  --accent:#D9481F;   --accent-ink:#FFFFFF; --accent-soft:#FBE7E0;
+  --signal:#0F7A56;   --signal-soft:#DEF0E8;
+  --warn:#8A5D06;     --warn-soft:#F8EEDA;
+  --crit:#B02436;     --crit-soft:#FBE4E7;
+  --shadow:0 1px 2px rgba(15,19,25,.06), 0 8px 24px -16px rgba(15,19,25,.25);
+  --info:#255CA8;     --info-soft:#E3ECF8;
+  --r:6px;  --r-lg:10px;
+  --rail:212px;
+}
+
+/* Older names, still referenced by docs/app.template.html. Aliases rather than
+   a second palette, so there is only ever one set of colours to change. */
+:root{
+  --surface-2:var(--raised); --surface-3:var(--sunken);
+  --ok:var(--signal); --ok-soft:var(--signal-soft); --idle:var(--ink-3);
+}
+
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --ground:#0A0D11;   --surface:#12171E;  --raised:#19202A;  --sunken:#0E1319;
+  --ink:#E9EEF5;      --ink-2:#96A3B8;    --ink-3:#67748A;
+  --line:#1F2731;     --line-2:#2E3846;
+  --accent:#FF6A3D;   --accent-ink:#190A04; --accent-soft:#2B1610;
+  --signal:#3DDCA0;   --signal-soft:#0D2620;
+  --warn:#F5B62E;     --warn-soft:#2A2011;
+  --crit:#FF5470;     --crit-soft:#2B1119;
+  --info:#82ABEA;     --info-soft:#132133;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px rgba(0,0,0,.9);
+}}
+:root[data-theme="dark"]{
+  --ground:#0A0D11;   --surface:#12171E;  --raised:#19202A;  --sunken:#0E1319;
+  --ink:#E9EEF5;      --ink-2:#96A3B8;    --ink-3:#67748A;
+  --line:#1F2731;     --line-2:#2E3846;
+  --accent:#FF6A3D;   --accent-ink:#190A04; --accent-soft:#2B1610;
+  --signal:#3DDCA0;   --signal-soft:#0D2620;
+  --warn:#F5B62E;     --warn-soft:#2A2011;
+  --crit:#FF5470;     --crit-soft:#2B1119;
+  --info:#82ABEA;     --info-soft:#132133;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px rgba(0,0,0,.9);
+}
+
+/* ---------------------------------------------------------------- base */
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+/* The rail-plus-page grid. On a class rather than body so the browser build,
+   which grids a div inside the page, can use the same stylesheet. */
+.shell{display:grid; grid-template-columns:var(--rail) 1fr; min-height:100%}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:3px}
+::selection{background:var(--accent); color:var(--accent-ink)}
+@media (prefers-reduced-motion:reduce){ *{animation:none!important; transition:none!important} }
+
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums}
+
+/* Equipment labelling: small, wide-tracked, upper. Used for every field name. */
+.lbl{
+  font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:600;
+  letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3);
+}
+
+/* ---------------------------------------------------------------- rail */
+
+aside{
+  background:var(--surface); border-right:1px solid var(--line);
+  padding:22px 0 16px; display:flex; flex-direction:column; gap:1px;
+  position:sticky; top:0; height:100vh; overflow:auto;
+}
+.brand{
+  font-family:Archivo,sans-serif; font-weight:800; font-size:19px;
+  letter-spacing:-.035em; padding:0 18px 2px;
+}
+.brand span{color:var(--accent)}
+.who{padding:0 18px 18px; font-size:11px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace}
+
+.nav{
+  appearance:none; border:0; background:none; font:inherit; text-align:left;
+  cursor:pointer; padding:7px 18px 7px 15px; color:var(--ink-2);
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  border-left:3px solid transparent;
+}
+.nav:hover{background:var(--raised); color:var(--ink)}
+.nav[aria-current="true"]{
+  color:var(--ink); font-weight:600;
+  border-left-color:var(--accent); background:var(--raised);
+}
+.nav .c{
+  font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:500;
+  color:var(--ink-3); font-variant-numeric:tabular-nums;
+}
+.nav[aria-current="true"] .c{color:var(--accent)}
+.navgap{height:14px}
+.railfoot{
+  margin-top:auto; padding:14px 18px 0; border-top:1px solid var(--line);
+  font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3);
+  display:flex; flex-direction:column; gap:6px; align-items:flex-start;
+}
+.railfoot button{
+  appearance:none; background:none; border:0; font:inherit; color:var(--ink-3);
+  cursor:pointer; padding:0; text-decoration:underline; text-underline-offset:2px;
+}
+.railfoot button:hover{color:var(--ink)}
+
+/* ---------------------------------------------------------------- page */
+
+main{padding:30px 34px 120px; max-width:1140px; min-width:0}
+h1{
+  font-family:Archivo,sans-serif; font-weight:800; font-size:28px;
+  letter-spacing:-.03em; margin:0 0 5px; text-wrap:balance;
+}
+h2{
+  font-family:Archivo,sans-serif; font-weight:700; font-size:15px;
+  letter-spacing:-.01em; margin:34px 0 12px;
+  display:flex; align-items:baseline; gap:10px;
+}
+h2 .n{font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:500; color:var(--ink-3)}
+.lede{color:var(--ink-2); margin:0 0 22px; max-width:70ch}
+.lede b{color:var(--ink); font-weight:600}
+
+/* ------------------------------------------------------- the lead stat */
+/* The overview opens on the one thing worth doing, not eight equal tiles. */
+
+.lead{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
+  padding:26px 28px; box-shadow:var(--shadow); margin-bottom:14px;
+  display:grid; grid-template-columns:1fr auto; gap:28px; align-items:end;
+}
+.lead .n{
+  font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:56px;
+  line-height:.94; letter-spacing:-.045em; color:var(--accent);
+  font-variant-numeric:tabular-nums; display:block; margin:6px 0 4px;
+}
+.lead .say{color:var(--ink-2); max-width:46ch}
+.lead .go{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end}
+
+/* Filed vs unfiled across the whole library, as one bar. */
+.bar{height:8px; border-radius:4px; background:var(--sunken); overflow:hidden;
+     display:flex; margin:18px 0 8px; border:1px solid var(--line)}
+.bar i{display:block; height:100%}
+.bar .filed{background:var(--signal)}
+.bar .todo{background:var(--accent)}
+.barkey{display:flex; gap:18px; flex-wrap:wrap}
+.barkey span{display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--ink-2)}
+.barkey i{width:8px; height:8px; border-radius:2px; flex:none}
+
+/* ---------------------------------------------------- secondary counts */
+
+.strip{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr));
+  gap:1px; background:var(--line); border:1px solid var(--line);
+  border-radius:var(--r-lg); overflow:hidden;
+}
+.cell{
+  background:var(--surface); padding:13px 15px; display:flex; flex-direction:column; gap:3px;
+  border:0; font:inherit; text-align:left; color:var(--ink); cursor:default;
+}
+button.cell{cursor:pointer}
+button.cell:hover{background:var(--raised)}
+.cell .n{
+  font-family:"IBM Plex Mono",monospace; font-size:21px; font-weight:600;
+  letter-spacing:-.03em; font-variant-numeric:tabular-nums; line-height:1.1;
+}
+.cell .d{font-size:12px; color:var(--ink-3); line-height:1.4}
+.cell.act .n{color:var(--accent)}
+.cell.warn .n{color:var(--warn)}
+.cell.ok .n{color:var(--signal)}
+
+/* ---------------------------------------------------------------- rows */
+/* Dense, scannable, with a fixed action column — these get triaged at speed. */
+
+.rows{display:flex; flex-direction:column; gap:1px; background:var(--line);
+      border:1px solid var(--line); border-radius:var(--r-lg); overflow:hidden}
+.row{
+  background:var(--surface); padding:11px 14px;
+  display:grid; grid-template-columns:auto 1fr auto; gap:13px; align-items:center;
+}
+.row.tall{align-items:start}
+.row.tall .art{margin-top:2px}
+.row:hover{background:var(--raised)}
+.row .main{min-width:0}
+.row .ttl{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.row .sub{color:var(--ink-2); font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.row .acts{display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end}
+.row.gone{opacity:.4}
+
+/* Artwork is the fastest way to recognise a record you are deciding about. */
+.art{width:40px; height:40px; border-radius:3px; flex:none; object-fit:cover;
+     background:var(--sunken); border:1px solid var(--line)}
+.art.lg{width:76px; height:76px; border-radius:5px}
+.art.ph{display:grid; place-items:center; color:var(--ink-3); font-size:15px}
+
+/* The reason something was flagged is the most valuable text on the screen. */
+.why{
+  grid-column:1/-1; font-size:12.5px; color:var(--ink-2);
+  border-left:2px solid var(--accent); padding:2px 0 2px 10px; margin-top:2px;
+}
+.why b{color:var(--ink); font-weight:600}
+
+/* ------------------------------------------------------------ controls */
+
+button.b{
+  appearance:none; font:inherit; font-size:13px; font-weight:600; cursor:pointer;
+  border:1px solid var(--line-2); background:var(--surface); color:var(--ink);
+  border-radius:var(--r); padding:7px 12px; white-space:nowrap;
+  display:inline-flex; align-items:center; gap:7px;
+}
+button.b:hover:not(:disabled){border-color:var(--ink-3); background:var(--raised)}
+button.b.p{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+button.b.p:hover:not(:disabled){filter:brightness(1.08)}
+button.b.g{background:var(--signal); border-color:var(--signal); color:var(--ground)}
+button.b.sm{font-size:12px; padding:5px 9px; font-weight:500}
+button.b.q{border-color:transparent; background:none; color:var(--ink-2)}
+button.b.q:hover:not(:disabled){background:var(--sunken); color:var(--ink)}
+button.b:disabled{opacity:.45; cursor:default}
+a.b{text-decoration:none}
+
+select,input[type=search],input[type=text]{
+  font:inherit; font-size:13px; padding:7px 10px; border:1px solid var(--line-2);
+  border-radius:var(--r); background:var(--surface); color:var(--ink); max-width:100%;
+}
+input::placeholder{color:var(--ink-3)}
+
+/* A key cap, so the shortcuts are visible where they apply. */
+kbd{
+  font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:600;
+  border:1px solid var(--line-2); border-bottom-width:2px; border-radius:4px;
+  padding:1px 5px; color:var(--ink-3); background:var(--sunken); line-height:1.5;
+}
+
+.tagrow{display:flex; gap:5px; flex-wrap:wrap}
+.tag{font-size:11px; background:var(--sunken); color:var(--ink-2); border-radius:3px;
+     padding:2px 7px; border:1px solid var(--line)}
+
+.chip{
+  font-size:12px; border:1px solid var(--line-2); border-radius:20px; padding:3px 11px;
+  background:var(--surface); color:var(--ink-2); cursor:pointer; font:inherit; font-size:12px;
+}
+.chip:hover{border-color:var(--ink-3); color:var(--ink)}
+.chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
+
+.pill{
+  display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:500;
+  border-radius:20px; padding:2px 9px; white-space:nowrap;
+}
+.pill.ok{background:var(--signal-soft); color:var(--signal)}
+.pill.warn{background:var(--warn-soft); color:var(--warn)}
+.pill.crit{background:var(--crit-soft); color:var(--crit)}
+.pill.act{background:var(--accent-soft); color:var(--accent)}
+
+/* --------------------------------------------------------- confidence */
+/* A cosine percentage is not something anyone can calibrate. Three steps. */
+
+.conf{display:inline-flex; align-items:center; gap:7px; white-space:nowrap}
+.conf .meter{display:flex; gap:2px}
+.conf .meter i{width:9px; height:5px; border-radius:1px; background:var(--line-2)}
+.conf .t{font-size:11px; color:var(--ink-3); font-weight:500}
+.conf.s3 .meter i{background:var(--signal)}
+.conf.s3 .t{color:var(--signal)}
+.conf.s2 .meter i:nth-child(-n+2){background:var(--warn)}
+.conf.s2 .t{color:var(--warn)}
+.conf.s1 .meter i:nth-child(1){background:var(--ink-3)}
+
+/* ------------------------------------------------------- the big card */
+/* One card shape for every "decide about this track" screen. */
+
+.deck{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
+  box-shadow:var(--shadow); overflow:hidden; max-width:820px;
+}
+.deck .prog{height:3px; background:var(--sunken); display:block}
+.deck .prog i{display:block; height:100%; background:var(--accent)}
+.deck .body{padding:22px 24px 20px}
+.now{display:grid; grid-template-columns:auto 1fr; gap:16px; align-items:start}
+.now .t{font-family:Archivo,sans-serif; font-weight:700; font-size:22px;
+        letter-spacing:-.025em; margin:0; text-wrap:balance; line-height:1.15}
+.now .a{color:var(--ink-2); font-size:15px; margin:3px 0 0}
+.now .m{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3);
+        margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.now .m em{font-style:normal; color:var(--line-2)}
+
+.picks{display:flex; flex-direction:column; gap:6px; margin-top:18px}
+.pick{
+  display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:11px;
+  border:1px solid var(--line); border-radius:var(--r); background:var(--surface);
+  padding:9px 12px; cursor:pointer; font:inherit; color:var(--ink); text-align:left; width:100%;
+}
+.pick:hover{border-color:var(--accent); background:var(--accent-soft)}
+.pick .nm{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.pick .ax{font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3);
+          font-family:"IBM Plex Mono",monospace}
+.rowbtns{display:flex; gap:7px; margin-top:16px; flex-wrap:wrap; align-items:center}
+
+table.cmp{border-collapse:collapse; font-size:12px; margin-top:8px; width:100%}
+table.cmp th{text-align:left; font-family:"IBM Plex Mono",monospace; font-size:9.5px;
+             letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+             font-weight:600; padding:0 12px 4px 0; white-space:nowrap}
+table.cmp td{padding:4px 12px 4px 0; border-top:1px solid var(--line); white-space:nowrap}
+table.cmp .differs{color:var(--accent); font-weight:600}
+.tblwrap{overflow-x:auto}
+
+/* ------------------------------------------------------- states & chrome */
+
+.empty{color:var(--ink-3); padding:44px 20px; text-align:center;
+       border:1px dashed var(--line-2); border-radius:var(--r-lg)}
+.empty b{display:block; color:var(--ink); font-family:Archivo,sans-serif;
+         font-weight:700; font-size:16px; margin-bottom:5px}
+
+.boot{display:grid; place-items:center; min-height:78vh; text-align:center; padding:20px}
+.boot .in{max-width:44ch; display:flex; flex-direction:column; gap:12px; align-items:center}
+.boot h1{font-size:24px}
+.boot .bar{width:min(340px,80vw); margin:4px 0 0}
+
+/* Undo is not a thing that should vanish on a timer. */
+.undobar{
+  position:fixed; left:calc(var(--rail) + 34px); right:34px; bottom:20px; z-index:30;
+  background:var(--ink); color:var(--ground); border-radius:var(--r-lg);
+  padding:11px 16px; display:flex; align-items:center; gap:14px;
+  box-shadow:0 10px 34px -12px rgba(0,0,0,.55); max-width:620px;
+}
+.undobar .msg{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.undobar button{
+  appearance:none; border:1px solid currentColor; background:none; color:var(--ground);
+  font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
+  border-radius:5px; padding:4px 11px;
+}
+.undobar button.x{border-color:transparent; opacity:.6; padding:4px 7px}
+.undobar button:hover{opacity:1}
+
+.sheet{
+  position:fixed; inset:0; z-index:40; background:rgba(4,6,9,.62);
+  display:grid; place-items:center; padding:24px;
+}
+.sheet .in{
+  background:var(--surface); border:1px solid var(--line-2); border-radius:var(--r-lg);
+  padding:24px 26px; max-width:440px; width:100%; box-shadow:var(--shadow);
+}
+.sheet h2{margin-top:0}
+.keys{display:grid; grid-template-columns:auto 1fr; gap:9px 14px; align-items:center}
+.keys kbd{justify-self:start}
+.keys span{color:var(--ink-2); font-size:13px}
+
+/* ---------------------------------------------------------------- small */
+
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}
+  aside{
+    /* A definite height, not auto: a horizontal scroll container is its own
+       minimum size, so as a grid item `auto` collapses the row to nothing. */
+    position:sticky; top:0; z-index:20; height:52px; flex-direction:row;
+    align-items:stretch; gap:0; padding:0 4px; overflow-x:auto; overflow-y:hidden;
+    border-right:0; border-bottom:1px solid var(--line);
+  }
+  .brand{padding:0 12px 0 14px; font-size:16px; flex:none}
+  .who,.railfoot{display:none}
+  .navgap{display:none}
+  .nav{
+    border-left:0; border-bottom:3px solid transparent; white-space:nowrap;
+    padding:13px 12px 10px; gap:6px;
+  }
+  .nav[aria-current="true"]{border-left-color:transparent; border-bottom-color:var(--accent)}
+  main{padding:20px 16px 140px}
+  h1{font-size:23px}
+  .lead{grid-template-columns:1fr; gap:16px; padding:20px; align-items:start}
+  .lead .go{justify-content:flex-start}
+  .lead .n{font-size:44px}
+  .now{grid-template-columns:1fr}
+  .now .art.lg{width:56px; height:56px}
+  .row{grid-template-columns:auto 1fr; row-gap:9px}
+  .row .acts{grid-column:1/-1; justify-content:flex-start}
+  .undobar{left:12px; right:12px; bottom:12px}
+}
