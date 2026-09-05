@@ -134,9 +134,18 @@
 
   <button class="b p big" id="connect">Connect Spotify</button>
   <p class="lede" style="margin-top:12px; font-size:13px">Runs entirely in this browser. Your library never reaches a server — there isn't one.</p>
-  <p class="lede" style="font-size:12.5px; color:var(--ink-3)">
-    Redirect URI this page sends: <span class="mono" id="redirectShow2"></span><br>Build <span class="mono">2026-09-05-0441</span>
-  </p>
+  <div class="note" style="margin-top:18px">
+    <b>Setting this up?</b> This exact string must be saved as a Redirect URI on the Spotify app,
+    or sign-in fails with “redirect_uri: Not matching configuration”.
+    <div class="field" style="align-items:center">
+      <input id="redirectShow2" class="mono" size="46" readonly onclick="this.select()">
+      <button class="b sm" id="copyRedirect">Copy</button>
+    </div>
+    <p style="margin:8px 0 0; font-size:12.5px; color:var(--ink-3)">
+      In the Spotify dashboard you must click <b>Add</b> next to the field <i>and then</i> <b>Save</b> at the
+      bottom — adding without saving is the usual cause. Build <span class="mono">2026-09-05-0450</span>.
+    </p>
+  </div>
 
   <div class="feat">
     <div><b>Duplicates that matter</b><p>Matches on ISRC, so a remaster and a re-issue are caught while a remix or extended mix is left alone.</p></div>
@@ -197,7 +206,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-05-0441</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-05-0450</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -939,9 +948,10 @@ document.addEventListener('keydown', e => {
 
 /* ---------- boot ---------- */
 $('#redirectShow').textContent = REDIRECT;
-$('#redirectShow2').textContent = REDIRECT;
+$('#redirectShow2').value = REDIRECT;
 $('#ownId').value = localStorage.getItem('bf_client_id') || '';
 $('#connect').onclick = () => beginAuth();
+$('#copyRedirect').onclick = async () => { try { await navigator.clipboard.writeText(REDIRECT); toast('Copied.'); } catch { $('#redirectShow2').select(); toast('Press Ctrl+C to copy.'); } };
 $('#saveId').onclick = () => { const v = $('#ownId').value.trim();
   if (v) { localStorage.setItem('bf_client_id', v); toast('Saved. Now connect.'); } };
 $('#clearId').onclick = () => { localStorage.removeItem('bf_client_id'); $('#ownId').value=''; toast('Using the default app.'); };
@@ -965,7 +975,7 @@ async function start(force) {
     if (!LIB) LIB = await syncLibrary((name, pct) => stage(`Reading ${name}…`, pct));
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-05-0441').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-05-0450').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
