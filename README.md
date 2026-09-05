@@ -26,6 +26,32 @@ your suggestions may start thin. The **Playlists** view shows your tag coverage
 and can fill the gaps in your browser given a free
 [Last.fm key](https://www.last.fm/api/account/create).
 
+### On a phone
+
+The hosted page is built for an iPhone first. Open it in Safari, then
+**Share → Add to Home Screen**: it runs full-screen with its own icon, and the
+layout keeps clear of the notch, the Dynamic Island and the home indicator
+rather than sliding under them.
+
+- **Bottom tab bar** — Overview, Inbox, Duplicates, Misfiles, and **More** for
+  the other six screens. Unread counts ride the icons.
+- **Swipe left or right** anywhere on a screen to move to the next or previous
+  one; the dots under the header show where you are. Arrow keys do the same
+  thing on a keyboard.
+- **Swipe the inbox card right to file it** into its best-fitting playlist,
+  **left to skip**, and tap the artwork to play. Every one of those is still a
+  button, and filing is still undoable from the toast.
+- **Pull down** at the top of any screen to re-sync from Spotify.
+- Settings and More open as sheets from the bottom edge; flick the handle down
+  to dismiss.
+
+Each screen has its own colour, spun off the accent you pick in Settings, so
+the tab bar, stat tiles and headers stay in step with it — including a
+readability correction, since a yellow and a blue at the same lightness are
+nowhere near as legible as each other.
+
+The local app (`npm start`) is still laid out for a desktop browser.
+
 ### Staying on the current version
 
 GitHub Pages caches the page for about ten minutes, and a tab you left open
