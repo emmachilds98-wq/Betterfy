@@ -1,0 +1,23 @@
+{
+  "name": "music-filer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "File, de-duplicate and discover music across a large Spotify library, using Last.fm and Discogs for the genre data Spotify no longer provides.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "auth": "node auth.mjs",
+    "snapshot": "node snapshot.mjs",
+    "enrich": "node enrich-lastfm.mjs",
+    "axes": "node axes.mjs",
+    "dupes": "node dupes.mjs",
+    "misfile": "node misfile.mjs",
+    "discover": "node discover.mjs",
+    "shuffle": "node shuffle.mjs",
+    "consolidate": "node consolidate.mjs",
+    "build:review": "node build-review.mjs",
+    "start": "node server.mjs",
+    "setup": "node auth.mjs && node snapshot.mjs && node enrich-lastfm.mjs && node axes.mjs"
+  },
+  "license": "MIT"
+}

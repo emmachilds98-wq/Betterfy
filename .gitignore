@@ -1,0 +1,11 @@
+.env
+.env.local
+.tokens.json
+library.json
+tags-lastfm.json
+cache-*.json
+report-*.json
+playlists.config.json
+review.build.html
+node_modules/
+*.tmp

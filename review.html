@@ -1,0 +1,408 @@
+<title>Library Filing Desk</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --ground:#F1F3F6; --surface:#FFFFFF; --surface-2:#F7F8FA;
+    --ink:#141821; --ink-2:#4E586A; --ink-3:#798394;
+    --line:#DCE1E8; --line-2:#C7CEDA;
+    --accent:#D9502B; --accent-ink:#FFFFFF; --accent-soft:#FBEAE4;
+    --ok:#1F7F58; --ok-soft:#E3F2EA;
+    --warn:#9A6B0E; --warn-soft:#F8EFD9;
+    --idle:#98A2B3;
+    --shadow:0 1px 2px rgba(20,24,33,.06),0 4px 14px rgba(20,24,33,.05);
+    --r:7px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A;
+      --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
+      --line:#252B35; --line-2:#333B48;
+      --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
+      --ok:#4FBE8B; --ok-soft:#12261D;
+      --warn:#D9A83E; --warn-soft:#2A2113;
+      --idle:#5C6675;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A;
+    --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
+    --line:#252B35; --line-2:#333B48;
+    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
+    --ok:#4FBE8B; --ok-soft:#12261D;
+    --warn:#D9A83E; --warn-soft:#2A2113;
+    --idle:#5C6675;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-size:14px; line-height:1.5; margin:0;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:28px 22px 120px}
+
+  /* ---------- masthead ---------- */
+  header.top{display:flex; flex-wrap:wrap; align-items:flex-end; gap:18px; justify-content:space-between; margin-bottom:22px}
+  h1{
+    font-family:Archivo,system-ui,sans-serif; font-weight:800; font-size:29px;
+    letter-spacing:-.024em; margin:0; text-wrap:balance;
+  }
+  .sub{color:var(--ink-2); margin:5px 0 0; max-width:62ch}
+  .stamp{
+    font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11px;
+    color:var(--ink-3); text-align:right; line-height:1.7; white-space:nowrap;
+  }
+
+  /* ---------- meters ---------- */
+  .meters{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:26px}
+  .meter{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+    padding:13px 15px; display:flex; flex-direction:column; gap:3px;
+  }
+  .meter .n{font-family:"IBM Plex Mono",monospace; font-size:26px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+  .meter .l{font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+  .meter .d{font-size:12px; color:var(--ink-2)}
+  .meter.act .n{color:var(--accent)}
+  .meter.jud .n{color:var(--warn)}
+
+  /* ---------- tabs ---------- */
+  nav.tabs{display:flex; gap:2px; border-bottom:1px solid var(--line); margin-bottom:18px; flex-wrap:wrap}
+  .tab{
+    appearance:none; background:none; border:0; border-bottom:2px solid transparent;
+    font:inherit; font-weight:600; color:var(--ink-3); cursor:pointer;
+    padding:9px 14px; margin-bottom:-1px; border-radius:var(--r) var(--r) 0 0;
+  }
+  .tab:hover{color:var(--ink); background:var(--surface-2)}
+  .tab[aria-selected="true"]{color:var(--ink); border-bottom-color:var(--accent)}
+  .tab .c{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3); margin-left:6px}
+
+  .lede{color:var(--ink-2); margin:0 0 16px; max-width:74ch}
+  .lede b{color:var(--ink); font-weight:600}
+
+  /* ---------- rows ---------- */
+  .rows{display:flex; flex-direction:column; gap:8px}
+  .row{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+    display:grid; grid-template-columns:3px 1fr auto; align-items:stretch;
+    overflow:hidden;
+  }
+  .stripe{background:var(--idle)}
+  .row[data-state="act"] .stripe{background:var(--accent)}
+  .row[data-state="done"] .stripe{background:var(--ok)}
+  .body{padding:12px 15px; min-width:0}
+  .ctrl{
+    padding:12px 15px; border-left:1px solid var(--line); background:var(--surface-2);
+    display:flex; flex-direction:column; gap:6px; justify-content:center; min-width:186px;
+  }
+  .where{
+    font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:500;
+    letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); margin-bottom:3px;
+  }
+  .title{font-weight:600; letter-spacing:-.005em}
+  .artist{color:var(--ink-2)}
+  .releases{display:flex; flex-direction:column; gap:4px; margin-top:9px}
+  .rel{
+    display:flex; align-items:center; gap:9px; font-size:12.5px;
+    border:1px solid var(--line); border-radius:5px; padding:5px 9px; cursor:pointer;
+    background:var(--surface); color:var(--ink-2);
+  }
+  .rel:hover{border-color:var(--line-2)}
+  .rel input{margin:0; accent-color:var(--accent)}
+  .rel.on{border-color:var(--ok); background:var(--ok-soft); color:var(--ink)}
+  .rel .al{font-weight:500; color:var(--ink)}
+  .rel .dt{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3); margin-left:auto; font-variant-numeric:tabular-nums}
+
+  .chips{display:flex; flex-wrap:wrap; gap:5px; margin-top:9px}
+  .chip{
+    font-size:12px; border:1px solid var(--line); border-radius:20px; padding:3px 11px;
+    background:var(--surface); color:var(--ink-2); cursor:pointer; font-family:inherit;
+  }
+  .chip:hover{border-color:var(--line-2); color:var(--ink)}
+  .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
+
+  button.act{
+    appearance:none; font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
+    border:1px solid var(--line-2); background:var(--surface); color:var(--ink);
+    border-radius:5px; padding:6px 11px; text-align:center;
+  }
+  button.act:hover{border-color:var(--ink-3)}
+  button.act[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+  button.act.keep[aria-pressed="true"]{background:var(--ok); border-color:var(--ok); color:#fff}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+  .filters{display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; align-items:center}
+  .filters .lbl{font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; margin-right:3px}
+  .more{margin-top:14px; text-align:center}
+
+  /* ---------- dock ---------- */
+  .dock{
+    position:fixed; left:0; right:0; bottom:0; background:var(--surface);
+    border-top:1px solid var(--line); box-shadow:var(--shadow); z-index:9;
+  }
+  .dock .in{
+    max-width:1180px; margin:0 auto; padding:11px 22px;
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  }
+  .tally{font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--ink-2); font-variant-numeric:tabular-nums}
+  .tally b{color:var(--ink); font-weight:600}
+  .dot{width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:5px}
+  .save{margin-left:auto; font-size:12px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace}
+  .hint{background:var(--warn-soft); color:var(--warn); border:1px solid transparent; border-radius:5px; padding:3px 9px; font-size:12px; font-weight:500}
+  @media (prefers-reduced-motion:no-preference){ .row{transition:border-color .12s} }
+  @media (max-width:700px){
+    .row{grid-template-columns:3px 1fr}
+    .ctrl{border-left:0; border-top:1px solid var(--line); flex-direction:row; flex-wrap:wrap; grid-column:2}
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Library Filing Desk</h1>
+      <p class="sub">Duplicate and cross-filing decisions for 83 playlists. Nothing here touches Spotify — choices are saved for Claude to apply on your say-so.</p>
+    </div>
+    <div class="stamp" id="stamp">library snapshot<br>7,554 unique tracks</div>
+  </header>
+
+  <div class="meters" id="meters"></div>
+
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <p class="lede" id="lede"></p>
+  <div id="panel"></div>
+</div>
+
+<div class="dock">
+  <div class="in">
+    <span class="tally" id="tally"></span>
+    <span class="hint" id="hint" hidden></span>
+    <span class="save" id="save">local only</span>
+  </div>
+</div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById('data').textContent);
+  const { same, diff, across } = DATA;
+
+  // decision state, keyed by case id
+  const state = new Map();
+  let db = null, tab = 'same', shown = { same: 400, diff: 400, across: 60 };
+  let acrossMin = 3;
+
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  /* ---------- meters ---------- */
+  const meters = [
+    { n: same.length,   l: 'Exact repeats', d: 'Same release added twice in one playlist', cls: 'act' },
+    { n: diff.length,   l: 'Version clashes', d: 'Two releases of one track in one playlist', cls: 'jud' },
+    { n: across.length, l: 'Cross-filed',    d: 'Sitting in more than one playlist', cls: '' },
+    { n: DATA.playlists, l: 'Playlists',     d: 'Untouched until you decide', cls: '' },
+  ];
+  document.getElementById('meters').innerHTML = meters.map(m =>
+    `<div class="meter ${m.cls}"><span class="l">${esc(m.l)}</span><span class="n">${m.n.toLocaleString()}</span><span class="d">${esc(m.d)}</span></div>`
+  ).join('');
+
+  /* ---------- tabs ---------- */
+  const TABS = [
+    { k:'same',   t:'Exact repeats', c:same.length,
+      lede:'The same release sits in one playlist twice. No judgement needed — <b>Remove</b> drops the second copy and leaves every other playlist alone.' },
+    { k:'diff',   t:'Version clashes', c:diff.length,
+      lede:'One track, two different releases, both in the same playlist. Pick which pressing to keep — a single, an album cut, a reissue — or keep both if they are genuinely different records to you.' },
+    { k:'across', t:'Cross-filed', c:across.length,
+      lede:'Tracks living in several playlists. This is usually deliberate, so <b>nothing is preselected</b>. Click a playlist to mark the track for removal from just that one.' },
+  ];
+  const tabsEl = document.getElementById('tabs');
+  tabsEl.innerHTML = TABS.map(t =>
+    `<button class="tab" role="tab" data-k="${t.k}" aria-selected="${t.k===tab}">${esc(t.t)}<span class="c">${t.c}</span></button>`
+  ).join('');
+  tabsEl.addEventListener('click', e => {
+    const b = e.target.closest('.tab'); if (!b) return;
+    tab = b.dataset.k;
+    [...tabsEl.children].forEach(x => x.setAttribute('aria-selected', x.dataset.k === tab));
+    render();
+  });
+
+  /* ---------- persistence ---------- */
+  async function persist(id, value) {
+    if (value === null) state.delete(id); else state.set(id, value);
+    tally();
+    if (!db) return;
+    try {
+      const ref = db.doc('decisions/' + id);
+      if (value === null) await ref.delete();
+      else await ref.set({ ...value, id, at: new Date().toISOString() });
+      flash('saved');
+    } catch (err) {
+      flash(err && err.code === 'not_granted' ? 'view only' : 'save failed');
+    }
+  }
+  let flashT;
+  function flash(msg) {
+    const el = document.getElementById('save');
+    el.textContent = msg; clearTimeout(flashT);
+    flashT = setTimeout(() => { el.textContent = db ? 'saved to this page' : 'local only'; }, 1600);
+  }
+
+  function tally() {
+    const n = { same:0, diff:0, across:0 };
+    for (const [k, v] of state) if (v) n[v.kind] = (n[v.kind] ?? 0) + 1;
+    const drops = [...state.values()].reduce((s,v) => s + (v.drop?.length ?? 0), 0);
+    document.getElementById('tally').innerHTML =
+      `<span class="dot" style="background:var(--ok)"></span><b>${state.size}</b> decisions &nbsp;·&nbsp; ` +
+      `${n.same} exact &nbsp; ${n.diff} version &nbsp; ${n.across} cross-filed &nbsp;·&nbsp; ` +
+      `<b>${drops}</b> track${drops===1?'':'s'} marked for removal`;
+    const h = document.getElementById('hint');
+    h.hidden = state.size > 0;
+    h.textContent = 'Nothing decided yet';
+  }
+
+  /* ---------- renderers ---------- */
+  function rowWithin(c, i, kind) {
+    const id = kind + '-' + i;
+    const st = state.get(id);
+    const decided = !!st;
+    const all = [c.keep, ...c.drop];
+    const keepId = st?.keepId ?? (kind === 'same' ? c.keep.id : null);
+    const keepBoth = st?.action === 'keep';
+
+    const rels = kind === 'diff' ? `<div class="releases">${all.map(r => `
+        <label class="rel ${keepId===r.id && !keepBoth ? 'on' : ''}">
+          <input type="radio" name="${id}" value="${esc(r.id)}" ${keepId===r.id && !keepBoth ? 'checked' : ''}>
+          <span class="al">${esc(r.album ?? '—')}</span>
+          <span class="dt">${esc((r.released ?? '').slice(0,10))}</span>
+        </label>`).join('')}</div>`
+      : `<div class="releases"><div class="rel"><span class="al">${esc(c.keep.album ?? '—')}</span><span class="dt">${esc((c.keep.released ?? '').slice(0,10))}</span></div></div>`;
+
+    return `<div class="row" data-state="${decided ? 'done' : (kind==='same'?'act':'')}" data-id="${id}">
+      <div class="stripe"></div>
+      <div class="body">
+        <div class="where">${esc(c.playlist)}</div>
+        <div class="title">${esc(c.title)}</div>
+        <div class="artist">${esc(c.artist ?? '')}</div>
+        ${rels}
+      </div>
+      <div class="ctrl">
+        <button class="act rm" data-do="remove" aria-pressed="${decided && !keepBoth}">Remove duplicate</button>
+        <button class="act keep" data-do="keep" aria-pressed="${keepBoth}">Keep both</button>
+      </div>
+    </div>`;
+  }
+
+  function rowAcross(c, i) {
+    const id = 'across-' + i;
+    const st = state.get(id);
+    const cut = new Set(st?.removeFrom ?? []);
+    return `<div class="row" data-state="${cut.size ? 'done' : ''}" data-id="${id}">
+      <div class="stripe"></div>
+      <div class="body">
+        <div class="where">in ${c.playlists.length} playlists${c.differentReleases ? ' · different releases' : ''}</div>
+        <div class="title">${esc(c.title)}</div>
+        <div class="artist">${esc(c.artist ?? '')}</div>
+        <div class="chips">${c.playlists.map(p =>
+          `<button class="chip ${cut.has(p) ? 'cut' : ''}" data-pl="${esc(p)}">${esc(p)}</button>`).join('')}</div>
+      </div>
+      <div class="ctrl">
+        <button class="act keep" data-do="fine" aria-pressed="${st?.action === 'fine'}">Leave as is</button>
+      </div>
+    </div>`;
+  }
+
+  function render() {
+    const panel = document.getElementById('panel');
+    const t = TABS.find(x => x.k === tab);
+    document.getElementById('lede').innerHTML = t.lede;
+
+    let list, html, total;
+    if (tab === 'across') {
+      list = across.filter(a => a.playlists.length >= acrossMin);
+      total = list.length;
+      const slice = list.slice(0, shown.across);
+      html = `<div class="filters"><span class="lbl">Show tracks in</span>` +
+        [2,3,4,5,6].map(n => `<button class="act" data-min="${n}" aria-pressed="${acrossMin===n}">${n}+ playlists</button>`).join('') +
+        `</div><div class="rows">${slice.map((c,i) => rowAcross(c, across.indexOf(c))).join('')}</div>`;
+      if (total > shown.across) html += `<div class="more"><button class="act" data-more="across">Show more (${total - shown.across} left)</button></div>`;
+    } else {
+      list = tab === 'same' ? same : diff;
+      total = list.length;
+      const slice = list.slice(0, shown[tab]);
+      html = `<div class="rows">${slice.map((c,i) => rowWithin(c, i, tab)).join('')}</div>`;
+      if (total > shown[tab]) html += `<div class="more"><button class="act" data-more="${tab}">Show more (${total - shown[tab]} left)</button></div>`;
+    }
+    panel.innerHTML = html;
+  }
+
+  /* ---------- interaction ---------- */
+  document.getElementById('panel').addEventListener('click', async e => {
+    const more = e.target.closest('[data-more]');
+    if (more) { shown[more.dataset.more] += 400; render(); return; }
+
+    const min = e.target.closest('[data-min]');
+    if (min) { acrossMin = +min.dataset.min; shown.across = 60; render(); return; }
+
+    const row = e.target.closest('.row'); if (!row) return;
+    const id = row.dataset.id;
+    const [kind, idxRaw] = [id.slice(0, id.lastIndexOf('-')), +id.slice(id.lastIndexOf('-') + 1)];
+
+    const chip = e.target.closest('.chip');
+    if (chip) {
+      const c = across[idxRaw];
+      const cur = state.get(id);
+      const set = new Set(cur?.removeFrom ?? []);
+      const p = chip.dataset.pl;
+      set.has(p) ? set.delete(p) : set.add(p);
+      await persist(id, set.size
+        ? { kind:'across', artist:c.artist, title:c.title, removeFrom:[...set], drop:[...set] }
+        : null);
+      render(); return;
+    }
+
+    const btn = e.target.closest('[data-do]'); if (!btn) return;
+    const doWhat = btn.dataset.do;
+
+    if (kind === 'across') {
+      const c = across[idxRaw];
+      const on = state.get(id)?.action === 'fine';
+      await persist(id, on ? null : { kind:'across', action:'fine', artist:c.artist, title:c.title, removeFrom:[], drop:[] });
+      render(); return;
+    }
+
+    const c = (kind === 'same' ? same : diff)[idxRaw];
+    if (doWhat === 'keep') {
+      const on = state.get(id)?.action === 'keep';
+      await persist(id, on ? null : { kind, action:'keep', playlist:c.playlist, playlistId:c.playlistId, artist:c.artist, title:c.title, drop:[] });
+    } else {
+      const sel = row.querySelector('input[type=radio]:checked');
+      const keepId = sel ? sel.value : c.keep.id;
+      const drop = [c.keep, ...c.drop].filter(r => r.id !== keepId).map(r => r.id);
+      await persist(id, { kind, action:'remove', playlist:c.playlist, playlistId:c.playlistId,
+                          artist:c.artist, title:c.title, keepId, drop });
+    }
+    render();
+  });
+
+  document.getElementById('panel').addEventListener('change', e => {
+    if (e.target.type !== 'radio') return;
+    const row = e.target.closest('.row');
+    row.querySelectorAll('.rel').forEach(l => l.classList.toggle('on', l.contains(e.target)));
+  });
+
+  /* ---------- boot ---------- */
+  render(); tally();
+
+  (async () => {
+    if (!window.claude || !claude.use) return;
+    db = await claude.use('db');
+    if (!db) return;
+    document.getElementById('save').textContent = 'saved to this page';
+    try {
+      const snap = await db.collection('decisions').limit(1000).get();
+      for (const d of snap.docs) { const v = d.data(); if (v) state.set(d.id, v); }
+      render(); tally();
+    } catch (err) { /* empty store on first open */ }
+  })();
+})();
+</script>
