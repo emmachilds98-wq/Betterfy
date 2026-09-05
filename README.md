@@ -26,6 +26,12 @@ your suggestions may start thin. The **Playlists** view shows your tag coverage
 and can fill the gaps in your browser given a free
 [Last.fm key](https://www.last.fm/api/account/create).
 
+The **⚙ button** in the top-right corner opens Settings — appearance
+(system/light/dark), an accent colour (24 presets plus hue/depth/brightness
+sliders, and per-region toggles for where it applies), compact rows, and
+remembered filters. It's reachable from the landing screen, before you've
+even connected Spotify, and stays in the same place once you're in.
+
 ## Why it uses Last.fm and Discogs
 
 Verified against a freshly registered Spotify app in September 2026:

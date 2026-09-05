@@ -15,6 +15,11 @@
     --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4;
     --ok:#1F7F58; --ok-soft:#E3F2EA; --warn:#9A6B0E; --warn-soft:#F8EFD9;
     --idle:#98A2B3; --r:7px;
+    /* Per-element accent hooks — Settings can point any of these at a
+       neutral fallback instead of the chosen accent, region by region. */
+    --nav-accent:var(--accent); --btn-accent:var(--accent); --btn-ink:var(--accent-ink);
+    --meter-accent:var(--accent); --progress-accent:var(--accent); --hover-accent:var(--accent);
+    --tag-bg:var(--surface-3); --tag-ink:var(--ink-2);
   }
   @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
     --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
@@ -60,7 +65,7 @@
   .nav{appearance:none; border:0; background:none; font:inherit; text-align:left; cursor:pointer; padding:8px 20px;
        color:var(--ink-2); display:flex; justify-content:space-between; gap:8px; border-left:2px solid transparent}
   .nav:hover{background:var(--surface-2); color:var(--ink)}
-  .nav[aria-current="true"]{color:var(--ink); font-weight:600; border-left-color:var(--accent); background:var(--surface-2)}
+  .nav[aria-current="true"]{color:var(--ink); font-weight:600; border-left-color:var(--nav-accent); background:var(--surface-2)}
   .nav .c{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3); font-weight:500}
   .railfoot{margin-top:auto; padding:14px 20px 0; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:8px; align-items:flex-start}
   main{padding:26px 30px 70px; max-width:1080px; min-width:0}
@@ -74,21 +79,21 @@
   .meter .n{font-family:"IBM Plex Mono",monospace; font-size:25px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
   .meter .l{font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
   .meter .d{font-size:12px; color:var(--ink-2)}
-  .meter.act .n{color:var(--accent)} .meter.warn .n{color:var(--warn)} .meter.ok .n{color:var(--ok)}
+  .meter.act .n{color:var(--meter-accent)} .meter.warn .n{color:var(--warn)} .meter.ok .n{color:var(--ok)}
   .meter.click{cursor:pointer} .meter.click:hover{border-color:var(--line-2)}
 
   .card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:22px 24px}
   .prog{height:4px; background:var(--surface-3); border-radius:2px; overflow:hidden; margin-bottom:18px}
-  .prog i{display:block; height:100%; background:var(--accent); transition:width .2s}
+  .prog i{display:block; height:100%; background:var(--progress-accent); transition:width .2s}
   .now .t{font-family:Archivo,sans-serif; font-weight:700; font-size:23px; letter-spacing:-.02em; margin:0; text-wrap:balance}
   .now .a{color:var(--ink-2); font-size:15px; margin:2px 0 0}
   .now .m{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); margin-top:6px; display:flex; gap:14px; flex-wrap:wrap}
   .tagrow{display:flex; gap:5px; flex-wrap:wrap; margin-top:12px}
-  .tag{font-size:11.5px; background:var(--surface-3); color:var(--ink-2); border-radius:20px; padding:2px 10px}
+  .tag{font-size:11.5px; background:var(--tag-bg); color:var(--tag-ink); border-radius:20px; padding:2px 10px}
   .picks{display:flex; flex-direction:column; gap:7px; margin-top:18px}
   .pick{display:flex; align-items:center; gap:11px; border:1px solid var(--line); border-radius:var(--r); background:var(--surface);
         padding:10px 13px; cursor:pointer; font:inherit; color:var(--ink); text-align:left; width:100%}
-  .pick:hover{border-color:var(--accent); background:var(--accent-soft)}
+  .pick:hover{border-color:var(--hover-accent); background:var(--accent-soft)}
   .pick .k{font-family:"IBM Plex Mono",monospace; font-size:11px; width:19px; height:19px; flex:none; display:grid; place-items:center; border:1px solid var(--line-2); border-radius:4px; color:var(--ink-3)}
   .pick .nm{font-weight:600} .pick .ax{font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em}
   .pick .sc{margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3)}
@@ -97,12 +102,12 @@
   button.b{appearance:none; font:inherit; font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
            background:var(--surface); color:var(--ink); border-radius:6px; padding:8px 13px}
   button.b:hover{border-color:var(--ink-3)}
-  button.b.p{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+  button.b.p{background:var(--btn-accent); border-color:var(--btn-accent); color:var(--btn-ink)}
   button.b.sm{font-size:12px; padding:5px 10px; font-weight:500}
   button.b.big{font-size:15px; padding:12px 22px}
   button.b:disabled{opacity:.5; cursor:default}
   input,select{font:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--line-2); border-radius:6px; background:var(--surface); color:var(--ink); max-width:100%}
-  :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  :focus-visible{outline:2px solid var(--hover-accent); outline-offset:2px}
 
   .rows{display:flex; flex-direction:column; gap:7px}
   .row{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:11px 14px;
@@ -116,13 +121,52 @@
   table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
   table.cmp .differs{color:var(--accent); font-weight:600}
   .chip{font-size:12px; border:1px solid var(--line); border-radius:20px; padding:3px 10px; background:var(--surface); color:var(--ink-2); cursor:pointer; font-family:inherit}
-  .chip:hover{border-color:var(--line-2); color:var(--ink)}
+  .chip:hover{border-color:var(--hover-accent); color:var(--ink)}
   .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
   .empty{color:var(--ink-3); padding:34px 0; text-align:center}
   .toast{position:fixed; right:18px; bottom:18px; background:var(--ink); color:var(--ground); padding:10px 15px;
          border-radius:7px; font-size:13px; display:flex; gap:12px; align-items:center; z-index:20; max-width:420px}
-  .toast button{appearance:none; border:0; background:none; color:var(--accent); font:inherit; font-weight:700; cursor:pointer; padding:0}
+  .toast button{appearance:none; border:0; background:none; color:var(--hover-accent); font:inherit; font-weight:700; cursor:pointer; padding:0}
   @media (max-width:820px){ .app{grid-template-columns:1fr} aside{position:static; height:auto; flex-direction:row; overflow-x:auto; align-items:center} .brand,.who,.railfoot{display:none} }
+
+  /* ---- settings (fixed trigger, reachable from the landing screen too) ---- */
+  .settingsFab{position:fixed; top:14px; right:16px; z-index:25; appearance:none; border:1px solid var(--line-2);
+    background:var(--surface); color:var(--ink-2); border-radius:8px; width:38px; height:38px; font-size:16px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 3px rgba(0,0,0,.1)}
+  .settingsFab:hover{border-color:var(--hover-accent); color:var(--ink)}
+  .settingsFab[aria-expanded="true"]{background:var(--surface-2); color:var(--ink)}
+  .scrim{position:fixed; inset:0; background:rgba(8,10,14,.4); z-index:29; opacity:0; pointer-events:none; transition:opacity .18s ease}
+  .scrim.open{opacity:1; pointer-events:auto}
+  .settings{position:fixed; top:0; right:0; height:100vh; width:340px; max-width:92vw; background:var(--surface);
+            border-left:1px solid var(--line); z-index:30; display:flex; flex-direction:column;
+            box-shadow:-14px 0 32px rgba(0,0,0,.18); transform:translateX(100%); visibility:hidden;
+            transition:transform .18s ease}
+  .settings.open{transform:translateX(0); visibility:visible}
+  .settings-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); flex:none}
+  .settings-head h2{font-family:Archivo,sans-serif; font-size:16px; font-weight:700; margin:0}
+  .settings-body{padding:16px 18px 28px; overflow-y:auto; display:flex; flex-direction:column; gap:22px}
+  .settings-body h3{font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; margin:0 0 10px}
+  .iconbtn{appearance:none; border:0; background:none; color:var(--ink-2); font-size:16px; cursor:pointer; padding:4px 7px; border-radius:5px; line-height:1}
+  .iconbtn:hover{background:var(--surface-2); color:var(--ink)}
+  .segmented{display:flex; border:1px solid var(--line-2); border-radius:7px; overflow:hidden}
+  .segmented button{flex:1; appearance:none; border:0; background:var(--surface); color:var(--ink-2); font:inherit;
+                     font-size:12.5px; font-weight:600; padding:7px 0; cursor:pointer}
+  .segmented button+button{border-left:1px solid var(--line-2)}
+  .segmented button[aria-pressed="true"]{background:var(--surface-3); color:var(--ink)}
+  .swatches{display:grid; grid-template-columns:repeat(6,1fr); gap:7px; margin-bottom:14px}
+  .swatch{width:100%; aspect-ratio:1; border-radius:7px; border:2px solid transparent; cursor:pointer; padding:0}
+  .swatch[aria-pressed="true"]{border-color:var(--ink)}
+  .slider-row{display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--ink-2); margin-top:9px}
+  .slider-row input[type=range]{flex:1; accent-color:var(--accent)}
+  .slider-row span{width:34px; text-align:right; font-size:11.5px; font-family:"IBM Plex Mono",monospace}
+  .preview-row{margin-top:14px}
+  .preview-chip{display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:6px;
+                background:var(--accent); color:var(--accent-ink); font-weight:600; font-size:13px}
+  .check-row{display:flex; align-items:center; gap:9px; font-size:13px; color:var(--ink-2); padding:4px 0; cursor:pointer}
+  .check-row input{width:15px; height:15px; accent-color:var(--accent)}
+  .settings-body .b{align-self:flex-start}
+  .compact .row{padding:6px 12px}
+  .compact .rows{gap:4px}
 </style>
 </head>
 <body>
@@ -207,13 +251,58 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-05-0457</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-05-0923</span>
     </div>
   </aside>
   <main id="main"></main>
 </div>
 
 <div class="toast" id="toast" hidden></div>
+
+<!-- Fixed so it's reachable on the landing screen (before connecting) and
+     inside the app afterwards — both toggle #land/#app visibility, but
+     neither ever hides this. -->
+<button class="settingsFab" id="btnSettings" title="Settings" aria-expanded="false" aria-controls="settingsPanel">⚙</button>
+<div class="scrim" id="scrim"></div>
+<div class="settings" id="settingsPanel" aria-hidden="true" aria-label="Settings">
+  <div class="settings-head">
+    <h2>Settings</h2>
+    <button class="iconbtn" id="closeSettings" aria-label="Close settings">✕</button>
+  </div>
+  <div class="settings-body">
+    <section>
+      <h3>Appearance</h3>
+      <div class="segmented" id="modeGroup">
+        <button type="button" data-mode="system">System</button>
+        <button type="button" data-mode="light">Light</button>
+        <button type="button" data-mode="dark">Dark</button>
+      </div>
+    </section>
+    <section>
+      <h3>Accent colour</h3>
+      <div class="swatches" id="swatches"></div>
+      <label class="slider-row">Hue <input type="range" id="hue" min="0" max="360" step="1"><span id="hueVal"></span></label>
+      <label class="slider-row">Depth <input type="range" id="depth" min="0" max="100" step="1"><span id="depthVal"></span></label>
+      <label class="slider-row">Brightness <input type="range" id="bright" min="15" max="85" step="1"><span id="brightVal"></span></label>
+      <div class="preview-row"><span class="preview-chip">Preview</span></div>
+    </section>
+    <section>
+      <h3>Apply colour to</h3>
+      <label class="check-row"><input type="checkbox" data-region="nav"> Navigation highlight</label>
+      <label class="check-row"><input type="checkbox" data-region="btn"> Primary buttons</label>
+      <label class="check-row"><input type="checkbox" data-region="meter"> Stat tiles</label>
+      <label class="check-row"><input type="checkbox" data-region="progress"> Progress bar</label>
+      <label class="check-row"><input type="checkbox" data-region="tag"> Tags &amp; chips</label>
+      <label class="check-row"><input type="checkbox" data-region="hover"> Hover &amp; focus</label>
+    </section>
+    <section>
+      <h3>Other</h3>
+      <label class="check-row"><input type="checkbox" id="compactToggle"> Compact rows (denser lists)</label>
+      <label class="check-row"><input type="checkbox" id="rememberToggle"> Remember last filters (Cross-filed / Misfiles)</label>
+    </section>
+    <button class="b" id="resetTheme" type="button">Reset to defaults</button>
+  </div>
+</div>
 
 <script>
 /* ===================== bundled scoring core ===================== */
@@ -381,6 +470,140 @@ function topTags(track, tags, idf, n = 5) {
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const mmss = ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`;
+
+/* ---------------- theme (colour, density, remembered filters) ----------------
+ * Lives outside #land/#app so it works before Spotify is connected, not just
+ * inside the synced app — the trigger button is a fixed element, not part of
+ * either screen. */
+
+const THEME_KEY = 'betterfy-theme';
+
+// name, hue, depth (saturation %), brightness (lightness %) — 24 curated starting
+// points spanning the wheel; the sliders below can push far past any of these.
+const PRESETS = [
+  ['Ember',14,72,52], ['Rust',24,62,44], ['Bronze',32,55,42], ['Gold',40,78,50],
+  ['Amber',46,82,52], ['Olive',68,45,38], ['Lime',92,55,45], ['Green',132,45,40],
+  ['Emerald',150,55,40], ['Jade',162,50,40], ['Teal',176,55,38], ['Cyan',190,65,45],
+  ['Azure',204,75,50], ['Blue',220,70,52], ['Indigo',244,55,55], ['Violet',266,58,58],
+  ['Orchid',298,55,60], ['Magenta',320,62,55], ['Rose',338,70,58], ['Crimson',350,68,50],
+  ['Coral',7,72,60], ['Slate',215,15,45], ['Steel',200,20,48], ['Plum',288,35,40],
+];
+
+const DEFAULT_THEME = {
+  mode: 'system', hue: 14, depth: 72, brightness: 52,
+  regions: { nav:true, btn:true, meter:true, progress:true, hover:true, tag:false },
+  compact: false, rememberFilters: false,
+};
+
+function loadTheme() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(THEME_KEY));
+    return { ...DEFAULT_THEME, ...saved, regions: { ...DEFAULT_THEME.regions, ...(saved?.regions ?? {}) } };
+  } catch { return { ...DEFAULT_THEME }; }
+}
+function saveTheme() { try { localStorage.setItem(THEME_KEY, JSON.stringify(T)); } catch {} }
+
+let T = loadTheme();
+
+const hsl = (h,s,l) => `hsl(${((h%360)+360)%360} ${Math.max(0,Math.min(100,s))}% ${Math.max(0,Math.min(100,l))}%)`;
+
+function isDarkNow() {
+  const dt = document.documentElement.getAttribute('data-theme');
+  if (dt === 'dark') return true;
+  if (dt === 'light') return false;
+  return matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function applyTheme() {
+  if (T.mode === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', T.mode);
+
+  const { hue, depth, brightness } = T;
+  const dark = isDarkNow();
+  const root = document.documentElement.style;
+  root.setProperty('--accent', hsl(hue, depth, brightness));
+  root.setProperty('--accent-soft', dark
+    ? hsl(hue, Math.min(depth,80), Math.max(brightness-38,12))
+    : hsl(hue, Math.min(depth,85), Math.min(brightness+40,95)));
+  root.setProperty('--accent-ink', brightness >= 55 ? '#161A21' : '#FFFFFF');
+
+  const r = T.regions;
+  root.setProperty('--nav-accent',      r.nav      ? 'var(--accent)' : 'var(--line-2)');
+  root.setProperty('--btn-accent',      r.btn      ? 'var(--accent)' : 'var(--ink)');
+  root.setProperty('--btn-ink',         r.btn      ? 'var(--accent-ink)' : 'var(--ground)');
+  root.setProperty('--meter-accent',    r.meter    ? 'var(--accent)' : 'var(--ink)');
+  root.setProperty('--progress-accent', r.progress ? 'var(--accent)' : 'var(--ink-3)');
+  root.setProperty('--hover-accent',    r.hover    ? 'var(--accent)' : 'var(--line-2)');
+  root.setProperty('--tag-bg',          r.tag      ? 'var(--accent-soft)' : 'var(--surface-3)');
+  root.setProperty('--tag-ink',         r.tag      ? 'var(--accent)' : 'var(--ink-2)');
+
+  document.body.classList.toggle('compact', !!T.compact);
+}
+
+function buildSwatches() {
+  const wrap = $('#swatches'); wrap.innerHTML = '';
+  for (const [name, h, s, l] of PRESETS) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'swatch'; btn.title = name;
+    btn.style.background = hsl(h, s, l);
+    btn.dataset.hsl = `${h},${s},${l}`;
+    btn.setAttribute('aria-label', name);
+    btn.onclick = () => { T.hue = h; T.depth = s; T.brightness = l; applyTheme(); syncSettingsUI(); saveTheme(); };
+    wrap.appendChild(btn);
+  }
+}
+
+function syncSettingsUI() {
+  document.querySelectorAll('#modeGroup button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === T.mode)));
+  $('#hue').value = T.hue; $('#hueVal').textContent = T.hue + '°';
+  $('#depth').value = T.depth; $('#depthVal').textContent = T.depth + '%';
+  $('#bright').value = T.brightness; $('#brightVal').textContent = T.brightness + '%';
+  document.querySelectorAll('#settingsPanel [data-region]').forEach(cb => { cb.checked = !!T.regions[cb.dataset.region]; });
+  $('#compactToggle').checked = !!T.compact;
+  $('#rememberToggle').checked = !!T.rememberFilters;
+  document.querySelectorAll('#swatches .swatch').forEach(el => {
+    const [h, s, l] = el.dataset.hsl.split(',').map(Number);
+    el.setAttribute('aria-pressed', String(h === T.hue && s === T.depth && l === T.brightness));
+  });
+}
+
+function initSettingsPanel() {
+  buildSwatches();
+  syncSettingsUI();
+
+  document.querySelectorAll('#modeGroup button').forEach(b => b.onclick = () => {
+    T.mode = b.dataset.mode; applyTheme(); syncSettingsUI(); saveTheme();
+  });
+  for (const [id, key] of [['hue','hue'], ['depth','depth'], ['bright','brightness']]) {
+    $('#' + id).oninput = e => { T[key] = +e.target.value; applyTheme(); syncSettingsUI(); saveTheme(); };
+  }
+  document.querySelectorAll('#settingsPanel [data-region]').forEach(cb => cb.onchange = () => {
+    T.regions[cb.dataset.region] = cb.checked; applyTheme(); saveTheme();
+  });
+  $('#compactToggle').onchange = e => { T.compact = e.target.checked; applyTheme(); saveTheme(); };
+  $('#rememberToggle').onchange = e => {
+    T.rememberFilters = e.target.checked;
+    if (T.rememberFilters) { T.crossMin = S.crossMin; T.mfBand = S.mfBand; }
+    saveTheme();
+  };
+  $('#resetTheme').onclick = () => { T = JSON.parse(JSON.stringify(DEFAULT_THEME)); applyTheme(); syncSettingsUI(); saveTheme(); };
+
+  const panel = $('#settingsPanel'), scrim = $('#scrim'), trigger = $('#btnSettings');
+  const openSettings = open => {
+    panel.classList.toggle('open', open); scrim.classList.toggle('open', open);
+    panel.setAttribute('aria-hidden', String(!open)); trigger.setAttribute('aria-expanded', String(open));
+    if (open) $('#closeSettings').focus(); else trigger.focus();
+  };
+  trigger.onclick = () => openSettings(!panel.classList.contains('open'));
+  $('#closeSettings').onclick = () => openSettings(false);
+  scrim.onclick = () => openSettings(false);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && panel.classList.contains('open')) openSettings(false); });
+
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (T.mode === 'system') applyTheme(); });
+}
+
+applyTheme();
+initSettingsPanel();
 
 const DEFAULT_CLIENT_ID = '7e79f50acaf24fb6ae40cb339bdde382';
 // Always the directory form with a trailing slash. Spotify matches the redirect
@@ -1099,8 +1322,10 @@ document.addEventListener('click', async e => {
     try { await undoAction(un.dataset.undo); toast('Restored.'); S.history = await getLog(); render(); }
     catch (err) { toast('Undo failed: '+err.message); un.disabled = false; } return; }
   const go = e.target.closest('[data-go]'); if (go) { view = go.dataset.go; return render(); }
-  const cmin = e.target.closest('[data-cmin]'); if (cmin) { S.crossMin = +cmin.dataset.cmin; return render(); }
-  const mfb = e.target.closest('[data-mfb]'); if (mfb) { S.mfBand = mfb.dataset.mfb; return render(); }
+  const cmin = e.target.closest('[data-cmin]');
+  if (cmin) { S.crossMin = +cmin.dataset.cmin; if (T.rememberFilters) { T.crossMin = S.crossMin; saveTheme(); } return render(); }
+  const mfb = e.target.closest('[data-mfb]');
+  if (mfb) { S.mfBand = mfb.dataset.mfb; if (T.rememberFilters) { T.mfBand = S.mfBand; saveTheme(); } return render(); }
 
   const file = e.target.closest('[data-file]'); if (file) return fileCurrent(file.dataset.file);
   const act = e.target.closest('[data-act]'); if (act) return inboxAct(act.dataset.act);
@@ -1263,7 +1488,7 @@ async function start(force) {
     if (!LIB) LIB = await syncLibrary((name, pct) => stage(`Reading ${name}…`, pct));
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-05-0457').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-05-0923').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
@@ -1294,6 +1519,8 @@ const FRIENDLY = {
 };
 
 (async () => {
+  if (T.rememberFilters) { if (T.crossMin) S.crossMin = T.crossMin; if (T.mfBand) S.mfBand = T.mfBand; }
+
   const q = new URLSearchParams(location.search);
   if (q.get('setup') !== null) { $('#setupPanel').hidden = false; localStorage.setItem('bf_setup','1'); }
   else if (localStorage.getItem('bf_setup')) $('#setupPanel').hidden = false;
