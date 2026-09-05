@@ -77,6 +77,25 @@ npm run consolidate  # maintain one playlist holding every unique track
 Everything is **dry-run by default**. Commands that change your Spotify library
 print what they would do and stop; add `--apply` to commit.
 
+### The local app (`npm start`)
+
+The rail has two utility buttons at the bottom: **Refresh** re-fetches the
+current data from the server (fast — seconds, not minutes; for a full
+Spotify re-sync use the Refresh section on Overview instead), and
+**Settings** opens a panel with:
+
+- **Appearance** — System / Light / Dark.
+- **Accent colour** — 24 preset swatches, plus hue, depth (saturation) and
+  brightness (lightness) sliders for fine control.
+- **Apply colour to** — toggle the accent on or off per region (navigation
+  highlight, primary buttons, stat tiles, progress bar, tags & chips,
+  hover/focus), so you can, say, keep a loud accent on buttons but keep the
+  nav neutral.
+- **Compact rows**, for denser lists, and **remember last filters**, to
+  keep the Cross-filed/Misfiles thresholds you last picked across reloads.
+
+All of it is stored in the browser's `localStorage`, per device.
+
 ## How the filing model works
 
 Spotify supplies no genre, so a track's signal is the union of its artists'
