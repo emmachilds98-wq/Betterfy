@@ -175,8 +175,11 @@ createServer(async (req, res) => {
   res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
   res.end(readFileSync(file));
 }).listen(PORT, '127.0.0.1', () => {
-  const url = `http://127.0.0.1:${PORT}`;
-  console.log(`\n  Betterfy running at ${url}\n`);
+  // Browsers resolve *.localhost to loopback themselves (RFC 6761), so this
+  // reads as a real address without a hosts-file entry or admin rights.
+  const url = `http://betterfy.localhost:${PORT}`;
+  console.log(`\n  Betterfy running at ${url}`);
+  console.log(`  (also http://127.0.0.1:${PORT})\n`);
   const s = summary();
   console.log(`  ${s.playlists} playlists · ${s.tracks} tracks · ${s.backlog} unfiled`);
   console.log(`  reports: dupes=${s.reports.dupes} misfile=${s.reports.misfile} discover=${s.reports.discover}\n`);
