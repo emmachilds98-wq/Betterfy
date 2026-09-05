@@ -5,16 +5,27 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Betterfy</title>
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23D9502B'/><rect x='8' y='9.6' width='16' height='3.6' rx='1.8' fill='white'/><rect x='8' y='14.5' width='11' height='3.6' rx='1.8' fill='white'/><rect x='8' y='19.4' width='6' height='3.6' rx='1.8' fill='white'/></svg>">
+<!-- Read back over the network by the update check, to tell whether the copy in
+     this browser is the one currently published. Keep the name and quoting. -->
+<meta name="bf-build" content="__BUILD__">
+<meta name="theme-color" content="#D9502B">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta property="og:title" content="Betterfy">
+<meta property="og:description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
+<meta property="og:image" content="icon-512.png">
+<meta name="twitter:card" content="summary">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
   :root{
     --ground:#F1F3F6; --surface:#FFF; --surface-2:#F7F8FA; --surface-3:#EDEFF4;
     --ink:#141821; --ink-2:#4E586A; --ink-3:#798394;
     --line:#DCE1E8; --line-2:#C7CEDA;
-    --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4;
+    --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4; --accent-lift:#EC663E;
     --ok:#1F7F58; --ok-soft:#E3F2EA; --warn:#9A6B0E; --warn-soft:#F8EFD9;
     --idle:#98A2B3; --r:7px;
+    --shadow:0 1px 2px rgba(16,20,28,.05); --shadow-2:0 4px 16px rgba(16,20,28,.09);
     /* Per-element accent hooks — Settings can point any of these at a
        neutral fallback instead of the chosen accent, region by region. */
     --nav-accent:var(--accent); --btn-accent:var(--accent); --btn-ink:var(--accent-ink);
@@ -25,15 +36,17 @@
     --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
     --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
     --line:#252B35; --line-2:#333B48;
-    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
+    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15; --accent-lift:#FF9068;
     --ok:#4FBE8B; --ok-soft:#12261D; --warn:#D9A83E; --warn-soft:#2A2113; --idle:#5C6675;
+    --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-2:0 4px 18px rgba(0,0,0,.45);
   }}
   :root[data-theme="dark"]{
     --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
     --ink:#E7EBF1; --ink-2:#A3AEBF; --ink-3:#7B8698;
     --line:#252B35; --line-2:#333B48;
-    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15;
+    --accent:#FF7A52; --accent-ink:#20120C; --accent-soft:#2E1C15; --accent-lift:#FF9068;
     --ok:#4FBE8B; --ok-soft:#12261D; --warn:#D9A83E; --warn-soft:#2A2113; --idle:#5C6675;
+    --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-2:0 4px 18px rgba(0,0,0,.45);
   }
   *{box-sizing:border-box}
   body{margin:0; background:var(--ground); color:var(--ink); font-size:14px; line-height:1.5;
@@ -42,17 +55,30 @@
   a{color:var(--accent)}
 
   /* ---------- landing ---------- */
-  .land{max-width:760px; margin:0 auto; padding:64px 22px 80px}
-  .logo{display:flex; align-items:center; gap:14px; font-family:Archivo,sans-serif; font-weight:800; font-size:44px; letter-spacing:-.035em; margin:0}
+  /* A wash of the accent behind the hero, so the first screen carries the
+     brand colour the viewer picked rather than being flat grey. */
+  .land{max-width:780px; margin:0 auto; padding:70px 22px 60px; position:relative}
+  .land::before{content:""; position:absolute; inset:-120px -35% auto -35%; height:560px; z-index:-1;
+    background:radial-gradient(46% 46% at 50% 34%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 72%)}
+  .logo{display:flex; align-items:center; gap:15px; font-family:Archivo,sans-serif; font-weight:800; font-size:46px; letter-spacing:-.035em; margin:0}
   .logo span{color:var(--accent)}
   .mark{flex:none}
-  .logo .mark{width:44px; height:44px}
+  .logo .mark{width:48px; height:48px; filter:drop-shadow(0 3px 10px rgba(0,0,0,.16))}
   .brand .mark{width:24px; height:24px}
-  .tagline{font-size:18px; color:var(--ink-2); margin:8px 0 28px; max-width:52ch; text-wrap:balance}
+  .tagline{font-size:18px; color:var(--ink-2); margin:12px 0 26px; max-width:52ch; text-wrap:balance}
   .land h2{font-family:Archivo,sans-serif; font-weight:700; font-size:15px; letter-spacing:.02em; margin:34px 0 10px}
-  .feat{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:12px; margin:26px 0}
-  .feat div{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px}
-  .feat b{display:block; margin-bottom:3px}
+  .cta{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .fineprint{color:var(--ink-3); font-size:12.5px; margin:14px 0 0; display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .fineprint .dot{color:var(--line-2)}
+  .linkish{appearance:none; border:0; background:none; padding:0; font:inherit; font-size:12.5px;
+    color:var(--accent); cursor:pointer; text-decoration:underline; text-underline-offset:2px}
+  .linkish:disabled{color:var(--ink-3); cursor:default; text-decoration:none}
+  .feat{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:12px; margin:30px 0}
+  .feat div{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:15px 17px;
+    box-shadow:var(--shadow); transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease}
+  .feat div:hover{transform:translateY(-2px); border-color:var(--line-2); box-shadow:var(--shadow-2)}
+  .feat b{display:flex; align-items:center; gap:7px; margin-bottom:4px}
+  .feat b::before{content:""; width:6px; height:6px; border-radius:2px; background:var(--accent); flex:none}
   .feat p{margin:0; color:var(--ink-2); font-size:13px}
   .note{background:var(--surface-3); border-radius:var(--r); padding:13px 16px; color:var(--ink-2); font-size:13.5px; margin:16px 0}
   .note b{color:var(--ink)}
@@ -78,14 +104,15 @@
   .lede{color:var(--ink-2); margin:0 0 20px; max-width:72ch}
 
   .meters{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:11px}
-  .meter{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:13px 15px; display:flex; flex-direction:column; gap:2px}
+  .meter{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:13px 15px;
+         display:flex; flex-direction:column; gap:2px; box-shadow:var(--shadow)}
   .meter .n{font-family:"IBM Plex Mono",monospace; font-size:25px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
   .meter .l{font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
   .meter .d{font-size:12px; color:var(--ink-2)}
   .meter.act .n{color:var(--meter-accent)} .meter.warn .n{color:var(--warn)} .meter.ok .n{color:var(--ok)}
   .meter.click{cursor:pointer} .meter.click:hover{border-color:var(--line-2)}
 
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:22px 24px}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:22px 24px; box-shadow:var(--shadow)}
   .prog{height:4px; background:var(--surface-3); border-radius:2px; overflow:hidden; margin-bottom:18px}
   .prog i{display:block; height:100%; background:var(--progress-accent); transition:width .2s}
   .now .t{font-family:Archivo,sans-serif; font-weight:700; font-size:23px; letter-spacing:-.02em; margin:0; text-wrap:balance}
@@ -103,12 +130,16 @@
   .rowbtns{display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; align-items:center}
 
   button.b{appearance:none; font:inherit; font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
-           background:var(--surface); color:var(--ink); border-radius:6px; padding:8px 13px}
+           background:var(--surface); color:var(--ink); border-radius:6px; padding:8px 13px;
+           transition:border-color .12s ease, background .12s ease, transform .08s ease}
   button.b:hover{border-color:var(--ink-3)}
-  button.b.p{background:var(--btn-accent); border-color:var(--btn-accent); color:var(--btn-ink)}
+  button.b:active{transform:translateY(1px)}
+  button.b.p{background:var(--btn-accent); border-color:var(--btn-accent); color:var(--btn-ink); box-shadow:var(--shadow)}
+  button.b.p:hover{filter:brightness(1.06)}
   button.b.sm{font-size:12px; padding:5px 10px; font-weight:500}
-  button.b.big{font-size:15px; padding:12px 22px}
+  button.b.big{font-size:15px; padding:12px 22px; border-radius:8px}
   button.b:disabled{opacity:.5; cursor:default}
+  button.b:disabled:hover{filter:none; border-color:var(--line-2)}
   input,select{font:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--line-2); border-radius:6px; background:var(--surface); color:var(--ink); max-width:100%}
   :focus-visible{outline:2px solid var(--hover-accent); outline-offset:2px}
 
@@ -134,17 +165,36 @@
 
   /* ---- fixed corner controls (reachable from the landing screen too) ---- */
   .fabBar{position:fixed; top:14px; right:16px; z-index:25; display:flex; gap:8px}
-  .fab{appearance:none; border:1px solid var(--line-2); background:var(--surface); color:var(--ink-2);
+  .fab{appearance:none; position:relative; border:1px solid var(--line-2); background:var(--surface); color:var(--ink-2);
     border-radius:8px; width:38px; height:38px; font-size:16px; cursor:pointer; display:flex;
-    align-items:center; justify-content:center; box-shadow:0 1px 3px rgba(0,0,0,.1)}
+    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color .12s ease, color .12s ease}
   .fab:hover{border-color:var(--hover-accent); color:var(--ink)}
   .fab[aria-expanded="true"]{background:var(--surface-2); color:var(--ink)}
   .fab:disabled{opacity:.6; cursor:default}
   .fab.spin{animation:spin .6s linear infinite}
+  .fab.busy{animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.4}}
+  /* Marks the update button when a newer build is waiting on the server. */
+  .fab.hasUpdate{border-color:var(--accent); color:var(--accent)}
+  .fab.hasUpdate::after{content:""; position:absolute; top:-3px; right:-3px; width:8px; height:8px;
+    border-radius:50%; background:var(--accent); border:2px solid var(--ground)}
   @keyframes spin{to{transform:rotate(360deg)}}
-  /* Refreshing only means anything once a library is loaded. */
-  #btnRefresh{display:none}
-  body:has(#app:not([hidden])) #btnRefresh{display:flex}
+  /* Re-syncing only means anything once a library is loaded. Checking for a new
+     version of the page itself is useful from the very first screen, so that
+     one is never hidden. */
+  #btnResync{display:none}
+  body:has(#app:not([hidden])) #btnResync{display:flex}
+
+  /* ---- "a newer version is published" bar ---- */
+  .updatebar{position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:26;
+    display:flex; align-items:center; gap:12px; max-width:min(560px,calc(100vw - 130px));
+    background:var(--surface); border:1px solid var(--accent); border-radius:9px;
+    padding:9px 10px 9px 15px; box-shadow:var(--shadow-2); font-size:13px}
+  .updatebar b{font-weight:600}
+  .updatebar .txt{min-width:0}
+  .updatebar .b{white-space:nowrap}
+  /* Narrow: sit under the corner buttons rather than under them. */
+  @media (max-width:820px){ .updatebar{top:62px; left:12px; right:12px; transform:none; max-width:none} }
   .scrim{position:fixed; inset:0; background:rgba(8,10,14,.4); z-index:29; opacity:0; pointer-events:none; transition:opacity .18s ease}
   .scrim.open{opacity:1; pointer-events:auto}
   .settings{position:fixed; top:0; right:0; height:100vh; width:340px; max-width:92vw; background:var(--surface);
@@ -181,22 +231,43 @@
 </head>
 <body>
 
+<!-- The tile gradient lives here, once, so every copy of the mark on the page
+     can point at it. It has to sit outside #land and #app, both of which get
+     their innerHTML replaced. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;overflow:hidden">
+  <defs>
+    <linearGradient id="bfTile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color:var(--accent-lift)"/>
+      <stop offset="1" style="stop-color:var(--accent)"/>
+    </linearGradient>
+  </defs>
+</svg>
+
 <!-- ============ landing / connect ============ -->
 <div class="land" id="land">
   <h1 class="logo">
     <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="9" style="fill:var(--accent)"/>
-      <rect x="8" y="9.6" width="16" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
-      <rect x="8" y="14.5" width="11" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
-      <rect x="8" y="19.4" width="6" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
+      <rect width="32" height="32" rx="9" style="fill:url(#bfTile) var(--accent)"/>
+      <g style="fill:var(--accent-ink)">
+        <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" opacity=".92"/>
+        <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" opacity=".97"/>
+        <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" opacity=".97"/>
+        <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" opacity=".92"/>
+      </g>
     </svg>
     Better<span>fy</span>
   </h1>
   <p class="tagline">Find duplicates, catch misfiled tracks, and empty the liked-songs backlog you've been ignoring.</p>
 
-  <button class="b p big" id="connect">Connect Spotify</button>
-  <p class="lede" style="margin-top:12px; font-size:13px">
-    Runs entirely in your browser — your library never leaves it.
+  <div class="cta">
+    <button class="b p big" id="connect">Connect Spotify</button>
+    <button class="b big" id="landUpdate">Check for updates</button>
+  </div>
+  <p class="fineprint">
+    <span>Runs entirely in your browser — your library never leaves it.</span>
+    <span class="dot">·</span>
+    <span class="mono">build __BUILD__</span>
   </p>
 
   <div class="feat">
@@ -250,10 +321,14 @@
   <aside>
     <div class="brand">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="9" style="fill:var(--accent)"/>
-        <rect x="8" y="9.6" width="16" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
-        <rect x="8" y="14.5" width="11" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
-        <rect x="8" y="19.4" width="6" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
+        <rect width="32" height="32" rx="9" style="fill:url(#bfTile) var(--accent)"/>
+        <g style="fill:var(--accent-ink)">
+          <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" opacity=".92"/>
+          <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" opacity=".97"/>
+          <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7"/>
+          <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" opacity=".97"/>
+          <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" opacity=".92"/>
+        </g>
       </svg>
       Better<span>fy</span>
     </div>
@@ -279,11 +354,25 @@
 
 <div class="toast" id="toast" hidden></div>
 
+<!-- A newer build is published: offered, never forced, since a reload in the
+     middle of filing would lose the viewer's place. -->
+<div class="updatebar" id="updateBar" hidden>
+  <span class="txt"><b>New version available.</b> <span id="updateFrom" class="mono" style="color:var(--ink-3);font-size:12px"></span></span>
+  <button class="b sm p" id="doUpdate">Update now</button>
+  <button class="iconbtn" id="dismissUpdate" aria-label="Dismiss">✕</button>
+</div>
+
 <!-- Fixed so it's reachable on the landing screen (before connecting) and
      inside the app afterwards — both toggle #land/#app visibility, but
      neither ever hides this. -->
 <div class="fabBar">
-  <button class="fab" id="btnRefresh" title="Re-sync your library from Spotify">⟳</button>
+  <button class="fab" id="btnUpdate" title="Check for a newer version of Betterfy" aria-label="Check for a newer version of Betterfy">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 3.5v10.5"/><path d="M7.6 9.6 12 14l4.4-4.4"/><path d="M4.5 17v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2"/>
+    </svg>
+  </button>
+  <button class="fab" id="btnResync" title="Re-sync your library from Spotify">⟳</button>
   <button class="fab" id="btnSettings" title="Settings" aria-expanded="false" aria-controls="settingsPanel">⚙</button>
 </div>
 <div class="scrim" id="scrim"></div>
@@ -390,6 +479,9 @@ function applyTheme() {
   root.setProperty('--accent-soft', dark
     ? hsl(hue, Math.min(depth,80), Math.max(brightness-38,12))
     : hsl(hue, Math.min(depth,85), Math.min(brightness+40,95)));
+  // The top stop of the logo tile's gradient — a lift rather than a second hue,
+  // so the mark stays one colour however far the sliders are pushed.
+  root.setProperty('--accent-lift', hsl(hue, Math.min(depth+6,100), Math.min(brightness+9,92)));
   root.setProperty('--accent-ink', brightness >= 55 ? '#161A21' : '#FFFFFF');
 
   const r = T.regions;
@@ -483,6 +575,57 @@ const SCOPES = ['playlist-read-private','playlist-read-collaborative','playlist-
   'user-read-recently-played','user-read-private','user-read-playback-state','user-modify-playback-state'].join(' ');
 
 const clientId = () => localStorage.getItem('bf_client_id') || DEFAULT_CLIENT_ID;
+
+/* ---------------- staying on the current version ----------------
+ * GitHub Pages serves this HTML with a ~10 minute cache, and a browser that
+ * already has the page keeps what it loaded until something forces a
+ * revalidation — so "am I looking at the current Betterfy?" is a real question,
+ * and it is asked from the very first screen rather than only once you are
+ * signed in. The build stamp is baked into a meta tag at build time; the check
+ * re-fetches the page over the network and compares the two stamps. */
+
+const BUILD = '__BUILD__';
+
+async function publishedBuild() {
+  // Cache-busted *and* no-store: this has to be what the server holds right
+  // now, not what this browser happens to be keeping.
+  const r = await fetch(REDIRECT + '?_=' + Date.now(), { cache: 'no-store' });
+  if (!r.ok) throw new Error(`the server answered ${r.status}`);
+  const m = (await r.text()).match(/name="bf-build"\s+content="([^"]*)"/);
+  if (!m) throw new Error('the published page carries no version stamp');
+  return m[1];
+}
+
+/** @param {boolean} quiet — say nothing when already current (the startup check). */
+async function checkForUpdate(quiet) {
+  const fab = $('#btnUpdate'), inline = $('#landUpdate');
+  fab.disabled = true; fab.classList.add('busy');
+  if (inline) { inline.disabled = true; inline.textContent = 'Checking…'; }
+  try {
+    const latest = await publishedBuild();
+    if (latest === BUILD) { if (!quiet) toast(`You have the latest version (build ${BUILD}).`); return false; }
+    $('#updateFrom').textContent = `build ${latest}`;
+    $('#updateBar').hidden = false;
+    fab.classList.add('hasUpdate');
+    return true;
+  } catch (e) {
+    if (!quiet) toast(`Could not check for updates — ${e.message}.`);
+    return false;
+  } finally {
+    fab.disabled = false; fab.classList.remove('busy');
+    if (inline) { inline.disabled = false; inline.textContent = 'Check for updates'; }
+  }
+}
+
+/** Offered, never forced: a reload mid-way through filing would lose your place. */
+async function installUpdate() {
+  // Drop anything cached for this origin, pull a fresh copy into the HTTP
+  // cache, then navigate to a URL no cache can answer from. Nothing here
+  // touches the saved token or library, so you land back where you were.
+  try { if (window.caches) for (const k of await caches.keys()) await caches.delete(k); } catch {}
+  try { await fetch(REDIRECT, { cache: 'reload' }); } catch {}
+  location.replace(REDIRECT + '?v=' + Date.now());
+}
 
 /* ---------- PKCE ---------- */
 const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf)))
@@ -1335,18 +1478,26 @@ $('#saveId').onclick = () => { const v = $('#ownId').value.trim();
 $('#clearId').onclick = () => { localStorage.removeItem('bf_client_id'); $('#ownId').value=''; toast('Using the default app.'); };
 $('#disconnect').onclick = async () => { localStorage.removeItem('bf_tok'); await idb.clear(); location.href = REDIRECT; };
 $('#resync').onclick = () => start(true);
-$('#btnRefresh').onclick = async () => {
-  const btn = $('#btnRefresh');
+$('#btnResync').onclick = async () => {
+  const btn = $('#btnResync');
   btn.disabled = true; btn.classList.add('spin');
   try { await start(true); } finally { btn.disabled = false; btn.classList.remove('spin'); }
 };
+$('#btnUpdate').onclick = () => checkForUpdate(false);
+$('#landUpdate').onclick = () => checkForUpdate(false);
+$('#doUpdate').onclick = () => installUpdate();
+$('#dismissUpdate').onclick = () => { $('#updateBar').hidden = true; };
 window.bfReset = async () => { localStorage.removeItem('bf_tok'); localStorage.removeItem('bf_verifier'); await idb.clear(); location.replace(REDIRECT); };
 
 const LOGO_HTML = `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
-  <rect width="32" height="32" rx="9" style="fill:var(--accent)"/>
-  <rect x="8" y="9.6" width="16" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
-  <rect x="8" y="14.5" width="11" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
-  <rect x="8" y="19.4" width="6" height="3.6" rx="1.8" style="fill:var(--accent-ink)"/>
+  <rect width="32" height="32" rx="9" style="fill:url(#bfTile) var(--accent)"/>
+  <g style="fill:var(--accent-ink)">
+    <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" opacity=".92"/>
+    <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" opacity=".97"/>
+    <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7"/>
+    <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" opacity=".97"/>
+    <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" opacity=".92"/>
+  </g>
 </svg>Better<span>fy</span>`;
 
 function stage(msg, pct) {
@@ -1401,6 +1552,14 @@ const FRIENDLY = {
   const q = new URLSearchParams(location.search);
   if (q.get('setup') !== null) { $('#setupPanel').hidden = false; localStorage.setItem('bf_setup','1'); }
   else if (localStorage.getItem('bf_setup')) $('#setupPanel').hidden = false;
+
+  // Arrived here from "Update now": the cache-busting parameter has done its
+  // job, so tidy it out of the address bar.
+  if (q.has('v')) history.replaceState({}, '', REDIRECT);
+
+  // Quiet check on every load, so a stale tab says so without being asked.
+  // Deliberately not awaited — it must never delay the library from loading.
+  setTimeout(() => checkForUpdate(true), 1500);
 
   if (q.get('error')) {
     const code = q.get('error');
