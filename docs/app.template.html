@@ -2,13 +2,26 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- viewport-fit=cover lets the page paint under the notch and the home
+     indicator; every fixed element below then pads itself back out with
+     env(safe-area-inset-*), which is the only way to sit correctly on an
+     iPhone in both orientations and in standalone (home-screen) mode. -->
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Betterfy</title>
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
 <meta name="bf-build" content="__BUILD__">
-<meta name="theme-color" content="#D9502B">
+<!-- Matched to the page background rather than the accent, so the iOS status
+     bar blends into the app instead of sitting on a coloured strip. Kept in
+     sync with the chosen theme at runtime by applyTheme(). -->
+<meta name="theme-color" content="#F1F3F6" media="(prefers-color-scheme:light)">
+<meta name="theme-color" content="#0E1116" media="(prefers-color-scheme:dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Betterfy">
+<meta name="format-detection" content="telephone=no">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -31,6 +44,21 @@
     --nav-accent:var(--accent); --btn-accent:var(--accent); --btn-ink:var(--accent-ink);
     --meter-accent:var(--accent); --progress-accent:var(--accent); --hover-accent:var(--accent);
     --tag-bg:var(--surface-3); --tag-ink:var(--ink-2);
+    /* Eight hues spun off the chosen accent, written by applyTheme(). Each
+       screen and each stat tile owns one, so the app reads as a palette
+       rather than one colour — and it still turns with the accent slider.
+       The literals here are only what the first paint uses. */
+    --c0:#D9502B; --c1:#B4741A; --c2:#6E8F1E; --c3:#1F8A5B;
+    --c4:#1B8A86; --c5:#2A6FB8; --c6:#6C57C4; --c7:#B03C93;
+    --c0-soft:#FBEAE4; --c1-soft:#F8F0DC; --c2-soft:#EFF4E0; --c3-soft:#E2F3EA;
+    --c4-soft:#E0F3F2; --c5-soft:#E4EEF9; --c6-soft:#ECE8FA; --c7-soft:#F9E6F3;
+    /* The hue of whatever screen is open — set by render(). */
+    --view:var(--accent); --view-soft:var(--accent-soft);
+    /* iPhone safe areas, named once so every fixed element pads the same way. */
+    --sat:env(safe-area-inset-top); --sab:env(safe-area-inset-bottom);
+    --sal:env(safe-area-inset-left); --sar:env(safe-area-inset-right);
+    --tabh:60px;                       /* bottom tab bar, excluding the inset */
+    --topbar:52px;                     /* mobile header, excluding the inset */
   }
   @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
     --ground:#0E1116; --surface:#161A21; --surface-2:#1C212A; --surface-3:#222835;
@@ -49,18 +77,48 @@
     --shadow:0 1px 2px rgba(0,0,0,.3); --shadow-2:0 4px 18px rgba(0,0,0,.45);
   }
   *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  /* Nothing here is meant to scroll sideways. clip (not hidden) because it
+     doesn't turn the root into a scroll container, so sticky still works. */
+  @supports (overflow-x:clip){ html{overflow-x:clip} }
   body{margin:0; background:var(--ground); color:var(--ink); font-size:14px; line-height:1.5;
-       font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased}
+       font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased;
+       -webkit-tap-highlight-color:transparent; overscroll-behavior-y:none}
   [hidden]{display:none!important}
   a{color:var(--accent)}
+  /* Everything below animates. Someone who has asked their phone to stop
+     moving things gets the same app, still. */
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.001ms!important; animation-iteration-count:1!important; transition-duration:.001ms!important}
+  }
 
   /* ---------- landing ---------- */
   /* A wash of the accent behind the hero, so the first screen carries the
-     brand colour the viewer picked rather than being flat grey. */
-  .land{max-width:780px; margin:0 auto; padding:70px 22px 60px; position:relative}
-  .land::before{content:""; position:absolute; inset:-120px -35% auto -35%; height:560px; z-index:-1;
-    background:radial-gradient(46% 46% at 50% 34%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 72%)}
+     brand colour the viewer picked rather than being flat grey. Two more
+     blobs in neighbouring hues drift behind it — the whole page is one
+     colour otherwise, and on a phone the hero is most of what you see. */
+  .land{max-width:780px; margin:0 auto; position:relative;
+    padding:calc(70px + var(--sat)) calc(22px + var(--sar)) calc(60px + var(--sab)) calc(22px + var(--sal))}
+  /* Spread with a radius wider than the box rather than by hanging the box
+     off both edges: the old -35% insets pushed the document 137px wider than
+     the screen on a phone, which let the page scroll sideways and dragged the
+     fixed corner buttons out of reach. */
+  .land::before{content:""; position:absolute; inset:-120px 0 auto 0; height:560px; z-index:-1;
+    background:radial-gradient(78% 46% at 50% 34%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 72%)}
+  .aurora{position:fixed; inset:0 0 auto; height:70vh; z-index:-2; overflow:hidden; pointer-events:none;
+    opacity:0; transition:opacity .5s ease}
+  body:has(#land:not([hidden])) .aurora{opacity:1}
+  .aurora i{position:absolute; display:block; border-radius:50%; filter:blur(70px); opacity:.42}
+  .aurora i:nth-child(1){width:52vw; height:52vw; left:-12vw; top:-16vw; background:var(--c5); animation:drift1 19s ease-in-out infinite alternate}
+  .aurora i:nth-child(2){width:44vw; height:44vw; right:-10vw; top:-8vw; background:var(--c7); animation:drift2 23s ease-in-out infinite alternate}
+  .aurora i:nth-child(3){width:38vw; height:38vw; left:32vw; top:16vw; background:var(--c3); animation:drift1 27s ease-in-out infinite alternate-reverse}
+  @keyframes drift1{to{transform:translate3d(9vw,6vh,0) scale(1.16)}}
+  @keyframes drift2{to{transform:translate3d(-11vw,8vh,0) scale(1.1)}}
+  :root[data-theme="dark"] .aurora i{opacity:.34}
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .aurora i{opacity:.34} }
   .logo{display:flex; align-items:center; gap:15px; font-family:Archivo,sans-serif; font-weight:800; font-size:46px; letter-spacing:-.035em; margin:0}
+  /* The wordmark is an h1 too, and does not want the screen-hue rule below. */
+  .logo::before{display:none}
   .logo span{color:var(--accent)}
   .mark{flex:none}
   .logo .mark{width:48px; height:48px; filter:drop-shadow(0 3px 10px rgba(0,0,0,.16))}
@@ -70,15 +128,22 @@
   .cta{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
   .fineprint{color:var(--ink-3); font-size:12.5px; margin:14px 0 0; display:flex; gap:10px; flex-wrap:wrap; align-items:center}
   .fineprint .dot{color:var(--line-2)}
+  @media (max-width:820px){ .fineprint{gap:2px 10px} .fineprint .dot{display:none} }
   .linkish{appearance:none; border:0; background:none; padding:0; font:inherit; font-size:12.5px;
     color:var(--accent); cursor:pointer; text-decoration:underline; text-underline-offset:2px}
   .linkish:disabled{color:var(--ink-3); cursor:default; text-decoration:none}
   .feat{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:12px; margin:30px 0}
-  .feat div{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:15px 17px;
-    box-shadow:var(--shadow); transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease}
-  .feat div:hover{transform:translateY(-2px); border-color:var(--line-2); box-shadow:var(--shadow-2)}
+  .feat div{position:relative; background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:15px 17px 15px 19px; overflow:hidden; box-shadow:var(--shadow);
+    transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease}
+  /* One card per hue: the landing page is the first thing anyone sees, and a
+     four-up grid of identical grey boxes was selling it short. */
+  .feat div::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--fc)}
+  .feat div:nth-child(1){--fc:var(--c0)} .feat div:nth-child(2){--fc:var(--c3)}
+  .feat div:nth-child(3){--fc:var(--c5)} .feat div:nth-child(4){--fc:var(--c7)}
+  .feat div:hover{transform:translateY(-2px); border-color:var(--fc); box-shadow:var(--shadow-2)}
   .feat b{display:flex; align-items:center; gap:7px; margin-bottom:4px}
-  .feat b::before{content:""; width:6px; height:6px; border-radius:2px; background:var(--accent); flex:none}
+  .feat b::before{content:""; width:7px; height:7px; border-radius:2px; background:var(--fc); flex:none}
   .feat p{margin:0; color:var(--ink-2); font-size:13px}
   .note{background:var(--surface-3); border-radius:var(--r); padding:13px 16px; color:var(--ink-2); font-size:13.5px; margin:16px 0}
   .note b{color:var(--ink)}
@@ -86,66 +151,155 @@
   .field{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap}
 
   /* ---------- app chrome ---------- */
-  .app{display:grid; grid-template-columns:212px 1fr; min-height:100vh}
-  aside{background:var(--surface); border-right:1px solid var(--line); padding:20px 0; display:flex; flex-direction:column; gap:2px; position:sticky; top:0; height:100vh; overflow:auto}
+  .app{display:grid; grid-template-columns:212px 1fr; min-height:100vh; min-height:100dvh}
+  aside{background:var(--surface); border-right:1px solid var(--line); padding:20px 0; display:flex; flex-direction:column; gap:2px;
+        position:sticky; top:0; height:100vh; height:100dvh; overflow:auto}
   .brand{display:flex; align-items:center; gap:9px; font-family:Archivo,sans-serif; font-weight:800; font-size:20px; letter-spacing:-.03em; padding:0 20px 3px}
   .brand span{color:var(--accent)}
   .who{padding:0 20px 16px; font-size:11.5px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace; word-break:break-all}
   .nav{appearance:none; border:0; background:none; font:inherit; text-align:left; cursor:pointer; padding:8px 20px;
-       color:var(--ink-2); display:flex; justify-content:space-between; gap:8px; border-left:2px solid transparent}
+       color:var(--ink-2); display:flex; align-items:center; gap:10px; border-left:2px solid transparent; position:relative}
+  .nav .lbl{flex:1; min-width:0}
+  /* Each screen owns a hue (--vc, set per button below) so the rail, the tab
+     bar and the screen you land on all agree on a colour. */
+  .nav .ic{flex:none; width:19px; height:19px; display:grid; place-items:center; color:var(--ink-3)}
+  .nav .ic svg{width:17px; height:17px}
   .nav:hover{background:var(--surface-2); color:var(--ink)}
-  .nav[aria-current="true"]{color:var(--ink); font-weight:600; border-left-color:var(--nav-accent); background:var(--surface-2)}
+  .nav:hover .ic{color:var(--vc)}
+  .nav[aria-current="true"]{color:var(--ink); font-weight:600; border-left-color:var(--vc); background:var(--surface-2)}
+  .nav[aria-current="true"] .ic{color:var(--vc)}
   .nav .c{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3); font-weight:500}
+  .nav .c:empty{display:none}
+  [data-v="home"]{--vc:var(--c0)} [data-v="inbox"]{--vc:var(--c1)} [data-v="dupes"]{--vc:var(--c2)}
+  [data-v="cross"]{--vc:var(--c3)} [data-v="misfile"]{--vc:var(--c4)} [data-v="new"]{--vc:var(--c5)}
+  [data-v="discover"]{--vc:var(--c6)} [data-v="shuffle"]{--vc:var(--c7)} [data-v="lists"]{--vc:var(--c2)}
+  [data-v="history"]{--vc:var(--c5)}
   .railfoot{margin-top:auto; padding:14px 20px 0; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:8px; align-items:flex-start}
   main{padding:26px 30px 70px; max-width:1080px; min-width:0}
 
+  /* The mobile header and bottom tab bar. Both are display:none until the
+     narrow breakpoint takes over at the foot of this stylesheet. */
+  /* Fixed, not sticky: a sticky grid item can only stick inside its own grid
+     row, which is no use once the page scrolls. */
+  .mtop{display:none; position:fixed; top:0; left:0; right:0; z-index:22; align-items:center; gap:10px;
+        padding:calc(var(--sat) + 11px) calc(var(--sar) + 150px) 11px calc(var(--sal) + 14px);
+        background:color-mix(in srgb, var(--ground) 82%, transparent);
+        -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+        border-bottom:1px solid transparent; transition:border-color .2s ease}
+  .mtop.stuck{border-bottom-color:var(--line)}
+  .mtop .mark{width:26px; height:26px; flex:none}
+  .mtop .title{font-family:Archivo,sans-serif; font-weight:800; font-size:19px; letter-spacing:-.03em;
+               white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .mtop .title em{font-style:normal; color:var(--view)}
+  .tabmore{display:none}
+
   h1{font-family:Archivo,sans-serif; font-weight:800; font-size:27px; letter-spacing:-.024em; margin:0 0 4px; text-wrap:balance}
+  /* A short bar in the screen's own hue above every title. */
+  h1::before{content:""; display:block; width:34px; height:4px; border-radius:3px; background:var(--view); margin:0 0 10px}
   h2{font-family:Archivo,sans-serif; font-weight:700; font-size:16px; letter-spacing:-.015em; margin:26px 0 10px}
   .lede{color:var(--ink-2); margin:0 0 20px; max-width:72ch}
 
   .meters{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:11px}
-  .meter{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:13px 15px;
-         display:flex; flex-direction:column; gap:2px; box-shadow:var(--shadow)}
-  .meter .n{font-family:"IBM Plex Mono",monospace; font-size:25px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+  .meter{--mc:var(--view); --ms:var(--view-soft); position:relative; overflow:hidden;
+         background:linear-gradient(150deg, var(--ms), var(--surface) 62%);
+         border:1px solid var(--line); border-radius:14px; padding:14px 15px 15px;
+         display:flex; flex-direction:column; gap:2px; box-shadow:var(--shadow);
+         animation:tileIn .34s cubic-bezier(.2,.7,.3,1) backwards}
+  .meter::after{content:""; position:absolute; inset:0 auto 0 0; width:3px; background:var(--mc)}
+  @keyframes tileIn{from{opacity:0; transform:translateY(9px)}}
+  .meter:nth-child(2){animation-delay:.03s} .meter:nth-child(3){animation-delay:.06s}
+  .meter:nth-child(4){animation-delay:.09s} .meter:nth-child(5){animation-delay:.12s}
+  .meter:nth-child(6){animation-delay:.15s} .meter:nth-child(7){animation-delay:.18s}
+  .meter:nth-child(8){animation-delay:.21s}
+  .meter .n{font-family:"IBM Plex Mono",monospace; font-size:27px; font-weight:600; letter-spacing:-.02em;
+            font-variant-numeric:tabular-nums; color:var(--mc); line-height:1.15}
   .meter .l{font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
   .meter .d{font-size:12px; color:var(--ink-2)}
   .meter.act .n{color:var(--meter-accent)} .meter.warn .n{color:var(--warn)} .meter.ok .n{color:var(--ok)}
-  .meter.click{cursor:pointer} .meter.click:hover{border-color:var(--line-2)}
+  .meter.click{cursor:pointer; transition:transform .12s ease, box-shadow .14s ease, border-color .14s ease}
+  .meter.click:hover{border-color:var(--mc); box-shadow:var(--shadow-2); transform:translateY(-2px)}
+  .meter.click:active{transform:scale(.98)}
+  /* Only the tappable tiles get the chevron, so there is something to aim at. */
+  .meter.click .go{position:absolute; right:11px; top:12px; color:var(--mc); opacity:.55}
 
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:22px 24px; box-shadow:var(--shadow)}
-  .prog{height:4px; background:var(--surface-3); border-radius:2px; overflow:hidden; margin-bottom:18px}
-  .prog i{display:block; height:100%; background:var(--progress-accent); transition:width .2s}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px 24px; box-shadow:var(--shadow)}
+  .prog{height:5px; background:var(--surface-3); border-radius:3px; overflow:hidden; margin-bottom:18px}
+  .prog i{display:block; height:100%; border-radius:3px; transition:width .35s cubic-bezier(.2,.7,.3,1);
+          background:linear-gradient(90deg, var(--progress-accent), color-mix(in srgb, var(--view) 70%, var(--progress-accent)))}
+  .now{display:flex; gap:14px; align-items:flex-start}
+  .now .txt{min-width:0; flex:1}
   .now .t{font-family:Archivo,sans-serif; font-weight:700; font-size:23px; letter-spacing:-.02em; margin:0; text-wrap:balance}
   .now .a{color:var(--ink-2); font-size:15px; margin:2px 0 0}
   .now .m{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); margin-top:6px; display:flex; gap:14px; flex-wrap:wrap}
+  /* Album art, when the library was synced by a build that stores it; a
+     hue-shifted tile keyed off the track id when it wasn't. */
+  .art{width:74px; height:74px; cursor:pointer; border-radius:11px; flex:none; object-fit:cover; background:var(--surface-3); box-shadow:var(--shadow)}
+  .art.ph{display:grid; place-items:center; background:linear-gradient(150deg, var(--c5), var(--c7));
+          color:#FFF; font-family:Archivo,sans-serif; font-weight:800; font-size:26px; letter-spacing:-.03em}
   .tagrow{display:flex; gap:5px; flex-wrap:wrap; margin-top:12px}
-  .tag{font-size:11.5px; background:var(--tag-bg); color:var(--tag-ink); border-radius:20px; padding:2px 10px}
+  .tag{font-size:11.5px; background:var(--tag-bg); color:var(--tag-ink); border-radius:20px; padding:3px 10px}
   .picks{display:flex; flex-direction:column; gap:7px; margin-top:18px}
-  .pick{display:flex; align-items:center; gap:11px; border:1px solid var(--line); border-radius:var(--r); background:var(--surface);
-        padding:10px 13px; cursor:pointer; font:inherit; color:var(--ink); text-align:left; width:100%}
+  .pick{display:flex; align-items:center; gap:11px; border:1px solid var(--line); border-radius:10px; background:var(--surface);
+        padding:11px 13px; cursor:pointer; font:inherit; color:var(--ink); text-align:left; width:100%;
+        transition:border-color .12s ease, background .12s ease, transform .08s ease}
   .pick:hover{border-color:var(--hover-accent); background:var(--accent-soft)}
-  .pick .k{font-family:"IBM Plex Mono",monospace; font-size:11px; width:19px; height:19px; flex:none; display:grid; place-items:center; border:1px solid var(--line-2); border-radius:4px; color:var(--ink-3)}
-  .pick .nm{font-weight:600} .pick .ax{font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em}
-  .pick .sc{margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3)}
+  .pick:active{transform:scale(.99)}
+  /* The suggestion you get by swiping right is the one flagged here. */
+  .pick.best{border-color:var(--c3); background:linear-gradient(135deg, var(--c3-soft), var(--surface) 70%)}
+  .pick.best .k{border-color:var(--c3); color:var(--c3)}
+  .pick .k{font-family:"IBM Plex Mono",monospace; font-size:11px; width:21px; height:21px; flex:none; display:grid; place-items:center; border:1px solid var(--line-2); border-radius:6px; color:var(--ink-3)}
+  .pick .nm{font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .pick .ax{font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em}
+  .pick .sc{margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); flex:none}
   .rowbtns{display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; align-items:center}
 
+  /* ---------- inbox: the swipeable card ---------- */
+  .deck{position:relative; margin-top:4px}
+  /* A sliver of the next track behind the top card, so the deck reads as a
+     stack you are working through rather than one box that keeps changing. */
+  .peek{position:absolute; inset:14px 0 auto; height:120px; border-radius:14px; background:var(--surface);
+        border:1px solid var(--line); transform:scale(.955); opacity:.75; z-index:0}
+  .swipecard{position:relative; z-index:1; touch-action:pan-y; will-change:transform;
+             transition:transform .28s cubic-bezier(.2,.7,.3,1), box-shadow .2s ease}
+  .swipecard.drag{transition:none}
+  .swipecard.gone{transition:transform .3s ease-out, opacity .3s ease-out; opacity:0}
+  .verdicts{position:absolute; inset:0; pointer-events:none; z-index:3; border-radius:14px; overflow:hidden}
+  .verdict{position:absolute; top:16px; display:flex; align-items:center; gap:7px; padding:7px 13px; border-radius:9px;
+           font-family:Archivo,sans-serif; font-weight:800; font-size:13px; letter-spacing:.06em; text-transform:uppercase;
+           color:var(--c-ink); opacity:0; transform:scale(.9); max-width:60%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
+  .verdict.file{left:16px; background:var(--c3); transform:scale(.9) rotate(-7deg)}
+  .verdict.skip{right:16px; background:var(--ink-3); transform:scale(.9) rotate(7deg)}
+  /* Tinted glow under the card, matching whichever way it is being pushed. */
+  .swipecard.to-file{box-shadow:0 0 0 2px var(--c3), 0 12px 30px color-mix(in srgb, var(--c3) 30%, transparent)}
+  .swipecard.to-skip{box-shadow:0 0 0 2px var(--line-2), var(--shadow-2)}
+  .swipehint{display:none; gap:14px; justify-content:center; margin-top:14px; color:var(--ink-3); font-size:11.5px;
+             letter-spacing:.02em; flex-wrap:wrap}
+  .swipehint b{font-weight:600; color:var(--ink-2)}
+  .counter{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:14px;
+           font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3)}
+
   button.b{appearance:none; font:inherit; font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
-           background:var(--surface); color:var(--ink); border-radius:6px; padding:8px 13px;
-           transition:border-color .12s ease, background .12s ease, transform .08s ease}
+           background:var(--surface); color:var(--ink); border-radius:8px; padding:8px 13px;
+           transition:border-color .12s ease, background .12s ease, transform .08s ease, box-shadow .12s ease}
   button.b:hover{border-color:var(--ink-3)}
-  button.b:active{transform:translateY(1px)}
+  button.b:active{transform:scale(.97)}
   button.b.p{background:var(--btn-accent); border-color:var(--btn-accent); color:var(--btn-ink); box-shadow:var(--shadow)}
   button.b.p:hover{filter:brightness(1.06)}
   button.b.sm{font-size:12px; padding:5px 10px; font-weight:500}
-  button.b.big{font-size:15px; padding:12px 22px; border-radius:8px}
+  button.b.big{font-size:15px; padding:13px 22px; border-radius:11px}
+  /* The screen's own hue, for the one button on a screen that matters most. */
+  button.b.v{background:var(--view); border-color:var(--view); color:var(--c-ink); box-shadow:var(--shadow)}
   button.b:disabled{opacity:.5; cursor:default}
   button.b:disabled:hover{filter:none; border-color:var(--line-2)}
   input,select{font:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--line-2); border-radius:6px; background:var(--surface); color:var(--ink); max-width:100%}
   :focus-visible{outline:2px solid var(--hover-accent); outline-offset:2px}
 
   .rows{display:flex; flex-direction:column; gap:7px}
-  .row{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:11px 14px;
-       display:flex; gap:14px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap}
+  .row{position:relative; background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:11px 14px 11px 16px;
+       display:flex; gap:14px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; overflow:hidden;
+       transition:border-color .12s ease}
+  .row::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--view); opacity:.55}
+  .row:hover{border-color:var(--line-2)}
   .row .main{min-width:0; flex:1} .row .ttl{font-weight:600} .row .sub{color:var(--ink-2); font-size:13px}
   .row .acts{display:flex; gap:6px; flex-wrap:wrap}
   .mono{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums}
@@ -154,20 +308,23 @@
   table.cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:0 10px 3px 0}
   table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
   table.cmp .differs{color:var(--accent); font-weight:600}
-  .chip{font-size:12px; border:1px solid var(--line); border-radius:20px; padding:3px 10px; background:var(--surface); color:var(--ink-2); cursor:pointer; font-family:inherit}
+  .chip{font-size:12px; border:1px solid var(--line); border-radius:20px; padding:5px 12px; background:var(--surface); color:var(--ink-2); cursor:pointer; font-family:inherit; transition:border-color .12s ease, transform .08s ease}
   .chip:hover{border-color:var(--hover-accent); color:var(--ink)}
+  .chip:active{transform:scale(.96)}
   .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
   .empty{color:var(--ink-3); padding:34px 0; text-align:center}
-  .toast{position:fixed; right:18px; bottom:18px; background:var(--ink); color:var(--ground); padding:10px 15px;
-         border-radius:7px; font-size:13px; display:flex; gap:12px; align-items:center; z-index:20; max-width:420px}
+  .toast{position:fixed; right:calc(18px + var(--sar)); bottom:calc(18px + var(--sab)); background:var(--ink); color:var(--ground);
+         padding:11px 16px; border-radius:11px; font-size:13px; display:flex; gap:12px; align-items:center; z-index:28; max-width:420px;
+         box-shadow:var(--shadow-2); animation:toastIn .22s cubic-bezier(.2,.7,.3,1)}
+  @keyframes toastIn{from{opacity:0; transform:translateY(10px)}}
   .toast button{appearance:none; border:0; background:none; color:var(--hover-accent); font:inherit; font-weight:700; cursor:pointer; padding:0}
-  @media (max-width:820px){ .app{grid-template-columns:1fr} aside{position:static; height:auto; flex-direction:row; overflow-x:auto; align-items:center} .brand,.who,.railfoot{display:none} }
 
   /* ---- fixed corner controls (reachable from the landing screen too) ---- */
-  .fabBar{position:fixed; top:14px; right:16px; z-index:25; display:flex; gap:8px}
+  .fabBar{position:fixed; top:calc(14px + var(--sat)); right:calc(16px + var(--sar)); z-index:25; display:flex; gap:8px}
   .fab{appearance:none; position:relative; border:1px solid var(--line-2); background:var(--surface); color:var(--ink-2);
-    border-radius:8px; width:38px; height:38px; font-size:16px; cursor:pointer; display:flex;
-    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color .12s ease, color .12s ease}
+    border-radius:10px; width:38px; height:38px; font-size:16px; cursor:pointer; display:flex;
+    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color .12s ease, color .12s ease, transform .08s ease}
+  .fab:active{transform:scale(.94)}
   .fab:hover{border-color:var(--hover-accent); color:var(--ink)}
   .fab[aria-expanded="true"]{background:var(--surface-2); color:var(--ink)}
   .fab:disabled{opacity:.6; cursor:default}
@@ -186,25 +343,27 @@
   body:has(#app:not([hidden])) #btnResync{display:flex}
 
   /* ---- "a newer version is published" bar ---- */
-  .updatebar{position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:26;
+  .updatebar{position:fixed; top:calc(14px + var(--sat)); left:50%; transform:translateX(-50%); z-index:26;
     display:flex; align-items:center; gap:12px; max-width:min(560px,calc(100vw - 130px));
     background:var(--surface); border:1px solid var(--accent); border-radius:9px;
     padding:9px 10px 9px 15px; box-shadow:var(--shadow-2); font-size:13px}
   .updatebar b{font-weight:600}
   .updatebar .txt{min-width:0}
   .updatebar .b{white-space:nowrap}
-  /* Narrow: sit under the corner buttons rather than under them. */
-  @media (max-width:820px){ .updatebar{top:62px; left:12px; right:12px; transform:none; max-width:none} }
+  /* Narrow: sit under the corner buttons rather than behind them. */
+  @media (max-width:820px){ .updatebar{top:calc(62px + var(--sat)); left:calc(12px + var(--sal)); right:calc(12px + var(--sar)); transform:none; max-width:none} }
   .scrim{position:fixed; inset:0; background:rgba(8,10,14,.4); z-index:29; opacity:0; pointer-events:none; transition:opacity .18s ease}
   .scrim.open{opacity:1; pointer-events:auto}
-  .settings{position:fixed; top:0; right:0; height:100vh; width:340px; max-width:92vw; background:var(--surface);
+  .settings{position:fixed; top:0; right:0; height:100vh; height:100dvh; width:340px; max-width:92vw; background:var(--surface);
             border-left:1px solid var(--line); z-index:30; display:flex; flex-direction:column;
             box-shadow:-14px 0 32px rgba(0,0,0,.18); transform:translateX(100%); visibility:hidden;
             transition:transform .18s ease}
   .settings.open{transform:translateX(0); visibility:visible}
   .settings-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); flex:none}
   .settings-head h2{font-family:Archivo,sans-serif; font-size:16px; font-weight:700; margin:0}
-  .settings-body{padding:16px 18px 28px; overflow-y:auto; display:flex; flex-direction:column; gap:22px}
+  .settings-body{padding:16px 18px 28px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+                 display:flex; flex-direction:column; gap:22px}
+  .grabber{display:none; width:38px; height:4px; border-radius:3px; background:var(--line-2); margin:9px auto 0; flex:none}
   .settings-body h3{font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; margin:0 0 10px}
   .iconbtn{appearance:none; border:0; background:none; color:var(--ink-2); font-size:16px; cursor:pointer; padding:4px 7px; border-radius:5px; line-height:1}
   .iconbtn:hover{background:var(--surface-2); color:var(--ink)}
@@ -225,8 +384,121 @@
   .check-row{display:flex; align-items:center; gap:9px; font-size:13px; color:var(--ink-2); padding:4px 0; cursor:pointer}
   .check-row input{width:15px; height:15px; accent-color:var(--accent)}
   .settings-body .b{align-self:flex-start}
-  .compact .row{padding:6px 12px}
+  .compact .row{padding:6px 12px 6px 15px}
   .compact .rows{gap:4px}
+
+  /* ---- the "More" sheet: the screens that don't fit the tab bar ---- */
+  .sheet{position:fixed; left:0; right:0; bottom:0; z-index:30; background:var(--surface);
+         border-top:1px solid var(--line); border-radius:20px 20px 0 0; box-shadow:0 -12px 34px rgba(0,0,0,.22);
+         transform:translateY(101%); visibility:hidden; transition:transform .24s cubic-bezier(.2,.7,.3,1);
+         padding-bottom:calc(var(--sab) + 12px); max-height:88dvh; display:flex; flex-direction:column}
+  .sheet.open{transform:translateY(0); visibility:visible}
+  .sheet h2{font-family:Archivo,sans-serif; font-size:16px; font-weight:700; margin:0; padding:2px 20px 12px}
+  .sheetlist{overflow-y:auto; overscroll-behavior:contain; padding:0 12px 6px}
+  .sheet .nav{border-left:0; border-radius:12px; padding:11px 14px; font-size:14.5px}
+  .sheet .nav[aria-current="true"]{background:var(--surface-2)}
+  .sheet .nav .ic{width:22px; height:22px} .sheet .nav .ic svg{width:19px; height:19px}
+  .sheetfoot{display:flex; gap:8px; padding:12px 20px 0; border-top:1px solid var(--line); flex-wrap:wrap}
+
+  /* ---- pull down at the top of a screen to re-sync ---- */
+  .ptr{position:fixed; left:0; right:0; top:0; z-index:23; display:flex; align-items:flex-end; justify-content:center;
+       height:0; overflow:hidden; pointer-events:none; color:var(--view); font-size:12px; font-weight:600;
+       letter-spacing:.02em; padding-bottom:6px}
+  .ptr svg{margin-right:7px; transition:transform .2s ease}
+  .ptr.armed svg{transform:rotate(180deg)}
+
+  /* ---- swiping between screens ---- */
+  @keyframes slideL{from{opacity:0; transform:translateX(22px)}}
+  @keyframes slideR{from{opacity:0; transform:translateX(-22px)}}
+  main.in-l{animation:slideL .26s cubic-bezier(.2,.7,.3,1)}
+  main.in-r{animation:slideR .26s cubic-bezier(.2,.7,.3,1)}
+  /* Which screen you are on, out of how many — the swipe needs an anchor. */
+  .dots{display:none; gap:5px; justify-content:center; padding:2px 0 10px; align-items:center}
+  .dots i{width:5px; height:5px; border-radius:50%; background:var(--line-2); transition:background .2s ease, width .2s ease}
+  .dots i.on{width:16px; border-radius:3px; background:var(--view)}
+
+  /* ================= iPhone and other narrow screens ================= */
+  @media (max-width:820px){
+    .app{grid-template-columns:1fr; min-height:0}
+    .mtop{display:flex}
+    /* Clears the fixed header for the first thing in the scroller. */
+    .dots{display:flex; padding-top:calc(var(--sat) + 60px)}
+    .fabBar{top:calc(6px + var(--sat)); right:calc(10px + var(--sar))}
+    .swipehint{display:flex}
+
+    /* The rail becomes a bottom tab bar: thumb-reachable, and padded out of
+       the home-indicator strip rather than sitting under it. */
+    aside{position:fixed; top:auto; left:0; right:0; bottom:0; height:auto; z-index:24;
+          flex-direction:row; align-items:stretch; gap:0; overflow:visible;
+          padding:6px calc(6px + var(--sar)) calc(6px + var(--sab)) calc(6px + var(--sal));
+          border-right:0; border-top:1px solid var(--line);
+          background:color-mix(in srgb, var(--surface) 90%, transparent);
+          -webkit-backdrop-filter:saturate(180%) blur(18px); backdrop-filter:saturate(180%) blur(18px)}
+    .brand,.who,.railfoot{display:none}
+    aside .nav[data-sec]{display:none}
+    aside .nav, .tabmore{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+          gap:3px; padding:6px 2px 4px; border-left:0; border-radius:12px; min-height:48px;
+          background:none; appearance:none; border:0; font:inherit; color:var(--ink-3); cursor:pointer}
+    aside .nav .lbl, .tabmore .lbl{flex:none; font-size:10px; letter-spacing:.01em; font-weight:600; line-height:1}
+    aside .nav .ic, .tabmore .ic{width:24px; height:24px; border-radius:9px; transition:background .16s ease, color .16s ease}
+    aside .nav .ic svg, .tabmore .ic svg{width:19px; height:19px}
+    aside .nav[aria-current="true"]{background:none; color:var(--vc)}
+    aside .nav[aria-current="true"] .ic{background:color-mix(in srgb, var(--vc) 16%, transparent); color:var(--vc)}
+    .tabmore[aria-expanded="true"]{color:var(--ink)}
+    /* Lit whenever the open screen is one of the six behind it. */
+    .tabmore[aria-current="true"]{color:var(--view)}
+    .tabmore[aria-current="true"] .ic{background:color-mix(in srgb, var(--view) 16%, transparent); color:var(--view)}
+    aside .nav:active, .tabmore:active{transform:scale(.94)}
+    /* Counts ride the icon as a badge instead of sitting in a column. */
+    aside .nav .c{position:absolute; top:2px; left:50%; margin-left:5px; min-width:16px; height:16px; padding:0 4px;
+          display:grid; place-items:center; border-radius:8px; font-size:9.5px; font-weight:700; line-height:1;
+          background:var(--vc); color:var(--c-ink); border:2px solid var(--surface)}
+
+    main{padding:8px calc(14px + var(--sar)) calc(var(--tabh) + var(--sab) + 26px) calc(14px + var(--sal)); max-width:none}
+    h1{font-size:23px; margin-bottom:2px} h1::before{width:28px; height:3px; margin-bottom:8px}
+    h2{font-size:15px; margin-top:22px}
+    .lede{font-size:13px}
+    .card{padding:16px 16px 18px; border-radius:16px}
+    .meters{grid-template-columns:1fr 1fr; gap:9px}
+    .meter{padding:12px 12px 13px} .meter .n{font-size:23px}
+    .row{padding:12px 13px 12px 15px}
+    .row .acts{width:100%} .row .acts .b{flex:1}
+    table.cmp{display:block; overflow-x:auto; white-space:nowrap}
+
+    /* 16px or larger, or iOS zooms the whole page in on focus and leaves it
+       there — the single biggest reason the layout felt "off". */
+    input,select,textarea{font-size:16px; padding:10px 12px; border-radius:9px}
+    button.b{min-height:40px} button.b.sm{min-height:34px; font-size:12.5px}
+    .chip{min-height:32px; display:inline-flex; align-items:center}
+    .fab{width:40px; height:40px}
+
+    .land{padding-top:calc(48px + var(--sat))}
+    .logo{font-size:37px; gap:12px} .logo .mark{width:40px; height:40px}
+    .tagline{font-size:16px; margin-bottom:22px}
+    .cta{flex-direction:column; align-items:stretch} .cta .b{width:100%}
+    .feat{grid-template-columns:1fr; margin:24px 0}
+
+    .toast{left:calc(12px + var(--sal)); right:calc(12px + var(--sar)); max-width:none;
+           bottom:calc(var(--tabh) + var(--sab) + 12px); justify-content:space-between}
+    body:has(#land:not([hidden])) .toast{bottom:calc(12px + var(--sab))}
+
+    /* Settings reads as a sheet from the bottom on a phone, not a drawer from
+       a right edge your thumb can't reach. */
+    .settings{top:auto; bottom:0; left:0; right:0; width:auto; max-width:none; height:auto; max-height:88dvh;
+              border-left:0; border-top:1px solid var(--line); border-radius:20px 20px 0 0;
+              transform:translateY(101%); box-shadow:0 -12px 34px rgba(0,0,0,.22);
+              transition:transform .24s cubic-bezier(.2,.7,.3,1)}
+    .settings.open{transform:translateY(0)}
+    .grabber{display:block}
+    .settings-head{padding:10px 18px 14px; border-bottom:0}
+    .settings-body{padding-bottom:calc(28px + var(--sab))}
+    .swatches{grid-template-columns:repeat(8,1fr)}
+    .check-row{padding:9px 0} .check-row input{width:19px; height:19px}
+  }
+  @media (max-width:344px){
+    .meters{grid-template-columns:1fr}
+    aside .nav .lbl, .tabmore .lbl{font-size:9.5px}
+  }
 </style>
 </head>
 <body>
@@ -242,6 +514,10 @@
     </linearGradient>
   </defs>
 </svg>
+
+<!-- Slow-drifting colour behind the first screen only; the app screens keep a
+     flat ground so the cards stay legible. -->
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
 
 <!-- ============ landing / connect ============ -->
 <div class="land" id="land">
@@ -318,6 +594,21 @@
 
 <!-- ============ app ============ -->
 <div class="app" id="app" hidden>
+  <!-- Phone-only header. Desktop keeps the left rail and never renders this. -->
+  <div class="mtop" id="mtop">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="9" style="fill:url(#bfTile) var(--accent)"/>
+      <g style="fill:var(--accent-ink)">
+        <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" opacity=".92"/>
+        <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" opacity=".97"/>
+        <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" opacity=".97"/>
+        <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" opacity=".92"/>
+      </g>
+    </svg>
+    <span class="title" id="mtitle">Overview</span>
+  </div>
+  <div class="dots" id="dots" aria-hidden="true"></div>
   <aside>
     <div class="brand">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -333,16 +624,19 @@
       Better<span>fy</span>
     </div>
     <div class="who" id="who"></div>
-    <button class="nav" data-v="home" aria-current="true">Overview</button>
-    <button class="nav" data-v="inbox">Inbox <span class="c" id="c-inbox"></span></button>
-    <button class="nav" data-v="dupes">Duplicates <span class="c" id="c-dupes"></span></button>
-    <button class="nav" data-v="cross">Cross-filed <span class="c" id="c-cross"></span></button>
-    <button class="nav" data-v="misfile">Misfiles <span class="c" id="c-misfile"></span></button>
-    <button class="nav" data-v="new">New playlists <span class="c" id="c-new"></span></button>
-    <button class="nav" data-v="discover">Discover</button>
-    <button class="nav" data-v="shuffle">Shuffle</button>
-    <button class="nav" data-v="lists">Playlists <span class="c" id="c-lists"></span></button>
-    <button class="nav" data-v="history">History</button>
+    <button class="nav" data-v="home" aria-current="true"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg></span><span class="lbl">Overview</span></button>
+    <button class="nav" data-v="inbox"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/></svg></span><span class="lbl">Inbox</span><span class="c" data-count="inbox"></span></button>
+    <button class="nav" data-v="dupes"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 4.5H6a2.5 2.5 0 0 0-2.5 2.5v9.5"/></svg></span><span class="lbl">Duplicates</span><span class="c" data-count="dupes"></span></button>
+    <button class="nav" data-v="misfile"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.6 21 19.2H3z"/><path d="M12 9.6v4.2"/><path d="M12 17h.01"/></svg></span><span class="lbl">Misfiles</span><span class="c" data-count="misfile"></span></button>
+    <button class="nav" data-sec data-v="cross"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h4l8 10h4"/><path d="M17.5 19.5 21 17l-3.5-2.5"/><path d="M4 17h4l2.2-2.8"/><path d="M13.6 9.6 16 7h4"/><path d="M17.5 4.5 21 7"/></svg></span><span class="lbl">Cross-filed</span><span class="c" data-count="cross"></span></button>
+    <button class="nav" data-sec data-v="new"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11.5v5"/><path d="M9.5 14h5"/></svg></span><span class="lbl">New playlists</span><span class="c" data-count="new"></span></button>
+    <button class="nav" data-sec data-v="discover"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/></svg></span><span class="lbl">Discover</span></button>
+    <button class="nav" data-sec data-v="shuffle"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 4.5 20.5 7 17 9.5"/><path d="M17 14.5 20.5 17 17 19.5"/><path d="M3.5 7h3.2c1.2 0 2.3.6 3 1.6l4.6 6.8c.7 1 1.8 1.6 3 1.6h3.2"/><path d="M3.5 17h3.2c1.2 0 2.3-.6 3-1.6l.9-1.3"/><path d="M14.4 9.9l.9-1.3c.7-1 1.8-1.6 3-1.6h2.2"/></svg></span><span class="lbl">Shuffle</span></button>
+    <button class="nav" data-sec data-v="lists"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Playlists</span><span class="c" data-count="lists"></span></button>
+    <button class="nav" data-sec data-v="history"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 12a8.4 8.4 0 1 0 2.6-6"/><path d="M3.4 3.6v4.2h4.2"/><path d="M12 7.8V12l3 1.8"/></svg></span><span class="lbl">History</span></button>
+    <!-- Tab bar only: the six screens above that don't fit five tabs. -->
+    <button class="tabmore" id="tabMore" aria-expanded="false" aria-controls="moreSheet">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
@@ -376,7 +670,29 @@
   <button class="fab" id="btnSettings" title="Settings" aria-expanded="false" aria-controls="settingsPanel">⚙</button>
 </div>
 <div class="scrim" id="scrim"></div>
+
+<!-- Pull down from the top of any screen to re-read the library. -->
+<div class="ptr" id="ptr" aria-hidden="true">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+       stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v13"/><path d="m6.5 12 5.5 5.5L17.5 12"/></svg>
+  <span id="ptrTxt">Pull to re-sync</span>
+</div>
+
+<!-- The screens that don't fit on the tab bar. Filled from the rail so the two
+     can never list different things. -->
+<div class="sheet" id="moreSheet" aria-hidden="true" aria-label="More screens">
+  <div class="grabber" id="sheetGrab"></div>
+  <h2>More</h2>
+  <div class="sheetlist" id="sheetList"></div>
+  <div class="sheetfoot">
+    <button class="b sm" id="sheetResync">Re-sync library</button>
+    <button class="b sm" id="sheetSettings">Settings</button>
+    <button class="b sm" id="sheetDisconnect">Disconnect</button>
+  </div>
+</div>
+
 <div class="settings" id="settingsPanel" aria-hidden="true" aria-label="Settings">
+  <div class="grabber"></div>
   <div class="settings-head">
     <h2>Settings</h2>
     <button class="iconbtn" id="closeSettings" aria-label="Close settings">✕</button>
@@ -461,6 +777,29 @@ let T = loadTheme();
 
 const hsl = (h,s,l) => `hsl(${((h%360)+360)%360} ${Math.max(0,Math.min(100,s))}% ${Math.max(0,Math.min(100,l))}%)`;
 
+/**
+ * Relative luminance of an HSL colour, and the lightness that lands a given
+ * hue on a readable one. Hue matters enormously here: a yellow at 50%
+ * lightness is nearly twice as bright as a blue at 50%, so spinning the
+ * accent around the wheel at a fixed lightness produces some colours you
+ * cannot read. This walks the lightness until the colour is actually dark
+ * enough (on a light background) or light enough (on a dark one).
+ */
+function lumOf(h, s, l) {
+  h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
+  const c = (1 - Math.abs(2*l - 1)) * s, x = c * (1 - Math.abs((h/60) % 2 - 1)), m = l - c/2;
+  const [r, g, b] = h < 60 ? [c,x,0] : h < 120 ? [x,c,0] : h < 180 ? [0,c,x]
+                  : h < 240 ? [0,x,c] : h < 300 ? [x,0,c] : [c,0,x];
+  const lin = v => { v += m; return v <= .03928 ? v/12.92 : Math.pow((v + .055)/1.055, 2.4); };
+  return .2126*lin(r) + .7152*lin(g) + .0722*lin(b);
+}
+function readable(h, s, l, dark) {
+  let L = Math.max(8, Math.min(92, l));
+  if (dark) while (L < 92 && lumOf(h, s, L) < 0.30) L += 2;
+  else      while (L > 10 && lumOf(h, s, L) > 0.24) L -= 2;
+  return L;
+}
+
 function isDarkNow() {
   const dt = document.documentElement.getAttribute('data-theme');
   if (dt === 'dark') return true;
@@ -483,6 +822,35 @@ function applyTheme() {
   // so the mark stays one colour however far the sliders are pushed.
   root.setProperty('--accent-lift', hsl(hue, Math.min(depth+6,100), Math.min(brightness+9,92)));
   root.setProperty('--accent-ink', brightness >= 55 ? '#161A21' : '#FFFFFF');
+
+  // Eight hues spun off the chosen accent. Everything on screen that isn't a
+  // control — stat tiles, screen headers, the tab bar, the landing cards —
+  // takes one of these, so the app is colourful without wandering away from
+  // the colour the viewer actually picked.
+  const SPIN = [0, 38, 76, 130, 172, 208, 258, 308];
+  SPIN.forEach((off, i) => {
+    const h = hue + off, sat = dark ? Math.min(depth + 12, 82) : Math.min(depth + 4, 86);
+    const base = dark ? Math.max(brightness + 16, 64) : Math.min(brightness, 50);
+    root.setProperty(`--c${i}`, hsl(h, sat, readable(h, sat, base, dark)));
+    root.setProperty(`--c${i}-soft`, dark
+      ? hsl(h, Math.min(depth, 55), 13)
+      : hsl(h, Math.min(depth + 12, 92), 95));
+  });
+  // What to print on top of one of those hues.
+  root.setProperty('--c-ink', dark ? '#12161C' : '#FFFFFF');
+
+  // The iOS status bar picks this up, so it blends with the page instead of
+  // sitting on a coloured strip above it. The two media-scoped tags in the
+  // head are the pre-script default; from here on there is exactly one, which
+  // also has to follow an explicit light/dark choice rather than the OS.
+  let tc = document.querySelector('meta[name="theme-color"][data-live]');
+  if (!tc) {
+    document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.remove());
+    tc = Object.assign(document.createElement('meta'), { name:'theme-color' });
+    tc.dataset.live = '';
+    document.head.appendChild(tc);
+  }
+  tc.content = dark ? '#0E1116' : '#F1F3F6';
 
   const r = T.regions;
   root.setProperty('--nav-accent',      r.nav      ? 'var(--accent)' : 'var(--line-2)');
@@ -553,14 +921,20 @@ function initSettingsPanel() {
   };
   trigger.onclick = () => openSettings(!panel.classList.contains('open'));
   $('#closeSettings').onclick = () => openSettings(false);
-  scrim.onclick = () => openSettings(false);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && panel.classList.contains('open')) openSettings(false); });
+  scrim.onclick = () => { openSettings(false); openSheet(false); };
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (panel.classList.contains('open')) openSettings(false);
+    closeSheet();
+  });
 
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (T.mode === 'system') applyTheme(); });
 }
 
 applyTheme();
 initSettingsPanel();
+initSheet();
+bindAppGestures();
 
 const DEFAULT_CLIENT_ID = '__CLIENT_ID__';
 // Always the directory form with a trailing slash. Spotify matches the redirect
@@ -703,11 +1077,18 @@ const idb = {
   async clear(){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').clear(); tx.oncomplete = () => ok(); }); },
 };
 
-const FIELDS = 'next,items(added_at,item(id,name,popularity,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type),artists(id,name)))';
+const FIELDS = 'next,items(added_at,item(id,name,popularity,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type,images),artists(id,name)))';
+// One artwork URL per track — the ~300px size, which is what the inbox card
+// shows. Libraries synced before this existed simply have none, and the card
+// falls back to a coloured tile until the next re-sync.
+const artOf = t => {
+  const im = t?.album?.images ?? [];
+  return (im.find(x => x.width && x.width <= 400) ?? im[im.length - 1] ?? {}).url;
+};
 const shapeTrack = t => t && ({
   id:t.id, name:t.name, artists:(t.artists??[]).map(a=>({id:a.id,name:a.name})),
   album:t.album?.name, albumType:t.album?.album_type, released:t.album?.release_date,
-  duration_ms:t.duration_ms, isrc:t.external_ids?.isrc, popularity:t.popularity,
+  art:artOf(t), duration_ms:t.duration_ms, isrc:t.external_ids?.isrc, popularity:t.popularity,
 });
 
 async function syncLibrary(onProgress) {
@@ -828,7 +1209,7 @@ function buildReports(lib, cfg, tags) {
   for (const p of lib.playlists) for (const t of p.tracks) filed.add(t.id);
   const unfiled = lib.liked.filter(t => t?.id && !filed.has(t.id));
   const backlog = unfiled.map(t => ({ id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
-    album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms,
+    album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
     tags: topTags(t, tags, idf),
     suggest: rank(t, tags, profiles, idf, { top:3 }).map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null })) }))
     .sort((a,b) => (b.added??'').localeCompare(a.added??''));
@@ -856,6 +1237,16 @@ function buildReports(lib, cfg, tags) {
 /* ===================== UI ===================== */
 let LIB = null, CFG = null, TAGS = null, R = null, view = 'home';
 const S = { inboxAt:0, crossMin:3, mfBand:'high' };
+
+// Rail order, which is also swipe order: swiping left and right on a phone
+// walks this list, so the gesture and the tab bar agree on what comes next.
+const VORDER = ['home','inbox','dupes','misfile','cross','new','discover','shuffle','lists','history'];
+const VHUE = { home:'c0', inbox:'c1', dupes:'c2', misfile:'c4', cross:'c3', new:'c5',
+               discover:'c6', shuffle:'c7', lists:'c2', history:'c5' };
+const VTITLE = { home:'Overview', inbox:'Inbox', dupes:'Duplicates', misfile:'Misfiles', cross:'Cross-filed',
+                 new:'New playlists', discover:'Discover', shuffle:'Shuffle', lists:'Playlists', history:'History' };
+// The six that live behind "More" rather than on the tab bar.
+const SECONDARY = new Set(['cross','new','discover','shuffle','lists','history']);
 let toastT;
 function toast(msg, undoFn) {
   const el = $('#toast');
@@ -921,25 +1312,48 @@ async function playTrack(id) {
   return dev.name;
 }
 
+const CHEV = `<svg class="go" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>`;
+
 function vHome() {
   const exact = R.within.filter(x=>x.verdict==='same-recording').length;
   const clash = R.within.length - exact;
   const uniq = new Set(); let placements = 0;
   for (const p of LIB.playlists) for (const t of p.tracks) { uniq.add(t.id); placements++; }
+  // Each tile is tinted with the hue of the screen it opens, so the colour
+  // says where the tap goes and matches the tab you land on. The two that
+  // lead nowhere stay neutral rather than borrowing a hue they don't own.
   const m = [
-    ['Unfiled', R.backlog.length, 'Liked but in no playlist','act','inbox'],
-    ['Exact repeats', exact, 'Same recording twice in one playlist','act','dupes'],
-    ['Version clashes', clash, 'Two different cuts, one playlist','warn','dupes'],
-    ['Misfiles', R.misfiled.length, 'Fit another playlist far better','warn','misfile'],
-    ['Cross-filed', R.across.length, 'In more than one playlist','','cross'],
-    ['New playlists', R.clusters.length, 'Clusters with no home','','new'],
-    ['Unique tracks', uniq.size, `Across ${LIB.playlists.length} playlists`,'ok',null],
-    ['Placements', placements, 'Total filings','',null],
+    ['Unfiled', R.backlog.length, 'Liked but in no playlist', 'inbox'],
+    ['Exact repeats', exact, 'Same recording twice in one playlist', 'dupes'],
+    ['Version clashes', clash, 'Two different cuts, one playlist', 'dupes'],
+    ['Misfiles', R.misfiled.length, 'Fit another playlist far better', 'misfile'],
+    ['Cross-filed', R.across.length, 'In more than one playlist', 'cross'],
+    ['New playlists', R.clusters.length, 'Clusters with no home', 'new'],
+    ['Unique tracks', uniq.size, `Across ${LIB.playlists.length} playlists`, null],
+    ['Placements', placements, 'Total filings', null],
   ];
+  const liked = LIB.liked.length, done = Math.max(liked - R.backlog.length, 0);
+  const pct = liked ? Math.round(100 * done / liked) : 100;
   return `<h1>Overview</h1>
     <p class="lede">Synced ${esc((LIB.captured_at??'').slice(0,10))}. Nothing changes until you act, and every change can be undone.</p>
-    <div class="meters">${m.map(([l,n,d,c,go]) =>
-      `<div class="meter ${c} ${go?'click':''}" ${go?`data-go="${go}"`:''}><span class="l">${esc(l)}</span><span class="n">${n.toLocaleString()}</span><span class="d">${esc(d)}</span></div>`).join('')}</div>`;
+    ${liked ? `<div class="card" style="margin-bottom:14px">
+      <div class="counter" style="margin:0 0 9px"><span><b style="color:var(--ink);font-size:13px">${done.toLocaleString()} of ${liked.toLocaleString()} liked tracks filed</b></span><span>${pct}%</span></div>
+      <div class="prog" style="margin:0"><i style="width:${pct}%"></i></div>
+    </div>` : ''}
+    <div class="meters">${m.map(([l,n,d,go]) =>
+      `<div class="meter ${go?'click':''}" ${go?`data-go="${go}" style="--mc:var(--${VHUE[go]}); --ms:var(--${VHUE[go]}-soft)"`
+        : 'style="--mc:var(--ink); --ms:var(--surface-2)"'}>${go?CHEV:''}<span class="l">${esc(l)}</span>
+        <span class="n">${n.toLocaleString()}</span><span class="d">${esc(d)}</span></div>`).join('')}</div>`;
+}
+
+/** A stable hue per track, for the tile shown when there's no artwork. */
+const hueOf = id => { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
+
+function artHTML(t) {
+  if (t.art) return `<img class="art" src="${esc(t.art)}" alt="" data-act="play" title="Play" loading="lazy" decoding="async">`;
+  const h = hueOf(t.id);
+  return `<div class="art ph" data-act="play" title="Play" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h+48)%360} 58% 44%))">${esc((t.title||'?').trim()[0]??'?')}</div>`;
 }
 
 function vInbox() {
@@ -947,27 +1361,44 @@ function vInbox() {
   if (!rows.length) return `<h1>Inbox</h1><div class="empty">Nothing unfiled.</div>`;
   const i = Math.min(S.inboxAt, rows.length-1), t = rows[i];
   const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
+  const best = t.suggest[0];
+  // Say whichever of the two is actually available to the hand on the device.
+  const touch = matchMedia('(hover:none) and (pointer:coarse)').matches;
+  const how = touch
+    ? `Swipe the card <b>right</b> to file it${best ? ` into ${esc(best.name)}` : ''}, <b>left</b> to skip, and tap the artwork to play.`
+    : `Keys: <b>1–3</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.`;
   return `<h1>Inbox</h1>
-    <p class="lede">${rows.length.toLocaleString()} liked tracks sit in no playlist. Keys: <b>1–3</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.</p>
-    <div class="card">
-      <div class="prog"><i style="width:${(i/rows.length*100).toFixed(2)}%"></i></div>
-      <div class="now">
-        <p class="t">${esc(t.title)}</p><p class="a">${esc(t.artist)}</p>
-        <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span><span>liked ${esc(t.added)}</span></div>
+    <p class="lede">${rows.length.toLocaleString()} liked tracks sit in no playlist. ${how}</p>
+    <div class="deck">
+      ${rows[i+1] ? '<div class="peek" aria-hidden="true"></div>' : ''}
+      <div class="card swipecard" id="swipeCard" ${best?`data-best="${esc(best.id)}"`:''}>
+        <div class="verdicts" aria-hidden="true">
+          <span class="verdict file">${best ? esc(best.name) : 'No pick'}</span>
+          <span class="verdict skip">Skip</span>
+        </div>
+        <div class="prog"><i style="width:${(i/rows.length*100).toFixed(2)}%"></i></div>
+        <div class="now">
+          ${artHTML(t)}
+          <div class="txt">
+            <p class="t">${esc(t.title)}</p><p class="a">${esc(t.artist)}</p>
+            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>
+          </div>
+        </div>
         ${t.tags.length?`<div class="tagrow">${t.tags.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}</div>`:''}
+        ${t.suggest.length ? `<div class="picks">${t.suggest.slice(0,3).map((s,n)=>
+          `<button class="pick ${n===0?'best':''}" data-file="${esc(s.id)}"><span class="k">${n+1}</span><span class="nm">${esc(s.name)}</span>
+           <span class="ax">${esc(s.axis??'')}</span><span class="sc">${(s.score*100).toFixed(0)}% fit</span></button>`).join('')}</div>`
+          : `<p class="why">No confident suggestion — no tags for this artist, or it fits nothing you have.</p>`}
+        <div class="rowbtns">
+          <button class="b v" data-act="play">Play</button>
+          <button class="b" data-act="skip">Skip</button>
+          <button class="b" data-act="unlike">Unlike</button>
+          <select id="anyPl"><option value="">File somewhere else…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+        </div>
       </div>
-      ${t.suggest.length ? `<div class="picks">${t.suggest.slice(0,3).map((s,n)=>
-        `<button class="pick" data-file="${esc(s.id)}"><span class="k">${n+1}</span><span class="nm">${esc(s.name)}</span>
-         <span class="ax">${esc(s.axis??'')}</span><span class="sc">${(s.score*100).toFixed(0)}% fit</span></button>`).join('')}</div>`
-        : `<p class="why">No confident suggestion — no tags for this artist, or it fits nothing you have.</p>`}
-      <div class="rowbtns">
-        <button class="b p" data-act="play">Play (P)</button>
-        <button class="b" data-act="skip">Skip (S)</button>
-        <button class="b" data-act="unlike">Unlike (U)</button>
-        <select id="anyPl"><option value="">File somewhere else…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
-      </div>
-      <div class="m" style="margin-top:14px">${i+1} of ${rows.length}</div>
-    </div>`;
+    </div>
+    <div class="swipehint"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span></div>
+    <div class="counter"><span>liked ${esc(t.added)}</span><span>${i+1} of ${rows.length}</span></div>`;
 }
 
 function cmpTable(o) {
@@ -1162,7 +1593,7 @@ async function runDiscovery(seedPlaylistId) {
   S.discover = out.filter(o => o.id);
   S.discoverFrom = src?.name ?? 'your whole library';
   $('#land').hidden = true; $('#app').hidden = false;
-  view = 'discover'; render();
+  go('discover');
 }
 
 function vDiscover() {
@@ -1272,20 +1703,237 @@ async function enrichMissing() {
 
 const VIEWS = { home:vHome, inbox:vInbox, dupes:vDupes, cross:vCross, misfile:vMisfile,
                 new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists, history:vHistory };
-function render() {
-  $('#main').innerHTML = VIEWS[view]();
+/**
+ * Re-draw the current screen. `dir` is only passed when the screen changed:
+ * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
+ * content slides in from that side. Re-rendering in place after an action
+ * (filing a track, undoing) passes nothing and so doesn't animate.
+ */
+function render(dir) {
+  const root = document.documentElement.style;
+  root.setProperty('--view', `var(--${VHUE[view]})`);
+  root.setProperty('--view-soft', `var(--${VHUE[view]}-soft)`);
+
+  const main = $('#main');
+  main.classList.remove('in-l', 'in-r');
+  main.innerHTML = VIEWS[view]();
+  if (dir) { void main.offsetWidth; main.classList.add(dir > 0 ? 'in-l' : 'in-r'); }
+
+  $('#mtitle').textContent = VTITLE[view] ?? '';
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
-  const exact = R.within.filter(x=>x.verdict==='same-recording').length;
-  $('#c-inbox').textContent = R.backlog.length; $('#c-dupes').textContent = R.within.length;
-  $('#c-cross').textContent = R.across.length; $('#c-misfile').textContent = R.misfiled.length;
-  $('#c-new').textContent = R.clusters.length || '';
-  $('#c-lists').textContent = LIB.playlists.length;
+  $('#tabMore').setAttribute('aria-current', String(SECONDARY.has(view)));
+
+  const counts = { inbox:R.backlog.length, dupes:R.within.length, cross:R.across.length,
+                   misfile:R.misfiled.length, new:R.clusters.length, lists:LIB.playlists.length };
+  document.querySelectorAll('[data-count]').forEach(el => {
+    const n = counts[el.dataset.count] ?? 0;
+    el.textContent = n ? n.toLocaleString() : '';
+  });
+
+  const dots = $('#dots');
+  if (dots.childElementCount !== VORDER.length) dots.innerHTML = VORDER.map(() => '<i></i>').join('');
+  const at = VORDER.indexOf(view);
+  [...dots.children].forEach((d, i) => d.classList.toggle('on', i === at));
+
+  bindSwipeCard();
 }
+
+/** Move to another screen: animates in the direction of travel and starts at the top. */
+function go(v) {
+  if (v === view) return render();
+  const dir = VORDER.indexOf(v) >= VORDER.indexOf(view) ? 1 : -1;
+  view = v;
+  render(dir);
+  window.scrollTo(0, 0);
+}
+
+/* ======================= touch gestures =======================
+ * Everything here is additive: the same actions all have buttons and keys,
+ * so a phone with a cracked digitiser, a mouse, or a screen reader loses
+ * nothing. Nothing below runs on a pointer that can hover.
+ * ============================================================= */
+const buzz = ms => { try { navigator.vibrate?.(ms); } catch {} };
+const isPhone = () => innerWidth <= 820;
+// Set while the inbox card owns the current gesture, so the screen-level
+// swipe below doesn't try to change screen out from under it.
+let gestureClaimed = false;
+
+/** Drag the top inbox card: right files it into the best suggestion, left skips. */
+function bindSwipeCard() {
+  const card = $('#swipeCard');
+  if (!card) return;
+  const TH = 76;                       // travel, in px, before a swipe counts
+  let x0 = 0, y0 = 0, dx = 0, mode = null;
+  const vFile = card.querySelector('.verdict.file'), vSkip = card.querySelector('.verdict.skip');
+
+  const paint = () => {
+    const t = Math.max(-1, Math.min(1, dx / 160));
+    card.style.transform = `translate3d(${dx}px,0,0) rotate(${t * 6}deg)`;
+    if (vFile) vFile.style.opacity = dx > 12 ? Math.min(1, (dx - 12) / 60) : 0;
+    if (vSkip) vSkip.style.opacity = dx < -12 ? Math.min(1, (-dx - 12) / 60) : 0;
+    card.classList.toggle('to-file', dx > TH && !!card.dataset.best);
+    card.classList.toggle('to-skip', dx < -TH);
+  };
+  const reset = () => {
+    card.classList.remove('drag', 'to-file', 'to-skip');
+    card.style.transform = '';
+    if (vFile) vFile.style.opacity = 0;
+    if (vSkip) vSkip.style.opacity = 0;
+  };
+
+  card.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null;
+  }, { passive: true });
+
+  card.addEventListener('touchmove', e => {
+    if (e.touches.length !== 1) return;
+    const nx = e.touches[0].clientX - x0, ny = e.touches[0].clientY - y0;
+    if (mode === null) {
+      if (Math.abs(nx) < 12 && Math.abs(ny) < 12) return;
+      // touch-action:pan-y already hands vertical drags to the scroller; this
+      // only decides whether to draw the card following the finger.
+      mode = Math.abs(nx) > Math.abs(ny) * 1.3 ? 'swipe' : 'scroll';
+      if (mode === 'swipe') { gestureClaimed = true; card.classList.add('drag'); }
+    }
+    if (mode !== 'swipe') return;
+    dx = nx; paint();
+  }, { passive: true });
+
+  const finish = () => {
+    if (mode !== 'swipe') { gestureClaimed = false; mode = null; return; }
+    mode = null; gestureClaimed = false;
+    const best = card.dataset.best;
+    if (dx > TH && best) {
+      buzz(12);
+      card.classList.add('gone');
+      card.style.transform = 'translate3d(120vw,40px,0) rotate(14deg)';
+      fileCurrent(best);
+    } else if (dx < -TH) {
+      buzz(8);
+      card.classList.add('gone');
+      card.style.transform = 'translate3d(-120vw,40px,0) rotate(-14deg)';
+      inboxAct('skip');
+    } else reset();
+  };
+  card.addEventListener('touchend', finish);
+  card.addEventListener('touchcancel', () => { mode = null; gestureClaimed = false; reset(); });
+}
+
+/** Swipe left/right anywhere else on a screen to walk VORDER; pull down to re-sync. */
+function bindAppGestures() {
+  const app = $('#app'), ptr = $('#ptr'), ptrTxt = $('#ptrTxt');
+  const VTH = 62;                      // screen-change threshold
+  const PULL = 68;                     // pull-to-re-sync threshold
+  let x0 = 0, y0 = 0, dx = 0, dy = 0, mode = null, pulling = false;
+
+  // Scrollable in its own right — a swipe that starts here belongs to it.
+  const OWN = 'table.cmp, input, select, textarea, .settings, .sheet, .swipecard, .scrim';
+
+  app.addEventListener('touchstart', e => {
+    mode = null; pulling = false; dx = dy = 0;
+    if (!isPhone() || e.touches.length !== 1 || e.target.closest(OWN)) { mode = 'ignore'; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+  }, { passive: true });
+
+  app.addEventListener('touchmove', e => {
+    if (mode === 'ignore' || gestureClaimed || e.touches.length !== 1) return;
+    dx = e.touches[0].clientX - x0; dy = e.touches[0].clientY - y0;
+    if (mode === null) {
+      if (Math.abs(dx) < 14 && Math.abs(dy) < 14) return;
+      if (Math.abs(dx) > Math.abs(dy) * 1.5) mode = 'page';
+      else if (dy > 0 && scrollY <= 0) { mode = 'pull'; pulling = true; }
+      else mode = 'scroll';
+    }
+    if (mode === 'page') {
+      // A little travel under the finger, so the swipe feels connected.
+      $('#main').style.transform = `translate3d(${Math.max(-40, Math.min(40, dx / 3))}px,0,0)`;
+    } else if (mode === 'pull') {
+      const h = Math.min(dy * 0.5, 86);
+      ptr.style.height = h + 'px';
+      ptr.classList.toggle('armed', h >= PULL * 0.5);
+      ptrTxt.textContent = h >= PULL * 0.5 ? 'Release to re-sync' : 'Pull to re-sync';
+      if (e.cancelable) e.preventDefault();     // stop the page rubber-banding too
+    }
+  }, { passive: false });
+
+  const end = async () => {
+    $('#main').style.transform = '';
+    const wasPull = pulling && parseFloat(ptr.style.height || '0') >= PULL * 0.5;
+    ptr.style.height = ''; ptr.classList.remove('armed');
+    const m = mode; mode = null; pulling = false;
+    if (m === 'page' && Math.abs(dx) > VTH) {
+      const at = VORDER.indexOf(view);
+      const next = VORDER[at + (dx < 0 ? 1 : -1)];
+      if (next) { buzz(6); if (next === 'history') S.history = await getLog(); go(next); }
+    } else if (wasPull) {
+      buzz(12); toast('Re-syncing your library…'); start(true);
+    }
+  };
+  app.addEventListener('touchend', end);
+  app.addEventListener('touchcancel', () => {
+    $('#main').style.transform = ''; ptr.style.height = ''; ptr.classList.remove('armed');
+    mode = null; pulling = false;
+  });
+}
+
+/* ---------- the "More" sheet ---------- */
+function openSheet(open) {
+  const sheet = $('#moreSheet');
+  sheet.classList.toggle('open', open);
+  sheet.setAttribute('aria-hidden', String(!open));
+  $('#scrim').classList.toggle('open', open);
+  $('#tabMore').setAttribute('aria-expanded', String(open));
+}
+const closeSheet = () => { if ($('#moreSheet').classList.contains('open')) openSheet(false); };
+
+function initSheet() {
+  // Cloned from the rail so the two lists can never disagree.
+  const list = $('#sheetList');
+  document.querySelectorAll('aside .nav[data-sec]').forEach(n => {
+    const c = n.cloneNode(true);
+    c.removeAttribute('data-sec');
+    list.appendChild(c);
+  });
+  $('#tabMore').onclick = () => openSheet(!$('#moreSheet').classList.contains('open'));
+  $('#sheetResync').onclick = () => { closeSheet(); start(true); };
+  $('#sheetSettings').onclick = () => { closeSheet(); $('#btnSettings').click(); };
+  $('#sheetDisconnect').onclick = () => { closeSheet(); $('#disconnect').click(); };
+
+  // Drag either sheet down by its handle to dismiss it, the way every other
+  // sheet on the phone behaves.
+  for (const [el, close] of [[$('#moreSheet'), () => openSheet(false)],
+                             [$('#settingsPanel'), () => $('#closeSettings').click()]]) {
+    let y0 = 0, d = 0, on = false;
+    const grab = el.querySelector('.grabber') ?? el;
+    grab.addEventListener('touchstart', e => { on = true; d = 0; y0 = e.touches[0].clientY; el.style.transition = 'none'; }, { passive: true });
+    grab.addEventListener('touchmove', e => {
+      if (!on) return;
+      d = Math.max(0, e.touches[0].clientY - y0);
+      el.style.transform = `translateY(${d}px)`;
+    }, { passive: true });
+    grab.addEventListener('touchend', () => {
+      if (!on) return;
+      on = false; el.style.transition = ''; el.style.transform = '';
+      if (d > 70) close();
+    });
+  }
+}
+
+/* A hairline under the phone header once the content has scrolled beneath it. */
+addEventListener('scroll', () => {
+  const top = $('#mtop');
+  if (top) top.classList.toggle('stuck', scrollY > 4);
+}, { passive: true });
 
 /* ---------- events ---------- */
 document.addEventListener('click', async e => {
   const nav = e.target.closest('.nav');
-  if (nav) { view = nav.dataset.v; if (view === 'history') S.history = await getLog(); return render(); }
+  if (nav) {
+    closeSheet();
+    if (nav.dataset.v === 'history') S.history = await getLog();
+    return go(nav.dataset.v);
+  }
 
   if (e.target.id === 'shufApply' || e.target.id === 'shufPlay') {
     const btn = e.target, playIt = btn.id === 'shufPlay';
@@ -1329,7 +1977,7 @@ document.addEventListener('click', async e => {
   if (un) { un.disabled = true;
     try { await undoAction(un.dataset.undo); toast('Restored.'); S.history = await getLog(); render(); }
     catch (err) { toast('Undo failed: '+err.message); un.disabled = false; } return; }
-  const go = e.target.closest('[data-go]'); if (go) { view = go.dataset.go; return render(); }
+  const gto = e.target.closest('[data-go]'); if (gto) return go(gto.dataset.go);
   const cmin = e.target.closest('[data-cmin]');
   if (cmin) { S.crossMin = +cmin.dataset.cmin; if (T.rememberFilters) { T.crossMin = S.crossMin; saveTheme(); } return render(); }
   const mfb = e.target.closest('[data-mfb]');
@@ -1458,6 +2106,18 @@ async function inboxAct(a) {
     } catch(e){ toast('Failed: '+e.message); }
   }
 }
+// Keyboard parity for the swipe: the same walk through VORDER, for anyone not
+// using a touchscreen.
+document.addEventListener('keydown', async e => {
+  if ($('#app').hidden || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const next = VORDER[VORDER.indexOf(view) + (e.key === 'ArrowRight' ? 1 : -1)];
+  if (!next) return;
+  if (next === 'history') S.history = await getLog();
+  go(next);
+});
+
 document.addEventListener('keydown', e => {
   if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
   const t = R.backlog[S.inboxAt]; if (!t) return;
@@ -1529,6 +2189,7 @@ async function start(force) {
     $('#land').hidden = true; $('#app').hidden = false;
     $('#who').textContent = LIB.user?.name ?? LIB.user?.id ?? '';
     view = 'home'; S.inboxAt = 0; render();
+    window.scrollTo(0, 0);
   } catch (e) {
     $('#land').hidden = false; $('#app').hidden = true;
     $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
