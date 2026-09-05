@@ -1,10 +1,30 @@
-# music-filer
+# Betterfy
 
-Tools for keeping a large Spotify library in order: find duplicates, catch tracks
-filed in the wrong playlist, empty the "liked but never filed" backlog, discover
-music you don't already own, and shuffle a playlist so it actually sounds shuffled.
+Keep a large Spotify library in order: find duplicates, catch tracks filed in the
+wrong playlist, empty the "liked but never filed" backlog, discover music you
+don't already own, and shuffle a playlist so it actually sounds shuffled.
 
 Built because Spotify's Web API stopped providing the data this needs.
+
+**Two ways to run it:**
+
+| | |
+|---|---|
+| **[Use it in the browser](https://emmachilds98-wq.github.io/Betterfy/)** | Nothing to install. Authorise your own Spotify and work on your own library — there is no server, so nothing leaves your browser. |
+| **Run it locally** | Everything the web version does, plus discovery, spaced shuffle with playback control, an undo log, and full Last.fm/Discogs enrichment. |
+
+### Using the hosted version
+
+Click **Connect Spotify**. If sign-in is refused, that is Spotify's 25-user cap
+on development-mode apps: either ask the owner of the page to add your account
+email under **User Management**, or open *Use my own Spotify app* on the landing
+page, register one in two minutes and paste your client ID. No secret is needed —
+authentication uses PKCE.
+
+The prebuilt genre tags shipped with the page cover one person's artists, so
+your suggestions may start thin. The **Playlists** view shows your tag coverage
+and can fill the gaps in your browser given a free
+[Last.fm key](https://www.last.fm/api/account/create).
 
 ## Why it uses Last.fm and Discogs
 
@@ -96,7 +116,25 @@ guess, and everything downstream reads the file, not the rules.
 | `norm.mjs` / `credits.mjs` | track identity and collaboration-credit splitting |
 | `profile.mjs` | tag vectors, playlist centroids, IDF, ranking |
 | `snapshot.mjs` | dumps the whole library to `library.json` |
-| `server.mjs` | the local web app |
+| `actions.mjs` | every library mutation, with the undo log |
+| `server.mjs` + `ui/` | the local app |
+| `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
+
+`build-web.mjs` bundles `norm`, `credits` and `profile` verbatim into the page,
+so the browser and local builds score identically and cannot drift apart. It
+refuses to build if a secret appears in the output.
+
+## Data sources, and what they're worth
+
+| Source | Verdict |
+|---|---|
+| **Last.fm** artist tags | The genre backbone. Good coverage, sends `access-control-allow-origin: *` so it works from the browser too. |
+| **Discogs** release styles | Precise for electronic subgenres (Breakbeat / Techno / Electro). |
+| **MusicBrainz** | Identity glue. No key; wants a contact string in the User-Agent. |
+| **GetSongBPM** | Tempo, key and Camelot notation — but only **20% coverage** measured over a 40-track sample of a current UK electronic library. Fine for mainstream catalogue, blank for most underground releases. |
+| **Deezer** | Has a public BPM field, but it was empty for 4 of 5 tested tracks. Not worth wiring. |
+
+Tempo and musical key data by [GetSongBPM](https://getsongbpm.com).
 
 Generated files (`library.json`, `tags-lastfm.json`, `.tokens.json`, reports) are
 gitignored — they're yours, not the project's.

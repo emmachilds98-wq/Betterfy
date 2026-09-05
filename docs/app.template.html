@@ -135,7 +135,7 @@
   <button class="b p big" id="connect">Connect Spotify</button>
   <p class="lede" style="margin-top:12px; font-size:13px">Runs entirely in this browser. Your library never reaches a server — there isn't one.</p>
   <p class="lede" style="font-size:12.5px; color:var(--ink-3)">
-    Redirect URI this page sends: <span class="mono" id="redirectShow2"></span>
+    Redirect URI this page sends: <span class="mono" id="redirectShow2"></span><br>Build <span class="mono">__BUILD__</span>
   </p>
 
   <div class="feat">
@@ -197,6 +197,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build __BUILD__</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -233,7 +234,10 @@ const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf)))
 
 async function beginAuth() {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
-  sessionStorage.setItem('bf_verifier', verifier);
+  // localStorage, not sessionStorage: sessionStorage is per-tab, so if Spotify's
+  // redirect lands in a different tab (or the tab is restored) the verifier is
+  // gone and the exchange fails. That is why it only worked in a private window.
+  localStorage.setItem('bf_verifier', verifier);
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
     response_type:'code', client_id:clientId(), scope:SCOPES, redirect_uri:REDIRECT,
@@ -242,13 +246,15 @@ async function beginAuth() {
 }
 
 async function exchange(code) {
-  const verifier = sessionStorage.getItem('bf_verifier');
+  const verifier = localStorage.getItem('bf_verifier');
+  if (!verifier) throw new Error('Sign-in could not be completed — the browser lost the security code. Click Connect Spotify again.');
   const r = await fetch('https://accounts.spotify.com/api/token', {
     method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
     body:new URLSearchParams({ grant_type:'authorization_code', code, redirect_uri:REDIRECT,
                                client_id:clientId(), code_verifier:verifier }),
   });
   const t = await r.json();
+  localStorage.removeItem('bf_verifier');
   if (!r.ok) throw new Error(t.error_description || t.error || 'token exchange failed');
   t.expires_at = Date.now() + t.expires_in * 1000;
   localStorage.setItem('bf_tok', JSON.stringify(t));
@@ -783,6 +789,7 @@ $('#saveId').onclick = () => { const v = $('#ownId').value.trim();
 $('#clearId').onclick = () => { localStorage.removeItem('bf_client_id'); $('#ownId').value=''; toast('Using the default app.'); };
 $('#disconnect').onclick = async () => { localStorage.removeItem('bf_tok'); await idb.clear(); location.href = REDIRECT; };
 $('#resync').onclick = () => start(true);
+window.bfReset = async () => { localStorage.removeItem('bf_tok'); localStorage.removeItem('bf_verifier'); await idb.clear(); location.replace(REDIRECT); };
 
 function stage(msg, pct) {
   $('#app').hidden = true; $('#land').hidden = false;
@@ -800,7 +807,7 @@ async function start(force) {
     if (!LIB) LIB = await syncLibrary((name, pct) => stage(`Reading ${name}…`, pct));
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json').then(r => r.json());
+      const raw = await fetch('tags.json?v=__BUILD__').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };

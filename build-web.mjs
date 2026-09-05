@@ -7,6 +7,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const CLIENT_ID = process.argv[2] ?? readEnvClientId();
 
+// Shown in the UI and used to cache-bust tags.json. GitHub Pages caches HTML for
+// ~10 minutes, so this is how you tell which version you are actually looking at.
+const BUILD = new Date().toISOString().slice(0,16).replace('T','-').replace(':','');
+
 function readEnvClientId() {
   try {
     const line = readFileSync('.env', 'utf8').split('\n').find(l => l.startsWith('SPOTIFY_CLIENT_ID='));
@@ -25,7 +29,8 @@ const core = ['norm.mjs', 'credits.mjs', 'profile.mjs'].map(f =>
 
 const html = readFileSync('docs/app.template.html', 'utf8')
   .replace('__CORE__', core)
-  .replace('__CLIENT_ID__', CLIENT_ID);
+  .replace('__CLIENT_ID__', CLIENT_ID)
+  .replaceAll('__BUILD__', BUILD);
 
 if (/SPOTIFY_CLIENT_SECRET|LASTFM_SHARED_SECRET|DISCOGS_TOKEN/.test(html))
   throw new Error('Refusing to build: a secret leaked into the web bundle.');
