@@ -14,7 +14,7 @@ const BUNDLE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf
 
 function authSlice() {
   const from = BUNDLE.indexOf('const RATE_LIMITED');
-  const to = BUNDLE.indexOf('/* ---------- Spotify ---------- */');
+  const to = BUNDLE.indexOf('/* ---------- Spotify ----------');
   assert.ok(from > 0 && to > from, 'auth block not found in docs/index.html — rebuild with npm run build:web');
   return BUNDLE.slice(from, to);
 }
