@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-0009">
+<meta name="bf-build" content="2026-09-06-0015">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -563,7 +563,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-0009</span>
+    <span class="mono">build 2026-09-06-0015</span>
   </p>
 
   <div class="feat">
@@ -660,7 +660,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0009</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0015</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1128,6 +1128,19 @@ const SCOPES = ['playlist-read-private','playlist-read-collaborative','playlist-
 
 const clientId = () => localStorage.getItem('bf_client_id') || DEFAULT_CLIENT_ID;
 
+/** Running from the Home Screen rather than in a browser tab. */
+const standalone = () => window.navigator.standalone === true
+  || matchMedia('(display-mode: standalone)').matches;
+
+/**
+ * Whether to go to Spotify without being asked. Only from the Home Screen,
+ * only with no sign-in already, and only once ever — a second automatic
+ * attempt after a refusal is a redirect loop, not a retry.
+ */
+const autoConnectDue = () => standalone()
+  && !localStorage.getItem('bf_tok')
+  && !localStorage.getItem('bf_autoconnect');
+
 /* ---------------- staying on the current version ----------------
  * GitHub Pages serves this HTML with a ~10 minute cache, and a browser that
  * already has the page keeps what it loaded until something forces a
@@ -1136,7 +1149,7 @@ const clientId = () => localStorage.getItem('bf_client_id') || DEFAULT_CLIENT_ID
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-0009';
+const BUILD = '2026-09-06-0015';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2713,7 +2726,18 @@ async function start(force) {
   let t;
   try { t = await token(); }
   catch (e) { blocked(e.message, () => start(force)); return; }
-  if (!t) { $('#land').hidden = false; $('#app').hidden = true; return; }
+  if (!t) {
+    $('#land').hidden = false; $('#app').hidden = true;
+    // Signed in in Safari and puzzled to be asked again here: say why, once,
+    // where it is being asked rather than in a toast that disappears.
+    if (standalone() && !$('#landWhy')) {
+      const why = document.createElement('p');
+      why.id = 'landWhy'; why.className = 'fineprint';
+      why.textContent = 'iPhone keeps this app’s data separate from Safari’s, so it needs its own sign-in. It only asks once.';
+      $('.cta')?.after(why);
+    }
+    return;
+  }
   try {
     stage('Reading your library…', 0.02);
     LIB = force ? null : await idb.get('library');
@@ -2727,7 +2751,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-0009').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-0015').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
@@ -2801,6 +2825,19 @@ const FRIENDLY = {
       }
     }
   }
+  // iOS gives a home-screen app its own storage, so it opens with no sign-in
+  // even when Safari has one — there is no way to hand it across. What can be
+  // done is not making a person do it: the first time this app is opened from
+  // the Home Screen it goes to Spotify itself, and since Spotify already has
+  // the grant it comes straight back. One attempt only, and the flag is set
+  // before leaving, so a refusal lands on the landing page and stays there
+  // rather than bouncing in a loop.
+  if (autoConnectDue()) {
+    localStorage.setItem('bf_autoconnect', '1');
+    stage('Signing you in…', 0.01);
+    return beginAuth();
+  }
+
   start(false);
 })();
 </script>

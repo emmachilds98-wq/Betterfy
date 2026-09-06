@@ -970,6 +970,19 @@ const SCOPES = ['playlist-read-private','playlist-read-collaborative','playlist-
 
 const clientId = () => localStorage.getItem('bf_client_id') || DEFAULT_CLIENT_ID;
 
+/** Running from the Home Screen rather than in a browser tab. */
+const standalone = () => window.navigator.standalone === true
+  || matchMedia('(display-mode: standalone)').matches;
+
+/**
+ * Whether to go to Spotify without being asked. Only from the Home Screen,
+ * only with no sign-in already, and only once ever — a second automatic
+ * attempt after a refusal is a redirect loop, not a retry.
+ */
+const autoConnectDue = () => standalone()
+  && !localStorage.getItem('bf_tok')
+  && !localStorage.getItem('bf_autoconnect');
+
 /* ---------------- staying on the current version ----------------
  * GitHub Pages serves this HTML with a ~10 minute cache, and a browser that
  * already has the page keeps what it loaded until something forces a
@@ -2555,7 +2568,18 @@ async function start(force) {
   let t;
   try { t = await token(); }
   catch (e) { blocked(e.message, () => start(force)); return; }
-  if (!t) { $('#land').hidden = false; $('#app').hidden = true; return; }
+  if (!t) {
+    $('#land').hidden = false; $('#app').hidden = true;
+    // Signed in in Safari and puzzled to be asked again here: say why, once,
+    // where it is being asked rather than in a toast that disappears.
+    if (standalone() && !$('#landWhy')) {
+      const why = document.createElement('p');
+      why.id = 'landWhy'; why.className = 'fineprint';
+      why.textContent = 'iPhone keeps this app’s data separate from Safari’s, so it needs its own sign-in. It only asks once.';
+      $('.cta')?.after(why);
+    }
+    return;
+  }
   try {
     stage('Reading your library…', 0.02);
     LIB = force ? null : await idb.get('library');
@@ -2643,6 +2667,19 @@ const FRIENDLY = {
       }
     }
   }
+  // iOS gives a home-screen app its own storage, so it opens with no sign-in
+  // even when Safari has one — there is no way to hand it across. What can be
+  // done is not making a person do it: the first time this app is opened from
+  // the Home Screen it goes to Spotify itself, and since Spotify already has
+  // the grant it comes straight back. One attempt only, and the flag is set
+  // before leaving, so a refusal lands on the landing page and stays there
+  // rather than bouncing in a loop.
+  if (autoConnectDue()) {
+    localStorage.setItem('bf_autoconnect', '1');
+    stage('Signing you in…', 0.01);
+    return beginAuth();
+  }
+
   start(false);
 })();
 </script>

@@ -52,6 +52,13 @@ nowhere near as legible as each other.
 
 The local app (`npm start`) is still laid out for a desktop browser.
 
+**The home-screen app signs itself in.** The first time you open it it goes to
+Spotify on its own and comes straight back, because Spotify already has the
+grant — nothing to tap. It only ever tries that once: if the sign-in is refused
+it lands on the normal landing screen and stays there rather than bouncing.
+There is no way to hand a sign-in across from Safari, because iOS keeps the two
+sets of data apart, but there is no need to type anything either.
+
 **The first read on a new device takes a while.** iOS gives a home-screen app
 its own storage, separate from Safari's — so adding Betterfy to your Home
 Screen means signing in again and reading the whole library again, several

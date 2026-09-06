@@ -145,3 +145,67 @@ test('boot removes the authorization code from the URL before exchanging it', ()
   assert.ok(replace > -1 && post > replace, 'the URL must be cleaned before the code is posted');
   assert.ok(remember > -1 && remember < post, 'a code must be marked used before it is posted, not after');
 });
+
+/* ---------- signing in without being asked ---------- */
+
+// iOS gives a home-screen app its own storage, so it opens with no sign-in even
+// when Safari has one, and nothing can hand it across. What it can do is not
+// make a person do it — but an automatic redirect that can fire twice is a
+// loop, so exactly when it fires is worth pinning down.
+
+function autoConnect({ home = true, token = null, tried = null } = {}) {
+  const from = BUNDLE.indexOf('/** Running from the Home Screen');
+  const to = BUNDLE.indexOf('/* ---------------- staying on the current version');
+  assert.ok(from > 0 && to > from, 'auto-connect block not found — rebuild with npm run build:web');
+  const store = new Map();
+  if (token) store.set('bf_tok', token);
+  if (tried) store.set('bf_autoconnect', tried);
+  const sandbox = {
+    window: { navigator: { standalone: home } },
+    matchMedia: () => ({ matches: false }),
+    localStorage: { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(BUNDLE.slice(from, to), sandbox);
+  // Both are consts in the script's own scope, so they are read back out of
+  // the context rather than off the sandbox.
+  return { due: () => vm.runInContext('autoConnectDue()', sandbox),
+           isHome: () => vm.runInContext('standalone()', sandbox) };
+}
+
+test('a home-screen app with no sign-in goes and gets one', () => {
+  assert.equal(autoConnect().due(), true);
+});
+
+test('a browser tab never redirects itself to Spotify', () => {
+  // The landing page is where someone decides whether to connect at all.
+  assert.equal(autoConnect({ home: false }).due(), false);
+});
+
+test('an app that is already signed in is left alone', () => {
+  assert.equal(autoConnect({ token: '{"access_token":"a"}' }).due(), false);
+});
+
+test('it tries once and never again, so a refusal cannot loop', () => {
+  assert.equal(autoConnect({ tried: '1' }).due(), false);
+});
+
+test('display-mode standalone counts, not just the iOS flag', () => {
+  const from = BUNDLE.indexOf('/** Running from the Home Screen');
+  const to = BUNDLE.indexOf('/* ---------------- staying on the current version');
+  const sandbox = { window: { navigator: {} }, matchMedia: q => ({ matches: q.includes('standalone') }),
+                    localStorage: { getItem: () => null, setItem: () => {} } };
+  vm.createContext(sandbox);
+  vm.runInContext(BUNDLE.slice(from, to), sandbox);
+  assert.equal(vm.runInContext('standalone()', sandbox), true);
+  assert.equal(vm.runInContext('autoConnectDue()', sandbox), true);
+});
+
+test('the one attempt is claimed before leaving for Spotify, not after', () => {
+  // Set it afterwards and a page that never comes back would try again on the
+  // next open, and the one after that.
+  const boot = BUNDLE.slice(BUNDLE.indexOf('if (autoConnectDue())'));
+  const claim = boot.indexOf("setItem('bf_autoconnect'");
+  const leave = boot.indexOf('return beginAuth()');
+  assert.ok(claim > -1 && leave > claim, 'the attempt must be recorded before the redirect');
+});
