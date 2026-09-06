@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-2018">
+<meta name="bf-build" content="2026-09-06-2100">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -866,7 +866,14 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-2018</span>
+    <!-- The quota Spotify enforces belongs to the app, not to the listener, so
+         everyone signing in with this page's default app is spending the same
+         budget — which is what a second and third person notice first. Their
+         own app fixes it, and it should not take a failed sign-in to find out
+         that exists. -->
+    <a href="?setup">Use your own Spotify app</a>
+    <span class="dot">·</span>
+    <span class="mono">build 2026-09-06-2100</span>
   </p>
 
   <div class="feat">
@@ -962,7 +969,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-2018</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-2100</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1012,7 +1019,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-2018</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-2100</span>
   </div>
 </div>
 
@@ -1657,12 +1664,14 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-2018';
+const BUILD = '2026-09-06-2100';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
   // now, not what this browser happens to be keeping.
-  const r = await fetch(REDIRECT + '?_=' + Date.now(), { cache: 'no-store' });
+  // With a deadline, like everything else here: a hung check left the button
+  // saying "Checking…" and disabled, on the landing page, for good.
+  const r = await fetchDeadline(REDIRECT + '?_=' + Date.now(), { cache: 'no-store' }, 10000);
   if (!r.ok) throw new Error(`the server answered ${r.status}`);
   const m = (await r.text()).match(/name="bf-build"\s+content="([^"]*)"/);
   if (!m) throw new Error('the published page carries no version stamp');
@@ -1696,7 +1705,7 @@ async function installUpdate() {
   // cache, then navigate to a URL no cache can answer from. Nothing here
   // touches the saved token or library, so you land back where you were.
   try { if (window.caches) for (const k of await caches.keys()) await caches.delete(k); } catch {}
-  try { await fetch(REDIRECT, { cache: 'reload' }); } catch {}
+  try { await fetchDeadline(REDIRECT, { cache: 'reload' }, 15000); } catch {}
   location.replace(REDIRECT + '?v=' + Date.now());
 }
 
@@ -1726,6 +1735,22 @@ async function beginAuth() {
 const RATE_LIMITED = 'Spotify is handling too many requests right now. Wait a minute, then try again.';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/* Every request this page makes gets a deadline. fetch() has none of its own,
+ * and a phone hands you a request that never settles often enough to matter:
+ * a hung sign-in POST and a sign-in that is never going to finish look exactly
+ * the same from the outside, and the second one is what people were reporting. */
+const CALL_TIMEOUT = 20000;
+
+/** fetch with a deadline. AbortController is everywhere that matters; where it
+ *  is not, the call is still made, just without the deadline. */
+async function fetchDeadline(url, opts = {}, ms = CALL_TIMEOUT) {
+  if (typeof AbortController !== 'function') return fetch(url, opts);
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), ms);
+  try { return await fetch(url, { ...opts, signal: ac.signal }); }
+  finally { clearTimeout(t); }
+}
+
 /** A 429/5xx/offline failure; the sign-in itself is still good. */
 const retryable = e => !!e?.retryable;
 /** @param {number} [retryAfterMs] — when known, how long Spotify actually asked for. */
@@ -1738,7 +1763,10 @@ async function tokenRequest(params) {
   for (let attempt = 0; ; attempt++) {
     let res;
     try {
-      res = await fetch('https://accounts.spotify.com/api/token', {
+      // Deadline, not just a catch: a sign-in POST that hangs is indistinguishable
+      // from a sign-in that is simply never going to finish, and the second one is
+      // what people were looking at.
+      res = await fetchDeadline('https://accounts.spotify.com/api/token', {
         method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
         body:new URLSearchParams({ ...params, client_id:clientId() }),
       });
@@ -1818,15 +1846,51 @@ async function refresh(t) {
  * rolling window rather than a per-call one — fire them off as fast as the
  * network allows and you will find it. So every call is paced, the pace slackens
  * as soon as Spotify pushes back, and it tightens again once it stops. */
-const MIN_GAP = 70, MAX_GAP = 1200;
-let gap = MIN_GAP;   // ms between calls
+/* The floor used to be 70ms — fourteen calls a second, several times what a
+ * Spotify app that has not been granted extended quota is allowed, so a cold
+ * read did not risk a 429 so much as guarantee one. It is worse than that when
+ * the page's default client ID is shared: the quota is the app's, not the
+ * listener's, so two friends reading their libraries at once are spending the
+ * same budget. Pace for the shared case, because that is the case this page is
+ * for. The ceiling is high enough to actually be a pause rather than a slightly
+ * slower version of the same mistake. */
+const MIN_GAP = 250, MAX_GAP = 4000;
+/* Multiplicative increase on a 429, additive decrease on success — the pace
+ * backs off fast and recovers slowly. It used to recover by a tenth per call,
+ * which walked all the way back down to the floor in under thirty calls and
+ * straight into the next 429; that oscillation is what turned one busy minute
+ * into a read that never finished. */
+const GAP_RECOVER = 25;
+const GAP_KEY = 'bf_gap';
+
+/* iOS discards the page behind you freely, and every reopen used to start again
+ * at full speed — including the reopen right after Spotify asked for a pause.
+ * So the pace Spotify last agreed to is remembered, and only half-forgotten on
+ * the way back in: quick enough to speed up again once the queue clears, slow
+ * enough not to walk into the same wall on the first call. */
+const rememberedGap = () => {
+  try { return Math.min(MAX_GAP, Math.max(MIN_GAP, (+localStorage.getItem(GAP_KEY) || 0) / 2)); }
+  catch { return MIN_GAP; }
+};
+let gap = rememberedGap();   // ms between calls
+const setGap = ms => {
+  gap = Math.min(MAX_GAP, Math.max(MIN_GAP, ms));
+  try { localStorage.setItem(GAP_KEY, String(Math.round(gap))); } catch {}
+};
 let nextAt = 0;      // earliest moment the next call may leave
 
 /** Set while a sync is on screen, so a pause can say so instead of looking hung. */
 let onHold = null;
 
+/* Spotify's limit is a rolling window, so a quiet stretch drains it. Without
+ * this, a back-off earned during a cold sync outlives the window it was earned
+ * in — and every tap for the rest of the session waits on a queue that emptied
+ * minutes ago. */
+const GAP_IDLE_RESET = 30000;
+
 async function pace() {
   const now = Date.now();
+  if (nextAt && now - nextAt > GAP_IDLE_RESET) setGap(MIN_GAP);
   const at = Math.max(now, nextAt);
   nextAt = at + gap;
   if (at > now) await sleep(at - now);
@@ -1854,17 +1918,74 @@ async function hold(ms) {
 const AUTO_HOLD_MAX = 20000;    // sit out any single wait this short or less
 const AUTO_HOLD_BUDGET = 60000; // …but never more than this in total per call
 
+/* A phone's network is not a desktop's. It changes cell mid-request, hands over
+ * to Wi-Fi, and every so often leaves a request hanging with nobody ever coming
+ * back to it — and fetch() has no deadline of its own, so the read simply sat on
+ * "Reading <playlist>…" for as long as anyone was willing to watch it.
+ *
+ * The dropped ones were worse than the hung ones. A dropped fetch throws a
+ * TypeError ("Load failed", in Safari), and a TypeError carries no `retryable`
+ * flag — so one blip in the middle of a several-hundred-call read was read as a
+ * permanent answer, and there were only two permanent answers available: bank
+ * that playlist as empty, or decide the sign-in is dead and offer Start over.
+ * Start over cleared the token, so the next thing anyone did was sign in again
+ * — at the accounts service, which is rate-limited per app, which answered 429,
+ * which is the "too many requests" screen. The whole loop started with one
+ * dropped request that should have simply been asked again. */
+const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
+
+/* The shipped tag table is 435KB, fetched over whatever signal a phone has at
+ * the time. It used to be a bare fetch().then(r => r.json()): one blip threw a
+ * TypeError, TypeErrors are not retryable, and the only button on the screen
+ * that answered was Start over — which cleared a perfectly good sign-in over a
+ * failed static file. */
+async function fetchTags() {
+  for (let i = 0; ; i++) {
+    try {
+      const r = await fetchDeadline('tags.json?v=2026-09-06-2100', {}, 45000);
+      if (!r.ok) throw new Error(String(r.status));
+      return await r.json();
+    } catch {
+      if (i >= 2) throw authError('Could not load the genre tags. Your library is already read — this only needs the connection back.', 0);
+      await sleep(1000 * 2 ** i);
+    }
+  }
+}
+
+/** Make the next token() go back to Spotify even though the cached one still
+ *  looks fresh — for a 401, which means it stopped being fresh early. */
+function expireToken() {
+  try {
+    const t = JSON.parse(localStorage.getItem('bf_tok') || 'null');
+    if (t) localStorage.setItem('bf_tok', JSON.stringify({ ...t, expires_at: 0 }));
+  } catch {}
+}
+
+const NET_LOST = 'Lost the connection to Spotify. Nothing read so far is lost — this picks up where it stopped.';
+
 async function sp(path, opts = {}) {
   const url = path.startsWith('http') ? path : 'https://api.spotify.com/v1' + path;
-  let held = 0;
+  let held = 0;      // ms of 429 already sat through quietly, this call
+  let soft = 0;      // dropped / hung / 5xx attempts, this call
+  let back = 1000;   // and how long to wait before the next of those
+  let reauthed = false;
   for (let i = 0; ; i++) {
     await pace();
-    const res = await fetch(url, { ...opts, headers:{ authorization:'Bearer ' + await token(),
-      'content-type':'application/json', ...opts.headers } });
+    let res;
+    try {
+      res = await fetchDeadline(url, { ...opts, headers:{ authorization:'Bearer ' + await token(),
+        'content-type':'application/json', ...opts.headers } });
+    } catch (e) {
+      // Offline, dropped, or hung past the deadline. Ask again — and if it keeps
+      // failing, say so as something retryable, because it is the network, not
+      // an empty playlist and not a dead sign-in.
+      if (++soft >= NET_TRIES) throw authError(NET_LOST, 0);
+      setGap(gap * 2); await sleep(back); back *= 2; continue;
+    }
     if (res.status === 429) {
       const after = (+res.headers.get('retry-after') || 0) * 1000;
       const wait = after || Math.min(2000 * 2 ** i, 60000);
-      gap = Math.min(gap * 2, MAX_GAP);
+      setGap(gap * 2);
       if (wait <= AUTO_HOLD_MAX && held + wait <= AUTO_HOLD_BUDGET) {
         held += wait; await hold(wait); continue;
       }
@@ -1875,10 +1996,21 @@ async function sp(path, opts = {}) {
         ? `Spotify has asked for a pause — about ${Math.round(after / 60000)} minute${after >= 90000 ? 's' : ''}. It will carry on by itself once that has passed.`
         : RATE_LIMITED, 429, wait);
     }
-    gap = Math.max(MIN_GAP, gap * 0.9);
+    // Spotify's own bad day. Same treatment as a dropped connection: ask again,
+    // and if it will not settle, report it as something to come back to rather
+    // than as the sign-in having failed.
+    if (res.status >= 500) {
+      if (++soft >= NET_TRIES) throw authError(`Spotify answered ${res.status}. It will pick up where it stopped.`, res.status);
+      setGap(gap * 2); await sleep(back); back *= 2; continue;
+    }
+    // A token that has stopped working early — revoked, or the grant changed.
+    // Worth exactly one forced refresh before believing it; token() will clear
+    // the sign-in itself if Spotify refuses that too.
+    if (res.status === 401 && !reauthed) { reauthed = true; expireToken(); continue; }
+    setGap(gap - GAP_RECOVER);
     if (res.status === 204) return null;
     const body = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(`${res.status} ${body?.error?.message ?? ''}`);
+    if (!res.ok) throw Object.assign(new Error(`${res.status} ${body?.error?.message ?? ''}`), { status: res.status });
     return body;
   }
 }
@@ -1969,11 +2101,25 @@ async function dropParts() {
 }
 
 async function syncLibrary(force, onProgress) {
-  const me = await sp('/me');
-  const pls = await paged('/me/playlists?limit=50');
-  const owned = pls.filter(p => p.owner?.id === me.id);
-
+  // A forced re-read means "go and ask Spotify again", so the pieces banked by
+  // an earlier read are dropped first — but only once, at the top. The pieces
+  // this read banks as it goes still count, so a forced re-read that is
+  // interrupted resumes like any other rather than starting from nothing.
+  if (force) await dropParts();
   const banked = await bankedParts();
+
+  // Who you are and which playlists you have is two calls and a few pages, and
+  // every single retry used to spend them again before reaching the playlist it
+  // actually stopped on — on a rate-limited shared quota, sometimes that was the
+  // whole budget, so the retry failed in the same place having done no new work.
+  let me = banked[PART('index')]?.me, pls = banked[PART('index')]?.playlists;
+  if (!me || !pls) {
+    me = await sp('/me');
+    pls = await paged('/me/playlists?limit=50');
+    await idb.set(PART('index'), { shape:SHAPE, at:Date.now(), me,
+      playlists: pls.map(p => ({ id:p.id, name:p.name, owner:{ id:p.owner?.id }, snapshot_id:p.snapshot_id })) });
+  }
+  const owned = pls.filter(p => p.owner?.id === me.id);
   // Spotify stamps every playlist with a snapshot id that changes the moment
   // its contents do, so a playlist that has not moved since the last complete
   // read costs nothing to "read" again.
@@ -1986,20 +2132,26 @@ async function syncLibrary(force, onProgress) {
     onProgress?.(p.name, i / (owned.length + 1));
     const kept = banked[PART(p.id)]?.playlist ?? held[p.id];
     if (kept?.snapshot_id === p.snapshot_id) { playlists.push(kept); continue; }
-    let items = [];
+    let items = null;
     try {
       items = await paged(`/playlists/${p.id}/items?limit=100&fields=${encodeURIComponent(FIELDS)}`);
     } catch (e) {
-      // A playlist Spotify will not hand over is skipped, as it always was.
-      // A rate limit is not that: recording it as empty would quietly lose
-      // every track in it, so let it stop the read — the banked parts keep.
-      if (retryable(e)) throw e;
+      // Carrying on past a failure is only right when Spotify has refused this
+      // one playlist and would refuse it again: 403 or 404. Everything else —
+      // a rate limit, a 5xx, a dropped connection, a token that stopped
+      // working — is about the read, not the playlist, and recording it as an
+      // empty playlist would quietly lose every track in it. So it stops the
+      // read instead; the banked pieces keep and the retry resumes here.
+      if (e?.status !== 403 && e?.status !== 404) throw e;
+      // Even a refusal keeps no snapshot id below, so the next read asks again
+      // rather than trusting an empty answer forever. Without that, one refusal
+      // froze a playlist as empty until somebody happened to edit it.
     }
-    const entry = { id:p.id, name:p.name, snapshot_id:p.snapshot_id, shape:SHAPE,
-                    tracks: items.filter(x => x.item?.id)
-                      .map(x => ({ added_at:x.added_at, ...shapeTrack(x.item) })) };
+    const entry = { id:p.id, name:p.name, snapshot_id: items ? p.snapshot_id : null, shape:SHAPE,
+                    tracks: (items ?? []).filter(x => (x.item ?? x.track)?.id)
+                      .map(x => ({ added_at:x.added_at, ...shapeTrack(x.item ?? x.track) })) };
     playlists.push(entry);
-    await idb.set(PART(p.id), { shape:SHAPE, at:Date.now(), playlist:entry });
+    if (items) await idb.set(PART(p.id), { shape:SHAPE, at:Date.now(), playlist:entry });
   }
 
   // Liked songs come back fifty at a time with no snapshot id of their own, so
@@ -2007,7 +2159,10 @@ async function syncLibrary(force, onProgress) {
   // worth resuming and rare enough not to rewrite the pile on every page.
   const liked = banked[PART('liked')]?.liked ?? { rows: [], next: '/me/tracks?limit=50' };
   for (let page = 0; liked.next; page++) {
-    onProgress?.('liked songs', 0.95);
+    // Thousands of liked songs is dozens of pages, and they all used to report
+    // the same "liked songs" at the same 95% — several silent minutes that look
+    // identical to a hang. A number that moves is the difference.
+    onProgress?.(liked.rows.length ? `liked songs — ${liked.rows.length.toLocaleString()} so far` : 'liked songs', 0.95);
     const box = await sp(liked.next);
     liked.rows.push(...(box?.items ?? []).filter(i => (i.track ?? i.item)?.id)
       .map(i => ({ added_at:i.added_at, ...shapeTrack(i.track ?? i.item) })));
@@ -4065,7 +4220,11 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-2018').then(r => r.json());
+      // 435KB over whatever signal a phone has at the time. This used to be a
+      // bare fetch: one blip threw a TypeError, which is not retryable, which
+      // meant the only way off the screen was Start over — and Start over
+      // cleared a perfectly good sign-in over a failed static file.
+      const raw = await fetchTags();
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
@@ -4096,10 +4255,25 @@ async function start(force) {
       blocked(e.message, () => start(force), e.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER);
       return;
     }
+    // Whatever went wrong here, signing out is almost never the fix — and it
+    // used to be the only button on the screen. Clearing the token sent people
+    // back to the accounts service, which is rate-limited per app, which
+    // answered 429: "Spotify is handling too many requests." That is how one
+    // unexplained error turned into a sign-in that would not complete. So Try
+    // again keeps the sign-in and resumes from the banked pieces; starting over
+    // is still there, for whoever actually wants it.
     $('#land').hidden = false; $('#app').hidden = true;
     $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
       <p class="tagline">${esc(e.message)}</p>
-      <button class="b p" onclick="localStorage.removeItem('bf_tok');localStorage.removeItem('bf_autoconnect');location.href='${REDIRECT}'">Start over</button>`;
+      <button class="b p" id="landAgain">Try again</button>
+      <p class="fineprint">Nothing already read is lost — this carries on from where it stopped.<br>
+        Still stuck? <a href="#" id="landReset">Sign out and start over</a>.</p>`;
+    $('#landAgain').onclick = () => start(force);
+    $('#landReset').onclick = ev => {
+      ev.preventDefault();
+      localStorage.removeItem('bf_tok'); localStorage.removeItem('bf_autoconnect');
+      location.href = REDIRECT;
+    };
   }
 }
 

@@ -23,6 +23,25 @@ about a minute and needs no secret — authentication uses PKCE — or the owner
 can still add your email under **User Management** in their app's dashboard
 if they'd rather manage it that way.
 
+**Sharing it with a couple of friends.** Send them the page, but send them
+[`?setup`](https://emmachilds98-wq.github.io/Betterfy/?setup) with it — that
+opens the *Use a different Spotify app* panel, which is also linked from the
+landing page's fineprint. Two things make their own app worth the minute it
+takes rather than a fallback for when something breaks:
+
+- **The 25-user cap** is per app, so on the default app they need the owner to
+  add their account email first. On their own app they are the only user.
+- **The rate limit is per app too, not per listener.** Every account signing in
+  with the default app spends the same budget, and a cold library read is
+  several hundred calls — so two people reading their libraries on the same
+  afternoon is exactly the "Spotify is handling too many requests" screen. Their
+  own app has a budget nobody else can touch.
+
+Nothing else changes: same page, same features, no secret, nothing shared with
+whoever sent the link. Paste the redirect URI the setup panel shows into the
+new app (**Add**, then **Save** — adding without saving looks identical until
+sign-in fails), then paste the client ID back.
+
 There is no setting that removes the cap for everyone without Spotify's
 involvement: Spotify's own **Extended Quota Mode** is the only way to let any
 Spotify account sign in with no allow-list at all, and that's an application
@@ -149,6 +168,47 @@ longer than a few seconds shows a *Try again* screen with the real wait
 instead, and that screen retries itself the moment the wait is up — there is
 nothing to tap, and nothing lost either way: the parts of the read already
 finished are banked, so it carries on rather than starting over.
+
+**A dropped request is not a lost sign-in.** A phone changes cell mid-request,
+hands over to Wi-Fi, and now and then leaves a request hanging with nobody
+coming back to it — and `fetch()` has no deadline of its own. Both cases used
+to end the same way, because a dropped request throws a `TypeError` ("Load
+failed", in Safari) with nothing on it to say it was transient. So one blip in
+the middle of a several-hundred-call read was taken as a *permanent* answer,
+and there were only two of those available: bank the playlist in flight as
+empty — losing every track in it until somebody happened to edit that playlist
+— or decide the sign-in was dead and offer **Start over**, which cleared the
+token, which sent you to the accounts service, which is rate-limited per app,
+which answered `429`. That is where "stuck at too many requests, then it times
+out and can't get the playlists" came from: one dropped request that should
+simply have been asked again.
+
+Now every call has a deadline and a dropped, hung or `5xx` one is retried;
+if it still will not go through, that is reported as something to come back
+to, not as a sign-out. A read is only ever recorded as an empty playlist when
+Spotify has actually refused *that playlist* (`403`/`404`) — and even then it
+is stored without a snapshot id, so the next read asks again instead of
+trusting the empty answer forever. A token that stops working mid-read is
+refreshed once before anyone believes it. And the wall you land on when
+something genuinely unexpected happens leads with **Try again**, which keeps
+the sign-in and resumes from the banked pieces; signing out is still there,
+one line below, for whoever actually wants it.
+
+**The pace was the other half of it.** The read used to be floored at 70ms
+between calls — fourteen a second, several times what a Spotify app without
+Extended Quota is allowed — and it recovered a tenth of its back-off on every
+success, so it walked back down to that floor within thirty calls and straight
+into the next `429`. It is 250ms now, backing off hard and recovering slowly,
+with a ceiling high enough to be a real pause. The pace Spotify last agreed to
+is also written down, because iOS discards the page behind you and every reopen
+used to start at full speed again — including the reopen straight after a
+rate limit.
+
+**And a retry costs less.** `/me` and the playlist index are banked with the
+rest of the read, so a retry goes straight back to the playlist it stopped on
+instead of re-spending those calls first — which, on a busy shared quota, was
+sometimes the whole budget, leaving the retry to fail in the same place having
+read nothing new.
 
 ### Staying on the current version
 

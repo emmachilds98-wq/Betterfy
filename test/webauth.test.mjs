@@ -243,7 +243,9 @@ test('a rate limit leaves the one-shot auto-connect alone', async () => {
 for (const [name, marker, endMarker] of [
   ['Disconnect', "$('#disconnect').onclick", '\n};'],
   ['bfReset', 'window.bfReset =', '\n};'],
-  ['Start over', 'onclick="localStorage.removeItem(\'bf_tok\')', 'Start over</button>'],
+  // The sync-failure wall no longer signs you out by default — Try again keeps
+  // the sign-in — but the way off it that does still must clear both.
+  ['Sign out and start over', "$('#landReset').onclick", '\n    };'],
 ]) {
   test(`${name} clears bf_autoconnect along with bf_tok`, () => {
     const from = BUNDLE.indexOf(marker);
