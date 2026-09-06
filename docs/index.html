@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-0031">
+<meta name="bf-build" content="2026-09-06-0042">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -338,6 +338,12 @@
   .row .acts{display:flex; gap:6px; flex-wrap:wrap}
   .mono{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums}
   .why{font-size:12.5px; color:var(--ink-2); background:var(--surface-3); border-radius:5px; padding:4px 9px; display:inline-block; margin-top:6px}
+  /* Every axis says what it was guessed from, so it can be checked rather
+     than taken on trust — and a correction you made reads as yours. */
+  .axwhy{font-size:11.5px; color:var(--ink-3); margin-left:9px}
+  .axwhy::before{content:"· "}
+  .axwhy.mine{color:var(--ok)}
+  .axrow .acts{align-items:center}
   table.cmp{border-collapse:collapse; font-size:12.5px; margin-top:8px; width:100%}
   table.cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:0 10px 3px 0}
   table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
@@ -580,7 +586,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-0031</span>
+    <span class="mono">build 2026-09-06-0042</span>
   </p>
 
   <div class="feat">
@@ -677,7 +683,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0031</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0042</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1166,7 +1172,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-0031';
+const BUILD = '2026-09-06-0042';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -1489,16 +1495,49 @@ const ERA   = /\b(90s|00s|80s|70s|nostalgia|old but gold|retro)\b|^\d{4}$/i;
 const MOOD  = /(chill|mellow|wasted|vibin|groove|sleep|late night|hi energy|high energy|early night|relax|calm|hype|sad|happy)/i;
 const MIN_FOR_TARGET = 12;
 
-function classify(lib) {
+/* An event playlist named for the club gives itself away; one named for who
+ * you were with that night looks like any other playlist, and falls through to
+ * genre — where it competes for suggestions with the real genre buckets and
+ * turns up in Misfiles as noise. The filed dates carry what the name does not:
+ * a night out lands inside a couple of days and is then finished, while a
+ * genre bucket accretes for years and is still growing.
+ *
+ * Both halves matter. "Added in one go" alone would catch a playlist somebody
+ * built last week by dropping fifty tracks in at once, which is exactly what a
+ * new listener does — so it must also have been left alone since. */
+const EVENT_SPAN_DAYS = 4;      // a night out, and the next morning's additions
+const EVENT_SETTLED_DAYS = 45;  // and nothing added since
+const EVENT_MIN_TRACKS = 8;     // below this, one sitting means nothing
+
+/** How many days the middle 80% of a playlist's additions span, and how long
+ *  ago the last one was. Null when too few tracks carry a date to say. */
+function addedShape(p, now = Date.now()) {
+  const at = p.tracks.map(t => Date.parse(t?.added_at)).filter(Number.isFinite).sort((a, b) => a - b);
+  if (at.length < EVENT_MIN_TRACKS) return null;
+  // Percentiles rather than first-to-last, so one track added late does not
+  // hide a playlist that was otherwise built in an evening.
+  const lo = at[Math.floor(at.length * 0.1)], hi = at[Math.ceil(at.length * 0.9) - 1];
+  return { spanDays: (hi - lo) / 86400000, sinceDays: (now - at[at.length - 1]) / 86400000 };
+}
+
+function classify(lib, now = Date.now()) {
   const cfg = {};
   for (const p of lib.playlists) {
     const n = p.name;
-    const axis = EVENT.test(n) ? 'event' : DJSET.test(n) ? 'djset' : ERA.test(n) ? 'era' : MOOD.test(n) ? 'mood' : 'genre';
-    cfg[p.id] = { name:n, axis, tracks:p.tracks.length,
+    const named = EVENT.test(n) ? 'event' : DJSET.test(n) ? 'djset' : ERA.test(n) ? 'era' : MOOD.test(n) ? 'mood' : null;
+    let axis = named ?? 'genre', why = named ? 'from the name' : 'no signal in the name — treated as genre';
+    if (!named) {
+      const shape = addedShape(p, now);
+      if (shape && shape.spanDays <= EVENT_SPAN_DAYS && shape.sinceDays >= EVENT_SETTLED_DAYS) {
+        axis = 'event';
+        why = `built in ${shape.spanDays < 1 ? 'a day' : Math.round(shape.spanDays) + ' days'}, nothing added since`;
+      }
+    }
+    cfg[p.id] = { name:n, axis, why, tracks:p.tracks.length,
                   target: (axis === 'genre' || axis === 'mood') && p.tracks.length >= MIN_FOR_TARGET };
   }
   const saved = JSON.parse(localStorage.getItem('bf_axes') || '{}');
-  for (const [id, v] of Object.entries(saved)) if (cfg[id]) Object.assign(cfg[id], v);
+  for (const [id, v] of Object.entries(saved)) if (cfg[id]) Object.assign(cfg[id], v, { why:'set by you' });
   return cfg;
 }
 
@@ -2254,7 +2293,7 @@ function vLists() {
   const rows = Object.entries(CFG).map(([id,v]) => ({ id, ...v })).sort((a,b) => b.tracks - a.tracks);
   const cov = tagCoverage();
   return `<h1>Playlists</h1>
-    <p class="lede">How each of your playlists is treated. Only <b>genre</b> and <b>mood</b> playlists receive suggestions, and a track is only ever compared against playlists on its own axis — so a metal track in a mood playlist is not flagged as misfiled. Guessed from names; correct anything wrong and it is remembered on this device.</p>
+    <p class="lede">How each of your playlists is treated. Only <b>genre</b> and <b>mood</b> playlists receive suggestions, and a track is only ever compared against playlists on its own axis — so a metal track in a mood playlist is not flagged as misfiled. Each guess says what it was made from; correct anything wrong and it is remembered on this device.</p>
 
     <h2>Genre data</h2>
     <p class="lede">${cov.have.toLocaleString()} of ${cov.total.toLocaleString()} artists have genre tags (${cov.pct}%).
@@ -2270,9 +2309,10 @@ function vLists() {
 
     <h2>Axes</h2>
     <div class="rows">${rows.map(p => `
-      <div class="row" style="align-items:center">
+      <div class="row axrow" style="align-items:center">
         <div class="main"><div class="ttl">${esc(p.name)}</div>
-          <div class="sub mono">${p.tracks} tracks</div></div>
+          <div class="sub"><span class="mono">${p.tracks} tracks</span>
+            <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span></div></div>
         <div class="acts">
           <select data-ax="${esc(p.id)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select>
           <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2)">
@@ -2841,7 +2881,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-0031').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-0042').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };

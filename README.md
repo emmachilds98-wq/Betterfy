@@ -200,6 +200,15 @@ guess, and everything downstream reads the file, not the rules.
 - **Within a playlist vs across playlists.** The same track twice in one
   playlist is a mistake. The same track in five playlists is usually deliberate,
   so it is surfaced for review and never auto-removed.
+- **Axes are guessed from names, then from dates.** A playlist named for a club
+  or a decade says what it is. One named for whoever you were with that night
+  does not, and used to fall through to *genre* — where it competed for
+  suggestions with the real genre buckets and turned up in Misfiles as noise.
+  A playlist whose tracks all landed within a few days and which has had
+  nothing added for over a month is read as an event instead. Both halves are
+  needed: "added in one go" alone would catch a playlist someone built last
+  week by dropping fifty tracks in at once. Every playlist on the Playlists
+  screen says what its guess was made from, and correcting one overrides both.
 - **Discovery subtracts what you own** — every artist and track in the library,
   including each artist named inside a collaboration credit, so a seed artist
   can't return as one half of a duo. **Everything I listen to** weights your
