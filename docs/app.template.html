@@ -882,7 +882,7 @@
         <button class="b sm" id="copyRedirect">Copy</button>
       </div>
     </div>
-    <details>
+    <details id="ownAppDetails">
       <summary>Use a different Spotify app</summary>
       <p class="lede" style="font-size:13px; margin-top:10px">
         Create one at <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a>,
@@ -3523,7 +3523,7 @@ async function start(force) {
 // Spotify's raw error codes mean nothing to someone who just wanted to sort
 // their playlists, so say what to actually do about each.
 const FRIENDLY = {
-  access_denied: 'Sign-in was cancelled, or this Spotify account has not been given access yet. Ask whoever sent you the link, then try again.',
+  access_denied: 'Sign-in was cancelled, or this Spotify account hasn’t been approved for this app yet — see below for a way around that which needs nobody’s approval.',
   invalid_client: 'The app is not configured correctly yet. Let the person who sent you this link know.',
   invalid_scope: 'Spotify refused one of the permissions. Try again, and accept all of them.',
   server_error: 'Spotify had a problem. Try again in a moment.',
@@ -3548,6 +3548,21 @@ const FRIENDLY = {
     const code = q.get('error');
     $('#land').hidden = false;
     toast(FRIENDLY[code] ?? `Sign-in failed (${code}). Try again.`);
+    // access_denied covers both "you tapped cancel" and "this app has a
+    // 25-account cap and you're not on the list" — Spotify doesn't say which.
+    // Rather than send everyone back to whoever runs this page to be added by
+    // email, hand them the way to skip that approval entirely: their own free
+    // Spotify app, registered under their own account, needing nobody's say-so.
+    if (code === 'access_denied' && !$('#landSetupHint')) {
+      $('#setupPanel').hidden = false;
+      $('#ownAppDetails').open = true;
+      localStorage.setItem('bf_setup', '1');
+      const hint = document.createElement('p');
+      hint.id = 'landSetupHint'; hint.className = 'fineprint';
+      hint.innerHTML = 'If this account isn’t on the approved list, you don’t need to ask to be added — '
+        + '<a href="#ownAppDetails">use your own Spotify app</a> instead, set up in about a minute, sharing nothing with whoever sent you this link.';
+      $('.cta')?.after(hint);
+    }
     history.replaceState({},'',REDIRECT);
     return;
   }
