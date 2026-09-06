@@ -161,3 +161,38 @@ test('vLists surfaces playlists classify() defaulted with no real signal, and on
   assert.match(body, /Needs your input/);
   assert.match(body, /undecided = rows\.filter\(p => p\.why === NO_SIGNAL\)/);
 });
+
+test('vLists shows drifting playlists only when findDrift actually found some', () => {
+  const from = BUNDLE.indexOf('function vLists()');
+  const to = BUNDLE.indexOf('function tagCoverage()');
+  const body = BUNDLE.slice(from, to);
+  assert.match(body, /\(R\.drift \?\? \[\]\)\.length \?/, 'gated on there being anything to show');
+  assert.match(body, /Recently drifting/);
+  assert.match(body, /d\.recentTags\.map\(esc\)\.join/, 'shows what the newest additions actually look like');
+});
+
+test('buildReports computes drift alongside misfiled, from the same idf table', () => {
+  const from = BUNDLE.indexOf('function buildReports(lib, cfg, tags)');
+  const to = BUNDLE.indexOf('function secDupes');
+  const body = BUNDLE.slice(from, to);
+  assert.match(body, /const drift = findDrift\(lib, tags, targets, idf\);/);
+  assert.match(body, /return \{ within, across, misfiled, backlog, clusters, drift, profiles, idf \};/);
+});
+
+test('enrichMissing covers what you actually listen to first', () => {
+  const from = BUNDLE.indexOf('async function enrichMissing()');
+  const to = BUNDLE.indexOf("/* ---------- correcting one artist's tags", from);
+  const body = BUNDLE.slice(from, to);
+  assert.ok(from > 0 && to > from, 'enrichMissing not found — rebuild with npm run build:web');
+  assert.match(body, /todo = byListening\(todo, \(await getListening\(\)\)\.weights\)/);
+});
+
+test('secMisfile notes when a "misfiled" track is one you actually play a lot, without touching its confidence', () => {
+  const from = BUNDLE.indexOf('function secMisfile()');
+  const to = BUNDLE.indexOf('function vTidy()');
+  const body = BUNDLE.slice(from, to);
+  assert.match(body, /recentlyActive\?\.has\(x\.artist\)/);
+  assert.match(body, /You play this a lot right now/);
+  // The fetch is lazy and must not block the row rendering that's already there.
+  assert.match(body, /getListening\(\)\.then\(\(\) => render\(\)\)/);
+});

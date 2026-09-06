@@ -1904,10 +1904,17 @@ function buildReports(lib, cfg, tags) {
     }
   }
   clusters.sort((a,b) => b.size - a.size);
+
+  // Playlists whose recent additions read differently from what came before —
+  // the other shape of "goes against the pattern", at the playlist level
+  // rather than one track. Cheap and synchronous, needs no listening data,
+  // so it's always current rather than something to fetch separately.
+  const drift = findDrift(lib, tags, targets, idf);
+
   // profiles/idf come out too: Discover ranks tracks that are not in the
   // library at all, and must score them against the same centroids the inbox
   // uses rather than a second, subtly different model.
-  return { within, across, misfiled, backlog, clusters, profiles, idf };
+  return { within, across, misfiled, backlog, clusters, drift, profiles, idf };
 }
 
 /* ===================== UI ===================== */
@@ -2373,6 +2380,13 @@ function secMisfile() {
   const counts = { high: 0, medium: 0, low: 0 };
   for (const x of R.misfiled) counts[x.confidence]++;
   const m = R.misfiled.filter(x => x.confidence === S.mfBand);
+  // Best-effort, fetched once and reused: a "misfiled" track you actually
+  // play a lot is more likely a deliberate keep than a mistake. Doesn't
+  // change the confidence tier — just gives you the context to judge it —
+  // and the row renders immediately either way; the note appears once the
+  // fetch resolves, without blocking anything on it.
+  const recentlyActive = LISTENING_CACHE?.recentlyActive ?? null;
+  if (!recentlyActive && !LISTENING_PENDING) getListening().then(() => render());
   // Only draw the (stateful, id-bearing) editor once, even if the artist
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
@@ -2382,11 +2396,13 @@ function secMisfile() {
     <div class="rows">${m.slice(0, 80).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
+      const playedALot = recentlyActive?.has(x.artist);
       return `<div class="row ${done ? 'done' : ''}">${thumbHTML(x)}<div class="main">
         <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
         ${to ? `<div class="swap"><span class="from">${esc(x.current)}</span><span class="arw">→</span><span class="to">${esc(to.name)}</span>
           <span class="mono" style="color:var(--ink-3)">${(x.currentScore * 100).toFixed(0)}% → ${(to.score * 100).toFixed(0)}%</span></div>`
         : `<div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore * 100).toFixed(0)}% fit</span></div>`}
+        ${playedALot ? `<div class="sub" style="color:var(--accent)">You play this a lot right now — might be deliberate.</div>` : ''}
       </div><div class="acts">
         ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}">${done ? 'Moved' : 'Move'}</button>` : ''}
         ${x.suggest.filter(sg => sg.id).slice(1, 2).map(sg =>
@@ -2571,31 +2587,51 @@ function vShuffle() {
  * instead gives you that playlist's radio.
  */
 async function listeningSeeds() {
-  const w = new Map();
-  const bump = (name, x) => { if (name) w.set(name, (w.get(name) ?? 0) + x); };
+  const { topWindows, recentArtists } = await fetchListeningRaw();
+  // The library as a floor, scaled by the biggest count so that one enormous
+  // playlist cannot outvote a month of actually playing something.
+  const libraryArtists = [];
+  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) libraryArtists.push(a.name);
+  const weights = listeningWeights({ topWindows, recentArtists, libraryArtists });
 
-  // Most recent window counts for most, but the long one still counts: taste
-  // is not only what happened this month.
+  // Stashed for getListening() — Discovery, the tag-gap fetch and the Tidy
+  // screen's "you play this a lot" note all read the same one fetch.
+  const shortTerm = topWindows.find(w => w.range === 'short_term')?.items ?? [];
+  LISTENING_CACHE = { weights, recentlyActive: new Set([...shortTerm, ...recentArtists]) };
+  return weights;
+}
+
+// Most recent window counts for most, but the long one still counts: taste
+// is not only what happened this month. Kept aside so getListening() below
+// can reuse the same raw fetch for the recently-active set, rather than
+// hitting Spotify a second time for it.
+async function fetchListeningRaw() {
+  const topWindows = [];
   for (const [range, weight] of [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]]) {
     try {
       const r = await sp(`/me/top/artists?limit=50&time_range=${range}`);
-      (r?.items ?? []).forEach((a, i) => bump(a.name, weight * (1 - i / 60)));
+      topWindows.push({ range, weight, items: (r?.items ?? []).map(a => a.name) });
     } catch {}
   }
+  let recentArtists = [];
   try {
     const r = await sp('/me/player/recently-played?limit=50');
-    for (const p of r?.items ?? []) for (const a of p.track?.artists ?? []) bump(a.name, 0.6);
+    recentArtists = (r?.items ?? []).flatMap(p => (p.track?.artists ?? []).map(a => a.name));
   } catch {}
+  return { topWindows, recentArtists };
+}
 
-  // The library as a floor, scaled by the biggest count so that one enormous
-  // playlist cannot outvote a month of actually playing something.
-  const filed = new Map();
-  for (const p of LIB.playlists) for (const t of p.tracks)
-    for (const a of t.artists ?? []) filed.set(a.name, (filed.get(a.name) ?? 0) + 1);
-  const most = Math.max(1, ...filed.values());
-  for (const [name, n] of filed) bump(name, n / most);
-
-  return w;
+// Memoized for the session: whichever feature asks first (Discovery, the
+// Playlists tag-gap fetch, or opening Tidy) pays for the fetch; everyone
+// else reads the cache instead of hitting Spotify again. LISTENING_PENDING
+// collapses two callers racing to be first into one fetch, not two.
+let LISTENING_CACHE = null, LISTENING_PENDING = null;
+async function getListening() {
+  if (LISTENING_CACHE) return LISTENING_CACHE;
+  LISTENING_PENDING ??= listeningSeeds();
+  await LISTENING_PENDING;
+  LISTENING_PENDING = null;
+  return LISTENING_CACHE;
 }
 
 /** Artist weights for one playlist — its own radio, ignoring everything else. */
@@ -2869,6 +2905,15 @@ function vLists() {
       <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
     </div>
 
+    ${(R.drift ?? []).length ? `<h2>Recently drifting</h2>
+    <p class="lede">${R.drift.length} playlist${R.drift.length===1?'':'s'} whose newest additions read differently from everything added before them — not necessarily wrong, just worth a look. This is a trend across many tracks, not a single misfile.</p>
+    <div class="rows">${R.drift.map(d => `<div class="row">
+      <div class="main"><div class="ttl">${esc(d.playlistName)}</div>
+        <div class="sub">newest ${d.recentCount}: <b>${d.recentTags.map(esc).join(', ') || '—'}</b>
+          &nbsp;·&nbsp; the other ${d.olderCount}: <b>${d.olderTags.map(esc).join(', ') || '—'}</b>
+          &nbsp;·&nbsp; ${Math.round(d.similarity*100)}% alike</div></div>
+    </div>`).join('')}</div>` : ''}
+
     <h2>Axes</h2>
     <div class="rows">${rows.map(axisRowHTML).join('')}</div>`;
 }
@@ -2903,8 +2948,13 @@ async function enrichMissing() {
   const names = new Map();
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
-  const todo = [...names];
+  let todo = [...names];
   if (!todo.length) return toast('Nothing missing.');
+
+  // Hundreds of gaps can take a while — cover what you actually listen to
+  // first, so leaving the screen partway through still improves the
+  // suggestions that matter most.
+  try { todo = byListening(todo, (await getListening()).weights); } catch { /* library order is fine */ }
 
   const cached = (await idb.get('tags_extra')) ?? {};
   let done = 0, viaDiscogs = 0;

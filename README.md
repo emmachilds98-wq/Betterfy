@@ -277,6 +277,25 @@ guess, and everything downstream reads the file, not the rules.
   needed: "added in one go" alone would catch a playlist someone built last
   week by dropping fifty tracks in at once. Every playlist on the Playlists
   screen says what its guess was made from, and correcting one overrides both.
+- **A playlist can go wrong two ways: one track, or the whole thing drifting.**
+  Misfiles catches the first — a track that fits another playlist on the same
+  axis far better than the one it's actually in, flagged only past a wide
+  margin so ordinary cross-genre overlap stays quiet. The **Playlists** screen
+  now also catches the second: a playlist whose newest additions score low
+  against everything added before them — the same measurement, just run on a
+  playlist's recent quarter against its older three-quarters instead of one
+  track against a centroid. Neither auto-corrects anything; both are a
+  prompt to look, not a verdict. The drift threshold is a first pass, not
+  yet checked against a real library the way the misfile margin was — expect
+  to tune it once you can see it against your own playlists.
+- **Real listening now steers more than Discovery.** Your top artists over
+  Spotify's three windows plus recent plays — previously only used to seed a
+  Discovery run — now also decide which artist's tag gap gets filled first
+  when you hit **Fetch missing tags** (so an interrupted fetch still covers
+  what actually matters), and note on a Misfiles row when you're playing that
+  artist heavily right now, since that's more likely a deliberate keep than a
+  mistake. It's a note, not a rule: misfile confidence itself doesn't change,
+  because that's the one number with direct tests against it.
 - **Discovery subtracts what you own** — every artist and track in the library,
   including each artist named inside a collaboration credit, so a seed artist
   can't return as one half of a duo. **Everything I listen to** weights your
@@ -314,6 +333,7 @@ guess, and everything downstream reads the file, not the rules.
 | `norm.mjs` / `credits.mjs` | track identity and collaboration-credit splitting |
 | `profile.mjs` | tag vectors, playlist centroids, IDF, ranking |
 | `enrich-lastfm.mjs` / `enrich-discogs.mjs` / `tagstore.mjs` | fetch and merge genre tags — Discogs only ever fills what Last.fm left empty |
+| `listening.mjs` | real listening behaviour (top artists, recent plays) as a weight per artist — best-effort, works with no Spotify auth available too |
 | `snapshot.mjs` | dumps the whole library to `library.json` |
 | `actions.mjs` | every library mutation, with the undo log |
 | `server.mjs` + `ui/` | the local app |

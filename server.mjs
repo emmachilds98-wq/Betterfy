@@ -92,6 +92,7 @@ function summary() {
     crossFiled: dupes?.across?.length ?? 0,
     misfiled: misfile?.misfiled?.length ?? 0,
     clusters: misfile?.clusters?.length ?? 0,
+    drift: misfile?.drift?.length ?? 0,
     captured: lib.captured_at,
     reports: {
       dupes: !!dupes, misfile: !!misfile, discover: !!discover,
@@ -146,7 +147,7 @@ const ROUTES = {
   'GET /api/summary':   async () => summary(),
   'GET /api/backlog':   async () => backlog(),
   'GET /api/dupes':     async () => dupes ?? { within: [], across: [] },
-  'GET /api/misfile':   async () => misfile ?? { misfiled: [], placed: [], homeless: [], clusters: [] },
+  'GET /api/misfile':   async () => misfile ?? { misfiled: [], placed: [], homeless: [], clusters: [], drift: [] },
   'GET /api/discover':  async () => discover ?? [],
   'GET /api/playlists': async () => Object.entries(cfg?.playlists ?? {}).map(([id, v]) => ({ id, ...v })),
   'GET /api/history':   async () => history(),

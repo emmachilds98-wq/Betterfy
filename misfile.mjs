@@ -2,8 +2,9 @@
 //   1. Is anything filed somewhere that fits another playlist much better?
 //   2. Where should the 850 unfiled liked songs go — and what has no home at all?
 import { readFileSync, writeFileSync } from 'node:fs';
-import { buildProfiles, rank, topTags, trackVec, applyIdf, cosine, findMisfiled } from './profile.mjs';
+import { buildProfiles, rank, topTags, trackVec, applyIdf, cosine, findMisfiled, findDrift } from './profile.mjs';
 import { loadTags } from './tagstore.mjs';
+import { fetchListening } from './listening.mjs';
 
 const lib = JSON.parse(readFileSync('library.json', 'utf8'));
 const cfg = JSON.parse(readFileSync('playlists.config.json', 'utf8'));
@@ -15,6 +16,12 @@ const targets = new Set(Object.entries(cfg.playlists).filter(([, v]) => v.target
 const axisOf = id => cfg.playlists[id]?.axis ?? null;
 const { profiles, idf } = buildProfiles(lib, tags, targets, axisOf);
 console.error(`modelled ${profiles.size} destination playlists`);
+
+// Best-effort — a track flagged as misfiled but actually in heavy rotation
+// right now is more likely a deliberate keep than a mistake; annotated, not
+// used to change the confidence tier itself, since that's the one number
+// these reports have direct tests against.
+const { recentlyActive } = await fetchListening(lib).catch(() => ({ recentlyActive: new Set() }));
 
 // coverage check — how much of the library has any tag signal at all
 let withTags = 0, total = 0;
@@ -28,6 +35,7 @@ const misfiled = findMisfiled(lib, tags, targets, profiles, idf, axisOf).map(m =
   id: m.track.id, artist: m.track.artists?.[0]?.name, title: m.track.name,
   current: m.playlistName, currentPlaylistId: m.playlistId, currentScore: +m.ownScore.toFixed(3),
   confidence: m.confidence,
+  playedRecently: recentlyActive.has(m.track.artists?.[0]?.name),
   suggest: m.suggest.map(b => ({ id: b.id, name: b.name, score: +b.score.toFixed(3) })),
   tags: topTags(m.track, tags, idf),
 }));
@@ -75,12 +83,19 @@ for (const seed of vecs) {
 }
 clusters.sort((a, b) => b.size - a.size);
 
+// ---------- 4. playlists whose recent additions have drifted from the rest ----------
+const drift = findDrift(lib, tags, targets, idf);
+
 // ---------- report ----------
 const byConf = { high:0, medium:0, low:0 };
 for (const m of misfiled) byConf[m.confidence]++;
 console.log(`=== POSSIBLE MISFILES: ${misfiled.length} — high ${byConf.high}, medium ${byConf.medium}, low ${byConf.low} ===`);
 for (const m of misfiled.slice(0, 20))
-  console.log(`  ${m.artist} — ${m.title}\n     in ${m.current} (${m.currentScore})  ->  ${m.suggest.map(s=>`${s.name} (${s.score})`).join(' / ')}\n     tags: ${m.tags.join(', ')}`);
+  console.log(`  ${m.artist} — ${m.title}${m.playedRecently ? '  [you play this a lot]' : ''}\n     in ${m.current} (${m.currentScore})  ->  ${m.suggest.map(s=>`${s.name} (${s.score})`).join(' / ')}\n     tags: ${m.tags.join(', ')}`);
+
+console.log(`\n\n=== DRIFTING PLAYLISTS: ${drift.length} ===`);
+for (const d of drift)
+  console.log(`  ${d.playlistName} — recent ${d.recentTags.join(', ')} vs older ${d.olderTags.join(', ')} (similarity ${d.similarity.toFixed(2)})`);
 
 console.log(`\n\n=== UNFILED BACKLOG: ${unfiled.length} ===`);
 console.log(`  confident home:  ${placed.length}`);
@@ -93,5 +108,5 @@ console.log(`\n\n=== CANDIDATE NEW PLAYLISTS: ${clusters.length} ===`);
 for (const c of clusters)
   console.log(`  ${c.size} tracks — ${c.tags.join(', ')}\n     e.g. ${c.tracks.slice(0,4).join('; ')}`);
 
-writeFileSync('report-misfile.json', JSON.stringify({ misfiled, placed, homeless, clusters }, null, 2));
+writeFileSync('report-misfile.json', JSON.stringify({ misfiled, placed, homeless, clusters, drift }, null, 2));
 console.log('\nwrote report-misfile.json');
