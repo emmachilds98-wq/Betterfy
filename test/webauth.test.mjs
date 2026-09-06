@@ -273,7 +273,7 @@ function loadBlocked() {
   const el = id => els.get(id) ?? els.set(id, { textContent: '', onclick: null, hidden: false }).get(id);
   const sandbox = {
     $: sel => el(sel.replace('#', '')),
-    esc: s => s, LOGO_HTML: '',
+    esc: s => s, LOGO_HTML: '', REDIRECT: 'https://example.test/Betterfy/',
     setTimeout, clearTimeout, setInterval, clearInterval,
   };
   vm.createContext(sandbox);
@@ -319,21 +319,76 @@ test('a tap and the auto-retry timer cannot both fire — whichever wins stops t
 test('a rate limit found while reading the library carries its real wait to the fallback screen', () => {
   const start = BUNDLE.indexOf('async function start(force)');
   const boot = BUNDLE.slice(start, BUNDLE.indexOf('// Spotify\'s raw error codes'));
-  assert.match(boot, /blocked\(e\.message, \(\) => start\(force\), e\.retryAfterMs\)/,
+  assert.match(boot, /blocked\(e\.message, \(\) => start\(force\), e\.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER\)/,
     'the library-read fallback must pass the known wait through, not just a message');
 });
 
 test('a rate-limited code exchange carries its real wait through too, not just a bare "Try again"', () => {
   const start = BUNDLE.indexOf('// Spotify\'s raw error codes');
   const boot = BUNDLE.slice(BUNDLE.indexOf('(async () => {', start), BUNDLE.indexOf('if (autoConnectDue())'));
-  assert.match(boot, /blocked\(e\.message, \(\) => beginAuth\(\), e\.retryAfterMs\)/,
+  assert.match(boot, /blocked\(e\.message, \(\) => beginAuth\(\), e\.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER\)/,
     'a code exchange that hits the same rate limit deserves the same auto-retry the library read gets');
 });
 
 test('the auto-connect fallback also carries a known wait through', () => {
   const from = BUNDLE.indexOf('if (autoConnectDue())');
-  const boot = BUNDLE.slice(from, from + 500);
-  assert.match(boot, /blocked\(e\.message, \(\) => beginAuth\(\), e\.retryAfterMs\)/);
+  const boot = BUNDLE.slice(from, from + 700);
+  assert.match(boot, /blocked\(e\.message, \(\) => beginAuth\(\), e\.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER\)/);
+});
+
+/* ---------- several 429s in a row point at the actual fix ----------
+ * Waiting out one rate limit is normal. Several in a row on the shared
+ * default client ID means the quota itself is the problem, and no amount of
+ * waiting fixes that for as long as it stays busy — a personal Spotify app,
+ * with its own unshared quota, is the one thing that actually does. */
+
+test('every retryable call site increments the streak only on an actual 429', () => {
+  const from = BUNDLE.indexOf('async function start(force)');
+  const boot = BUNDLE.slice(from, BUNDLE.indexOf('if (autoConnectDue())'));
+  const hits = boot.match(/e\.status === 429 \? noteRateLimited\(\) : 0/g) ?? [];
+  assert.ok(hits.length >= 3, 'the library-read, token-refresh and code-exchange failures must all count toward the streak');
+});
+
+/** noteRateLimited/clearRateLimitStreak, loaded on their own. */
+function loadStreak() {
+  const from = BUNDLE.indexOf('const RATE_LIMIT_STREAK_KEY');
+  const to = BUNDLE.indexOf('let blockedTimer');
+  assert.ok(from > -1 && to > from, 'streak tracking not found — rebuild with npm run build:web');
+  const store = new Map();
+  const sandbox = {
+    localStorage: {
+      getItem: k => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: k => store.delete(k),
+    },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(BUNDLE.slice(from, to), sandbox);
+  return { note: () => vm.runInContext('noteRateLimited', sandbox)(),
+           clear: () => vm.runInContext('clearRateLimitStreak', sandbox)(),
+           threshold: vm.runInContext('RATE_LIMIT_OWN_APP_AFTER', sandbox) };
+}
+
+test('the streak counts consecutive 429s and clearing resets it to zero', () => {
+  const { note, clear, threshold } = loadStreak();
+  assert.equal(note(), 1);
+  assert.equal(note(), 2);
+  assert.ok(threshold >= 1, 'there is a real threshold, not one that never fires');
+  clear();
+  assert.equal(note(), 1, 'a clear really starts over, not just caps the count');
+});
+
+test('blocked() shows the own-app escape hatch only once the streak says so', () => {
+  const { blocked, el } = loadBlocked();
+  blocked('a pause', () => {}, 1000, false);
+  assert.doesNotMatch(el('land').innerHTML ?? '', /own Spotify app/i,
+    'a single rate limit should not yet suggest abandoning the default app');
+  el('landRetry').onclick();
+
+  blocked('a pause', () => {}, 1000, true);
+  assert.match(el('land').innerHTML, /Use your own Spotify app/);
+  assert.match(el('land').innerHTML, /\?setup/, 'the link actually reaches the setup panel, not just mentions it');
+  el('landRetry').onclick();
 });
 
 test('the shipped bundle carries a client ID', () => {
