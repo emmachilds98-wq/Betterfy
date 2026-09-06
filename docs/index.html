@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-1809">
+<meta name="bf-build" content="2026-09-06-1825">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -866,7 +866,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-1809</span>
+    <span class="mono">build 2026-09-06-1825</span>
   </p>
 
   <div class="feat">
@@ -963,7 +963,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1809</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1825</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1013,7 +1013,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1809</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1825</span>
   </div>
 </div>
 
@@ -1510,7 +1510,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-1809';
+const BUILD = '2026-09-06-1825';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3031,6 +3031,15 @@ function vLists() {
       <button class="b p" id="enrich" ${localStorage.getItem('bf_lfm') ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button>
       <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
     </div>
+    <p class="sub" style="margin:8px 0">
+      Optional — a free <b>Discogs</b> token fills in artists Last.fm has nothing on at all, from the styles on
+      their own releases (Jungle, Deep House, Electro — finer than Last.fm's one flat tag per artist). It never
+      overrides a real Last.fm tag, only ever fills a total gap, and runs automatically as part of the button above.</p>
+    <div class="rowbtns" style="margin-bottom:8px">
+      <input id="discogsKey" placeholder="Discogs personal access token" size="34" value="${esc(localStorage.getItem('bf_discogs') || '')}">
+      <button class="b" id="saveDiscogs">Save token</button>
+      <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
+    </div>
 
     <h2>Axes</h2>
     <div class="rows">${rows.map(axisRowHTML).join('')}</div>`;
@@ -3044,10 +3053,25 @@ function tagCoverage() {
   return { total: ids.size, have, missing: ids.size - have, pct: ids.size ? Math.round(100*have/ids.size) : 0 };
 }
 
+/** Release styles for an artist Last.fm has nothing on at all — never called
+ *  otherwise, since a real Last.fm tag always wins outright. */
+async function discogsTags(name, token) {
+  const r = await fetch('https://api.discogs.com/database/search?' + new URLSearchParams({
+    artist: name, type: 'release', per_page: '50', token })).then(x => x.json());
+  const tally = new Map();
+  for (const hit of r.results ?? [])
+    for (const style of hit.style ?? []) {
+      const s = style.toLowerCase();
+      tally.set(s, (tally.get(s) ?? 0) + 1);
+    }
+  return [...tally].sort((a, b) => b[1] - a[1]).slice(0, 10);
+}
+
 /** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
 async function enrichMissing() {
   const key = localStorage.getItem('bf_lfm');
   if (!key) return toast('Add a Last.fm key first.');
+  const discogsToken = localStorage.getItem('bf_discogs');
   const names = new Map();
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
@@ -3055,22 +3079,31 @@ async function enrichMissing() {
   if (!todo.length) return toast('Nothing missing.');
 
   const cached = (await idb.get('tags_extra')) ?? {};
-  let done = 0;
+  let done = 0, viaDiscogs = 0;
   for (const [id, name] of todo) {
     if (cached[id]) { TAGS[id] = cached[id]; done++; continue; }
+    let tags = [];
     try {
       const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
         method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
-      const tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
-      cached[id] = { tags }; TAGS[id] = { tags };
-    } catch { cached[id] = { tags: [] }; TAGS[id] = { tags: [] }; }
-    if (++done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
+      tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
+    } catch { tags = []; }
     await new Promise(r => setTimeout(r, 200));   // Last.fm's documented ~5/s
+
+    // Last.fm found nothing at all — try Discogs release styles before giving
+    // up on this artist, rather than leaving it permanently blank.
+    if (!tags.length && discogsToken) {
+      try { tags = await discogsTags(name, discogsToken); if (tags.length) viaDiscogs++; } catch { /* leave it blank */ }
+      await new Promise(r => setTimeout(r, 1100));  // Discogs: 60 req/min with a token
+    }
+
+    cached[id] = { tags }; TAGS[id] = { tags };
+    if (++done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
   }
   await idb.set('tags_extra', cached);
   R = buildReports(LIB, CFG, TAGS);
   $('#land').hidden = true; $('#app').hidden = false;
-  toast(`Tags filled for ${todo.length} artists.`);
+  toast(`Tags filled for ${todo.length} artists.` + (viaDiscogs ? ` (${viaDiscogs} from Discogs, where Last.fm had nothing.)` : ''));
   render();
 }
 
@@ -3554,6 +3587,12 @@ document.addEventListener('click', async e => {
     else { localStorage.removeItem('bf_lfm'); toast('Key cleared.'); render(); }
     return;
   }
+  if (e.target.id === 'saveDiscogs') {
+    const v = $('#discogsKey').value.trim();
+    if (v) { localStorage.setItem('bf_discogs', v); toast('Token saved.'); render(); }
+    else { localStorage.removeItem('bf_discogs'); toast('Token cleared.'); render(); }
+    return;
+  }
   if (e.target.id === 'enrich') return enrichMissing();
 
   const ea = e.target.closest('[data-editartist]');
@@ -3784,7 +3823,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-1809').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-1825').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };

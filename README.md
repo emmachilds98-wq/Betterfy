@@ -37,7 +37,13 @@ your suggestions may start thin. The **Playlists** view shows your tag coverage
 and can fill the gaps in your browser given a free
 [Last.fm key](https://www.last.fm/api/account/create) — paste the **API key**
 only; Betterfy only ever reads public tag data, so the shared secret that
-comes with a Last.fm app is not needed anywhere in this project.
+comes with a Last.fm app is not needed anywhere in this project. The
+**Discover** screen asks for the same key inline the first time you open it,
+so a first-time listener never has to go hunting for the Playlists screen
+just to get started. A free
+[Discogs token](https://www.discogs.com/settings/developers), also on
+Playlists, is optional and only ever fills an artist Last.fm has nothing on
+at all — a real Last.fm tag always wins.
 
 **A wrong suggestion is usually a wrong tag, not a wrong model.** Last.fm's
 tags are per *artist*, not per track, and crowd-submitted — a same-named act,
@@ -167,8 +173,15 @@ Verified against a freshly registered Spotify app in September 2026:
 | `POST /users/{id}/playlists` | `403` — use `POST /me/playlists` |
 
 So Spotify can no longer tell you the genre, mood or tempo of anything. Genre
-signal comes from **Last.fm** artist tags, with **Discogs** release styles for
-fine-grained electronic subgenres, and **MusicBrainz** as the identity glue.
+signal comes from **Last.fm** artist tags — the backbone, covering most of a
+library — with **Discogs** release styles as the fallback for an artist
+Last.fm has nothing on at all: Discogs' per-release `style` field (Jungle,
+Deep House, Electro) is tallied across an artist's catalogue the same way
+Last.fm's tag counts are, so it plugs straight into the same model rather
+than needing one of its own. It only ever fills a total gap and never
+outranks a real Last.fm tag. `MUSICBRAINZ_CONTACT` is still in
+`.env.example` for a planned identity-resolution pass — nothing reads it yet,
+so leave it blank until that lands.
 
 ## Setup
 
@@ -181,16 +194,20 @@ Requires Node 22+ (uses built-in `fetch`; no dependencies).
    Optionally connect Spotify scrobbling at
    https://www.last.fm/settings/applications — Spotify's API only returns your
    last 50 plays and keeps no history, Last.fm keeps everything from that day on.
-3. **Discogs token** — https://www.discogs.com/settings/developers → Generate token.
+3. **Discogs token** (optional) — https://www.discogs.com/settings/developers
+   → Generate token. Only fills artists Last.fm has nothing on; leave it blank
+   and `npm run setup` skips that step rather than failing on it.
 4. Copy `.env.example` to `.env` and fill it in.
 
 ```bash
 npm run setup     # authorise, snapshot the library, fetch tags, classify playlists
 ```
 
-`npm run setup` opens a browser once for Spotify authorisation. The tag fetch
-takes roughly 20 minutes for ~5,600 artists and is resumable — rerun it if
-interrupted and it continues from where it stopped.
+`npm run setup` opens a browser once for Spotify authorisation. The Last.fm
+fetch takes roughly 20 minutes for ~5,600 artists and is resumable — rerun it
+if interrupted and it continues from where it stopped. The Discogs pass that
+follows only touches artists still empty after that, so it's a much shorter
+run — or an instant no-op with no `DISCOGS_TOKEN` set.
 
 ## Use
 
@@ -200,6 +217,7 @@ npm run misfile      # possible misfiles + where the unfiled backlog should go
 npm run discover -- --like "Jungle & Breaks"   # new music, excluding all you own
 npm run shuffle -- "Techno" --play             # spaced shuffle, played on your device
 npm run consolidate  # maintain one playlist holding every unique track
+npm run rekordbox -- "collection.xml" --write  # import tempo/key from Rekordbox
 ```
 
 Everything is **dry-run by default**. Commands that change your Spotify library
@@ -295,6 +313,7 @@ guess, and everything downstream reads the file, not the rules.
 | `spotify.mjs` | API client — token refresh, pagination, 429 retry |
 | `norm.mjs` / `credits.mjs` | track identity and collaboration-credit splitting |
 | `profile.mjs` | tag vectors, playlist centroids, IDF, ranking |
+| `enrich-lastfm.mjs` / `enrich-discogs.mjs` / `tagstore.mjs` | fetch and merge genre tags — Discogs only ever fills what Last.fm left empty |
 | `snapshot.mjs` | dumps the whole library to `library.json` |
 | `actions.mjs` | every library mutation, with the undo log |
 | `server.mjs` + `ui/` | the local app |
@@ -310,12 +329,18 @@ refuses to build if a secret appears in the output.
 | Source | Verdict |
 |---|---|
 | **Last.fm** artist tags | The genre backbone. Good coverage, sends `access-control-allow-origin: *` so it works from the browser too. |
-| **Discogs** release styles | Precise for electronic subgenres (Breakbeat / Techno / Electro). |
-| **MusicBrainz** | Identity glue. No key; wants a contact string in the User-Agent. |
-| **GetSongBPM** | Tempo, key and Camelot notation — but only **20% coverage** measured over a 40-track sample of a current UK electronic library. Fine for mainstream catalogue, blank for most underground releases. |
+| **Discogs** release styles | Wired as a fallback: only queried for an artist Last.fm returned nothing for at all, tallying `style` across that artist's releases (Breakbeat / Techno / Electro — finer than Last.fm's one flat tag per artist). Needs a token in the `Authorization` header from Node, so this side is verified; the browser build sends it as a query param instead to avoid a custom header, which has **not** been checked against a real response — confirm it under Playlists once you have a token. |
+| **MusicBrainz** | Planned as identity glue — no key, but wants a contact string in the User-Agent, which a browser `fetch` cannot set. Nothing reads `MUSICBRAINZ_CONTACT` yet. |
+| **GetSongBPM** | Tempo, key and Camelot notation — but only **20% coverage** measured over a 40-track sample of a current UK electronic library. Superseded by the Rekordbox import below; nothing calls it. |
 | **Deezer** | Has a public BPM field, but it was empty for 4 of 5 tested tracks. Not worth wiring. |
 
-Tempo and musical key data by [GetSongBPM](https://getsongbpm.com).
+Tempo and musical key now come from **your own Rekordbox collection**, not a
+third-party lookup — `npm run rekordbox -- "path/to/collection.xml" --write`
+matches it against `library.json` (exact artist+title+version first, base
+title next, so an extended mix never gets silently treated as the original)
+and writes `rekordbox.json`. Nothing reads that file back into the scoring
+model or the UI yet — it's an import step ahead of that wiring, not a dead
+end, but today it's a report you'd open by hand.
 
 Generated files (`library.json`, `tags-lastfm.json`, `.tokens.json`, reports) are
 gitignored — they're yours, not the project's.
