@@ -1683,6 +1683,18 @@ async function hold(ms) {
 const AUTO_HOLD_MAX = 20000;    // sit out any single wait this short or less
 const AUTO_HOLD_BUDGET = 60000; // …but never more than this in total per call
 
+/* And a budget for the read as a whole, because the per-call one never trips in
+ * the case that matters. A quota that is simply gone answers the very first
+ * call of a read with a 429, then the next, then the next — each pause short
+ * enough to absorb, each one starting its countdown over, none of them ever
+ * reaching a per-call limit. From the outside that is a progress bar stuck at
+ * 2% and "Spotify asked for a pause" re-arming forever, which is exactly the
+ * report. No amount of waiting fixes it either: the quota belongs to the app,
+ * not to the listener, so it is being spent by everyone else with this page
+ * open. Past this, stop absorbing and show the screen that names the real fix. */
+const HOLD_BUDGET_RUN = 15000;
+let heldRun = 0;   // reset at the top of every read
+
 /* A phone's network is not a desktop's. It changes cell mid-request, hands over
  * to Wi-Fi, and every so often leaves a request hanging with nobody ever coming
  * back to it — and fetch() has no deadline of its own, so the read simply sat on
@@ -1751,8 +1763,9 @@ async function sp(path, opts = {}) {
       const after = (+res.headers.get('retry-after') || 0) * 1000;
       const wait = after || Math.min(2000 * 2 ** i, 60000);
       setGap(gap * 2);
-      if (wait <= AUTO_HOLD_MAX && held + wait <= AUTO_HOLD_BUDGET) {
-        held += wait; await hold(wait); continue;
+      if (wait <= AUTO_HOLD_MAX && held + wait <= AUTO_HOLD_BUDGET
+          && heldRun + wait <= HOLD_BUDGET_RUN) {
+        held += wait; heldRun += wait; await hold(wait); continue;
       }
       // wait, not after: after is only ever this one response's own Retry-After
       // (or 0), and what the fallback screen needs to wait out is whatever this
@@ -1926,6 +1939,7 @@ async function syncLibrary(force, onProgress) {
   // this read banks as it goes still count, so a forced re-read that is
   // interrupted resumes like any other rather than starting from nothing.
   if (force) await dropParts();
+  heldRun = 0;
   const banked = await bankedParts();
 
   // Who you are and which playlists you have is two calls and a few pages, and
@@ -3976,11 +3990,11 @@ const LOGO_HTML = `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
   <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
 </svg>Better<span>fy</span>`;
 
-function stage(msg, pct) {
+function stage(msg, pct, extra = '') {
   $('#app').hidden = true; $('#land').hidden = false;
   $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
     <p class="tagline">${esc(msg)}</p>
-    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>`;
+    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>${extra}`;
 }
 
 // A single 429 is ordinary. Several in a row on this page's default client ID
@@ -4008,6 +4022,20 @@ const clearRateLimitStreak = () => LS.removeItem(RATE_LIMIT_STREAK_KEY);
 /** A wall for a failure that is nobody's fault and will pass: no "start over"
  *  button, because signing in again is exactly what must not happen here. */
 let blockedTimer = null, blockedCountdown = null;
+
+/* The one thing that actually ends a shared-quota wait, rather than sitting it
+ * out. Shown on the pause screen as well as the fallback one now: the pause
+ * screen is where people were spending the wait, and it offered nothing to do
+ * but watch a countdown re-arm. */
+function ownAppNote() {
+  return `<div class="note" style="max-width:420px; margin-top:14px; text-align:left">
+      <b>Rather not wait it out?</b> This page's default Spotify app is shared by everyone who opens it,
+      so a busy few minutes anywhere can hold up your library here too, for as long as that stays busy.
+      Your own free Spotify app has a quota nobody else can spend: about a minute to set up, nothing to
+      share with whoever sent you this link.
+      <div class="rowbtns" style="margin-top:8px"><a class="b sm" href="${REDIRECT}?setup">Use your own Spotify app</a></div>
+    </div>`;
+}
 /**
  * @param {number} [retryInMs] — when known, retry on its own once this has passed,
  * so getting past a rate limit never depends on someone remembering to come tap it.
@@ -4026,13 +4054,7 @@ function blocked(msg, retry, retryInMs, ownAppHint) {
     <p class="tagline">${esc(msg)}</p>
     <button class="b p" id="landRetry">Try again</button>
     ${retryInMs != null ? `<p class="fineprint" id="landRetryCountdown"></p>` : ''}
-    ${ownAppHint ? `<div class="note" style="max-width:420px; margin-top:14px; text-align:left">
-      <b>Rather not wait it out?</b> This page's default Spotify app is shared by everyone who opens it,
-      so a busy few minutes anywhere can refuse sign-ins here too, for as long as that stays busy — Try
-      again above still works and gets there eventually. Your own free Spotify app has a quota nobody
-      else can spend instead: about a minute to set up, nothing to share with whoever sent you this link.
-      <div class="rowbtns" style="margin-top:8px"><a class="b sm" href="${REDIRECT}?setup">Use your own Spotify app</a></div>
-    </div>` : ''}`;
+    ${ownAppHint ? ownAppNote() : ''}`;
   // Whichever fires first — a tap or the timer — has to stop the other one,
   // or the countdown keeps ticking in the background forever after the retry
   // it was counting down to has already happened.
@@ -4078,9 +4100,12 @@ async function start(force) {
     LIB = force ? null : await idb.get('library');
     if (!LIB) {
       let at = 0.02;
+      // A pause at the very start of a read is not a busy moment, it is a quota
+      // that has already gone — so the way out rides along with the countdown
+      // rather than waiting for the read to give up first.
       onHold = secs => stage(secs
         ? `Spotify asked for a pause — carrying on in ${secs}s. Leave this open.`
-        : 'Carrying on…', at);
+        : 'Carrying on…', at, secs ? ownAppNote() : '');
       try { LIB = await syncLibrary(force, (name, pct) => { at = pct; stage(`Reading ${name}…`, pct); }); }
       finally { onHold = null; }
     }

@@ -446,3 +446,47 @@ test('a back-off does not outlive the rolling window that earned it', async () =
   assert.equal(vm.runInContext('gap', app), vm.runInContext('MIN_GAP', app),
     'a quiet stretch is the window draining, so the pace goes back to the floor');
 });
+
+/* ---------- a quota that is simply gone ----------
+ * The per-call hold budget never trips in the case that actually bit: the very
+ * first call of a read gets a 429, then the next, then the next, each pause
+ * short enough to absorb and each one restarting its countdown. From outside
+ * that is a progress bar stuck at 2% and "Spotify asked for a pause" re-arming
+ * forever — and waiting does not fix it, because the quota belongs to the app
+ * rather than the listener. So the read as a whole has a budget too. */
+
+test('short pauses that never stop are surfaced, not absorbed forever', async () => {
+  // Four seconds is well inside AUTO_HOLD_MAX, so every one of these used to be
+  // swallowed quietly and the read never got anywhere.
+  const app = load({ ...LIB, limit: () => 4 });
+  const began = Date.now();
+  await assert.rejects(() => app.syncLibrary(false, () => {}), e => {
+    assert.equal(e.retryable, true);
+    return true;
+  });
+  const took = Date.now() - began;
+  assert.ok(took < 40000, `sat through ${(took / 1000).toFixed(0)}s of short pauses before saying anything`);
+});
+
+test('the per-read budget is small enough to reach the actionable screen quickly', () => {
+  const m = BUNDLE.match(/const HOLD_BUDGET_RUN = (\d+);/);
+  assert.ok(m, 'HOLD_BUDGET_RUN not found — rebuild with npm run build:web');
+  assert.ok(+m[1] <= 30000, 'a whole read must not spend longer than this quietly waiting');
+});
+
+test('an ordinary one-off pause is still absorbed without bothering anyone', async () => {
+  // The budget must not turn every throttle into a wall — one short pause in a
+  // read is exactly what the quiet countdown is for.
+  const app = load({ ...LIB, limit: (url, nth) => url.includes('/playlists/p2/') && nth === 1 ? 1 : 0 });
+  const lib = await app.syncLibrary(false, () => {});
+  assert.equal(lib.playlists.length, 3, 'a single short throttle still just waits and carries on');
+});
+
+test('the budget resets per read, so each retry gets a fresh allowance', async () => {
+  const stop = { on: true };
+  const app = load({ ...LIB, limit: () => stop.on ? 4 : 0 });
+  await assert.rejects(() => app.syncLibrary(false, () => {}));
+  stop.on = false;
+  const lib = await app.syncLibrary(false, () => {});
+  assert.equal(lib.playlists.length, 3, 'the retry is not still carrying the last attempt’s spent budget');
+});

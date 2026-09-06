@@ -211,6 +211,21 @@ escape hatch already existed for the 25-account cap (`access_denied`); this
 is it surfacing for a persistent rate limit too, rather than only when Spotify has
 flatly refused the account.
 
+**When the pause never ends.** The per-call budget above never trips in the
+case that actually bit: a quota that is simply gone answers the *first* call of
+a read with a 429, then the next, then the next — each pause short enough to
+absorb quietly, each one restarting its countdown, none of them ever reaching a
+per-call limit. From the outside that is a progress bar stuck at 2% and
+"Spotify asked for a pause — carrying on in 4s" re-arming forever. So the read
+as a whole now has a budget too, and past it the pause is surfaced rather than
+absorbed. The countdown screen also carries **Use your own Spotify app**, since
+that screen is where the wait was actually being spent and it previously
+offered nothing to do but watch.
+
+That last point is the important one: waiting does not fix this. The quota
+belongs to the *app*, not to the listener, so it is being spent by everyone
+else who has the page open on the same client ID.
+
 **If it says "Spotify asked for a pause".** A short throttle while reading a
 large library is waited out on its own, counting down on screen. A longer one
 used to be sat through silently too — up to ten minutes at a time, several
