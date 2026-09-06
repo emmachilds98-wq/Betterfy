@@ -21,8 +21,11 @@ function slice() {
 /** The handful of elements the player paints into. */
 function fakeDom() {
   const mk = () => ({ textContent: '', value: '', innerHTML: '', max: '', disabled: false,
-    attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
+    attrs: {}, setAttribute(k, v) { this.attrs[k] = v; },
+    // The elapsed fill is painted through a custom property on the element.
+    css: {}, style: { setProperty(k, v) { this.owner.css[k] = v; } } });
   const els = { '#seek': mk(), '#pTime': mk(), '#pDur': mk(), '#pToggle': mk(), '#pDev': mk() };
+  for (const el of Object.values(els)) el.style.owner = el;
   return { els, $: sel => els[sel] ?? null };
 }
 
@@ -64,6 +67,19 @@ test('a poll paints the position, the length and the device', async () => {
   assert.equal(app.dom.els['#seek'].max, '200000');
   assert.match(app.dom.els['#pDev'].textContent, /playing on Emma's iPhone/);
   assert.equal(app.dom.els['#seek'].disabled, false);
+});
+
+test('the scrubber fills in as far as the track has played', async () => {
+  // Otherwise how far in you are is readable only from where the thumb sits.
+  const app = load(NOW);          // 30s into 200s
+  await app.playerPoll();
+  assert.equal(app.dom.els['#seek'].css['--p'], '15.00%');
+});
+
+test('a track of unknown length fills nothing rather than dividing by zero', async () => {
+  const app = load({ ...NOW, item: { id: 't1', duration_ms: 0 }, progress_ms: 0 });
+  await app.playerPoll();
+  assert.equal(app.dom.els['#seek'].css['--p'], '0.00%');
 });
 
 test('nothing playing anywhere is a quiet not-playing, not an error', async () => {
@@ -166,4 +182,38 @@ test('a failed transport call says so instead of lying about the state', async (
   await app.playerToggle();
   assert.deepEqual(app.calls.at(-1), { toast: 'No active device' });
   assert.equal(app.state().playing, true, 'still playing — the pause never landed');
+});
+
+/* ---------- playing from a screen that has no player on it ---------- */
+
+// Misfiles and the other list screens have a plain Play button and nowhere to
+// show a transport. That path used to read the Discover card's track to find a
+// duration, so on any other screen it silently did nothing at all.
+
+test('Play works on a screen with no player, and says where it went', async () => {
+  const app = load(NOW);
+  delete app.dom.els['#seek'];                 // a list screen: no transport
+  vm.runInContext('discAt = () => null', app);  // and no discovery loaded
+  await app.playFrom('t7', 181000);
+  assert.equal(app.state().id, 't7');
+  assert.equal(app.state().dur, 181000, 'the row passes the length it knows');
+  assert.equal(app.state().playing, true);
+  assert.deepEqual(app.calls.at(-1), { toast: "Playing on Emma's iPhone" });
+  app.playerStop();
+});
+
+test('a row that does not know the length still plays, and the poll fills it in', async () => {
+  const app = load(NOW);
+  await app.playFrom('t1');
+  assert.equal(app.state().dur, 0, 'nothing claimed up front');
+  await app.playerPoll();
+  assert.equal(app.state().dur, 200000, 'and Spotify supplies it');
+  app.playerStop();
+});
+
+test('a device that refuses is reported, not swallowed', async () => {
+  const app = load(NOW);
+  vm.runInContext('playTrack = async () => { throw new Error("No open Spotify device"); }', app);
+  await app.playFrom('t1', 1000);
+  assert.deepEqual(app.calls.at(-1), { toast: 'No open Spotify device' });
 });

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-0021">
+<meta name="bf-build" content="2026-09-06-0031">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -255,19 +255,26 @@
      operable and announced as a slider, with the native track and thumb
      restyled rather than replaced by divs. */
   .player{display:flex; align-items:center; gap:12px; margin-top:16px}
-  .tbtn{width:44px; height:44px; flex:none; border-radius:50%; border:1px solid var(--line-2); background:var(--accent);
-        color:var(--accent-ink); display:grid; place-items:center; cursor:pointer; box-shadow:var(--shadow)}
+  .tbtn{width:44px; height:44px; flex:none; border-radius:50%; border:1px solid var(--btn-accent); background:var(--btn-accent);
+        color:var(--btn-ink); display:grid; place-items:center; cursor:pointer; box-shadow:var(--shadow);
+        transition:transform .08s ease, filter .12s ease}
+  .tbtn:hover{filter:brightness(1.06)}
   .tbtn:active{transform:scale(.96)}
   .tbtn:disabled{opacity:.5; cursor:default}
   .tbtn svg{width:17px; height:17px; display:block}
   .seek{flex:1; min-width:0; height:24px; background:transparent; cursor:pointer; -webkit-appearance:none; appearance:none}
   .seek:disabled{cursor:default; opacity:.6}
-  .seek::-webkit-slider-runnable-track{height:5px; border-radius:3px; background:var(--line-2)}
-  .seek::-moz-range-track{height:5px; border-radius:3px; background:var(--line-2)}
+  /* --p is written by playerPaint, so the elapsed part of the track is filled
+     in rather than being readable only from where the thumb happens to sit. */
+  .seek{--p:0%}
+  .seek::-webkit-slider-runnable-track{height:5px; border-radius:3px;
+        background:linear-gradient(90deg, var(--progress-accent) var(--p), var(--line-2) var(--p))}
+  .seek::-moz-range-track{height:5px; border-radius:3px;
+        background:linear-gradient(90deg, var(--progress-accent) var(--p), var(--line-2) var(--p))}
   .seek::-webkit-slider-thumb{-webkit-appearance:none; width:15px; height:15px; margin-top:-5px; border-radius:50%;
-        background:var(--accent); border:2px solid var(--surface); box-shadow:var(--shadow)}
-  .seek::-moz-range-thumb{width:15px; height:15px; border:2px solid var(--surface); border-radius:50%; background:var(--accent)}
-  .seek:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:4px}
+        background:var(--progress-accent); border:2px solid var(--surface); box-shadow:var(--shadow)}
+  .seek::-moz-range-thumb{width:15px; height:15px; border:2px solid var(--surface); border-radius:50%; background:var(--progress-accent)}
+  .seek:focus-visible{outline:2px solid var(--hover-accent); outline-offset:3px; border-radius:4px}
   .tm{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); flex:none; font-variant-numeric:tabular-nums}
   .pdev{margin:8px 0 0; font-size:11.5px; color:var(--ink-3); text-align:right; min-height:15px}
   .card.disc .art{width:104px; height:104px; font-size:34px}
@@ -321,6 +328,13 @@
   .row::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--view); opacity:.55}
   .row:hover{border-color:var(--line-2)}
   .row .main{min-width:0; flex:1} .row .ttl{font-weight:600} .row .sub{color:var(--ink-2); font-size:13px}
+  /* The list screens were a wall of text next to the cards. A cover at row
+     size is the cheapest way to make a track recognisable at a glance. */
+  .thumb{width:44px; height:44px; border-radius:9px; flex:none; object-fit:cover;
+         background:var(--surface-3); box-shadow:var(--shadow)}
+  .thumb.ph{display:grid; place-items:center; color:#FFF; font-family:Archivo,sans-serif;
+            font-weight:800; font-size:17px; letter-spacing:-.02em}
+  .compact .thumb{width:32px; height:32px; border-radius:7px; font-size:14px}
   .row .acts{display:flex; gap:6px; flex-wrap:wrap}
   .mono{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums}
   .why{font-size:12.5px; color:var(--ink-2); background:var(--surface-3); border-radius:5px; padding:4px 9px; display:inline-block; margin-top:6px}
@@ -332,7 +346,10 @@
   .chip:hover{border-color:var(--hover-accent); color:var(--ink)}
   .chip:active{transform:scale(.96)}
   .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
-  .empty{color:var(--ink-3); padding:34px 0; text-align:center}
+  .empty{color:var(--ink-3); padding:30px 22px; text-align:center; font-size:13px;
+         border:1px dashed var(--line-2); border-radius:14px; background:var(--surface-2)}
+  .empty b{display:block; font-family:Archivo,sans-serif; font-weight:700; font-size:15px;
+           letter-spacing:-.01em; color:var(--ink-2); margin-bottom:3px}
   .toast{position:fixed; right:calc(18px + var(--sar)); bottom:calc(18px + var(--sab)); background:var(--ink); color:var(--ground);
          padding:11px 16px; border-radius:11px; font-size:13px; display:flex; gap:12px; align-items:center; z-index:28; max-width:420px;
          box-shadow:var(--shadow-2); animation:toastIn .22s cubic-bezier(.2,.7,.3,1)}
@@ -563,7 +580,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-0021</span>
+    <span class="mono">build 2026-09-06-0031</span>
   </p>
 
   <div class="feat">
@@ -660,7 +677,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0021</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0031</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1149,7 +1166,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-0021';
+const BUILD = '2026-09-06-0031';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -1501,7 +1518,7 @@ function describe(rows) {
 }
 
 function buildReports(lib, cfg, tags) {
-  const shape = t => ({ id:t.id, album:t.album, albumType:t.albumType, released:t.released,
+  const shape = t => ({ id:t.id, album:t.album, albumType:t.albumType, released:t.released, art:t.art,
                         duration_ms:t.duration_ms, dur:mmss(t.duration_ms), isrc:t.isrc, popularity:t.popularity, name:t.name });
   const within = [], where = new Map(), meta = new Map();
   for (const p of lib.playlists) {
@@ -1520,14 +1537,14 @@ function buildReports(lib, cfg, tags) {
       const shaped = rows.map(shape);
       const d = describe(shaped);
       const keep = [...shaped].sort((a,b) => (b.popularity??0)-(a.popularity??0))[0];
-      within.push({ playlist:p.name, playlistId:p.id, artist:rows[0].artists?.[0]?.name, title:rows[0].name,
+      within.push({ playlist:p.name, playlistId:p.id, artist:rows[0].artists?.[0]?.name, title:rows[0].name, art:rows[0].art,
         verdict:d.verdict, why:d.why, keep, options:shaped, drop:shaped.filter(r => r.id !== keep.id) });
     }
   }
   const across = [...where.entries()].filter(([,r]) => new Set(r.map(x=>x.playlist)).size > 1).map(([,rows]) => {
     const t = meta.get(rows[0].id);
     const byPl = [...new Map(rows.map(r => [r.playlist, r])).values()];
-    return { artist:t.artists?.[0]?.name, title:t.name,
+    return { artist:t.artists?.[0]?.name, title:t.name, id:t.id, art:t.art,
       placements: byPl.map(r => ({ playlist:r.playlist, playlistId:r.playlistId, axis:cfg[r.playlistId]?.axis ?? 'other',
                                    trackId:r.id, dur:r.dur })),
       mixedReleases: new Set(rows.map(r=>r.id)).size > 1,
@@ -1550,7 +1567,7 @@ function buildReports(lib, cfg, tags) {
       if (best[0].score > own * 1.6 && best[0].score > 0.25) {
         const confidence = own < 0.12 && best[0].score > 0.55 ? 'high'
                          : own < 0.25 && best[0].score > 0.40 ? 'medium' : 'low';
-        misfiled.push({ id:t.id, artist:t.artists?.[0]?.name, title:t.name, current:p.name,
+        misfiled.push({ id:t.id, artist:t.artists?.[0]?.name, title:t.name, art:t.art, dur:t.duration_ms, current:p.name,
           currentPlaylistId:p.id, currentScore:+own.toFixed(3), confidence,
           suggest: best.map(b => ({ id:b.id, name:b.name, score:+b.score.toFixed(3) })), tags: topTags(t, tags, idf) });
       }
@@ -1679,6 +1696,7 @@ function playerPaint() {
   seek.max = String(dur);
   seek.disabled = !PLAYER.id;
   if (!PLAYER.scrub) seek.value = String(Math.min(PLAYER.pos, dur));
+  seek.style.setProperty('--p', (dur ? Math.min(100, +seek.value / dur * 100) : 0).toFixed(2) + '%');
   $('#pTime').textContent = mmss(PLAYER.pos);
   $('#pDur').textContent = mmss(dur || null);
   const btn = $('#pToggle');
@@ -1726,7 +1744,7 @@ async function playerToggle() {
   // Play on a card the device is not already on means "play this", not
   // "resume whatever was last playing" — which is what Spotify would do.
   const t = typeof discAt === 'function' ? discAt() : null;
-  if (t && PLAYER.id !== t.id) return discPlay(t.id);
+  if (t && PLAYER.id !== t.id) return playFrom(t.id, t.dur ?? 0);
   try {
     await sp('/me/player/' + (PLAYER.playing ? 'pause' : 'play'), { method:'PUT' });
     PLAYER.playing = !PLAYER.playing;
@@ -1744,15 +1762,21 @@ async function playerSeek(ms) {
   } catch (e) { toast(e.message); }
 }
 
-/** Start a discovery track on the listener's device and follow it from there. */
-async function discPlay(id) {
-  const t = discAt(); if (!t) return;
+/**
+ * Start a track on the listener's device and follow it from there. Called from
+ * the Discover card, which knows the length up front, and from the plain rows
+ * on Misfiles, which do not — there the first poll fills it in. Screens with no
+ * player on them say where it went instead, since nothing on screen would.
+ */
+async function playFrom(id, dur = 0) {
   try {
-    PLAYER.device = await playTrack(id);
-    Object.assign(PLAYER, { id, pos:0, dur:t.dur ?? 0, playing:true, lastPoll:Date.now() });
-    playerPaint();
-    playerRun();
-    setTimeout(() => { PLAYER.lastPoll = 0; }, 800);  // let Spotify settle, then confirm
+    const device = await playTrack(id);
+    Object.assign(PLAYER, { id, device, dur, pos:0, playing:true, lastPoll:Date.now() });
+    if ($('#seek')) {
+      playerPaint();
+      playerRun();
+      setTimeout(() => { PLAYER.lastPoll = 0; }, 800);   // let Spotify settle, then confirm
+    } else toast('Playing on ' + device);
   } catch (e) { toast(e.message); }
 }
 
@@ -1802,6 +1826,14 @@ function vHome() {
 /** A stable hue per track, for the tile shown when there's no artwork. */
 const hueOf = id => { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
 
+/** A row-sized cover. Same fallback as the cards, so a library synced before
+ *  artwork was stored still reads as a list of distinct things. */
+function thumbHTML(t) {
+  if (t.art) return `<img class="thumb" src="${esc(t.art)}" alt="" loading="lazy" decoding="async">`;
+  const h = hueOf(t.id ?? t.title ?? '');
+  return `<div class="thumb ph" aria-hidden="true" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h+48)%360} 58% 44%))">${esc((t.title||'?').trim()[0]??'?')}</div>`;
+}
+
 function artHTML(t, hook = 'data-act="play"') {
   if (t.art) return `<img class="art" src="${esc(t.art)}" alt="" ${hook} title="Play" loading="lazy" decoding="async">`;
   const h = hueOf(t.id);
@@ -1810,7 +1842,7 @@ function artHTML(t, hook = 'data-act="play"') {
 
 function vInbox() {
   const rows = R.backlog;
-  if (!rows.length) return `<h1>Inbox</h1><div class="empty">Nothing unfiled.</div>`;
+  if (!rows.length) return `<h1>Inbox</h1><div class="empty"><b>Inbox zero</b>Every liked song sits in at least one playlist. Nothing to file.</div>`;
   const i = Math.min(S.inboxAt, rows.length-1), t = rows[i];
   const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
   const best = t.suggest[0];
@@ -1867,12 +1899,12 @@ function vDupes() {
   const clash = R.within.filter(x=>x.verdict!=='same-recording');
   const sec = (title,list,note) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:13px">${list.length}</span></h2>
     <p class="lede">${note}</p>
-    <div class="rows">${list.slice(0,60).map(c=>`<div class="row"><div class="main">
+    <div class="rows">${list.slice(0,60).map(c=>`<div class="row">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist??'')}</span></div>
       <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
     </div><div class="acts">${c.options.map(o=>
       `<button class="b sm" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z=>z.id!==o.id).map(z=>z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
-    </div></div>`).join('') || '<div class="empty">None.</div>'}</div>`;
+    </div></div>`).join('') || '<div class="empty"><b>None found</b>Nothing in your library matches this.</div>'}</div>`;
   return `<h1>Duplicates</h1>
     <p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — see Cross-filed.</p>
     ${sec('Same recording', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.')}
@@ -1884,12 +1916,13 @@ function vCross() {
   return `<h1>Cross-filed</h1>
     <p class="lede">Tracks in several playlists. Usually deliberate — nothing is preselected. Click a playlist to remove the track from just that one.</p>
     <div class="rowbtns" style="margin-bottom:14px">${[2,3,4,5,6].map(n=>`<button class="b sm ${S.crossMin===n?'p':''}" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
-    <div class="rows">${a.slice(0,80).map(c=>`<div class="row"><div class="main">
+    <div class="rows">${a.slice(0,80).map(c=>`<div class="row">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist??'')}</span></div>
       ${c.mixedRecordings?'<div class="why">Different recordings across these playlists.</div>':c.mixedReleases?'<div class="why">Same song, different pressings.</div>':''}
       <div class="acts" style="margin-top:8px">${c.placements.map(p=>
         `<button class="chip" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
-    </div></div>`).join('') || '<div class="empty">Nothing at this threshold.</div>'}</div>`;
+    </div></div>`).join('')
+      || `<div class="empty"><b>Nothing at ${S.crossMin}+ playlists</b>Lower the threshold to see tracks filed in fewer places.</div>`}</div>`;
 }
 
 function vMisfile() {
@@ -1899,12 +1932,13 @@ function vMisfile() {
   return `<h1>Misfiles</h1>
     <p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Start with high confidence; lower bands get speculative.</p>
     <div class="rowbtns" style="margin-bottom:14px">${['high','medium','low'].map(b=>`<button class="b sm ${S.mfBand===b?'p':''}" data-mfb="${b}">${b} (${counts[b]})</button>`).join('')}</div>
-    <div class="rows">${m.slice(0,80).map(x=>`<div class="row"><div class="main">
+    <div class="rows">${m.slice(0,80).map(x=>`<div class="row">${thumbHTML(x)}<div class="main">
       <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist??'')}</span></div>
       <div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore*100).toFixed(0)}% fit</span> · ${esc(x.tags.slice(0,4).join(', '))}</div>
     </div><div class="acts">${x.suggest.filter(s=>s.id).slice(0,2).map(s=>
       `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(s.id)}">→ ${esc(s.name)} <span class="mono">${(s.score*100).toFixed(0)}%</span></button>`).join('')}
-      <button class="b sm" data-dplay="${esc(x.id)}">Play</button></div></div>`).join('') || '<div class="empty">Nothing in this band.</div>'}</div>`;
+      <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${x.dur ?? 0}">Play</button></div></div>`).join('')
+      || `<div class="empty"><b>Nothing in this band</b>${S.mfBand === 'high' ? 'Everything is filed where it fits. Try the medium band for the speculative ones.' : 'Try another confidence band.'}</div>`}</div>`;
 }
 
 function vNew() {
@@ -2141,11 +2175,14 @@ function vDiscover() {
       <button class="b p" id="discRun" ${hasKey?'':'disabled'}>Find new music</button>
     </div>`;
 
-  if (!d.length) return head + (hasKey ? '<div class="empty">Pick a seed and hit Find new music.</div>' : '');
+  if (!d.length) return head + (hasKey
+    ? '<div class="empty"><b>Nothing found yet</b>Pick what to seed from above, then hit Find new music. A run takes a minute or two.</div>'
+    : '<div class="empty"><b>Discovery needs a Last.fm key</b>It is free, and it is what supplies the genre data Spotify no longer will.</div>');
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
   const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
-  const art = artHTML({ art:t.art, id:t.id, title:t.track }, `data-dplay="${esc(t.id)}"`);
+  const art = artHTML({ art:t.art, id:t.id, title:t.track },
+                      `data-dplay="${esc(t.id)}" data-ddur="${t.dur ?? 0}"`);
 
   return head + `<h2>${d.length} new tracks <span class="mono" style="font-size:13px;color:var(--ink-3)">from ${esc(S.discoverFrom)}</span></h2>
     <div class="deck">
@@ -2209,7 +2246,7 @@ function vHistory() {
       <div class="ttl">${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span></div>
       <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))} · ${(x.trackIds??[]).length} track(s)${x.reason?' · '+esc(x.reason):''}</div>
     </div><div class="acts">${['remove','add','unlike'].includes(x.op) ? `<button class="b sm" data-undo="${esc(x.at)}">Undo</button>` : ''}</div></div>`).join('')
-      || '<div class="empty">Nothing changed yet.</div>'}</div>`;
+      || '<div class="empty"><b>Nothing changed yet</b>Every edit Betterfy makes lands here, and can be undone from it.</div>'}</div>`;
 }
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
@@ -2624,7 +2661,7 @@ document.addEventListener('click', async e => {
     } catch (err) { toast('Failed: '+err.message); mv.disabled = false; } return; }
 
   const dp = e.target.closest('[data-dplay]');
-  if (dp) return discPlay(dp.dataset.dplay);
+  if (dp) return playFrom(dp.dataset.dplay, +dp.dataset.ddur || 0);
   if (e.target.closest('#pToggle')) return playerToggle();
   const dnav = e.target.closest('[data-dnav]');
   if (dnav) {
@@ -2804,7 +2841,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-0021').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-0031').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };

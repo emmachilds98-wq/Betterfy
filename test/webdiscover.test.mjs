@@ -68,7 +68,8 @@ test('with nothing found yet, the seed picker stands alone', () => {
   const html = app.vDiscover();
   assert.match(html, /id="discPl"/, 'you can still choose a seed');
   assert.match(html, /id="discRun"/);
-  assert.match(html, /Pick a seed and hit Find new music/);
+  assert.match(html, /Nothing found yet/);
+  assert.match(html, /Pick what to seed from above/);
   assert.doesNotMatch(html, /id="seek"/, 'no player until there is something to play');
 });
 
@@ -76,6 +77,7 @@ test('without a Last.fm key the run button is disabled and says why', () => {
   const html = load({ key: null }).vDiscover();
   assert.match(html, /Discovery needs a free Last\.fm key/);
   assert.match(html, /id="discRun" disabled/);
+  assert.match(html, /Discovery needs a Last\.fm key/, 'and the empty state says so too');
 });
 
 test('the card carries the cover, the track and a real position slider', () => {
