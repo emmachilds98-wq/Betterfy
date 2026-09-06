@@ -18,13 +18,36 @@ let cfg = readJson('playlists.config.json');
 let dupes = readJson('report-dupes.json');
 let misfile = readJson('report-misfile.json');
 let discover = readJson('report-discover.json');
+let rekordboxCoverage = { total: 0, matched: 0 };
 
 if (!lib) { console.error('No library.json — run: npm run snapshot'); process.exit(1); }
+
+// rekordbox.mjs --write produces this; optional, and only ever adds bpm/camelot
+// onto tracks already in lib — never changes what track is what.
+function applyRekordbox() {
+  const rb = readJson('rekordbox.json');
+  rekordboxCoverage = { total: 0, matched: 0 };
+  if (!rb) return;
+  const seen = new Set();
+  const stamp = t => {
+    if (!t?.id) return;
+    const m = rb[t.id];
+    if (m) { t.bpm = m.bpm; t.camelot = m.camelot; }
+    if (seen.has(t.id)) return;           // count each track once, not per placement
+    seen.add(t.id);
+    rekordboxCoverage.total++;
+    if (m) rekordboxCoverage.matched++;
+  };
+  for (const p of lib.playlists) p.tracks.forEach(stamp);
+  lib.liked.forEach(stamp);
+}
+applyRekordbox();
 
 const reload = () => {
   lib = readJson('library.json'); cfg = readJson('playlists.config.json');
   dupes = readJson('report-dupes.json'); misfile = readJson('report-misfile.json');
   discover = readJson('report-discover.json');
+  applyRekordbox();
 };
 
 /* ---------------- incremental local sync ----------------
@@ -73,6 +96,7 @@ function summary() {
     reports: {
       dupes: !!dupes, misfile: !!misfile, discover: !!discover,
     },
+    rekordbox: rekordboxCoverage,
   };
 }
 
@@ -90,7 +114,7 @@ function backlog(limit = 400) {
     return {
       id: t.id, artist: (t.artists ?? []).map(a => a.name).join(', '), title: t.name,
       album: t.album, released: t.released, added: (t.added_at ?? '').slice(0, 10),
-      dur: t.duration_ms,
+      dur: t.duration_ms, bpm: t.bpm ?? null, camelot: t.camelot ?? null,
       tags: s?.tags ?? [],
       suggest: (s?.suggest ?? []).map(x => ({
         ...x, id: targets.find(t2 => t2.name === x.name)?.id ?? null,

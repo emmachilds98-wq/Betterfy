@@ -471,6 +471,7 @@ function vHome() {
       <div>
         <h1>Overview</h1>
         <p class="lede">Snapshot taken ${esc((S.captured ?? '').slice(0,10))}. Nothing changes until you act, and every change can be undone.</p>
+        ${S.rekordbox?.total ? `<p class="lede">Tempo/key from Rekordbox: ${S.rekordbox.matched.toLocaleString()} of ${S.rekordbox.total.toLocaleString()} tracks matched. Re-run <span class="mono">npm run rekordbox -- "collection.xml" --write</span> after a fresh export to update it.</p>` : ''}
       </div>
       <div class="acts"><button class="b p" id="headRefresh"><span class="ico">⟳</span> Refresh</button></div>
     </div>
@@ -502,7 +503,8 @@ function vInbox() {
         <p class="t">${esc(t.title)}</p>
         <p class="a">${esc(t.artist)}</p>
         <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0,4))}</span>
-          <span>${mmss(t.dur)}</span><span>liked ${esc(t.added)}</span></div>
+          <span>${mmss(t.dur)}</span><span>liked ${esc(t.added)}</span>
+          ${t.bpm ? `<span>${t.bpm} BPM</span>` : ''}${t.camelot ? `<span>${esc(t.camelot)}</span>` : ''}</div>
         ${t.tags.length ? `<div class="tagrow">${t.tags.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>` : ''}
       </div>
       ${t.suggest.length
