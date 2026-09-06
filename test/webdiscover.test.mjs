@@ -101,10 +101,15 @@ test('the slider starts disabled, because nothing is playing yet', () => {
 
 test('the suggested playlists are ranked, with the best one marked', () => {
   const html = load({ discover: FOUND }).vDiscover();
-  assert.match(html, /class="pick best" data-dfile="p1"/, 'the top pick leads');
+  // The top pick is lifted out of the ranked list into its own callout — it is
+  // the recommendation, not one option among three — but it still files in one
+  // tap, and the runners-up stay behind it in order.
+  assert.match(html, /class="fitcall" data-dfile="p1"/, 'the top pick leads');
   assert.match(html, /61% fit/);
+  // The runners-up carry a score bar rather than the words, so the number is
+  // all that is asserted here.
   assert.match(html, /data-dfile="p2"/);
-  assert.match(html, /33% fit/);
+  assert.match(html, /33%/);
   assert.match(html, />genre</);
 });
 

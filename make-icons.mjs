@@ -18,11 +18,19 @@ const BAR_X = 7.75, BAR_H = 3.4, PITCH = 4.7, BAR_R = 1.7, BAR_Y0 = 4.9;
 const BAR_W = [7, 12, 16.5, 12, 7];
 const BAR_A = [0.92, 0.97, 1, 0.97, 0.92];   // outer bars sit back a hair
 
-// Brand colours. The web app re-tints the mark from the viewer's accent, but a
-// file on disk has to pick one — these are the defaults the app ships with.
-const TOP = [0xEC, 0x66, 0x3E];
-const BOTTOM = [0xC7, 0x42, 0x1E];
-const INK = [0xFF, 0xFF, 0xFF];
+// Brand colours. The bars are five fixed colours — the mark is the one thing
+// in the app that never turns with the accent or the theme, so the file on
+// disk and the inline SVG can finally be the same object. The tile is white:
+// it is what iOS masks cleanly, and it lets all five colours read at once,
+// which a coloured tile does not.
+const TILE = [0xFF, 0xFF, 0xFF];
+const BARS = [
+  [0xF2, 0xA9, 0x3B],   // amber
+  [0xF2, 0x64, 0x3C],   // orange
+  [0xC4, 0x4B, 0xA6],   // magenta
+  [0x7E, 0x63, 0xD8],   // violet
+  [0x3C, 0x82, 0xD9],   // blue
+];
 
 /** Signed distance to a rounded rectangle; negative inside. */
 function sdRoundRect(px, py, x, y, w, h, r) {
@@ -60,15 +68,11 @@ function renderIcon(size, { tileR = TILE_R, pad = 0 } = {}) {
     for (let x = 0; x < size; x++) {
       const { tile, bars } = sample(off + x * scale, off + y * scale, scale, tileR);
       if (tile <= 0) continue;
-      // vertical gradient across the tile
-      const t = Math.min(Math.max((off + y * scale) / 32, 0), 1);
-      let r = TOP[0] + (BOTTOM[0] - TOP[0]) * t;
-      let g = TOP[1] + (BOTTOM[1] - TOP[1]) * t;
-      let b = TOP[2] + (BOTTOM[2] - TOP[2]) * t;
+      let [r, g, b] = TILE;
       for (let i = 0; i < bars.length; i++) {
         const a = bars[i] * BAR_A[i];
         if (!a) continue;
-        r += (INK[0] - r) * a; g += (INK[1] - g) * a; b += (INK[2] - b) * a;
+        r += (BARS[i][0] - r) * a; g += (BARS[i][1] - g) * a; b += (BARS[i][2] - b) * a;
       }
       const p = (y * size + x) * 4;
       out[p] = Math.round(r); out[p + 1] = Math.round(g); out[p + 2] = Math.round(b);
