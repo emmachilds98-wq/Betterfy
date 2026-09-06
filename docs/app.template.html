@@ -251,6 +251,26 @@
   .pick .nm{font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .pick .ax{font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em}
   .pick .sc{margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); flex:none}
+  /* Player. The scrubber is a real range input so it is draggable, keyboard
+     operable and announced as a slider, with the native track and thumb
+     restyled rather than replaced by divs. */
+  .player{display:flex; align-items:center; gap:12px; margin-top:16px}
+  .tbtn{width:44px; height:44px; flex:none; border-radius:50%; border:1px solid var(--line-2); background:var(--accent);
+        color:var(--accent-ink); display:grid; place-items:center; cursor:pointer; box-shadow:var(--shadow)}
+  .tbtn:active{transform:scale(.96)}
+  .tbtn:disabled{opacity:.5; cursor:default}
+  .tbtn svg{width:17px; height:17px; display:block}
+  .seek{flex:1; min-width:0; height:24px; background:transparent; cursor:pointer; -webkit-appearance:none; appearance:none}
+  .seek:disabled{cursor:default; opacity:.6}
+  .seek::-webkit-slider-runnable-track{height:5px; border-radius:3px; background:var(--line-2)}
+  .seek::-moz-range-track{height:5px; border-radius:3px; background:var(--line-2)}
+  .seek::-webkit-slider-thumb{-webkit-appearance:none; width:15px; height:15px; margin-top:-5px; border-radius:50%;
+        background:var(--accent); border:2px solid var(--surface); box-shadow:var(--shadow)}
+  .seek::-moz-range-thumb{width:15px; height:15px; border:2px solid var(--surface); border-radius:50%; background:var(--accent)}
+  .seek:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:4px}
+  .tm{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); flex:none; font-variant-numeric:tabular-nums}
+  .pdev{margin:8px 0 0; font-size:11.5px; color:var(--ink-3); text-align:right; min-height:15px}
+  .card.disc .art{width:104px; height:104px; font-size:34px}
   .rowbtns{display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; align-items:center}
 
   /* ---------- inbox: the swipeable card ---------- */
@@ -1394,7 +1414,10 @@ function buildReports(lib, cfg, tags) {
     }
   }
   clusters.sort((a,b) => b.size - a.size);
-  return { within, across, misfiled, backlog, clusters };
+  // profiles/idf come out too: Discover ranks tracks that are not in the
+  // library at all, and must score them against the same centroids the inbox
+  // uses rather than a second, subtly different model.
+  return { within, across, misfiled, backlog, clusters, profiles, idf };
 }
 
 /* ===================== UI ===================== */
@@ -1467,6 +1490,101 @@ async function plCall(id, method, body) {
 const addTracks = (id, ids) => Promise.all(chunk(ids,100).map(c => plCall(id,'POST',{ uris:c.map(x=>'spotify:track:'+x) })));
 const delTracks = (id, ids) => plCall(id,'DELETE',{ tracks: ids.map(x=>({ uri:'spotify:track:'+x })) });
 
+/* ---------- player: Spotify Connect ----------
+ * The Web Playback SDK does not run on iOS, so the card drives whatever device
+ * the listener already has open — their phone's Spotify app, usually — and
+ * mirrors its position back. Spotify is asked where it is every few seconds
+ * and the bar is ticked locally in between, so the scrubber moves smoothly
+ * without spending a request a second to do it.
+ */
+const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h3.4v14H7zm6.6 0H17v14h-3.4z"/></svg>';
+const PLAYER = { id:null, pos:0, dur:0, playing:false, device:'', scrub:false,
+                 timer:null, lastPoll:0, busy:false };
+
+function playerPaint() {
+  const seek = $('#seek'); if (!seek) return;
+  const dur = PLAYER.dur || 0;
+  seek.max = String(dur);
+  seek.disabled = !PLAYER.id;
+  if (!PLAYER.scrub) seek.value = String(Math.min(PLAYER.pos, dur));
+  $('#pTime').textContent = mmss(PLAYER.pos);
+  $('#pDur').textContent = mmss(dur || null);
+  const btn = $('#pToggle');
+  btn.innerHTML = PLAYER.playing ? ICON_PAUSE : ICON_PLAY;
+  btn.setAttribute('aria-label', PLAYER.playing ? 'Pause' : 'Play');
+  $('#pDev').textContent = PLAYER.device ? (PLAYER.playing ? 'playing on ' : 'paused on ') + PLAYER.device : '';
+}
+
+async function playerPoll() {
+  if (PLAYER.busy) return;
+  PLAYER.busy = true;
+  PLAYER.lastPoll = Date.now();
+  try {
+    const p = await sp('/me/player');
+    if (p?.item) {
+      PLAYER.id = p.item.id;
+      PLAYER.dur = p.item.duration_ms ?? 0;
+      if (!PLAYER.scrub) PLAYER.pos = p.progress_ms ?? 0;
+      PLAYER.playing = !!p.is_playing;
+      PLAYER.device = p.device?.name ?? '';
+    } else PLAYER.playing = false;   // 204: nothing is playing anywhere
+  } catch {} finally { PLAYER.busy = false; }
+  playerPaint();
+}
+
+function playerStop() { clearInterval(PLAYER.timer); PLAYER.timer = null; }
+
+/** Tick the bar locally, and ask Spotify where it really is every four seconds. */
+function playerRun() {
+  playerStop();
+  PLAYER.timer = setInterval(() => {
+    if (!$('#seek')) return playerStop();          // the card is off screen
+    if (PLAYER.playing && !PLAYER.scrub) {
+      PLAYER.pos = PLAYER.dur ? Math.min(PLAYER.pos + 250, PLAYER.dur) : PLAYER.pos + 250;
+      playerPaint();
+    }
+    // Four seconds while something is moving; a slow heartbeat when it is not,
+    // so a card left open on screen does not quietly spend the rate budget.
+    if (Date.now() - PLAYER.lastPoll > (PLAYER.playing ? 4000 : 15000)) playerPoll();
+  }, 250);
+  if (Date.now() - PLAYER.lastPoll > 4000) playerPoll(); else playerPaint();
+}
+
+async function playerToggle() {
+  // Play on a card the device is not already on means "play this", not
+  // "resume whatever was last playing" — which is what Spotify would do.
+  const t = typeof discAt === 'function' ? discAt() : null;
+  if (t && PLAYER.id !== t.id) return discPlay(t.id);
+  try {
+    await sp('/me/player/' + (PLAYER.playing ? 'pause' : 'play'), { method:'PUT' });
+    PLAYER.playing = !PLAYER.playing;
+    playerPaint();
+    PLAYER.lastPoll = 0;                            // confirm it on the next tick
+  } catch (e) { toast(e.message); }
+}
+
+async function playerSeek(ms) {
+  try {
+    await sp(`/me/player/seek?position_ms=${Math.round(ms)}`, { method:'PUT' });
+    PLAYER.pos = ms;
+    playerPaint();
+    PLAYER.lastPoll = 0;
+  } catch (e) { toast(e.message); }
+}
+
+/** Start a discovery track on the listener's device and follow it from there. */
+async function discPlay(id) {
+  const t = discAt(); if (!t) return;
+  try {
+    PLAYER.device = await playTrack(id);
+    Object.assign(PLAYER, { id, pos:0, dur:t.dur ?? 0, playing:true, lastPoll:Date.now() });
+    playerPaint();
+    playerRun();
+    setTimeout(() => { PLAYER.lastPoll = 0; }, 800);  // let Spotify settle, then confirm
+  } catch (e) { toast(e.message); }
+}
+
 async function playTrack(id) {
   const d = await sp('/me/player/devices');
   const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
@@ -1513,10 +1631,10 @@ function vHome() {
 /** A stable hue per track, for the tile shown when there's no artwork. */
 const hueOf = id => { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
 
-function artHTML(t) {
-  if (t.art) return `<img class="art" src="${esc(t.art)}" alt="" data-act="play" title="Play" loading="lazy" decoding="async">`;
+function artHTML(t, hook = 'data-act="play"') {
+  if (t.art) return `<img class="art" src="${esc(t.art)}" alt="" ${hook} title="Play" loading="lazy" decoding="async">`;
   const h = hueOf(t.id);
-  return `<div class="art ph" data-act="play" title="Play" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h+48)%360} 58% 44%))">${esc((t.title||'?').trim()[0]??'?')}</div>`;
+  return `<div class="art ph" ${hook} title="Play" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h+48)%360} 58% 44%))">${esc((t.title||'?').trim()[0]??'?')}</div>`;
 }
 
 function vInbox() {
@@ -1739,9 +1857,18 @@ async function runDiscovery(seedPlaylistId) {
     let top;
     try { top = await lfm({ method:'artist.gettoptracks', artist:c.name, limit:'4' }); } catch { continue; }
     await new Promise(r => setTimeout(r, 200));
+    // The artist's own tags, so a track you do not own yet can still be ranked
+    // against your playlists by the same model the inbox uses.
+    let lfmTags = [];
+    try {
+      const tg = await lfm({ method:'artist.gettoptags', artist:c.name, autocorrect:'1' });
+      lfmTags = (tg.toptags?.tag ?? []).slice(0, 20)
+        .map(x => [String(x.name).toLowerCase(), +x.count || 0]).filter(([, n]) => n > 0);
+    } catch {}
+    await new Promise(r => setTimeout(r, 200));
     for (const t of top.toptracks?.track ?? []) {
       if (ownedTrack.has(norm(c.name) + '|' + norm(t.name))) continue;
-      out.push({ artist:c.name, track:t.name, via:c.via }); break;
+      out.push({ artist:c.name, track:t.name, via:c.via, lfmTags }); break;
     }
   }
 
@@ -1750,36 +1877,104 @@ async function runDiscovery(seedPlaylistId) {
     try {
       const r = await sp(`/search?q=${encodeURIComponent(`artist:${o.artist} track:${o.track}`)}&type=track&limit=1`);
       const hit = r.tracks?.items?.[0];
-      if (hit) { o.id = hit.id; o.album = hit.album?.name; o.released = hit.album?.release_date; }
+      if (hit) {
+        o.id = hit.id; o.album = hit.album?.name; o.released = hit.album?.release_date;
+        o.art = artOf(hit); o.dur = hit.duration_ms;
+        o.artists = (hit.artists ?? []).map(a => ({ id:a.id, name:a.name }));
+        const lead = o.artists[0];
+        if (lead && o.lfmTags?.length && !TAGS[lead.id]) TAGS[lead.id] = { tags:o.lfmTags };
+      }
     } catch {}
   }
+  for (const o of out) {
+    if (!o.id) continue;
+    o.suggest = rank(o, TAGS, R.profiles, R.idf, { top:3 }).map(b => ({ ...b, axis:CFG[b.id]?.axis ?? null }));
+    o.tags = topTags(o, TAGS, R.idf);
+  }
   S.discover = out.filter(o => o.id);
+  S.discAt = 0;
   S.discoverFrom = src?.name ?? 'your whole library';
   $('#land').hidden = true; $('#app').hidden = false;
   go('discover');
+}
+
+/** The discovery currently on the card. */
+function discAt() {
+  const d = S.discover ?? [];
+  return d.length ? d[Math.min(S.discAt ?? 0, d.length - 1)] : null;
 }
 
 function vDiscover() {
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
   const hasKey = !!localStorage.getItem('bf_lfm');
-  return `<h1>Discover</h1>
+  const head = `<h1>Discover</h1>
     <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.</p>
     ${hasKey ? '' : '<div class="note">Discovery needs a free Last.fm key. Add one under <b>Playlists</b>.</div>'}
     <div class="rowbtns" style="margin-bottom:16px">
       <select id="discPl"><option value="">Seed from my whole library</option>
         ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>Seed from ${esc(p.name)}</option>`).join('')}</select>
       <button class="b p" id="discRun" ${hasKey?'':'disabled'}>Find new music</button>
+    </div>`;
+
+  if (!d.length) return head + (hasKey ? '<div class="empty">Pick a seed and hit Find new music.</div>' : '');
+
+  const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
+  const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
+  const art = artHTML({ art:t.art, id:t.id, title:t.track }, `data-dplay="${esc(t.id)}"`);
+
+  return head + `<h2>${d.length} new tracks <span class="mono" style="font-size:13px;color:var(--ink-3)">from ${esc(S.discoverFrom)}</span></h2>
+    <div class="deck">
+      <div class="card disc">
+        <div class="prog"><i style="width:${((i+1)/d.length*100).toFixed(2)}%"></i></div>
+        <div class="now">
+          ${art}
+          <div class="txt">
+            <p class="t">${esc(t.track)}</p><p class="a">${esc(t.artist)}</p>
+            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>
+          </div>
+        </div>
+
+        <div class="player">
+          <button class="tbtn" id="pToggle" aria-label="Play">${ICON_PLAY}</button>
+          <input class="seek" id="seek" type="range" min="0" max="${t.dur ?? 0}" step="1000" value="0"
+                 aria-label="Playing position" disabled>
+          <span class="tm"><span id="pTime">0:00</span> / <span id="pDur">${mmss(t.dur)}</span></span>
+        </div>
+        <p class="pdev" id="pDev"></p>
+
+        ${(t.tags??[]).length?`<div class="tagrow">${t.tags.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}</div>`:''}
+        ${(t.suggest??[]).length ? `<div class="picks">${t.suggest.slice(0,3).map((sg,n)=>
+          `<button class="pick ${n===0?'best':''}" data-dfile="${esc(sg.id)}"><span class="k">${n+1}</span><span class="nm">${esc(sg.name)}</span>
+           <span class="ax">${esc(sg.axis??'')}</span><span class="sc">${(sg.score*100).toFixed(0)}% fit</span></button>`).join('')}</div>`
+          : `<p class="why">No confident suggestion — Last.fm has no tags for this artist, or it fits nothing you have. Pick a playlist below.</p>`}
+
+        <div class="rowbtns">
+          <button class="b" data-dnav="-1" ${i===0?'disabled':''}>← Back</button>
+          <button class="b" data-dnav="1" ${i>=d.length-1?'disabled':''}>Next →</button>
+          <button class="b" data-like="${esc(t.id)}">Like</button>
+          <a class="b" style="text-decoration:none" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
+          <select id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+        </div>
+      </div>
     </div>
-    ${d.length ? `<h2>${d.length} new tracks <span class="mono" style="font-size:13px;color:var(--ink-3)">from ${esc(S.discoverFrom)}</span></h2>` : ''}
-    <div class="rows">${d.map(x => `<div class="row"><div class="main">
-      <div class="ttl">${esc(x.track)} <span class="sub">— ${esc(x.artist)}</span></div>
-      <div class="sub mono">${esc((x.released??'').slice(0,4))} · via ${esc((x.via??[]).join(', '))}</div>
-    </div><div class="acts">
-      <button class="b sm" data-dplay="${esc(x.id)}">Play</button>
-      <button class="b sm" data-like="${esc(x.id)}">Like</button>
-      <a class="b sm" style="text-decoration:none" href="https://open.spotify.com/track/${esc(x.id)}" target="_blank" rel="noopener">Open</a>
-    </div></div>`).join('') || (d.length===0 && hasKey ? '<div class="empty">Pick a seed and hit Find new music.</div>' : '')}</div>`;
+    <div class="counter"><span>via ${esc((t.via??[]).join(', '))}</span><span>${i+1} of ${d.length}</span></div>`;
+}
+
+/** Add the track on the card to a playlist, and take it off the pile. */
+async function discAdd(playlistId) {
+  const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
+  if (!t) return;
+  const name = CFG[playlistId]?.name ?? playlistId;
+  try {
+    await addTracks(playlistId, [t.id]);
+    await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'added from discovery' });
+    const when = (await getLog())[0]?.at;
+    toast(`Added “${t.track}” to ${name}.`, () => undoAction(when));
+    d.splice(at, 1);
+    S.discAt = Math.max(0, Math.min(at, d.length - 1));
+    render();
+  } catch (e) { toast('Failed: ' + e.message); }
 }
 
 function vHistory() {
@@ -1899,6 +2094,13 @@ function render(dir) {
   [...dots.children].forEach((d, i) => d.classList.toggle('on', i === at));
 
   bindSwipeCard();
+
+  const seek = $('#seek');
+  if (seek) {
+    seek.oninput = () => { PLAYER.scrub = true; $('#pTime').textContent = mmss(+seek.value); };
+    seek.onchange = async () => { const to = +seek.value; PLAYER.scrub = false; await playerSeek(to); };
+    playerRun();
+  } else playerStop();
 }
 
 /** Move to another screen: animates in the direction of travel and starts at the top. */
@@ -2198,7 +2400,15 @@ document.addEventListener('click', async e => {
     } catch (err) { toast('Failed: '+err.message); mv.disabled = false; } return; }
 
   const dp = e.target.closest('[data-dplay]');
-  if (dp) { try { toast('Playing on ' + await playTrack(dp.dataset.dplay)); } catch (err) { toast(err.message); } return; }
+  if (dp) return discPlay(dp.dataset.dplay);
+  if (e.target.closest('#pToggle')) return playerToggle();
+  const dnav = e.target.closest('[data-dnav]');
+  if (dnav) {
+    const d = S.discover ?? [];
+    S.discAt = Math.max(0, Math.min((S.discAt ?? 0) + (+dnav.dataset.dnav), d.length - 1));
+    return render();
+  }
+  const dfile = e.target.closest('[data-dfile]'); if (dfile) return discAdd(dfile.dataset.dfile);
 
   if (e.target.id === 'saveLfm') {
     const v = $('#lfmKey').value.trim();
@@ -2224,6 +2434,7 @@ document.addEventListener('change', async e => {
   if (e.target.id === 'anyPl' && e.target.value) return fileCurrent(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
+  if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
 
   // Axis / target edits are per-viewer and persist on this device.
   const ax = e.target.closest('[data-ax]'), tg = e.target.closest('[data-tg]');

@@ -195,7 +195,12 @@ guess, and everything downstream reads the file, not the rules.
   so it is surfaced for review and never auto-removed.
 - **Discovery subtracts what you own** — every artist and track in the library,
   including each artist named inside a collaboration credit, so a seed artist
-  can't return as one half of a duo.
+  can't return as one half of a duo. Results come one card at a time: the album
+  cover, a scrubber that drives your own Spotify device, and the playlists the
+  track would fit — ranked by the same model the inbox files with, since
+  discovery also pulls the new artist's Last.fm tags. Take the suggestion or
+  overrule it from the dropdown; either way the track is added and the card
+  moves on.
 - **Shuffle spaces artists rather than randomising.** Uniform random clumps; the
   greedy max-spacing interleave takes the artist with the most tracks left,
   skipping any used within a cooldown window.
