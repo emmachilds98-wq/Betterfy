@@ -24,7 +24,21 @@ authentication uses PKCE.
 The prebuilt genre tags shipped with the page cover one person's artists, so
 your suggestions may start thin. The **Playlists** view shows your tag coverage
 and can fill the gaps in your browser given a free
-[Last.fm key](https://www.last.fm/api/account/create).
+[Last.fm key](https://www.last.fm/api/account/create) — paste the **API key**
+only; Betterfy only ever reads public tag data, so the shared secret that
+comes with a Last.fm app is not needed anywhere in this project.
+
+**A wrong suggestion is usually a wrong tag, not a wrong model.** Last.fm's
+tags are per *artist*, not per track, and crowd-submitted — a same-named act,
+a stray scrobble, or a niche artist with three taggers is enough to mistag
+everything they've made. If Tidy keeps suggesting somewhere a track plainly
+doesn't belong, open it there: tags now show under every misfiled and
+newly-added track, and **Wrong tags?** next to an artist's name opens an
+editor — remove the bad one, add the right one, or re-ask Last.fm, and it's
+remembered on this device from then on. The **Playlists** view also now flags
+which playlists it had no real signal for and silently defaulted to genre —
+worth a pass, since that default is exactly what turns a mood or context
+playlist into noisy Tidy suggestions.
 
 ### On a phone
 

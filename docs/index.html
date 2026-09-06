@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-0323">
+<meta name="bf-build" content="2026-09-06-0350">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -860,7 +860,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-0323</span>
+    <span class="mono">build 2026-09-06-0350</span>
   </p>
 
   <div class="feat">
@@ -957,7 +957,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0323</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0350</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1007,7 +1007,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0323</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0350</span>
   </div>
 </div>
 
@@ -1504,7 +1504,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-0323';
+const BUILD = '2026-09-06-0350';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -1960,7 +1960,8 @@ function buildReports(lib, cfg, tags) {
                          : own < 0.25 && best[0].score > 0.40 ? 'medium' : 'low';
         misfiled.push({ id:t.id, artist:t.artists?.[0]?.name, title:t.name, art:t.art, dur:t.duration_ms, current:p.name,
           currentPlaylistId:p.id, currentScore:+own.toFixed(3), confidence,
-          suggest: best.map(b => ({ id:b.id, name:b.name, score:+b.score.toFixed(3) })), tags: topTags(t, tags, idf) });
+          suggest: best.map(b => ({ id:b.id, name:b.name, score:+b.score.toFixed(3) })), tags: topTags(t, tags, idf),
+          artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })) });
       }
     }
   }
@@ -1973,6 +1974,7 @@ function buildReports(lib, cfg, tags) {
   const backlog = unfiled.map(t => ({ id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
     album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
     tags: topTags(t, tags, idf),
+    artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })),
     suggest: rank(t, tags, profiles, idf, { top:3 }).map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null })) }))
     .sort((a,b) => (b.added??'').localeCompare(a.added??''));
 
@@ -2000,8 +2002,8 @@ function buildReports(lib, cfg, tags) {
 }
 
 /* ===================== UI ===================== */
-let LIB = null, CFG = null, TAGS = null, R = null, view = 'home';
-const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set() };
+let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'home';
+const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null };
 
 // Bar order, which is also swipe order: swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
@@ -2445,6 +2447,9 @@ function secMisfile() {
   const counts = { high: 0, medium: 0, low: 0 };
   for (const x of R.misfiled) counts[x.confidence]++;
   const m = R.misfiled.filter(x => x.confidence === S.mfBand);
+  // Only draw the (stateful, id-bearing) editor once, even if the artist
+  // being fixed has several other misfiled tracks in the same list.
+  let editorDrawn = false;
   return `<p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Each row is a move, not a score — and every one of them lands in History.</p>
     <div class="rowbtns" style="margin-bottom:14px">${['high', 'medium', 'low'].map(b =>
       `<button class="b sm ${S.mfBand === b ? 'p' : ''}" data-mfb="${b}">${b} (${counts[b]})</button>`).join('')}</div>
@@ -2460,7 +2465,14 @@ function secMisfile() {
         ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}">${done ? 'Moved' : 'Move'}</button>` : ''}
         ${x.suggest.filter(sg => sg.id).slice(1, 2).map(sg =>
           `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(sg.id)}">→ ${esc(sg.name)}</button>`).join('')}
-        <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${x.dur ?? 0}">Play</button></div></div>`;
+        <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${x.dur ?? 0}">Play</button></div>
+      ${x.tags?.length ? `<div style="flex-basis:100%; margin-top:6px">
+        <div class="tagrow">${x.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+        <div class="rowbtns" style="margin-top:6px">${(x.artists ?? []).map(a =>
+          `<button class="b sm" data-editartist="${esc(a.id)}">${S.editingArtist === a.id ? 'Close' : 'Wrong tags?'} ${esc(a.name)}</button>`).join('')}</div>
+        ${!editorDrawn && S.editingArtist && x.artists?.some(a => a.id === S.editingArtist)
+          ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
+      </div>` : ''}</div>`;
     }).join('')
       || `<div class="empty"><b>Nothing in this band</b>${S.mfBand === 'high' ? 'Everything is filed where it fits. Try the medium band for the speculative ones.' : 'Try another confidence band.'}</div>`}</div>`;
 }
@@ -2798,17 +2810,46 @@ function vHistory() {
 }
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
+// The exact fallback classify() writes when a playlist's name gives it no clue
+// at all — a silent guess, not a real signal, and the one worth confirming.
+const NO_SIGNAL = 'no signal in the name — treated as genre';
+
+function axisRowHTML(p) {
+  return `<div class="row axrow" style="align-items:center">
+    <div class="main"><div class="ttl">${esc(p.name)}</div>
+      <div class="sub"><span class="mono">${p.tracks} tracks</span>
+        <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span></div></div>
+    <div class="acts">
+      <select data-ax="${esc(p.id)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2)">
+        <input type="checkbox" data-tg="${esc(p.id)}" ${p.target?'checked':''} ${p.tracks < MIN_FOR_TARGET ? 'disabled title="too few tracks to model"' : ''}>
+        receives suggestions</label>
+    </div>
+  </div>`;
+}
+
 function vLists() {
   const rows = Object.entries(CFG).map(([id,v]) => ({ id, ...v })).sort((a,b) => b.tracks - a.tracks);
   const cov = tagCoverage();
+  // Everything classify() could not read from the name or the dates — it
+  // defaulted to genre rather than ask, which is exactly the silent guess
+  // that later shows up as a wrong Tidy suggestion. Worth confirming once.
+  const undecided = rows.filter(p => p.why === NO_SIGNAL);
   return `<h1>Playlists</h1>
     <p class="lede">How each of your playlists is treated. Only <b>genre</b> and <b>mood</b> playlists receive suggestions, and a track is only ever compared against playlists on its own axis — so a metal track in a mood playlist is not flagged as misfiled. Each guess says what it was made from; correct anything wrong and it is remembered on this device.</p>
+
+    ${undecided.length ? `<h2>Needs your input</h2>
+    <p class="lede">${undecided.length} playlist${undecided.length===1?' has':'s have'} no clue in ${undecided.length===1?'its':'their'} name, so
+      ${undecided.length===1?'it was':'they were'} defaulted to <b>genre</b> rather than asked about. That default is exactly what
+      turns a mood or context playlist into noisy Tidy suggestions — set the real one below.</p>
+    <div class="rows">${undecided.map(axisRowHTML).join('')}</div>` : ''}
 
     <h2>Genre data</h2>
     <p class="lede">${cov.have.toLocaleString()} of ${cov.total.toLocaleString()} artists have genre tags (${cov.pct}%).
       ${cov.pct < 85 ? 'Suggestions will be thin until this improves.' : ''}
       Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set; add your own free
-      Last.fm key to fill the gaps for artists it doesn\'t cover.</p>
+      Last.fm key to fill the gaps for artists it doesn\'t cover — and to fix one that already has tags but has them
+      wrong, from a Tidy or File row, tap <b>Wrong tags?</b> under it.</p>
     <div class="rowbtns" style="margin-bottom:8px">
       <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(localStorage.getItem('bf_lfm') || '')}">
       <button class="b" id="saveLfm">Save key</button>
@@ -2817,18 +2858,7 @@ function vLists() {
     </div>
 
     <h2>Axes</h2>
-    <div class="rows">${rows.map(p => `
-      <div class="row axrow" style="align-items:center">
-        <div class="main"><div class="ttl">${esc(p.name)}</div>
-          <div class="sub"><span class="mono">${p.tracks} tracks</span>
-            <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span></div></div>
-        <div class="acts">
-          <select data-ax="${esc(p.id)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select>
-          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2)">
-            <input type="checkbox" data-tg="${esc(p.id)}" ${p.target?'checked':''} ${p.tracks < MIN_FOR_TARGET ? 'disabled title="too few tracks to model"' : ''}>
-            receives suggestions</label>
-        </div>
-      </div>`).join('')}</div>`;
+    <div class="rows">${rows.map(axisRowHTML).join('')}</div>`;
 }
 
 function tagCoverage() {
@@ -2867,6 +2897,63 @@ async function enrichMissing() {
   $('#land').hidden = true; $('#app').hidden = false;
   toast(`Tags filled for ${todo.length} artists.`);
   render();
+}
+
+/* ---------- correcting one artist's tags ----------
+ * Last.fm tags are crowd-submitted per artist, not per track, and
+ * enrichMissing() only ever fills an artist with *no* tags — an artist Last.fm
+ * has simply got wrong (a same-named act, a stray scrobble, a niche artist
+ * with three taggers) keeps its wrong tags forever, and every track of theirs
+ * inherits the mistake. This is the fix for that: edit, in place, right where
+ * a wrong suggestion was spotted, and it sticks — tags_extra already wins over
+ * the shipped set, the same mechanism enrichMissing() relies on. */
+
+async function saveArtistTags(id, tags) {
+  const extra = (await idb.get('tags_extra')) ?? {};
+  extra[id] = { tags };
+  await idb.set('tags_extra', extra);
+  TAGS[id] = { tags };
+  R = buildReports(LIB, CFG, TAGS);
+}
+
+async function resetArtistTags(id) {
+  const extra = (await idb.get('tags_extra')) ?? {};
+  delete extra[id];
+  await idb.set('tags_extra', extra);
+  TAGS[id] = RAW_TAGS?.[id] ? { tags: [...RAW_TAGS[id].tags] } : { tags: [] };
+  R = buildReports(LIB, CFG, TAGS);
+}
+
+/** Ask Last.fm again for one artist, ignoring whatever it is shipped with —
+ *  for the case where autocorrect or the crowd tags have since improved. */
+async function refetchArtist(id, name) {
+  const key = localStorage.getItem('bf_lfm');
+  if (!key) return toast('Add a Last.fm key on the Playlists screen first.');
+  try {
+    const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
+      method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
+    const tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
+    await saveArtistTags(id, tags);
+    toast(tags.length ? `Refetched — ${tags.length} tag(s) for ${name}.` : `Last.fm has no tags for ${name}.`);
+  } catch (e) { toast('Failed: ' + e.message); }
+}
+
+function tagEditorHTML(id, name) {
+  const tags = TAGS[id]?.tags ?? [];
+  return `<div class="tagedit" style="margin-top:8px; padding:10px; border-radius:10px; background:var(--surface-2)">
+    <p class="sub" style="margin:0 0 8px">Tags for <b>${esc(name)}</b> — a wrong one here throws off every suggestion this artist is part of.</p>
+    <div class="tagrow">${tags.length ? tags.map(([t], idx) =>
+      `<span class="tag" style="cursor:pointer" data-rmtag="${esc(id)}|${idx}" title="Remove">${esc(t)} ✕</span>`).join('')
+      : '<span class="sub">No tags.</span>'}</div>
+    <div class="rowbtns" style="margin-top:8px">
+      <input id="newTagVal" placeholder="Add a tag" size="16">
+      <button class="b sm" data-addtag="${esc(id)}">Add</button>
+      <button class="b sm" data-refetchtags="${esc(id)}" data-artistname="${esc(name)}"
+        ${localStorage.getItem('bf_lfm') ? '' : 'disabled title="Add a Last.fm key on this screen first"'}>Refetch from Last.fm</button>
+      <button class="b sm" data-resettags="${esc(id)}">Reset to shipped</button>
+      <button class="b sm" data-closetagedit="1">Done</button>
+    </div>
+  </div>`;
 }
 
 const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
@@ -3246,6 +3333,29 @@ document.addEventListener('click', async e => {
   }
   if (e.target.id === 'enrich') return enrichMissing();
 
+  const ea = e.target.closest('[data-editartist]');
+  if (ea) { S.editingArtist = S.editingArtist === ea.dataset.editartist ? null : ea.dataset.editartist; render(); return; }
+  const closeEdit = e.target.closest('[data-closetagedit]');
+  if (closeEdit) { S.editingArtist = null; render(); return; }
+  const rmtag = e.target.closest('[data-rmtag]');
+  if (rmtag) {
+    const i = rmtag.dataset.rmtag.lastIndexOf('|');
+    const id = rmtag.dataset.rmtag.slice(0, i), idx = +rmtag.dataset.rmtag.slice(i + 1);
+    await saveArtistTags(id, (TAGS[id]?.tags ?? []).filter((_, n) => n !== idx));
+    render(); return;
+  }
+  const addtag = e.target.closest('[data-addtag]');
+  if (addtag) {
+    const v = $('#newTagVal')?.value.trim().toLowerCase();
+    if (!v) return;
+    await saveArtistTags(addtag.dataset.addtag, [...(TAGS[addtag.dataset.addtag]?.tags ?? []), [v, 50]]);
+    render(); return;
+  }
+  const refetch = e.target.closest('[data-refetchtags]');
+  if (refetch) { await refetchArtist(refetch.dataset.refetchtags, refetch.dataset.artistname); render(); return; }
+  const reset = e.target.closest('[data-resettags]');
+  if (reset) { await resetArtistTags(reset.dataset.resettags); render(); return; }
+
   const cl = e.target.closest('[data-cluster]');
   if (cl) {
     const i = +cl.dataset.cluster, name = $('#nm'+i).value.trim();
@@ -3270,6 +3380,10 @@ document.addEventListener('change', async e => {
     const id = (ax ?? tg).dataset.ax ?? tg.dataset.tg;
     if (ax) {
       CFG[id].axis = ax.value;
+      // Matches what a reload would do via classify()'s saved-override merge —
+      // done here too so a playlist just fixed drops out of "Needs your input"
+      // immediately rather than waiting for the next full sync.
+      CFG[id].why = 'set by you';
       if (!['genre','mood'].includes(ax.value)) CFG[id].target = false;
     } else {
       CFG[id].target = tg.checked;
@@ -3417,10 +3531,13 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-0323').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-0350').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
+      // Kept aside so a hand-corrected artist can be put back the way Last.fm
+      // shipped it, without losing every other correction made this session.
+      RAW_TAGS = JSON.parse(JSON.stringify(TAGS));
       // anything this viewer has fetched for their own artists wins
       Object.assign(TAGS, (await idb.get('tags_extra')) ?? {});
     }
