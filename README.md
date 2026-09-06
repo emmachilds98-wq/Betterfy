@@ -127,6 +127,18 @@ can hit this 429 (a stale refresh, an interrupted code exchange, the
 home-screen app's own silent first attempt), so a wait that's genuinely
 being handled never again looks like the app has simply stopped.
 
+**If it keeps happening.** Once in a while is Spotify's shared, per-app quota
+having a busy minute — waiting it out is the right move, and the countdown
+above handles that on its own. Several in a row on the page's *default*
+client ID is a different problem: that quota is shared by everyone who has
+this page open, so no amount of local waiting fixes it while it stays busy.
+After a couple of back-to-back 429s the fallback screen says so and offers
+the actual fix — **Use your own Spotify app** — which takes about a minute
+to set up and gives you a quota nobody else can spend. The same escape hatch
+already existed for the 25-account cap (`access_denied`); this is it
+surfacing for a persistent rate limit too, rather than only when Spotify has
+flatly refused the account.
+
 **If it says "Spotify asked for a pause".** A short throttle while reading a
 large library is waited out on its own, counting down on screen. A longer one
 used to be sat through silently too — up to ten minutes at a time, several

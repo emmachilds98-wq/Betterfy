@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-1939">
+<meta name="bf-build" content="2026-09-06-1955">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -866,7 +866,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-1939</span>
+    <span class="mono">build 2026-09-06-1955</span>
   </p>
 
   <div class="feat">
@@ -910,7 +910,6 @@
     genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a>
     (Spotify no longer provides genre — top yours up from the Playlists screen) ·
     release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
-    tempo/key from <a href="https://getsongbpm.com" target="_blank" rel="noopener">GetSongBPM</a> ·
     <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.
   </p>
 </div>
@@ -963,7 +962,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1939</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1955</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1013,7 +1012,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1939</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1955</span>
   </div>
 </div>
 
@@ -1658,7 +1657,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-1939';
+const BUILD = '2026-09-06-1955';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3963,24 +3962,50 @@ function stage(msg, pct) {
     <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>`;
 }
 
+// A single 429 is ordinary. Several in a row on this page's default client ID
+// is a different problem: that ID's quota is shared with everyone else who
+// has this page open, so waiting it out just means waiting on someone else's
+// traffic, and a retry loop that keeps failing looks exactly like "never
+// recovers" from the outside — because from inside a shared queue, it might
+// genuinely not, for as long as that queue stays busy. The one thing that
+// actually fixes that rather than just waiting longer is a personal Spotify
+// app: same page, same everything, but a quota nobody else can spend.
+const RATE_LIMIT_STREAK_KEY = 'bf_ratelimit_streak', RATE_LIMIT_OWN_APP_AFTER = 2;
+function noteRateLimited() {
+  const n = (+localStorage.getItem(RATE_LIMIT_STREAK_KEY) || 0) + 1;
+  localStorage.setItem(RATE_LIMIT_STREAK_KEY, String(n));
+  return n;
+}
+const clearRateLimitStreak = () => localStorage.removeItem(RATE_LIMIT_STREAK_KEY);
+
 /** A wall for a failure that is nobody's fault and will pass: no "start over"
  *  button, because signing in again is exactly what must not happen here. */
 let blockedTimer = null, blockedCountdown = null;
-/** @param {number} [retryInMs] — when known, retry on its own once this has passed,
- *  so getting past a rate limit never depends on someone remembering to come tap it.
- *  A silent timer with a static "Try again" screen is what looked broken —
- *  the button sat there with no sign anything was ever going to happen, so a
- *  wait that was actually being handled read as the app having hung. Counting
- *  down is the same fix hold() already applies to a Web API 429 mid-sync,
- *  brought to the sign-in wall too. */
-function blocked(msg, retry, retryInMs) {
+/**
+ * @param {number} [retryInMs] — when known, retry on its own once this has passed,
+ * so getting past a rate limit never depends on someone remembering to come tap it.
+ * A silent timer with a static "Try again" screen is what looked broken —
+ * the button sat there with no sign anything was ever going to happen, so a
+ * wait that was actually being handled read as the app having hung. Counting
+ * down is the same fix hold() already applies to a Web API 429 mid-sync,
+ * brought to the sign-in wall too.
+ * @param {boolean} [ownAppHint] — several 429s in a row: say what actually helps.
+ */
+function blocked(msg, retry, retryInMs, ownAppHint) {
   clearTimeout(blockedTimer); blockedTimer = null;
   clearInterval(blockedCountdown); blockedCountdown = null;
   $('#app').hidden = true; $('#land').hidden = false;
   $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
     <p class="tagline">${esc(msg)}</p>
     <button class="b p" id="landRetry">Try again</button>
-    ${retryInMs != null ? `<p class="fineprint" id="landRetryCountdown"></p>` : ''}`;
+    ${retryInMs != null ? `<p class="fineprint" id="landRetryCountdown"></p>` : ''}
+    ${ownAppHint ? `<div class="note" style="max-width:420px; margin-top:14px; text-align:left">
+      <b>Still going after a few tries?</b> This page's default Spotify app is shared by everyone who
+      opens it, so a busy few minutes anywhere can keep refusing sign-ins here too, for as long as that
+      stays busy. Your own free Spotify app has a quota nobody else can spend — about a minute to set up,
+      and nothing to share with whoever sent you this link.
+      <div class="rowbtns" style="margin-top:8px"><a class="b sm" href="${REDIRECT}?setup">Use your own Spotify app</a></div>
+    </div>` : ''}`;
   // Whichever fires first — a tap or the timer — has to stop the other one,
   // or the countdown keeps ticking in the background forever after the retry
   // it was counting down to has already happened.
@@ -4003,7 +4028,12 @@ function blocked(msg, retry, retryInMs) {
 async function start(force) {
   let t;
   try { t = await token(); }
-  catch (e) { blocked(e.message, () => start(force), e.retryAfterMs); return; }
+  catch (e) {
+    const streak = e.status === 429 ? noteRateLimited() : 0;
+    blocked(e.message, () => start(force), e.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER);
+    return;
+  }
+  clearRateLimitStreak();
   if (!t) {
     $('#land').hidden = false; $('#app').hidden = true;
     // Signed in in Safari and puzzled to be asked again here: say why, once,
@@ -4029,7 +4059,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-1939').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-1955').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
@@ -4046,6 +4076,7 @@ async function start(force) {
     CFG = classify(LIB);
     R = buildReports(LIB, CFG, TAGS);
     $('#land').hidden = true; $('#app').hidden = false;
+    clearRateLimitStreak();
     // The rail that used to carry this is a bar now; the account line lives in
     // the More sheet, which is where Disconnect sits too.
     const whoName = LIB.user?.name ?? LIB.user?.id ?? '';
@@ -4054,7 +4085,11 @@ async function start(force) {
     view = 'home'; S.inboxAt = 0; render();
     window.scrollTo(0, 0);
   } catch (e) {
-    if (retryable(e)) { blocked(e.message, () => start(force), e.retryAfterMs); return; }
+    if (retryable(e)) {
+      const streak = e.status === 429 ? noteRateLimited() : 0;
+      blocked(e.message, () => start(force), e.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER);
+      return;
+    }
     $('#land').hidden = false; $('#app').hidden = true;
     $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
       <p class="tagline">${esc(e.message)}</p>
@@ -4125,8 +4160,10 @@ const FRIENDLY = {
         // the real wait through means this waits it out instead of inviting
         // an impatient tap that just asks the same rate-limited endpoint for
         // another code right away.
-        if (retryable(e)) blocked(e.message, () => beginAuth(), e.retryAfterMs);
-        else { $('#land').hidden = false; toast(e.message); }
+        if (retryable(e)) {
+          const streak = e.status === 429 ? noteRateLimited() : 0;
+          blocked(e.message, () => beginAuth(), e.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER);
+        } else { $('#land').hidden = false; toast(e.message); }
         return;
       }
     }
@@ -4145,7 +4182,11 @@ const FRIENDLY = {
     // but if it throws first (no network, no secure context) that must not
     // leave "Signing you in…" on screen forever with no way off it.
     try { return await beginAuth(); }
-    catch (e) { blocked(e.message, () => beginAuth(), e.retryAfterMs); return; }
+    catch (e) {
+      const streak = e.status === 429 ? noteRateLimited() : 0;
+      blocked(e.message, () => beginAuth(), e.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER);
+      return;
+    }
   }
 
   start(false);
