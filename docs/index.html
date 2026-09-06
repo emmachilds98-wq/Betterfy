@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-0350">
+<meta name="bf-build" content="2026-09-06-1303">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -860,7 +860,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-0350</span>
+    <span class="mono">build 2026-09-06-1303</span>
   </p>
 
   <div class="feat">
@@ -957,7 +957,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0350</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1303</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1007,7 +1007,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0350</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1303</span>
   </div>
 </div>
 
@@ -1504,7 +1504,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-0350';
+const BUILD = '2026-09-06-1303';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2003,7 +2003,8 @@ function buildReports(lib, cfg, tags) {
 
 /* ===================== UI ===================== */
 let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'home';
-const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null };
+const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null,
+            fileSel:new Set(), fileSelFor:null };
 
 // Bar order, which is also swipe order: swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
@@ -2340,14 +2341,23 @@ function vInbox() {
       <b>That's the lot.</b>Every liked song sits in at least one playlist. Nothing left to file.</div>`;
 
   const i = Math.min(S.inboxAt, rows.length - 1), t = rows[i];
+  // A tap only ever builds a selection now — it never writes to Spotify by
+  // itself, which is what a misclick used to cost. The selection belongs to
+  // whichever track is on screen, so it clears the moment that changes.
+  if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; }
   const opts = Object.entries(CFG).filter(([, v]) => v.target).map(([id, v]) => ({ id, ...v }))
     .sort((a, b) => a.name.localeCompare(b.name));
+  const nameOf = id => opts.find(o => o.id === id)?.name ?? t.suggest.find(s => s.id === id)?.name ?? id;
   const best = t.suggest[0];
+  const canFile = S.fileSel.size > 0 || !!best;
+  const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
+    : S.fileSel.size === 1 ? `File in ${esc(nameOf([...S.fileSel][0]))}`
+    : best ? `File in ${esc(best.name)}` : 'Pick a playlist below';
   // Say whichever of the two is actually available to the hand on the device.
   const touch = matchMedia('(hover:none) and (pointer:coarse)').matches;
   const how = touch
-    ? `Swipe <b>right</b> to file, <b>left</b> to skip.`
-    : `Keys: <b>1–3</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.`;
+    ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
+    : `Keys: <b>1–3</b> pick, <b>Enter</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.`;
 
   return `<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
@@ -2355,9 +2365,9 @@ function vInbox() {
     </div>
     <div class="deck">
       ${rows[i + 1] ? '<div class="peek" aria-hidden="true"></div>' : ''}
-      <div class="card swipecard" id="swipeCard" ${best ? `data-best="${esc(best.id)}"` : ''}>
+      <div class="card swipecard" id="swipeCard" ${canFile ? `data-best="${esc(best?.id ?? '')}"` : ''}>
         <div class="verdicts" aria-hidden="true">
-          <span class="verdict file">${best ? esc(best.name) : 'No pick'}</span>
+          <span class="verdict file">${S.fileSel.size ? `${S.fileSel.size} playlist${S.fileSel.size>1?'s':''}` : best ? esc(best.name) : 'No pick'}</span>
           <span class="verdict skip">Skip</span>
         </div>
         <h2 style="margin:0 0 20px; font-size:26px; font-weight:800; letter-spacing:-.025em">Where does this one go?</h2>
@@ -2373,22 +2383,27 @@ function vInbox() {
           </div>
         </div>
         ${t.suggest.length ? `<div class="picks">${t.suggest.slice(0, 3).map((sg, n) => `
-          <button class="pick ${n === 0 ? 'best' : ''}" data-file="${esc(sg.id)}">
-            <span class="k">${n + 1}</span>
+          <button class="pick ${n === 0 ? 'best' : ''}" data-selfile="${esc(sg.id)}"
+            ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
+            <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis ?? '')} playlist</span></span>
             <span class="rt"><span class="sc">${(sg.score * 100).toFixed(0)}%</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
           </button>`).join('')}</div>`
         : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, or it fits nothing you have. Pick a playlist below.</p>`}
+        ${[...S.fileSel].filter(id => !t.suggest.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
+          ${[...S.fileSel].filter(id => !t.suggest.some(sg => sg.id === id)).map(id =>
+            `<button class="chip" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
+        </div>` : ''}
         <div class="rowbtns" style="margin-top:22px">
-          ${best ? `<button class="b big go grow" data-file="${esc(best.id)}">File in ${esc(best.name)}</button>` : ''}
+          <button class="b big go grow" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
           <button class="b big" data-act="skip">Skip</button>
         </div>
         <div class="rowbtns" style="margin-top:10px">
           <button class="b sm" data-act="unlike">Unlike</button>
-          <select id="anyPl"><option value="">File somewhere else…</option>${opts.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+          <select id="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
         </div>
-        <p style="margin:14px 0 0; font-size:13px; color:var(--ink-3); text-align:center">Nothing is written to Spotify until you tap — and everything can be undone.</p>
+        <p style="margin:14px 0 0; font-size:13px; color:var(--ink-3); text-align:center">Nothing is written to Spotify until you tap File or swipe — and it can be undone after.</p>
       </div>
     </div>
     <div class="prog" style="margin-top:16px"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
@@ -2536,9 +2551,74 @@ function shuffleStats(order) {
            avgGap: gaps.length?(gaps.reduce((a,b)=>a+b,0)/gaps.length).toFixed(1):'—' };
 }
 
+// The playlist syncAllSongsPlaylist() keeps topped up — a distinctive name so
+// it is never confused with (or overwritten in place of) something a listener
+// already made and happened to call "All Songs".
+const ALL_SONGS_NAME = 'All Songs — Betterfy';
+
+/** Every track in the library, once each — the union this feeds into
+ *  ALL_SONGS_NAME. Order doesn't matter; Shuffle re-orders it regardless. */
+function allLibraryTracks() {
+  const seen = new Map();
+  for (const p of LIB.playlists) for (const t of p.tracks) if (t?.id && !seen.has(t.id)) seen.set(t.id, t);
+  for (const t of LIB.liked) if (t?.id && !seen.has(t.id)) seen.set(t.id, t);
+  return [...seen.values()];
+}
+
+/**
+ * Create (once) or top up (every time after) a playlist holding every track
+ * in the library. Never removes anything and never re-adds what is already
+ * there — it reads the playlist's current contents first and only sends the
+ * difference, so running it again costs nothing and duplicates nothing.
+ */
+async function syncAllSongsPlaylist() {
+  const all = allLibraryTracks();
+  if (!all.length) return toast('Nothing to add yet — sync your library first.');
+  const mine = await paged('/me/playlists?limit=50');
+  let pl = mine.find(p => p.name === ALL_SONGS_NAME && p.owner?.id === LIB.user.id);
+  if (!pl) pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({
+    name: ALL_SONGS_NAME, public:false,
+    description:'Every track in your library, kept in one place by Betterfy. Refresh any time — nothing is ever duplicated.',
+  }) });
+
+  const have = new Set(await playlistIds(pl.id));
+  const missing = all.filter(t => !have.has(t.id));
+  if (missing.length) {
+    await addTracks(pl.id, missing.map(t => t.id));
+    await logAction({ op:'add', playlistId:pl.id, playlistName:ALL_SONGS_NAME,
+      trackIds:missing.map(t => t.id), reason:'All Songs refresh' });
+  }
+
+  // Reflect the result locally so Shuffle can use it immediately, rather than
+  // needing a full re-sync to notice a playlist it just wrote to.
+  const nowIds = new Set([...have, ...missing.map(t => t.id)]);
+  const merged = [...nowIds].map(id => all.find(t => t.id === id) ?? { id });
+  const idx = LIB.playlists.findIndex(p => p.id === pl.id);
+  const entry = { id:pl.id, name:ALL_SONGS_NAME, snapshot_id:pl.snapshot_id, tracks:merged };
+  if (idx >= 0) LIB.playlists[idx] = entry; else LIB.playlists.push(entry);
+  await idb.set('library', LIB);
+  // A meta playlist of everything is not a filing destination on any axis —
+  // comparing tracks against it would just mean "matches something you own".
+  CFG[pl.id] = { name:ALL_SONGS_NAME, axis:'context', why:'set by you', target:false, tracks:merged.length };
+  const savedAxes = JSON.parse(localStorage.getItem('bf_axes') || '{}');
+  savedAxes[pl.id] = { axis:'context', target:false };
+  localStorage.setItem('bf_axes', JSON.stringify(savedAxes));
+  R = buildReports(LIB, CFG, TAGS);
+  S.shufPl = pl.id;
+  toast(missing.length ? `${ALL_SONGS_NAME} refreshed — ${missing.length} track${missing.length===1?'':'s'} added.`
+                       : `${ALL_SONGS_NAME} is already up to date.`);
+  render();
+}
+
 function vShuffle() {
   const pls = LIB.playlists.filter(p => p.tracks.length >= 8).sort((a,b) => b.tracks.length - a.tracks.length);
-  const sel = S.shufPl ?? pls[0]?.id;
+  // Once it exists, everything you own beats any single bucket as a shuffle
+  // source — that default only loses to a playlist you have since chosen.
+  const allSongs = LIB.playlists.find(p => p.name === ALL_SONGS_NAME);
+  // Persisted immediately, not just used locally — otherwise "Create shuffled
+  // playlist" (which reads S.shufPl on its own) can act on a different
+  // playlist than whichever one the dropdown is actually showing as selected.
+  const sel = S.shufPl = S.shufPl ?? allSongs?.id ?? pls[0]?.id;
   const p = LIB.playlists.find(x => x.id === sel);
   const tracks = p ? dedupe(p.tracks) : [];
   const order = tracks.length ? spacedShuffle(tracks) : [];
@@ -2547,6 +2627,10 @@ function vShuffle() {
   S.shufOrder = order;
   return `<h1>Shuffle</h1>
     <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
+    <p class="lede" style="margin-top:-8px">${allSongs
+      ? `Shuffling from <b>${esc(ALL_SONGS_NAME)}</b> by default — everything in your library, kept in one place.`
+      : `No single playlist has everything you own yet.`}
+      <button class="b sm" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Build it'}</button></p>
     <div class="rowbtns" style="margin-bottom:22px">
       <select id="shufPl">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
       <button class="b p" id="shufApply" ${order.length?'':'disabled'}>Create shuffled playlist</button>
@@ -3039,7 +3123,7 @@ function bindSwipeCard() {
     card.style.transform = `translate3d(${dx}px,0,0) rotate(${t * 6}deg)`;
     if (vFile) vFile.style.opacity = dx > 12 ? Math.min(1, (dx - 12) / 60) : 0;
     if (vSkip) vSkip.style.opacity = dx < -12 ? Math.min(1, (-dx - 12) / 60) : 0;
-    card.classList.toggle('to-file', dx > TH && !!card.dataset.best);
+    card.classList.toggle('to-file', dx > TH && (!!card.dataset.best || S.fileSel.size > 0));
     card.classList.toggle('to-skip', dx < -TH);
   };
   const reset = () => {
@@ -3072,11 +3156,13 @@ function bindSwipeCard() {
     if (mode !== 'swipe') { gestureClaimed = false; mode = null; return; }
     mode = null; gestureClaimed = false;
     const best = card.dataset.best;
-    if (dx > TH && best) {
+    // A pending tap selection wins over the single best guess — swiping is
+    // then "confirm what I picked", not "override it with something else".
+    if (dx > TH && (S.fileSel.size > 0 || best)) {
       buzz(12);
       card.classList.add('gone');
       card.style.transform = 'translate3d(120vw,40px,0) rotate(14deg)';
-      fileCurrent(best);
+      fileCurrent(S.fileSel.size ? [...S.fileSel] : best);
     } else if (dx < -TH) {
       buzz(8);
       card.classList.add('gone');
@@ -3208,9 +3294,18 @@ document.addEventListener('click', async e => {
     return go(nav.dataset.v);
   }
 
+  if (e.target.id === 'syncAllSongs') {
+    const btn = e.target; btn.disabled = true; btn.textContent = 'Working…';
+    try { await syncAllSongsPlaylist(); }
+    catch (err) { toast('Failed: ' + err.message); render(); }
+    return;
+  }
+
   if (e.target.id === 'shufApply' || e.target.id === 'shufPlay') {
     const btn = e.target, playIt = btn.id === 'shufPlay';
-    const src = LIB.playlists.find(p => p.id === (S.shufPl ?? LIB.playlists[0].id));
+    // vShuffle() always sets S.shufPl to whatever it last showed as selected
+    // by the time this button is reachable, so this and the screen agree.
+    const src = LIB.playlists.find(p => p.id === S.shufPl);
     const order = S.shufOrder ?? [];
     if (!order.length) return;
     btn.disabled = true; btn.textContent = 'Working…';
@@ -3260,7 +3355,9 @@ document.addEventListener('click', async e => {
   const mfb = e.target.closest('[data-mfb]');
   if (mfb) { S.mfBand = mfb.dataset.mfb; if (T.rememberFilters) { T.mfBand = S.mfBand; saveTheme(); } return render(); }
 
-  const file = e.target.closest('[data-file]'); if (file) return fileCurrent(file.dataset.file);
+  const selfile = e.target.closest('[data-selfile]'); if (selfile) return toggleFileSel(selfile.dataset.selfile);
+  const filesel = e.target.closest('[data-filesel]');
+  if (filesel) return fileCurrent(S.fileSel.size ? [...S.fileSel] : (R.backlog[S.inboxAt]?.suggest[0]?.id));
   const act = e.target.closest('[data-act]'); if (act) return inboxAct(act.dataset.act);
 
   const keep = e.target.closest('[data-keep]');
@@ -3369,7 +3466,7 @@ document.addEventListener('click', async e => {
 });
 
 document.addEventListener('change', async e => {
-  if (e.target.id === 'anyPl' && e.target.value) return fileCurrent(e.target.value);
+  if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
   if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
@@ -3397,14 +3494,33 @@ document.addEventListener('change', async e => {
   }
 });
 
-async function fileCurrent(playlistId) {
+/** Toggle one playlist in or out of the pending selection for the track on screen. */
+function toggleFileSel(id) {
+  if (S.fileSel.has(id)) S.fileSel.delete(id); else S.fileSel.add(id);
+  render();
+}
+
+/** File the current inbox track into one or several playlists at once. Takes
+ *  a single id (the swipe gesture, keyboard 1-3 followed by Enter's fallback)
+ *  or an array (the multi-select confirm button) — either way nothing is
+ *  written until this actually runs. */
+async function fileCurrent(playlistIds) {
+  const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
+  if (!ids.length) return;
   const t = R.backlog[S.inboxAt]; if (!t) return;
-  const name = CFG[playlistId]?.name ?? playlistId;
+  const names = ids.map(id => CFG[id]?.name ?? id);
   try {
-    await addTracks(playlistId, [t.id]);
-    await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'filed from inbox' });
-    const at = (await getLog())[0]?.at;
-    toast(`Filed “${t.title}” into ${name}.`, () => undoAction(at));
+    // One log entry per playlist, so History and its per-row undo stay exact —
+    // the toast just chains all of them for the common "undo the lot" case.
+    const ats = [];
+    for (const id of ids) {
+      await addTracks(id, [t.id]);
+      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox' });
+      ats.push((await getLog())[0]?.at);
+    }
+    const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
+    toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
+    S.fileSel = new Set();
     R.backlog.splice(S.inboxAt, 1); render();
   } catch (e) { toast('Failed: '+e.message); }
 }
@@ -3437,7 +3553,8 @@ document.addEventListener('keydown', async e => {
 document.addEventListener('keydown', e => {
   if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
   const t = R.backlog[S.inboxAt]; if (!t) return;
-  if (['1','2','3'].includes(e.key)) { const s = t.suggest[+e.key-1]; if (s) fileCurrent(s.id); }
+  if (['1','2','3'].includes(e.key)) { const s = t.suggest[+e.key-1]; if (s) toggleFileSel(s.id); }
+  if (e.key === 'Enter' && (S.fileSel.size || t.suggest[0])) fileCurrent(S.fileSel.size ? [...S.fileSel] : t.suggest[0].id);
   if (e.key.toLowerCase()==='p') inboxAct('play');
   if (e.key.toLowerCase()==='s') inboxAct('skip');
   if (e.key.toLowerCase()==='u') inboxAct('unlike');
@@ -3531,7 +3648,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-0350').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-1303').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };

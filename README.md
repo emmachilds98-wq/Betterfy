@@ -54,9 +54,12 @@ rather than sliding under them.
 - **Swipe left or right** anywhere on a screen to move to the next or previous
   one; the dots under the header show where you are. Arrow keys do the same
   thing on a keyboard.
-- **Swipe the file card right to file it** into its best-fitting playlist,
-  **left to skip**, and tap the artwork to play. Every one of those is still a
-  button, and filing is still undoable from the toast.
+- **File into one playlist or several.** Tapping a suggested playlist (or
+  adding one from the dropdown) only selects it — nothing reaches Spotify
+  until you tap **File** or swipe the card right, so a misclick is a non-event
+  rather than something to undo. Swipe right confirms whatever's selected, or
+  falls back to the best guess if you haven't picked anything; **left** still
+  skips, and tapping the artwork still plays.
 - **Pull down** at the top of any screen to re-sync from Spotify.
 - Settings and More open as sheets from the bottom edge; flick the handle down
   to dismiss.
@@ -260,7 +263,12 @@ guess, and everything downstream reads the file, not the rules.
   moves on.
 - **Shuffle spaces artists rather than randomising.** Uniform random clumps; the
   greedy max-spacing interleave takes the artist with the most tracks left,
-  skipping any used within a cooldown window.
+  skipping any used within a cooldown window. It defaults to **All Songs —
+  Betterfy**, a playlist Betterfy keeps topped up with everything in your
+  library — build or refresh it from the button on the Shuffle screen. It's a
+  real Spotify playlist, not a snapshot: running it again only ever adds
+  whatever's missing since the last time, and never duplicates a track that's
+  already there.
 - **The mark is a sorted list that is also a play button.** Five stacked bars
   whose widths grow then shrink, so their right edge forms a play triangle. In
   the app it is inline SVG and keeps its five colours whatever accent you pick; at
