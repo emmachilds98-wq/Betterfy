@@ -176,3 +176,106 @@ test('readVerifier survives a browser with no sessionStorage at all', () => {
   vm.runInContext(slice('function readVerifier()', 'const retryable =', 'readVerifier'), sandbox);
   assert.equal(sandbox.readVerifier(), 'from-local');
 });
+
+/* ---------- the library cache, when there is no IndexedDB ----------
+ * One store holds the library cache, the action log, skips and rejections, tag
+ * corrections and the banked pieces of an interrupted read. So a browser that
+ * refuses IndexedDB did not cost one feature — open() rejected and every await
+ * above it rejected too, taking filing, undo, history and Tidy with it. */
+
+/** The idb helper, loaded against whatever `indexedDB` is handed in. */
+function loadIdb(indexedDB) {
+  const sandbox = { indexedDB, console, structuredClone };
+  vm.createContext(sandbox);
+  vm.runInContext(slice('const idb = (() => {', '/* ---------- what you told it', 'the idb helper')
+    + '\nthis.idb = idb;', sandbox);
+  return sandbox.idb;
+}
+
+/** An indexedDB.open that always fails, the way a blocked one does. */
+const refusingDB = { open: () => { const r = {}; setTimeout(() => { r.error = new Error('refused'); r.onerror?.(); }, 0); return r; } };
+
+test('a browser with no IndexedDB at all still reads and writes', async () => {
+  const idb = loadIdb(undefined);   // not merely refusing — absent
+  await idb.set('library', { playlists: [] });
+  assert.deepEqual(JSON.parse(JSON.stringify(await idb.get('library'))), { playlists: [] });
+  assert.equal(idb.durable, false, 'and it knows the cache will not survive the session');
+});
+
+test('an IndexedDB that refuses to open falls back rather than rejecting', async () => {
+  const idb = loadIdb(refusingDB);
+  await assert.doesNotReject(() => idb.set('actions', [{ op: 'add' }]));
+  assert.deepEqual(JSON.parse(JSON.stringify(await idb.get('actions'))), [{ op: 'add' }]);
+  assert.deepEqual([...(await idb.keys())], ['actions']);
+  await idb.del('actions');
+  assert.equal(await idb.get('actions'), undefined);
+});
+
+test('clear works with no store, so Disconnect is never a dead button', async () => {
+  const idb = loadIdb(refusingDB);
+  await idb.set('library', { x: 1 });
+  await assert.doesNotReject(() => idb.clear());
+  assert.deepEqual([...(await idb.keys())], []);
+});
+
+test('a refused open is not retried on every single call', async () => {
+  let opens = 0;
+  const counting = { open: () => { opens++; const r = {}; setTimeout(() => { r.error = new Error('no'); r.onerror?.(); }, 0); return r; } };
+  const idb = loadIdb(counting);
+  await idb.get('a'); await idb.get('b'); await idb.set('c', 1); await idb.keys();
+  assert.equal(opens, 1, 'once it has said no, stop asking it on every read');
+});
+
+/* ---------- and nothing anyone taps fails in silence ---------- */
+
+function loadGuard() {
+  const toasts = [];
+  const sandbox = { toast: m => toasts.push(m), console: { error() {} } };
+  vm.createContext(sandbox);
+  vm.runInContext(slice('function actionFailed(err)', "document.addEventListener('click'", 'guard/fire')
+    + '\nthis.guard = guard; this.fire = fire; this.actionFailed = actionFailed;', sandbox);
+  return Object.assign(sandbox, { toasts });
+}
+
+test('an async handler that rejects puts its reason on screen', async () => {
+  const g = loadGuard();
+  g.guard(async () => { throw new Error('Lost the connection to Spotify.'); })();
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(g.toasts, ['Lost the connection to Spotify.']);
+});
+
+test('a handler that throws before it ever returns a promise is caught too', () => {
+  const g = loadGuard();
+  g.guard(() => { throw new Error('nope'); })();
+  assert.deepEqual(g.toasts, ['nope']);
+});
+
+test("a bare Spotify status is turned into something worth reading", async () => {
+  const g = loadGuard();
+  g.guard(async () => { throw new Error('403 Forbidden'); })();
+  await new Promise(r => setImmediate(r));
+  assert.match(g.toasts[0], /Spotify refused that — 403 Forbidden\./);
+});
+
+test('a handler that succeeds is left alone, and its value passed through', async () => {
+  const g = loadGuard();
+  const out = await g.guard(async () => 'fine')();
+  assert.equal(out, 'fine');
+  assert.deepEqual(g.toasts, []);
+});
+
+test('a fire-and-forget action nobody awaits still reports its failure', async () => {
+  // Swipe-to-file and Enter-to-file call fileCurrent() without awaiting it.
+  const g = loadGuard();
+  g.fire(Promise.reject(new Error('Could not add to that playlist.')));
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(g.toasts, ['Could not add to that playlist.']);
+});
+
+test('the delegated handlers are all wrapped, not just some of them', () => {
+  // Every one of them is async, and the branches inside mostly have no catch.
+  for (const ev of ['click', 'change', 'keydown']) {
+    assert.ok(BUNDLE.includes(`addEventListener('${ev}', guard(async`),
+      `the delegated ${ev} handler is not wrapped`);
+  }
+});

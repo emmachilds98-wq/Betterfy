@@ -54,7 +54,9 @@ async function run(errorCode) {
     toast: m => toasts.push(m),
     console,
   };
-  const friendly = slice('const FRIENDLY = {', '(async () => {', 'FRIENDLY table');
+  // Anchored to the start of a line: a bare "(async () => {" also matches a
+  // nested arrow somewhere above, and then this slices the wrong region.
+  const friendly = slice('const FRIENDLY = {', '\n(async () => {', 'FRIENDLY table');
   // The boot IIFE's own opening/closing are stripped so this can be re-wrapped
   // and awaited directly — the "return" inside the error branch only parses
   // inside a function body.

@@ -1786,15 +1786,70 @@ async function paged(path, key) {
 }
 
 /* ---------- library cache (IndexedDB) ---------- */
-const idb = {
-  open: () => new Promise((ok, bad) => { const r = indexedDB.open('betterfy', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => ok(r.result); r.onerror = () => bad(r.error); }),
-  async get(k){ const d = await this.open(); return new Promise(ok => { const r = d.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); }); },
-  async set(k,v){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete = () => ok(); }); },
-  async del(k){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').delete(k); tx.oncomplete = () => ok(); }); },
-  async keys(){ const d = await this.open(); return new Promise(ok => { const r = d.transaction('kv').objectStore('kv').getAllKeys(); r.onsuccess = () => ok(r.result ?? []); r.onerror = () => ok([]); }); },
-  async clear(){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').clear(); tx.oncomplete = () => ok(); }); },
-};
+/* This one store holds the library cache, the action log, your skips and
+ * rejections, your tag corrections and the banked pieces of an interrupted
+ * read. So a browser that will not hand over IndexedDB did not cost one
+ * feature, it cost all of them at once: open() rejected, and every await above
+ * it rejected with it — filing, undo, history, Tidy, the lot, each one failing
+ * in whatever way its own caller happened to fail.
+ *
+ * A private window, blocked site data, a partitioned origin, a device out of
+ * space: all real, none of them a reason for the app to stop working. Memory is
+ * a poor cache and a perfectly good one for a single session, which is the
+ * difference between "this does not work here" and "this re-reads next time". */
+const idb = (() => {
+  const mem = new Map();
+  let opening = null, usable = true;
+
+  const open = () => {
+    if (!usable) return Promise.resolve(null);
+    return opening ??= new Promise((ok, bad) => {
+      const r = indexedDB.open('betterfy', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => bad(r.error);
+    }).catch(() => { usable = false; return null; });
+  };
+
+  /**
+   * @param fn (store, resolve, tx) => void — resolve with the result.
+   * @param fallback what to do instead when there is no usable store.
+   */
+  const run = async (mode, fn, fallback) => {
+    let d = null;
+    try { d = await open(); } catch { d = null; }
+    if (!d) return fallback();
+    try {
+      return await new Promise((ok, bad) => {
+        const tx = d.transaction('kv', mode);
+        tx.onabort = () => bad(tx.error ?? new Error('aborted'));
+        tx.onerror = () => bad(tx.error ?? new Error('failed'));
+        fn(tx.objectStore('kv'), ok, tx);
+      });
+    } catch {
+      // A store that has started refusing mid-session — quota, or the browser
+      // reclaiming it — is not coming back. Stop asking and carry on in memory
+      // rather than failing every call from here on.
+      usable = false; opening = null;
+      return fallback();
+    }
+  };
+
+  return {
+    /** False once nothing stored here will outlive the session. */
+    get durable() { return usable; },
+    get: k => run('readonly', (st, ok) => { const r = st.get(k);
+      r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); }, () => mem.get(k)),
+    set: (k, v) => run('readwrite', (st, ok, tx) => { st.put(v, k); tx.oncomplete = () => ok(); },
+      () => { mem.set(k, v); }),
+    del: k => run('readwrite', (st, ok, tx) => { st.delete(k); tx.oncomplete = () => ok(); },
+      () => { mem.delete(k); }),
+    keys: () => run('readonly', (st, ok) => { const r = st.getAllKeys();
+      r.onsuccess = () => ok(r.result ?? []); r.onerror = () => ok([]); }, () => [...mem.keys()]),
+    clear: () => run('readwrite', (st, ok, tx) => { st.clear(); tx.oncomplete = () => ok(); },
+      () => { mem.clear(); }),
+  };
+})();
 
 /* ---------- what you told it by skipping and rejecting ----------
  * Filing decisions teach the model twice. An accept is learned for free: the
@@ -3312,7 +3367,7 @@ function render(dir) {
   const seek = $('#seek');
   if (seek) {
     seek.oninput = () => { PLAYER.scrub = true; $('#pTime').textContent = mmss(+seek.value); };
-    seek.onchange = async () => { const to = +seek.value; PLAYER.scrub = false; await playerSeek(to); };
+    seek.onchange = guard(async ev => { const to = +ev.target.value; PLAYER.scrub = false; await playerSeek(to); });
     playerRun();
   } else playerStop();
 }
@@ -3389,12 +3444,12 @@ function bindSwipeCard() {
       buzz(12);
       card.classList.add('gone');
       card.style.transform = 'translate3d(120vw,40px,0) rotate(14deg)';
-      fileCurrent(S.fileSel.size ? [...S.fileSel] : best);
+      fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : best));
     } else if (dx < -TH) {
       buzz(8);
       card.classList.add('gone');
       card.style.transform = 'translate3d(-120vw,40px,0) rotate(-14deg)';
-      inboxAct('skip');
+      fire(inboxAct('skip'));
     } else reset();
   };
   card.addEventListener('touchend', finish);
@@ -3451,7 +3506,7 @@ function bindAppGestures() {
       buzz(12); toast('Re-syncing your library…'); start(true);
     }
   };
-  app.addEventListener('touchend', end);
+  app.addEventListener('touchend', guard(end));
   app.addEventListener('touchcancel', () => {
     $('#main').style.transform = ''; ptr.style.height = ''; ptr.classList.remove('armed');
     mode = null; pulling = false;
@@ -3513,7 +3568,32 @@ addEventListener('scroll', () => {
 }, { passive: true });
 
 /* ---------- events ---------- */
-document.addEventListener('click', async e => {
+/* ---------- nothing fails in silence ----------
+ * Every delegated handler below is async, and an async handler that rejects
+ * leaves no trace at all: no message, no screen, just a tap that did nothing.
+ * That is exactly the failure the Connect button had, and the same one line
+ * stops it happening to filing, undo, Tidy, Discover, Shuffle and the rest —
+ * most of whose branches never had a catch of their own. Now that a dropped
+ * request throws instead of being mistaken for an answer, this matters more:
+ * "the network went" has to reach the screen, not vanish. */
+function actionFailed(err) {
+  console.error(err);
+  const m = err?.message ? String(err.message) : 'Something went wrong.';
+  // Spotify's own failures arrive as "403 Forbidden" and mean nothing on their
+  // own; anything this file raised is already a sentence.
+  toast(/^\d{3}\b/.test(m) ? `Spotify refused that — ${m}.` : m);
+}
+
+/** Wrap a handler so whatever it throws, sync or async, reaches the screen. */
+const guard = fn => (...a) => {
+  try { const r = fn(...a); if (r && typeof r.catch === 'function') r.catch(actionFailed); return r; }
+  catch (e) { actionFailed(e); }
+};
+
+/** Start an async action nobody is awaiting, and put any failure on screen. */
+const fire = p => { Promise.resolve(p).catch(actionFailed); };
+
+document.addEventListener('click', guard(async e => {
   const nav = e.target.closest('.nav');
   if (nav) {
     closeSheet();
@@ -3731,9 +3811,9 @@ document.addEventListener('click', async e => {
       R.clusters.splice(i,1); render(); }
     catch (err) { toast('Failed: '+err.message); }
   }
-});
+}));
 
-document.addEventListener('change', async e => {
+document.addEventListener('change', guard(async e => {
   if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
@@ -3760,7 +3840,7 @@ document.addEventListener('change', async e => {
     toast('Updated — suggestions recomputed.');
     render();
   }
-});
+}));
 
 /** Toggle one playlist in or out of the pending selection for the track on screen. */
 function toggleFileSel(id) {
@@ -3818,7 +3898,7 @@ async function inboxAct(a) {
 }
 // Keyboard parity for the swipe: the same walk through VORDER, for anyone not
 // using a touchscreen.
-document.addEventListener('keydown', async e => {
+document.addEventListener('keydown', guard(async e => {
   if ($('#app').hidden || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target.matches('input,select,textarea')) return;
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -3826,13 +3906,13 @@ document.addEventListener('keydown', async e => {
   if (!next) return;
   if (next === 'history') S.history = await getLog();
   go(next);
-});
+}));
 
 document.addEventListener('keydown', e => {
   if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
   const t = R.backlog[S.inboxAt]; if (!t) return;
   if (['1','2','3'].includes(e.key)) { const s = t.suggest[+e.key-1]; if (s) toggleFileSel(s.id); }
-  if (e.key === 'Enter' && (S.fileSel.size || t.suggest[0])) fileCurrent(S.fileSel.size ? [...S.fileSel] : t.suggest[0].id);
+  if (e.key === 'Enter' && (S.fileSel.size || t.suggest[0])) fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : t.suggest[0].id));
   if (e.key.toLowerCase()==='p') inboxAct('play');
   if (e.key.toLowerCase()==='s') inboxAct('skip');
   if (e.key.toLowerCase()==='u') inboxAct('unlike');

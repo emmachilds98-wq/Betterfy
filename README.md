@@ -160,6 +160,30 @@ has to survive one redirect. What it cannot do is keep you signed in, so the
 landing page now says that on the way in rather than letting every open look
 like a first open.
 
+**And the same silence, everywhere else.** Connect was the visible case; the
+rest of the app had it too. Every delegated handler (`click`, `change`,
+`keydown`) is `async`, and most branches inside them had no `catch` of their
+own — so filing a track, undoing, moving a misfile, running Discovery,
+building a shuffle or saving a tag correction could all reject and leave
+nothing on screen. Swipe-to-file and Enter-to-file were worse: they called
+`fileCurrent()` without awaiting it at all. That mattered more once a dropped
+request started throwing rather than being mistaken for an answer — "the
+network went" has to reach the screen, not vanish.
+
+All of them now go through one wrapper that puts the reason in a toast, and
+turns a bare Spotify status into a sentence.
+
+**And one store, for everything.** The library cache, the action log, your
+skips and rejections, your tag corrections and the banked pieces of an
+interrupted read all live in IndexedDB — so a browser that will not hand it
+over did not cost one feature, it cost all of them at once: `open()` rejected
+and every `await` above it rejected with it. A private window, blocked site
+data, a partitioned origin, a device out of space are all real, and none of
+them is a reason for the app to stop working. It now falls back to memory,
+which is a poor cache and a perfectly good one for a single session — the
+difference between "this does not work here" and "this re-reads next time". A
+store that refuses once is not asked again on every call.
+
 **If sign-in says "too many requests".** Spotify rate-limits its accounts
 service per app rather than per listener, so a busy few minutes can refuse
 anyone's sign-in with a 429. Betterfy now waits it out rather than making it
