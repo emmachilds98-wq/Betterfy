@@ -22,7 +22,7 @@ function load(saved = {}) {
   const p = BUNDLE.indexOf('/* ---- profile.mjs ---- */');
   const pEnd = BUNDLE.indexOf('/* ============', p);
   assert.ok(p > 0 && pEnd > p, 'profile.mjs block not found — rebuild with npm run build:web');
-  const sandbox = { localStorage: { getItem: () => JSON.stringify(saved) }, console };
+  const sandbox = { LS: { getItem: () => JSON.stringify(saved) }, console };
   vm.createContext(sandbox);
   vm.runInContext(BUNDLE.slice(p, pEnd), sandbox);
   vm.runInContext(BUNDLE.slice(i, j), sandbox);

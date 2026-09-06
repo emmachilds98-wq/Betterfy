@@ -54,7 +54,7 @@ const track = (id, name) => ({ id, name, duration_ms: 1000, external_ids: { isrc
  * `limit(url, nth)` returns seconds of Retry-After, or 0 to answer normally.
  * `fail(url, nth)`  returns 'drop' (the connection goes), 'hang' (nothing ever
  *                   comes back), or an HTTP status, or 0 to answer normally.
- * `saved`           seeds localStorage — for what a reopened page remembers.
+ * `saved`           seeds stored state — for what a reopened page remembers.
  */
 function load({ playlists = [], liked = [], limit = () => 0, refuse = () => false,
                 fail = () => 0, saved = {} } = {}) {
@@ -73,7 +73,7 @@ function load({ playlists = [], liked = [], limit = () => 0, refuse = () => fals
     clientId: () => 'test-client',
     REDIRECT: 'https://example.test/Betterfy/',
     indexedDB: idb,
-    localStorage: {
+    LS: {
       // Key-aware, because the pace the last read settled on is remembered
       // under its own key now and must not come back as a parsed token.
       store: { bf_tok: JSON.stringify({ access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600e3 }), ...saved },
@@ -408,7 +408,7 @@ test('the pace recovers slowly after a 429, rather than diving back into it', as
 test('the pace Spotify last agreed to is written down', async () => {
   const app = load({ ...LIB, limit: (url, nth) => url.includes('/playlists/p1/') && nth === 1 ? 1 : 0 });
   await app.syncLibrary(false, () => {});
-  assert.ok(+app.localStorage.store.bf_gap > vm.runInContext('MIN_GAP', app),
+  assert.ok(+app.LS.store.bf_gap > vm.runInContext('MIN_GAP', app),
     'the back-off a 429 earned has to outlive the read that earned it');
 });
 

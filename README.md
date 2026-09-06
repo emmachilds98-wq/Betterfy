@@ -133,6 +133,33 @@ app again picks up where it stopped rather than starting over. Playlists are
 matched on the snapshot id Spotify stamps them with, so every read after the
 first only fetches what has actually changed.
 
+**If Connect Spotify does nothing at all.** This was its own bug, separate from
+every rate limit below, and it looked like nothing: the landing page came up
+perfectly (it is static HTML) and the button was wired to nothing.
+
+Two causes, both now handled. First, the button ran an `async` function through
+`onclick = () => beginAuth()`, so anything that failed inside it became an
+unhandled rejection — no message, no toast, no screen. Second, and the usual
+thing that failed inside it: a browser that refuses storage. Safari with
+**Block All Cookies**, a locked-down private window, or a page opened inside
+another app's web view will *throw* on `localStorage` rather than return null,
+and the page had around fifty unguarded calls to it — any one of which could
+kill the boot script partway through, leaving the handlers below it unattached.
+
+All storage now goes through one shim that falls back to memory and never
+throws, so a browser that keeps nothing still runs. Sign-in also checks up
+front that `crypto.subtle` exists (PKCE needs SHA-256, and it is absent over
+plain http and in some in-app browsers) and that the PKCE verifier actually
+persisted — both before the redirect, so the message is one clear sentence
+about this browser rather than a "lost security code" one redirect too late.
+The verifier is written to `sessionStorage` as well as `localStorage`, since a
+restricted browser rarely takes both.
+
+A browser that keeps nothing can still complete a sign-in — the verifier only
+has to survive one redirect. What it cannot do is keep you signed in, so the
+landing page now says that on the way in rather than letting every open look
+like a first open.
+
 **If sign-in says "too many requests".** Spotify rate-limits its accounts
 service per app rather than per listener, so a busy few minutes can refuse
 anyone's sign-in with a 429. Betterfy now waits it out rather than making it

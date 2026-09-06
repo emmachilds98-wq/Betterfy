@@ -26,7 +26,7 @@ function load(responses) {
   const sandbox = {
     clientId: () => 'test-client',
     REDIRECT: 'https://example.test/Betterfy/',
-    localStorage: {
+    LS: {
       getItem: k => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => store.set(k, String(v)),
       removeItem: k => store.delete(k),
@@ -163,7 +163,7 @@ function autoConnect({ home = true, token = null, tried = null } = {}) {
   const sandbox = {
     window: { navigator: { standalone: home } },
     matchMedia: () => ({ matches: false }),
-    localStorage: { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) },
+    LS: { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) },
   };
   vm.createContext(sandbox);
   vm.runInContext(BUNDLE.slice(from, to), sandbox);
@@ -194,7 +194,7 @@ test('display-mode standalone counts, not just the iOS flag', () => {
   const from = BUNDLE.indexOf('/** Running from the Home Screen');
   const to = BUNDLE.indexOf('/* ---------------- staying on the current version');
   const sandbox = { window: { navigator: {} }, matchMedia: q => ({ matches: q.includes('standalone') }),
-                    localStorage: { getItem: () => null, setItem: () => {} } };
+                    LS: { getItem: () => null, setItem: () => {} } };
   vm.createContext(sandbox);
   vm.runInContext(BUNDLE.slice(from, to), sandbox);
   assert.equal(vm.runInContext('standalone()', sandbox), true);
@@ -358,7 +358,7 @@ function loadStreak() {
   assert.ok(from > -1 && to > from, 'streak tracking not found — rebuild with npm run build:web');
   const store = new Map();
   const sandbox = {
-    localStorage: {
+    LS: {
       getItem: k => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => store.set(k, String(v)),
       removeItem: k => store.delete(k),
