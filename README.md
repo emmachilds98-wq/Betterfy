@@ -16,10 +16,21 @@ Built because Spotify's Web API stopped providing the data this needs.
 ### Using the hosted version
 
 Click **Connect Spotify**. If sign-in is refused, that is Spotify's 25-user cap
-on development-mode apps: either ask the owner of the page to add your account
-email under **User Management**, or open *Use my own Spotify app* on the landing
-page, register one in two minutes and paste your client ID. No secret is needed —
-authentication uses PKCE.
+on development-mode apps — the page now offers *use your own Spotify app*
+right there when that happens, so nobody has to hand their account email to
+the person running the page just to be added to a list. Registering one takes
+about a minute and needs no secret — authentication uses PKCE — or the owner
+can still add your email under **User Management** in their app's dashboard
+if they'd rather manage it that way.
+
+There is no setting that removes the cap for everyone without Spotify's
+involvement: Spotify's own **Extended Quota Mode** is the only way to let any
+Spotify account sign in with no allow-list at all, and that's an application
+the developer submits through their dashboard for Spotify to review — not a
+switch this project can flip on its own, and not guaranteed for a small,
+non-commercial app. Bringing your own app sidesteps the cap entirely in the
+meantime, since each person's app has only ever needed to authorise its own
+creator.
 
 The prebuilt genre tags shipped with the page cover one person's artists, so
 your suggestions may start thin. The **Playlists** view shows your tag coverage
