@@ -8,6 +8,8 @@
 import { readFileSync } from 'node:fs';
 import { env } from './env.mjs';
 import { Cache, sleep, retry } from './cache.mjs';
+import { fetchListening } from './listening.mjs';
+import { byListening } from './profile.mjs';
 
 if (!env.DISCOGS_TOKEN) {
   console.error('No DISCOGS_TOKEN in .env — Discogs enrichment is optional, skipping.');
@@ -25,7 +27,15 @@ const lastfm = new Cache('tags-lastfm.json');
 const empty = [...artists].filter(([id]) => !lastfm.get(id)?.tags?.length);
 
 const cache = new Cache('tags-discogs.json');
-const todo = empty.filter(([id]) => !cache.has(id));
+let todo = empty.filter(([id]) => !cache.has(id));
+
+// Same reasoning as enrich-lastfm.mjs: at ~1 req/s this can be the longer of
+// the two fetches, so cover what you actually listen to first.
+try {
+  const { weights } = await fetchListening(lib);
+  todo = byListening(todo, weights);
+} catch { /* no Spotify auth available here, or offline — library order is fine */ }
+
 console.error(`artists with no Last.fm tags: ${empty.length} | cached: ${cache.size} | to fetch: ${todo.length}`);
 
 let done = 0, filled = 0;

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-1834">
+<meta name="bf-build" content="2026-09-06-1912">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -866,7 +866,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-1834</span>
+    <span class="mono">build 2026-09-06-1912</span>
   </p>
 
   <div class="feat">
@@ -963,7 +963,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1834</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1912</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1013,7 +1013,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1834</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1912</span>
   </div>
 </div>
 
@@ -1277,6 +1277,108 @@ function findMisfiled(lib, tags, targets, profiles, idf, axisOf) {
   misfiled.sort((a, b) => RANK[a.confidence] - RANK[b.confidence]
     || (b.suggest[0].score - b.ownScore) - (a.suggest[0].score - a.ownScore));
   return misfiled;
+}
+
+// ---------- listening weight ----------
+// How much you actually play an artist, not just how much of them you have
+// filed. Node and the browser fetch the raw numbers differently (spotify.mjs's
+// api() vs the browser's own sp()), but combine them the same way — this is
+// the shared half, kept pure so it can be tested without a network at all.
+
+/**
+ * `topWindows`: [{ weight, items }] — items is an artist-name array already in
+ * Spotify's own rank order for that window (short/medium/long_term).
+ * `recentArtists`: flat artist-name list from recently-played.
+ * `libraryArtists`: every artist name across the library — the floor, so an
+ * artist you have filed counts for something with no recent activity at all,
+ * scaled by the biggest count so one enormous playlist can't outvote someone
+ * you've actually been playing this month.
+ * Returns a Map(artist name -> weight), unbounded and relative, not a 0-1 score.
+ */
+function listeningWeights({ topWindows = [], recentArtists = [], libraryArtists = [] } = {}) {
+  const w = new Map();
+  const bump = (name, x) => { if (name) w.set(name, (w.get(name) ?? 0) + x); };
+  for (const { items, weight } of topWindows)
+    (items ?? []).forEach((name, i) => bump(name, weight * (1 - i / 60)));
+  for (const name of recentArtists) bump(name, 0.6);
+
+  const filed = new Map();
+  for (const name of libraryArtists) filed.set(name, (filed.get(name) ?? 0) + 1);
+  const most = Math.max(1, ...filed.values());
+  for (const [name, n] of filed) bump(name, n / most);
+  return w;
+}
+
+/**
+ * Sort entries most-played first, so an interrupted run (a tag fetch that
+ * times out, a page closed halfway through) has already covered what
+ * actually matters to this listener rather than whatever came first in
+ * playlist order. Untracked or unweighted entries sort last, stable
+ * otherwise — never reordered at random.
+ */
+function byListening(entries, weights, nameOf = e => e[1]) {
+  const w = e => weights?.get?.(nameOf(e)) ?? 0;
+  return [...entries]
+    .map((e, i) => [e, i])
+    .sort(([a, i], [b, j]) => (w(b) - w(a)) || (i - j))
+    .map(([e]) => e);
+}
+
+// ---------- playlist drift ----------
+// A single wrong track is what findMisfiled catches. This catches the other
+// shape of "goes against the pattern": a playlist whose recent additions
+// read differently from the identity it had before, one ordinary-looking
+// track at a time until the whole thing has quietly changed.
+
+const DRIFT_RECENT_FRACTION = 0.25; // "recent" = newest quarter of the playlist
+const DRIFT_RECENT_MIN = 8;         // below this, a "recent" centroid is noise
+const DRIFT_OLDER_MIN = 8;          // same for the established "older" half
+// A first-pass number, not yet checked against a real library the way the
+// misfile margin was (see the rejected-rules note in the browser build's
+// classify()). Treat it as a starting point to tune once real drift — or
+// real false positives — actually show up.
+const DRIFT_THRESHOLD = 0.35;
+
+/**
+ * Playlists whose most recent additions score low against the centroid of
+ * everything added before them. `idf` should be the same table `rank()` and
+ * `findMisfiled()` use, so this reads on the same scale as everything else
+ * in the app — not a second, differently-calibrated model.
+ */
+function findDrift(lib, tags, targets, idf) {
+  const centroidOf = list => {
+    const vecs = list.map(t => trackVec(t, tags)).filter(v => v.size);
+    if (!vecs.length) return null;
+    const c = new Map();
+    for (const v of vecs) for (const [k, x] of v) c.set(k, (c.get(k) ?? 0) + x / vecs.length);
+    return applyIdf(c, idf);
+  };
+
+  const drift = [];
+  for (const p of lib.playlists) {
+    if (!targets.has(p.id)) continue;
+    const dated = p.tracks.filter(t => t?.added_at).sort((a, b) => Date.parse(a.added_at) - Date.parse(b.added_at));
+    if (dated.length < DRIFT_RECENT_MIN + DRIFT_OLDER_MIN) continue;
+
+    const cut = Math.max(DRIFT_RECENT_MIN, Math.round(dated.length * DRIFT_RECENT_FRACTION));
+    const recent = dated.slice(-cut), older = dated.slice(0, -cut);
+    if (recent.length < DRIFT_RECENT_MIN || older.length < DRIFT_OLDER_MIN) continue;
+
+    const recentC = centroidOf(recent), olderC = centroidOf(older);
+    if (!recentC || !olderC) continue;
+
+    const similarity = cosine(recentC, olderC);
+    if (similarity < DRIFT_THRESHOLD) {
+      const topOf = c => [...c].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k]) => k);
+      drift.push({
+        playlistId: p.id, playlistName: p.name, similarity,
+        recentCount: recent.length, olderCount: older.length,
+        recentTags: topOf(recentC), olderTags: topOf(olderC),
+      });
+    }
+  }
+  drift.sort((a, b) => a.similarity - b.similarity);
+  return drift;
 }
 
 /* =============================================================== */
@@ -1556,7 +1658,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-1834';
+const BUILD = '2026-09-06-1912';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2108,10 +2210,17 @@ function buildReports(lib, cfg, tags) {
     }
   }
   clusters.sort((a,b) => b.size - a.size);
+
+  // Playlists whose recent additions read differently from what came before —
+  // the other shape of "goes against the pattern", at the playlist level
+  // rather than one track. Cheap and synchronous, needs no listening data,
+  // so it's always current rather than something to fetch separately.
+  const drift = findDrift(lib, tags, targets, idf);
+
   // profiles/idf come out too: Discover ranks tracks that are not in the
   // library at all, and must score them against the same centroids the inbox
   // uses rather than a second, subtly different model.
-  return { within, across, misfiled, backlog, clusters, profiles, idf };
+  return { within, across, misfiled, backlog, clusters, drift, profiles, idf };
 }
 
 /* ===================== UI ===================== */
@@ -2577,6 +2686,13 @@ function secMisfile() {
   const counts = { high: 0, medium: 0, low: 0 };
   for (const x of R.misfiled) counts[x.confidence]++;
   const m = R.misfiled.filter(x => x.confidence === S.mfBand);
+  // Best-effort, fetched once and reused: a "misfiled" track you actually
+  // play a lot is more likely a deliberate keep than a mistake. Doesn't
+  // change the confidence tier — just gives you the context to judge it —
+  // and the row renders immediately either way; the note appears once the
+  // fetch resolves, without blocking anything on it.
+  const recentlyActive = LISTENING_CACHE?.recentlyActive ?? null;
+  if (!recentlyActive && !LISTENING_PENDING) getListening().then(() => render());
   // Only draw the (stateful, id-bearing) editor once, even if the artist
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
@@ -2586,11 +2702,13 @@ function secMisfile() {
     <div class="rows">${m.slice(0, 80).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
+      const playedALot = recentlyActive?.has(x.artist);
       return `<div class="row ${done ? 'done' : ''}">${thumbHTML(x)}<div class="main">
         <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
         ${to ? `<div class="swap"><span class="from">${esc(x.current)}</span><span class="arw">→</span><span class="to">${esc(to.name)}</span>
           <span class="mono" style="color:var(--ink-3)">${(x.currentScore * 100).toFixed(0)}% → ${(to.score * 100).toFixed(0)}%</span></div>`
         : `<div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore * 100).toFixed(0)}% fit</span></div>`}
+        ${playedALot ? `<div class="sub" style="color:var(--accent)">You play this a lot right now — might be deliberate.</div>` : ''}
       </div><div class="acts">
         ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}">${done ? 'Moved' : 'Move'}</button>` : ''}
         ${x.suggest.filter(sg => sg.id).slice(1, 2).map(sg =>
@@ -2775,31 +2893,51 @@ function vShuffle() {
  * instead gives you that playlist's radio.
  */
 async function listeningSeeds() {
-  const w = new Map();
-  const bump = (name, x) => { if (name) w.set(name, (w.get(name) ?? 0) + x); };
+  const { topWindows, recentArtists } = await fetchListeningRaw();
+  // The library as a floor, scaled by the biggest count so that one enormous
+  // playlist cannot outvote a month of actually playing something.
+  const libraryArtists = [];
+  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) libraryArtists.push(a.name);
+  const weights = listeningWeights({ topWindows, recentArtists, libraryArtists });
 
-  // Most recent window counts for most, but the long one still counts: taste
-  // is not only what happened this month.
+  // Stashed for getListening() — Discovery, the tag-gap fetch and the Tidy
+  // screen's "you play this a lot" note all read the same one fetch.
+  const shortTerm = topWindows.find(w => w.range === 'short_term')?.items ?? [];
+  LISTENING_CACHE = { weights, recentlyActive: new Set([...shortTerm, ...recentArtists]) };
+  return weights;
+}
+
+// Most recent window counts for most, but the long one still counts: taste
+// is not only what happened this month. Kept aside so getListening() below
+// can reuse the same raw fetch for the recently-active set, rather than
+// hitting Spotify a second time for it.
+async function fetchListeningRaw() {
+  const topWindows = [];
   for (const [range, weight] of [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]]) {
     try {
       const r = await sp(`/me/top/artists?limit=50&time_range=${range}`);
-      (r?.items ?? []).forEach((a, i) => bump(a.name, weight * (1 - i / 60)));
+      topWindows.push({ range, weight, items: (r?.items ?? []).map(a => a.name) });
     } catch {}
   }
+  let recentArtists = [];
   try {
     const r = await sp('/me/player/recently-played?limit=50');
-    for (const p of r?.items ?? []) for (const a of p.track?.artists ?? []) bump(a.name, 0.6);
+    recentArtists = (r?.items ?? []).flatMap(p => (p.track?.artists ?? []).map(a => a.name));
   } catch {}
+  return { topWindows, recentArtists };
+}
 
-  // The library as a floor, scaled by the biggest count so that one enormous
-  // playlist cannot outvote a month of actually playing something.
-  const filed = new Map();
-  for (const p of LIB.playlists) for (const t of p.tracks)
-    for (const a of t.artists ?? []) filed.set(a.name, (filed.get(a.name) ?? 0) + 1);
-  const most = Math.max(1, ...filed.values());
-  for (const [name, n] of filed) bump(name, n / most);
-
-  return w;
+// Memoized for the session: whichever feature asks first (Discovery, the
+// Playlists tag-gap fetch, or opening Tidy) pays for the fetch; everyone
+// else reads the cache instead of hitting Spotify again. LISTENING_PENDING
+// collapses two callers racing to be first into one fetch, not two.
+let LISTENING_CACHE = null, LISTENING_PENDING = null;
+async function getListening() {
+  if (LISTENING_CACHE) return LISTENING_CACHE;
+  LISTENING_PENDING ??= listeningSeeds();
+  await LISTENING_PENDING;
+  LISTENING_PENDING = null;
+  return LISTENING_CACHE;
 }
 
 /** Artist weights for one playlist — its own radio, ignoring everything else. */
@@ -3073,6 +3211,15 @@ function vLists() {
       <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
     </div>
 
+    ${(R.drift ?? []).length ? `<h2>Recently drifting</h2>
+    <p class="lede">${R.drift.length} playlist${R.drift.length===1?'':'s'} whose newest additions read differently from everything added before them — not necessarily wrong, just worth a look. This is a trend across many tracks, not a single misfile.</p>
+    <div class="rows">${R.drift.map(d => `<div class="row">
+      <div class="main"><div class="ttl">${esc(d.playlistName)}</div>
+        <div class="sub">newest ${d.recentCount}: <b>${d.recentTags.map(esc).join(', ') || '—'}</b>
+          &nbsp;·&nbsp; the other ${d.olderCount}: <b>${d.olderTags.map(esc).join(', ') || '—'}</b>
+          &nbsp;·&nbsp; ${Math.round(d.similarity*100)}% alike</div></div>
+    </div>`).join('')}</div>` : ''}
+
     <h2>Axes</h2>
     <div class="rows">${rows.map(axisRowHTML).join('')}</div>`;
 }
@@ -3107,8 +3254,13 @@ async function enrichMissing() {
   const names = new Map();
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
-  const todo = [...names];
+  let todo = [...names];
   if (!todo.length) return toast('Nothing missing.');
+
+  // Hundreds of gaps can take a while — cover what you actually listen to
+  // first, so leaving the screen partway through still improves the
+  // suggestions that matter most.
+  try { todo = byListening(todo, (await getListening()).weights); } catch { /* library order is fine */ }
 
   const cached = (await idb.get('tags_extra')) ?? {};
   let done = 0, viaDiscogs = 0;
@@ -3855,7 +4007,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-1834').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-1912').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };

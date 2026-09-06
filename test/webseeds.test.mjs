@@ -14,6 +14,11 @@ function load({ top = {}, recent = [], playlists = [] } = {}) {
   const i = BUNDLE.indexOf('async function listeningSeeds()');
   const j = BUNDLE.indexOf('async function runDiscovery(');
   assert.ok(i > 0 && j > i, 'seed block not found — rebuild with npm run build:web');
+  // listeningSeeds() calls listeningWeights(), so the profile.mjs bundle has
+  // to come along too.
+  const p = BUNDLE.indexOf('/* ---- profile.mjs ---- */');
+  const pEnd = BUNDLE.indexOf('/* ============', p);
+  assert.ok(p > 0 && pEnd > p, 'profile.mjs block not found — rebuild with npm run build:web');
   const calls = [];
   const sandbox = {
     LIB: { playlists },
@@ -28,6 +33,7 @@ function load({ top = {}, recent = [], playlists = [] } = {}) {
     console,
   };
   vm.createContext(sandbox);
+  vm.runInContext(BUNDLE.slice(p, pEnd), sandbox);
   vm.runInContext(BUNDLE.slice(i, j), sandbox);
   const run = expr => vm.runInContext(expr, sandbox);
   return { calls, sandbox, run,

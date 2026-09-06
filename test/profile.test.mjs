@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildProfiles, findMisfiled, trackVec, applyIdf, cosine } from '../profile.mjs';
+import { buildProfiles, findMisfiled, trackVec, applyIdf, cosine, listeningWeights, byListening, findDrift } from '../profile.mjs';
 
 // findMisfiled is the "goes against the pattern of this playlist" check —
 // shared between the Node pipeline and the browser build. These exercise it
@@ -145,4 +145,118 @@ test('a home playlist with no profile at all (nothing tagged) is skipped, not th
   const { profiles, idf } = buildProfiles(lib, tags, new Set(['p-empty', ...targets]), axisOf);
 
   assert.doesNotThrow(() => findMisfiled(lib, tags, new Set(['p-empty', ...targets]), profiles, idf, axisOf));
+});
+
+/* ---- listeningWeights / byListening: real listening as a signal ---- */
+
+test('a more recent listening window counts for more at the same chart position', () => {
+  const w = listeningWeights({
+    topWindows: [
+      { weight: 3, items: ['Recent Favourite'] },
+      { weight: 1.5, items: ['Old Favourite'] },
+    ],
+  });
+  assert.ok(w.get('Recent Favourite') > w.get('Old Favourite'));
+});
+
+test('position within a window still matters — first place outweighs last', () => {
+  const w = listeningWeights({ topWindows: [{ weight: 1, items: ['First', 'Fiftieth'] }] });
+  // Position 0 vs position 1 out of the same window, same weight.
+  assert.ok(w.get('First') > w.get('Fiftieth'));
+});
+
+test('recently-played bumps an artist even with no top-artist chart position at all', () => {
+  const w = listeningWeights({ recentArtists: ['Just Heard', 'Just Heard'] });
+  assert.ok(w.get('Just Heard') > 0);
+});
+
+test('the library is a floor, not a ceiling — a month of actual plays still outranks a huge playlist', () => {
+  const library = Array.from({ length: 500 }, () => 'Huge Playlist Artist');
+  const w = listeningWeights({
+    topWindows: [{ weight: 3, items: ['Actually Playing'] }],
+    libraryArtists: [...library, 'Actually Playing'],
+  });
+  assert.ok(w.get('Actually Playing') > w.get('Huge Playlist Artist'),
+    'filed-but-unplayed never outranks something you are actually playing');
+});
+
+test('an artist filed but never played still gets some weight, not zero', () => {
+  const w = listeningWeights({ libraryArtists: ['Filed Only', 'Filed Only', 'Other'] });
+  assert.ok(w.get('Filed Only') > 0);
+});
+
+test('listeningWeights on nothing at all returns an empty map, not a throw', () => {
+  assert.deepEqual([...listeningWeights().entries()], []);
+  assert.deepEqual([...listeningWeights({}).entries()], []);
+});
+
+test('byListening sorts most-played first and pushes untracked entries to the end, stably', () => {
+  const weights = new Map([['B', 5], ['A', 1]]);
+  const entries = [['id-c', 'C'], ['id-a', 'A'], ['id-b', 'B'], ['id-d', 'D']];
+  const sorted = byListening(entries, weights);
+  assert.deepEqual(sorted.map(e => e[1]), ['B', 'A', 'C', 'D'],
+    'B (5) then A (1), then the two untracked entries in their original order');
+});
+
+test('byListening never throws on an empty weights map — falls back to original order', () => {
+  const entries = [['id-a', 'A'], ['id-b', 'B']];
+  assert.deepEqual(byListening(entries, new Map()), entries);
+  assert.deepEqual(byListening(entries, undefined), entries);
+});
+
+/* ---- findDrift: a playlist quietly changing character over time ---- */
+
+const trkAt = (id, artistId, addedAt) => ({ id, name: id, added_at: addedAt, artists: [{ id: artistId, name: artistId }] });
+const day = 86400000;
+const NOW = Date.parse('2026-09-06T00:00:00Z');
+
+test('a playlist whose recent additions are a different sound entirely is flagged as drifting', () => {
+  const { tags: houseTags, tracks: houseCore } = bucket('house', 12, HOUSE_TAGS);
+  // The older 12 are House, added a year ago; the newest 8 are Jungle, added
+  // this month — a clean identity swap, the clearest possible drift.
+  const older = houseCore.map((t, i) => trkAt(t.id, t.artists[0].id, new Date(NOW - 365 * day + i * day).toISOString()));
+  const { tags: jungleTags, tracks: jungleCore } = bucket('drift-jungle', 8, JUNGLE_TAGS);
+  const recent = jungleCore.map((t, i) => trkAt(t.id, t.artists[0].id, new Date(NOW - 5 * day + i * day).toISOString()));
+
+  const lib = { playlists: [{ id: 'p-house', name: 'House', tracks: [...older, ...recent] }] };
+  const tags = { ...houseTags, ...jungleTags };
+  const { idf } = buildProfiles(lib, tags, new Set(['p-house']), axisOf);
+  const drift = findDrift(lib, tags, new Set(['p-house']), idf);
+
+  assert.equal(drift.length, 1);
+  assert.equal(drift[0].playlistId, 'p-house');
+  assert.ok(drift[0].similarity < 0.35);
+  assert.ok(drift[0].recentTags.some(t => JUNGLE_TAGS.includes(t)));
+  assert.ok(drift[0].olderTags.some(t => HOUSE_TAGS.includes(t)));
+});
+
+test('a playlist that just keeps growing in the same genre is not flagged', () => {
+  const { tags, tracks } = bucket('stable-house', 24, HOUSE_TAGS);
+  const dated = tracks.map((t, i) => trkAt(t.id, t.artists[0].id, new Date(NOW - (24 - i) * day).toISOString()));
+  const lib = { playlists: [{ id: 'p-house', name: 'House', tracks: dated }] };
+  const { idf } = buildProfiles(lib, tags, new Set(['p-house']), axisOf);
+
+  assert.equal(findDrift(lib, tags, new Set(['p-house']), idf).length, 0);
+});
+
+test('a playlist too small to split into a trustworthy recent/older pair is skipped, not thrown on', () => {
+  const { tags, tracks } = bucket('tiny', 10, HOUSE_TAGS);
+  const dated = tracks.map((t, i) => trkAt(t.id, t.artists[0].id, new Date(NOW - (10 - i) * day).toISOString()));
+  const lib = { playlists: [{ id: 'p-tiny', name: 'Tiny', tracks: dated }] };
+  const { idf } = buildProfiles(lib, tags, new Set(['p-tiny']), axisOf);
+
+  assert.doesNotThrow(() => findDrift(lib, tags, new Set(['p-tiny']), idf));
+  assert.equal(findDrift(lib, tags, new Set(['p-tiny']), idf).length, 0);
+});
+
+test('a playlist outside targets is never checked for drift', () => {
+  const { tags: houseTags, tracks: houseCore } = bucket('house2', 12, HOUSE_TAGS);
+  const older = houseCore.map((t, i) => trkAt(t.id, t.artists[0].id, new Date(NOW - 365 * day + i * day).toISOString()));
+  const { tags: jungleTags, tracks: jungleCore } = bucket('drift-jungle2', 8, JUNGLE_TAGS);
+  const recent = jungleCore.map((t, i) => trkAt(t.id, t.artists[0].id, new Date(NOW - 5 * day + i * day).toISOString()));
+  const lib = { playlists: [{ id: 'p-house2', name: 'House', tracks: [...older, ...recent] }] };
+  const tags = { ...houseTags, ...jungleTags };
+  const { idf } = buildProfiles(lib, tags, new Set(), axisOf);
+
+  assert.equal(findDrift(lib, tags, new Set(), idf).length, 0, 'not a filing target, so never modelled as having a "pattern" at all');
 });

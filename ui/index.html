@@ -479,6 +479,14 @@ function vHome() {
       `<div class="meter ${c} ${go?'click':''}" ${go?`data-go="${go}"`:''}>
          <span class="l">${esc(l)}</span><span class="n">${(n??0).toLocaleString()}</span><span class="d">${esc(d)}</span></div>`).join('')}
     </div>
+    ${(data.misfile?.drift ?? []).length ? `<h2>Recently drifting</h2>
+    <p class="lede">Playlists whose newest additions read differently from everything added before them — a trend across many tracks, not a single misfile. Not necessarily wrong, just worth a look.</p>
+    <div class="rows">${data.misfile.drift.map(d => `<div class="row"><div class="main">
+      <div class="ttl">${esc(d.playlistName)}</div>
+      <div class="sub">newest ${d.recentCount}: <b>${esc(d.recentTags.join(', ') || '—')}</b>
+        &nbsp;·&nbsp; the other ${d.olderCount}: <b>${esc(d.olderTags.join(', ') || '—')}</b>
+        &nbsp;·&nbsp; ${Math.round(d.similarity*100)}% alike</div>
+    </div></div>`).join('')}</div>` : ''}
     <h2>Re-read from Spotify</h2>
     <p class="lede">Refresh above reloads what the server already has, in seconds. These go back to Spotify itself and recompute — a full snapshot takes a couple of minutes.</p>
     <div class="rowbtns">
@@ -598,6 +606,7 @@ function vMisfile() {
         <div class="main">
           <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
           <div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore*100).toFixed(0)}% fit</span> · ${esc(x.tags.slice(0,4).join(', '))}</div>
+          ${x.playedRecently ? '<div class="sub">You play this a lot right now — might be deliberate.</div>' : ''}
         </div>
         <div class="acts">${x.suggest.filter(s => s.id).slice(0,2).map(s =>
           `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(s.id)}">→ ${esc(s.name)} <span class="mono">${(s.score*100).toFixed(0)}%</span></button>`).join('')}

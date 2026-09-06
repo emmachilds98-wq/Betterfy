@@ -2,6 +2,8 @@
 import { readFileSync } from 'node:fs';
 import { env } from './env.mjs';
 import { Cache, sleep, retry } from './cache.mjs';
+import { fetchListening } from './listening.mjs';
+import { byListening } from './profile.mjs';
 
 const lib = JSON.parse(readFileSync('library.json', 'utf8'));
 const artists = new Map();
@@ -10,7 +12,16 @@ for (const p of lib.playlists) p.tracks.forEach(add);
 lib.liked.forEach(add);
 
 const cache = new Cache('tags-lastfm.json');
-const todo = [...artists].filter(([id]) => !cache.has(id));
+let todo = [...artists].filter(([id]) => !cache.has(id));
+
+// Whatever this run doesn't finish should at least have covered what you
+// actually listen to — a 20-minute fetch interrupted partway still leaves
+// the artists behind your real suggestions tagged first.
+try {
+  const { weights } = await fetchListening(lib);
+  todo = byListening(todo, weights);
+} catch { /* no Spotify auth available here, or offline — library order is fine */ }
+
 console.error(`artists: ${artists.size} | cached: ${cache.size} | to fetch: ${todo.length}`);
 
 let done = 0, empty = 0;

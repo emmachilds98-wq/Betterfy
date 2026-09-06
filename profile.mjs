@@ -145,3 +145,105 @@ export function findMisfiled(lib, tags, targets, profiles, idf, axisOf) {
     || (b.suggest[0].score - b.ownScore) - (a.suggest[0].score - a.ownScore));
   return misfiled;
 }
+
+// ---------- listening weight ----------
+// How much you actually play an artist, not just how much of them you have
+// filed. Node and the browser fetch the raw numbers differently (spotify.mjs's
+// api() vs the browser's own sp()), but combine them the same way — this is
+// the shared half, kept pure so it can be tested without a network at all.
+
+/**
+ * `topWindows`: [{ weight, items }] — items is an artist-name array already in
+ * Spotify's own rank order for that window (short/medium/long_term).
+ * `recentArtists`: flat artist-name list from recently-played.
+ * `libraryArtists`: every artist name across the library — the floor, so an
+ * artist you have filed counts for something with no recent activity at all,
+ * scaled by the biggest count so one enormous playlist can't outvote someone
+ * you've actually been playing this month.
+ * Returns a Map(artist name -> weight), unbounded and relative, not a 0-1 score.
+ */
+export function listeningWeights({ topWindows = [], recentArtists = [], libraryArtists = [] } = {}) {
+  const w = new Map();
+  const bump = (name, x) => { if (name) w.set(name, (w.get(name) ?? 0) + x); };
+  for (const { items, weight } of topWindows)
+    (items ?? []).forEach((name, i) => bump(name, weight * (1 - i / 60)));
+  for (const name of recentArtists) bump(name, 0.6);
+
+  const filed = new Map();
+  for (const name of libraryArtists) filed.set(name, (filed.get(name) ?? 0) + 1);
+  const most = Math.max(1, ...filed.values());
+  for (const [name, n] of filed) bump(name, n / most);
+  return w;
+}
+
+/**
+ * Sort entries most-played first, so an interrupted run (a tag fetch that
+ * times out, a page closed halfway through) has already covered what
+ * actually matters to this listener rather than whatever came first in
+ * playlist order. Untracked or unweighted entries sort last, stable
+ * otherwise — never reordered at random.
+ */
+export function byListening(entries, weights, nameOf = e => e[1]) {
+  const w = e => weights?.get?.(nameOf(e)) ?? 0;
+  return [...entries]
+    .map((e, i) => [e, i])
+    .sort(([a, i], [b, j]) => (w(b) - w(a)) || (i - j))
+    .map(([e]) => e);
+}
+
+// ---------- playlist drift ----------
+// A single wrong track is what findMisfiled catches. This catches the other
+// shape of "goes against the pattern": a playlist whose recent additions
+// read differently from the identity it had before, one ordinary-looking
+// track at a time until the whole thing has quietly changed.
+
+const DRIFT_RECENT_FRACTION = 0.25; // "recent" = newest quarter of the playlist
+const DRIFT_RECENT_MIN = 8;         // below this, a "recent" centroid is noise
+const DRIFT_OLDER_MIN = 8;          // same for the established "older" half
+// A first-pass number, not yet checked against a real library the way the
+// misfile margin was (see the rejected-rules note in the browser build's
+// classify()). Treat it as a starting point to tune once real drift — or
+// real false positives — actually show up.
+const DRIFT_THRESHOLD = 0.35;
+
+/**
+ * Playlists whose most recent additions score low against the centroid of
+ * everything added before them. `idf` should be the same table `rank()` and
+ * `findMisfiled()` use, so this reads on the same scale as everything else
+ * in the app — not a second, differently-calibrated model.
+ */
+export function findDrift(lib, tags, targets, idf) {
+  const centroidOf = list => {
+    const vecs = list.map(t => trackVec(t, tags)).filter(v => v.size);
+    if (!vecs.length) return null;
+    const c = new Map();
+    for (const v of vecs) for (const [k, x] of v) c.set(k, (c.get(k) ?? 0) + x / vecs.length);
+    return applyIdf(c, idf);
+  };
+
+  const drift = [];
+  for (const p of lib.playlists) {
+    if (!targets.has(p.id)) continue;
+    const dated = p.tracks.filter(t => t?.added_at).sort((a, b) => Date.parse(a.added_at) - Date.parse(b.added_at));
+    if (dated.length < DRIFT_RECENT_MIN + DRIFT_OLDER_MIN) continue;
+
+    const cut = Math.max(DRIFT_RECENT_MIN, Math.round(dated.length * DRIFT_RECENT_FRACTION));
+    const recent = dated.slice(-cut), older = dated.slice(0, -cut);
+    if (recent.length < DRIFT_RECENT_MIN || older.length < DRIFT_OLDER_MIN) continue;
+
+    const recentC = centroidOf(recent), olderC = centroidOf(older);
+    if (!recentC || !olderC) continue;
+
+    const similarity = cosine(recentC, olderC);
+    if (similarity < DRIFT_THRESHOLD) {
+      const topOf = c => [...c].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k]) => k);
+      drift.push({
+        playlistId: p.id, playlistName: p.name, similarity,
+        recentCount: recent.length, olderCount: older.length,
+        recentTags: topOf(recentC), olderTags: topOf(olderC),
+      });
+    }
+  }
+  drift.sort((a, b) => a.similarity - b.similarity);
+  return drift;
+}
