@@ -33,22 +33,30 @@ The hosted page is built for an iPhone first. Open it in Safari, then
 layout keeps clear of the notch, the Dynamic Island and the home indicator
 rather than sliding under them.
 
-- **Bottom tab bar** — Overview, Inbox, Duplicates, Misfiles, and **More** for
-  the other six screens. Unread counts ride the icons.
+- **Bottom tab bar** — Home, File, Tidy, Discover, Shuffle, and **More** for
+  New playlists, Playlists and History. Counts ride the icons. Duplicates,
+  Misfiles and Cross-filed were three screens asking the same question, so
+  they are one screen, **Tidy**, with a section each.
 - **Swipe left or right** anywhere on a screen to move to the next or previous
   one; the dots under the header show where you are. Arrow keys do the same
   thing on a keyboard.
-- **Swipe the inbox card right to file it** into its best-fitting playlist,
+- **Swipe the file card right to file it** into its best-fitting playlist,
   **left to skip**, and tap the artwork to play. Every one of those is still a
   button, and filing is still undoable from the toast.
 - **Pull down** at the top of any screen to re-sync from Spotify.
 - Settings and More open as sheets from the bottom edge; flick the handle down
   to dismiss.
 
-Each screen has its own colour, spun off the accent you pick in Settings, so
-the tab bar, stat tiles and headers stay in step with it — including a
-readability correction, since a yellow and a blue at the same lightness are
-nowhere near as legible as each other.
+Each of the five screens owns one of the five colours in the Betterfy mark, so
+the card on Home, the tab you tap and the screen you land on are all the same
+colour — and it is the same colour every time, not whatever the accent happened
+to spin off. The accent itself still colours the buttons, the highlights and
+the hues on the screens behind More, with a readability correction, since a
+yellow and a blue at the same lightness are nowhere near as legible as each
+other.
+
+Betterfy opens in **Nightshift**, its dark theme. Daylight and System are both
+in Settings; System follows the phone, including its sunset schedule.
 
 The local app (`npm start`) is still laid out for a desktop browser.
 
@@ -95,14 +103,17 @@ anything**:
   caches and reloads; your Spotify sign-in and synced library survive it.
 
 The build you're running is printed under the buttons on the landing screen and
-at the foot of the rail once you're in.
+in the **More** sheet once you're in.
 
 The corner buttons, in order: **⬇ Check for updates**, **⟳ Re-sync library**
 (only once a library is loaded — this one re-reads Spotify, not the page), and
-**⚙ Settings** — appearance (system/light/dark), an accent colour (24 presets
-plus hue/depth/brightness sliders, and per-region toggles for where it
-applies), compact rows, and remembered filters. Settings is reachable from the
-landing screen too.
+**⚙ Settings** — appearance (Nightshift/Daylight/System), an accent colour
+(twelve presets, each a matched pair so the same choice reads correctly on
+both themes), an app-icon preview, compact rows, and remembered filters.
+Hue/depth/brightness sliders and the per-region toggles are still there under
+**Custom colour** — one fewer than before, since the stat tiles the "Stat
+tiles" toggle governed have been replaced by the coloured cards on Home.
+Settings is reachable from the landing screen too.
 
 ## Why it uses Last.fm and Discogs
 
@@ -227,7 +238,7 @@ guess, and everything downstream reads the file, not the rules.
   skipping any used within a cooldown window.
 - **The mark is a sorted list that is also a play button.** Five stacked bars
   whose widths grow then shrink, so their right edge forms a play triangle. In
-  the app it is inline SVG and re-tints to whichever accent colour you pick; at
+  the app it is inline SVG and keeps its five colours whatever accent you pick; at
   favicon size the gaps close up and it degrades into the triangle alone, which
   is the point. `npm run build:icons` re-renders `docs/icon-*.png`,
   `apple-touch-icon.png` and the maskable icon from that same geometry — no
