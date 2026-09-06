@@ -63,7 +63,7 @@ function load({ playlists = [], liked = [], existing = null } = {}) {
     clientId: () => 'test-client',
     REDIRECT: 'https://example.test/Betterfy/',
     indexedDB: fakeIndexedDB(),
-    localStorage: { getItem: () => JSON.stringify({ access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600e3 }),
+    LS: { getItem: () => JSON.stringify({ access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600e3 }),
                     setItem: () => {}, removeItem: () => {} },
     fetch: async (url, opts = {}) => {
       const method = opts.method ?? 'GET';

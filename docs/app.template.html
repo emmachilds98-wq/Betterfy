@@ -603,8 +603,10 @@
   /* Re-syncing only means anything once a library is loaded. Checking for a new
      version of the page itself is useful from the very first screen, so that
      one is never hidden. */
-  #btnResync{display:none}
-  body:has(#app:not([hidden])) #btnResync{display:flex}
+  /* Re-syncing needs a library to re-sync, so it is not offered before there
+     is one — same rule the ⟳ button used to carry. */
+  #librarySection{display:none}
+  body:has(#app:not([hidden])) #librarySection{display:block}
 
   /* ---- "a newer version is published" bar ---- */
   .updatebar{position:fixed; top:calc(70px + var(--sat)); left:50%; transform:translateX(-50%); z-index:26;
@@ -703,13 +705,6 @@
   .sheet .nav[aria-current="true"] .c{background:var(--surface-3); color:var(--ink-2)}
   .sheet .nav .ic{width:22px; height:22px} .sheet .nav .ic svg{width:19px; height:19px}
   .sheetfoot{display:flex; gap:8px; padding:12px 20px 0; border-top:1px solid var(--line); flex-wrap:wrap}
-
-  /* ---- pull down at the top of a screen to re-sync ---- */
-  .ptr{position:fixed; left:0; right:0; top:0; z-index:23; display:flex; align-items:flex-end; justify-content:center;
-       height:0; overflow:hidden; pointer-events:none; color:var(--view); font-size:12px; font-weight:600;
-       letter-spacing:.02em; padding-bottom:6px}
-  .ptr svg{margin-right:7px; transition:transform .2s ease}
-  .ptr.armed svg{transform:rotate(180deg)}
 
   /* ---- swiping between screens ---- */
   @keyframes slideL{from{opacity:0; transform:translateX(22px)}}
@@ -908,6 +903,7 @@
         <button class="b" id="saveId">Save</button>
         <button class="b sm" id="clearId">Use default</button>
       </div>
+      <p class="fineprint" id="whichApp"></p>
     </details>
   </div>
 
@@ -967,7 +963,6 @@
     <button class="tabmore" id="tabMore" aria-expanded="false" aria-controls="moreSheet">
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
-      <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
       <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build __BUILD__</span>
     </div>
@@ -995,17 +990,9 @@
       <path d="M12 3.5v10.5"/><path d="M7.6 9.6 12 14l4.4-4.4"/><path d="M4.5 17v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2"/>
     </svg>
   </button>
-  <button class="fab" id="btnResync" title="Re-sync your library from Spotify">⟳</button>
   <button class="fab" id="btnSettings" title="Settings" aria-expanded="false" aria-controls="settingsPanel">⚙</button>
 </div>
 <div class="scrim" id="scrim"></div>
-
-<!-- Pull down from the top of any screen to re-read the library. -->
-<div class="ptr" id="ptr" aria-hidden="true">
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-       stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v13"/><path d="m6.5 12 5.5 5.5L17.5 12"/></svg>
-  <span id="ptrTxt">Pull to re-sync</span>
-</div>
 
 <!-- The screens that don't fit on the tab bar. Filled from the rail so the two
      can never list different things. -->
@@ -1014,7 +1001,6 @@
   <h2>More</h2>
   <div class="sheetlist" id="sheetList"></div>
   <div class="sheetfoot">
-    <button class="b sm" id="sheetResync">Re-sync library</button>
     <button class="b sm" id="sheetSettings">Settings</button>
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
@@ -1074,6 +1060,21 @@
       <label class="check-row"><input type="checkbox" id="compactToggle"> Compact rows (denser lists)</label>
       <label class="check-row"><input type="checkbox" id="rememberToggle"> Remember last filters (Tidy)</label>
     </section>
+    <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, plus a
+         pull-down and two footer buttons. Next to the update button it read as
+         "get the latest Betterfy", which it is not: it re-reads every playlist
+         from Spotify, hundreds of calls against a quota that belongs to the app
+         rather than the listener — so pressing it by mistake is how a working
+         app becomes a rate-limited one. One home, named for what it does, in
+         the place you go on purpose. -->
+    <section id="librarySection">
+      <h3>Your library</h3>
+      <p class="hint">Betterfy keeps up as you file, so this is only for changes made
+        <em>outside</em> Betterfy — a playlist edited in Spotify itself. It re-reads every
+        playlist and can take a few minutes on a large library. This is not the app
+        update: that is <b>⬇ Check for updates</b>, top right.</p>
+      <button class="b" id="settingsResync" type="button">Re-sync library from Spotify</button>
+    </section>
     <button class="b" id="resetTheme" type="button">Reset to defaults</button>
   </div>
 </div>
@@ -1085,6 +1086,46 @@ __CORE__
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- storage ----------
+ * Every browser this runs in has localStorage, and not every one of them lets
+ * you touch it. Safari with "Block All Cookies", a locked-down private window,
+ * an in-app web view: there, reading the property itself throws a SecurityError
+ * — and every unguarded localStorage call in this file was a line that could
+ * kill the boot script outright. The page still rendered, because the landing
+ * screen is static HTML; it just came up with Connect Spotify wired to nothing,
+ * which is indistinguishable from the app being broken and impossible to report
+ * usefully. So it all goes through here: real storage when there is any, memory
+ * when there is not, and never a throw either way.
+ *
+ * Memory is always written too, not only as a fallback — a store that accepts
+ * a write and then throws on the next one (a full quota, a private window's
+ * small allowance) would otherwise lose the value it had already taken. */
+const LS = (() => {
+  const mem = new Map();
+  let real = null;
+  try {
+    const probe = '__bf_probe';
+    window.localStorage.setItem(probe, '1');
+    window.localStorage.removeItem(probe);
+    real = window.localStorage;
+  } catch { real = null; }
+  const fallback = k => mem.has(k) ? mem.get(k) : null;
+  return {
+    /** False when nothing written here outlives the page. */
+    durable: !!real,
+    // Real store first, memory behind it — not "one or the other". A store that
+    // took the first write and refused the second still answers null for the
+    // second, and reading null there would quietly undo a value this page is
+    // still relying on.
+    getItem(k) {
+      try { const v = real?.getItem(k); if (v != null) return v; } catch {}
+      return fallback(k);
+    },
+    setItem(k, v) { mem.set(k, String(v)); try { real?.setItem(k, String(v)); } catch {} },
+    removeItem(k) { mem.delete(k); try { real?.removeItem(k); } catch {} },
+  };
+})();
 const mmss = ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`;
 
 /* ---------------- theme (colour, density, remembered filters) ----------------
@@ -1128,11 +1169,11 @@ const DEFAULT_THEME = {
 
 function loadTheme() {
   try {
-    const saved = JSON.parse(localStorage.getItem(THEME_KEY));
+    const saved = JSON.parse(LS.getItem(THEME_KEY));
     return { ...DEFAULT_THEME, ...saved, regions: { ...DEFAULT_THEME.regions, ...(saved?.regions ?? {}) } };
   } catch { return { ...DEFAULT_THEME }; }
 }
-function saveTheme() { try { localStorage.setItem(THEME_KEY, JSON.stringify(T)); } catch {} }
+function saveTheme() { try { LS.setItem(THEME_KEY, JSON.stringify(T)); } catch {} }
 
 let T = loadTheme();
 
@@ -1335,7 +1376,7 @@ const SCOPES = ['playlist-read-private','playlist-read-collaborative','playlist-
   'playlist-modify-public','user-library-read','user-library-modify','user-top-read',
   'user-read-recently-played','user-read-private','user-read-playback-state','user-modify-playback-state'].join(' ');
 
-const clientId = () => localStorage.getItem('bf_client_id') || DEFAULT_CLIENT_ID;
+const clientId = () => LS.getItem('bf_client_id') || DEFAULT_CLIENT_ID;
 
 /** Running from the Home Screen rather than in a browser tab. */
 const standalone = () => window.navigator.standalone === true
@@ -1347,8 +1388,8 @@ const standalone = () => window.navigator.standalone === true
  * attempt after a refusal is a redirect loop, not a retry.
  */
 const autoConnectDue = () => standalone()
-  && !localStorage.getItem('bf_tok')
-  && !localStorage.getItem('bf_autoconnect');
+  && !LS.getItem('bf_tok')
+  && !LS.getItem('bf_autoconnect');
 
 /* ---------------- staying on the current version ----------------
  * GitHub Pages serves this HTML with a ~10 minute cache, and a browser that
@@ -1407,13 +1448,34 @@ async function installUpdate() {
 const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf)))
   .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 
+/* PKCE needs SHA-256, and crypto.subtle only exists in a secure context. Over
+ * plain http, or inside an in-app web view that withholds it, this used to be a
+ * bare TypeError thrown out of a click handler nobody was catching — a Connect
+ * button that did nothing at all, with no way to tell that apart from the app
+ * being broken. Spotify requires S256, so there is no weaker fallback to take;
+ * what there is, is saying so. */
+const AUTH_UNAVAILABLE = 'This browser will not let Betterfy sign in securely — '
+  + 'it is blocking the cryptography the Spotify sign-in needs. Open the page over '
+  + 'https, in Safari or Chrome rather than inside another app.';
+
 async function beginAuth() {
+  if (!globalThis.crypto?.subtle || !crypto.getRandomValues) throw new Error(AUTH_UNAVAILABLE);
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
-  // localStorage, not sessionStorage: sessionStorage is per-tab, so if Spotify's
-  // redirect lands in a different tab (or the tab is restored) the verifier is
-  // gone and the exchange fails. That is why it only worked in a private window.
-  localStorage.setItem('bf_verifier', verifier);
+  // Both stores, not one. localStorage because sessionStorage is per-tab and
+  // Spotify's redirect can land in a different tab (or a restored one), which
+  // is what used to make this work only in a private window. sessionStorage as
+  // well because localStorage is the half a locked-down browser takes away, and
+  // a sign-in that cannot remember one random string for ten seconds is not
+  // worth failing over — the verifier is short-lived and single-use either way.
+  LS.setItem('bf_verifier', verifier);
+  try { sessionStorage.setItem('bf_verifier', verifier); } catch {}
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  // Nothing below can recover a verifier that was never kept, and finding that
+  // out after the round trip to Spotify means failing on the way back in with
+  // an error about a "lost security code". Check it here, where it is still
+  // one clear sentence about this browser.
+  if (readVerifier() !== verifier) throw new Error('This browser is not letting Betterfy store anything, '
+    + 'so it cannot complete a Spotify sign-in. Turn off "Block All Cookies" for this site, or open it in a normal window.');
   location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
     response_type:'code', client_id:clientId(), scope:SCOPES, redirect_uri:REDIRECT,
     code_challenge_method:'S256', code_challenge:challenge,
@@ -1428,6 +1490,15 @@ async function beginAuth() {
  * describe, so the body has to be parsed defensively. */
 const RATE_LIMITED = 'Spotify is handling too many requests right now. Wait a minute, then try again.';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/** The PKCE verifier, from whichever store still has it. Written to both on the
+ *  way out, because a locked-down browser takes localStorage away and not always
+ *  sessionStorage with it. */
+function readVerifier() {
+  let v = null;
+  try { v = sessionStorage.getItem('bf_verifier'); } catch {}
+  return v || LS.getItem('bf_verifier');
+}
 
 /* Every request this page makes gets a deadline. fetch() has none of its own,
  * and a phone hands you a request that never settles often enough to matter:
@@ -1483,17 +1554,18 @@ async function tokenRequest(params) {
 }
 
 async function exchange(code) {
-  const verifier = localStorage.getItem('bf_verifier');
+  const verifier = readVerifier();
   if (!verifier) throw new Error('Sign-in could not be completed — the browser lost the security code. Tap Connect Spotify again.');
   try {
     const t = await tokenRequest({ grant_type:'authorization_code', code, redirect_uri:REDIRECT,
                                    code_verifier:verifier });
     t.expires_at = Date.now() + t.expires_in * 1000;
-    localStorage.setItem('bf_tok', JSON.stringify(t));
+    LS.setItem('bf_tok', JSON.stringify(t));
     return t;
   } finally {
     // The code is spent either way, so the verifier that goes with it is too.
-    localStorage.removeItem('bf_verifier');
+    LS.removeItem('bf_verifier');
+    try { sessionStorage.removeItem('bf_verifier'); } catch {}
   }
 }
 
@@ -1503,7 +1575,7 @@ async function exchange(code) {
 let refreshing = null;
 
 async function token() {
-  const t = JSON.parse(localStorage.getItem('bf_tok') || 'null');
+  const t = JSON.parse(LS.getItem('bf_tok') || 'null');
   if (!t) return null;
   if (Date.now() < t.expires_at - 60000) return t.access_token;
   if (!refreshing) refreshing = refresh(t).finally(() => { refreshing = null; });
@@ -1520,18 +1592,18 @@ async function refresh(t) {
     // sign-in screen — where signing in asked the same rate-limited endpoint
     // for another token, and got the same 429 back.
     if (retryable(e)) throw e;
-    localStorage.removeItem('bf_tok');
+    LS.removeItem('bf_tok');
     // A token Spotify has actually rejected, not just rate-limited, is a real
     // sign-out — so the home-screen app's one shot at signing itself back in
     // is worth spending again, rather than leaving it stuck on a landing page
     // with a button to tap forever because that shot was already used at
     // install time.
-    localStorage.removeItem('bf_autoconnect');
+    LS.removeItem('bf_autoconnect');
     return null;
   }
   // Spotify only sometimes issues a new refresh token; keep the old one otherwise.
   const merged = { ...t, ...f, expires_at: Date.now() + f.expires_in*1000 };
-  localStorage.setItem('bf_tok', JSON.stringify(merged));
+  LS.setItem('bf_tok', JSON.stringify(merged));
   return merged.access_token;
 }
 
@@ -1563,13 +1635,13 @@ const GAP_KEY = 'bf_gap';
  * the way back in: quick enough to speed up again once the queue clears, slow
  * enough not to walk into the same wall on the first call. */
 const rememberedGap = () => {
-  try { return Math.min(MAX_GAP, Math.max(MIN_GAP, (+localStorage.getItem(GAP_KEY) || 0) / 2)); }
+  try { return Math.min(MAX_GAP, Math.max(MIN_GAP, (+LS.getItem(GAP_KEY) || 0) / 2)); }
   catch { return MIN_GAP; }
 };
 let gap = rememberedGap();   // ms between calls
 const setGap = ms => {
   gap = Math.min(MAX_GAP, Math.max(MIN_GAP, ms));
-  try { localStorage.setItem(GAP_KEY, String(Math.round(gap))); } catch {}
+  try { LS.setItem(GAP_KEY, String(Math.round(gap))); } catch {}
 };
 let nextAt = 0;      // earliest moment the next call may leave
 
@@ -1612,6 +1684,18 @@ async function hold(ms) {
 const AUTO_HOLD_MAX = 20000;    // sit out any single wait this short or less
 const AUTO_HOLD_BUDGET = 60000; // …but never more than this in total per call
 
+/* And a budget for the read as a whole, because the per-call one never trips in
+ * the case that matters. A quota that is simply gone answers the very first
+ * call of a read with a 429, then the next, then the next — each pause short
+ * enough to absorb, each one starting its countdown over, none of them ever
+ * reaching a per-call limit. From the outside that is a progress bar stuck at
+ * 2% and "Spotify asked for a pause" re-arming forever, which is exactly the
+ * report. No amount of waiting fixes it either: the quota belongs to the app,
+ * not to the listener, so it is being spent by everyone else with this page
+ * open. Past this, stop absorbing and show the screen that names the real fix. */
+const HOLD_BUDGET_RUN = 15000;
+let heldRun = 0;   // reset at the top of every read
+
 /* A phone's network is not a desktop's. It changes cell mid-request, hands over
  * to Wi-Fi, and every so often leaves a request hanging with nobody ever coming
  * back to it — and fetch() has no deadline of its own, so the read simply sat on
@@ -1650,8 +1734,8 @@ async function fetchTags() {
  *  looks fresh — for a 401, which means it stopped being fresh early. */
 function expireToken() {
   try {
-    const t = JSON.parse(localStorage.getItem('bf_tok') || 'null');
-    if (t) localStorage.setItem('bf_tok', JSON.stringify({ ...t, expires_at: 0 }));
+    const t = JSON.parse(LS.getItem('bf_tok') || 'null');
+    if (t) LS.setItem('bf_tok', JSON.stringify({ ...t, expires_at: 0 }));
   } catch {}
 }
 
@@ -1680,8 +1764,9 @@ async function sp(path, opts = {}) {
       const after = (+res.headers.get('retry-after') || 0) * 1000;
       const wait = after || Math.min(2000 * 2 ** i, 60000);
       setGap(gap * 2);
-      if (wait <= AUTO_HOLD_MAX && held + wait <= AUTO_HOLD_BUDGET) {
-        held += wait; await hold(wait); continue;
+      if (wait <= AUTO_HOLD_MAX && held + wait <= AUTO_HOLD_BUDGET
+          && heldRun + wait <= HOLD_BUDGET_RUN) {
+        held += wait; heldRun += wait; await hold(wait); continue;
       }
       // wait, not after: after is only ever this one response's own Retry-After
       // (or 0), and what the fallback screen needs to wait out is whatever this
@@ -1715,15 +1800,70 @@ async function paged(path, key) {
 }
 
 /* ---------- library cache (IndexedDB) ---------- */
-const idb = {
-  open: () => new Promise((ok, bad) => { const r = indexedDB.open('betterfy', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => ok(r.result); r.onerror = () => bad(r.error); }),
-  async get(k){ const d = await this.open(); return new Promise(ok => { const r = d.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); }); },
-  async set(k,v){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete = () => ok(); }); },
-  async del(k){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').delete(k); tx.oncomplete = () => ok(); }); },
-  async keys(){ const d = await this.open(); return new Promise(ok => { const r = d.transaction('kv').objectStore('kv').getAllKeys(); r.onsuccess = () => ok(r.result ?? []); r.onerror = () => ok([]); }); },
-  async clear(){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').clear(); tx.oncomplete = () => ok(); }); },
-};
+/* This one store holds the library cache, the action log, your skips and
+ * rejections, your tag corrections and the banked pieces of an interrupted
+ * read. So a browser that will not hand over IndexedDB did not cost one
+ * feature, it cost all of them at once: open() rejected, and every await above
+ * it rejected with it — filing, undo, history, Tidy, the lot, each one failing
+ * in whatever way its own caller happened to fail.
+ *
+ * A private window, blocked site data, a partitioned origin, a device out of
+ * space: all real, none of them a reason for the app to stop working. Memory is
+ * a poor cache and a perfectly good one for a single session, which is the
+ * difference between "this does not work here" and "this re-reads next time". */
+const idb = (() => {
+  const mem = new Map();
+  let opening = null, usable = true;
+
+  const open = () => {
+    if (!usable) return Promise.resolve(null);
+    return opening ??= new Promise((ok, bad) => {
+      const r = indexedDB.open('betterfy', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => bad(r.error);
+    }).catch(() => { usable = false; return null; });
+  };
+
+  /**
+   * @param fn (store, resolve, tx) => void — resolve with the result.
+   * @param fallback what to do instead when there is no usable store.
+   */
+  const run = async (mode, fn, fallback) => {
+    let d = null;
+    try { d = await open(); } catch { d = null; }
+    if (!d) return fallback();
+    try {
+      return await new Promise((ok, bad) => {
+        const tx = d.transaction('kv', mode);
+        tx.onabort = () => bad(tx.error ?? new Error('aborted'));
+        tx.onerror = () => bad(tx.error ?? new Error('failed'));
+        fn(tx.objectStore('kv'), ok, tx);
+      });
+    } catch {
+      // A store that has started refusing mid-session — quota, or the browser
+      // reclaiming it — is not coming back. Stop asking and carry on in memory
+      // rather than failing every call from here on.
+      usable = false; opening = null;
+      return fallback();
+    }
+  };
+
+  return {
+    /** False once nothing stored here will outlive the session. */
+    get durable() { return usable; },
+    get: k => run('readonly', (st, ok) => { const r = st.get(k);
+      r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); }, () => mem.get(k)),
+    set: (k, v) => run('readwrite', (st, ok, tx) => { st.put(v, k); tx.oncomplete = () => ok(); },
+      () => { mem.set(k, v); }),
+    del: k => run('readwrite', (st, ok, tx) => { st.delete(k); tx.oncomplete = () => ok(); },
+      () => { mem.delete(k); }),
+    keys: () => run('readonly', (st, ok) => { const r = st.getAllKeys();
+      r.onsuccess = () => ok(r.result ?? []); r.onerror = () => ok([]); }, () => [...mem.keys()]),
+    clear: () => run('readwrite', (st, ok, tx) => { st.clear(); tx.oncomplete = () => ok(); },
+      () => { mem.clear(); }),
+  };
+})();
 
 /* ---------- what you told it by skipping and rejecting ----------
  * Filing decisions teach the model twice. An accept is learned for free: the
@@ -1800,6 +1940,7 @@ async function syncLibrary(force, onProgress) {
   // this read banks as it goes still count, so a forced re-read that is
   // interrupted resumes like any other rather than starting from nothing.
   if (force) await dropParts();
+  heldRun = 0;
   const banked = await bankedParts();
 
   // Who you are and which playlists you have is two calls and a few pages, and
@@ -1951,7 +2092,7 @@ function classify(lib, now = Date.now()) {
     cfg[p.id] = { name:n, axis, why, tracks:p.tracks.length,
                   target: (axis === 'genre' || axis === 'mood') && p.tracks.length >= MIN_FOR_TARGET };
   }
-  const saved = JSON.parse(localStorage.getItem('bf_axes') || '{}');
+  const saved = JSON.parse(LS.getItem('bf_axes') || '{}');
   for (const [id, v] of Object.entries(saved)) if (cfg[id]) Object.assign(cfg[id], v, { why:'set by you' });
   return cfg;
 }
@@ -2681,9 +2822,9 @@ async function syncAllSongsPlaylist() {
   // A meta playlist of everything is not a filing destination on any axis —
   // comparing tracks against it would just mean "matches something you own".
   CFG[pl.id] = { name:ALL_SONGS_NAME, axis:'context', why:'set by you', target:false, tracks:merged.length };
-  const savedAxes = JSON.parse(localStorage.getItem('bf_axes') || '{}');
+  const savedAxes = JSON.parse(LS.getItem('bf_axes') || '{}');
   savedAxes[pl.id] = { axis:'context', target:false };
-  localStorage.setItem('bf_axes', JSON.stringify(savedAxes));
+  LS.setItem('bf_axes', JSON.stringify(savedAxes));
   R = buildReports(LIB, CFG, TAGS);
   S.shufPl = pl.id;
   toast(missing.length ? `${ALL_SONGS_NAME} refreshed — ${missing.length} track${missing.length===1?'':'s'} added.`
@@ -2803,7 +2944,7 @@ function rankSeeds(weights, n = 40) {
 }
 
 async function runDiscovery(seedPlaylistId) {
-  const key = localStorage.getItem('bf_lfm');
+  const key = LS.getItem('bf_lfm');
   if (!key) { toast('Discovery needs a Last.fm key — paste one above to get started.'); return; }
   const lfm = p => fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({ ...p, api_key:key, format:'json' })).then(r => r.json());
 
@@ -2892,7 +3033,7 @@ function discAt() {
 function vDiscover() {
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
-  const hasKey = !!localStorage.getItem('bf_lfm');
+  const hasKey = !!LS.getItem('bf_lfm');
   const head = `<h1>Discover</h1>
     <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
       <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
@@ -3044,9 +3185,9 @@ function vLists() {
       Last.fm key to fill the gaps for artists it doesn\'t cover — and to fix one that already has tags but has them
       wrong, from a Tidy or File row, tap <b>Wrong tags?</b> under it.</p>
     <div class="rowbtns" style="margin-bottom:8px">
-      <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(localStorage.getItem('bf_lfm') || '')}">
+      <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(LS.getItem('bf_lfm') || '')}">
       <button class="b" id="saveLfm">Save key</button>
-      <button class="b p" id="enrich" ${localStorage.getItem('bf_lfm') ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button>
+      <button class="b p" id="enrich" ${LS.getItem('bf_lfm') ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button>
       <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
     </div>
     <p class="sub" style="margin:8px 0">
@@ -3054,7 +3195,7 @@ function vLists() {
       their own releases (Jungle, Deep House, Electro — finer than Last.fm's one flat tag per artist). It never
       overrides a real Last.fm tag, only ever fills a total gap, and runs automatically as part of the button above.</p>
     <div class="rowbtns" style="margin-bottom:8px">
-      <input id="discogsKey" placeholder="Discogs personal access token" size="34" value="${esc(localStorage.getItem('bf_discogs') || '')}">
+      <input id="discogsKey" placeholder="Discogs personal access token" size="34" value="${esc(LS.getItem('bf_discogs') || '')}">
       <button class="b" id="saveDiscogs">Save token</button>
       <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
     </div>
@@ -3096,9 +3237,9 @@ async function discogsTags(name, token) {
 
 /** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
 async function enrichMissing() {
-  const key = localStorage.getItem('bf_lfm');
+  const key = LS.getItem('bf_lfm');
   if (!key) return toast('Add a Last.fm key first.');
-  const discogsToken = localStorage.getItem('bf_discogs');
+  const discogsToken = LS.getItem('bf_discogs');
   const names = new Map();
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
@@ -3167,7 +3308,7 @@ async function resetArtistTags(id) {
 /** Ask Last.fm again for one artist, ignoring whatever it is shipped with —
  *  for the case where autocorrect or the crowd tags have since improved. */
 async function refetchArtist(id, name) {
-  const key = localStorage.getItem('bf_lfm');
+  const key = LS.getItem('bf_lfm');
   if (!key) return toast('Add a Last.fm key on the Playlists screen first.');
   try {
     const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
@@ -3189,7 +3330,7 @@ function tagEditorHTML(id, name) {
       <input id="newTagVal" placeholder="Add a tag" size="16">
       <button class="b sm" data-addtag="${esc(id)}">Add</button>
       <button class="b sm" data-refetchtags="${esc(id)}" data-artistname="${esc(name)}"
-        ${localStorage.getItem('bf_lfm') ? '' : 'disabled title="Add a Last.fm key on this screen first"'}>Refetch from Last.fm</button>
+        ${LS.getItem('bf_lfm') ? '' : 'disabled title="Add a Last.fm key on this screen first"'}>Refetch from Last.fm</button>
       <button class="b sm" data-resettags="${esc(id)}">Reset to shipped</button>
       <button class="b sm" data-closetagedit="1">Done</button>
     </div>
@@ -3241,7 +3382,7 @@ function render(dir) {
   const seek = $('#seek');
   if (seek) {
     seek.oninput = () => { PLAYER.scrub = true; $('#pTime').textContent = mmss(+seek.value); };
-    seek.onchange = async () => { const to = +seek.value; PLAYER.scrub = false; await playerSeek(to); };
+    seek.onchange = guard(async ev => { const to = +ev.target.value; PLAYER.scrub = false; await playerSeek(to); });
     playerRun();
   } else playerStop();
 }
@@ -3318,30 +3459,33 @@ function bindSwipeCard() {
       buzz(12);
       card.classList.add('gone');
       card.style.transform = 'translate3d(120vw,40px,0) rotate(14deg)';
-      fileCurrent(S.fileSel.size ? [...S.fileSel] : best);
+      fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : best));
     } else if (dx < -TH) {
       buzz(8);
       card.classList.add('gone');
       card.style.transform = 'translate3d(-120vw,40px,0) rotate(-14deg)';
-      inboxAct('skip');
+      fire(inboxAct('skip'));
     } else reset();
   };
   card.addEventListener('touchend', finish);
   card.addEventListener('touchcancel', () => { mode = null; gestureClaimed = false; reset(); });
 }
 
-/** Swipe left/right anywhere else on a screen to walk VORDER; pull down to re-sync. */
+/** Swipe left/right anywhere else on a screen to walk VORDER.
+ *  Pulling down used to re-sync from here. A stray downward swipe at the top of
+ *  a list is about the easiest gesture on a phone to make by accident, and what
+ *  it triggered was hundreds of calls against a shared quota — so re-syncing is
+ *  one deliberate button in Settings now, and a pull does nothing. */
 function bindAppGestures() {
-  const app = $('#app'), ptr = $('#ptr'), ptrTxt = $('#ptrTxt');
+  const app = $('#app');
   const VTH = 62;                      // screen-change threshold
-  const PULL = 68;                     // pull-to-re-sync threshold
-  let x0 = 0, y0 = 0, dx = 0, dy = 0, mode = null, pulling = false;
+  let x0 = 0, y0 = 0, dx = 0, dy = 0, mode = null;
 
   // Scrollable in its own right — a swipe that starts here belongs to it.
   const OWN = 'table.cmp, input, select, textarea, .settings, .sheet, .swipecard, .scrim';
 
   app.addEventListener('touchstart', e => {
-    mode = null; pulling = false; dx = dy = 0;
+    mode = null; dx = dy = 0;
     if (!isPhone() || e.touches.length !== 1 || e.target.closest(OWN)) { mode = 'ignore'; return; }
     x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
   }, { passive: true });
@@ -3352,38 +3496,26 @@ function bindAppGestures() {
     if (mode === null) {
       if (Math.abs(dx) < 14 && Math.abs(dy) < 14) return;
       if (Math.abs(dx) > Math.abs(dy) * 1.5) mode = 'page';
-      else if (dy > 0 && scrollY <= 0) { mode = 'pull'; pulling = true; }
       else mode = 'scroll';
     }
     if (mode === 'page') {
       // A little travel under the finger, so the swipe feels connected.
       $('#main').style.transform = `translate3d(${Math.max(-40, Math.min(40, dx / 3))}px,0,0)`;
-    } else if (mode === 'pull') {
-      const h = Math.min(dy * 0.5, 86);
-      ptr.style.height = h + 'px';
-      ptr.classList.toggle('armed', h >= PULL * 0.5);
-      ptrTxt.textContent = h >= PULL * 0.5 ? 'Release to re-sync' : 'Pull to re-sync';
-      if (e.cancelable) e.preventDefault();     // stop the page rubber-banding too
     }
   }, { passive: false });
 
   const end = async () => {
     $('#main').style.transform = '';
-    const wasPull = pulling && parseFloat(ptr.style.height || '0') >= PULL * 0.5;
-    ptr.style.height = ''; ptr.classList.remove('armed');
-    const m = mode; mode = null; pulling = false;
+    const m = mode; mode = null;
     if (m === 'page' && Math.abs(dx) > VTH) {
       const at = VORDER.indexOf(view);
       const next = VORDER[at + (dx < 0 ? 1 : -1)];
       if (next) { buzz(6); if (next === 'history') S.history = await getLog(); go(next); }
-    } else if (wasPull) {
-      buzz(12); toast('Re-syncing your library…'); start(true);
     }
   };
-  app.addEventListener('touchend', end);
+  app.addEventListener('touchend', guard(end));
   app.addEventListener('touchcancel', () => {
-    $('#main').style.transform = ''; ptr.style.height = ''; ptr.classList.remove('armed');
-    mode = null; pulling = false;
+    $('#main').style.transform = ''; mode = null;
   });
 }
 
@@ -3406,7 +3538,6 @@ function initSheet() {
     list.appendChild(c);
   });
   $('#tabMore').onclick = () => openSheet(!$('#moreSheet').classList.contains('open'));
-  $('#sheetResync').onclick = () => { closeSheet(); start(true); };
   $('#sheetSettings').onclick = () => { closeSheet(); $('#btnSettings').click(); };
   $('#sheetDisconnect').onclick = () => { closeSheet(); $('#disconnect').click(); };
 
@@ -3442,7 +3573,32 @@ addEventListener('scroll', () => {
 }, { passive: true });
 
 /* ---------- events ---------- */
-document.addEventListener('click', async e => {
+/* ---------- nothing fails in silence ----------
+ * Every delegated handler below is async, and an async handler that rejects
+ * leaves no trace at all: no message, no screen, just a tap that did nothing.
+ * That is exactly the failure the Connect button had, and the same one line
+ * stops it happening to filing, undo, Tidy, Discover, Shuffle and the rest —
+ * most of whose branches never had a catch of their own. Now that a dropped
+ * request throws instead of being mistaken for an answer, this matters more:
+ * "the network went" has to reach the screen, not vanish. */
+function actionFailed(err) {
+  console.error(err);
+  const m = err?.message ? String(err.message) : 'Something went wrong.';
+  // Spotify's own failures arrive as "403 Forbidden" and mean nothing on their
+  // own; anything this file raised is already a sentence.
+  toast(/^\d{3}\b/.test(m) ? `Spotify refused that — ${m}.` : m);
+}
+
+/** Wrap a handler so whatever it throws, sync or async, reaches the screen. */
+const guard = fn => (...a) => {
+  try { const r = fn(...a); if (r && typeof r.catch === 'function') r.catch(actionFailed); return r; }
+  catch (e) { actionFailed(e); }
+};
+
+/** Start an async action nobody is awaiting, and put any failure on screen. */
+const fire = p => { Promise.resolve(p).catch(actionFailed); };
+
+document.addEventListener('click', guard(async e => {
   const nav = e.target.closest('.nav');
   if (nav) {
     closeSheet();
@@ -3498,7 +3654,7 @@ document.addEventListener('click', async e => {
   if (e.target.id === 'saveLfmDiscover') {
     const v = $('#lfmKeyDisc')?.value.trim();
     if (!v) return toast('Paste a Last.fm key first.');
-    localStorage.setItem('bf_lfm', v);
+    LS.setItem('bf_lfm', v);
     toast('Key saved — finding new music…');
     return runDiscovery(S.discSeed || null);
   }
@@ -3615,14 +3771,14 @@ document.addEventListener('click', async e => {
 
   if (e.target.id === 'saveLfm') {
     const v = $('#lfmKey').value.trim();
-    if (v) { localStorage.setItem('bf_lfm', v); toast('Key saved.'); render(); }
-    else { localStorage.removeItem('bf_lfm'); toast('Key cleared.'); render(); }
+    if (v) { LS.setItem('bf_lfm', v); toast('Key saved.'); render(); }
+    else { LS.removeItem('bf_lfm'); toast('Key cleared.'); render(); }
     return;
   }
   if (e.target.id === 'saveDiscogs') {
     const v = $('#discogsKey').value.trim();
-    if (v) { localStorage.setItem('bf_discogs', v); toast('Token saved.'); render(); }
-    else { localStorage.removeItem('bf_discogs'); toast('Token cleared.'); render(); }
+    if (v) { LS.setItem('bf_discogs', v); toast('Token saved.'); render(); }
+    else { LS.removeItem('bf_discogs'); toast('Token cleared.'); render(); }
     return;
   }
   if (e.target.id === 'enrich') return enrichMissing();
@@ -3660,9 +3816,9 @@ document.addEventListener('click', async e => {
       R.clusters.splice(i,1); render(); }
     catch (err) { toast('Failed: '+err.message); }
   }
-});
+}));
 
-document.addEventListener('change', async e => {
+document.addEventListener('change', guard(async e => {
   if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
@@ -3682,14 +3838,14 @@ document.addEventListener('change', async e => {
     } else {
       CFG[id].target = tg.checked;
     }
-    const saved = JSON.parse(localStorage.getItem('bf_axes') || '{}');
+    const saved = JSON.parse(LS.getItem('bf_axes') || '{}');
     saved[id] = { axis: CFG[id].axis, target: CFG[id].target };
-    localStorage.setItem('bf_axes', JSON.stringify(saved));
+    LS.setItem('bf_axes', JSON.stringify(saved));
     R = buildReports(LIB, CFG, TAGS);
     toast('Updated — suggestions recomputed.');
     render();
   }
-});
+}));
 
 /** Toggle one playlist in or out of the pending selection for the track on screen. */
 function toggleFileSel(id) {
@@ -3747,7 +3903,7 @@ async function inboxAct(a) {
 }
 // Keyboard parity for the swipe: the same walk through VORDER, for anyone not
 // using a touchscreen.
-document.addEventListener('keydown', async e => {
+document.addEventListener('keydown', guard(async e => {
   if ($('#app').hidden || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target.matches('input,select,textarea')) return;
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -3755,13 +3911,13 @@ document.addEventListener('keydown', async e => {
   if (!next) return;
   if (next === 'history') S.history = await getLog();
   go(next);
-});
+}));
 
 document.addEventListener('keydown', e => {
   if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
   const t = R.backlog[S.inboxAt]; if (!t) return;
   if (['1','2','3'].includes(e.key)) { const s = t.suggest[+e.key-1]; if (s) toggleFileSel(s.id); }
-  if (e.key === 'Enter' && (S.fileSel.size || t.suggest[0])) fileCurrent(S.fileSel.size ? [...S.fileSel] : t.suggest[0].id);
+  if (e.key === 'Enter' && (S.fileSel.size || t.suggest[0])) fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : t.suggest[0].id));
   if (e.key.toLowerCase()==='p') inboxAct('play');
   if (e.key.toLowerCase()==='s') inboxAct('skip');
   if (e.key.toLowerCase()==='u') inboxAct('unlike');
@@ -3770,28 +3926,78 @@ document.addEventListener('keydown', e => {
 /* ---------- boot ---------- */
 $('#redirectShow').textContent = REDIRECT;
 $('#redirectShow2').value = REDIRECT;
-$('#ownId').value = localStorage.getItem('bf_client_id') || '';
-$('#connect').onclick = () => beginAuth();
+$('#ownId').value = LS.getItem('bf_client_id') || '';
+
+/* Which app is actually in use, in words. Without this the panel looks the same
+ * whether the switch took or not, and "I've set my own client ID" and "I am
+ * still on the shared one" are indistinguishable from the outside — which is
+ * the difference between fixed and still-throttled. */
+function showWhichApp() {
+  const own = LS.getItem('bf_client_id');
+  const el = $('#whichApp'); if (!el) return;
+  el.textContent = own
+    ? `Using your own Spotify app (${own.slice(0, 8)}…) — its quota is yours alone.`
+    : 'Using this page’s default Spotify app, whose quota is shared with everyone else who opens this link.';
+}
+showWhichApp();
+/* beginAuth() is async, so `onclick = () => beginAuth()` turned every failure
+ * inside it into an unhandled rejection: the button did nothing, said nothing,
+ * and looked exactly like a broken app. Anything that stops a sign-in before it
+ * leaves this page has to be on the screen. */
+$('#connect').onclick = async () => {
+  const btn = $('#connect');
+  btn.disabled = true;
+  try { await beginAuth(); }
+  catch (e) { signInUnavailable(e.message); }
+  finally { btn.disabled = false; }
+};
+
+/** A sign-in that cannot even start: say what is wrong, and offer the one thing
+ *  that sometimes gets around it rather than a button that will fail again. */
+function signInUnavailable(msg) {
+  toast(msg);
+  if ($('#landBlocked')) { $('#landBlocked').textContent = msg; return; }
+  const p = document.createElement('p');
+  p.id = 'landBlocked'; p.className = 'fineprint';
+  p.textContent = msg;
+  $('.cta')?.after(p);
+}
 $('#copyRedirect').onclick = async () => { try { await navigator.clipboard.writeText(REDIRECT); toast('Copied.'); } catch { $('#redirectShow2').select(); toast('Press Ctrl+C to copy.'); } };
-$('#saveId').onclick = () => { const v = $('#ownId').value.trim();
-  if (v) { localStorage.setItem('bf_client_id', v); toast('Saved. Now connect.'); } };
-$('#clearId').onclick = () => { localStorage.removeItem('bf_client_id'); $('#ownId').value=''; toast('Using the default app.'); };
+$('#saveId').onclick = () => {
+  const v = $('#ownId').value.trim();
+  if (!v) return toast('Paste the client ID from your own Spotify app first.');
+  // The whole point of this box is a different app with a quota of its own, and
+  // the default one is printed in this page's source — so it is the easiest
+  // wrong thing to paste in, and pasting it changes precisely nothing while
+  // looking exactly like the fix.
+  if (v === DEFAULT_CLIENT_ID)
+    return toast('That is this page’s default app — the one already being shared. Create your own at developer.spotify.com/dashboard and paste that client ID instead.');
+  // A Spotify client ID is 32 hex characters. The usual mistakes are pasting
+  // the client secret, or half of something.
+  if (!/^[0-9a-f]{32}$/i.test(v))
+    return toast('That does not look like a Spotify client ID — they are 32 letters and numbers. Copy the Client ID, not the secret.');
+  LS.setItem('bf_client_id', v);
+  showWhichApp();
+  toast('Saved — that is your app now. Tap Connect Spotify.');
+};
+$('#clearId').onclick = () => { LS.removeItem('bf_client_id'); $('#ownId').value=''; showWhichApp(); toast('Using the default app.'); };
 $('#disconnect').onclick = async () => {
-  localStorage.removeItem('bf_tok'); localStorage.removeItem('bf_autoconnect');
+  LS.removeItem('bf_tok'); LS.removeItem('bf_autoconnect');
   await idb.clear(); location.href = REDIRECT;
 };
-$('#resync').onclick = () => start(true);
-$('#btnResync').onclick = async () => {
-  const btn = $('#btnResync');
-  btn.disabled = true; btn.classList.add('spin');
-  try { await start(true); } finally { btn.disabled = false; btn.classList.remove('spin'); }
+$('#settingsResync').onclick = async () => {
+  const btn = $('#settingsResync');
+  btn.disabled = true; btn.textContent = 'Re-reading your library…';
+  openSettings(false);
+  try { await start(true); }
+  finally { btn.disabled = false; btn.textContent = 'Re-sync library from Spotify'; }
 };
 $('#btnUpdate').onclick = () => checkForUpdate(false);
 $('#landUpdate').onclick = () => checkForUpdate(false);
 $('#doUpdate').onclick = () => installUpdate();
 $('#dismissUpdate').onclick = () => { $('#updateBar').hidden = true; };
 window.bfReset = async () => {
-  localStorage.removeItem('bf_tok'); localStorage.removeItem('bf_verifier'); localStorage.removeItem('bf_autoconnect');
+  LS.removeItem('bf_tok'); LS.removeItem('bf_verifier'); LS.removeItem('bf_autoconnect');
   await idb.clear(); location.replace(REDIRECT);
 };
 
@@ -3804,11 +4010,11 @@ const LOGO_HTML = `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
   <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
 </svg>Better<span>fy</span>`;
 
-function stage(msg, pct) {
+function stage(msg, pct, extra = '') {
   $('#app').hidden = true; $('#land').hidden = false;
   $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
     <p class="tagline">${esc(msg)}</p>
-    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>`;
+    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>${extra}`;
 }
 
 // A single 429 is ordinary. Several in a row on this page's default client ID
@@ -3827,15 +4033,29 @@ function stage(msg, pct) {
 // finding out there was a faster way through.
 const RATE_LIMIT_STREAK_KEY = 'bf_ratelimit_streak', RATE_LIMIT_OWN_APP_AFTER = 1;
 function noteRateLimited() {
-  const n = (+localStorage.getItem(RATE_LIMIT_STREAK_KEY) || 0) + 1;
-  localStorage.setItem(RATE_LIMIT_STREAK_KEY, String(n));
+  const n = (+LS.getItem(RATE_LIMIT_STREAK_KEY) || 0) + 1;
+  LS.setItem(RATE_LIMIT_STREAK_KEY, String(n));
   return n;
 }
-const clearRateLimitStreak = () => localStorage.removeItem(RATE_LIMIT_STREAK_KEY);
+const clearRateLimitStreak = () => LS.removeItem(RATE_LIMIT_STREAK_KEY);
 
 /** A wall for a failure that is nobody's fault and will pass: no "start over"
  *  button, because signing in again is exactly what must not happen here. */
 let blockedTimer = null, blockedCountdown = null;
+
+/* The one thing that actually ends a shared-quota wait, rather than sitting it
+ * out. Shown on the pause screen as well as the fallback one now: the pause
+ * screen is where people were spending the wait, and it offered nothing to do
+ * but watch a countdown re-arm. */
+function ownAppNote() {
+  return `<div class="note" style="max-width:420px; margin-top:14px; text-align:left">
+      <b>Rather not wait it out?</b> This page's default Spotify app is shared by everyone who opens it,
+      so a busy few minutes anywhere can hold up your library here too, for as long as that stays busy.
+      Your own free Spotify app has a quota nobody else can spend: about a minute to set up, nothing to
+      share with whoever sent you this link.
+      <div class="rowbtns" style="margin-top:8px"><a class="b sm" href="${REDIRECT}?setup">Use your own Spotify app</a></div>
+    </div>`;
+}
 /**
  * @param {number} [retryInMs] — when known, retry on its own once this has passed,
  * so getting past a rate limit never depends on someone remembering to come tap it.
@@ -3854,13 +4074,7 @@ function blocked(msg, retry, retryInMs, ownAppHint) {
     <p class="tagline">${esc(msg)}</p>
     <button class="b p" id="landRetry">Try again</button>
     ${retryInMs != null ? `<p class="fineprint" id="landRetryCountdown"></p>` : ''}
-    ${ownAppHint ? `<div class="note" style="max-width:420px; margin-top:14px; text-align:left">
-      <b>Rather not wait it out?</b> This page's default Spotify app is shared by everyone who opens it,
-      so a busy few minutes anywhere can refuse sign-ins here too, for as long as that stays busy — Try
-      again above still works and gets there eventually. Your own free Spotify app has a quota nobody
-      else can spend instead: about a minute to set up, nothing to share with whoever sent you this link.
-      <div class="rowbtns" style="margin-top:8px"><a class="b sm" href="${REDIRECT}?setup">Use your own Spotify app</a></div>
-    </div>` : ''}`;
+    ${ownAppHint ? ownAppNote() : ''}`;
   // Whichever fires first — a tap or the timer — has to stop the other one,
   // or the countdown keeps ticking in the background forever after the retry
   // it was counting down to has already happened.
@@ -3906,9 +4120,12 @@ async function start(force) {
     LIB = force ? null : await idb.get('library');
     if (!LIB) {
       let at = 0.02;
+      // A pause at the very start of a read is not a busy moment, it is a quota
+      // that has already gone — so the way out rides along with the countdown
+      // rather than waiting for the read to give up first.
       onHold = secs => stage(secs
         ? `Spotify asked for a pause — carrying on in ${secs}s. Leave this open.`
-        : 'Carrying on…', at);
+        : 'Carrying on…', at, secs ? ownAppNote() : '');
       try { LIB = await syncLibrary(force, (name, pct) => { at = pct; stage(`Reading ${name}…`, pct); }); }
       finally { onHold = null; }
     }
@@ -3965,7 +4182,7 @@ async function start(force) {
     $('#landAgain').onclick = () => start(force);
     $('#landReset').onclick = ev => {
       ev.preventDefault();
-      localStorage.removeItem('bf_tok'); localStorage.removeItem('bf_autoconnect');
+      LS.removeItem('bf_tok'); LS.removeItem('bf_autoconnect');
       location.href = REDIRECT;
     };
   }
@@ -3984,8 +4201,8 @@ const FRIENDLY = {
   if (T.rememberFilters) { if (T.crossMin) S.crossMin = T.crossMin; if (T.mfBand) S.mfBand = T.mfBand; }
 
   const q = new URLSearchParams(location.search);
-  if (q.get('setup') !== null) { $('#setupPanel').hidden = false; localStorage.setItem('bf_setup','1'); }
-  else if (localStorage.getItem('bf_setup')) $('#setupPanel').hidden = false;
+  if (q.get('setup') !== null) { $('#setupPanel').hidden = false; LS.setItem('bf_setup','1'); }
+  else if (LS.getItem('bf_setup')) $('#setupPanel').hidden = false;
 
   // Arrived here from "Update now": the cache-busting parameter has done its
   // job, so tidy it out of the address bar.
@@ -4007,7 +4224,7 @@ const FRIENDLY = {
     if (code === 'access_denied' && !$('#landSetupHint')) {
       $('#setupPanel').hidden = false;
       $('#ownAppDetails').open = true;
-      localStorage.setItem('bf_setup', '1');
+      LS.setItem('bf_setup', '1');
       const hint = document.createElement('p');
       hint.id = 'landSetupHint'; hint.className = 'fineprint';
       hint.innerHTML = 'If this account isn’t on the approved list, you don’t need to ask to be added — '
@@ -4025,8 +4242,8 @@ const FRIENDLY = {
     // carrying ?code= sent that same, already-spent code to Spotify again on
     // every reopen. Enough of those in a row is what earned the 429.
     history.replaceState({}, '', REDIRECT);
-    if (localStorage.getItem('bf_code_used') !== code) {
-      localStorage.setItem('bf_code_used', code);
+    if (LS.getItem('bf_code_used') !== code) {
+      LS.setItem('bf_code_used', code);
       try { await exchange(code); }
       catch (e) {
         // The code is spent, so retrying means signing in from the top —
@@ -4037,7 +4254,7 @@ const FRIENDLY = {
         if (retryable(e)) {
           const streak = e.status === 429 ? noteRateLimited() : 0;
           blocked(e.message, () => beginAuth(), e.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER);
-        } else { $('#land').hidden = false; toast(e.message); }
+        } else { $('#land').hidden = false; signInUnavailable(e.message); }
         return;
       }
     }
@@ -4049,8 +4266,21 @@ const FRIENDLY = {
   // the grant it comes straight back. One attempt only, and the flag is set
   // before leaving, so a refusal lands on the landing page and stays there
   // rather than bouncing in a loop.
+  // A browser that keeps nothing can still finish a sign-in — the verifier only
+  // has to survive one redirect, and memory does that. What it cannot do is keep
+  // you signed in: the token is gone on the next load, and every open looks like
+  // a first open. Better said plainly on the way in than discovered repeatedly.
+  if (!LS.durable && !$('#landNoStore')) {
+    const p = document.createElement('p');
+    p.id = 'landNoStore'; p.className = 'fineprint';
+    p.textContent = 'This browser is not letting Betterfy store anything, so it will ask you to '
+      + 'sign in every time and re-read your library each session. Turning off "Block All Cookies" '
+      + 'for this site, or using a normal window rather than a private one, fixes that.';
+    $('.cta')?.after(p);
+  }
+
   if (autoConnectDue()) {
-    localStorage.setItem('bf_autoconnect', '1');
+    LS.setItem('bf_autoconnect', '1');
     stage('Signing you in…', 0.01);
     // beginAuth() ends in a navigation, so this normally never resolves —
     // but if it throws first (no network, no secure context) that must not

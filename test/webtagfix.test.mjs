@@ -37,7 +37,7 @@ function load({ tags = {}, rawTags = {}, key = 'lfm-key', fetchTags = null } = {
       get: async k => (k === 'tags_extra' ? JSON.parse(JSON.stringify(store)) : undefined),
       set: async (k, v) => { if (k === 'tags_extra') store = JSON.parse(JSON.stringify(v)); },
     },
-    localStorage: { getItem: k => (k === 'bf_lfm' ? key : null) },
+    LS: { getItem: k => (k === 'bf_lfm' ? key : null) },
     fetch: async () => ({ json: async () => fetchTags ?? { toptags: { tag: [] } } }),
     toast: () => {},
     esc: s => String(s ?? ''),

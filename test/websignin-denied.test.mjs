@@ -47,14 +47,16 @@ async function run(errorCode) {
     URLSearchParams,
     $: dom.$,
     document: dom.document,
-    localStorage: { store: {}, setItem(k, v) { this.store[k] = v; }, getItem(k) { return this.store[k]; } },
+    LS: { store: {}, setItem(k, v) { this.store[k] = v; }, getItem(k) { return this.store[k]; } },
     history: { replaceState() {} },
     setTimeout: () => {},
     checkForUpdate: () => {},
     toast: m => toasts.push(m),
     console,
   };
-  const friendly = slice('const FRIENDLY = {', '(async () => {', 'FRIENDLY table');
+  // Anchored to the start of a line: a bare "(async () => {" also matches a
+  // nested arrow somewhere above, and then this slices the wrong region.
+  const friendly = slice('const FRIENDLY = {', '\n(async () => {', 'FRIENDLY table');
   // The boot IIFE's own opening/closing are stripped so this can be re-wrapped
   // and awaited directly — the "return" inside the error branch only parses
   // inside a function body.
@@ -79,7 +81,7 @@ test('access_denied leaves a persistent explanation, not just a toast that vanis
 
 test('the setup panel stays revealed across reload — remembered like the ?setup flag', async () => {
   const { sandbox } = await run('access_denied');
-  assert.equal(sandbox.localStorage.store.bf_setup, '1');
+  assert.equal(sandbox.LS.store.bf_setup, '1');
 });
 
 test('a different error code does not touch the setup panel at all', async () => {

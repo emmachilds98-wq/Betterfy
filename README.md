@@ -42,6 +42,14 @@ whoever sent the link. Paste the redirect URI the setup panel shows into the
 new app (**Add**, then **Save** — adding without saving looks identical until
 sign-in fails), then paste the client ID back.
 
+It has to be a **new** app, though. The default client ID is printed in this
+page's own source, so it is the easiest wrong thing to paste into that box —
+and pasting it changes nothing at all while looking exactly like the fix. The
+box now refuses it, refuses anything that is not a 32-character client ID (a
+client secret, or half of one), and the panel says in words which app is
+actually in use, so "I set my own client ID" and "I am still on the shared
+one" stop being indistinguishable.
+
 There is no setting that removes the cap for everyone without Spotify's
 involvement: Spotify's own **Extended Quota Mode** is the only way to let any
 Spotify account sign in with no allow-list at all, and that's an application
@@ -96,7 +104,15 @@ rather than sliding under them.
   rather than something to undo. Swipe right confirms whatever's selected, or
   falls back to the best guess if you haven't picked anything; **left** still
   skips, and tapping the artwork still plays.
-- **Pull down** at the top of any screen to re-sync from Spotify.
+- **Re-syncing lives in Settings**, and only there. It used to be a ⟳ button
+  sitting next to ⬇ Check for updates, plus a pull-down gesture and two footer
+  buttons. Next to the update button it read as "get the latest Betterfy",
+  which it is not: it re-reads every playlist, hundreds of calls against a
+  quota that belongs to the Spotify *app* rather than to you — so pressing it
+  by mistake is how a working app becomes a rate-limited one. A stray downward
+  swipe at the top of a list did the same thing. Now it is one button, named
+  for what it does, where you go on purpose. Normal filing keeps the library up
+  to date on its own; re-sync is only for changes made *outside* Betterfy.
 - Settings and More open as sheets from the bottom edge; flick the handle down
   to dismiss.
 
@@ -133,6 +149,57 @@ app again picks up where it stopped rather than starting over. Playlists are
 matched on the snapshot id Spotify stamps them with, so every read after the
 first only fetches what has actually changed.
 
+**If Connect Spotify does nothing at all.** This was its own bug, separate from
+every rate limit below, and it looked like nothing: the landing page came up
+perfectly (it is static HTML) and the button was wired to nothing.
+
+Two causes, both now handled. First, the button ran an `async` function through
+`onclick = () => beginAuth()`, so anything that failed inside it became an
+unhandled rejection — no message, no toast, no screen. Second, and the usual
+thing that failed inside it: a browser that refuses storage. Safari with
+**Block All Cookies**, a locked-down private window, or a page opened inside
+another app's web view will *throw* on `localStorage` rather than return null,
+and the page had around fifty unguarded calls to it — any one of which could
+kill the boot script partway through, leaving the handlers below it unattached.
+
+All storage now goes through one shim that falls back to memory and never
+throws, so a browser that keeps nothing still runs. Sign-in also checks up
+front that `crypto.subtle` exists (PKCE needs SHA-256, and it is absent over
+plain http and in some in-app browsers) and that the PKCE verifier actually
+persisted — both before the redirect, so the message is one clear sentence
+about this browser rather than a "lost security code" one redirect too late.
+The verifier is written to `sessionStorage` as well as `localStorage`, since a
+restricted browser rarely takes both.
+
+A browser that keeps nothing can still complete a sign-in — the verifier only
+has to survive one redirect. What it cannot do is keep you signed in, so the
+landing page now says that on the way in rather than letting every open look
+like a first open.
+
+**And the same silence, everywhere else.** Connect was the visible case; the
+rest of the app had it too. Every delegated handler (`click`, `change`,
+`keydown`) is `async`, and most branches inside them had no `catch` of their
+own — so filing a track, undoing, moving a misfile, running Discovery,
+building a shuffle or saving a tag correction could all reject and leave
+nothing on screen. Swipe-to-file and Enter-to-file were worse: they called
+`fileCurrent()` without awaiting it at all. That mattered more once a dropped
+request started throwing rather than being mistaken for an answer — "the
+network went" has to reach the screen, not vanish.
+
+All of them now go through one wrapper that puts the reason in a toast, and
+turns a bare Spotify status into a sentence.
+
+**And one store, for everything.** The library cache, the action log, your
+skips and rejections, your tag corrections and the banked pieces of an
+interrupted read all live in IndexedDB — so a browser that will not hand it
+over did not cost one feature, it cost all of them at once: `open()` rejected
+and every `await` above it rejected with it. A private window, blocked site
+data, a partitioned origin, a device out of space are all real, and none of
+them is a reason for the app to stop working. It now falls back to memory,
+which is a poor cache and a perfectly good one for a single session — the
+difference between "this does not work here" and "this re-reads next time". A
+store that refuses once is not asked again on every call.
+
 **If sign-in says "too many requests".** Spotify rate-limits its accounts
 service per app rather than per listener, so a busy few minutes can refuse
 anyone's sign-in with a 429. Betterfy now waits it out rather than making it
@@ -159,6 +226,21 @@ it still works too, for whenever waiting it out is good enough. The same
 escape hatch already existed for the 25-account cap (`access_denied`); this
 is it surfacing for a persistent rate limit too, rather than only when Spotify has
 flatly refused the account.
+
+**When the pause never ends.** The per-call budget above never trips in the
+case that actually bit: a quota that is simply gone answers the *first* call of
+a read with a 429, then the next, then the next — each pause short enough to
+absorb quietly, each one restarting its countdown, none of them ever reaching a
+per-call limit. From the outside that is a progress bar stuck at 2% and
+"Spotify asked for a pause — carrying on in 4s" re-arming forever. So the read
+as a whole now has a budget too, and past it the pause is surfaced rather than
+absorbed. The countdown screen also carries **Use your own Spotify app**, since
+that screen is where the wait was actually being spent and it previously
+offered nothing to do but watch.
+
+That last point is the important one: waiting does not fix this. The quota
+belongs to the *app*, not to the listener, so it is being spent by everyone
+else who has the page open on the same client ID.
 
 **If it says "Spotify asked for a pause".** A short throttle while reading a
 large library is waited out on its own, counting down on screen. A longer one
@@ -230,15 +312,17 @@ anything**:
 The build you're running is printed under the buttons on the landing screen and
 in the **More** sheet once you're in.
 
-The corner buttons, in order: **⬇ Check for updates**, **⟳ Re-sync library**
-(only once a library is loaded — this one re-reads Spotify, not the page), and
-**⚙ Settings** — appearance (Nightshift/Daylight/System), an accent colour
+The corner buttons, in order: **⬇ Check for updates** and **⚙ Settings** —
+appearance (Nightshift/Daylight/System), an accent colour
 (twelve presets, each a matched pair so the same choice reads correctly on
-both themes), an app-icon preview, compact rows, and remembered filters.
+both themes), an app-icon preview, compact rows, remembered filters, and
+**Re-sync library from Spotify** under *Your library*, which is now the only
+way to trigger a full re-read.
 Hue/depth/brightness sliders and the per-region toggles are still there under
 **Custom colour** — one fewer than before, since the stat tiles the "Stat
 tiles" toggle governed have been replaced by the coloured cards on Home.
-Settings is reachable from the landing screen too.
+Settings is reachable from the landing screen too, though re-sync only appears
+once there is a library to re-read.
 
 ## Why it uses Last.fm and Discogs
 
