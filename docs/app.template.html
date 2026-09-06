@@ -1487,6 +1487,12 @@ async function refresh(t) {
     // for another token, and got the same 429 back.
     if (retryable(e)) throw e;
     localStorage.removeItem('bf_tok');
+    // A token Spotify has actually rejected, not just rate-limited, is a real
+    // sign-out — so the home-screen app's one shot at signing itself back in
+    // is worth spending again, rather than leaving it stuck on a landing page
+    // with a button to tap forever because that shot was already used at
+    // install time.
+    localStorage.removeItem('bf_autoconnect');
     return null;
   }
   // Spotify only sometimes issues a new refresh token; keep the old one otherwise.
@@ -3160,7 +3166,10 @@ $('#copyRedirect').onclick = async () => { try { await navigator.clipboard.write
 $('#saveId').onclick = () => { const v = $('#ownId').value.trim();
   if (v) { localStorage.setItem('bf_client_id', v); toast('Saved. Now connect.'); } };
 $('#clearId').onclick = () => { localStorage.removeItem('bf_client_id'); $('#ownId').value=''; toast('Using the default app.'); };
-$('#disconnect').onclick = async () => { localStorage.removeItem('bf_tok'); await idb.clear(); location.href = REDIRECT; };
+$('#disconnect').onclick = async () => {
+  localStorage.removeItem('bf_tok'); localStorage.removeItem('bf_autoconnect');
+  await idb.clear(); location.href = REDIRECT;
+};
 $('#resync').onclick = () => start(true);
 $('#btnResync').onclick = async () => {
   const btn = $('#btnResync');
@@ -3171,7 +3180,10 @@ $('#btnUpdate').onclick = () => checkForUpdate(false);
 $('#landUpdate').onclick = () => checkForUpdate(false);
 $('#doUpdate').onclick = () => installUpdate();
 $('#dismissUpdate').onclick = () => { $('#updateBar').hidden = true; };
-window.bfReset = async () => { localStorage.removeItem('bf_tok'); localStorage.removeItem('bf_verifier'); await idb.clear(); location.replace(REDIRECT); };
+window.bfReset = async () => {
+  localStorage.removeItem('bf_tok'); localStorage.removeItem('bf_verifier'); localStorage.removeItem('bf_autoconnect');
+  await idb.clear(); location.replace(REDIRECT);
+};
 
 const LOGO_HTML = `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
   <rect width="32" height="32" rx="9" style="fill:var(--tilebg,var(--surface-2))"/>
@@ -3251,7 +3263,7 @@ async function start(force) {
     $('#land').hidden = false; $('#app').hidden = true;
     $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
       <p class="tagline">${esc(e.message)}</p>
-      <button class="b p" onclick="localStorage.removeItem('bf_tok');location.href='${REDIRECT}'">Start over</button>`;
+      <button class="b p" onclick="localStorage.removeItem('bf_tok');localStorage.removeItem('bf_autoconnect');location.href='${REDIRECT}'">Start over</button>`;
   }
 }
 
@@ -3316,7 +3328,11 @@ const FRIENDLY = {
   if (autoConnectDue()) {
     localStorage.setItem('bf_autoconnect', '1');
     stage('Signing you in…', 0.01);
-    return beginAuth();
+    // beginAuth() ends in a navigation, so this normally never resolves —
+    // but if it throws first (no network, no secure context) that must not
+    // leave "Signing you in…" on screen forever with no way off it.
+    try { return await beginAuth(); }
+    catch (e) { blocked(e.message, () => beginAuth()); return; }
   }
 
   start(false);
