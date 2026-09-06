@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-1912">
+<meta name="bf-build" content="2026-09-06-1939">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -866,7 +866,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-1912</span>
+    <span class="mono">build 2026-09-06-1939</span>
   </p>
 
   <div class="feat">
@@ -963,7 +963,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1912</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1939</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1013,7 +1013,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1912</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1939</span>
   </div>
 </div>
 
@@ -1658,7 +1658,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-1912';
+const BUILD = '2026-09-06-1939';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3965,17 +3965,39 @@ function stage(msg, pct) {
 
 /** A wall for a failure that is nobody's fault and will pass: no "start over"
  *  button, because signing in again is exactly what must not happen here. */
-let blockedTimer = null;
+let blockedTimer = null, blockedCountdown = null;
 /** @param {number} [retryInMs] — when known, retry on its own once this has passed,
- *  so getting past a rate limit never depends on someone remembering to come tap it. */
+ *  so getting past a rate limit never depends on someone remembering to come tap it.
+ *  A silent timer with a static "Try again" screen is what looked broken —
+ *  the button sat there with no sign anything was ever going to happen, so a
+ *  wait that was actually being handled read as the app having hung. Counting
+ *  down is the same fix hold() already applies to a Web API 429 mid-sync,
+ *  brought to the sign-in wall too. */
 function blocked(msg, retry, retryInMs) {
   clearTimeout(blockedTimer); blockedTimer = null;
+  clearInterval(blockedCountdown); blockedCountdown = null;
   $('#app').hidden = true; $('#land').hidden = false;
   $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
     <p class="tagline">${esc(msg)}</p>
-    <button class="b p" id="landRetry">Try again</button>`;
-  $('#landRetry').onclick = () => { clearTimeout(blockedTimer); retry(); };
-  if (retryInMs != null) blockedTimer = setTimeout(retry, retryInMs);
+    <button class="b p" id="landRetry">Try again</button>
+    ${retryInMs != null ? `<p class="fineprint" id="landRetryCountdown"></p>` : ''}`;
+  // Whichever fires first — a tap or the timer — has to stop the other one,
+  // or the countdown keeps ticking in the background forever after the retry
+  // it was counting down to has already happened.
+  const go = () => { clearTimeout(blockedTimer); clearInterval(blockedCountdown); retry(); };
+  $('#landRetry').onclick = go;
+  if (retryInMs != null) {
+    blockedTimer = setTimeout(go, retryInMs);
+    const until = Date.now() + retryInMs;
+    const tick = () => {
+      const el = $('#landRetryCountdown');
+      if (!el) return;
+      const left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+      el.textContent = left > 0 ? `Retrying by itself in ${left}s — no need to tap anything.` : 'Retrying…';
+    };
+    tick();
+    blockedCountdown = setInterval(tick, 1000);
+  }
 }
 
 async function start(force) {
@@ -4007,7 +4029,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-1912').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-1939').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
@@ -4099,8 +4121,11 @@ const FRIENDLY = {
       try { await exchange(code); }
       catch (e) {
         // The code is spent, so retrying means signing in from the top —
-        // worth offering for a rate limit, which passes on its own.
-        if (retryable(e)) blocked(e.message, () => beginAuth());
+        // worth offering for a rate limit, which passes on its own. Carrying
+        // the real wait through means this waits it out instead of inviting
+        // an impatient tap that just asks the same rate-limited endpoint for
+        // another code right away.
+        if (retryable(e)) blocked(e.message, () => beginAuth(), e.retryAfterMs);
         else { $('#land').hidden = false; toast(e.message); }
         return;
       }
@@ -4120,7 +4145,7 @@ const FRIENDLY = {
     // but if it throws first (no network, no secure context) that must not
     // leave "Signing you in…" on screen forever with no way off it.
     try { return await beginAuth(); }
-    catch (e) { blocked(e.message, () => beginAuth()); return; }
+    catch (e) { blocked(e.message, () => beginAuth(), e.retryAfterMs); return; }
   }
 
   start(false);

@@ -120,6 +120,12 @@ anyone's sign-in with a 429. Betterfy now waits it out rather than making it
 worse: a rate-limited refresh leaves you signed in and offers *Try again*
 instead of dropping you back at the sign-in screen, and reopening the
 home-screen app never re-sends an authorization code it has already used.
+Whenever Spotify says how long the wait actually is, that screen now counts
+it down and retries itself when it reaches zero — the same fix the "asked
+for a pause" screen below already had, brought to every sign-in path that
+can hit this 429 (a stale refresh, an interrupted code exchange, the
+home-screen app's own silent first attempt), so a wait that's genuinely
+being handled never again looks like the app has simply stopped.
 
 **If it says "Spotify asked for a pause".** A short throttle while reading a
 large library is waited out on its own, counting down on screen. A longer one
