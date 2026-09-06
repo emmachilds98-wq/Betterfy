@@ -104,7 +104,15 @@ rather than sliding under them.
   rather than something to undo. Swipe right confirms whatever's selected, or
   falls back to the best guess if you haven't picked anything; **left** still
   skips, and tapping the artwork still plays.
-- **Pull down** at the top of any screen to re-sync from Spotify.
+- **Re-syncing lives in Settings**, and only there. It used to be a ⟳ button
+  sitting next to ⬇ Check for updates, plus a pull-down gesture and two footer
+  buttons. Next to the update button it read as "get the latest Betterfy",
+  which it is not: it re-reads every playlist, hundreds of calls against a
+  quota that belongs to the Spotify *app* rather than to you — so pressing it
+  by mistake is how a working app becomes a rate-limited one. A stray downward
+  swipe at the top of a list did the same thing. Now it is one button, named
+  for what it does, where you go on purpose. Normal filing keeps the library up
+  to date on its own; re-sync is only for changes made *outside* Betterfy.
 - Settings and More open as sheets from the bottom edge; flick the handle down
   to dismiss.
 
@@ -304,15 +312,17 @@ anything**:
 The build you're running is printed under the buttons on the landing screen and
 in the **More** sheet once you're in.
 
-The corner buttons, in order: **⬇ Check for updates**, **⟳ Re-sync library**
-(only once a library is loaded — this one re-reads Spotify, not the page), and
-**⚙ Settings** — appearance (Nightshift/Daylight/System), an accent colour
+The corner buttons, in order: **⬇ Check for updates** and **⚙ Settings** —
+appearance (Nightshift/Daylight/System), an accent colour
 (twelve presets, each a matched pair so the same choice reads correctly on
-both themes), an app-icon preview, compact rows, and remembered filters.
+both themes), an app-icon preview, compact rows, remembered filters, and
+**Re-sync library from Spotify** under *Your library*, which is now the only
+way to trigger a full re-read.
 Hue/depth/brightness sliders and the per-region toggles are still there under
 **Custom colour** — one fewer than before, since the stat tiles the "Stat
 tiles" toggle governed have been replaced by the coloured cards on Home.
-Settings is reachable from the landing screen too.
+Settings is reachable from the landing screen too, though re-sync only appears
+once there is a library to re-read.
 
 ## Why it uses Last.fm and Discogs
 
