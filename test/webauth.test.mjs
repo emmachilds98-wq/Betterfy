@@ -206,9 +206,56 @@ test('the one attempt is claimed before leaving for Spotify, not after', () => {
   // next open, and the one after that.
   const boot = BUNDLE.slice(BUNDLE.indexOf('if (autoConnectDue())'));
   const claim = boot.indexOf("setItem('bf_autoconnect'");
-  const leave = boot.indexOf('return beginAuth()');
+  const leave = boot.indexOf('beginAuth()');
   assert.ok(claim > -1 && leave > claim, 'the attempt must be recorded before the redirect');
 });
+
+/* ---------- re-arming the one-shot after a real sign-out ---------- */
+
+// The one-attempt-ever rule above stops a refusal from looping, but it used to
+// also mean a legitimate sign-out — Disconnect, Start over, or Spotify itself
+// revoking the refresh token — permanently downgraded the home-screen app from
+// "signs itself in" to "sits on the landing page forever", since the one shot
+// had already been spent back at install time. Each of those sign-outs must
+// clear bf_autoconnect along with bf_tok so the next open gets to try again.
+
+test('a refresh token Spotify has actually rejected re-arms the home-screen auto sign-in', async () => {
+  const app = load([{ status: 400, body: { error: 'invalid_grant', error_description: 'Refresh token revoked' } }]);
+  app.store.set('bf_tok', SAVED());
+  app.store.set('bf_autoconnect', '1');
+
+  assert.equal(await app.token(), null);
+  assert.equal(app.store.get('bf_autoconnect'), undefined,
+    'a confirmed sign-out must not leave the one-shot auto-connect permanently spent');
+});
+
+test('a rate limit leaves the one-shot auto-connect alone', async () => {
+  // Contrast with the above: "try later" must not re-arm anything, since the
+  // saved token is still good and no sign-out has actually happened.
+  const app = load([{ status: 429, text: true, retryAfter: '60' }]);
+  app.store.set('bf_tok', SAVED());
+  app.store.set('bf_autoconnect', '1');
+
+  await assert.rejects(() => app.token());
+  assert.equal(app.store.get('bf_autoconnect'), '1');
+});
+
+for (const [name, marker, endMarker] of [
+  ['Disconnect', "$('#disconnect').onclick", '\n};'],
+  ['bfReset', 'window.bfReset =', '\n};'],
+  ['Start over', 'onclick="localStorage.removeItem(\'bf_tok\')', 'Start over</button>'],
+]) {
+  test(`${name} clears bf_autoconnect along with bf_tok`, () => {
+    const from = BUNDLE.indexOf(marker);
+    assert.ok(from > -1, `${name} handler not found`);
+    // Look only within this handler's own definition, not the whole file.
+    const slice = BUNDLE.slice(from, from + 400);
+    const end = slice.indexOf(endMarker);
+    const body = slice.slice(0, end === -1 ? undefined : end);
+    assert.match(body, /removeItem\(['"]bf_tok['"]\)/);
+    assert.match(body, /removeItem\(['"]bf_autoconnect['"]\)/);
+  });
+}
 
 test('the shipped bundle carries a client ID', () => {
   // Without one the page looks perfectly healthy and cannot sign anyone in:
