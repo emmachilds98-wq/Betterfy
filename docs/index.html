@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-0259">
+<meta name="bf-build" content="2026-09-06-0323">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -860,7 +860,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-0259</span>
+    <span class="mono">build 2026-09-06-0323</span>
   </p>
 
   <div class="feat">
@@ -957,7 +957,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0259</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0323</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1007,7 +1007,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0259</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0323</span>
   </div>
 </div>
 
@@ -1504,7 +1504,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-0259';
+const BUILD = '2026-09-06-0323';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -1575,8 +1575,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** A 429/5xx/offline failure; the sign-in itself is still good. */
 const retryable = e => !!e?.retryable;
-const authError = (msg, status) => Object.assign(new Error(msg), {
-  status, retryable: status === 429 || status >= 500 || status === 0,
+/** @param {number} [retryAfterMs] — when known, how long Spotify actually asked for. */
+const authError = (msg, status, retryAfterMs) => Object.assign(new Error(msg), {
+  status, retryable: status === 429 || status >= 500 || status === 0, retryAfterMs,
 });
 
 async function tokenRequest(params) {
@@ -1602,7 +1603,7 @@ async function tokenRequest(params) {
     }
     throw authError(res.status === 429 ? RATE_LIMITED
       : (body?.error_description || body?.error?.message || body?.error || `Spotify answered ${res.status}.`),
-      res.status);
+      res.status, res.status === 429 ? (+res.headers.get('retry-after') || 0) * 1000 || undefined : undefined);
   }
 }
 
@@ -1688,25 +1689,38 @@ async function hold(ms) {
   onHold?.(0);
 }
 
+// A 429 is worth sitting through quietly only while the wait is short — that
+// covers ordinary throttling. Retry-After is not a suggestion, and Spotify can
+// legitimately ask for minutes at a time, especially on a client ID shared by
+// everyone using the hosted page; holding through one of those with nothing
+// on screen but a re-arming countdown, up to eight times in a row, is what
+// "stuck on Spotify asked for a pause" actually was — the same silent wait
+// restarting for over an hour with no way to back out of it. Past this budget
+// the pause is surfaced instead: a real screen with a Try again button and an
+// honest wait time, which is what "stuck" needs to stop meaning "frozen".
+const AUTO_HOLD_MAX = 20000;    // sit out any single wait this short or less
+const AUTO_HOLD_BUDGET = 60000; // …but never more than this in total per call
+
 async function sp(path, opts = {}) {
   const url = path.startsWith('http') ? path : 'https://api.spotify.com/v1' + path;
+  let held = 0;
   for (let i = 0; ; i++) {
     await pace();
     const res = await fetch(url, { ...opts, headers:{ authorization:'Bearer ' + await token(),
       'content-type':'application/json', ...opts.headers } });
     if (res.status === 429) {
-      // Retry-After is in seconds, and it is not a suggestion: coming back
-      // early spends an attempt and earns another 429. Waiting the whole time
-      // is what actually gets a big library read.
       const after = (+res.headers.get('retry-after') || 0) * 1000;
       const wait = after || Math.min(2000 * 2 ** i, 60000);
       gap = Math.min(gap * 2, MAX_GAP);
-      if (i < 8 && wait <= 600000) { await hold(wait); continue; }
-      // Spotify sometimes asks for far longer than anyone will sit and watch.
-      // Say how long, so it reads as a wait rather than a dead end.
-      throw authError(after > 600000
-        ? `Spotify has asked for a longer pause — about ${Math.round(after / 60000)} minutes. Come back then and tap Try again; it picks up where it stopped.`
-        : RATE_LIMITED, 429);
+      if (wait <= AUTO_HOLD_MAX && held + wait <= AUTO_HOLD_BUDGET) {
+        held += wait; await hold(wait); continue;
+      }
+      // wait, not after: after is only ever this one response's own Retry-After
+      // (or 0), and what the fallback screen needs to wait out is whatever this
+      // attempt actually asked for — the backoff estimate when Spotify sent none.
+      throw authError(after >= 60000
+        ? `Spotify has asked for a pause — about ${Math.round(after / 60000)} minute${after >= 90000 ? 's' : ''}. It will carry on by itself once that has passed.`
+        : RATE_LIMITED, 429, wait);
     }
     gap = Math.max(MIN_GAP, gap * 0.9);
     if (res.status === 204) return null;
@@ -3361,18 +3375,23 @@ function stage(msg, pct) {
 
 /** A wall for a failure that is nobody's fault and will pass: no "start over"
  *  button, because signing in again is exactly what must not happen here. */
-function blocked(msg, retry) {
+let blockedTimer = null;
+/** @param {number} [retryInMs] — when known, retry on its own once this has passed,
+ *  so getting past a rate limit never depends on someone remembering to come tap it. */
+function blocked(msg, retry, retryInMs) {
+  clearTimeout(blockedTimer); blockedTimer = null;
   $('#app').hidden = true; $('#land').hidden = false;
   $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
     <p class="tagline">${esc(msg)}</p>
     <button class="b p" id="landRetry">Try again</button>`;
-  $('#landRetry').onclick = retry;
+  $('#landRetry').onclick = () => { clearTimeout(blockedTimer); retry(); };
+  if (retryInMs != null) blockedTimer = setTimeout(retry, retryInMs);
 }
 
 async function start(force) {
   let t;
   try { t = await token(); }
-  catch (e) { blocked(e.message, () => start(force)); return; }
+  catch (e) { blocked(e.message, () => start(force), e.retryAfterMs); return; }
   if (!t) {
     $('#land').hidden = false; $('#app').hidden = true;
     // Signed in in Safari and puzzled to be asked again here: say why, once,
@@ -3398,7 +3417,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-0259').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-0323').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
@@ -3417,7 +3436,7 @@ async function start(force) {
     view = 'home'; S.inboxAt = 0; render();
     window.scrollTo(0, 0);
   } catch (e) {
-    if (retryable(e)) { blocked(e.message, () => start(force)); return; }
+    if (retryable(e)) { blocked(e.message, () => start(force), e.retryAfterMs); return; }
     $('#land').hidden = false; $('#app').hidden = true;
     $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
       <p class="tagline">${esc(e.message)}</p>
