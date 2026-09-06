@@ -1749,19 +1749,46 @@ function addedShape(p, now = Date.now()) {
   return { spanDays: (hi - lo) / 86400000, sinceDays: (now - at[at.length - 1]) / 86400000 };
 }
 
+/* Two content-based axis rules were tried here and rejected on evidence,
+ * measured over a real 83-playlist library. Do not re-add them without
+ * new data.
+ *
+ * Tag coherence (mean pairwise similarity) to tell genre from mood: it
+ * does not separate them. Genre playlists ran a median 0.225 (0.096-0.677)
+ * and mood 0.246 (0.036-0.751) - mood scored HIGHER, and the ranges
+ * overlap almost entirely. A broad genre bucket ("Alt/Indie", 293 tracks)
+ * scored 0.110 while a tight mood playlist scored 0.751. The signal
+ * measures how broad a playlist is, not which axis it sits on.
+ *
+ * A release-year window to spot an era: genres cluster in time too.
+ * "Pop Punk" (a genre) spans 2002-2016 at coherence 0.385; "Nostalgia
+ * Rock" (an era) spans 1994-2011 at 0.370 - indistinguishable on both
+ * signals. Worse, the real era playlists in that library span 16-45 years,
+ * so any window tight enough to mean anything caught only the false
+ * positive.
+ *
+ * What does generalise is below: the name as a hint, and the filed dates,
+ * which need no vocabulary at all. Whatever the guess gets wrong is
+ * corrected once on the Playlists screen and remembered as "set by you".
+ */
+
 function classify(lib, now = Date.now()) {
   const cfg = {};
   for (const p of lib.playlists) {
     const n = p.name;
     const named = EVENT.test(n) ? 'event' : DJSET.test(n) ? 'djset' : ERA.test(n) ? 'era' : MOOD.test(n) ? 'mood' : null;
-    let axis = named ?? 'genre', why = named ? 'from the name' : 'no signal in the name — treated as genre';
-    if (!named) {
-      const shape = addedShape(p, now);
-      if (shape && shape.spanDays <= EVENT_SPAN_DAYS && shape.sinceDays >= EVENT_SETTLED_DAYS) {
-        axis = 'event';
-        why = `built in ${shape.spanDays < 1 ? 'a day' : Math.round(shape.spanDays) + ' days'}, nothing added since`;
-      }
+    let axis = named ?? 'genre';
+    let why = named ? 'from the name' : 'no signal in the name — treated as genre';
+
+    // Built in one sitting and never touched again: a night out, a party, a
+    // trip. This is the one content signal that holds up, and it needs no
+    // vocabulary — so it works for a library nobody has tuned for.
+    const shape = addedShape(p, now);
+    if (shape && shape.spanDays <= EVENT_SPAN_DAYS && shape.sinceDays >= EVENT_SETTLED_DAYS) {
+      axis = 'event';
+      why = `built in ${shape.spanDays < 1 ? 'a day' : Math.round(shape.spanDays) + ' days'}, nothing added since`;
     }
+
     cfg[p.id] = { name:n, axis, why, tracks:p.tracks.length,
                   target: (axis === 'genre' || axis === 'mood') && p.tracks.length >= MIN_FOR_TARGET };
   }

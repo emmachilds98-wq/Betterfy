@@ -18,8 +18,13 @@ function load(saved = {}) {
   const i = BUNDLE.indexOf('const EVENT = ');
   const j = BUNDLE.indexOf('/* ---------- reports (mirrors');
   assert.ok(i > 0 && j > i, 'classify block not found — rebuild with npm run build:web');
+  // classify reads tag coherence, so the scoring helpers have to come too.
+  const p = BUNDLE.indexOf('/* ---- profile.mjs ---- */');
+  const pEnd = BUNDLE.indexOf('/* ============', p);
+  assert.ok(p > 0 && pEnd > p, 'profile.mjs block not found — rebuild with npm run build:web');
   const sandbox = { localStorage: { getItem: () => JSON.stringify(saved) }, console };
   vm.createContext(sandbox);
+  vm.runInContext(BUNDLE.slice(p, pEnd), sandbox);
   vm.runInContext(BUNDLE.slice(i, j), sandbox);
   return sandbox;
 }
@@ -102,4 +107,28 @@ test('too few tracks to model never receives suggestions, whatever the axis', ()
   const of = axisOf([pl('x', 'tiny genre thing', { n: 9, span: 900, since: 2 })]);
   assert.equal(of('x').axis, 'genre');
   assert.equal(of('x').target, false, 'nine tracks is not a centroid');
+});
+
+/* ---- signals that need no vocabulary at all ----
+ * The name hints above only work in the author's own words: one person's club
+ * nights are "Drumsheds", another's are "me tash and liv". These read the
+ * tracks instead, so they work for a library nobody has tuned for.
+ */
+
+/** A playlist whose tracks carry release years and artist ids. */
+const withTracks = (id, name, tracks) => ({ id, name, tracks });
+// Added over a long span and still growing, so these fixtures test the era and
+// coherence rules rather than tripping the "built in one sitting" event rule.
+const trk = (id, year, artistId, k = 0) => ({
+  id, released: `${year}-06-01`,
+  added_at: new Date(NOW - 3 * day - k * 30 * day).toISOString(),
+  artists: artistId ? [{ id: artistId, name: artistId }] : [],
+});
+/** tags[artistId] = { tags: [[tag, weight]] } */
+const tagset = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { tags: v.map(t => [t, 100]) }]));
+
+test('with no tags loaded at all, classification still works from name and dates', () => {
+  const tracks = Array.from({ length: 12 }, (_, k) => trk('t' + k, 2015 + (k % 8), 'a' + k, k));
+  const of = axisOf([withTracks('x', 'unlabelled', tracks)], {}, null);
+  assert.equal(of('x').axis, 'genre', 'the old behaviour, unchanged');
 });
