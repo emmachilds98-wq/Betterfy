@@ -159,6 +159,34 @@ test('a read interrupted by a rate limit resumes instead of starting over', asyn
   assert.deepEqual(own(lib.playlists.map(p => p.tracks.length)), [1, 1, 1]);
 });
 
+/* ---------- bounding the silent wait ----------
+ * A single 429 used to be worth sitting out for up to ten minutes, up to
+ * eight times in a row per call — over an hour of "Spotify asked for a
+ * pause — carrying on in Xs" resetting itself, which is what people were
+ * reporting as the app being stuck. A short throttle is still waited out
+ * quietly; anything longer is surfaced instead, with the real wait attached
+ * so the fallback screen can retry itself once it has passed. */
+
+test('a pause longer than the short-throttle budget is surfaced immediately, not sat through', async () => {
+  const app = load({ ...LIB, limit: url => url.includes('/playlists/p2/') ? 25 : 0 });
+  const began = Date.now();
+  await assert.rejects(() => app.syncLibrary(false, () => {}), e => {
+    assert.equal(e.retryable, true);
+    assert.equal(e.retryAfterMs, 25000, 'so the fallback screen can retry itself once that has passed');
+    return true;
+  });
+  assert.ok(Date.now() - began < 5000,
+    'a 25s Retry-After must not be sat through silently before surfacing it — that is what "stuck" was');
+});
+
+test('the automatic hold has a bound, so a long pause cannot be sat through for an hour', () => {
+  const m = BUNDLE.match(/const AUTO_HOLD_MAX = (\d+);/);
+  const b = BUNDLE.match(/const AUTO_HOLD_BUDGET = (\d+);/);
+  assert.ok(m && b, 'AUTO_HOLD_MAX / AUTO_HOLD_BUDGET not found — rebuild with npm run build:web');
+  assert.ok(+m[1] <= 30000, 'a single silent wait must stay short');
+  assert.ok(+b[1] <= 120000, 'the total silent wait per call must stay bounded');
+});
+
 test('a finished read clears the banked pieces', async () => {
   const app = load(LIB);
   await app.syncLibrary(false, () => {});

@@ -257,6 +257,34 @@ for (const [name, marker, endMarker] of [
   });
 }
 
+/* ---------- the fallback screen retries itself ----------
+ * A rate limit used to leave a manual "Try again" button as the only way
+ * back in — fine if you're watching, useless on a home-screen app nobody is
+ * staring at. Once the real wait is known, the fallback screen should carry
+ * it and fire the retry on its own rather than depending on a tap. */
+
+test('blocked() re-arms its own retry after the wait it is given', () => {
+  const from = BUNDLE.indexOf('let blockedTimer = null;');
+  const to = BUNDLE.indexOf('async function start(force)');
+  assert.ok(from > -1 && to > from, 'blocked() not found — rebuild with npm run build:web');
+  const sandbox = {
+    $: () => ({}), esc: s => s, LOGO_HTML: '',
+    setTimeout, clearTimeout,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(BUNDLE.slice(from, to), sandbox);
+  let fired = 0;
+  vm.runInContext('blocked', sandbox)('a pause', () => fired++, 5);
+  assert.equal(fired, 0, 'must not fire before the given wait has passed');
+});
+
+test('a rate limit found while reading the library carries its real wait to the fallback screen', () => {
+  const start = BUNDLE.indexOf('async function start(force)');
+  const boot = BUNDLE.slice(start, BUNDLE.indexOf('// Spotify\'s raw error codes'));
+  assert.match(boot, /blocked\(e\.message, \(\) => start\(force\), e\.retryAfterMs\)/,
+    'the library-read fallback must pass the known wait through, not just a message');
+});
+
 test('the shipped bundle carries a client ID', () => {
   // Without one the page looks perfectly healthy and cannot sign anyone in:
   // beginAuth() sends client_id= empty and Spotify refuses. .env is gitignored,

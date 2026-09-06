@@ -85,8 +85,16 @@ service per app rather than per listener, so a busy few minutes can refuse
 anyone's sign-in with a 429. Betterfy now waits it out rather than making it
 worse: a rate-limited refresh leaves you signed in and offers *Try again*
 instead of dropping you back at the sign-in screen, and reopening the
-home-screen app never re-sends an authorization code it has already used. Give
-it a minute and tap *Try again*.
+home-screen app never re-sends an authorization code it has already used.
+
+**If it says "Spotify asked for a pause".** A short throttle while reading a
+large library is waited out on its own, counting down on screen. A longer one
+used to be sat through silently too — up to ten minutes at a time, several
+times over, which looked exactly like the app being stuck. Now anything
+longer than a few seconds shows a *Try again* screen with the real wait
+instead, and that screen retries itself the moment the wait is up — there is
+nothing to tap, and nothing lost either way: the parts of the read already
+finished are banked, so it carries on rather than starting over.
 
 ### Staying on the current version
 
