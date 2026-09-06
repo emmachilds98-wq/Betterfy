@@ -42,6 +42,14 @@ whoever sent the link. Paste the redirect URI the setup panel shows into the
 new app (**Add**, then **Save** — adding without saving looks identical until
 sign-in fails), then paste the client ID back.
 
+It has to be a **new** app, though. The default client ID is printed in this
+page's own source, so it is the easiest wrong thing to paste into that box —
+and pasting it changes nothing at all while looking exactly like the fix. The
+box now refuses it, refuses anything that is not a 32-character client ID (a
+client secret, or half of one), and the panel says in words which app is
+actually in use, so "I set my own client ID" and "I am still on the shared
+one" stop being indistinguishable.
+
 There is no setting that removes the cap for everyone without Spotify's
 involvement: Spotify's own **Extended Quota Mode** is the only way to let any
 Spotify account sign in with no allow-list at all, and that's an application

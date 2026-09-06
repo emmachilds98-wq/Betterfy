@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-2313">
+<meta name="bf-build" content="2026-09-06-2326">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -873,7 +873,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-2313</span>
+    <span class="mono">build 2026-09-06-2326</span>
   </p>
 
   <div class="feat">
@@ -908,6 +908,7 @@
         <button class="b" id="saveId">Save</button>
         <button class="b sm" id="clearId">Use default</button>
       </div>
+      <p class="fineprint" id="whichApp"></p>
     </details>
   </div>
 
@@ -969,7 +970,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-2313</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-2326</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1019,7 +1020,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-2313</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-2326</span>
   </div>
 </div>
 
@@ -1704,7 +1705,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-2313';
+const BUILD = '2026-09-06-2326';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2025,7 +2026,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-09-06-2313', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-09-06-2326', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -4242,6 +4243,19 @@ document.addEventListener('keydown', e => {
 $('#redirectShow').textContent = REDIRECT;
 $('#redirectShow2').value = REDIRECT;
 $('#ownId').value = LS.getItem('bf_client_id') || '';
+
+/* Which app is actually in use, in words. Without this the panel looks the same
+ * whether the switch took or not, and "I've set my own client ID" and "I am
+ * still on the shared one" are indistinguishable from the outside — which is
+ * the difference between fixed and still-throttled. */
+function showWhichApp() {
+  const own = LS.getItem('bf_client_id');
+  const el = $('#whichApp'); if (!el) return;
+  el.textContent = own
+    ? `Using your own Spotify app (${own.slice(0, 8)}…) — its quota is yours alone.`
+    : 'Using this page’s default Spotify app, whose quota is shared with everyone else who opens this link.';
+}
+showWhichApp();
 /* beginAuth() is async, so `onclick = () => beginAuth()` turned every failure
  * inside it into an unhandled rejection: the button did nothing, said nothing,
  * and looked exactly like a broken app. Anything that stops a sign-in before it
@@ -4265,9 +4279,24 @@ function signInUnavailable(msg) {
   $('.cta')?.after(p);
 }
 $('#copyRedirect').onclick = async () => { try { await navigator.clipboard.writeText(REDIRECT); toast('Copied.'); } catch { $('#redirectShow2').select(); toast('Press Ctrl+C to copy.'); } };
-$('#saveId').onclick = () => { const v = $('#ownId').value.trim();
-  if (v) { LS.setItem('bf_client_id', v); toast('Saved. Now connect.'); } };
-$('#clearId').onclick = () => { LS.removeItem('bf_client_id'); $('#ownId').value=''; toast('Using the default app.'); };
+$('#saveId').onclick = () => {
+  const v = $('#ownId').value.trim();
+  if (!v) return toast('Paste the client ID from your own Spotify app first.');
+  // The whole point of this box is a different app with a quota of its own, and
+  // the default one is printed in this page's source — so it is the easiest
+  // wrong thing to paste in, and pasting it changes precisely nothing while
+  // looking exactly like the fix.
+  if (v === DEFAULT_CLIENT_ID)
+    return toast('That is this page’s default app — the one already being shared. Create your own at developer.spotify.com/dashboard and paste that client ID instead.');
+  // A Spotify client ID is 32 hex characters. The usual mistakes are pasting
+  // the client secret, or half of something.
+  if (!/^[0-9a-f]{32}$/i.test(v))
+    return toast('That does not look like a Spotify client ID — they are 32 letters and numbers. Copy the Client ID, not the secret.');
+  LS.setItem('bf_client_id', v);
+  showWhichApp();
+  toast('Saved — that is your app now. Tap Connect Spotify.');
+};
+$('#clearId').onclick = () => { LS.removeItem('bf_client_id'); $('#ownId').value=''; showWhichApp(); toast('Using the default app.'); };
 $('#disconnect').onclick = async () => {
   LS.removeItem('bf_tok'); LS.removeItem('bf_autoconnect');
   await idb.clear(); location.href = REDIRECT;

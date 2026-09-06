@@ -279,3 +279,82 @@ test('the delegated handlers are all wrapped, not just some of them', () => {
       `the delegated ${ev} handler is not wrapped`);
   }
 });
+
+/* ---------- the client-ID box ----------
+ * The default client ID is printed in this page's own source, so it is the
+ * easiest wrong thing to paste into "use your own Spotify app" — and pasting it
+ * changes nothing at all while looking exactly like the fix. Someone did
+ * precisely that, reported the ID back as their own, and stayed throttled. */
+
+function loadSetup(saved = {}) {
+  const store = { ...saved };
+  const els = new Map();
+  const el = id => {
+    if (!els.has(id)) els.set(id, { id, value: '', textContent: '', onclick: null });
+    return els.get(id);
+  };
+  const toasts = [];
+  const sandbox = {
+    DEFAULT_CLIENT_ID: '7e79f50acaf24fb6ae40cb339bdde382',
+    LS: { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
+    $: sel => el(sel.replace('#', '')),
+    toast: m => toasts.push(m),
+    console,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(slice("$('#ownId').value = LS.getItem('bf_client_id')", "$('#disconnect').onclick", 'the setup panel')
+    // The Connect handler in between needs a button element; give it one.
+    .replace(/\$\('#connect'\)\.onclick[\s\S]*?\n};\n/, ''), sandbox);
+  return { el, toasts, store, sandbox };
+}
+
+test('pasting the page default back in is refused, and says why', () => {
+  const s = loadSetup();
+  s.el('ownId').value = '7e79f50acaf24fb6ae40cb339bdde382';
+  s.el('saveId').onclick();
+  assert.equal(s.store.bf_client_id, undefined, 'it must not be saved as if it were a different app');
+  assert.match(s.toasts[0], /default app/i);
+  assert.match(s.toasts[0], /developer\.spotify\.com/, 'and points at where to make a real one');
+});
+
+test('a client secret, or half an id, is refused rather than silently breaking sign-in', () => {
+  for (const bad of ['not-an-id', '7e79f50acaf24fb6', 'ab'.repeat(40)]) {
+    const s = loadSetup();
+    s.el('ownId').value = bad;
+    s.el('saveId').onclick();
+    assert.equal(s.store.bf_client_id, undefined, `${bad} should not have been accepted`);
+    assert.match(s.toasts[0], /32 letters and numbers|client ID/i);
+  }
+});
+
+test('a real, different client id is accepted', () => {
+  const s = loadSetup();
+  s.el('ownId').value = '0123456789ABCDEF0123456789abcdef';
+  s.el('saveId').onclick();
+  assert.equal(s.store.bf_client_id, '0123456789ABCDEF0123456789abcdef');
+  assert.match(s.toasts[0], /your app now/i);
+});
+
+test('an empty box says what to paste rather than saving nothing', () => {
+  const s = loadSetup();
+  s.el('saveId').onclick();
+  assert.equal(s.store.bf_client_id, undefined);
+  assert.match(s.toasts[0], /paste/i);
+});
+
+test('the panel says which app is actually in use, so the switch is verifiable', () => {
+  const off = loadSetup();
+  assert.match(off.el('whichApp').textContent, /default Spotify app/,
+    'on the shared app it must say so — the panel used to look identical either way');
+
+  const on = loadSetup({ bf_client_id: '0123456789abcdef0123456789abcdef' });
+  assert.match(on.el('whichApp').textContent, /your own Spotify app/);
+  assert.match(on.el('whichApp').textContent, /01234567/, 'and shows enough of it to tell them apart');
+});
+
+test('going back to the default updates what the panel says', () => {
+  const s = loadSetup({ bf_client_id: '0123456789abcdef0123456789abcdef' });
+  s.el('clearId').onclick();
+  assert.equal(s.store.bf_client_id, undefined);
+  assert.match(s.el('whichApp').textContent, /default Spotify app/);
+});
