@@ -127,16 +127,18 @@ can hit this 429 (a stale refresh, an interrupted code exchange, the
 home-screen app's own silent first attempt), so a wait that's genuinely
 being handled never again looks like the app has simply stopped.
 
-**If it keeps happening.** Once in a while is Spotify's shared, per-app quota
-having a busy minute — waiting it out is the right move, and the countdown
-above handles that on its own. Several in a row on the page's *default*
-client ID is a different problem: that quota is shared by everyone who has
-this page open, so no amount of local waiting fixes it while it stays busy.
-After a couple of back-to-back 429s the fallback screen says so and offers
-the actual fix — **Use your own Spotify app** — which takes about a minute
-to set up and gives you a quota nobody else can spend. The same escape hatch
-already existed for the 25-account cap (`access_denied`); this is it
-surfacing for a persistent rate limit too, rather than only when Spotify has
+**If it keeps happening.** A short, silent pause is Spotify's shared,
+per-app quota having a busy moment — the countdown above absorbs plenty of
+that on its own, with nothing to look at until it's done. Reaching the
+fallback screen at all means that silent budget is already spent, which is
+a different problem: this page's *default* client ID is shared by everyone
+who has it open, so no amount of local waiting fixes it while that shared
+quota stays busy. So the fallback screen says so immediately and offers the
+actual fix — **Use your own Spotify app** — which takes about a minute to
+set up and gives you a quota nobody else can spend; *Try again* right above
+it still works too, for whenever waiting it out is good enough. The same
+escape hatch already existed for the 25-account cap (`access_denied`); this
+is it surfacing for a persistent rate limit too, rather than only when Spotify has
 flatly refused the account.
 
 **If it says "Spotify asked for a pause".** A short throttle while reading a

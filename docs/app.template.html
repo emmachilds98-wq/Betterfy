@@ -3664,7 +3664,13 @@ function stage(msg, pct) {
 // genuinely not, for as long as that queue stays busy. The one thing that
 // actually fixes that rather than just waiting longer is a personal Spotify
 // app: same page, same everything, but a quota nobody else can spend.
-const RATE_LIMIT_STREAK_KEY = 'bf_ratelimit_streak', RATE_LIMIT_OWN_APP_AFTER = 2;
+// Reaching this screen at all means the silent budget (hold()'s own 60s of
+// quietly-absorbed waits) is already spent — that is not "a busy few
+// minutes" any more, it is the actual signal worth acting on. Waiting for a
+// *second* one before saying so left people sitting through a whole extra
+// failed cycle — each one its own round of escalating waits — before ever
+// finding out there was a faster way through.
+const RATE_LIMIT_STREAK_KEY = 'bf_ratelimit_streak', RATE_LIMIT_OWN_APP_AFTER = 1;
 function noteRateLimited() {
   const n = (+localStorage.getItem(RATE_LIMIT_STREAK_KEY) || 0) + 1;
   localStorage.setItem(RATE_LIMIT_STREAK_KEY, String(n));
@@ -3694,10 +3700,10 @@ function blocked(msg, retry, retryInMs, ownAppHint) {
     <button class="b p" id="landRetry">Try again</button>
     ${retryInMs != null ? `<p class="fineprint" id="landRetryCountdown"></p>` : ''}
     ${ownAppHint ? `<div class="note" style="max-width:420px; margin-top:14px; text-align:left">
-      <b>Still going after a few tries?</b> This page's default Spotify app is shared by everyone who
-      opens it, so a busy few minutes anywhere can keep refusing sign-ins here too, for as long as that
-      stays busy. Your own free Spotify app has a quota nobody else can spend — about a minute to set up,
-      and nothing to share with whoever sent you this link.
+      <b>Rather not wait it out?</b> This page's default Spotify app is shared by everyone who opens it,
+      so a busy few minutes anywhere can refuse sign-ins here too, for as long as that stays busy — Try
+      again above still works and gets there eventually. Your own free Spotify app has a quota nobody
+      else can spend instead: about a minute to set up, nothing to share with whoever sent you this link.
       <div class="rowbtns" style="margin-top:8px"><a class="b sm" href="${REDIRECT}?setup">Use your own Spotify app</a></div>
     </div>` : ''}`;
   // Whichever fires first — a tap or the timer — has to stop the other one,
