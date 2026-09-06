@@ -57,6 +57,23 @@ test('a name that says what it is still decides', () => {
   assert.equal(of('e').why, 'no signal in the name — treated as genre');
 });
 
+test('a genre name that contains a mood word as a substring is not mood', () => {
+  // "Chillstep" and "Hyperpop" are genres, not moods — MOOD used to match them
+  // on "chill" and "hype" with no word boundary, which is a name-matching bug
+  // that misfires on anyone's library, not just one person's vocabulary.
+  const of = axisOf([
+    pl('a', 'Chillstep Bangers', { span: 900, since: 3 }),
+    pl('b', 'Hyperpop Essentials', { span: 900, since: 3 }),
+    pl('c', 'Nu-Groovebox', { span: 900, since: 3 }),
+    pl('d', 'chill vibes'), pl('e', 'so hype rn'),
+  ]);
+  assert.equal(of('a').axis, 'genre');
+  assert.equal(of('b').axis, 'genre');
+  assert.equal(of('c').axis, 'genre');
+  assert.equal(of('d').axis, 'mood', 'a real mood word on its own still matches');
+  assert.equal(of('e').axis, 'mood');
+});
+
 test('a playlist built in one night and never touched since reads as an event', () => {
   // Named for who you were with, so the name gives nothing away.
   const of = axisOf([pl('x', 'me tash and liv', { span: 1, since: 200 })]);

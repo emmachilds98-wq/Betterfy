@@ -99,3 +99,49 @@ export function topTags(track, tags, idf, n = 5) {
   const v = applyIdf(trackVec(track, tags), idf);
   return [...v].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
 }
+
+// Flagged only when another playlist beats the current one by a wide margin,
+// so ordinary cross-genre overlap doesn't generate noise.
+const MISFILE_MARGIN = 1.6;
+const MISFILE_FLOOR = 0.25;
+
+/**
+ * Tracks that fit another playlist on the same axis far better than the one
+ * they are actually filed in — "goes against the pattern of this playlist".
+ * Shared between the Node pipeline (misfile.mjs) and the browser build so the
+ * two cannot silently drift into different answers about the same library.
+ *
+ * Only ever compares a track against playlists on its own axis (a metal track
+ * in a mood playlist is not "misfiled" relative to the metal bucket), and
+ * only within `targets` — a playlist below the size gate, or on an axis that
+ * doesn't take suggestions at all, is never treated as a home to be misfiled
+ * from or a destination to be misfiled to.
+ */
+export function findMisfiled(lib, tags, targets, profiles, idf, axisOf) {
+  const misfiled = [];
+  for (const p of lib.playlists) {
+    if (!targets.has(p.id)) continue;
+    const home = profiles.get(p.id);
+    if (!home) continue;
+    for (const t of p.tracks) {
+      const v = applyIdf(trackVec(t, tags), idf);
+      if (v.size < 3) continue;                    // too little signal to trust
+      const own = cosine(v, home.vec);
+      const best = rank(t, tags, profiles, idf, { exclude: p.id, top: 3, axis: axisOf(p.id) });
+      if (!best.length) continue;
+      if (best[0].score > own * MISFILE_MARGIN && best[0].score > MISFILE_FLOOR) {
+        // Confidence tiers. The raw margin test produces a long uncertain
+        // tail; banding it keeps the convincing cases from being buried.
+        const confidence =
+          own < 0.12 && best[0].score > 0.55 ? 'high'
+          : own < 0.25 && best[0].score > 0.40 ? 'medium'
+          : 'low';
+        misfiled.push({ track: t, playlistId: p.id, playlistName: p.name, ownScore: own, confidence, suggest: best });
+      }
+    }
+  }
+  const RANK = { high: 0, medium: 1, low: 2 };
+  misfiled.sort((a, b) => RANK[a.confidence] - RANK[b.confidence]
+    || (b.suggest[0].score - b.ownScore) - (a.suggest[0].score - a.ownScore));
+  return misfiled;
+}

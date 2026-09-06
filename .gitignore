@@ -3,6 +3,7 @@
 .tokens.json
 library.json
 tags-lastfm.json
+tags-discogs.json
 cache-*.json
 report-*.json
 playlists.config.json

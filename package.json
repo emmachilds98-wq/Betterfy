@@ -11,6 +11,7 @@
     "auth": "node auth.mjs",
     "snapshot": "node snapshot.mjs",
     "enrich": "node enrich-lastfm.mjs",
+    "enrich:discogs": "node enrich-discogs.mjs",
     "axes": "node axes.mjs",
     "dupes": "node dupes.mjs",
     "misfile": "node misfile.mjs",
@@ -20,7 +21,7 @@
     "build:review": "node build-review.mjs",
     "test": "node --test",
     "start": "node server.mjs",
-    "setup": "node auth.mjs && node snapshot.mjs && node enrich-lastfm.mjs && node axes.mjs",
+    "setup": "node auth.mjs && node snapshot.mjs && node enrich-lastfm.mjs && node enrich-discogs.mjs && node axes.mjs",
     "build:web": "node build-web.mjs",
     "build:icons": "node make-icons.mjs",
     "rekordbox": "node rekordbox.mjs"

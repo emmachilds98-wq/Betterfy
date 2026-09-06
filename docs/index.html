@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-1759">
+<meta name="bf-build" content="2026-09-06-1834">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -866,7 +866,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-1759</span>
+    <span class="mono">build 2026-09-06-1834</span>
   </p>
 
   <div class="feat">
@@ -963,7 +963,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1759</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1834</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1013,7 +1013,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1759</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1834</span>
   </div>
 </div>
 
@@ -1231,6 +1231,52 @@ function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis = null
 function topTags(track, tags, idf, n = 5) {
   const v = applyIdf(trackVec(track, tags), idf);
   return [...v].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
+}
+
+// Flagged only when another playlist beats the current one by a wide margin,
+// so ordinary cross-genre overlap doesn't generate noise.
+const MISFILE_MARGIN = 1.6;
+const MISFILE_FLOOR = 0.25;
+
+/**
+ * Tracks that fit another playlist on the same axis far better than the one
+ * they are actually filed in — "goes against the pattern of this playlist".
+ * Shared between the Node pipeline (misfile.mjs) and the browser build so the
+ * two cannot silently drift into different answers about the same library.
+ *
+ * Only ever compares a track against playlists on its own axis (a metal track
+ * in a mood playlist is not "misfiled" relative to the metal bucket), and
+ * only within `targets` — a playlist below the size gate, or on an axis that
+ * doesn't take suggestions at all, is never treated as a home to be misfiled
+ * from or a destination to be misfiled to.
+ */
+function findMisfiled(lib, tags, targets, profiles, idf, axisOf) {
+  const misfiled = [];
+  for (const p of lib.playlists) {
+    if (!targets.has(p.id)) continue;
+    const home = profiles.get(p.id);
+    if (!home) continue;
+    for (const t of p.tracks) {
+      const v = applyIdf(trackVec(t, tags), idf);
+      if (v.size < 3) continue;                    // too little signal to trust
+      const own = cosine(v, home.vec);
+      const best = rank(t, tags, profiles, idf, { exclude: p.id, top: 3, axis: axisOf(p.id) });
+      if (!best.length) continue;
+      if (best[0].score > own * MISFILE_MARGIN && best[0].score > MISFILE_FLOOR) {
+        // Confidence tiers. The raw margin test produces a long uncertain
+        // tail; banding it keeps the convincing cases from being buried.
+        const confidence =
+          own < 0.12 && best[0].score > 0.55 ? 'high'
+          : own < 0.25 && best[0].score > 0.40 ? 'medium'
+          : 'low';
+        misfiled.push({ track: t, playlistId: p.id, playlistName: p.name, ownScore: own, confidence, suggest: best });
+      }
+    }
+  }
+  const RANK = { high: 0, medium: 1, low: 2 };
+  misfiled.sort((a, b) => RANK[a.confidence] - RANK[b.confidence]
+    || (b.suggest[0].score - b.ownScore) - (a.suggest[0].score - a.ownScore));
+  return misfiled;
 }
 
 /* =============================================================== */
@@ -1510,7 +1556,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-1759';
+const BUILD = '2026-09-06-1834';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -1879,7 +1925,12 @@ async function syncLibrary(force, onProgress) {
 const EVENT = /\b(drumsheds|fabric|ministry|printworks|warehouse|festival)\b|\d{2}\.\d{2}\s*$/i;
 const DJSET = /^(mix|side|set)(\s*\d+)?$|rekordbox|dj'?ing for|extended .*mix/i;
 const ERA   = /\b(90s|00s|80s|70s|nostalgia|old but gold|retro)\b|^\d{4}$/i;
-const MOOD  = /(chill|mellow|wasted|vibin|groove|sleep|late night|hi energy|high energy|early night|relax|calm|hype|sad|happy)/i;
+// Word-bounded: unbounded "chill" also matches inside "Chillstep" or
+// "Chillwave" (genres), "hype" inside "Hyperpop", "groove" inside
+// "Groovebox" — real genre names that happen to contain a mood word as a
+// substring. This is not one listener's vocabulary problem; it misfires on
+// any library that has a mood-adjacent genre bucket.
+const MOOD  = /\b(chill|mellow|wasted|vibin|groove|sleep|late night|hi energy|high energy|early night|relax|calm|hype|sad|happy)\b/i;
 const MIN_FOR_TARGET = 12;
 
 /* An event playlist named for the club gives itself away; one named for who
@@ -2008,27 +2059,13 @@ function buildReports(lib, cfg, tags) {
   const axisOf = id => cfg[id]?.axis ?? null;
   const { profiles, idf } = buildProfiles(lib, tags, targets, axisOf);
 
-  const misfiled = [];
-  for (const p of lib.playlists) {
-    if (!targets.has(p.id)) continue;
-    const home = profiles.get(p.id); if (!home) continue;
-    for (const t of p.tracks) {
-      const v = applyIdf(trackVec(t, tags), idf); if (v.size < 3) continue;
-      const own = cosine(v, home.vec);
-      const best = rank(t, tags, profiles, idf, { exclude:p.id, top:3, axis:axisOf(p.id) });
-      if (!best.length) continue;
-      if (best[0].score > own * 1.6 && best[0].score > 0.25) {
-        const confidence = own < 0.12 && best[0].score > 0.55 ? 'high'
-                         : own < 0.25 && best[0].score > 0.40 ? 'medium' : 'low';
-        misfiled.push({ id:t.id, artist:t.artists?.[0]?.name, title:t.name, art:t.art, dur:t.duration_ms, current:p.name,
-          currentPlaylistId:p.id, currentScore:+own.toFixed(3), confidence,
-          suggest: best.map(b => ({ id:b.id, name:b.name, score:+b.score.toFixed(3) })), tags: topTags(t, tags, idf),
-          artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })) });
-      }
-    }
-  }
-  const RK = { high:0, medium:1, low:2 };
-  misfiled.sort((a,b) => RK[a.confidence]-RK[b.confidence] || (b.suggest[0].score-b.currentScore)-(a.suggest[0].score-a.currentScore));
+  // Shared with the Node pipeline (misfile.mjs) via profile.mjs, bundled in
+  // verbatim — the two builds cannot silently drift into different answers.
+  const misfiled = findMisfiled(lib, tags, targets, profiles, idf, axisOf).map(m => ({
+    id: m.track.id, artist: m.track.artists?.[0]?.name, title: m.track.name, art: m.track.art, dur: m.track.duration_ms,
+    current: m.playlistName, currentPlaylistId: m.playlistId, currentScore: +m.ownScore.toFixed(3), confidence: m.confidence,
+    suggest: m.suggest.map(b => ({ id: b.id, name: b.name, score: +b.score.toFixed(3) })), tags: topTags(m.track, tags, idf),
+    artists: (m.track.artists ?? []).filter(a => a.id).map(a => ({ id: a.id, name: a.name })) }));
 
   const filed = new Set();
   for (const p of lib.playlists) for (const t of p.tracks) filed.add(t.id);
@@ -2781,7 +2818,7 @@ function rankSeeds(weights, n = 40) {
 
 async function runDiscovery(seedPlaylistId) {
   const key = localStorage.getItem('bf_lfm');
-  if (!key) { toast('Discovery needs a Last.fm key — add one under Playlists.'); return; }
+  if (!key) { toast('Discovery needs a Last.fm key — paste one above to get started.'); return; }
   const lfm = p => fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({ ...p, api_key:key, format:'json' })).then(r => r.json());
 
   const ownedArtist = new Set(), ownedTrack = new Set();
@@ -2873,7 +2910,15 @@ function vDiscover() {
   const head = `<h1>Discover</h1>
     <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
       <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
-    ${hasKey ? '' : '<div class="note">Discovery needs a free Last.fm key. Add one under <b>Playlists</b>.</div>'}
+    ${hasKey ? '' : `<div class="note">
+      <b>Discovery needs a free Last.fm key</b> — it supplies the genre data Spotify no longer will.
+      Paste one below; it's saved on this device and discovery starts right away, no extra screen.
+      <div class="rowbtns" style="margin-top:8px">
+        <input id="lfmKeyDisc" placeholder="Last.fm API key" size="34">
+        <button class="b p" id="saveLfmDiscover">Save &amp; find new music</button>
+        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
+      </div>
+    </div>`}
     <div class="rowbtns" style="margin-bottom:16px">
       <select id="discPl">
         <option value="">Everything I listen to</option>
@@ -2886,7 +2931,7 @@ function vDiscover() {
 
   if (!d.length) return head + (hasKey
     ? '<div class="empty"><b>Nothing found yet</b>Pick what to seed from above, then hit Find new music. A run takes a minute or two.</div>'
-    : '<div class="empty"><b>Discovery needs a Last.fm key</b>It is free, and it is what supplies the genre data Spotify no longer will.</div>');
+    : '<div class="empty"><b>Add a key above to get started</b>It only takes a few seconds, and finding new music begins the moment you save it.</div>');
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
   const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
@@ -3018,6 +3063,15 @@ function vLists() {
       <button class="b p" id="enrich" ${localStorage.getItem('bf_lfm') ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button>
       <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
     </div>
+    <p class="sub" style="margin:8px 0">
+      Optional — a free <b>Discogs</b> token fills in artists Last.fm has nothing on at all, from the styles on
+      their own releases (Jungle, Deep House, Electro — finer than Last.fm's one flat tag per artist). It never
+      overrides a real Last.fm tag, only ever fills a total gap, and runs automatically as part of the button above.</p>
+    <div class="rowbtns" style="margin-bottom:8px">
+      <input id="discogsKey" placeholder="Discogs personal access token" size="34" value="${esc(localStorage.getItem('bf_discogs') || '')}">
+      <button class="b" id="saveDiscogs">Save token</button>
+      <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
+    </div>
 
     <h2>Axes</h2>
     <div class="rows">${rows.map(axisRowHTML).join('')}</div>`;
@@ -3031,10 +3085,25 @@ function tagCoverage() {
   return { total: ids.size, have, missing: ids.size - have, pct: ids.size ? Math.round(100*have/ids.size) : 0 };
 }
 
+/** Release styles for an artist Last.fm has nothing on at all — never called
+ *  otherwise, since a real Last.fm tag always wins outright. */
+async function discogsTags(name, token) {
+  const r = await fetch('https://api.discogs.com/database/search?' + new URLSearchParams({
+    artist: name, type: 'release', per_page: '50', token })).then(x => x.json());
+  const tally = new Map();
+  for (const hit of r.results ?? [])
+    for (const style of hit.style ?? []) {
+      const s = style.toLowerCase();
+      tally.set(s, (tally.get(s) ?? 0) + 1);
+    }
+  return [...tally].sort((a, b) => b[1] - a[1]).slice(0, 10);
+}
+
 /** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
 async function enrichMissing() {
   const key = localStorage.getItem('bf_lfm');
   if (!key) return toast('Add a Last.fm key first.');
+  const discogsToken = localStorage.getItem('bf_discogs');
   const names = new Map();
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
@@ -3042,22 +3111,31 @@ async function enrichMissing() {
   if (!todo.length) return toast('Nothing missing.');
 
   const cached = (await idb.get('tags_extra')) ?? {};
-  let done = 0;
+  let done = 0, viaDiscogs = 0;
   for (const [id, name] of todo) {
     if (cached[id]) { TAGS[id] = cached[id]; done++; continue; }
+    let tags = [];
     try {
       const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
         method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
-      const tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
-      cached[id] = { tags }; TAGS[id] = { tags };
-    } catch { cached[id] = { tags: [] }; TAGS[id] = { tags: [] }; }
-    if (++done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
+      tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
+    } catch { tags = []; }
     await new Promise(r => setTimeout(r, 200));   // Last.fm's documented ~5/s
+
+    // Last.fm found nothing at all — try Discogs release styles before giving
+    // up on this artist, rather than leaving it permanently blank.
+    if (!tags.length && discogsToken) {
+      try { tags = await discogsTags(name, discogsToken); if (tags.length) viaDiscogs++; } catch { /* leave it blank */ }
+      await new Promise(r => setTimeout(r, 1100));  // Discogs: 60 req/min with a token
+    }
+
+    cached[id] = { tags }; TAGS[id] = { tags };
+    if (++done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
   }
   await idb.set('tags_extra', cached);
   R = buildReports(LIB, CFG, TAGS);
   $('#land').hidden = true; $('#app').hidden = false;
-  toast(`Tags filled for ${todo.length} artists.`);
+  toast(`Tags filled for ${todo.length} artists.` + (viaDiscogs ? ` (${viaDiscogs} from Discogs, where Last.fm had nothing.)` : ''));
   render();
 }
 
@@ -3413,6 +3491,18 @@ document.addEventListener('click', async e => {
 
   if (e.target.id === 'discRun') return runDiscovery(S.discSeed || null);
 
+  // Saving the key and finding new music used to be two screens and two
+  // clicks — go to Playlists, paste it, come back, hit Find new music. Doing
+  // it right here removes the trip: the key is saved and discovery starts in
+  // the same action, so a first-time listener never has to go looking for it.
+  if (e.target.id === 'saveLfmDiscover') {
+    const v = $('#lfmKeyDisc')?.value.trim();
+    if (!v) return toast('Paste a Last.fm key first.');
+    localStorage.setItem('bf_lfm', v);
+    toast('Key saved — finding new music…');
+    return runDiscovery(S.discSeed || null);
+  }
+
   const like = e.target.closest('[data-like]');
   if (like) { try { await sp('/me/tracks?ids='+like.dataset.like, { method:'PUT' });
       await logAction({ op:'add-liked', trackIds:[like.dataset.like], reason:'from discovery' });
@@ -3527,6 +3617,12 @@ document.addEventListener('click', async e => {
     const v = $('#lfmKey').value.trim();
     if (v) { localStorage.setItem('bf_lfm', v); toast('Key saved.'); render(); }
     else { localStorage.removeItem('bf_lfm'); toast('Key cleared.'); render(); }
+    return;
+  }
+  if (e.target.id === 'saveDiscogs') {
+    const v = $('#discogsKey').value.trim();
+    if (v) { localStorage.setItem('bf_discogs', v); toast('Token saved.'); render(); }
+    else { localStorage.removeItem('bf_discogs'); toast('Token cleared.'); render(); }
     return;
   }
   if (e.target.id === 'enrich') return enrichMissing();
@@ -3759,7 +3855,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-1759').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-1834').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
