@@ -263,19 +263,57 @@ for (const [name, marker, endMarker] of [
  * staring at. Once the real wait is known, the fallback screen should carry
  * it and fire the retry on its own rather than depending on a tap. */
 
-test('blocked() re-arms its own retry after the wait it is given', () => {
-  const from = BUNDLE.indexOf('let blockedTimer = null;');
+/** blocked() rendered against a fake DOM that actually remembers elements,
+ *  so the countdown text can be read back rather than just trusting it ran. */
+function loadBlocked() {
+  const from = BUNDLE.indexOf('let blockedTimer = null, blockedCountdown = null;');
   const to = BUNDLE.indexOf('async function start(force)');
   assert.ok(from > -1 && to > from, 'blocked() not found — rebuild with npm run build:web');
+  const els = new Map();
+  const el = id => els.get(id) ?? els.set(id, { textContent: '', onclick: null, hidden: false }).get(id);
   const sandbox = {
-    $: () => ({}), esc: s => s, LOGO_HTML: '',
-    setTimeout, clearTimeout,
+    $: sel => el(sel.replace('#', '')),
+    esc: s => s, LOGO_HTML: '',
+    setTimeout, clearTimeout, setInterval, clearInterval,
   };
   vm.createContext(sandbox);
   vm.runInContext(BUNDLE.slice(from, to), sandbox);
+  return { sandbox, el, blocked: (...a) => vm.runInContext('blocked', sandbox)(...a) };
+}
+
+test('blocked() re-arms its own retry after the wait it is given', () => {
+  const { blocked, el } = loadBlocked();
   let fired = 0;
-  vm.runInContext('blocked', sandbox)('a pause', () => fired++, 5);
+  blocked('a pause', () => fired++, 5);
   assert.equal(fired, 0, 'must not fire before the given wait has passed');
+  el('landRetry').onclick(); // clean up the pending timer/interval rather than waiting them out
+  assert.equal(fired, 1);
+});
+
+test('blocked() counts down when the wait is known, so a silent screen does not read as stuck', async () => {
+  const { blocked, el } = loadBlocked();
+  blocked('a pause', () => {}, 3000);
+  const first = el('landRetryCountdown').textContent;
+  assert.match(first, /Retrying by itself in 3s/);
+  await new Promise(r => setTimeout(r, 1100));
+  assert.match(el('landRetryCountdown').textContent, /Retrying by itself in [12]s/,
+    'the countdown actually ticks, not just a static "it will retry" line');
+  el('landRetry').onclick(); // stop the countdown rather than waiting the rest of it out
+});
+
+test('blocked() with no known wait shows the button alone, not a countdown promising one', () => {
+  const { blocked, el } = loadBlocked();
+  blocked('a pause', () => {});
+  assert.equal(el('landRetryCountdown').textContent, '', 'nothing to count down when the wait is not known');
+});
+
+test('a tap and the auto-retry timer cannot both fire — whichever wins stops the other', async () => {
+  const { blocked, el } = loadBlocked();
+  let fired = 0;
+  blocked('a pause', () => fired++, 20);
+  el('landRetry').onclick(); // the tap wins
+  await new Promise(r => setTimeout(r, 50)); // long past the 20ms the timer needed
+  assert.equal(fired, 1, 'the timer must not also fire after the tap already retried');
 });
 
 test('a rate limit found while reading the library carries its real wait to the fallback screen', () => {
@@ -283,6 +321,19 @@ test('a rate limit found while reading the library carries its real wait to the 
   const boot = BUNDLE.slice(start, BUNDLE.indexOf('// Spotify\'s raw error codes'));
   assert.match(boot, /blocked\(e\.message, \(\) => start\(force\), e\.retryAfterMs\)/,
     'the library-read fallback must pass the known wait through, not just a message');
+});
+
+test('a rate-limited code exchange carries its real wait through too, not just a bare "Try again"', () => {
+  const start = BUNDLE.indexOf('// Spotify\'s raw error codes');
+  const boot = BUNDLE.slice(BUNDLE.indexOf('(async () => {', start), BUNDLE.indexOf('if (autoConnectDue())'));
+  assert.match(boot, /blocked\(e\.message, \(\) => beginAuth\(\), e\.retryAfterMs\)/,
+    'a code exchange that hits the same rate limit deserves the same auto-retry the library read gets');
+});
+
+test('the auto-connect fallback also carries a known wait through', () => {
+  const from = BUNDLE.indexOf('if (autoConnectDue())');
+  const boot = BUNDLE.slice(from, from + 500);
+  assert.match(boot, /blocked\(e\.message, \(\) => beginAuth\(\), e\.retryAfterMs\)/);
 });
 
 test('the shipped bundle carries a client ID', () => {
