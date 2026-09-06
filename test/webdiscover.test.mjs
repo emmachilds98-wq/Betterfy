@@ -73,11 +73,21 @@ test('with nothing found yet, the seed picker stands alone', () => {
   assert.doesNotMatch(html, /id="seek"/, 'no player until there is something to play');
 });
 
-test('without a Last.fm key the run button is disabled and says why', () => {
+test('without a Last.fm key the run button is disabled and an inline form offers one', () => {
+  // Used to just point at the Playlists screen and leave you to find your own
+  // way there; now the key can be pasted and saved right where it's needed.
   const html = load({ key: null }).vDiscover();
   assert.match(html, /Discovery needs a free Last\.fm key/);
   assert.match(html, /id="discRun" disabled/);
-  assert.match(html, /Discovery needs a Last\.fm key/, 'and the empty state says so too');
+  assert.match(html, /id="lfmKeyDisc"/, 'the key can be entered on this screen');
+  assert.match(html, /id="saveLfmDiscover"/, 'and saving it is one click, not a trip to another screen');
+  assert.match(html, /Add a key above to get started/, 'and the empty state points at the same form');
+});
+
+test('with a key already saved, no inline form clutters the screen', () => {
+  const html = load({ key: 'lfm-key' }).vDiscover();
+  assert.doesNotMatch(html, /id="lfmKeyDisc"/);
+  assert.doesNotMatch(html, /id="saveLfmDiscover"/);
 });
 
 test('the card carries the cover, the track and a real position slider', () => {

@@ -1721,7 +1721,12 @@ async function syncLibrary(force, onProgress) {
 const EVENT = /\b(drumsheds|fabric|ministry|printworks|warehouse|festival)\b|\d{2}\.\d{2}\s*$/i;
 const DJSET = /^(mix|side|set)(\s*\d+)?$|rekordbox|dj'?ing for|extended .*mix/i;
 const ERA   = /\b(90s|00s|80s|70s|nostalgia|old but gold|retro)\b|^\d{4}$/i;
-const MOOD  = /(chill|mellow|wasted|vibin|groove|sleep|late night|hi energy|high energy|early night|relax|calm|hype|sad|happy)/i;
+// Word-bounded: unbounded "chill" also matches inside "Chillstep" or
+// "Chillwave" (genres), "hype" inside "Hyperpop", "groove" inside
+// "Groovebox" — real genre names that happen to contain a mood word as a
+// substring. This is not one listener's vocabulary problem; it misfires on
+// any library that has a mood-adjacent genre bucket.
+const MOOD  = /\b(chill|mellow|wasted|vibin|groove|sleep|late night|hi energy|high energy|early night|relax|calm|hype|sad|happy)\b/i;
 const MIN_FOR_TARGET = 12;
 
 /* An event playlist named for the club gives itself away; one named for who
@@ -2623,7 +2628,7 @@ function rankSeeds(weights, n = 40) {
 
 async function runDiscovery(seedPlaylistId) {
   const key = localStorage.getItem('bf_lfm');
-  if (!key) { toast('Discovery needs a Last.fm key — add one under Playlists.'); return; }
+  if (!key) { toast('Discovery needs a Last.fm key — paste one above to get started.'); return; }
   const lfm = p => fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({ ...p, api_key:key, format:'json' })).then(r => r.json());
 
   const ownedArtist = new Set(), ownedTrack = new Set();
@@ -2715,7 +2720,15 @@ function vDiscover() {
   const head = `<h1>Discover</h1>
     <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
       <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
-    ${hasKey ? '' : '<div class="note">Discovery needs a free Last.fm key. Add one under <b>Playlists</b>.</div>'}
+    ${hasKey ? '' : `<div class="note">
+      <b>Discovery needs a free Last.fm key</b> — it supplies the genre data Spotify no longer will.
+      Paste one below; it's saved on this device and discovery starts right away, no extra screen.
+      <div class="rowbtns" style="margin-top:8px">
+        <input id="lfmKeyDisc" placeholder="Last.fm API key" size="34">
+        <button class="b p" id="saveLfmDiscover">Save &amp; find new music</button>
+        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
+      </div>
+    </div>`}
     <div class="rowbtns" style="margin-bottom:16px">
       <select id="discPl">
         <option value="">Everything I listen to</option>
@@ -2728,7 +2741,7 @@ function vDiscover() {
 
   if (!d.length) return head + (hasKey
     ? '<div class="empty"><b>Nothing found yet</b>Pick what to seed from above, then hit Find new music. A run takes a minute or two.</div>'
-    : '<div class="empty"><b>Discovery needs a Last.fm key</b>It is free, and it is what supplies the genre data Spotify no longer will.</div>');
+    : '<div class="empty"><b>Add a key above to get started</b>It only takes a few seconds, and finding new music begins the moment you save it.</div>');
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
   const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
@@ -3254,6 +3267,18 @@ document.addEventListener('click', async e => {
   }
 
   if (e.target.id === 'discRun') return runDiscovery(S.discSeed || null);
+
+  // Saving the key and finding new music used to be two screens and two
+  // clicks — go to Playlists, paste it, come back, hit Find new music. Doing
+  // it right here removes the trip: the key is saved and discovery starts in
+  // the same action, so a first-time listener never has to go looking for it.
+  if (e.target.id === 'saveLfmDiscover') {
+    const v = $('#lfmKeyDisc')?.value.trim();
+    if (!v) return toast('Paste a Last.fm key first.');
+    localStorage.setItem('bf_lfm', v);
+    toast('Key saved — finding new music…');
+    return runDiscovery(S.discSeed || null);
+  }
 
   const like = e.target.closest('[data-like]');
   if (like) { try { await sp('/me/tracks?ids='+like.dataset.like, { method:'PUT' });
