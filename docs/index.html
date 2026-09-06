@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-0323">
+<meta name="bf-build" content="2026-09-06-1303">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -860,7 +860,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-0323</span>
+    <span class="mono">build 2026-09-06-1303</span>
   </p>
 
   <div class="feat">
@@ -957,7 +957,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0323</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1303</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1007,7 +1007,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0323</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-1303</span>
   </div>
 </div>
 
@@ -1504,7 +1504,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-0323';
+const BUILD = '2026-09-06-1303';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -1960,7 +1960,8 @@ function buildReports(lib, cfg, tags) {
                          : own < 0.25 && best[0].score > 0.40 ? 'medium' : 'low';
         misfiled.push({ id:t.id, artist:t.artists?.[0]?.name, title:t.name, art:t.art, dur:t.duration_ms, current:p.name,
           currentPlaylistId:p.id, currentScore:+own.toFixed(3), confidence,
-          suggest: best.map(b => ({ id:b.id, name:b.name, score:+b.score.toFixed(3) })), tags: topTags(t, tags, idf) });
+          suggest: best.map(b => ({ id:b.id, name:b.name, score:+b.score.toFixed(3) })), tags: topTags(t, tags, idf),
+          artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })) });
       }
     }
   }
@@ -1973,6 +1974,7 @@ function buildReports(lib, cfg, tags) {
   const backlog = unfiled.map(t => ({ id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
     album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
     tags: topTags(t, tags, idf),
+    artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })),
     suggest: rank(t, tags, profiles, idf, { top:3 }).map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null })) }))
     .sort((a,b) => (b.added??'').localeCompare(a.added??''));
 
@@ -2000,8 +2002,9 @@ function buildReports(lib, cfg, tags) {
 }
 
 /* ===================== UI ===================== */
-let LIB = null, CFG = null, TAGS = null, R = null, view = 'home';
-const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set() };
+let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'home';
+const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null,
+            fileSel:new Set(), fileSelFor:null };
 
 // Bar order, which is also swipe order: swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
@@ -2338,14 +2341,23 @@ function vInbox() {
       <b>That's the lot.</b>Every liked song sits in at least one playlist. Nothing left to file.</div>`;
 
   const i = Math.min(S.inboxAt, rows.length - 1), t = rows[i];
+  // A tap only ever builds a selection now — it never writes to Spotify by
+  // itself, which is what a misclick used to cost. The selection belongs to
+  // whichever track is on screen, so it clears the moment that changes.
+  if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; }
   const opts = Object.entries(CFG).filter(([, v]) => v.target).map(([id, v]) => ({ id, ...v }))
     .sort((a, b) => a.name.localeCompare(b.name));
+  const nameOf = id => opts.find(o => o.id === id)?.name ?? t.suggest.find(s => s.id === id)?.name ?? id;
   const best = t.suggest[0];
+  const canFile = S.fileSel.size > 0 || !!best;
+  const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
+    : S.fileSel.size === 1 ? `File in ${esc(nameOf([...S.fileSel][0]))}`
+    : best ? `File in ${esc(best.name)}` : 'Pick a playlist below';
   // Say whichever of the two is actually available to the hand on the device.
   const touch = matchMedia('(hover:none) and (pointer:coarse)').matches;
   const how = touch
-    ? `Swipe <b>right</b> to file, <b>left</b> to skip.`
-    : `Keys: <b>1–3</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.`;
+    ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
+    : `Keys: <b>1–3</b> pick, <b>Enter</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.`;
 
   return `<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
@@ -2353,9 +2365,9 @@ function vInbox() {
     </div>
     <div class="deck">
       ${rows[i + 1] ? '<div class="peek" aria-hidden="true"></div>' : ''}
-      <div class="card swipecard" id="swipeCard" ${best ? `data-best="${esc(best.id)}"` : ''}>
+      <div class="card swipecard" id="swipeCard" ${canFile ? `data-best="${esc(best?.id ?? '')}"` : ''}>
         <div class="verdicts" aria-hidden="true">
-          <span class="verdict file">${best ? esc(best.name) : 'No pick'}</span>
+          <span class="verdict file">${S.fileSel.size ? `${S.fileSel.size} playlist${S.fileSel.size>1?'s':''}` : best ? esc(best.name) : 'No pick'}</span>
           <span class="verdict skip">Skip</span>
         </div>
         <h2 style="margin:0 0 20px; font-size:26px; font-weight:800; letter-spacing:-.025em">Where does this one go?</h2>
@@ -2371,22 +2383,27 @@ function vInbox() {
           </div>
         </div>
         ${t.suggest.length ? `<div class="picks">${t.suggest.slice(0, 3).map((sg, n) => `
-          <button class="pick ${n === 0 ? 'best' : ''}" data-file="${esc(sg.id)}">
-            <span class="k">${n + 1}</span>
+          <button class="pick ${n === 0 ? 'best' : ''}" data-selfile="${esc(sg.id)}"
+            ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
+            <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis ?? '')} playlist</span></span>
             <span class="rt"><span class="sc">${(sg.score * 100).toFixed(0)}%</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
           </button>`).join('')}</div>`
         : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, or it fits nothing you have. Pick a playlist below.</p>`}
+        ${[...S.fileSel].filter(id => !t.suggest.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
+          ${[...S.fileSel].filter(id => !t.suggest.some(sg => sg.id === id)).map(id =>
+            `<button class="chip" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
+        </div>` : ''}
         <div class="rowbtns" style="margin-top:22px">
-          ${best ? `<button class="b big go grow" data-file="${esc(best.id)}">File in ${esc(best.name)}</button>` : ''}
+          <button class="b big go grow" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
           <button class="b big" data-act="skip">Skip</button>
         </div>
         <div class="rowbtns" style="margin-top:10px">
           <button class="b sm" data-act="unlike">Unlike</button>
-          <select id="anyPl"><option value="">File somewhere else…</option>${opts.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+          <select id="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
         </div>
-        <p style="margin:14px 0 0; font-size:13px; color:var(--ink-3); text-align:center">Nothing is written to Spotify until you tap — and everything can be undone.</p>
+        <p style="margin:14px 0 0; font-size:13px; color:var(--ink-3); text-align:center">Nothing is written to Spotify until you tap File or swipe — and it can be undone after.</p>
       </div>
     </div>
     <div class="prog" style="margin-top:16px"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
@@ -2445,6 +2462,9 @@ function secMisfile() {
   const counts = { high: 0, medium: 0, low: 0 };
   for (const x of R.misfiled) counts[x.confidence]++;
   const m = R.misfiled.filter(x => x.confidence === S.mfBand);
+  // Only draw the (stateful, id-bearing) editor once, even if the artist
+  // being fixed has several other misfiled tracks in the same list.
+  let editorDrawn = false;
   return `<p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Each row is a move, not a score — and every one of them lands in History.</p>
     <div class="rowbtns" style="margin-bottom:14px">${['high', 'medium', 'low'].map(b =>
       `<button class="b sm ${S.mfBand === b ? 'p' : ''}" data-mfb="${b}">${b} (${counts[b]})</button>`).join('')}</div>
@@ -2460,7 +2480,14 @@ function secMisfile() {
         ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}">${done ? 'Moved' : 'Move'}</button>` : ''}
         ${x.suggest.filter(sg => sg.id).slice(1, 2).map(sg =>
           `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(sg.id)}">→ ${esc(sg.name)}</button>`).join('')}
-        <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${x.dur ?? 0}">Play</button></div></div>`;
+        <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${x.dur ?? 0}">Play</button></div>
+      ${x.tags?.length ? `<div style="flex-basis:100%; margin-top:6px">
+        <div class="tagrow">${x.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+        <div class="rowbtns" style="margin-top:6px">${(x.artists ?? []).map(a =>
+          `<button class="b sm" data-editartist="${esc(a.id)}">${S.editingArtist === a.id ? 'Close' : 'Wrong tags?'} ${esc(a.name)}</button>`).join('')}</div>
+        ${!editorDrawn && S.editingArtist && x.artists?.some(a => a.id === S.editingArtist)
+          ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
+      </div>` : ''}</div>`;
     }).join('')
       || `<div class="empty"><b>Nothing in this band</b>${S.mfBand === 'high' ? 'Everything is filed where it fits. Try the medium band for the speculative ones.' : 'Try another confidence band.'}</div>`}</div>`;
 }
@@ -2524,9 +2551,74 @@ function shuffleStats(order) {
            avgGap: gaps.length?(gaps.reduce((a,b)=>a+b,0)/gaps.length).toFixed(1):'—' };
 }
 
+// The playlist syncAllSongsPlaylist() keeps topped up — a distinctive name so
+// it is never confused with (or overwritten in place of) something a listener
+// already made and happened to call "All Songs".
+const ALL_SONGS_NAME = 'All Songs — Betterfy';
+
+/** Every track in the library, once each — the union this feeds into
+ *  ALL_SONGS_NAME. Order doesn't matter; Shuffle re-orders it regardless. */
+function allLibraryTracks() {
+  const seen = new Map();
+  for (const p of LIB.playlists) for (const t of p.tracks) if (t?.id && !seen.has(t.id)) seen.set(t.id, t);
+  for (const t of LIB.liked) if (t?.id && !seen.has(t.id)) seen.set(t.id, t);
+  return [...seen.values()];
+}
+
+/**
+ * Create (once) or top up (every time after) a playlist holding every track
+ * in the library. Never removes anything and never re-adds what is already
+ * there — it reads the playlist's current contents first and only sends the
+ * difference, so running it again costs nothing and duplicates nothing.
+ */
+async function syncAllSongsPlaylist() {
+  const all = allLibraryTracks();
+  if (!all.length) return toast('Nothing to add yet — sync your library first.');
+  const mine = await paged('/me/playlists?limit=50');
+  let pl = mine.find(p => p.name === ALL_SONGS_NAME && p.owner?.id === LIB.user.id);
+  if (!pl) pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({
+    name: ALL_SONGS_NAME, public:false,
+    description:'Every track in your library, kept in one place by Betterfy. Refresh any time — nothing is ever duplicated.',
+  }) });
+
+  const have = new Set(await playlistIds(pl.id));
+  const missing = all.filter(t => !have.has(t.id));
+  if (missing.length) {
+    await addTracks(pl.id, missing.map(t => t.id));
+    await logAction({ op:'add', playlistId:pl.id, playlistName:ALL_SONGS_NAME,
+      trackIds:missing.map(t => t.id), reason:'All Songs refresh' });
+  }
+
+  // Reflect the result locally so Shuffle can use it immediately, rather than
+  // needing a full re-sync to notice a playlist it just wrote to.
+  const nowIds = new Set([...have, ...missing.map(t => t.id)]);
+  const merged = [...nowIds].map(id => all.find(t => t.id === id) ?? { id });
+  const idx = LIB.playlists.findIndex(p => p.id === pl.id);
+  const entry = { id:pl.id, name:ALL_SONGS_NAME, snapshot_id:pl.snapshot_id, tracks:merged };
+  if (idx >= 0) LIB.playlists[idx] = entry; else LIB.playlists.push(entry);
+  await idb.set('library', LIB);
+  // A meta playlist of everything is not a filing destination on any axis —
+  // comparing tracks against it would just mean "matches something you own".
+  CFG[pl.id] = { name:ALL_SONGS_NAME, axis:'context', why:'set by you', target:false, tracks:merged.length };
+  const savedAxes = JSON.parse(localStorage.getItem('bf_axes') || '{}');
+  savedAxes[pl.id] = { axis:'context', target:false };
+  localStorage.setItem('bf_axes', JSON.stringify(savedAxes));
+  R = buildReports(LIB, CFG, TAGS);
+  S.shufPl = pl.id;
+  toast(missing.length ? `${ALL_SONGS_NAME} refreshed — ${missing.length} track${missing.length===1?'':'s'} added.`
+                       : `${ALL_SONGS_NAME} is already up to date.`);
+  render();
+}
+
 function vShuffle() {
   const pls = LIB.playlists.filter(p => p.tracks.length >= 8).sort((a,b) => b.tracks.length - a.tracks.length);
-  const sel = S.shufPl ?? pls[0]?.id;
+  // Once it exists, everything you own beats any single bucket as a shuffle
+  // source — that default only loses to a playlist you have since chosen.
+  const allSongs = LIB.playlists.find(p => p.name === ALL_SONGS_NAME);
+  // Persisted immediately, not just used locally — otherwise "Create shuffled
+  // playlist" (which reads S.shufPl on its own) can act on a different
+  // playlist than whichever one the dropdown is actually showing as selected.
+  const sel = S.shufPl = S.shufPl ?? allSongs?.id ?? pls[0]?.id;
   const p = LIB.playlists.find(x => x.id === sel);
   const tracks = p ? dedupe(p.tracks) : [];
   const order = tracks.length ? spacedShuffle(tracks) : [];
@@ -2535,6 +2627,10 @@ function vShuffle() {
   S.shufOrder = order;
   return `<h1>Shuffle</h1>
     <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
+    <p class="lede" style="margin-top:-8px">${allSongs
+      ? `Shuffling from <b>${esc(ALL_SONGS_NAME)}</b> by default — everything in your library, kept in one place.`
+      : `No single playlist has everything you own yet.`}
+      <button class="b sm" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Build it'}</button></p>
     <div class="rowbtns" style="margin-bottom:22px">
       <select id="shufPl">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
       <button class="b p" id="shufApply" ${order.length?'':'disabled'}>Create shuffled playlist</button>
@@ -2798,17 +2894,46 @@ function vHistory() {
 }
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
+// The exact fallback classify() writes when a playlist's name gives it no clue
+// at all — a silent guess, not a real signal, and the one worth confirming.
+const NO_SIGNAL = 'no signal in the name — treated as genre';
+
+function axisRowHTML(p) {
+  return `<div class="row axrow" style="align-items:center">
+    <div class="main"><div class="ttl">${esc(p.name)}</div>
+      <div class="sub"><span class="mono">${p.tracks} tracks</span>
+        <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span></div></div>
+    <div class="acts">
+      <select data-ax="${esc(p.id)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2)">
+        <input type="checkbox" data-tg="${esc(p.id)}" ${p.target?'checked':''} ${p.tracks < MIN_FOR_TARGET ? 'disabled title="too few tracks to model"' : ''}>
+        receives suggestions</label>
+    </div>
+  </div>`;
+}
+
 function vLists() {
   const rows = Object.entries(CFG).map(([id,v]) => ({ id, ...v })).sort((a,b) => b.tracks - a.tracks);
   const cov = tagCoverage();
+  // Everything classify() could not read from the name or the dates — it
+  // defaulted to genre rather than ask, which is exactly the silent guess
+  // that later shows up as a wrong Tidy suggestion. Worth confirming once.
+  const undecided = rows.filter(p => p.why === NO_SIGNAL);
   return `<h1>Playlists</h1>
     <p class="lede">How each of your playlists is treated. Only <b>genre</b> and <b>mood</b> playlists receive suggestions, and a track is only ever compared against playlists on its own axis — so a metal track in a mood playlist is not flagged as misfiled. Each guess says what it was made from; correct anything wrong and it is remembered on this device.</p>
+
+    ${undecided.length ? `<h2>Needs your input</h2>
+    <p class="lede">${undecided.length} playlist${undecided.length===1?' has':'s have'} no clue in ${undecided.length===1?'its':'their'} name, so
+      ${undecided.length===1?'it was':'they were'} defaulted to <b>genre</b> rather than asked about. That default is exactly what
+      turns a mood or context playlist into noisy Tidy suggestions — set the real one below.</p>
+    <div class="rows">${undecided.map(axisRowHTML).join('')}</div>` : ''}
 
     <h2>Genre data</h2>
     <p class="lede">${cov.have.toLocaleString()} of ${cov.total.toLocaleString()} artists have genre tags (${cov.pct}%).
       ${cov.pct < 85 ? 'Suggestions will be thin until this improves.' : ''}
       Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set; add your own free
-      Last.fm key to fill the gaps for artists it doesn\'t cover.</p>
+      Last.fm key to fill the gaps for artists it doesn\'t cover — and to fix one that already has tags but has them
+      wrong, from a Tidy or File row, tap <b>Wrong tags?</b> under it.</p>
     <div class="rowbtns" style="margin-bottom:8px">
       <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(localStorage.getItem('bf_lfm') || '')}">
       <button class="b" id="saveLfm">Save key</button>
@@ -2817,18 +2942,7 @@ function vLists() {
     </div>
 
     <h2>Axes</h2>
-    <div class="rows">${rows.map(p => `
-      <div class="row axrow" style="align-items:center">
-        <div class="main"><div class="ttl">${esc(p.name)}</div>
-          <div class="sub"><span class="mono">${p.tracks} tracks</span>
-            <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span></div></div>
-        <div class="acts">
-          <select data-ax="${esc(p.id)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select>
-          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2)">
-            <input type="checkbox" data-tg="${esc(p.id)}" ${p.target?'checked':''} ${p.tracks < MIN_FOR_TARGET ? 'disabled title="too few tracks to model"' : ''}>
-            receives suggestions</label>
-        </div>
-      </div>`).join('')}</div>`;
+    <div class="rows">${rows.map(axisRowHTML).join('')}</div>`;
 }
 
 function tagCoverage() {
@@ -2867,6 +2981,63 @@ async function enrichMissing() {
   $('#land').hidden = true; $('#app').hidden = false;
   toast(`Tags filled for ${todo.length} artists.`);
   render();
+}
+
+/* ---------- correcting one artist's tags ----------
+ * Last.fm tags are crowd-submitted per artist, not per track, and
+ * enrichMissing() only ever fills an artist with *no* tags — an artist Last.fm
+ * has simply got wrong (a same-named act, a stray scrobble, a niche artist
+ * with three taggers) keeps its wrong tags forever, and every track of theirs
+ * inherits the mistake. This is the fix for that: edit, in place, right where
+ * a wrong suggestion was spotted, and it sticks — tags_extra already wins over
+ * the shipped set, the same mechanism enrichMissing() relies on. */
+
+async function saveArtistTags(id, tags) {
+  const extra = (await idb.get('tags_extra')) ?? {};
+  extra[id] = { tags };
+  await idb.set('tags_extra', extra);
+  TAGS[id] = { tags };
+  R = buildReports(LIB, CFG, TAGS);
+}
+
+async function resetArtistTags(id) {
+  const extra = (await idb.get('tags_extra')) ?? {};
+  delete extra[id];
+  await idb.set('tags_extra', extra);
+  TAGS[id] = RAW_TAGS?.[id] ? { tags: [...RAW_TAGS[id].tags] } : { tags: [] };
+  R = buildReports(LIB, CFG, TAGS);
+}
+
+/** Ask Last.fm again for one artist, ignoring whatever it is shipped with —
+ *  for the case where autocorrect or the crowd tags have since improved. */
+async function refetchArtist(id, name) {
+  const key = localStorage.getItem('bf_lfm');
+  if (!key) return toast('Add a Last.fm key on the Playlists screen first.');
+  try {
+    const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
+      method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
+    const tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
+    await saveArtistTags(id, tags);
+    toast(tags.length ? `Refetched — ${tags.length} tag(s) for ${name}.` : `Last.fm has no tags for ${name}.`);
+  } catch (e) { toast('Failed: ' + e.message); }
+}
+
+function tagEditorHTML(id, name) {
+  const tags = TAGS[id]?.tags ?? [];
+  return `<div class="tagedit" style="margin-top:8px; padding:10px; border-radius:10px; background:var(--surface-2)">
+    <p class="sub" style="margin:0 0 8px">Tags for <b>${esc(name)}</b> — a wrong one here throws off every suggestion this artist is part of.</p>
+    <div class="tagrow">${tags.length ? tags.map(([t], idx) =>
+      `<span class="tag" style="cursor:pointer" data-rmtag="${esc(id)}|${idx}" title="Remove">${esc(t)} ✕</span>`).join('')
+      : '<span class="sub">No tags.</span>'}</div>
+    <div class="rowbtns" style="margin-top:8px">
+      <input id="newTagVal" placeholder="Add a tag" size="16">
+      <button class="b sm" data-addtag="${esc(id)}">Add</button>
+      <button class="b sm" data-refetchtags="${esc(id)}" data-artistname="${esc(name)}"
+        ${localStorage.getItem('bf_lfm') ? '' : 'disabled title="Add a Last.fm key on this screen first"'}>Refetch from Last.fm</button>
+      <button class="b sm" data-resettags="${esc(id)}">Reset to shipped</button>
+      <button class="b sm" data-closetagedit="1">Done</button>
+    </div>
+  </div>`;
 }
 
 const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
@@ -2952,7 +3123,7 @@ function bindSwipeCard() {
     card.style.transform = `translate3d(${dx}px,0,0) rotate(${t * 6}deg)`;
     if (vFile) vFile.style.opacity = dx > 12 ? Math.min(1, (dx - 12) / 60) : 0;
     if (vSkip) vSkip.style.opacity = dx < -12 ? Math.min(1, (-dx - 12) / 60) : 0;
-    card.classList.toggle('to-file', dx > TH && !!card.dataset.best);
+    card.classList.toggle('to-file', dx > TH && (!!card.dataset.best || S.fileSel.size > 0));
     card.classList.toggle('to-skip', dx < -TH);
   };
   const reset = () => {
@@ -2985,11 +3156,13 @@ function bindSwipeCard() {
     if (mode !== 'swipe') { gestureClaimed = false; mode = null; return; }
     mode = null; gestureClaimed = false;
     const best = card.dataset.best;
-    if (dx > TH && best) {
+    // A pending tap selection wins over the single best guess — swiping is
+    // then "confirm what I picked", not "override it with something else".
+    if (dx > TH && (S.fileSel.size > 0 || best)) {
       buzz(12);
       card.classList.add('gone');
       card.style.transform = 'translate3d(120vw,40px,0) rotate(14deg)';
-      fileCurrent(best);
+      fileCurrent(S.fileSel.size ? [...S.fileSel] : best);
     } else if (dx < -TH) {
       buzz(8);
       card.classList.add('gone');
@@ -3121,9 +3294,18 @@ document.addEventListener('click', async e => {
     return go(nav.dataset.v);
   }
 
+  if (e.target.id === 'syncAllSongs') {
+    const btn = e.target; btn.disabled = true; btn.textContent = 'Working…';
+    try { await syncAllSongsPlaylist(); }
+    catch (err) { toast('Failed: ' + err.message); render(); }
+    return;
+  }
+
   if (e.target.id === 'shufApply' || e.target.id === 'shufPlay') {
     const btn = e.target, playIt = btn.id === 'shufPlay';
-    const src = LIB.playlists.find(p => p.id === (S.shufPl ?? LIB.playlists[0].id));
+    // vShuffle() always sets S.shufPl to whatever it last showed as selected
+    // by the time this button is reachable, so this and the screen agree.
+    const src = LIB.playlists.find(p => p.id === S.shufPl);
     const order = S.shufOrder ?? [];
     if (!order.length) return;
     btn.disabled = true; btn.textContent = 'Working…';
@@ -3173,7 +3355,9 @@ document.addEventListener('click', async e => {
   const mfb = e.target.closest('[data-mfb]');
   if (mfb) { S.mfBand = mfb.dataset.mfb; if (T.rememberFilters) { T.mfBand = S.mfBand; saveTheme(); } return render(); }
 
-  const file = e.target.closest('[data-file]'); if (file) return fileCurrent(file.dataset.file);
+  const selfile = e.target.closest('[data-selfile]'); if (selfile) return toggleFileSel(selfile.dataset.selfile);
+  const filesel = e.target.closest('[data-filesel]');
+  if (filesel) return fileCurrent(S.fileSel.size ? [...S.fileSel] : (R.backlog[S.inboxAt]?.suggest[0]?.id));
   const act = e.target.closest('[data-act]'); if (act) return inboxAct(act.dataset.act);
 
   const keep = e.target.closest('[data-keep]');
@@ -3246,6 +3430,29 @@ document.addEventListener('click', async e => {
   }
   if (e.target.id === 'enrich') return enrichMissing();
 
+  const ea = e.target.closest('[data-editartist]');
+  if (ea) { S.editingArtist = S.editingArtist === ea.dataset.editartist ? null : ea.dataset.editartist; render(); return; }
+  const closeEdit = e.target.closest('[data-closetagedit]');
+  if (closeEdit) { S.editingArtist = null; render(); return; }
+  const rmtag = e.target.closest('[data-rmtag]');
+  if (rmtag) {
+    const i = rmtag.dataset.rmtag.lastIndexOf('|');
+    const id = rmtag.dataset.rmtag.slice(0, i), idx = +rmtag.dataset.rmtag.slice(i + 1);
+    await saveArtistTags(id, (TAGS[id]?.tags ?? []).filter((_, n) => n !== idx));
+    render(); return;
+  }
+  const addtag = e.target.closest('[data-addtag]');
+  if (addtag) {
+    const v = $('#newTagVal')?.value.trim().toLowerCase();
+    if (!v) return;
+    await saveArtistTags(addtag.dataset.addtag, [...(TAGS[addtag.dataset.addtag]?.tags ?? []), [v, 50]]);
+    render(); return;
+  }
+  const refetch = e.target.closest('[data-refetchtags]');
+  if (refetch) { await refetchArtist(refetch.dataset.refetchtags, refetch.dataset.artistname); render(); return; }
+  const reset = e.target.closest('[data-resettags]');
+  if (reset) { await resetArtistTags(reset.dataset.resettags); render(); return; }
+
   const cl = e.target.closest('[data-cluster]');
   if (cl) {
     const i = +cl.dataset.cluster, name = $('#nm'+i).value.trim();
@@ -3259,7 +3466,7 @@ document.addEventListener('click', async e => {
 });
 
 document.addEventListener('change', async e => {
-  if (e.target.id === 'anyPl' && e.target.value) return fileCurrent(e.target.value);
+  if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
   if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
@@ -3270,6 +3477,10 @@ document.addEventListener('change', async e => {
     const id = (ax ?? tg).dataset.ax ?? tg.dataset.tg;
     if (ax) {
       CFG[id].axis = ax.value;
+      // Matches what a reload would do via classify()'s saved-override merge —
+      // done here too so a playlist just fixed drops out of "Needs your input"
+      // immediately rather than waiting for the next full sync.
+      CFG[id].why = 'set by you';
       if (!['genre','mood'].includes(ax.value)) CFG[id].target = false;
     } else {
       CFG[id].target = tg.checked;
@@ -3283,14 +3494,33 @@ document.addEventListener('change', async e => {
   }
 });
 
-async function fileCurrent(playlistId) {
+/** Toggle one playlist in or out of the pending selection for the track on screen. */
+function toggleFileSel(id) {
+  if (S.fileSel.has(id)) S.fileSel.delete(id); else S.fileSel.add(id);
+  render();
+}
+
+/** File the current inbox track into one or several playlists at once. Takes
+ *  a single id (the swipe gesture, keyboard 1-3 followed by Enter's fallback)
+ *  or an array (the multi-select confirm button) — either way nothing is
+ *  written until this actually runs. */
+async function fileCurrent(playlistIds) {
+  const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
+  if (!ids.length) return;
   const t = R.backlog[S.inboxAt]; if (!t) return;
-  const name = CFG[playlistId]?.name ?? playlistId;
+  const names = ids.map(id => CFG[id]?.name ?? id);
   try {
-    await addTracks(playlistId, [t.id]);
-    await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'filed from inbox' });
-    const at = (await getLog())[0]?.at;
-    toast(`Filed “${t.title}” into ${name}.`, () => undoAction(at));
+    // One log entry per playlist, so History and its per-row undo stay exact —
+    // the toast just chains all of them for the common "undo the lot" case.
+    const ats = [];
+    for (const id of ids) {
+      await addTracks(id, [t.id]);
+      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox' });
+      ats.push((await getLog())[0]?.at);
+    }
+    const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
+    toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
+    S.fileSel = new Set();
     R.backlog.splice(S.inboxAt, 1); render();
   } catch (e) { toast('Failed: '+e.message); }
 }
@@ -3323,7 +3553,8 @@ document.addEventListener('keydown', async e => {
 document.addEventListener('keydown', e => {
   if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
   const t = R.backlog[S.inboxAt]; if (!t) return;
-  if (['1','2','3'].includes(e.key)) { const s = t.suggest[+e.key-1]; if (s) fileCurrent(s.id); }
+  if (['1','2','3'].includes(e.key)) { const s = t.suggest[+e.key-1]; if (s) toggleFileSel(s.id); }
+  if (e.key === 'Enter' && (S.fileSel.size || t.suggest[0])) fileCurrent(S.fileSel.size ? [...S.fileSel] : t.suggest[0].id);
   if (e.key.toLowerCase()==='p') inboxAct('play');
   if (e.key.toLowerCase()==='s') inboxAct('skip');
   if (e.key.toLowerCase()==='u') inboxAct('unlike');
@@ -3417,10 +3648,13 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-0323').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-1303').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
+      // Kept aside so a hand-corrected artist can be put back the way Last.fm
+      // shipped it, without losing every other correction made this session.
+      RAW_TAGS = JSON.parse(JSON.stringify(TAGS));
       // anything this viewer has fetched for their own artists wins
       Object.assign(TAGS, (await idb.get('tags_extra')) ?? {});
     }

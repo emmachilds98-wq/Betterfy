@@ -24,7 +24,21 @@ authentication uses PKCE.
 The prebuilt genre tags shipped with the page cover one person's artists, so
 your suggestions may start thin. The **Playlists** view shows your tag coverage
 and can fill the gaps in your browser given a free
-[Last.fm key](https://www.last.fm/api/account/create).
+[Last.fm key](https://www.last.fm/api/account/create) — paste the **API key**
+only; Betterfy only ever reads public tag data, so the shared secret that
+comes with a Last.fm app is not needed anywhere in this project.
+
+**A wrong suggestion is usually a wrong tag, not a wrong model.** Last.fm's
+tags are per *artist*, not per track, and crowd-submitted — a same-named act,
+a stray scrobble, or a niche artist with three taggers is enough to mistag
+everything they've made. If Tidy keeps suggesting somewhere a track plainly
+doesn't belong, open it there: tags now show under every misfiled and
+newly-added track, and **Wrong tags?** next to an artist's name opens an
+editor — remove the bad one, add the right one, or re-ask Last.fm, and it's
+remembered on this device from then on. The **Playlists** view also now flags
+which playlists it had no real signal for and silently defaulted to genre —
+worth a pass, since that default is exactly what turns a mood or context
+playlist into noisy Tidy suggestions.
 
 ### On a phone
 
@@ -40,9 +54,12 @@ rather than sliding under them.
 - **Swipe left or right** anywhere on a screen to move to the next or previous
   one; the dots under the header show where you are. Arrow keys do the same
   thing on a keyboard.
-- **Swipe the file card right to file it** into its best-fitting playlist,
-  **left to skip**, and tap the artwork to play. Every one of those is still a
-  button, and filing is still undoable from the toast.
+- **File into one playlist or several.** Tapping a suggested playlist (or
+  adding one from the dropdown) only selects it — nothing reaches Spotify
+  until you tap **File** or swipe the card right, so a misclick is a non-event
+  rather than something to undo. Swipe right confirms whatever's selected, or
+  falls back to the best guess if you haven't picked anything; **left** still
+  skips, and tapping the artwork still plays.
 - **Pull down** at the top of any screen to re-sync from Spotify.
 - Settings and More open as sheets from the bottom edge; flick the handle down
   to dismiss.
@@ -246,7 +263,12 @@ guess, and everything downstream reads the file, not the rules.
   moves on.
 - **Shuffle spaces artists rather than randomising.** Uniform random clumps; the
   greedy max-spacing interleave takes the artist with the most tracks left,
-  skipping any used within a cooldown window.
+  skipping any used within a cooldown window. It defaults to **All Songs —
+  Betterfy**, a playlist Betterfy keeps topped up with everything in your
+  library — build or refresh it from the button on the Shuffle screen. It's a
+  real Spotify playlist, not a snapshot: running it again only ever adds
+  whatever's missing since the last time, and never duplicates a track that's
+  already there.
 - **The mark is a sorted list that is also a play button.** Five stacked bars
   whose widths grow then shrink, so their right edge forms a play triangle. In
   the app it is inline SVG and keeps its five colours whatever accent you pick; at
