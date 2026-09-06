@@ -139,7 +139,7 @@ test('buildReports carries artist ids through to misfiled and backlog rows, not 
   const to = BUNDLE.indexOf('function secDupes');
   const body = from > 0 ? BUNDLE.slice(from, to > from ? to : undefined) : '';
   assert.ok(from > 0, 'buildReports not found — rebuild with npm run build:web');
-  assert.match(body, /misfiled\.push\(\{[\s\S]*?artists: \(t\.artists \?\? \[\]\)\.filter\(a => a\.id\)/,
+  assert.match(body, /findMisfiled\(lib, tags, targets, profiles, idf, axisOf\)\.map\(m => \(\{[\s\S]*?artists: \(m\.track\.artists \?\? \[\]\)\.filter\(a => a\.id\)/,
     'a misfiled row must carry artist ids, or there is nothing for "Wrong tags?" to point at');
   // Either arrow-body form is fine — what matters is that the row carries ids.
   assert.match(body, /const backlog = unfiled\.map\(t => [({][\s\S]*?artists: \(t\.artists \?\? \[\]\)\.filter\(a => a\.id\)/,

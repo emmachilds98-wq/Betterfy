@@ -2,7 +2,7 @@
 //   1. Is anything filed somewhere that fits another playlist much better?
 //   2. Where should the 850 unfiled liked songs go — and what has no home at all?
 import { readFileSync, writeFileSync } from 'node:fs';
-import { buildProfiles, rank, topTags, trackVec, applyIdf, cosine } from './profile.mjs';
+import { buildProfiles, rank, topTags, trackVec, applyIdf, cosine, findMisfiled } from './profile.mjs';
 import { loadTags } from './tagstore.mjs';
 
 const lib = JSON.parse(readFileSync('library.json', 'utf8'));
@@ -22,40 +22,15 @@ for (const p of lib.playlists) for (const t of p.tracks) { total++; if (trackVec
 console.error(`tag coverage: ${withTags}/${total} placements (${(100*withTags/total).toFixed(1)}%)\n`);
 
 // ---------- 1. possible misfiles ----------
-// Flagged only when another playlist beats the current one by a wide margin,
-// so ordinary cross-genre tracks don't generate noise.
-const MARGIN = 1.6;
-const misfiled = [];
-for (const p of lib.playlists) {
-  if (!targets.has(p.id)) continue;
-  const home = profiles.get(p.id);
-  if (!home) continue;
-  for (const t of p.tracks) {
-    const v = applyIdf(trackVec(t, tags), idf);
-    if (v.size < 3) continue;
-    const own = cosine(v, home.vec);
-    const best = rank(t, tags, profiles, idf, { exclude: p.id, top: 3, axis: axisOf(p.id) });
-    if (!best.length) continue;
-    if (best[0].score > own * MARGIN && best[0].score > 0.25) {
-      // Confidence tiers. The raw margin test produces a long uncertain tail;
-      // banding it keeps the convincing cases from being buried by the rest.
-      const confidence =
-        own < 0.12 && best[0].score > 0.55 ? 'high'
-        : own < 0.25 && best[0].score > 0.40 ? 'medium'
-        : 'low';
-      misfiled.push({
-        id: t.id, artist: t.artists?.[0]?.name, title: t.name,
-        current: p.name, currentPlaylistId: p.id, currentScore: +own.toFixed(3),
-        confidence,
-        suggest: best.map(b => ({ id: b.id, name: b.name, score: +b.score.toFixed(3) })),
-        tags: topTags(t, tags, idf),
-      });
-    }
-  }
-}
-const RANKC = { high: 0, medium: 1, low: 2 };
-misfiled.sort((a, b) => RANKC[a.confidence] - RANKC[b.confidence]
-  || (b.suggest[0].score - b.currentScore) - (a.suggest[0].score - a.currentScore));
+// Shared with the browser build via profile.mjs, so the two cannot drift
+// into different answers about the same library.
+const misfiled = findMisfiled(lib, tags, targets, profiles, idf, axisOf).map(m => ({
+  id: m.track.id, artist: m.track.artists?.[0]?.name, title: m.track.name,
+  current: m.playlistName, currentPlaylistId: m.playlistId, currentScore: +m.ownScore.toFixed(3),
+  confidence: m.confidence,
+  suggest: m.suggest.map(b => ({ id: b.id, name: b.name, score: +b.score.toFixed(3) })),
+  tags: topTags(m.track, tags, idf),
+}));
 
 // ---------- 2. the unfiled backlog ----------
 const filed = new Set();
