@@ -209,3 +209,14 @@ test('the one attempt is claimed before leaving for Spotify, not after', () => {
   const leave = boot.indexOf('return beginAuth()');
   assert.ok(claim > -1 && leave > claim, 'the attempt must be recorded before the redirect');
 });
+
+test('the shipped bundle carries a client ID', () => {
+  // Without one the page looks perfectly healthy and cannot sign anyone in:
+  // beginAuth() sends client_id= empty and Spotify refuses. .env is gitignored,
+  // so a rebuild on a machine that has never held it used to blank this and the
+  // only symptom was at the sign-in screen, after publishing.
+  const m = BUNDLE.match(/const DEFAULT_CLIENT_ID = '([^']*)'/);
+  assert.ok(m, 'DEFAULT_CLIENT_ID not found in docs/index.html — rebuild with npm run build:web');
+  assert.match(m[1], /^[0-9a-f]{32}$/,
+    'docs/index.html was built without a Spotify client ID — rebuild with `node build-web.mjs <client id>`');
+});

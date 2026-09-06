@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-06-0222">
+<meta name="bf-build" content="2026-09-06-0242">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -860,7 +860,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-06-0222</span>
+    <span class="mono">build 2026-09-06-0242</span>
   </p>
 
   <div class="feat">
@@ -957,7 +957,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0222</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0242</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1007,7 +1007,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0222</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0242</span>
   </div>
 </div>
 
@@ -1469,7 +1469,7 @@ initSettingsPanel();
 initSheet();
 bindAppGestures();
 
-const DEFAULT_CLIENT_ID = '';
+const DEFAULT_CLIENT_ID = '7e79f50acaf24fb6ae40cb339bdde382';
 // Always the directory form with a trailing slash. Spotify matches the redirect
 // URI byte-for-byte, so visiting /Betterfy and /Betterfy/ must not send two
 // different values — only one of them could ever be registered.
@@ -1504,7 +1504,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-06-0222';
+const BUILD = '2026-09-06-0242';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3386,7 +3386,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-06-0222').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-0242').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
