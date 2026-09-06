@@ -202,7 +202,12 @@ guess, and everything downstream reads the file, not the rules.
   so it is surfaced for review and never auto-removed.
 - **Discovery subtracts what you own** — every artist and track in the library,
   including each artist named inside a collaboration credit, so a seed artist
-  can't return as one half of a duo. Results come one card at a time: the album
+  can't return as one half of a duo. **Everything I listen to** weights your
+  top artists over the three windows Spotify keeps and your recent plays, with
+  the filed library behind them as a floor — so an artist you had on all month
+  steers a run harder than a playlist you filed once and never played. Seeding
+  from a single playlist instead gives you that playlist's radio, and costs no
+  requests at all. Results come one card at a time: the album
   cover, a scrubber that drives your own Spotify device, and the playlists the
   track would fit — ranked by the same model the inbox files with, since
   discovery also pulls the new artist's Last.fm tags. Take the suggestion or

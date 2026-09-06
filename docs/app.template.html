@@ -1827,7 +1827,57 @@ function vShuffle() {
       <div class="sub">${esc(artistOf(t))}</div></div></div>`).join('')}</div>` : '<div class="empty">Pick a playlist.</div>'}`;
 }
 
-/* ---------- discovery: new by construction ---------- */
+/* ---------- discovery: new by construction ----------
+ *
+ * What you listen to is not the same as what you own. A playlist filed two
+ * years ago and never played since should not steer a discovery run as hard as
+ * an artist you had on all last month — so the seeds are weighted by Spotify's
+ * three listening windows and your recent plays, with the filed library behind
+ * them as a floor rather than as the whole story. Seeding from one playlist
+ * instead gives you that playlist's radio.
+ */
+async function listeningSeeds() {
+  const w = new Map();
+  const bump = (name, x) => { if (name) w.set(name, (w.get(name) ?? 0) + x); };
+
+  // Most recent window counts for most, but the long one still counts: taste
+  // is not only what happened this month.
+  for (const [range, weight] of [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]]) {
+    try {
+      const r = await sp(`/me/top/artists?limit=50&time_range=${range}`);
+      (r?.items ?? []).forEach((a, i) => bump(a.name, weight * (1 - i / 60)));
+    } catch {}
+  }
+  try {
+    const r = await sp('/me/player/recently-played?limit=50');
+    for (const p of r?.items ?? []) for (const a of p.track?.artists ?? []) bump(a.name, 0.6);
+  } catch {}
+
+  // The library as a floor, scaled by the biggest count so that one enormous
+  // playlist cannot outvote a month of actually playing something.
+  const filed = new Map();
+  for (const p of LIB.playlists) for (const t of p.tracks)
+    for (const a of t.artists ?? []) filed.set(a.name, (filed.get(a.name) ?? 0) + 1);
+  const most = Math.max(1, ...filed.values());
+  for (const [name, n] of filed) bump(name, n / most);
+
+  return w;
+}
+
+/** Artist weights for one playlist — its own radio, ignoring everything else. */
+function playlistSeeds(pl) {
+  const w = new Map();
+  for (const t of pl.tracks) for (const a of t.artists ?? []) w.set(a.name, (w.get(a.name) ?? 0) + 1);
+  return w;
+}
+
+/** The top artists to ask Last.fm about, scaled so none is worth nothing. */
+function rankSeeds(weights, n = 40) {
+  const top = [...weights].sort((a, b) => b[1] - a[1]).slice(0, n);
+  const most = top[0]?.[1] || 1;
+  return top.map(([name, x]) => ({ name, w: 0.35 + 0.65 * (x / most) }));
+}
+
 async function runDiscovery(seedPlaylistId) {
   const key = localStorage.getItem('bf_lfm');
   if (!key) { toast('Discovery needs a Last.fm key — add one under Playlists.'); return; }
@@ -1840,10 +1890,8 @@ async function runDiscovery(seedPlaylistId) {
   LIB.liked.forEach(own);
 
   const src = seedPlaylistId ? LIB.playlists.find(p => p.id === seedPlaylistId) : null;
-  const pool = src ? src.tracks : LIB.playlists.flatMap(p => p.tracks);
-  const freq = new Map();
-  for (const t of pool) for (const a of t.artists ?? []) freq.set(a.name, (freq.get(a.name) ?? 0) + 1);
-  const seeds = [...freq].sort((a,b) => b[1]-a[1]).slice(0, 40).map(([name], i) => ({ name, w: 1 - i/60 }));
+  if (!src) stage('Reading what you have been playing…', 0.02);
+  const seeds = rankSeeds(src ? playlistSeeds(src) : await listeningSeeds());
   if (!seeds.length) { toast('Nothing to seed from.'); return; }
 
   const cand = new Map();
@@ -1906,7 +1954,7 @@ async function runDiscovery(seedPlaylistId) {
   }
   S.discover = out.filter(o => o.id);
   S.discAt = 0;
-  S.discoverFrom = src?.name ?? 'your whole library';
+  S.discoverFrom = src?.name ?? 'everything you listen to';
   $('#land').hidden = true; $('#app').hidden = false;
   go('discover');
 }
@@ -1922,11 +1970,16 @@ function vDiscover() {
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
   const hasKey = !!localStorage.getItem('bf_lfm');
   const head = `<h1>Discover</h1>
-    <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.</p>
+    <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
+      <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
     ${hasKey ? '' : '<div class="note">Discovery needs a free Last.fm key. Add one under <b>Playlists</b>.</div>'}
     <div class="rowbtns" style="margin-bottom:16px">
-      <select id="discPl"><option value="">Seed from my whole library</option>
-        ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>Seed from ${esc(p.name)}</option>`).join('')}</select>
+      <select id="discPl">
+        <option value="">Everything I listen to</option>
+        <optgroup label="Playlist radio">
+          ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
+        </optgroup>
+      </select>
       <button class="b p" id="discRun" ${hasKey?'':'disabled'}>Find new music</button>
     </div>`;
 
