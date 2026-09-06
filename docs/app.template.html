@@ -416,6 +416,12 @@
   .pick .nm{display:block; font-weight:600; font-size:15.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .pick .ax{display:block; font-size:13px; color:var(--ink-2)}
   .pick .rt{flex:none; display:flex; flex-direction:column; align-items:flex-end; gap:6px}
+  /* Sits inside the pick button, so its handler stops propagation. */
+  .pick .nope{flex:none; width:22px; height:22px; display:grid; place-items:center; border-radius:6px;
+    color:var(--ink-3); font-size:12px; line-height:1; cursor:pointer; opacity:0; transition:opacity .12s}
+  .pick:hover .nope, .pick:focus-within .nope{opacity:1}
+  .pick .nope:hover{background:var(--accent-soft); color:var(--accent)}
+  @media (hover:none){ .pick .nope{opacity:1} }
   .pick .sc{font-family:var(--mono); font-size:13.5px; font-weight:600; color:var(--ink-2)}
   .pick .bar{display:block; width:62px; height:5px; border-radius:3px; overflow:hidden;
         background:color-mix(in srgb, var(--ink-3) 30%, transparent)}
@@ -1588,6 +1594,35 @@ const idb = {
   async clear(){ const d = await this.open(); return new Promise(ok => { const tx = d.transaction('kv','readwrite'); tx.objectStore('kv').clear(); tx.oncomplete = () => ok(); }); },
 };
 
+/* ---------- what you told it by skipping and rejecting ----------
+ * Filing decisions teach the model twice. An accept is learned for free: the
+ * track joins the playlist, and the next sync folds it into that playlist's
+ * centroid. A rejection taught it nothing, because Skip only advanced an
+ * in-memory index — so the same wrong suggestion came back every session, for
+ * the same track, forever. This keeps the negative half.
+ *
+ *   { [trackId]: { skips, lastSkip, rejected: [playlistId, ...] } }
+ */
+let FB = {};
+const loadFeedback = async () => { FB = (await idb.get('feedback')) ?? {}; };
+const saveFeedback = () => idb.set('feedback', FB);
+const fbFor = id => (FB[id] ??= { skips: 0, lastSkip: null, rejected: [] });
+
+async function recordSkip(trackId) {
+  const f = fbFor(trackId);
+  f.skips++; f.lastSkip = new Date().toISOString();
+  await saveFeedback();
+}
+
+/** "Not that playlist" for this track. Never suggested for it again. */
+async function recordReject(trackId, playlistId) {
+  const f = fbFor(trackId);
+  if (!f.rejected.includes(playlistId)) f.rejected.push(playlistId);
+  await saveFeedback();
+}
+
+async function clearFeedback(trackId) { delete FB[trackId]; await saveFeedback(); }
+
 const FIELDS = 'next,items(added_at,item(id,name,popularity,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type,images),artists(id,name)))';
 // One artwork URL per track — the ~300px size, which is what the inbox card
 // shows. Libraries synced before this existed simply have none, and the card
@@ -1813,12 +1848,26 @@ function buildReports(lib, cfg, tags) {
   const filed = new Set();
   for (const p of lib.playlists) for (const t of p.tracks) filed.add(t.id);
   const unfiled = lib.liked.filter(t => t?.id && !filed.has(t.id));
-  const backlog = unfiled.map(t => ({ id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
-    album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
-    tags: topTags(t, tags, idf),
-    artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })),
-    suggest: rank(t, tags, profiles, idf, { top:3 }).map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null })) }))
-    .sort((a,b) => (b.added??'').localeCompare(a.added??''));
+  const backlog = unfiled.map(t => {
+    const fb = FB[t.id];
+    // Ask for more than three, then drop the playlists already rejected for
+    // this track, so a rejection promotes the next real candidate instead of
+    // leaving a gap where the rejected one was.
+    const ranked = rank(t, tags, profiles, idf, { top: 8 })
+      .filter(b => !fb?.rejected?.includes(b.id))
+      .slice(0, 3)
+      .map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null }));
+    return { id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
+      album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
+      tags: topTags(t, tags, idf),
+      artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })),
+      skips: fb?.skips ?? 0,
+      suggest: ranked };
+  })
+    // Newest first, but anything already skipped sinks below everything you
+    // have not seen yet — so the queue moves on instead of reopening on the
+    // same track you passed on last time.
+    .sort((a,b) => (a.skips - b.skips) || (b.added??'').localeCompare(a.added??''));
 
   // clusters with no home
   const homeless = backlog.filter(b => !b.suggest.length || b.suggest[0].score < 0.30);
@@ -2231,6 +2280,8 @@ function vInbox() {
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis ?? '')} playlist</span></span>
             <span class="rt"><span class="sc">${(sg.score * 100).toFixed(0)}%</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
+            <span class="nope" data-reject="${esc(sg.id)}" role="button" tabindex="0"
+              title="Never suggest ${esc(sg.name)} for this track">✕</span>
           </button>`).join('')}</div>`
         : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, or it fits nothing you have. Pick a playlist below.</p>`}
         ${[...S.fileSel].filter(id => !t.suggest.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
@@ -3197,6 +3248,29 @@ document.addEventListener('click', async e => {
   const mfb = e.target.closest('[data-mfb]');
   if (mfb) { S.mfBand = mfb.dataset.mfb; if (T.rememberFilters) { T.mfBand = S.mfBand; saveTheme(); } return render(); }
 
+  // Checked before the pick itself, since the ✕ sits inside that button.
+  const reject = e.target.closest('[data-reject]');
+  if (reject) {
+    e.stopPropagation();
+    const t = R.backlog[S.inboxAt]; if (!t) return;
+    // nameOf() is local to the File view; CFG is the global source of names.
+    const pid = reject.dataset.reject, pname = CFG[pid]?.name ?? pid;
+    await recordReject(t.id, pid);
+    S.fileSel.delete(pid);
+    // Re-rank this one track now, so the slot fills with the next real
+    // candidate instead of leaving a gap.
+    const raw = LIB.liked.find(x => x.id === t.id);
+    t.suggest = (raw ? rank(raw, TAGS, R.profiles, R.idf, { top: 8 }) : [])
+      .filter(b => !FB[t.id]?.rejected?.includes(b.id))
+      .slice(0, 3)
+      .map(b => ({ ...b, axis: CFG[b.id]?.axis ?? null }));
+    toast(`Won't suggest ${pname} for this track again.`, async () => {
+      const f = FB[t.id]; if (f) f.rejected = f.rejected.filter(x => x !== pid);
+      await saveFeedback(); R = buildReports(LIB, CFG, TAGS); render();
+    });
+    return render();
+  }
+
   const selfile = e.target.closest('[data-selfile]'); if (selfile) return toggleFileSel(selfile.dataset.selfile);
   const filesel = e.target.closest('[data-filesel]');
   if (filesel) return fileCurrent(S.fileSel.size ? [...S.fileSel] : (R.backlog[S.inboxAt]?.suggest[0]?.id));
@@ -3369,7 +3443,17 @@ async function fileCurrent(playlistIds) {
 async function inboxAct(a) {
   const t = R.backlog[S.inboxAt]; if (!t) return;
   if (a === 'play') { try { toast('Playing on ' + await playTrack(t.id)); } catch(e){ toast(e.message); } return; }
-  if (a === 'skip') { S.inboxAt = Math.min(S.inboxAt+1, R.backlog.length-1); return render(); }
+  if (a === 'skip') {
+    await recordSkip(t.id);
+    // Move it to the back rather than stepping past it, so the rest of the
+    // queue advances now and the skip still holds after a reload.
+    t.skips = (t.skips ?? 0) + 1;
+    R.backlog.splice(S.inboxAt, 1);
+    R.backlog.push(t);
+    if (S.inboxAt >= R.backlog.length) S.inboxAt = 0;
+    S.fileSel = new Set();
+    return render();
+  }
   if (a === 'unlike') {
     try {
       await sp('/me/tracks?ids='+t.id, { method:'DELETE' });
@@ -3500,6 +3584,9 @@ async function start(force) {
       // anything this viewer has fetched for their own artists wins
       Object.assign(TAGS, (await idb.get('tags_extra')) ?? {});
     }
+    // Skips and rejections must be in hand before reports are built, since
+    // buildReports filters rejected playlists out of each track's suggestions.
+    await loadFeedback();
     stage('Working out where everything goes…', 0.99);
     CFG = classify(LIB);
     R = buildReports(LIB, CFG, TAGS);

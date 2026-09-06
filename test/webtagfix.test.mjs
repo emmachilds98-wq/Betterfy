@@ -141,7 +141,9 @@ test('buildReports carries artist ids through to misfiled and backlog rows, not 
   assert.ok(from > 0, 'buildReports not found — rebuild with npm run build:web');
   assert.match(body, /misfiled\.push\(\{[\s\S]*?artists: \(t\.artists \?\? \[\]\)\.filter\(a => a\.id\)/,
     'a misfiled row must carry artist ids, or there is nothing for "Wrong tags?" to point at');
-  assert.match(body, /const backlog = unfiled\.map\(t => \([\s\S]*?artists: \(t\.artists \?\? \[\]\)\.filter\(a => a\.id\)/);
+  // Either arrow-body form is fine — what matters is that the row carries ids.
+  assert.match(body, /const backlog = unfiled\.map\(t => [({][\s\S]*?artists: \(t\.artists \?\? \[\]\)\.filter\(a => a\.id\)/,
+    'a backlog row must carry artist ids, or there is nothing for "Wrong tags?" to point at');
 });
 
 test('choosing an axis by hand marks it "set by you" immediately, not just after the next sync', () => {
