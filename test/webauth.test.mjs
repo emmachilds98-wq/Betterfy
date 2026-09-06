@@ -378,11 +378,19 @@ test('the streak counts consecutive 429s and clearing resets it to zero', () => 
   assert.equal(note(), 1, 'a clear really starts over, not just caps the count');
 });
 
-test('blocked() shows the own-app escape hatch only once the streak says so', () => {
+test('reaching the fallback screen at all already meets the threshold — no need to fail twice', () => {
+  // Reaching blocked() means hold()'s own silent 60s budget is already
+  // spent; making someone sit through a second full escalation before
+  // mentioning the actual fix was the thing that needed fixing.
+  const { note, threshold } = loadStreak();
+  assert.equal(note() >= threshold, true, 'the very first 429 that reaches this screen should qualify');
+});
+
+test('blocked() shows the own-app escape hatch exactly when told to, nothing implied otherwise', () => {
   const { blocked, el } = loadBlocked();
   blocked('a pause', () => {}, 1000, false);
   assert.doesNotMatch(el('land').innerHTML ?? '', /own Spotify app/i,
-    'a single rate limit should not yet suggest abandoning the default app');
+    'the caller decides, not blocked() guessing from anything else');
   el('landRetry').onclick();
 
   blocked('a pause', () => {}, 1000, true);
