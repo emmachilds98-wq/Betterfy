@@ -52,6 +52,13 @@ nowhere near as legible as each other.
 
 The local app (`npm start`) is still laid out for a desktop browser.
 
+**The home-screen app signs itself in.** The first time you open it it goes to
+Spotify on its own and comes straight back, because Spotify already has the
+grant — nothing to tap. It only ever tries that once: if the sign-in is refused
+it lands on the normal landing screen and stays there rather than bouncing.
+There is no way to hand a sign-in across from Safari, because iOS keeps the two
+sets of data apart, but there is no need to type anything either.
+
 **The first read on a new device takes a while.** iOS gives a home-screen app
 its own storage, separate from Safari's — so adding Betterfy to your Home
 Screen means signing in again and reading the whole library again, several
@@ -195,7 +202,17 @@ guess, and everything downstream reads the file, not the rules.
   so it is surfaced for review and never auto-removed.
 - **Discovery subtracts what you own** — every artist and track in the library,
   including each artist named inside a collaboration credit, so a seed artist
-  can't return as one half of a duo.
+  can't return as one half of a duo. **Everything I listen to** weights your
+  top artists over the three windows Spotify keeps and your recent plays, with
+  the filed library behind them as a floor — so an artist you had on all month
+  steers a run harder than a playlist you filed once and never played. Seeding
+  from a single playlist instead gives you that playlist's radio, and costs no
+  requests at all. Results come one card at a time: the album
+  cover, a scrubber that drives your own Spotify device, and the playlists the
+  track would fit — ranked by the same model the inbox files with, since
+  discovery also pulls the new artist's Last.fm tags. Take the suggestion or
+  overrule it from the dropdown; either way the track is added and the card
+  moves on.
 - **Shuffle spaces artists rather than randomising.** Uniform random clumps; the
   greedy max-spacing interleave takes the artist with the most tracks left,
   skipping any used within a cooldown window.

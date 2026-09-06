@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-05-2344">
+<meta name="bf-build" content="2026-09-06-0021">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -251,6 +251,26 @@
   .pick .nm{font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .pick .ax{font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em}
   .pick .sc{margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); flex:none}
+  /* Player. The scrubber is a real range input so it is draggable, keyboard
+     operable and announced as a slider, with the native track and thumb
+     restyled rather than replaced by divs. */
+  .player{display:flex; align-items:center; gap:12px; margin-top:16px}
+  .tbtn{width:44px; height:44px; flex:none; border-radius:50%; border:1px solid var(--line-2); background:var(--accent);
+        color:var(--accent-ink); display:grid; place-items:center; cursor:pointer; box-shadow:var(--shadow)}
+  .tbtn:active{transform:scale(.96)}
+  .tbtn:disabled{opacity:.5; cursor:default}
+  .tbtn svg{width:17px; height:17px; display:block}
+  .seek{flex:1; min-width:0; height:24px; background:transparent; cursor:pointer; -webkit-appearance:none; appearance:none}
+  .seek:disabled{cursor:default; opacity:.6}
+  .seek::-webkit-slider-runnable-track{height:5px; border-radius:3px; background:var(--line-2)}
+  .seek::-moz-range-track{height:5px; border-radius:3px; background:var(--line-2)}
+  .seek::-webkit-slider-thumb{-webkit-appearance:none; width:15px; height:15px; margin-top:-5px; border-radius:50%;
+        background:var(--accent); border:2px solid var(--surface); box-shadow:var(--shadow)}
+  .seek::-moz-range-thumb{width:15px; height:15px; border:2px solid var(--surface); border-radius:50%; background:var(--accent)}
+  .seek:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:4px}
+  .tm{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); flex:none; font-variant-numeric:tabular-nums}
+  .pdev{margin:8px 0 0; font-size:11.5px; color:var(--ink-3); text-align:right; min-height:15px}
+  .card.disc .art{width:104px; height:104px; font-size:34px}
   .rowbtns{display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; align-items:center}
 
   /* ---------- inbox: the swipeable card ---------- */
@@ -543,7 +563,7 @@
   <p class="fineprint">
     <span>Runs entirely in your browser — your library never leaves it.</span>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-05-2344</span>
+    <span class="mono">build 2026-09-06-0021</span>
   </p>
 
   <div class="feat">
@@ -640,7 +660,7 @@
     <div class="railfoot">
       <button class="b sm" id="resync">Re-sync library</button>
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-05-2344</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-06-0021</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1108,6 +1128,19 @@ const SCOPES = ['playlist-read-private','playlist-read-collaborative','playlist-
 
 const clientId = () => localStorage.getItem('bf_client_id') || DEFAULT_CLIENT_ID;
 
+/** Running from the Home Screen rather than in a browser tab. */
+const standalone = () => window.navigator.standalone === true
+  || matchMedia('(display-mode: standalone)').matches;
+
+/**
+ * Whether to go to Spotify without being asked. Only from the Home Screen,
+ * only with no sign-in already, and only once ever — a second automatic
+ * attempt after a refusal is a redirect loop, not a retry.
+ */
+const autoConnectDue = () => standalone()
+  && !localStorage.getItem('bf_tok')
+  && !localStorage.getItem('bf_autoconnect');
+
 /* ---------------- staying on the current version ----------------
  * GitHub Pages serves this HTML with a ~10 minute cache, and a browser that
  * already has the page keeps what it loaded until something forces a
@@ -1116,7 +1149,7 @@ const clientId = () => localStorage.getItem('bf_client_id') || DEFAULT_CLIENT_ID
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-05-2344';
+const BUILD = '2026-09-06-0021';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -1552,7 +1585,10 @@ function buildReports(lib, cfg, tags) {
     }
   }
   clusters.sort((a,b) => b.size - a.size);
-  return { within, across, misfiled, backlog, clusters };
+  // profiles/idf come out too: Discover ranks tracks that are not in the
+  // library at all, and must score them against the same centroids the inbox
+  // uses rather than a second, subtly different model.
+  return { within, across, misfiled, backlog, clusters, profiles, idf };
 }
 
 /* ===================== UI ===================== */
@@ -1625,6 +1661,101 @@ async function plCall(id, method, body) {
 const addTracks = (id, ids) => Promise.all(chunk(ids,100).map(c => plCall(id,'POST',{ uris:c.map(x=>'spotify:track:'+x) })));
 const delTracks = (id, ids) => plCall(id,'DELETE',{ tracks: ids.map(x=>({ uri:'spotify:track:'+x })) });
 
+/* ---------- player: Spotify Connect ----------
+ * The Web Playback SDK does not run on iOS, so the card drives whatever device
+ * the listener already has open — their phone's Spotify app, usually — and
+ * mirrors its position back. Spotify is asked where it is every few seconds
+ * and the bar is ticked locally in between, so the scrubber moves smoothly
+ * without spending a request a second to do it.
+ */
+const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h3.4v14H7zm6.6 0H17v14h-3.4z"/></svg>';
+const PLAYER = { id:null, pos:0, dur:0, playing:false, device:'', scrub:false,
+                 timer:null, lastPoll:0, busy:false };
+
+function playerPaint() {
+  const seek = $('#seek'); if (!seek) return;
+  const dur = PLAYER.dur || 0;
+  seek.max = String(dur);
+  seek.disabled = !PLAYER.id;
+  if (!PLAYER.scrub) seek.value = String(Math.min(PLAYER.pos, dur));
+  $('#pTime').textContent = mmss(PLAYER.pos);
+  $('#pDur').textContent = mmss(dur || null);
+  const btn = $('#pToggle');
+  btn.innerHTML = PLAYER.playing ? ICON_PAUSE : ICON_PLAY;
+  btn.setAttribute('aria-label', PLAYER.playing ? 'Pause' : 'Play');
+  $('#pDev').textContent = PLAYER.device ? (PLAYER.playing ? 'playing on ' : 'paused on ') + PLAYER.device : '';
+}
+
+async function playerPoll() {
+  if (PLAYER.busy) return;
+  PLAYER.busy = true;
+  PLAYER.lastPoll = Date.now();
+  try {
+    const p = await sp('/me/player');
+    if (p?.item) {
+      PLAYER.id = p.item.id;
+      PLAYER.dur = p.item.duration_ms ?? 0;
+      if (!PLAYER.scrub) PLAYER.pos = p.progress_ms ?? 0;
+      PLAYER.playing = !!p.is_playing;
+      PLAYER.device = p.device?.name ?? '';
+    } else PLAYER.playing = false;   // 204: nothing is playing anywhere
+  } catch {} finally { PLAYER.busy = false; }
+  playerPaint();
+}
+
+function playerStop() { clearInterval(PLAYER.timer); PLAYER.timer = null; }
+
+/** Tick the bar locally, and ask Spotify where it really is every four seconds. */
+function playerRun() {
+  playerStop();
+  PLAYER.timer = setInterval(() => {
+    if (!$('#seek')) return playerStop();          // the card is off screen
+    if (PLAYER.playing && !PLAYER.scrub) {
+      PLAYER.pos = PLAYER.dur ? Math.min(PLAYER.pos + 250, PLAYER.dur) : PLAYER.pos + 250;
+      playerPaint();
+    }
+    // Four seconds while something is moving; a slow heartbeat when it is not,
+    // so a card left open on screen does not quietly spend the rate budget.
+    if (Date.now() - PLAYER.lastPoll > (PLAYER.playing ? 4000 : 15000)) playerPoll();
+  }, 250);
+  if (Date.now() - PLAYER.lastPoll > 4000) playerPoll(); else playerPaint();
+}
+
+async function playerToggle() {
+  // Play on a card the device is not already on means "play this", not
+  // "resume whatever was last playing" — which is what Spotify would do.
+  const t = typeof discAt === 'function' ? discAt() : null;
+  if (t && PLAYER.id !== t.id) return discPlay(t.id);
+  try {
+    await sp('/me/player/' + (PLAYER.playing ? 'pause' : 'play'), { method:'PUT' });
+    PLAYER.playing = !PLAYER.playing;
+    playerPaint();
+    PLAYER.lastPoll = 0;                            // confirm it on the next tick
+  } catch (e) { toast(e.message); }
+}
+
+async function playerSeek(ms) {
+  try {
+    await sp(`/me/player/seek?position_ms=${Math.round(ms)}`, { method:'PUT' });
+    PLAYER.pos = ms;
+    playerPaint();
+    PLAYER.lastPoll = 0;
+  } catch (e) { toast(e.message); }
+}
+
+/** Start a discovery track on the listener's device and follow it from there. */
+async function discPlay(id) {
+  const t = discAt(); if (!t) return;
+  try {
+    PLAYER.device = await playTrack(id);
+    Object.assign(PLAYER, { id, pos:0, dur:t.dur ?? 0, playing:true, lastPoll:Date.now() });
+    playerPaint();
+    playerRun();
+    setTimeout(() => { PLAYER.lastPoll = 0; }, 800);  // let Spotify settle, then confirm
+  } catch (e) { toast(e.message); }
+}
+
 async function playTrack(id) {
   const d = await sp('/me/player/devices');
   const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
@@ -1671,10 +1802,10 @@ function vHome() {
 /** A stable hue per track, for the tile shown when there's no artwork. */
 const hueOf = id => { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
 
-function artHTML(t) {
-  if (t.art) return `<img class="art" src="${esc(t.art)}" alt="" data-act="play" title="Play" loading="lazy" decoding="async">`;
+function artHTML(t, hook = 'data-act="play"') {
+  if (t.art) return `<img class="art" src="${esc(t.art)}" alt="" ${hook} title="Play" loading="lazy" decoding="async">`;
   const h = hueOf(t.id);
-  return `<div class="art ph" data-act="play" title="Play" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h+48)%360} 58% 44%))">${esc((t.title||'?').trim()[0]??'?')}</div>`;
+  return `<div class="art ph" ${hook} title="Play" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h+48)%360} 58% 44%))">${esc((t.title||'?').trim()[0]??'?')}</div>`;
 }
 
 function vInbox() {
@@ -1854,7 +1985,57 @@ function vShuffle() {
       <div class="sub">${esc(artistOf(t))}</div></div></div>`).join('')}</div>` : '<div class="empty">Pick a playlist.</div>'}`;
 }
 
-/* ---------- discovery: new by construction ---------- */
+/* ---------- discovery: new by construction ----------
+ *
+ * What you listen to is not the same as what you own. A playlist filed two
+ * years ago and never played since should not steer a discovery run as hard as
+ * an artist you had on all last month — so the seeds are weighted by Spotify's
+ * three listening windows and your recent plays, with the filed library behind
+ * them as a floor rather than as the whole story. Seeding from one playlist
+ * instead gives you that playlist's radio.
+ */
+async function listeningSeeds() {
+  const w = new Map();
+  const bump = (name, x) => { if (name) w.set(name, (w.get(name) ?? 0) + x); };
+
+  // Most recent window counts for most, but the long one still counts: taste
+  // is not only what happened this month.
+  for (const [range, weight] of [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]]) {
+    try {
+      const r = await sp(`/me/top/artists?limit=50&time_range=${range}`);
+      (r?.items ?? []).forEach((a, i) => bump(a.name, weight * (1 - i / 60)));
+    } catch {}
+  }
+  try {
+    const r = await sp('/me/player/recently-played?limit=50');
+    for (const p of r?.items ?? []) for (const a of p.track?.artists ?? []) bump(a.name, 0.6);
+  } catch {}
+
+  // The library as a floor, scaled by the biggest count so that one enormous
+  // playlist cannot outvote a month of actually playing something.
+  const filed = new Map();
+  for (const p of LIB.playlists) for (const t of p.tracks)
+    for (const a of t.artists ?? []) filed.set(a.name, (filed.get(a.name) ?? 0) + 1);
+  const most = Math.max(1, ...filed.values());
+  for (const [name, n] of filed) bump(name, n / most);
+
+  return w;
+}
+
+/** Artist weights for one playlist — its own radio, ignoring everything else. */
+function playlistSeeds(pl) {
+  const w = new Map();
+  for (const t of pl.tracks) for (const a of t.artists ?? []) w.set(a.name, (w.get(a.name) ?? 0) + 1);
+  return w;
+}
+
+/** The top artists to ask Last.fm about, scaled so none is worth nothing. */
+function rankSeeds(weights, n = 40) {
+  const top = [...weights].sort((a, b) => b[1] - a[1]).slice(0, n);
+  const most = top[0]?.[1] || 1;
+  return top.map(([name, x]) => ({ name, w: 0.35 + 0.65 * (x / most) }));
+}
+
 async function runDiscovery(seedPlaylistId) {
   const key = localStorage.getItem('bf_lfm');
   if (!key) { toast('Discovery needs a Last.fm key — add one under Playlists.'); return; }
@@ -1867,10 +2048,8 @@ async function runDiscovery(seedPlaylistId) {
   LIB.liked.forEach(own);
 
   const src = seedPlaylistId ? LIB.playlists.find(p => p.id === seedPlaylistId) : null;
-  const pool = src ? src.tracks : LIB.playlists.flatMap(p => p.tracks);
-  const freq = new Map();
-  for (const t of pool) for (const a of t.artists ?? []) freq.set(a.name, (freq.get(a.name) ?? 0) + 1);
-  const seeds = [...freq].sort((a,b) => b[1]-a[1]).slice(0, 40).map(([name], i) => ({ name, w: 1 - i/60 }));
+  if (!src) stage('Reading what you have been playing…', 0.02);
+  const seeds = rankSeeds(src ? playlistSeeds(src) : await listeningSeeds());
   if (!seeds.length) { toast('Nothing to seed from.'); return; }
 
   const cand = new Map();
@@ -1897,9 +2076,18 @@ async function runDiscovery(seedPlaylistId) {
     let top;
     try { top = await lfm({ method:'artist.gettoptracks', artist:c.name, limit:'4' }); } catch { continue; }
     await new Promise(r => setTimeout(r, 200));
+    // The artist's own tags, so a track you do not own yet can still be ranked
+    // against your playlists by the same model the inbox uses.
+    let lfmTags = [];
+    try {
+      const tg = await lfm({ method:'artist.gettoptags', artist:c.name, autocorrect:'1' });
+      lfmTags = (tg.toptags?.tag ?? []).slice(0, 20)
+        .map(x => [String(x.name).toLowerCase(), +x.count || 0]).filter(([, n]) => n > 0);
+    } catch {}
+    await new Promise(r => setTimeout(r, 200));
     for (const t of top.toptracks?.track ?? []) {
       if (ownedTrack.has(norm(c.name) + '|' + norm(t.name))) continue;
-      out.push({ artist:c.name, track:t.name, via:c.via }); break;
+      out.push({ artist:c.name, track:t.name, via:c.via, lfmTags }); break;
     }
   }
 
@@ -1908,36 +2096,109 @@ async function runDiscovery(seedPlaylistId) {
     try {
       const r = await sp(`/search?q=${encodeURIComponent(`artist:${o.artist} track:${o.track}`)}&type=track&limit=1`);
       const hit = r.tracks?.items?.[0];
-      if (hit) { o.id = hit.id; o.album = hit.album?.name; o.released = hit.album?.release_date; }
+      if (hit) {
+        o.id = hit.id; o.album = hit.album?.name; o.released = hit.album?.release_date;
+        o.art = artOf(hit); o.dur = hit.duration_ms;
+        o.artists = (hit.artists ?? []).map(a => ({ id:a.id, name:a.name }));
+        const lead = o.artists[0];
+        if (lead && o.lfmTags?.length && !TAGS[lead.id]) TAGS[lead.id] = { tags:o.lfmTags };
+      }
     } catch {}
   }
+  for (const o of out) {
+    if (!o.id) continue;
+    o.suggest = rank(o, TAGS, R.profiles, R.idf, { top:3 }).map(b => ({ ...b, axis:CFG[b.id]?.axis ?? null }));
+    o.tags = topTags(o, TAGS, R.idf);
+  }
   S.discover = out.filter(o => o.id);
-  S.discoverFrom = src?.name ?? 'your whole library';
+  S.discAt = 0;
+  S.discoverFrom = src?.name ?? 'everything you listen to';
   $('#land').hidden = true; $('#app').hidden = false;
   go('discover');
+}
+
+/** The discovery currently on the card. */
+function discAt() {
+  const d = S.discover ?? [];
+  return d.length ? d[Math.min(S.discAt ?? 0, d.length - 1)] : null;
 }
 
 function vDiscover() {
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
   const hasKey = !!localStorage.getItem('bf_lfm');
-  return `<h1>Discover</h1>
-    <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.</p>
+  const head = `<h1>Discover</h1>
+    <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
+      <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
     ${hasKey ? '' : '<div class="note">Discovery needs a free Last.fm key. Add one under <b>Playlists</b>.</div>'}
     <div class="rowbtns" style="margin-bottom:16px">
-      <select id="discPl"><option value="">Seed from my whole library</option>
-        ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>Seed from ${esc(p.name)}</option>`).join('')}</select>
+      <select id="discPl">
+        <option value="">Everything I listen to</option>
+        <optgroup label="Playlist radio">
+          ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
+        </optgroup>
+      </select>
       <button class="b p" id="discRun" ${hasKey?'':'disabled'}>Find new music</button>
+    </div>`;
+
+  if (!d.length) return head + (hasKey ? '<div class="empty">Pick a seed and hit Find new music.</div>' : '');
+
+  const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
+  const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
+  const art = artHTML({ art:t.art, id:t.id, title:t.track }, `data-dplay="${esc(t.id)}"`);
+
+  return head + `<h2>${d.length} new tracks <span class="mono" style="font-size:13px;color:var(--ink-3)">from ${esc(S.discoverFrom)}</span></h2>
+    <div class="deck">
+      <div class="card disc">
+        <div class="prog"><i style="width:${((i+1)/d.length*100).toFixed(2)}%"></i></div>
+        <div class="now">
+          ${art}
+          <div class="txt">
+            <p class="t">${esc(t.track)}</p><p class="a">${esc(t.artist)}</p>
+            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>
+          </div>
+        </div>
+
+        <div class="player">
+          <button class="tbtn" id="pToggle" aria-label="Play">${ICON_PLAY}</button>
+          <input class="seek" id="seek" type="range" min="0" max="${t.dur ?? 0}" step="1000" value="0"
+                 aria-label="Playing position" disabled>
+          <span class="tm"><span id="pTime">0:00</span> / <span id="pDur">${mmss(t.dur)}</span></span>
+        </div>
+        <p class="pdev" id="pDev"></p>
+
+        ${(t.tags??[]).length?`<div class="tagrow">${t.tags.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}</div>`:''}
+        ${(t.suggest??[]).length ? `<div class="picks">${t.suggest.slice(0,3).map((sg,n)=>
+          `<button class="pick ${n===0?'best':''}" data-dfile="${esc(sg.id)}"><span class="k">${n+1}</span><span class="nm">${esc(sg.name)}</span>
+           <span class="ax">${esc(sg.axis??'')}</span><span class="sc">${(sg.score*100).toFixed(0)}% fit</span></button>`).join('')}</div>`
+          : `<p class="why">No confident suggestion — Last.fm has no tags for this artist, or it fits nothing you have. Pick a playlist below.</p>`}
+
+        <div class="rowbtns">
+          <button class="b" data-dnav="-1" ${i===0?'disabled':''}>← Back</button>
+          <button class="b" data-dnav="1" ${i>=d.length-1?'disabled':''}>Next →</button>
+          <button class="b" data-like="${esc(t.id)}">Like</button>
+          <a class="b" style="text-decoration:none" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
+          <select id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+        </div>
+      </div>
     </div>
-    ${d.length ? `<h2>${d.length} new tracks <span class="mono" style="font-size:13px;color:var(--ink-3)">from ${esc(S.discoverFrom)}</span></h2>` : ''}
-    <div class="rows">${d.map(x => `<div class="row"><div class="main">
-      <div class="ttl">${esc(x.track)} <span class="sub">— ${esc(x.artist)}</span></div>
-      <div class="sub mono">${esc((x.released??'').slice(0,4))} · via ${esc((x.via??[]).join(', '))}</div>
-    </div><div class="acts">
-      <button class="b sm" data-dplay="${esc(x.id)}">Play</button>
-      <button class="b sm" data-like="${esc(x.id)}">Like</button>
-      <a class="b sm" style="text-decoration:none" href="https://open.spotify.com/track/${esc(x.id)}" target="_blank" rel="noopener">Open</a>
-    </div></div>`).join('') || (d.length===0 && hasKey ? '<div class="empty">Pick a seed and hit Find new music.</div>' : '')}</div>`;
+    <div class="counter"><span>via ${esc((t.via??[]).join(', '))}</span><span>${i+1} of ${d.length}</span></div>`;
+}
+
+/** Add the track on the card to a playlist, and take it off the pile. */
+async function discAdd(playlistId) {
+  const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
+  if (!t) return;
+  const name = CFG[playlistId]?.name ?? playlistId;
+  try {
+    await addTracks(playlistId, [t.id]);
+    await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'added from discovery' });
+    const when = (await getLog())[0]?.at;
+    toast(`Added “${t.track}” to ${name}.`, () => undoAction(when));
+    d.splice(at, 1);
+    S.discAt = Math.max(0, Math.min(at, d.length - 1));
+    render();
+  } catch (e) { toast('Failed: ' + e.message); }
 }
 
 function vHistory() {
@@ -2057,6 +2318,13 @@ function render(dir) {
   [...dots.children].forEach((d, i) => d.classList.toggle('on', i === at));
 
   bindSwipeCard();
+
+  const seek = $('#seek');
+  if (seek) {
+    seek.oninput = () => { PLAYER.scrub = true; $('#pTime').textContent = mmss(+seek.value); };
+    seek.onchange = async () => { const to = +seek.value; PLAYER.scrub = false; await playerSeek(to); };
+    playerRun();
+  } else playerStop();
 }
 
 /** Move to another screen: animates in the direction of travel and starts at the top. */
@@ -2356,7 +2624,15 @@ document.addEventListener('click', async e => {
     } catch (err) { toast('Failed: '+err.message); mv.disabled = false; } return; }
 
   const dp = e.target.closest('[data-dplay]');
-  if (dp) { try { toast('Playing on ' + await playTrack(dp.dataset.dplay)); } catch (err) { toast(err.message); } return; }
+  if (dp) return discPlay(dp.dataset.dplay);
+  if (e.target.closest('#pToggle')) return playerToggle();
+  const dnav = e.target.closest('[data-dnav]');
+  if (dnav) {
+    const d = S.discover ?? [];
+    S.discAt = Math.max(0, Math.min((S.discAt ?? 0) + (+dnav.dataset.dnav), d.length - 1));
+    return render();
+  }
+  const dfile = e.target.closest('[data-dfile]'); if (dfile) return discAdd(dfile.dataset.dfile);
 
   if (e.target.id === 'saveLfm') {
     const v = $('#lfmKey').value.trim();
@@ -2382,6 +2658,7 @@ document.addEventListener('change', async e => {
   if (e.target.id === 'anyPl' && e.target.value) return fileCurrent(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
+  if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
 
   // Axis / target edits are per-viewer and persist on this device.
   const ax = e.target.closest('[data-ax]'), tg = e.target.closest('[data-tg]');
@@ -2502,7 +2779,18 @@ async function start(force) {
   let t;
   try { t = await token(); }
   catch (e) { blocked(e.message, () => start(force)); return; }
-  if (!t) { $('#land').hidden = false; $('#app').hidden = true; return; }
+  if (!t) {
+    $('#land').hidden = false; $('#app').hidden = true;
+    // Signed in in Safari and puzzled to be asked again here: say why, once,
+    // where it is being asked rather than in a toast that disappears.
+    if (standalone() && !$('#landWhy')) {
+      const why = document.createElement('p');
+      why.id = 'landWhy'; why.className = 'fineprint';
+      why.textContent = 'iPhone keeps this app’s data separate from Safari’s, so it needs its own sign-in. It only asks once.';
+      $('.cta')?.after(why);
+    }
+    return;
+  }
   try {
     stage('Reading your library…', 0.02);
     LIB = force ? null : await idb.get('library');
@@ -2516,7 +2804,7 @@ async function start(force) {
     }
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
-      const raw = await fetch('tags.json?v=2026-09-05-2344').then(r => r.json());
+      const raw = await fetch('tags.json?v=2026-09-06-0021').then(r => r.json());
       TAGS = {};
       // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
       for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
@@ -2590,6 +2878,19 @@ const FRIENDLY = {
       }
     }
   }
+  // iOS gives a home-screen app its own storage, so it opens with no sign-in
+  // even when Safari has one — there is no way to hand it across. What can be
+  // done is not making a person do it: the first time this app is opened from
+  // the Home Screen it goes to Spotify itself, and since Spotify already has
+  // the grant it comes straight back. One attempt only, and the flag is set
+  // before leaving, so a refusal lands on the landing page and stays there
+  // rather than bouncing in a loop.
+  if (autoConnectDue()) {
+    localStorage.setItem('bf_autoconnect', '1');
+    stage('Signing you in…', 0.01);
+    return beginAuth();
+  }
+
   start(false);
 })();
 </script>
