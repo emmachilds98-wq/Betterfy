@@ -206,6 +206,15 @@ another device** — opening the page never creates an identity or writes
 anything on its own. Full design, the Firestore rules, and how the merge
 works in `FIREBASE.md`.
 
+Discogs was a total-gap fallback only — filling an artist Last.fm returned
+nothing on at all, never touching one Last.fm had already tagged. It now also
+blends into a *thin* answer (fewer than three Last.fm tags): Discogs styles
+the artist doesn't already have are added alongside what Last.fm said, never
+reordering or displacing it, so a barely-tagged artist gets more evidence
+rather than staying thin forever waiting for Last.fm alone to catch up. Three
+tags is also the line the rest of the model now uses to call an answer
+"thin" — see `mergeTagSources()` in `tagstore.mjs`.
+
 Discogs results are deliberately **not** shared yet. `discogsTags()` now
 normalises its tally to the same 0–100 Last.fm uses — the commonest style is
 100 and the rest are relative to it — so the two sources are at least on one
@@ -547,9 +556,14 @@ Requires Node 22+ (uses built-in `fetch`; no dependencies).
    https://www.last.fm/settings/applications — Spotify's API only returns your
    last 50 plays and keeps no history, Last.fm keeps everything from that day on.
 3. **Discogs token** (optional) — https://www.discogs.com/settings/developers
-   → Generate token. Only fills artists Last.fm has nothing on; leave it blank
-   and `npm run setup` skips that step rather than failing on it.
-4. Copy `.env.example` to `.env` and fill it in.
+   → Generate token. Fills a total Last.fm gap and blends into a thin answer;
+   leave it blank and `npm run setup` skips that step rather than failing on it.
+4. **MusicBrainz contact** (optional, no signup) — any string identifying you
+   or this install, e.g. an email address. Lets `npm run enrich` resolve each
+   artist's exact MusicBrainz id ahead of the Last.fm fetch, so a same-named
+   artist can't get autocorrected onto by mistake. Leave it blank and every
+   artist is looked up by name exactly as before this existed.
+5. Copy `.env.example` to `.env` and fill it in.
 
 ```bash
 npm run setup     # authorise, snapshot the library, fetch tags, classify playlists
@@ -656,6 +670,52 @@ guess, and everything downstream reads the file, not the rules.
   is a genre, the same lesson the name rules learned. And anything unrecognised
   stays a genre, because being wrong in that direction only costs the status
   quo.
+- **A feature colours a track; it does not define it.** `trackVec()` used to
+  average every credited artist's tags equally — a drum & bass tune with a
+  guest MC who happens to have a stronger Last.fm following as a grime artist
+  pulled the whole track toward grime, at full strength, on Spotify's own
+  billing order alone. Credited artists are now weighted by billing position
+  (the primary, first-listed artist carries the full weight of a solo track;
+  a feature colours it at half that), so the actual producer's sound still
+  leads and a well-tagged guest can no longer outvote them. Measured against
+  no data of any kind — this only changes what happens once more than one
+  credited artist actually has tags.
+- **Thin data is not the same as strong data, and used to be treated
+  identically.** An artist Last.fm barely answered — one tag, just over the
+  count-≥10 floor — used to shape a centroid exactly as confidently as one
+  with fifteen tags at 80-100. Below three tags, an artist's contribution is
+  now scaled down with how little there actually is (to a third at a single
+  tag); at three or more, nothing changes from before this existed. The same
+  three-tag line is what makes a Last.fm answer "thin" everywhere else in this
+  README — the point past which it is trusted at face value. A suggestion
+  built entirely on thin data is flagged in the UI ("thin data" next to its
+  tag chips) rather than presented with the same confidence as one backed by
+  real coverage.
+- **A tag only one artist in the whole library has is exactly as likely to be
+  a misspelling as a real answer.** Last.fm's tags are crowd-submitted with no
+  spellchecker and no curated genre list to check them against, so a stray
+  scrobble or a one-off tagger's typo looks, to the model, identical to a
+  genuinely rare micro-genre. `tagGate()` (`profile.mjs`) requires a tag to be
+  attested by at least two artists across the whole library before it can
+  shape a centroid at all — cheap for a real genre with any following, and it
+  quietly drops the ones that are just noise from a single bad answer. The
+  real cost: a genuinely one-artist niche genre in a small library loses its
+  only distinguishing tag, which is why the bar is kept at two, not higher.
+- **A same-named artist can poison a tag fetch worse than an empty one.**
+  Last.fm's `artist.gettoptags` is queried by name with autocorrect on, and
+  more than one artist shares a name in electronic music alone — an
+  autocorrect that lands on the wrong one returns a confident, wrong tag set,
+  which is worse than nothing because it actively misfiles every track by the
+  real artist. With a free `MUSICBRAINZ_CONTACT` set (see `.env.example`),
+  `npm run enrich` now looks up each artist's exact MusicBrainz id first, from
+  the Spotify artist URL MusicBrainz volunteers attach to an artist page — an
+  exact match, no name-fuzziness involved — and asks Last.fm for that id
+  (`mbid=`) instead of a name when one is found. Off by default, and Node-only:
+  the lookup needs a custom `User-Agent` a browser `fetch` cannot set, so the
+  hosted page's name+autocorrect path is unchanged either way. Not yet
+  confirmed against a live MusicBrainz response from every environment this
+  runs in — see `musicbrainz.mjs` for what to check if a shape mismatch ever
+  shows up as "MusicBrainz never seems to match anything."
 - **A playlist that says nothing in its name is asked what it is made of.**
   The one thing left after the name and the dates is the tags, read as a
   facet mix against *your own library's* baseline rather than a fixed share —
@@ -697,6 +757,17 @@ guess, and everything downstream reads the file, not the rules.
   good. Only an answer that actually landed is cached now, and the count on
   **Fetch missing tags** means the same thing the run does (it used to offer to
   fetch tags for artists it then reported as "Nothing missing").
+- **Nor is a thin one, forever.** A genuine "nothing here" or "barely
+  anything" answer is not a request-that-failed, but it is not permanent
+  either — Last.fm's crowd tags and Discogs' catalogue both grow, so an
+  artist who really had fewer than three usable tags six months ago may not
+  still be that thin. `worthReasking()` (`cache.mjs`) re-asks anything thin
+  after about six months, and asks again immediately for anything that
+  actually errored; a well-tagged artist is never re-asked at all, since
+  there is no upside. **Fetch missing tags** now covers this on the hosted
+  page too — "missing" means thin, not just absent. A hand-correction you
+  make in the tag editor is stamped as freshly checked so this can never
+  quietly overwrite it later.
 - **Real listening now steers more than Discovery.** Your top artists over
   Spotify's three windows plus recent plays — previously only used to seed a
   Discovery run — now also decide which artist's tag gap gets filled first
@@ -777,8 +848,9 @@ guess, and everything downstream reads the file, not the rules.
 | `storage.rules` | Per-account private blobs — not provisioned yet, see `FIREBASE.md` |
 | `FIREBASE.md` | Verified project state, console steps, and the cross-device sync plan |
 | `norm.mjs` / `credits.mjs` | track identity and collaboration-credit splitting |
-| `profile.mjs` | tag vectors, playlist centroids, IDF, ranking |
-| `enrich-lastfm.mjs` / `enrich-discogs.mjs` / `tagstore.mjs` | fetch and merge genre tags — Discogs only ever fills what Last.fm left empty |
+| `profile.mjs` | tag vectors, playlist centroids, IDF, ranking, the tag gate |
+| `enrich-lastfm.mjs` / `enrich-discogs.mjs` / `tagstore.mjs` | fetch and merge genre tags — Discogs fills a total gap and blends into a thin one |
+| `musicbrainz.mjs` | resolves a Spotify artist to a MusicBrainz id, so enrich-lastfm.mjs can ask Last.fm by id instead of a name — Node-only, optional |
 | `listening.mjs` | real listening behaviour (top artists, recent plays) as a weight per artist — best-effort, works with no Spotify auth available too |
 | `snapshot.mjs` | dumps the whole library to `library.json` |
 | `actions.mjs` | every library mutation, with the undo log |
@@ -796,7 +868,7 @@ refuses to build if a secret appears in the output.
 |---|---|
 | **Last.fm** artist tags | The genre backbone. Good coverage, sends `access-control-allow-origin: *` so it works from the browser too. |
 | **Discogs** release styles | Wired as a fallback: only queried for an artist Last.fm returned nothing for at all *and actually answered about* (a dropped request is not an empty answer), tallying `style` across that artist's releases (Breakbeat / Techno / Electro — finer than Last.fm's one flat tag per artist) and rescaling the tally to Last.fm's 0–100 so the two can be averaged at all. Needs a token in the `Authorization` header from Node, so this side is verified; the browser build sends it as a query param instead to avoid a custom header, which has **not** been checked against a real response — confirm it under Playlists once you have a token. |
-| **MusicBrainz** | Planned as identity glue — no key, but wants a contact string in the User-Agent, which a browser `fetch` cannot set. Nothing reads `MUSICBRAINZ_CONTACT` yet. |
+| **MusicBrainz** | Identity glue, wired into `npm run enrich` (`musicbrainz.mjs`): resolves a Spotify artist to an exact MusicBrainz id from the Spotify URL on its artist page, so the Last.fm fetch that follows can ask by id instead of a name autocorrect might match onto a same-named artist. No key, but wants a contact string in the User-Agent (`MUSICBRAINZ_CONTACT`) — off with none set. Node-only: the custom header a browser `fetch` cannot set is exactly what this needs, so the hosted page is unaffected either way. The response shape it parses is written from MusicBrainz's documented ws/2 JSON, unconfirmed against a live response from every environment — see `musicbrainz.mjs`. |
 | **GetSongBPM** | Tempo, key and Camelot notation — but only **20% coverage** measured over a 40-track sample of a current UK electronic library. Superseded by the Rekordbox import below; nothing calls it. |
 | **Deezer** | Has a public BPM field, but it was empty for 4 of 5 tested tracks. Not worth wiring. |
 

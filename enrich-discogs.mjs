@@ -1,13 +1,15 @@
-// Fallback tag source for artists Last.fm has nothing on. Not a replacement —
-// Last.fm's crowd tags are the backbone (enrich-lastfm.mjs) — this only ever
-// fills an artist that comes back with zero tags, using Discogs' release
-// search: each hit carries its own `style` array (Jungle, Deep House, Electro
-// — genre is far coarser and mostly unused), so tallying style across an
-// artist's releases approximates the release-level nuance a single flat
-// artist bio never gives Last.fm either.
+// Fallback tag source for artists Last.fm has little or nothing on. Not a
+// replacement — Last.fm's crowd tags are the backbone (enrich-lastfm.mjs) —
+// this only ever fills a total gap or blends into a thin answer, using
+// Discogs' release search: each hit carries its own `style` array (Jungle,
+// Deep House, Electro — genre is far coarser and mostly unused), so tallying
+// style across an artist's releases approximates the release-level nuance a
+// single flat artist bio never gives Last.fm either. tagstore.mjs's
+// mergeTagSources() decides gap-fill vs blend; this script only has to fetch
+// for the same set it would use either way.
 import { readFileSync } from 'node:fs';
 import { env } from './env.mjs';
-import { Cache, sleep, retry } from './cache.mjs';
+import { Cache, sleep, retry, worthReasking, REASK_TAG_FLOOR } from './cache.mjs';
 import { fetchListening } from './listening.mjs';
 import { byListening } from './profile.mjs';
 
@@ -22,12 +24,13 @@ const add = t => { for (const a of t?.artists ?? []) if (a.id) artists.set(a.id,
 for (const p of lib.playlists) p.tracks.forEach(add);
 lib.liked.forEach(add);
 
-// Only the gap Last.fm left open — this never overrides a real Last.fm tag.
+// The gap Last.fm left open, total or thin — this never overrides a real,
+// well-tagged Last.fm answer.
 const lastfm = new Cache('tags-lastfm.json');
-const empty = [...artists].filter(([id]) => !lastfm.get(id)?.tags?.length);
+const empty = [...artists].filter(([id]) => (lastfm.get(id)?.tags?.length ?? 0) < REASK_TAG_FLOOR);
 
 const cache = new Cache('tags-discogs.json');
-let todo = empty.filter(([id]) => !cache.has(id));
+let todo = empty.filter(([id]) => worthReasking(cache.get(id)));
 
 // Same reasoning as enrich-lastfm.mjs: at ~1 req/s this can be the longer of
 // the two fetches, so cover what you actually listen to first.
@@ -55,10 +58,10 @@ for (const [id, name] of todo) {
         tally.set(style.toLowerCase(), (tally.get(style.toLowerCase()) ?? 0) + 1);
 
     const tags = [...tally].sort((a, b) => b[1] - a[1]).slice(0, 10);
-    cache.set(id, { name, tags, source: 'discogs' });
+    cache.set(id, { name, tags, source: 'discogs', checkedAt: Date.now() });
     if (tags.length) filled++;
   } catch (e) {
-    cache.set(id, { name, tags: [], source: 'discogs', error: String(e.message).slice(0, 80) });
+    cache.set(id, { name, tags: [], source: 'discogs', error: String(e.message).slice(0, 80), checkedAt: Date.now() });
   }
   if (++done % 100 === 0) console.error(`  ${done}/${todo.length}  (${filled} filled so far)`);
   await sleep(1100);                     // 60 req/min with a token — stay under it

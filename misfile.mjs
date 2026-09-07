@@ -2,7 +2,7 @@
 //   1. Is anything filed somewhere that fits another playlist much better?
 //   2. Where should the 850 unfiled liked songs go — and what has no home at all?
 import { readFileSync, writeFileSync } from 'node:fs';
-import { buildProfiles, rank, topTags, trackVec, applyIdf, cosine, findMisfiled, findDrift } from './profile.mjs';
+import { buildProfiles, rank, topTags, trackVec, applyIdf, cosine, findMisfiled, findDrift, isThinSignal } from './profile.mjs';
 import { loadTags } from './tagstore.mjs';
 import { fetchListening } from './listening.mjs';
 
@@ -23,10 +23,16 @@ console.error(`modelled ${profiles.size} destination playlists`);
 // these reports have direct tests against.
 const { recentlyActive } = await fetchListening(lib).catch(() => ({ recentlyActive: new Set() }));
 
-// coverage check — how much of the library has any tag signal at all
-let withTags = 0, total = 0;
-for (const p of lib.playlists) for (const t of p.tracks) { total++; if (trackVec(t, tags).size) withTags++; }
-console.error(`tag coverage: ${withTags}/${total} placements (${(100*withTags/total).toFixed(1)}%)\n`);
+// coverage check — how much of the library has any tag signal at all, and how
+// much of that signal is thin (real, but built on very little Last.fm data)
+let withTags = 0, thin = 0, total = 0;
+for (const p of lib.playlists) for (const t of p.tracks) {
+  total++;
+  if (trackVec(t, tags).size) withTags++;
+  if (isThinSignal(t, tags)) thin++;
+}
+console.error(`tag coverage: ${withTags}/${total} placements (${(100*withTags/total).toFixed(1)}%)`
+  + ` — ${thin} of those thin\n`);
 
 // ---------- 1. possible misfiles ----------
 // Shared with the browser build via profile.mjs, so the two cannot drift
@@ -38,6 +44,7 @@ const misfiled = findMisfiled(lib, tags, targets, profiles, idf, axisOf).map(m =
   playedRecently: recentlyActive.has(m.track.artists?.[0]?.name),
   suggest: m.suggest.map(b => ({ id: b.id, name: b.name, score: +b.score.toFixed(3) })),
   tags: topTags(m.track, tags, idf),
+  thinData: isThinSignal(m.track, tags),
 }));
 
 // ---------- 2. the unfiled backlog ----------
@@ -53,6 +60,7 @@ for (const t of unfiled) {
     added: (t.added_at ?? '').slice(0, 10),
     suggest: best.map(b => ({ name: b.name, score: +b.score.toFixed(3) })),
     tags: topTags(t, tags, idf),
+    thinData: isThinSignal(t, tags),
   };
   (best.length && best[0].score >= 0.30 ? placed : homeless).push(row);
 }

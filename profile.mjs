@@ -188,17 +188,101 @@ export function facetMix(tracks, tags, idf = null) {
   return mix;
 }
 
-/** Tag weights for one track, averaged over its credited artists. */
+// How many tags a Last.fm answer needs before it's trusted at full strength.
+// An artist autocorrected onto with one tag just over the count>=10 floor is
+// not "sure of one genre" — it is one crowd-tagger, and used to be weighted
+// identically to an artist with fifteen tags at 80-100. Below this floor,
+// trust scales down with how little there actually is (down to a third at a
+// single tag) rather than snapping to all-or-nothing; at or above it, nothing
+// changes from before this existed. Chosen to match REASK_TAG_FLOOR in
+// cache.mjs — the same tag count that made an empty-ish answer worth asking
+// Last.fm about again is the one this model stops fully trusting.
+const CONFIDENT_TAG_COUNT = 3;
+const confidenceOf = entry => Math.min(1, (entry.tags?.length ?? 0) / CONFIDENT_TAG_COUNT);
+
+// A featured or "with" credit colours a track; it does not define its sound
+// the way the primary, first-billed artist does. Spotify lists credited
+// artists in billing order, so only the credit *position* decides this — never
+// which artist happens to have the stronger Last.fm following, or a well-
+// tagged guest vocalist would outvote the actual producer on their own track.
+const FEATURE_CREDIT_WEIGHT = 0.5;
+const creditWeight = i => i === 0 ? 1 : FEATURE_CREDIT_WEIGHT;
+
+/**
+ * Tag weights for one track: each credited, tagged artist's cloud, weighted
+ * by billing order and scaled by how much data actually backs it. A single
+ * confidently-tagged primary artist scores exactly as it always did — the
+ * two effects only diverge from the old flat average on a multi-artist credit
+ * or a thin Last.fm answer.
+ */
 export function trackVec(track, tags) {
   const v = new Map();
-  const artists = (track.artists ?? []).filter(a => tags[a.id]?.tags?.length);
-  if (!artists.length) return v;
-  for (const a of artists)
-    for (const [tag, count] of tags[a.id].tags) {
+  const credited = (track.artists ?? [])
+    .map((a, i) => [a, i])
+    .filter(([a]) => tags[a.id]?.tags?.length);
+  if (!credited.length) return v;
+  const totalWeight = credited.reduce((s, [, i]) => s + creditWeight(i), 0);
+  for (const [a, i] of credited) {
+    const entry = tags[a.id];
+    const w = (creditWeight(i) / totalWeight) * confidenceOf(entry);
+    for (const [tag, count] of entry.tags) {
       if (!usableTag(tag)) continue;
-      v.set(tag, (v.get(tag) ?? 0) + count / 100 / artists.length);
+      v.set(tag, (v.get(tag) ?? 0) + (count / 100) * w);
     }
+  }
   return v;
+}
+
+/**
+ * True when every tagged artist behind a track is below the confidence floor
+ * — the suggestion is real, but built on very little Last.fm evidence, which
+ * is worth knowing before trusting or dismissing it. A track with no tagged
+ * artists at all is a different, already-visible case (no suggestion at all),
+ * not this one.
+ */
+export function isThinSignal(track, tags) {
+  const credited = (track.artists ?? []).filter(a => tags[a.id]?.tags?.length);
+  if (!credited.length) return false;
+  return credited.every(a => (tags[a.id].tags.length) < CONFIDENT_TAG_COUNT);
+}
+
+// A tag seen on only one artist in the whole library is indistinguishable, at
+// the model level, from a misspelling, a stray scrobble, or a same-named-
+// artist mismatch — exactly the "missing/bad data" failure this project has
+// no curated genre list to check tags against. Requiring a tag to show up on
+// at least this many distinct artists before it can shape a centroid costs
+// nothing for a real genre with any following at all — the artists who play
+// it share more than one tag — while quietly dropping the ones that are just
+// noise from a single bad answer. The real cost: a genuinely one-artist niche
+// genre in a small library loses its only distinguishing tag. Kept low
+// deliberately, so that cost stays rare.
+const TAG_GATE_MIN_ARTISTS = 2;
+
+/**
+ * Which tags are trusted enough to shape the model, from a library-wide pass
+ * over every artist's tag list: seen on at least `min` distinct artists.
+ * Call once per tag set and pass the result to gateTags().
+ */
+export function tagGate(tags, min = TAG_GATE_MIN_ARTISTS) {
+  const byArtists = new Map();
+  for (const entry of Object.values(tags)) {
+    if (!entry?.tags?.length) continue;
+    const seen = new Set(entry.tags.map(([tag]) => String(tag).toLowerCase()));
+    for (const t of seen) byArtists.set(t, (byArtists.get(t) ?? 0) + 1);
+  }
+  const gate = new Set();
+  for (const [t, n] of byArtists) if (n >= min) gate.add(t);
+  return gate;
+}
+
+/** Drop every tag a gate (from tagGate()) doesn't trust, artist by artist. */
+export function gateTags(tags, gate) {
+  const out = {};
+  for (const [id, entry] of Object.entries(tags)) {
+    if (!entry?.tags?.length) { out[id] = entry; continue; }
+    out[id] = { ...entry, tags: entry.tags.filter(([tag]) => gate.has(String(tag).toLowerCase())) };
+  }
+  return out;
 }
 
 const dot = (a, b) => {

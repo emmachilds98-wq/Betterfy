@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tagFacet, axisVec, facetMix, trackVec, applyIdf, cosine,
-         buildProfiles, findMisfiled } from '../profile.mjs';
+         buildProfiles, findMisfiled, isThinSignal, tagGate, gateTags } from '../profile.mjs';
 
 /*
  * Last.fm hands back one flat cloud per artist with no type on any of it, and
@@ -163,4 +163,115 @@ test('a track is scored against its home the same way it is scored against the a
   const v = applyIdf(axisVec(lib.playlists[0].tracks[0], tags, 'genre'), idf);
   assert.ok(Math.abs(cosine(v, profiles.get('p-house').vec) - hit.ownScore) < 1e-9);
   assert.ok(Math.abs(cosine(v, profiles.get('p-jungle').vec) - hit.suggest[0].score) < 1e-9);
+});
+
+/* ---- trackVec: billing order and confidence, both new ----
+ *
+ * Every fixture above uses a single, well-tagged (3+ tags) artist per track,
+ * so it is untouched by either change — confidence only bites below 3 tags,
+ * and billing order only exists to disagree with when there is more than one
+ * credited artist. These exercise exactly the cases those fixtures don't. */
+
+const withTags = (id, list) => [id, { name: id, tags: list.map(t => [t, 90]) }];
+const trkArtists = (id, artistIds) => ({ id, name: id, artists: artistIds.map(a => ({ id: a, name: a })) });
+
+test('a single well-tagged artist scores exactly as it always did', () => {
+  const tags = Object.fromEntries([withTags('a', ['house', 'deep house', 'techno'])]);
+  const v = trackVec(trkArtists('t', ['a']), tags);
+  // Unweighted: count/100 for a lone, fully-trusted credit.
+  assert.ok(Math.abs(v.get('house') - 0.9) < 1e-9);
+});
+
+test('a featured artist colours a track less than the primary, first-billed one', () => {
+  const tags = Object.fromEntries([
+    withTags('lead', ['jungle', 'breakbeat', 'amen break']),
+    withTags('feature', ['grime', 'uk rap', 'garage']),
+  ]);
+  const v = trackVec(trkArtists('t', ['lead', 'feature']), tags);
+  assert.ok(v.get('jungle') > v.get('grime'), 'the primary artist\'s sound still leads');
+  assert.ok(v.get('grime') > 0, 'the feature still colours the track, just less');
+});
+
+test('billing order, not who happens to have the stronger Last.fm following, decides the weight', () => {
+  // Swap which position is well-tagged — the credit position is what carries
+  // the weight, not which artist Last.fm happens to know more about.
+  const tags = Object.fromEntries([
+    withTags('lead', ['jungle', 'breakbeat', 'amen break']),
+    withTags('feature', ['grime', 'uk rap', 'garage', 'drill', 'trap']), // more tags than the lead
+  ]);
+  const v = trackVec(trkArtists('t', ['lead', 'feature']), tags);
+  assert.ok(v.get('jungle') > v.get('grime'), 'first billing wins even against a more heavily tagged feature');
+});
+
+test('a single artist with only one tag counts for less than one with three', () => {
+  const thin = Object.fromEntries([withTags('a', ['jungle'])]);
+  const rich = Object.fromEntries([withTags('a', ['jungle', 'breakbeat', 'amen break'])]);
+  const vThin = trackVec(trkArtists('t', ['a']), thin);
+  const vRich = trackVec(trkArtists('t', ['a']), rich);
+  assert.ok(vThin.get('jungle') < vRich.get('jungle'), 'one tag is trusted less than three at the same count');
+});
+
+test('confidence never crosses zero, and never exceeds the old, unweighted value', () => {
+  const tags = Object.fromEntries([withTags('a', ['jungle'])]);
+  const v = trackVec(trkArtists('t', ['a']), tags);
+  assert.ok(v.get('jungle') > 0 && v.get('jungle') < 0.9);
+});
+
+/* ---- isThinSignal: is this suggestion built on real evidence or a guess? ---- */
+
+test('a track backed by a well-tagged artist is not thin', () => {
+  const tags = Object.fromEntries([withTags('a', ['house', 'deep house', 'techno'])]);
+  assert.equal(isThinSignal(trkArtists('t', ['a']), tags), false);
+});
+
+test('a track whose only tagged artist has one tag is thin', () => {
+  const tags = Object.fromEntries([withTags('a', ['jungle'])]);
+  assert.equal(isThinSignal(trkArtists('t', ['a']), tags), true);
+});
+
+test('a track with no tagged artist at all is not "thin" — it is a different, already-visible case', () => {
+  assert.equal(isThinSignal(trkArtists('t', ['nobody']), {}), false);
+});
+
+test('one well-tagged credited artist is enough to call the signal real, even alongside a thin one', () => {
+  const tags = Object.fromEntries([withTags('lead', ['house', 'deep house', 'techno']), withTags('feature', ['grime'])]);
+  assert.equal(isThinSignal(trkArtists('t', ['lead', 'feature']), tags), false);
+});
+
+/* ---- tagGate / gateTags: a tag only one artist in the library has ---- */
+
+test('a tag seen on only one artist is dropped by the gate', () => {
+  const tags = { a1: { tags: [['house', 90], ['a-typo-nobody-else-has', 20]] } };
+  const gate = tagGate(tags);
+  assert.ok(!gate.has('a-typo-nobody-else-has'));
+});
+
+test('a tag seen on two or more artists passes the gate', () => {
+  const tags = { a1: { tags: [['footwork', 90]] }, a2: { tags: [['footwork', 80]] } };
+  const gate = tagGate(tags);
+  assert.ok(gate.has('footwork'), 'a real if niche genre with more than one artist is trusted');
+});
+
+test('a higher minimum can be asked for explicitly', () => {
+  const tags = { a1: { tags: [['footwork', 90]] }, a2: { tags: [['footwork', 80]] } };
+  assert.ok(!tagGate(tags, 3).has('footwork'), 'two artists is not enough against a minimum of three');
+});
+
+test('gateTags drops only what the gate does not trust, per artist, leaving the rest untouched', () => {
+  const tags = {
+    a1: { name: 'A', tags: [['house', 90], ['solo-typo', 20]] },
+    a2: { name: 'B', tags: [['house', 80]] },
+    a3: { name: 'C', tags: [] },
+  };
+  const gated = gateTags(tags, tagGate(tags));
+  assert.deepEqual(gated.a1.tags, [['house', 90]]);
+  assert.deepEqual(gated.a2.tags, [['house', 80]]);
+  assert.deepEqual(gated.a3.tags, [], 'an artist with nothing at all is passed through untouched');
+});
+
+test('gateTags never mutates its input', () => {
+  const tags = { a1: { tags: [['house', 90], ['solo-typo', 20]] } };
+  const before = JSON.stringify(tags);
+  gateTags(tags, tagGate(tags));
+  assert.equal(JSON.stringify(tags), before);
 });
