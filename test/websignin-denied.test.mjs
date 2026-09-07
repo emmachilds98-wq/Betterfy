@@ -38,11 +38,11 @@ function fakeDom() {
   };
 }
 
-async function boot(search) {
+async function boot(search, { contactEmail = '' } = {}) {
   const dom = fakeDom();
   const toasts = [];
   const sandbox = {
-    T: {}, S: {}, REDIRECT: 'https://example.test/Betterfy/',
+    T: {}, S: {}, REDIRECT: 'https://example.test/Betterfy/', CONTACT_EMAIL: contactEmail,
     location: { search },
     URLSearchParams,
     $: dom.$,
@@ -127,4 +127,23 @@ test('a 403-after-sign-in reload does not loop: the reason is stripped from the 
 test('a 403-after-sign-in reload toasts too, distinctly from access_denied', async () => {
   const { toasts } = await boot('?setup&reason=not_allowlisted');
   assert.match(toasts[0], /approved/i);
+});
+
+// CONTACT_EMAIL is blank unless whoever built the page opted in (build-web.mjs)
+// — a fork of this repo must never ship a stranger's inbox by default.
+
+test('with no CONTACT_EMAIL configured, there is no "ask to be added" option', async () => {
+  const { dom } = await run('access_denied');
+  assert.doesNotMatch(dom.cta._after.innerHTML, /mailto:/);
+});
+
+test('with CONTACT_EMAIL configured, access_denied also offers to ask to be added', async () => {
+  const { dom } = await boot('?error=access_denied', { contactEmail: 'owner@example.test' });
+  assert.match(dom.cta._after.innerHTML, /mailto:owner@example\.test\?/);
+  assert.match(dom.cta._after.innerHTML, /ask to be added/);
+});
+
+test('with CONTACT_EMAIL configured, a 403-after-sign-in reload offers it too', async () => {
+  const { dom } = await boot('?setup&reason=not_allowlisted', { contactEmail: 'owner@example.test' });
+  assert.match(dom.cta._after.innerHTML, /mailto:owner@example\.test\?/);
 });

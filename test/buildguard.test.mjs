@@ -93,13 +93,30 @@ test('the values that are public by design still ship', t => {
     `SPOTIFY_CLIENT_ID=${CLIENT_ID}\n`
     + `SPOTIFY_REDIRECT_URI=https://emmachilds98-wq.github.io/Betterfy/\n`
     + `TAGS_PROJECT=betterfy-1a983\n`
-    + `TAGS_KEY=AIzaSyBEom-MoIBCnC9g48dIeQ0MIRPeVptrBLQ\n` });
+    + `TAGS_KEY=AIzaSyBEom-MoIBCnC9g48dIeQ0MIRPeVptrBLQ\n`
+    + `CONTACT_EMAIL=access@example.test\n` });
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const { ok, out } = build(dir);
   assert.ok(ok, `a build carrying only public values should succeed:\n${out}`);
   const html = readFileSync(join(dir, 'docs', 'index.html'), 'utf8');
   assert.ok(html.includes(CLIENT_ID), 'the client ID is meant to be in there');
   assert.ok(html.includes('betterfy-1a983'));
+  assert.ok(html.includes('access@example.test'), 'an explicitly configured contact email is meant to ship too');
+});
+
+test('with no CONTACT_EMAIL set and no prior build to inherit from, none is baked in', t => {
+  // sandbox() copies this repo's own already-built docs/index.html too, and
+  // the fallback chain deliberately carries a value forward from it (the same
+  // as CLIENT_ID/TAGS_PROJECT) — so proving "blank by default" means removing
+  // that prior build first, or this repo's own configured contact email would
+  // carry over and the assertion below would fail for the wrong reason.
+  const dir = sandbox({ env: `SPOTIFY_CLIENT_ID=${CLIENT_ID}\n` });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  rmSync(join(dir, 'docs', 'index.html'), { force: true });
+  const { ok, out } = build(dir);
+  assert.ok(ok, out);
+  const html = readFileSync(join(dir, 'docs', 'index.html'), 'utf8');
+  assert.match(html, /const CONTACT_EMAIL = '';/);
 });
 
 test('a short or empty .env value never cries wolf', t => {
