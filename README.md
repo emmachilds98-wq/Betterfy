@@ -72,6 +72,69 @@ just to get started. A free
 Playlists, is optional and only ever fills an artist Last.fm has nothing on
 at all — a real Last.fm tag always wins.
 
+### The shared tag table
+
+Tag coverage is the ceiling on every suggestion Betterfy makes, and
+`docs/tags.json` ships **4,866 artists** — one person's library. Everyone
+else's gaps used to get filled by their own Last.fm key, into their own
+browser's IndexedDB, where the answer helped nobody else and died the moment
+they cleared site data. Every listener re-solved the same gaps from scratch.
+
+Optionally, the browser now offers each freshly-fetched answer to a shared
+Firestore collection, and `npm run tags` folds those back into the file
+everyone downloads.
+
+What makes it safe to share is the split: **only what a public API returned**
+goes up. Last.fm's tags for an artist are the same answer for everyone,
+re-fetchable by anyone, so there is nothing to trust and nothing to poison.
+Corrections you make in the tag editor are opinionated and stay on your device.
+
+Three more things keep it cheap and dull:
+
+- **Nothing reads the database at runtime.** Browsers only write. A scheduled
+  Action merges and commits, so the page's read path is unchanged and no
+  listener pays a per-artist database read — the shipped table just gets better.
+- **Gaps only.** An artist already in `tags.json` is never overwritten, so the
+  worst an unauthenticated write can do is add an artist nobody had. Validation
+  in `merge-tags.mjs` is the real boundary, and the commit diff is the audit
+  trail.
+- **Entirely optional**, per the rule in `CLAUDE.md`. With no project configured
+  the page makes no request, and however the request fails it is never the
+  reason your own tag fetch went wrong. A fork with no Firebase behaves exactly
+  as Betterfy did before any of this existed.
+
+Setting it up: create a Firebase project, enable Firestore, publish the rules
+below, then build with the project id and web key —
+`npm run build:web -- --tags-project=<id> --tags-key=<key>` (or put
+`TAGS_PROJECT` / `TAGS_KEY` in `.env`). Both are public: a Firebase web key
+names a project, it does not authorise anything.
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    match /tagContributions/{artistId} {
+      // Readable because every contribution is published in this repo the
+      // moment it merges — there is nothing here that is not about to be public.
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['tags','source','at'])
+                    && request.resource.data.tags is string
+                    && request.resource.data.tags.size() < 2000
+                    && request.resource.data.source == 'lastfm';
+      // First contribution for an artist wins; no edits, nothing to reconcile.
+      allow update, delete: if false;
+    }
+  }
+}
+```
+
+Discogs results are deliberately **not** shared yet. Last.fm returns a 0–100
+confidence that maps cleanly onto the 0–10 scale `tags.json` stores, but
+`discogsTags()` returns a count of releases carrying each style — a different
+scale entirely, and baking that mismatch into a file everyone downloads would
+skew every suggestion those artists take part in. The `source` field is there
+so it can be added once it is normalised.
+
 **A wrong suggestion is usually a wrong tag, not a wrong model.** Last.fm's
 tags are per *artist*, not per track, and crowd-submitted — a same-named act,
 a stray scrobble, or a niche artist with three taggers is enough to mistag
@@ -494,6 +557,7 @@ guess, and everything downstream reads the file, not the rules.
 | | |
 |---|---|
 | `spotify.mjs` | API client — token refresh, pagination, 429 retry |
+| `merge-tags.mjs` | Folds contributed Last.fm tags into `docs/tags.json` |
 | `norm.mjs` / `credits.mjs` | track identity and collaboration-credit splitting |
 | `profile.mjs` | tag vectors, playlist centroids, IDF, ranking |
 | `enrich-lastfm.mjs` / `enrich-discogs.mjs` / `tagstore.mjs` | fetch and merge genre tags — Discogs only ever fills what Last.fm left empty |

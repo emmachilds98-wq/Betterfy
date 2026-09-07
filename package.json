@@ -24,7 +24,8 @@
     "setup": "node auth.mjs && node snapshot.mjs && node enrich-lastfm.mjs && node enrich-discogs.mjs && node axes.mjs",
     "build:web": "node build-web.mjs",
     "build:icons": "node make-icons.mjs",
-    "rekordbox": "node rekordbox.mjs"
+    "rekordbox": "node rekordbox.mjs",
+    "tags": "node merge-tags.mjs"
   },
   "license": "MIT"
 }

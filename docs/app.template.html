@@ -3223,6 +3223,55 @@ function tagCoverage() {
 
 /** Release styles for an artist Last.fm has nothing on at all — never called
  *  otherwise, since a real Last.fm tag always wins outright. */
+/* ---------- giving a tag back ----------
+ * The shipped tag table covers one person's artists. Everyone else's gaps get
+ * filled by their own Last.fm key, into their own IndexedDB, where the answer
+ * helps nobody else and dies when they clear site data — so every listener
+ * re-solves the same gaps from scratch, forever.
+ *
+ * What is shared here is only what a public API returned for an artist, which
+ * is the same answer for everyone and can be re-fetched by anyone. Corrections
+ * made in the tag editor are opinionated and stay local; that split is what
+ * keeps a shared table worth trusting.
+ *
+ * Entirely optional, per CLAUDE.md's rule for anything outside Spotify: with no
+ * project configured this is a no-op, a failure is silent, and nothing waits on
+ * it. A build with no sharing configured behaves exactly as it always did. */
+const TAGS_PROJECT = '__TAGS_PROJECT__', TAGS_KEY = '__TAGS_KEY__';
+
+/** Configured, and not just carrying an unreplaced build placeholder. */
+const sharingTags = () => /^[a-z][a-z0-9-]{3,39}$/.test(TAGS_PROJECT) && TAGS_KEY.length >= 20;
+
+/**
+ * Offer one artist's freshly-fetched tags to the shared table. Never awaited,
+ * never retried: the tags are already saved locally, and this is a gift to
+ * whoever hits the same gap next rather than something this listener is
+ * waiting on.
+ * @param tags [name, 0-100][] — Last.fm's own scale.
+ */
+function contributeTags(artistId, tags) {
+  // Wrapped whole: this sits in the middle of fetching and saving a listener's
+  // own tags, and nothing optional is allowed to interrupt that.
+  try {
+    if (!sharingTags() || !artistId || !tags?.length) return;
+    // Already in the table everyone downloads, so there is nothing to give.
+    if (RAW_TAGS?.[artistId]) return;
+    const url = `https://firestore.googleapis.com/v1/projects/${TAGS_PROJECT}/databases/(default)`
+      + `/documents/tagContributions?documentId=${encodeURIComponent(artistId)}&key=${TAGS_KEY}`;
+    // documentId= on a create means the first contribution for an artist wins
+    // and later ones are refused outright — no edits, no overwrites, nothing to
+    // reconcile. The refusal is a 409 nobody reads.
+    fetchDeadline(url, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fields: {
+        tags:   { stringValue: JSON.stringify(tags.slice(0, 10)) },
+        source: { stringValue: 'lastfm' },
+        at:     { integerValue: String(Date.now()) },
+      } }),
+    }, 6000).catch(() => {});
+  } catch { /* never the reason a tag fetch failed */ }
+}
+
 async function discogsTags(name, token) {
   const r = await fetch('https://api.discogs.com/database/search?' + new URLSearchParams({
     artist: name, type: 'release', per_page: '50', token })).then(x => x.json());
@@ -3260,6 +3309,7 @@ async function enrichMissing() {
       const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
         method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
       tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
+      contributeTags(id, tags);
     } catch { tags = []; }
     await new Promise(r => setTimeout(r, 200));   // Last.fm's documented ~5/s
 
@@ -3314,6 +3364,7 @@ async function refetchArtist(id, name) {
     const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
       method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
     const tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
+    contributeTags(id, tags);
     await saveArtistTags(id, tags);
     toast(tags.length ? `Refetched — ${tags.length} tag(s) for ${name}.` : `Last.fm has no tags for ${name}.`);
   } catch (e) { toast('Failed: ' + e.message); }
