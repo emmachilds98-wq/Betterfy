@@ -3868,7 +3868,12 @@ function bindAppGestures() {
       if (next) { buzz(6); if (next === 'history') S.history = await getLog(); go(next); }
     }
   };
-  app.addEventListener('touchend', guard(end));
+  // guard() itself isn't declared until further down the script — bindAppGestures()
+  // runs at startup, long before that point, so calling guard(end) here directly
+  // hit its temporal dead zone and threw, aborting every top-level statement after
+  // it (every button's onclick wiring included). Deferring the lookup to the event
+  // itself, by which time the whole script has run, is what actually fixes it.
+  app.addEventListener('touchend', e => guard(end)(e));
   app.addEventListener('touchcancel', () => {
     $('#main').style.transform = ''; mode = null;
   });
