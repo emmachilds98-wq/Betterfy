@@ -48,6 +48,10 @@ function load({ discover = [], discAt = 0, key = 'lfm-key' } = {}) {
   vm.createContext(sandbox);
   vm.runInContext(line(/const esc = [^\n]+/), sandbox);
   vm.runInContext(line(/const mmss = [^\n]+/), sandbox);
+  // The card draws its tag chips through tagChips(), which asks profile.mjs
+  // which of them are genres and which are moods, decades or occasions.
+  vm.runInContext(between('/* ---- profile.mjs ---- */', '/* =============================================================== */', 'the scoring core'), sandbox);
+  vm.runInContext(between('/** A row of tag chips', 'function describe(rows)', 'tagChips'), sandbox);
   vm.runInContext(between('function artHTML(t', 'function vInbox()', 'artHTML'), sandbox);
   vm.runInContext(between('/** The discovery currently on the card. */', 'function vHistory()', 'the Discover view'), sandbox);
   return Object.assign(sandbox, { added });

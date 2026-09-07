@@ -15,6 +15,179 @@
 const JUNK = /_|^seen live$|^albums? i|^my |^favou?rites?$|^\d+$|^under \d|lidarr|spotify|^check out|^to listen|^love(d)?$|^awesome$|^cool$|^good$|^best|^all$/i;
 const usableTag = t => t.length > 1 && t.length < 32 && !JUNK.test(t);
 
+/* ---------- tag facets ----------
+ *
+ * Last.fm hands back one flat cloud per artist with no type on any of it:
+ * "deep house", "chill", "90s", "workout", "female vocalists" and "british"
+ * all arrive as the same kind of thing, and until now all counted equally as
+ * evidence of what a track *sounds* like. They are not the same kind of thing.
+ * Half of them describe how the music feels, when you'd play it, when it came
+ * out, or who made it — and mixed into one vector they pull a track toward
+ * whichever playlist happens to share its mood or its decade rather than its
+ * genre.
+ *
+ * This is a global vocabulary, not one listener's: everybody's artists are
+ * tagged out of the same Last.fm cloud, so a lexicon over that cloud works for
+ * an account nobody has tuned for. (Contrast the playlist-name OVERRIDE table
+ * in axes.mjs, which is one person's playlist names and generalises to nobody.)
+ *
+ * Two rules keep it honest:
+ *
+ *  - Whole tag only, never a substring. "chill" is a mood; "chillstep" and
+ *    "chillwave" are genres. The same lesson the playlist-name MOOD regex
+ *    learned the hard way, applied to tags.
+ *  - When in doubt it stays a genre. A mood word wrongly demoted costs real
+ *    genre signal; a genre left alone costs nothing but the status quo. So
+ *    ambiguous tags that carry sound with them — "ambient", "psychedelic",
+ *    "acoustic", "instrumental", "club", "rave" — are deliberately absent.
+ */
+
+/** Lowercase, and treat "feel-good" / "old_school" as "feel good" / "old school". */
+const normTag = t => String(t).toLowerCase().trim().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ');
+
+// How it feels.
+const MOOD_TAGS = new Set([
+  'chill', 'chilled', 'chillout', 'chill out', 'mellow', 'laid back', 'laidback',
+  'relaxing', 'relaxed', 'relax', 'calm', 'calming', 'soothing', 'peaceful', 'serene',
+  'soft', 'gentle', 'warm', 'smooth', 'sleepy', 'dreamy', 'ethereal', 'meditative',
+  'melancholy', 'melancholic', 'sad', 'sadness', 'bittersweet', 'wistful', 'longing',
+  'moody', 'dark', 'darkness', 'gloomy', 'haunting', 'eerie', 'sombre', 'somber',
+  'lonely', 'depressing', 'emotional', 'emotive', 'cathartic', 'nostalgic',
+  'happy', 'happiness', 'joyful', 'feel good', 'feelgood', 'uplifting', 'upbeat',
+  'euphoric', 'euphoria', 'blissful', 'sunny', 'hopeful', 'fun', 'playful',
+  'energetic', 'high energy', 'hi energy', 'hype', 'hyped', 'intense', 'aggressive',
+  'angry', 'dramatic', 'epic', 'powerful', 'motivational', 'empowering', 'confident',
+  'sexy', 'sensual', 'seductive', 'romantic', 'hypnotic', 'trippy',
+  'late night', 'groovy',
+]);
+
+// When you'd play it.
+const OCCASION_TAGS = new Set([
+  'party', 'partying', 'house party', 'clubbing', 'pregame', 'pre drinks', 'night out',
+  'workout', 'work out', 'gym', 'running', 'jogging', 'exercise', 'fitness', 'yoga',
+  'driving', 'road trip', 'roadtrip', 'travel', 'commute',
+  'study', 'studying', 'focus', 'concentration', 'background', 'background music',
+  'sleep', 'sleeping', 'bedtime', 'shower', 'cooking', 'dinner', 'gaming',
+  'summer', 'winter', 'beach', 'poolside', 'bbq', 'barbecue', 'rainy day',
+  'christmas', 'xmas', 'halloween', 'wedding', 'birthday', 'new year',
+  'festival', 'festivals', 'holiday', 'holidays',
+]);
+
+// Who made it, or how you feel about owning it — never what it sounds like.
+const DESCRIPTOR_TAGS = new Set([
+  'female vocalists', 'female vocalist', 'female vocals', 'female fronted', 'female',
+  'male vocalists', 'male vocalist', 'male vocals', 'male',
+  'vocal', 'vocals', 'lyrics', 'band', 'bands', 'duo', 'solo', 'producer', 'dj',
+  'british', 'english', 'scottish', 'irish', 'welsh', 'american', 'uk', 'usa',
+  'german', 'french', 'italian', 'spanish', 'dutch', 'belgian', 'swedish',
+  'norwegian', 'danish', 'finnish', 'icelandic', 'polish', 'russian', 'greek',
+  'portuguese', 'australian', 'canadian', 'japanese', 'korean', 'chinese',
+  'brazilian', 'mexican', 'argentinian', 'indian', 'african', 'european',
+  'underground', 'mainstream', 'obscure', 'underrated', 'overrated', 'popular',
+  'hipster', 'music', 'songs', 'tracks', 'albums', 'artist', 'artists',
+]);
+
+// When it came out. A bare decade or year is the common shape; the words are
+// the rest of it. "classic rock" and "old school hip hop" stay genres, because
+// only the whole tag is ever matched.
+const ERA_TAGS = new Set([
+  'oldies', 'old school', 'oldschool', 'classic', 'classics', 'retro', 'nostalgia',
+  'throwback', 'vintage', 'contemporary', 'modern', 'new', 'old',
+]);
+const ERA_SHAPE = /^(the )?((19|20)?\d0s|(19|20)\d{2})$/;
+
+/**
+ * Which kind of thing a tag is: 'genre' (the default and the fallback),
+ * 'mood', 'era', 'occasion' or 'descriptor'.
+ */
+export function tagFacet(tag) {
+  const t = normTag(tag);
+  if (MOOD_TAGS.has(t)) return 'mood';
+  if (OCCASION_TAGS.has(t)) return 'occasion';
+  if (ERA_TAGS.has(t) || ERA_SHAPE.test(t)) return 'era';
+  if (DESCRIPTOR_TAGS.has(t)) return 'descriptor';
+  return 'genre';
+}
+
+/**
+ * How much each kind of tag counts when the question is "does this belong in
+ * that playlist" — per axis, because the question is a different one on each.
+ *
+ * A genre bucket wants sound and almost nothing else: two tracks both tagged
+ * "chill" and "90s" are not the same genre, and that coincidence used to score
+ * as if they were. A mood bucket is the mirror image — it wants feel first,
+ * with genre kept at a real weight underneath, because most artists carry only
+ * a tag or two of mood and a mood centroid built from those alone would be
+ * noise. Nothing is ever dropped to zero: an artist with no mood tags at all
+ * still scores, just on what it does have.
+ *
+ * Axes that receive no suggestions (era, event, DJ set, context, inbox) never
+ * reach this — nothing is ranked against them.
+ */
+export const FACET_WEIGHTS = {
+  genre: { genre: 1,    mood: 0.15, occasion: 0.1, era: 0.3,  descriptor: 0.1 },
+  mood:  { genre: 0.45, mood: 1,    occasion: 0.6, era: 0.15, descriptor: 0.1 },
+};
+
+/**
+ * Re-weigh an already-built tag vector for one axis. Split out from axisVec so
+ * a caller that needs the flat vector anyway — to count how much signal a
+ * track carries at all — pays for trackVec once rather than twice.
+ */
+export function weighFacets(v, axis = null) {
+  const w = FACET_WEIGHTS[axis];
+  if (!w) return v;
+  const out = new Map();
+  for (const [tag, x] of v) {
+    const s = x * (w[tagFacet(tag)] ?? 1);
+    if (s > 0) out.set(tag, s);
+  }
+  return out;
+}
+
+/**
+ * A track's tag vector as the given axis reads it. With no axis (or one that
+ * takes no suggestions) this is exactly trackVec — the old behaviour, so
+ * nothing that never had an axis to begin with changes.
+ */
+export function axisVec(track, tags, axis = null) {
+  return weighFacets(trackVec(track, tags), axis);
+}
+
+/**
+ * What a playlist is *made of*, as fractions of its total tag weight per
+ * facet — the content half of "is this a genre playlist or a mood playlist".
+ *
+ * Note this is not the tag-coherence signal that was tried and rejected (see
+ * the note above classify() in the browser build). Coherence asked how tightly
+ * a playlist's tags agree with each other, and genre and mood playlists scored
+ * indistinguishably because it really measures how broad a playlist is. This
+ * asks a different question — which *kind* of tag the playlist is held
+ * together by — and a playlist whose distinctive tags are moods is a mood
+ * playlist whether it is broad or narrow.
+ *
+ * Weighted by IDF when a table is supplied, so "electronic" on every track
+ * does not outvote the handful of tags that actually characterise the bucket.
+ */
+export function facetMix(tracks, tags, idf = null) {
+  const total = new Map();
+  let n = 0;
+  for (const t of tracks ?? []) {
+    const v = idf ? applyIdf(trackVec(t, tags), idf) : trackVec(t, tags);
+    if (!v.size) continue;
+    n++;
+    for (const [tag, x] of v) {
+      const f = tagFacet(tag);
+      total.set(f, (total.get(f) ?? 0) + x);
+    }
+  }
+  const sum = [...total.values()].reduce((a, b) => a + b, 0);
+  const mix = { genre: 0, mood: 0, era: 0, occasion: 0, descriptor: 0, tracks: n };
+  if (!sum) return mix;
+  for (const [f, x] of total) mix[f] = x / sum;
+  return mix;
+}
+
 /** Tag weights for one track, averaged over its credited artists. */
 export function trackVec(track, tags) {
   const v = new Map();
@@ -59,12 +232,18 @@ export function buildProfiles(lib, tags, targets, axisOf = null) {
 
   for (const p of lib.playlists) {
     if (targets && !targets.has(p.id)) continue;
-    const vecs = p.tracks.map(t => trackVec(t, tags)).filter(v => v.size);
+    // Built through the axis's own reading of a tag cloud, so a genre bucket's
+    // centroid is made of what its tracks sound like and a mood bucket's of
+    // what they feel like. rank() weights the track the same way before
+    // comparing, and only ever compares within one axis, so both sides of
+    // every cosine are on the same scale.
+    const axis = axisOf ? axisOf(p.id) : null;
+    const vecs = p.tracks.map(t => axisVec(t, tags, axis)).filter(v => v.size);
     if (!vecs.length) continue;
 
     const c = new Map();
     for (const v of vecs) for (const [k, x] of v) c.set(k, (c.get(k) ?? 0) + x / vecs.length);
-    raw.set(p.id, { name: p.name, axis: axisOf ? axisOf(p.id) : null, vec: c, n: vecs.length, total: p.tracks.length });
+    raw.set(p.id, { name: p.name, axis, vec: c, n: vecs.length, total: p.tracks.length });
     for (const k of c.keys()) df.set(k, (df.get(k) ?? 0) + 1);
   }
 
@@ -79,8 +258,16 @@ export function buildProfiles(lib, tags, targets, axisOf = null) {
 
 /** Rank playlists by fit for one track. */
 export function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis = null } = {}) {
-  const v = applyIdf(trackVec(track, tags), idf);
-  if (!v.size) return [];
+  const flat = trackVec(track, tags);
+  if (!flat.size) return [];
+  // One weighting per axis in play, not per playlist — the inbox ranks an
+  // unfiled track against genre and mood buckets in the same pass, and each
+  // must see the track the way its own centroid was built.
+  const cache = new Map();
+  const vecFor = a => {
+    if (!cache.has(a)) cache.set(a, applyIdf(weighFacets(flat, a), idf));
+    return cache.get(a);
+  };
   const out = [];
   for (const [id, p] of profiles) {
     if (id === exclude) continue;
@@ -88,6 +275,8 @@ export function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis
     // playlists, a mood playlist with mood playlists. Comparing across axes
     // flags every track in a mood playlist as misfiled, which it is not.
     if (axis && p.axis && p.axis !== axis) continue;
+    const v = vecFor(p.axis);
+    if (!v.size) continue;
     const s = cosine(v, p.vec);
     if (s > 0) out.push({ id, name: p.name, score: s });
   }
@@ -124,8 +313,13 @@ export function findMisfiled(lib, tags, targets, profiles, idf, axisOf) {
     const home = profiles.get(p.id);
     if (!home) continue;
     for (const t of p.tracks) {
-      const v = applyIdf(trackVec(t, tags), idf);
-      if (v.size < 3) continue;                    // too little signal to trust
+      const flat = trackVec(t, tags);
+      if (flat.size < 3) continue;                 // too little signal to trust
+      // Scored against home through home's own axis, exactly as rank() scores
+      // it against the alternatives below — otherwise the margin between them
+      // would be comparing two differently-weighted numbers.
+      const v = applyIdf(weighFacets(flat, home.axis), idf);
+      if (!v.size) continue;
       const own = cosine(v, home.vec);
       const best = rank(t, tags, profiles, idf, { exclude: p.id, top: 3, axis: axisOf(p.id) });
       if (!best.length) continue;

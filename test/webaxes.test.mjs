@@ -15,16 +15,25 @@ const NOW = Date.parse('2026-09-06T00:00:00Z');
 const day = 86400000;
 
 function load(saved = {}) {
-  const i = BUNDLE.indexOf('const EVENT = ');
+  const i = BUNDLE.indexOf('/* ---------- axis classification');
   const j = BUNDLE.indexOf('/* ---------- reports (mirrors');
   assert.ok(i > 0 && j > i, 'classify block not found — rebuild with npm run build:web');
-  // classify reads tag coherence, so the scoring helpers have to come too.
+  // classify asks profile.mjs which kind of thing each tag is, so the scoring
+  // core has to come with it.
   const p = BUNDLE.indexOf('/* ---- profile.mjs ---- */');
   const pEnd = BUNDLE.indexOf('/* ============', p);
   assert.ok(p > 0 && pEnd > p, 'profile.mjs block not found — rebuild with npm run build:web');
-  const sandbox = { LS: { getItem: () => JSON.stringify(saved) }, console };
+  const sandbox = { LS: { getItem: k => (k === 'bf_axes' ? JSON.stringify(saved) : null) }, console };
   vm.createContext(sandbox);
   vm.runInContext(BUNDLE.slice(p, pEnd), sandbox);
+  // classify() skips the All Songs mirror when it works out the library's tag
+  // baseline — it holds a copy of everything, so reading it in would count the
+  // whole library twice.
+  vm.runInContext(`const ALL_SONGS_NAME = 'All Songs — Betterfy';`, sandbox);
+  const m = BUNDLE.indexOf("const ALL_SONGS_KEY = 'bf_allsongs';");
+  const mEnd = BUNDLE.indexOf('/** A row of tag chips', m);
+  assert.ok(m > 0 && mEnd > m, 'mirror predicate not found — rebuild with npm run build:web');
+  vm.runInContext(BUNDLE.slice(m, mEnd), sandbox);
   vm.runInContext(BUNDLE.slice(i, j), sandbox);
   return sandbox;
 }
@@ -38,9 +47,9 @@ const pl = (id, name, { n = 20, span = 900, since = 2 } = {}) => ({
   })),
 });
 
-const axisOf = (playlists, saved) => {
+const axisOf = (playlists, saved, tags = null) => {
   const app = load(saved);
-  const cfg = vm.runInContext('classify', app)({ playlists }, NOW);
+  const cfg = vm.runInContext('classify', app)({ playlists }, tags, NOW);
   return id => ({ axis: cfg[id].axis, why: cfg[id].why, target: cfg[id].target });
 };
 
@@ -148,4 +157,132 @@ test('with no tags loaded at all, classification still works from name and dates
   const tracks = Array.from({ length: 12 }, (_, k) => trk('t' + k, 2015 + (k % 8), 'a' + k, k));
   const of = axisOf([withTracks('x', 'unlabelled', tracks)], {}, null);
   assert.equal(of('x').axis, 'genre', 'the old behaviour, unchanged');
+});
+
+/* ---- names that mean the same thing on every account ---- */
+
+test('Spotify\'s own generated playlists are an inflow, not a filing destination', () => {
+  // Everybody has these, under exactly these names. Left as genre they are
+  // filing targets, so Tidy offers to move your music into a playlist Spotify
+  // overwrites every Monday.
+  const of = axisOf([
+    pl('a', 'Discover Weekly'), pl('b', 'Release Radar'), pl('c', 'On Repeat'),
+    pl('d', 'My Shazam Tracks'), pl('e', 'Your Top Songs 2025'), pl('f', 'Daily Mix 3'),
+  ]);
+  for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) assert.equal(of(id).axis, 'inbox', id);
+  assert.equal(of('a').target, false, 'and nothing is ever suggested into one');
+});
+
+test('a playlist named for a situation is context, not a genre bucket', () => {
+  const of = axisOf([
+    pl('a', 'Gym'), pl('b', 'Sunday Roast Dinner'), pl('c', 'Road Trip 2024'),
+    pl('d', 'Wedding Reception'), pl('e', 'Study Focus'),
+  ]);
+  for (const id of ['a', 'b', 'c', 'd', 'e']) assert.equal(of(id).axis, 'context', id);
+  assert.equal(of('a').target, false, 'a workout playlist has no genre to compare anything against');
+});
+
+test('a genre that merely contains a mood word as a separate word is still a genre', () => {
+  // The word-boundary rule cannot separate "Dark Techno" from "dark vibes",
+  // so the words that commonly modify a genre are deliberately left out of the
+  // mood list. Being wrong toward genre is the cheap direction.
+  const of = axisOf([
+    pl('a', 'Dark Techno'), pl('b', 'Deep House'), pl('c', 'Heavy Metal'),
+    pl('d', 'Hard Trance'), pl('e', 'Smooth Jazz'),
+  ]);
+  for (const id of ['a', 'b', 'c', 'd', 'e']) assert.equal(of(id).axis, 'genre', id);
+});
+
+/* ---- and the last resort, when the name says nothing at all ----
+ * A playlist with no clue in its name and no clue in its dates used to be
+ * defaulted to genre without asking, which is exactly the silent guess that
+ * later shows up as a wrong Tidy suggestion. The tags on its tracks are the
+ * one thing left to ask, and they are read against this library's own
+ * baseline rather than a fixed share — mood tags are a small slice of
+ * anybody's cloud, and whatever number worked for one library would be wrong
+ * for the next.
+ */
+
+/** A playlist of n tracks by n artists, each carrying `vocab`. */
+const tagged = (id, name, n, vocab, tags) => {
+  const tracks = [];
+  for (let k = 0; k < n; k++) {
+    const a = `${id}-a${k}`;
+    tags[a] = { tags: vocab.map(t => [t, 100]) };
+    tracks.push({ id: `${id}-t${k}`, artists: [{ id: a, name: a }],
+                  added_at: new Date(NOW - 3 * day - k * 30 * day).toISOString() });
+  }
+  return { id, name, tracks };
+};
+
+test('with nothing in the name, a playlist held together by mood tags is read as mood', () => {
+  const tags = {};
+  const lists = [
+    tagged('m', 'saudade', 12, ['chill', 'mellow', 'dreamy', 'downtempo'], tags),
+    tagged('g1', 'first thing', 14, ['techno', 'industrial techno', 'hard techno'], tags),
+    tagged('g2', 'second thing', 14, ['jungle', 'breakbeat', 'hardcore'], tags),
+  ];
+  const of = axisOf(lists, {}, tags);
+  assert.equal(of('m').axis, 'mood');
+  assert.match(of('m').why, /mood tags, against .* across your library/);
+  assert.equal(of('g1').axis, 'genre', 'the genre buckets it is measured against are left alone');
+  assert.equal(of('g2').axis, 'genre');
+});
+
+test('a playlist held together by decades is read as an era', () => {
+  const tags = {};
+  const lists = [
+    tagged('e', 'the good ones', 12, ['90s', '80s', 'oldies', 'pop'], tags),
+    tagged('g1', 'first thing', 14, ['techno', 'industrial techno'], tags),
+    tagged('g2', 'second thing', 14, ['jungle', 'breakbeat'], tags),
+  ];
+  const of = axisOf(lists, {}, tags);
+  assert.equal(of('e').axis, 'era');
+  assert.equal(of('e').target, false, 'and so it stops competing for filing suggestions');
+});
+
+test('the mood lean has to be a lean, not the whole library being tagged that way', () => {
+  // Every playlist equally moody: nothing stands out, so nothing is promoted
+  // and they all stay the honest "no signal" default.
+  const tags = {};
+  const lists = ['a', 'b', 'c'].map((id, i) =>
+    tagged(id, 'untitled ' + i, 14, ['chill', 'house', 'techno', 'garage'], tags));
+  const of = axisOf(lists, {}, tags);
+  for (const id of ['a', 'b', 'c']) {
+    assert.equal(of(id).axis, 'genre', id);
+    assert.equal(of(id).why, 'no signal in the name — treated as genre', id);
+  }
+});
+
+test('a handful of tracks is never enough to be read from tags', () => {
+  const tags = {};
+  const lists = [
+    tagged('m', 'tiny', 6, ['chill', 'mellow', 'dreamy'], tags),
+    tagged('g1', 'first thing', 14, ['techno', 'industrial techno'], tags),
+    tagged('g2', 'second thing', 14, ['jungle', 'breakbeat'], tags),
+  ];
+  const of = axisOf(lists, {}, tags);
+  assert.equal(of('m').axis, 'genre', 'below the floor the mix is noise');
+});
+
+test('the name and the dates both still beat the tags', () => {
+  const tags = {};
+  const named = tagged('n', 'jungle emma', 14, ['chill', 'mellow', 'dreamy'], tags);
+  const night = tagged('x', 'me tash and liv', 14, ['chill', 'mellow', 'dreamy'], tags);
+  night.tracks.forEach((t, k) => { t.added_at = new Date(NOW - 200 * day - k * 3600e3).toISOString(); });
+  const filler = tagged('g', 'first thing', 14, ['techno', 'jungle'], tags);
+  const of = axisOf([named, night, filler], {}, tags);
+  assert.equal(of('n').axis, 'genre', 'a name that says genre is not overruled by the tags');
+  assert.equal(of('x').axis, 'event', 'nor is a night out that the dates already caught');
+});
+
+test('your own correction still beats every one of them', () => {
+  const tags = {};
+  const lists = [
+    tagged('m', 'saudade', 14, ['chill', 'mellow', 'dreamy'], tags),
+    tagged('g', 'first thing', 14, ['techno', 'jungle'], tags),
+  ];
+  const of = axisOf(lists, { m: { axis: 'genre', target: true } }, tags);
+  assert.equal(of('m').axis, 'genre');
+  assert.equal(of('m').why, 'set by you');
 });

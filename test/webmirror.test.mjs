@@ -30,8 +30,9 @@ function slice(from, to, what) {
 }
 
 /** buildReports with the scoring core it is bundled alongside. */
-function reports(lib, cfg, tags, feedback = {}) {
-  const sandbox = { console, FB: feedback, LS: { getItem: () => null, setItem: () => {} } };
+function reports(lib, cfg, tags, feedback = {}, pinned = null) {
+  const sandbox = { console, FB: feedback,
+    LS: { getItem: k => (k === 'bf_allsongs' ? pinned : null), setItem: () => {} } };
   vm.createContext(sandbox);
   vm.runInContext(slice('/* ---- norm.mjs ---- */', '/* ---------- storage ----------', 'scoring core'), sandbox);
   vm.runInContext('const mmss = ms => ms == null ? "—" : Math.floor(ms/60000) + ":" + String(Math.round(ms%60000/1000)).padStart(2,"0");', sandbox);
@@ -118,7 +119,21 @@ test('syncAllSongsPlaylist keeps no bare id stubs in the library copy it writes 
     'an id with no track behind it carries no artist and no title — it is dropped, not kept');
 });
 
-test('the mirror is recognised by name, wherever the reports ask', () => {
+test('the mirror is recognised wherever the reports ask, by id as well as by name', () => {
+  // By name alone, renaming the mirror turned it back into an ordinary
+  // playlist as far as every report was concerned — and re-broke all three
+  // screens above. syncAllSongsPlaylist() pins its id; this reads it back.
   const body = slice('/* ---------- reports (mirrors', 'function buildReports', 'mirror predicate');
-  assert.match(body, /const isMirrorPlaylist = p => p\?\.name === ALL_SONGS_NAME;/);
+  assert.match(body, /const isMirrorPlaylist = p => !!p && \(p\.name === ALL_SONGS_NAME \|\| p\.id === pinnedAllSongs\(\)\);/);
+  assert.match(body, /const pinnedAllSongs = \(\) => LS\.getItem\(ALL_SONGS_KEY\)/);
+});
+
+test('a renamed mirror is still treated as a view of the library, not a playlist', () => {
+  const { lib, cfg } = library({ mirrored: true });
+  const mirror = lib.playlists.find(p => p.name === MIRROR);
+  mirror.name = 'Everything';                      // renamed in Spotify
+  const r = reports(lib, cfg, TAGS, {}, mirror.id); // …but still the pinned one
+  assert.deepEqual(own(r.backlog.map(b => b.id)), ['t5'],
+    'the File queue does not empty just because the mirror got a new name');
+  assert.equal(r.across.length, 0, 'and nothing is suddenly cross-filed into it');
 });

@@ -396,6 +396,13 @@
   .artwrap .pfab:active{transform:scale(.94)}
   .tagrow{display:flex; gap:5px; flex-wrap:wrap; margin-top:12px}
   .tag{font-size:12.5px; background:var(--tag-bg); color:var(--tag-ink); border-radius:20px; padding:5px 12px}
+  /* Genre tags are what a filing suggestion is actually made of. The rest of
+     what Last.fm attaches to an artist — a mood, a decade, an occasion, a
+     nationality — is still shown, drawn back, so you can see at a glance how
+     much of a track's "genre data" is really genre. */
+  .tag.f-off{background:transparent; color:var(--ink-3); box-shadow:inset 0 0 0 1px var(--line)}
+  .axmix{font-size:11.5px; color:var(--ink-3); margin-left:9px}
+  .axmix::before{content:"· "}
   .picks{display:flex; flex-direction:column; gap:9px; margin-top:24px}
   .pick{display:flex; align-items:center; gap:14px; border:1px solid var(--line); border-radius:18px; background:var(--surface-2);
         padding:16px 18px; cursor:pointer; font:inherit; font-size:15px; color:var(--ink); text-align:left; width:100%;
@@ -2054,15 +2061,34 @@ async function syncLibrary(force, onProgress) {
 }
 
 /* ---------- axis classification (mirrors axes.mjs) ---------- */
-const EVENT = /\b(drumsheds|fabric|ministry|printworks|warehouse|festival)\b|\d{2}\.\d{2}\s*$/i;
+
+/* Spotify's own generated playlists and the obvious hand-made staging posts.
+ * These are an *inflow*, not a destination: everyone's account has Discover
+ * Weekly and Release Radar under exactly those names, so unlike a club night
+ * or a genre word this needs no vocabulary of the listener's at all. Left as
+ * genre they are filing targets, which means Tidy offers to move your music
+ * into a playlist Spotify overwrites every Monday. */
+const INBOX = /\bshazam\b|^discover weekly|^release radar|^on repeat$|^repeat rewind$|^daily mix|^your top songs|^liked (songs )?from radio|^new music friday|^you may have missed|^time capsule|^inbox$|^to (sort|file|listen)\b/i;
+const EVENT = /\b(drumsheds|fabric|ministry|printworks|warehouse|festival|boiler room|glastonbury|coachella|tomorrowland|creamfields|carnival|after ?party|afters)\b|\d{2}[./]\d{2}\s*$/i;
 const DJSET = /^(mix|side|set)(\s*\d+)?$|rekordbox|dj'?ing for|extended .*mix/i;
-const ERA   = /\b(90s|00s|80s|70s|nostalgia|old but gold|retro)\b|^\d{4}$/i;
+const ERA   = /\b((19|20)?\d0s|nostalgia|old ?school|old but gold|retro|throwback|oldies)\b|^\d{4}$/i;
+/* A situation rather than a sound: the gym, the drive, the wedding. Filed as
+ * context, which takes no suggestions — a workout playlist has no genre for
+ * Tidy to compare anything against, and left as one it attracts whatever
+ * happens to be loud. */
+const OCCASION = /\b(part(y|ies)|pre ?drinks|pregame|workout|gym|running|yoga|study(ing)?|revision|focus|sleep(ing)?|bedtime|driving|road ?trip|commute|wedding|birthday|b'?day|christmas|xmas|halloween|new year|nye|holiday|beach|bbq|barbecue|dinner|cooking|gaming)\b/i;
 // Word-bounded: unbounded "chill" also matches inside "Chillstep" or
 // "Chillwave" (genres), "hype" inside "Hyperpop", "groove" inside
 // "Groovebox" — real genre names that happen to contain a mood word as a
 // substring. This is not one listener's vocabulary problem; it misfires on
 // any library that has a mood-adjacent genre bucket.
-const MOOD  = /\b(chill|mellow|wasted|vibin|groove|sleep|late night|hi energy|high energy|early night|relax|calm|hype|sad|happy)\b/i;
+//
+// What is deliberately *not* here is every mood word that also modifies a
+// genre: "dark" (Dark Techno), "deep" (Deep House), "heavy" (Heavy Metal),
+// "hard" (Hard Trance), "smooth" (Smooth Jazz), "lo-fi". A word boundary
+// cannot separate those, so they stay genre and the listener corrects the
+// rare miss — which is the cheap direction to be wrong in.
+const MOOD  = /\b(chill|chilled|mellow|wasted|vibin|vibes|groove|sleepy|late night|hi energy|high energy|early night|relax(ing|ed)?|calm|hype|sad|happy|angry|moody|dreamy|melanchol(y|ic)|euphoric|uplifting|upbeat|feel ?good|emotional|romantic|sexy|co[sz]y|soft|energetic)\b/i;
 const MIN_FOR_TARGET = 12;
 
 /* An event playlist named for the club gives itself away; one named for who
@@ -2108,16 +2134,68 @@ function addedShape(p, now = Date.now()) {
  * so any window tight enough to mean anything caught only the false
  * positive.
  *
- * What does generalise is below: the name as a hint, and the filed dates,
- * which need no vocabulary at all. Whatever the guess gets wrong is
- * corrected once on the Playlists screen and remembered as "set by you".
+ * The facet mix below is a third content rule and not a rerun of the first.
+ * Coherence asked how tightly a playlist's tags agree with each other, which
+ * turned out to measure breadth. This asks which *kind* of tag holds the
+ * playlist together — sound, feel, decade or occasion — which is the actual
+ * question the axis is asking, and a mood playlist is one whether it is broad
+ * or narrow. See tagFacet() in profile.mjs.
  */
 
-function classify(lib, now = Date.now()) {
+/* Read against the library's own baseline rather than an absolute number.
+ * Mood tags are a small slice of anybody's tag cloud — "chill" turns up far
+ * less often than "electronic" — so "28% mood" means nothing on its own, and
+ * whatever number worked for one library would be wrong for the next. What
+ * travels is the lift: a playlist carrying twice the mood weight of the rest
+ * of your library is a mood playlist in your vocabulary, whatever the raw
+ * share happens to be. */
+const FACET_LIFT = 1.8;        // times the library's own share of that facet
+const FACET_MIN_SHARE = 0.10;  // and still a real share, so a library with
+                               // almost no mood tags cannot promote on a trace
+const FACET_MIN_TRACKS = 10;   // tagged tracks — below this the mix is noise
+
+// Which axis each facet argues for. 'genre' is the default and argues for
+// nothing; 'descriptor' (british, female vocalists) says how a playlist was
+// tagged, never how it was organised, so it argues for nothing either.
+const FACET_AXIS = { mood: 'mood', era: 'era', occasion: 'context' };
+
+/**
+ * The axis a playlist's tags argue for, or null when they argue for nothing.
+ * `base` is the same mix taken over the whole library, so this reads as
+ * "unusually moody *for you*" rather than against some fixed number.
+ */
+function facetAxis(p, tags, base) {
+  if (!tags || !base) return null;
+  const mix = facetMix(p.tracks, tags);
+  if (mix.tracks < FACET_MIN_TRACKS) return null;
+  let best = null;
+  for (const [facet, axis] of Object.entries(FACET_AXIS)) {
+    const share = mix[facet], baseShare = base[facet];
+    if (!(share >= FACET_MIN_SHARE) || !baseShare) continue;
+    const lift = share / baseShare;
+    if (lift < FACET_LIFT) continue;
+    if (!best || lift > best.lift) best = { axis, facet, share, baseShare, lift };
+  }
+  if (!best) return null;
+  const pct = x => Math.round(x * 100) + '%';
+  return { axis: best.axis,
+           why: `${pct(best.share)} ${best.facet} tags, against ${pct(best.baseShare)} across your library` };
+}
+
+function classify(lib, tags = null, now = Date.now()) {
   const cfg = {};
+  // The baseline every playlist is read against. Taken over the library as one
+  // pile, so it is this listener's own tag vocabulary and not an average of
+  // somebody else's.
+  // The mirror is skipped: it holds a copy of every track by construction, so
+  // reading it into the baseline is counting the whole library twice.
+  const base = tags
+    ? facetMix(lib.playlists.filter(p => !isMirrorPlaylist(p)).flatMap(p => p.tracks ?? []), tags)
+    : null;
   for (const p of lib.playlists) {
     const n = p.name;
-    const named = EVENT.test(n) ? 'event' : DJSET.test(n) ? 'djset' : ERA.test(n) ? 'era' : MOOD.test(n) ? 'mood' : null;
+    const named = INBOX.test(n) ? 'inbox' : EVENT.test(n) ? 'event' : DJSET.test(n) ? 'djset'
+                : ERA.test(n) ? 'era' : OCCASION.test(n) ? 'context' : MOOD.test(n) ? 'mood' : null;
     let axis = named ?? 'genre';
     let why = named ? 'from the name' : 'no signal in the name — treated as genre';
 
@@ -2128,6 +2206,15 @@ function classify(lib, now = Date.now()) {
     if (shape && shape.spanDays <= EVENT_SPAN_DAYS && shape.sinceDays >= EVENT_SETTLED_DAYS) {
       axis = 'event';
       why = `built in ${shape.spanDays < 1 ? 'a day' : Math.round(shape.spanDays) + ' days'}, nothing added since`;
+    }
+
+    // Last resort, and only ever a last resort: with nothing in the name and
+    // nothing in the dates, ask what the tracks are actually tagged with. It
+    // never overrules a name or a date, so a playlist that was already being
+    // read correctly cannot start being read differently.
+    if (!named && why.startsWith('no signal')) {
+      const guess = facetAxis(p, tags, base);
+      if (guess) { axis = guess.axis; why = guess.why; }
     }
 
     cfg[p.id] = { name:n, axis, why, tracks:p.tracks.length,
@@ -2149,8 +2236,22 @@ function classify(lib, now = Date.now()) {
  * more than one playlist", so Cross-filed swelled to the whole library; and
  * any two pressings of the same record landed in it together and were reported
  * as a repeat. It stays a shuffle source and nothing else.
+ *
+ * Which playlist that is, is remembered by id — syncAllSongsPlaylist() writes
+ * it under ALL_SONGS_KEY. Recognised by name alone, renaming the mirror turned
+ * it straight back into an ordinary playlist as far as every report was
+ * concerned, and re-broke all three screens above.
  */
-const isMirrorPlaylist = p => p?.name === ALL_SONGS_NAME;
+const ALL_SONGS_KEY = 'bf_allsongs';
+const pinnedAllSongs = () => LS.getItem(ALL_SONGS_KEY) || null;
+const isMirrorPlaylist = p => !!p && (p.name === ALL_SONGS_NAME || p.id === pinnedAllSongs());
+
+/** A row of tag chips with everything that is not a genre drawn back, so the
+ *  tags a suggestion was actually made from are the ones you notice. */
+const tagChips = list => `<div class="tagrow">${(list ?? []).map(t => {
+  const f = tagFacet(t);
+  return `<span class="tag${f === 'genre' ? '' : ' f-off'}" title="${f} tag">${esc(t)}</span>`;
+}).join('')}</div>`;
 
 function describe(rows) {
   const isrcs = new Set(rows.map(r => r.isrc).filter(Boolean));
@@ -2328,11 +2429,37 @@ async function undoAction(at) {
   await logAction({ op:'undo', of:at, playlistId:e.playlistId, trackIds:e.trackIds });
 }
 
-async function playlistIds(id) {
+/**
+ * Every slot in a playlist, in order: `{ id, from, pos }`, where `from` is the
+ * id you originally added when Spotify has handed back a different one.
+ *
+ * Both extras matter and neither is cosmetic. **Relinking**: Spotify swaps a
+ * track for whichever pressing is playable in your market, so the id you POST
+ * is often not the id you read back — the original comes home under
+ * `linked_from`. Matching on the visible id alone meant a relinked track
+ * looked missing on every single refresh and was added again each time, which
+ * is exactly the "it keeps re-adding what I already have" complaint.
+ * **Positions**: a local file or a track pulled from Spotify entirely has no
+ * id at all, and it still occupies a slot — so unusable items are kept as
+ * blanks rather than skipped, otherwise every position after one of them is
+ * off by one and a delete-by-position removes the wrong track.
+ */
+async function playlistEntries(id) {
   const out = [];
-  let page = await sp(`/playlists/${id}/items?limit=100&fields=next,items(item(id))`);
-  while (page) { for (const i of page.items) if (i.item?.id) out.push(i.item.id); if (!page.next) break; page = await sp(page.next); }
+  let page = await sp(`/playlists/${id}/items?limit=100&fields=next,items(item(id,linked_from(id)))`);
+  while (page) {
+    for (const i of page.items ?? []) {
+      const it = i.item ?? i.track;
+      out.push({ id: it?.id ?? null, from: it?.linked_from?.id ?? null, pos: out.length });
+    }
+    if (!page.next) break;
+    page = await sp(page.next);
+  }
   return out;
+}
+
+async function playlistIds(id) {
+  return (await playlistEntries(id)).map(e => e.id).filter(Boolean);
 }
 
 const chunk = (a,n) => Array.from({length:Math.ceil(a.length/n)},(_,i)=>a.slice(i*n,i*n+n));
@@ -2667,7 +2794,7 @@ function vInbox() {
           <div class="txt">
             <p class="t">${esc(t.title)}</p><p class="a">${esc(t.artist)}</p>
             <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0, 4))}</span><span>${mmss(t.dur)}</span></div>
-            ${t.tags.length ? `<div class="tagrow">${t.tags.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>` : ''}
+            ${t.tags.length ? tagChips(t.tags) : ''}
           </div>
         </div>
         ${t.suggest.length ? `<div class="picks">${t.suggest.slice(0, 3).map((sg, n) => `
@@ -2781,7 +2908,7 @@ function secMisfile() {
           `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(sg.id)}">→ ${esc(sg.name)}</button>`).join('')}
         <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${x.dur ?? 0}">Play</button></div>
       ${x.tags?.length ? `<div style="flex-basis:100%; margin-top:6px">
-        <div class="tagrow">${x.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+        ${tagChips(x.tags)}
         <div class="rowbtns" style="margin-top:6px">${(x.artists ?? []).map(a =>
           `<button class="b sm" data-editartist="${esc(a.id)}">${S.editingArtist === a.id ? 'Close' : 'Wrong tags?'} ${esc(a.name)}</button>`).join('')}</div>
         ${!editorDrawn && S.editingArtist && x.artists?.some(a => a.id === S.editingArtist)
@@ -2909,8 +3036,35 @@ function shuffleStats(order) {
 
 // The playlist syncAllSongsPlaylist() keeps topped up — a distinctive name so
 // it is never confused with (or overwritten in place of) something a listener
-// already made and happened to call "All Songs".
+// already made and happened to call "All Songs". The name is only how the
+// *first* one is found, though: see ALL_SONGS_KEY.
 const ALL_SONGS_NAME = 'All Songs — Betterfy';
+
+/**
+ * The mirror as it exists in the account right now, or null if there isn't one.
+ *
+ * Found by the id in ALL_SONGS_KEY first. Finding it by name alone meant
+ * renaming it — the first thing anyone does to a playlist they mean to keep —
+ * made the next refresh unable to see it, so it built a second one and filled
+ * that with a copy of the whole library. The id survives a rename; the name is
+ * only the fallback for the first refresh after an upgrade, before anything
+ * has been pinned.
+ *
+ * Deliberately still looked up inside /me/playlists rather than fetched by id
+ * on its own: Spotify never really deletes a playlist, it unfollows it, and
+ * GET /playlists/{id} keeps answering for one you threw away. Requiring it to
+ * still be in your library is what makes "delete it, press the button again"
+ * mean "build me a new one" rather than quietly topping up something you can
+ * no longer see.
+ */
+async function findAllSongsPlaylist() {
+  const mine = await paged('/me/playlists?limit=50');
+  const ours = p => p?.owner?.id === LIB.user.id;
+  const pinned = pinnedAllSongs();
+  return mine.find(p => p.id === pinned && ours(p))
+      ?? mine.find(p => p.name === ALL_SONGS_NAME && ours(p))
+      ?? null;
+}
 
 /** Every track in the library, once each — the union this feeds into
  *  ALL_SONGS_NAME. Order doesn't matter; Shuffle re-orders it regardless. */
@@ -2921,33 +3075,94 @@ function allLibraryTracks() {
   return [...seen.values()];
 }
 
+// Spotify's own ceiling. Adding past it fails the whole request with a 403
+// that says nothing useful, so it is worth saying it here instead.
+const PLAYLIST_MAX = 10000;
+
+/**
+ * Delete the surplus copies of anything sitting in the mirror more than once.
+ *
+ * The mirror holds one of each by construction, so a second copy is always
+ * damage — from a refresh before relinked ids were matched properly, from two
+ * devices refreshing at the same time, or from a duplicate dragged in by hand.
+ * Nothing is ever removed that isn't a repeat of something staying put.
+ *
+ * Deleted by position, highest first: removing a track at position 900 cannot
+ * move anything at position 40, so one read is enough and the indices stay
+ * valid across every request. (Deleting by uri alone would take out *all*
+ * copies, including the one that should stay.)
+ */
+async function pruneMirrorDuplicates(id, entries) {
+  const seen = new Set(), extra = [];
+  for (const e of entries) {
+    if (!e.id) continue;                  // a local file — never touched
+    const key = e.from ?? e.id;           // the same recording under either id
+    if (seen.has(key)) extra.push(e); else seen.add(key);
+  }
+  if (!extra.length) return 0;
+  extra.sort((a, b) => b.pos - a.pos);
+  for (const part of chunk(extra, 100)) {
+    const byUri = new Map();
+    for (const e of part) {
+      const uri = 'spotify:track:' + e.id;
+      if (!byUri.has(uri)) byUri.set(uri, []);
+      byUri.get(uri).push(e.pos);
+    }
+    await plCall(id, 'DELETE', { tracks: [...byUri].map(([uri, positions]) => ({ uri, positions })) });
+  }
+  await logAction({ op:'prune', playlistId:id, playlistName:ALL_SONGS_NAME,
+    trackIds:extra.map(e => e.id), reason:'duplicate copies in the All Songs mirror' });
+  return extra.length;
+}
+
 /**
  * Create (once) or top up (every time after) a playlist holding every track
- * in the library. Never removes anything and never re-adds what is already
- * there — it reads the playlist's current contents first and only sends the
- * difference, so running it again costs nothing and duplicates nothing.
+ * in the library. Never removes anything you filed and never re-adds what is
+ * already there — it reads the playlist's current contents first and only
+ * sends the difference, so running it again costs nothing and duplicates
+ * nothing. The one thing it does remove is a duplicate copy of a track the
+ * playlist already holds, which is damage from an earlier run rather than
+ * anything you put there.
  */
 async function syncAllSongsPlaylist() {
   const all = allLibraryTracks();
   if (!all.length) return toast('Nothing to add yet — sync your library first.');
-  const mine = await paged('/me/playlists?limit=50');
-  let pl = mine.find(p => p.name === ALL_SONGS_NAME && p.owner?.id === LIB.user.id);
+  let pl = await findAllSongsPlaylist();
+  const fresh = !pl;
   if (!pl) pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({
     name: ALL_SONGS_NAME, public:false,
     description:'Every track in your library, kept in one place by Betterfy. Refresh any time — nothing is ever duplicated.',
   }) });
+  // Pinned on every run, not just on creation: an existing mirror found by
+  // name this once is found by id from here on, and so survives a rename.
+  LS.setItem(ALL_SONGS_KEY, pl.id);
 
-  const have = new Set(await playlistIds(pl.id));
+  let entries = fresh ? [] : await playlistEntries(pl.id);
+  const pruned = await pruneMirrorDuplicates(pl.id, entries);
+  // Read back rather than assumed. Removing surplus copies is the one
+  // destructive step in here, and if it ever took out more than the surplus —
+  // an endpoint that quietly ignores `positions`, say — this is what notices,
+  // because everything now missing is put back by the add below.
+  if (pruned) entries = await playlistEntries(pl.id);
+
+  // A relinked track counts as present under either id — the one Spotify shows
+  // and the one you actually added. Without this half every relinked track in
+  // the library was re-added on every single refresh.
+  const have = new Set();
+  for (const e of entries) { if (e.id) have.add(e.id); if (e.from) have.add(e.from); }
+
   const missing = all.filter(t => !have.has(t.id));
-  if (missing.length) {
-    await addTracks(pl.id, missing.map(t => t.id));
-    await logAction({ op:'add', playlistId:pl.id, playlistName:ALL_SONGS_NAME,
-      trackIds:missing.map(t => t.id), reason:'All Songs refresh' });
+  const room = PLAYLIST_MAX - entries.length;
+  const adding = missing.slice(0, Math.max(0, room));
+  if (adding.length) {
+    await addTracks(pl.id, adding.map(t => t.id));
+    await logAction({ op:'add', playlistId:pl.id, playlistName:pl.name ?? ALL_SONGS_NAME,
+      trackIds:adding.map(t => t.id), reason:'All Songs refresh' });
   }
 
   // Reflect the result locally so Shuffle can use it immediately, rather than
   // needing a full re-sync to notice a playlist it just wrote to.
-  const nowIds = new Set([...have, ...missing.map(t => t.id)]);
+  const nowIds = new Set([...have, ...adding.map(t => t.id)]);
   const byId = new Map(all.map(t => [t.id, t]));
   // Ids that are in the playlist but no longer in the library — a track
   // unliked or removed since the last refresh. They used to be kept as a bare
@@ -2956,19 +3171,23 @@ async function syncAllSongsPlaylist() {
   // of each other, in a row with no name on it. They are simply dropped now.
   const merged = [...nowIds].map(id => byId.get(id)).filter(Boolean);
   const idx = LIB.playlists.findIndex(p => p.id === pl.id);
-  const entry = { id:pl.id, name:ALL_SONGS_NAME, snapshot_id:null, shape:SHAPE, tracks:merged };
+  const entry = { id:pl.id, name:pl.name ?? ALL_SONGS_NAME, snapshot_id:null, shape:SHAPE, tracks:merged };
   if (idx >= 0) LIB.playlists[idx] = entry; else LIB.playlists.push(entry);
   await idb.set('library', LIB);
   // A meta playlist of everything is not a filing destination on any axis —
   // comparing tracks against it would just mean "matches something you own".
-  CFG[pl.id] = { name:ALL_SONGS_NAME, axis:'context', why:'set by you', target:false, tracks:merged.length };
+  CFG[pl.id] = { name:entry.name, axis:'context', why:'set by you', target:false, tracks:merged.length };
   const savedAxes = JSON.parse(LS.getItem('bf_axes') || '{}');
   savedAxes[pl.id] = { axis:'context', target:false };
   LS.setItem('bf_axes', JSON.stringify(savedAxes));
   R = buildReports(LIB, CFG, TAGS);
   S.shufPl = pl.id; S.shufCache = null;
-  toast(missing.length ? `${ALL_SONGS_NAME} refreshed — ${missing.length} track${missing.length===1?'':'s'} added.`
-                       : `${ALL_SONGS_NAME} is already up to date.`);
+  const say = [];
+  if (adding.length) say.push(`${adding.length} track${adding.length===1?'':'s'} added`);
+  if (pruned) say.push(`${pruned} duplicate${pruned===1?'':'s'} cleared out`);
+  if (adding.length < missing.length)
+    say.push(`${(missing.length - adding.length).toLocaleString()} left over — Spotify caps a playlist at ${PLAYLIST_MAX.toLocaleString()}`);
+  toast(say.length ? `${entry.name} refreshed — ${say.join(', ')}.` : `${entry.name} is already up to date.`);
   render();
 }
 
@@ -2976,7 +3195,7 @@ function vShuffle() {
   const pls = LIB.playlists.filter(p => p.tracks.length >= 8).sort((a,b) => b.tracks.length - a.tracks.length);
   // Once it exists, everything you own beats any single bucket as a shuffle
   // source — that default only loses to a playlist you have since chosen.
-  const allSongs = LIB.playlists.find(p => p.name === ALL_SONGS_NAME);
+  const allSongs = LIB.playlists.find(isMirrorPlaylist);
   // Persisted immediately, not just used locally — otherwise "Create shuffled
   // playlist" (which reads S.shufPl on its own) can act on a different
   // playlist than whichever one the dropdown is actually showing as selected.
@@ -2998,7 +3217,7 @@ function vShuffle() {
   return `<h1>Shuffle</h1>
     <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
     <p class="lede" style="margin-top:-8px">${allSongs
-      ? `Shuffling from <b>${esc(ALL_SONGS_NAME)}</b> by default — everything in your library, kept in one place.`
+      ? `Shuffling from <b>${esc(allSongs.name)}</b> by default — everything in your library, kept in one place.`
       : `No single playlist has everything you own yet.`}
       <button class="b sm" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Build it'}</button></p>
     <div class="rowbtns" style="margin-bottom:22px">
@@ -3260,7 +3479,7 @@ function vDiscover() {
         </div>
         <p class="pdev" id="pDev"></p>
 
-        ${(t.tags??[]).length?`<div class="tagrow">${t.tags.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}</div>`:''}
+        ${(t.tags??[]).length ? tagChips(t.tags) : ''}
         ${best ? `<button class="fitcall" data-dfile="${esc(best.id)}">
             <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
               <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ranked by the same model the file queue uses</span></span>
@@ -3319,11 +3538,42 @@ const AXES = ['genre','mood','era','event','djset','context','inbox'];
 // at all — a silent guess, not a real signal, and the one worth confirming.
 const NO_SIGNAL = 'no signal in the name — treated as genre';
 
-function axisRowHTML(p) {
+/* The facet mix of every playlist, for the Playlists screen. A full pass over
+ * every track, so it is cached against the library it was built from rather
+ * than recomputed on each of the many redraws this screen gets. */
+let MIXCACHE = null;
+function playlistMixes() {
+  const stamp = LIB?.captured_at + '/' + (LIB?.playlists.length ?? 0);
+  if (MIXCACHE?.stamp === stamp) return MIXCACHE;
+  const mix = new Map();
+  for (const p of LIB.playlists) mix.set(p.id, facetMix(p.tracks, TAGS));
+  // The same measurement over the library as one pile — the baseline every
+  // playlist above is read against, and the honest answer to "how much of my
+  // genre data is actually genre".
+  const base = facetMix(LIB.playlists.filter(p => !isMirrorPlaylist(p)).flatMap(p => p.tracks ?? []), TAGS);
+  MIXCACHE = { stamp, mix, base };
+  return MIXCACHE;
+}
+
+/** "64% genre · 19% mood" — what a playlist's tags are actually made of,
+ *  which is the evidence behind a content-guessed axis and a sanity check on
+ *  every other one. Facets under a tenth are left out as noise. */
+function mixLabel(mix) {
+  if (!mix || !mix.tracks) return '';
+  const parts = ['genre','mood','era','occasion','descriptor']
+    .map(f => [f, mix[f]]).filter(([, x]) => x >= 0.1)
+    .sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([f, x]) => `${Math.round(x * 100)}% ${f}`);
+  return parts.join(' · ');
+}
+
+function axisRowHTML(p, mix) {
+  const m = mixLabel(mix);
   return `<div class="row axrow" style="align-items:center">
     <div class="main"><div class="ttl">${esc(p.name)}</div>
       <div class="sub"><span class="mono">${p.tracks} tracks</span>
-        <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span></div></div>
+        <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span>
+        ${m ? `<span class="axmix" title="which kind of tag its tracks carry">${esc(m)}</span>` : ''}</div></div>
     <div class="acts">
       <select data-ax="${esc(p.id)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select>
       <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2)">
@@ -3336,22 +3586,28 @@ function axisRowHTML(p) {
 function vLists() {
   const rows = Object.entries(CFG).map(([id,v]) => ({ id, ...v })).sort((a,b) => b.tracks - a.tracks);
   const cov = tagCoverage();
+  const { mix: mixes, base } = playlistMixes();
+  const row = p => axisRowHTML(p, mixes.get(p.id));
+  const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
   // Everything classify() could not read from the name or the dates — it
   // defaulted to genre rather than ask, which is exactly the silent guess
   // that later shows up as a wrong Tidy suggestion. Worth confirming once.
   const undecided = rows.filter(p => p.why === NO_SIGNAL);
   return `<h1>Playlists</h1>
-    <p class="lede">How each of your playlists is treated. Only <b>genre</b> and <b>mood</b> playlists receive suggestions, and a track is only ever compared against playlists on its own axis — so a metal track in a mood playlist is not flagged as misfiled. Each guess says what it was made from; correct anything wrong and it is remembered on this device.</p>
+    <p class="lede">How each of your playlists is treated. Only <b>genre</b> and <b>mood</b> playlists receive suggestions, and a track is only ever compared against playlists on its own axis — so a metal track in a mood playlist is not flagged as misfiled. Each guess says what it was made from — the name, the dates the tracks were filed, or what kind of tags they carry — and correcting one is remembered on this device.</p>
+    <p class="lede" style="margin-top:-8px">The percentages on each row are what its tracks are tagged with. Only the <b>genre</b> share tells a genre playlist apart from another one; the mood, decade and occasion tags are what a <b>mood</b> or <b>context</b> playlist is really held together by, and each axis now weighs them accordingly instead of pouring the lot into one pile.</p>
 
     ${undecided.length ? `<h2>Needs your input</h2>
-    <p class="lede">${undecided.length} playlist${undecided.length===1?' has':'s have'} no clue in ${undecided.length===1?'its':'their'} name, so
-      ${undecided.length===1?'it was':'they were'} defaulted to <b>genre</b> rather than asked about. That default is exactly what
-      turns a mood or context playlist into noisy Tidy suggestions — set the real one below.</p>
-    <div class="rows">${undecided.map(axisRowHTML).join('')}</div>` : ''}
+    <p class="lede">${undecided.length} playlist${undecided.length===1?' has':'s have'} nothing to go on — no clue in ${undecided.length===1?'its':'their'} name,
+      nothing in the dates, and no strong lean in the tags either — so ${undecided.length===1?'it was':'they were'} defaulted to <b>genre</b>
+      rather than asked about. That default is exactly what turns a mood or context playlist into noisy Tidy suggestions — set the real one below.</p>
+    <div class="rows">${undecided.map(row).join('')}</div>` : ''}
 
     <h2>Genre data</h2>
     <p class="lede">${cov.have.toLocaleString()} of ${cov.total.toLocaleString()} artists have genre tags (${cov.pct}%).
       ${cov.pct < 85 ? 'Suggestions will be thin until this improves.' : ''}
+      ${genreShare === null ? '' : `Of all the tag weight across your library, <b>${genreShare}%</b> describes a sound —
+      the rest is moods, decades, occasions and things like nationality, which are no longer counted as evidence of genre.`}
       Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set; add your own free
       Last.fm key to fill the gaps for artists it doesn\'t cover — and to fix one that already has tags but has them
       wrong, from a Tidy or File row, tap <b>Wrong tags?</b> under it.</p>
@@ -3381,7 +3637,7 @@ function vLists() {
     </div>`).join('')}</div>` : ''}
 
     <h2>Axes</h2>
-    <div class="rows">${rows.map(axisRowHTML).join('')}</div>`;
+    <div class="rows">${rows.map(row).join('')}</div>`;
 }
 
 function tagCoverage() {
@@ -4123,24 +4379,32 @@ document.addEventListener('click', guard(async e => {
     btn.disabled = true; btn.textContent = 'Working…';
     try {
       const name = `🔀 ${src.name}`;
+      // Remembered by id, like the All Songs mirror and for the same reason:
+      // found by name alone, renaming the shuffled playlist (or its source)
+      // made the next shuffle build a second one beside it instead of
+      // replacing what was already there.
+      const key = 'bf_shuf_' + src.id;
+      const pinned = LS.getItem(key);
       const mine = await paged('/me/playlists?limit=50');
-      let pl = mine.find(p => p.name === name && p.owner?.id === LIB.user.id);
+      const ours = p => p?.owner?.id === LIB.user.id;
+      let pl = mine.find(p => p.id === pinned && ours(p)) ?? mine.find(p => p.name === name && ours(p));
       if (!pl) pl = await sp('/me/playlists', { method:'POST',
         body:JSON.stringify({ name, public:false, description:`Spaced shuffle of "${src.name}". Play with Spotify shuffle OFF.` }) });
+      LS.setItem(key, pl.id);
       // PUT replaces wholesale, so re-shuffling the same playlist doesn't pile up
       await plCall(pl.id, 'PUT', { uris: order.slice(0,100).map(t => 'spotify:track:'+t.id) });
       for (const part of chunk(order.slice(100), 100)) await plCall(pl.id, 'POST', { uris: part.map(t => 'spotify:track:'+t.id) });
-      await logAction({ op:'shuffle', playlistId:pl.id, playlistName:name, trackIds:order.map(t=>t.id), reason:`from ${src.name}` });
+      await logAction({ op:'shuffle', playlistId:pl.id, playlistName:pl.name ?? name, trackIds:order.map(t=>t.id), reason:`from ${src.name}` });
       if (playIt) {
         const d = await sp('/me/player/devices');
         const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
-        if (!dev) toast(`Created "${name}" — no open Spotify device to play on.`);
+        if (!dev) toast(`"${pl.name ?? name}" is ready — no open Spotify device to play it on.`);
         else {
           await sp(`/me/player/shuffle?state=false&device_id=${dev.id}`, { method:'PUT' });
           await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body:JSON.stringify({ context_uri:`spotify:playlist:${pl.id}` }) });
-          toast(`Playing "${name}" on ${dev.name}, Spotify shuffle off.`);
+          toast(`Playing "${pl.name ?? name}" on ${dev.name}, Spotify shuffle off.`);
         }
-      } else toast(`Created "${name}" — ${order.length} tracks. Play it with Spotify shuffle OFF.`);
+      } else toast(`"${pl.name ?? name}" — ${order.length} tracks, ready. Play it with Spotify shuffle OFF.`);
     } catch (err) { toast('Failed: ' + err.message); }
     render(); return;
   }
@@ -4716,7 +4980,7 @@ async function start(force) {
     // buildReports filters rejected playlists out of each track's suggestions.
     await loadFeedback();
     stage('Working out where everything goes…', 0.99);
-    CFG = classify(LIB);
+    CFG = classify(LIB, TAGS);
     R = buildReports(LIB, CFG, TAGS);
     $('#land').hidden = true; $('#app').hidden = false;
     clearRateLimitStreak();
