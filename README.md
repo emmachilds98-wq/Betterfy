@@ -206,12 +206,19 @@ another device** — opening the page never creates an identity or writes
 anything on its own. Full design, the Firestore rules, and how the merge
 works in `FIREBASE.md`.
 
-Discogs results are deliberately **not** shared yet. Last.fm returns a 0–100
-confidence that maps cleanly onto the 0–10 scale `tags.json` stores, but
-`discogsTags()` returns a count of releases carrying each style — a different
-scale entirely, and baking that mismatch into a file everyone downloads would
-skew every suggestion those artists take part in. The `source` field is there
-so it can be added once it is normalised.
+Discogs results are deliberately **not** shared yet. `discogsTags()` now
+normalises its tally to the same 0–100 Last.fm uses — the commonest style is
+100 and the rest are relative to it — so the two sources are at least on one
+scale. (Until that landed they were not, and the mismatch was not only a
+sharing problem: Discogs counts releases, so a style seen on six of an
+artist's records arrived as `6` against a Last.fm tag's `90`, and since
+`trackVec()` divides every count by 100, a Discogs-filled artist was an order
+of magnitude quieter in the model than a Last.fm one — inaudible in the
+playlist centroids they belong to, and drowned out entirely by a
+Last.fm-tagged collaborator on the same track.) What is still unverified is
+the browser build's query-param auth against a real Discogs response, which is
+the reason to keep these out of a file everyone downloads for now. The
+`source` field is there so it can be added once that is confirmed.
 
 **A wrong suggestion is usually a wrong tag, not a wrong model.** Last.fm's
 tags are per *artist*, not per track, and crowd-submitted — a same-named act,
@@ -633,6 +640,15 @@ guess, and everything downstream reads the file, not the rules.
   prompt to look, not a verdict. The drift threshold is a first pass, not
   yet checked against a real library the way the misfile margin was — expect
   to tune it once you can see it against your own playlists.
+- **A tag gap that was never answered is not an answer.** Filling a Last.fm
+  gap costs a request and is cached so it is only ever paid once, which makes
+  it important which answers are worth keeping. "Last.fm has nothing on this
+  artist" and "that request failed" both arrive as an empty array, and both
+  used to be written down as the artist's permanent tag set — so one bad minute
+  of signal froze every artist it touched as untaggable, on that device, for
+  good. Only an answer that actually landed is cached now, and the count on
+  **Fetch missing tags** means the same thing the run does (it used to offer to
+  fetch tags for artists it then reported as "Nothing missing").
 - **Real listening now steers more than Discovery.** Your top artists over
   Spotify's three windows plus recent plays — previously only used to seed a
   Discovery run — now also decide which artist's tag gap gets filled first
@@ -656,12 +672,25 @@ guess, and everything downstream reads the file, not the rules.
   moves on.
 - **Shuffle spaces artists rather than randomising.** Uniform random clumps; the
   greedy max-spacing interleave takes the artist with the most tracks left,
-  skipping any used within a cooldown window. It defaults to **All Songs —
-  Betterfy**, a playlist Betterfy keeps topped up with everything in your
-  library — build or refresh it from the button on the Shuffle screen. It's a
-  real Spotify playlist, not a snapshot: running it again only ever adds
-  whatever's missing since the last time, and never duplicates a track that's
-  already there.
+  skipping any used within a cooldown window. Artists are indexed by how many
+  tracks they have left rather than rescanned on every placement — the scan was
+  quadratic, and on a twelve-thousand-track source it cost about twelve seconds
+  of blocked main thread *per redraw of the screen*. The order is also cached
+  against the playlist it was built from now, so an unrelated redraw doesn't
+  re-roll it; **Shuffle again** is the deliberate re-roll.
+- **All Songs — Betterfy is a shuffle source, and only that.** A playlist
+  Betterfy keeps topped up with everything in your library, so Shuffle has
+  something better to default to than whichever bucket happens to be biggest —
+  build or refresh it from the button on the Shuffle screen. It's a real
+  Spotify playlist, not a snapshot: running it again only ever adds whatever's
+  missing since the last time, and never duplicates a track that's already
+  there. Everything else in the app treats it as a *view* of the library rather
+  than a place anything was filed, because it holds a copy of every track by
+  construction. Read as an ordinary playlist it broke three screens at once:
+  every liked song counted as filed, so the File queue emptied; every track was
+  suddenly "in more than one playlist", so Cross-filed swelled to the whole
+  library; and two pressings of one record, happily filed apart, met inside it
+  and were reported as a repeat.
 - **The mark is a sorted list that is also a play button.** Five stacked bars
   whose widths grow then shrink, so their right edge forms a play triangle. In
   the app it is inline SVG and keeps its five colours whatever accent you pick; at
@@ -698,7 +727,7 @@ refuses to build if a secret appears in the output.
 | Source | Verdict |
 |---|---|
 | **Last.fm** artist tags | The genre backbone. Good coverage, sends `access-control-allow-origin: *` so it works from the browser too. |
-| **Discogs** release styles | Wired as a fallback: only queried for an artist Last.fm returned nothing for at all, tallying `style` across that artist's releases (Breakbeat / Techno / Electro — finer than Last.fm's one flat tag per artist). Needs a token in the `Authorization` header from Node, so this side is verified; the browser build sends it as a query param instead to avoid a custom header, which has **not** been checked against a real response — confirm it under Playlists once you have a token. |
+| **Discogs** release styles | Wired as a fallback: only queried for an artist Last.fm returned nothing for at all *and actually answered about* (a dropped request is not an empty answer), tallying `style` across that artist's releases (Breakbeat / Techno / Electro — finer than Last.fm's one flat tag per artist) and rescaling the tally to Last.fm's 0–100 so the two can be averaged at all. Needs a token in the `Authorization` header from Node, so this side is verified; the browser build sends it as a query param instead to avoid a custom header, which has **not** been checked against a real response — confirm it under Playlists once you have a token. |
 | **MusicBrainz** | Planned as identity glue — no key, but wants a contact string in the User-Agent, which a browser `fetch` cannot set. Nothing reads `MUSICBRAINZ_CONTACT` yet. |
 | **GetSongBPM** | Tempo, key and Camelot notation — but only **20% coverage** measured over a 40-track sample of a current UK electronic library. Superseded by the Rekordbox import below; nothing calls it. |
 | **Deezer** | Has a public BPM field, but it was empty for 4 of 5 tested tracks. Not worth wiring. |

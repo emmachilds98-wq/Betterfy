@@ -1333,6 +1333,21 @@ function syncSettingsUI() {
   if (!cur) $('#customAccent').open = true;
 }
 
+/**
+ * Show or hide the settings panel. Top-level on purpose: the "Re-sync library
+ * from Spotify" button is wired up hundreds of lines further down and calls
+ * this by name. As a const inside initSettingsPanel() it was never in scope
+ * there, so the one deliberate way to re-read a library threw a ReferenceError
+ * out of an unguarded async onclick — no message, no re-read, and a button
+ * left disabled reading "Re-reading your library…" forever.
+ */
+function openSettings(open) {
+  const panel = $('#settingsPanel'), scrim = $('#scrim'), trigger = $('#btnSettings');
+  panel.classList.toggle('open', open); scrim.classList.toggle('open', open);
+  panel.setAttribute('aria-hidden', String(!open)); trigger.setAttribute('aria-expanded', String(open));
+  if (open) $('#closeSettings').focus(); else trigger.focus();
+}
+
 function initSettingsPanel() {
   buildSwatches();
   syncSettingsUI();
@@ -1357,11 +1372,6 @@ function initSettingsPanel() {
   $('#resetTheme').onclick = () => { T = JSON.parse(JSON.stringify(DEFAULT_THEME)); applyTheme(); syncSettingsUI(); saveTheme(); };
 
   const panel = $('#settingsPanel'), scrim = $('#scrim'), trigger = $('#btnSettings');
-  const openSettings = open => {
-    panel.classList.toggle('open', open); scrim.classList.toggle('open', open);
-    panel.setAttribute('aria-hidden', String(!open)); trigger.setAttribute('aria-expanded', String(open));
-    if (open) $('#closeSettings').focus(); else trigger.focus();
-  };
   trigger.onclick = () => openSettings(!panel.classList.contains('open'));
   $('#closeSettings').onclick = () => openSettings(false);
   scrim.onclick = () => { openSettings(false); openSheet(false); };
@@ -2129,6 +2139,19 @@ function classify(lib, now = Date.now()) {
 }
 
 /* ---------- reports (mirrors dupes.mjs / misfile.mjs) ---------- */
+
+/**
+ * Betterfy's own "All Songs" playlist is a mirror of the library, not a place
+ * anything was filed: by construction it holds a copy of every track you own,
+ * liked songs included. Reading it as an ordinary playlist meant that building
+ * it once quietly broke three screens at the same time — every liked song
+ * counted as filed, so the File queue emptied; every track was suddenly "in
+ * more than one playlist", so Cross-filed swelled to the whole library; and
+ * any two pressings of the same record landed in it together and were reported
+ * as a repeat. It stays a shuffle source and nothing else.
+ */
+const isMirrorPlaylist = p => p?.name === ALL_SONGS_NAME;
+
 function describe(rows) {
   const isrcs = new Set(rows.map(r => r.isrc).filter(Boolean));
   const durs = rows.map(r => r.duration_ms).filter(x => x != null);
@@ -2148,6 +2171,7 @@ function buildReports(lib, cfg, tags) {
                         duration_ms:t.duration_ms, dur:mmss(t.duration_ms), isrc:t.isrc, popularity:t.popularity, name:t.name });
   const within = [], where = new Map(), meta = new Map();
   for (const p of lib.playlists) {
+    if (isMirrorPlaylist(p)) continue;
     const groups = new Map();
     for (const t of p.tracks) {
       if (!t?.id) continue;
@@ -2190,7 +2214,8 @@ function buildReports(lib, cfg, tags) {
     artists: (m.track.artists ?? []).filter(a => a.id).map(a => ({ id: a.id, name: a.name })) }));
 
   const filed = new Set();
-  for (const p of lib.playlists) for (const t of p.tracks) filed.add(t.id);
+  for (const p of lib.playlists) { if (isMirrorPlaylist(p)) continue;
+    for (const t of p.tracks) filed.add(t.id); }
   const unfiled = lib.liked.filter(t => t?.id && !filed.has(t.id));
   const backlog = unfiled.map(t => {
     const fb = FB[t.id];
@@ -2215,7 +2240,11 @@ function buildReports(lib, cfg, tags) {
 
   // clusters with no home
   const homeless = backlog.filter(b => !b.suggest.length || b.suggest[0].score < 0.30);
-  const vecs = homeless.map(h => ({ h, v: applyIdf(trackVec(unfiled.find(t=>t.id===h.id) ?? {}, tags), idf) })).filter(x => x.v.size >= 3);
+  // Indexed rather than searched: unfiled.find() inside a map over the homeless
+  // rows is a full scan per row, which on a real backlog of a few thousand
+  // liked songs is millions of comparisons for a lookup a Map answers flat.
+  const unfiledById = new Map(unfiled.map(t => [t.id, t]));
+  const vecs = homeless.map(h => ({ h, v: applyIdf(trackVec(unfiledById.get(h.id) ?? {}, tags), idf) })).filter(x => x.v.size >= 3);
   const clusters = []; const used = new Set();
   for (const seed of vecs) {
     if (used.has(seed.h.id)) continue;
@@ -2457,7 +2486,8 @@ function vHome() {
   const exact = R.within.filter(x => x.verdict === 'same-recording').length;
   const clash = R.within.length - exact;
   const uniq = new Set(); let placements = 0;
-  for (const p of LIB.playlists) for (const t of p.tracks) { uniq.add(t.id); placements++; }
+  for (const p of LIB.playlists) { if (isMirrorPlaylist(p)) continue;
+    for (const t of p.tracks) { uniq.add(t.id); placements++; } }
 
   const backlog = R.backlog.length;
   const toTidy = R.within.length + R.misfiled.length;
@@ -2475,13 +2505,19 @@ function vHome() {
     ['shuffle', shufflable, 'playlists to re-order', 'Spacing that keeps the same artist from clumping.'],
   ];
 
-  // Where the library sits, as one bar. "Needs a decision" is the same number
-  // the Tidy card offers, so the two cannot tell different stories.
-  const liked = LIB.liked.length, filed = Math.max(liked - backlog, 0);
+  // Where the library sits, as one bar over one population: your liked songs.
+  // It used to mix three that came from different ones — liked-and-filed,
+  // cross-filing measured across the whole library, and a Tidy total that had
+  // already counted some of the same tracks twice — so the segments could sum
+  // to more than the library, and "Filed" clamped to zero on any library with
+  // much to tidy.
+  const liked = LIB.liked.length;
+  const likedIds = new Set(LIB.liked.map(t => t?.id).filter(Boolean));
+  const crossLiked = R.across.filter(x => likedIds.has(x.id)).length;
+  const filed = Math.max(liked - backlog, 0);
   const seg = [
-    ['Filed', Math.max(filed - R.across.length, 0), 'm4'],
-    ['Cross-filed', R.across.length, 'm3'],
-    ['Needs a decision', toTidy, 'm2'],
+    ['Filed', Math.max(filed - crossLiked, 0), 'm4'],
+    ['Cross-filed', Math.min(crossLiked, filed), 'm3'],
     ['Unfiled', backlog, 'm0'],
   ];
   const tot = seg.reduce((n, x) => n + x[1], 0) || 1;
@@ -2789,18 +2825,75 @@ function spacedShuffle(items) {
   for (const t of items) { const k = artistOf(t); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(t); }
   for (const v of buckets.values()) rnd(v);
   const cooldown = Math.max(1, Math.min(buckets.size-1, Math.floor(buckets.size/3), 12));
-  const out = [], recentA = [], recentAl = [];
+
+  /* Artists indexed by how many tracks they have left to place, so "who has
+   * the most still unplaced" is a lookup instead of a scan over every artist
+   * in the library. The scan is what made this quadratic, and it stopped being
+   * theoretical the moment "All Songs — Betterfy" became the default source:
+   * measured on this build, twelve thousand tracks took about twelve seconds
+   * of blocked main thread — and the screen ran the whole thing again on every
+   * redraw. levels[c] holds the artists with c tracks left, and `slot` is each
+   * artist's index within its level, so moving one down a level is O(1). */
+  const levels = [];
+  const slot = new Map();                          // artist -> index within its level
+  const put = k => { const c = buckets.get(k).length;
+    (levels[c] ??= []).push(k); slot.set(k, levels[c].length - 1); };
+  const take = k => { const lvl = levels[buckets.get(k).length], i = slot.get(k), last = lvl.pop();
+    if (i < lvl.length) { lvl[i] = last; slot.set(last, i); }
+    slot.delete(k);
+  };
+  let top = 0;
+  for (const [k, v] of buckets) { put(k); if (v.length > top) top = v.length; }
+
+  // A count, not a set: with few enough artists the same one can sit in the
+  // cooldown window twice, and dropping it on the first expiry would let it
+  // come back while the window still holds it.
+  const out = [], recentA = [], onCooldown = new Map(), recentAl = [];
+  const cools = k => { recentA.push(k); onCooldown.set(k, (onCooldown.get(k) ?? 0) + 1);
+    if (recentA.length > cooldown) { const old = recentA.shift(), n = onCooldown.get(old) - 1;
+      if (n > 0) onCooldown.set(old, n); else onCooldown.delete(old); } };
+  /* At most `cooldown` artists are on the naughty step and at most four albums
+   * are, so on a level holding hundreds of artists a random draw lands on a
+   * usable one almost every time — cheaper, and just as uniform, as filtering
+   * the level. A small level is filtered outright, where that is the cheaper
+   * of the two. Either way the choice is the same one as before: the busiest
+   * artist not heard recently, preferring one whose next track is off an album
+   * that has not just played. */
+  const pick = lvl => {
+    if (lvl.length <= 64) {
+      const free = lvl.filter(k => !onCooldown.has(k));
+      if (!free.length) return null;
+      const fresh = free.filter(k => !recentAl.includes(buckets.get(k).at(-1)?.album));
+      const from = fresh.length ? fresh : free;
+      return from[Math.floor(Math.random() * from.length)];
+    }
+    let fallback = null;
+    for (let i = 0; i < 24; i++) {
+      const k = lvl[Math.floor(Math.random() * lvl.length)];
+      if (onCooldown.has(k)) continue;
+      if (!recentAl.includes(buckets.get(k).at(-1)?.album)) return k;
+      fallback ??= k;
+    }
+    return fallback;
+  };
+
   while (out.length < items.length) {
-    const avail = [...buckets.entries()].filter(([,v]) => v.length);
-    let pool = avail.filter(([k]) => !recentA.includes(k));
-    if (!pool.length) pool = avail;
-    const max = Math.max(...pool.map(([,v]) => v.length));
-    let top = pool.filter(([,v]) => v.length === max);
-    const fresh = top.filter(([,v]) => !recentAl.includes(v.at(-1).album));
-    if (fresh.length) top = fresh;
-    const [key, list] = top[Math.floor(Math.random()*top.length)];
+    while (top > 0 && !levels[top]?.length) top--;
+    if (!top) break;
+    let key = null;
+    for (let c = top; c > 0 && key === null; c--) {
+      if (levels[c]?.length) key = pick(levels[c]);
+    }
+    // Everything still unplaced is inside the cooldown window: take the
+    // busiest of them anyway rather than stalling.
+    if (key === null) key = levels[top][Math.floor(Math.random() * levels[top].length)];
+
+    const list = buckets.get(key);
+    take(key);
     const t = list.pop(); out.push(t);
-    recentA.push(key); if (recentA.length > cooldown) recentA.shift();
+    if (list.length) put(key);
+
+    cools(key);
     recentAl.push(t.album); if (recentAl.length > 4) recentAl.shift();
   }
   return out;
@@ -2855,9 +2948,15 @@ async function syncAllSongsPlaylist() {
   // Reflect the result locally so Shuffle can use it immediately, rather than
   // needing a full re-sync to notice a playlist it just wrote to.
   const nowIds = new Set([...have, ...missing.map(t => t.id)]);
-  const merged = [...nowIds].map(id => all.find(t => t.id === id) ?? { id });
+  const byId = new Map(all.map(t => [t.id, t]));
+  // Ids that are in the playlist but no longer in the library — a track
+  // unliked or removed since the last refresh. They used to be kept as a bare
+  // { id }, which carries no artist and no title: every one of them shared the
+  // same empty identity key, so a handful of them were reported as duplicates
+  // of each other, in a row with no name on it. They are simply dropped now.
+  const merged = [...nowIds].map(id => byId.get(id)).filter(Boolean);
   const idx = LIB.playlists.findIndex(p => p.id === pl.id);
-  const entry = { id:pl.id, name:ALL_SONGS_NAME, snapshot_id:pl.snapshot_id, tracks:merged };
+  const entry = { id:pl.id, name:ALL_SONGS_NAME, snapshot_id:null, shape:SHAPE, tracks:merged };
   if (idx >= 0) LIB.playlists[idx] = entry; else LIB.playlists.push(entry);
   await idb.set('library', LIB);
   // A meta playlist of everything is not a filing destination on any axis —
@@ -2867,7 +2966,7 @@ async function syncAllSongsPlaylist() {
   savedAxes[pl.id] = { axis:'context', target:false };
   LS.setItem('bf_axes', JSON.stringify(savedAxes));
   R = buildReports(LIB, CFG, TAGS);
-  S.shufPl = pl.id;
+  S.shufPl = pl.id; S.shufCache = null;
   toast(missing.length ? `${ALL_SONGS_NAME} refreshed — ${missing.length} track${missing.length===1?'':'s'} added.`
                        : `${ALL_SONGS_NAME} is already up to date.`);
   render();
@@ -2884,9 +2983,17 @@ function vShuffle() {
   const sel = S.shufPl = S.shufPl ?? allSongs?.id ?? pls[0]?.id;
   const p = LIB.playlists.find(x => x.id === sel);
   const tracks = p ? dedupe(p.tracks) : [];
-  const order = tracks.length ? spacedShuffle(tracks) : [];
+  // Cached against the source it was built from. Shuffling used to run again on
+  // every single redraw of this screen — including the redraw after an
+  // unrelated toast — and it is by some distance the most expensive thing the
+  // app computes. "Shuffle again" below is how you deliberately re-roll it.
+  if (S.shufCache?.id !== sel || S.shufCache?.n !== tracks.length) {
+    S.shufCache = { id: sel, n: tracks.length,
+      order: tracks.length ? spacedShuffle(tracks) : [],
+      naive: tracks.length ? shuffleStats(rnd([...tracks])) : null };
+  }
+  const order = S.shufCache.order, naive = S.shufCache.naive;
   const good = order.length ? shuffleStats(order) : null;
-  const naive = tracks.length ? shuffleStats(rnd([...tracks])) : null;
   S.shufOrder = order;
   return `<h1>Shuffle</h1>
     <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
@@ -2898,6 +3005,7 @@ function vShuffle() {
       <select id="shufPl">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
       <button class="b p" id="shufApply" ${order.length?'':'disabled'}>Create shuffled playlist</button>
       <button class="b" id="shufPlay" ${order.length?'':'disabled'}>Create and play</button>
+      <button class="b sm" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>
     </div>
     ${good ? `<div class="vs">
       <div class="bad"><div class="l">Spotify's shuffle</div><div class="n">${naive.minGap}</div>
@@ -2927,7 +3035,12 @@ async function listeningSeeds() {
   // The library as a floor, scaled by the biggest count so that one enormous
   // playlist cannot outvote a month of actually playing something.
   const libraryArtists = [];
-  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) libraryArtists.push(a.name);
+  for (const p of LIB.playlists) { if (isMirrorPlaylist(p)) continue;
+    for (const t of p.tracks) for (const a of t.artists ?? []) libraryArtists.push(a.name); }
+  // Liked songs count towards the floor too — the Node side (listening.mjs)
+  // has always included them, and leaving them out here meant the two builds
+  // weighted the same library differently.
+  for (const t of LIB.liked ?? []) for (const a of t.artists ?? []) libraryArtists.push(a.name);
   const weights = listeningWeights({ topWindows, recentArtists, libraryArtists });
 
   // Stashed for getListening() — Discovery, the tag-gap fetch and the Tidy
@@ -3585,7 +3698,17 @@ async function discogsTags(name, token) {
       const s = style.toLowerCase();
       tally.set(s, (tally.get(s) ?? 0) + 1);
     }
-  return [...tally].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  /* Rescaled to Last.fm's 0-100, where the top tag is 100 and the rest are
+   * relative to it. Discogs counts releases, so a style seen on six of an
+   * artist's records came back as 6 — and trackVec() divides every count by
+   * 100, so a Discogs-filled artist arrived in the model an order of magnitude
+   * quieter than a Last.fm one. That is not a rounding difference: their tags
+   * all but vanished from the playlist centroids they belong in, and on a
+   * collaboration a single Last.fm-tagged co-artist drowned them out entirely.
+   * The two sources have to be on one scale to be averaged at all. */
+  const ranked = [...tally].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const most = ranked[0]?.[1] || 1;
+  return ranked.map(([style, n]) => [style, Math.round(100 * n / most)]);
 }
 
 /** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
@@ -3593,9 +3716,13 @@ async function enrichMissing() {
   const key = LS.getItem('bf_lfm');
   if (!key) return toast('Add a Last.fm key first.');
   const discogsToken = LS.getItem('bf_discogs');
+  // Missing means "no usable tags", not "no entry at all". tagCoverage() counts
+  // an artist with an empty tag list as missing and this used to skip it, so
+  // the button read "Fetch missing tags (37)" and answered "Nothing missing."
+  const gap = id => !TAGS[id]?.tags?.length;
   const names = new Map();
-  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
-  for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && !TAGS[a.id]) names.set(a.id, a.name);
+  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
+  for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
   let todo = [...names];
   if (!todo.length) return toast('Nothing missing.');
 
@@ -3605,32 +3732,45 @@ async function enrichMissing() {
   try { todo = byListening(todo, (await getListening()).weights); } catch { /* library order is fine */ }
 
   const cached = (await idb.get('tags_extra')) ?? {};
-  let done = 0, viaDiscogs = 0;
+  let done = 0, viaDiscogs = 0, failed = 0, blank = 0;
   for (const [id, name] of todo) {
-    if (cached[id]) { TAGS[id] = cached[id]; done++; continue; }
+    // Already asked about. An empty answer that was actually given is kept —
+    // Last.fm genuinely has nothing on plenty of artists — so a re-run costs no
+    // requests for those, it just cannot fill them either.
+    if (cached[id]) { TAGS[id] = cached[id]; if (cached[id].tags?.length) done++; else blank++; continue; }
     let tags = [];
+    // "Last.fm has nothing for this artist" and "that request failed" are the
+    // same empty array, and only the first is an answer worth keeping. Caching
+    // both wrote the network's bad afternoon into IndexedDB as a permanent
+    // verdict: the artist was never asked about again, on any later run.
+    let answered = false;
     try {
       const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
         method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
+      if (r?.error) throw new Error(r.message || `Last.fm error ${r.error}`);
       tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
+      answered = true;
       contributeTags(id, tags);
-    } catch { tags = []; }
+    } catch { tags = []; failed++; }
     await new Promise(r => setTimeout(r, 200));   // Last.fm's documented ~5/s
 
     // Last.fm found nothing at all — try Discogs release styles before giving
     // up on this artist, rather than leaving it permanently blank.
-    if (!tags.length && discogsToken) {
+    if (answered && !tags.length && discogsToken) {
       try { tags = await discogsTags(name, discogsToken); if (tags.length) viaDiscogs++; } catch { /* leave it blank */ }
       await new Promise(r => setTimeout(r, 1100));  // Discogs: 60 req/min with a token
     }
 
-    cached[id] = { tags }; TAGS[id] = { tags };
-    if (++done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
+    if (answered) { cached[id] = { tags }; TAGS[id] = { tags }; done++; }
+    if (done && done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
   }
   await idb.set('tags_extra', cached);
   R = buildReports(LIB, CFG, TAGS);
   $('#land').hidden = true; $('#app').hidden = false;
-  toast(`Tags filled for ${todo.length} artists.` + (viaDiscogs ? ` (${viaDiscogs} from Discogs, where Last.fm had nothing.)` : ''));
+  toast(`Tags filled for ${done} of ${todo.length} artists.`
+    + (viaDiscogs ? ` ${viaDiscogs} from Discogs, where Last.fm had nothing.` : '')
+    + (blank ? ` ${blank} have no tags anywhere.` : '')
+    + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : ''));
   render();
 }
 
@@ -4005,6 +4145,8 @@ document.addEventListener('click', guard(async e => {
     render(); return;
   }
 
+  if (e.target.id === 'shufAgain') { S.shufCache = null; return render(); }
+
   if (e.target.id === 'discRun') return runDiscovery(S.discSeed || null);
 
   // Saving the key and finding new music used to be two screens and two
@@ -4033,7 +4175,10 @@ document.addEventListener('click', guard(async e => {
   const ti = e.target.closest('[data-tidy]'); if (ti) { S.tidySec = ti.dataset.tidy; return render(); }
   // A card under "Next up to file" opens the queue on that track, not at the top.
   const gi = e.target.closest('[data-goinbox]');
-  if (gi) { S.inboxAt = Math.min(S.inboxAt + (+gi.dataset.goinbox || 0), Math.max(R.backlog.length - 1, 0)); return go('inbox'); }
+  // The cards under "Next up to file" show the head of the queue, so their
+  // index is an absolute position in it. Adding it to wherever the queue
+  // happened to be left instead opened a different track than the one tapped.
+  if (gi) { S.inboxAt = Math.min(+gi.dataset.goinbox || 0, Math.max(R.backlog.length - 1, 0)); return go('inbox'); }
   const cmin = e.target.closest('[data-cmin]');
   if (cmin) { S.crossMin = +cmin.dataset.cmin; if (T.rememberFilters) { T.crossMin = S.crossMin; saveTheme(); } return render(); }
   const mfb = e.target.closest('[data-mfb]');
@@ -4043,7 +4188,7 @@ document.addEventListener('click', guard(async e => {
   const reject = e.target.closest('[data-reject]');
   if (reject) {
     e.stopPropagation();
-    const t = R.backlog[S.inboxAt]; if (!t) return;
+    const t = inboxTrack(); if (!t) return;
     // nameOf() is local to the File view; CFG is the global source of names.
     const pid = reject.dataset.reject, pname = CFG[pid]?.name ?? pid;
     await recordReject(t.id, pid);
@@ -4064,7 +4209,7 @@ document.addEventListener('click', guard(async e => {
 
   const selfile = e.target.closest('[data-selfile]'); if (selfile) return toggleFileSel(selfile.dataset.selfile);
   const filesel = e.target.closest('[data-filesel]');
-  if (filesel) return fileCurrent(S.fileSel.size ? [...S.fileSel] : (R.backlog[S.inboxAt]?.suggest[0]?.id));
+  if (filesel) return fileCurrent(S.fileSel.size ? [...S.fileSel] : inboxTrack()?.suggest[0]?.id);
   const act = e.target.closest('[data-act]'); if (act) return inboxAct(act.dataset.act);
 
   const keep = e.target.closest('[data-keep]');
@@ -4180,7 +4325,7 @@ document.addEventListener('click', guard(async e => {
 
 document.addEventListener('change', guard(async e => {
   if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
-  if (e.target.id === 'shufPl') { S.shufPl = e.target.value; return render(); }
+  if (e.target.id === 'shufPl') { S.shufPl = e.target.value; S.shufCache = null; return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
   if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
 
@@ -4213,6 +4358,19 @@ function toggleFileSel(id) {
   render();
 }
 
+/**
+ * The track the File screen is actually showing. vInbox() clamps its index to
+ * the end of the queue, and every action below used to read R.backlog[S.inboxAt]
+ * raw — so once filing had shortened the queue past the position "Next up to
+ * file" had jumped to, the card on screen and the track the buttons acted on
+ * were different rows, and at the very end of the queue there was no such row
+ * at all: File, Skip, Unlike and Play each returned silently, with the card
+ * still sitting there. Clamped in one place instead, so the screen and its
+ * buttons cannot disagree.
+ */
+const inboxIndex = () => Math.min(Math.max(S.inboxAt | 0, 0), Math.max(R.backlog.length - 1, 0));
+const inboxTrack = () => R.backlog[inboxIndex()] ?? null;
+
 /** File the current inbox track into one or several playlists at once. Takes
  *  a single id (the swipe gesture, keyboard 1-3 followed by Enter's fallback)
  *  or an array (the multi-select confirm button) — either way nothing is
@@ -4220,7 +4378,7 @@ function toggleFileSel(id) {
 async function fileCurrent(playlistIds) {
   const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
   if (!ids.length) return;
-  const t = R.backlog[S.inboxAt]; if (!t) return;
+  const at = inboxIndex(), t = R.backlog[at]; if (!t) return;
   const names = ids.map(id => CFG[id]?.name ?? id);
   try {
     // One log entry per playlist, so History and its per-row undo stay exact —
@@ -4234,20 +4392,23 @@ async function fileCurrent(playlistIds) {
     const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
     toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
     S.fileSel = new Set();
-    R.backlog.splice(S.inboxAt, 1); render();
+    R.backlog.splice(at, 1); S.inboxAt = inboxIndex(); render();
   } catch (e) { toast('Failed: '+e.message); }
 }
 async function inboxAct(a) {
-  const t = R.backlog[S.inboxAt]; if (!t) return;
+  const at = inboxIndex(), t = R.backlog[at]; if (!t) return;
   if (a === 'play') { try { toast('Playing on ' + await playTrack(t.id)); } catch(e){ toast(e.message); } return; }
   if (a === 'skip') {
     await recordSkip(t.id);
     // Move it to the back rather than stepping past it, so the rest of the
     // queue advances now and the skip still holds after a reload.
     t.skips = (t.skips ?? 0) + 1;
-    R.backlog.splice(S.inboxAt, 1);
+    R.backlog.splice(at, 1);
     R.backlog.push(t);
-    if (S.inboxAt >= R.backlog.length) S.inboxAt = 0;
+    // The skipped card is now the last row, so staying on the last index would
+    // show it straight back — which is what skipping the final track in the
+    // queue used to do: the skip was recorded, and nothing on screen moved.
+    S.inboxAt = at >= R.backlog.length - 1 ? 0 : at;
     S.fileSel = new Set();
     return render();
   }
@@ -4255,9 +4416,9 @@ async function inboxAct(a) {
     try {
       await libraryCall('DELETE', [t.id]);
       await logAction({ op:'unlike', trackIds:[t.id], reason:'from inbox' });
-      const at = (await getLog())[0]?.at;
-      toast(`Unliked “${t.title}”.`, () => undoAction(at));
-      R.backlog.splice(S.inboxAt,1); render();
+      const logAt = (await getLog())[0]?.at;
+      toast(`Unliked “${t.title}”.`, () => undoAction(logAt));
+      R.backlog.splice(at, 1); S.inboxAt = inboxIndex(); render();
     } catch(e){ toast('Failed: '+e.message); }
   }
 }
@@ -4275,7 +4436,7 @@ document.addEventListener('keydown', guard(async e => {
 
 document.addEventListener('keydown', e => {
   if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
-  const t = R.backlog[S.inboxAt]; if (!t) return;
+  const t = inboxTrack(); if (!t) return;
   if (['1','2','3'].includes(e.key)) { const s = t.suggest[+e.key-1]; if (s) toggleFileSel(s.id); }
   if (e.key === 'Enter' && (S.fileSel.size || t.suggest[0])) fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : t.suggest[0].id));
   if (e.key.toLowerCase()==='p') inboxAct('play');
@@ -4341,17 +4502,19 @@ $('#saveId').onclick = () => {
   toast('Saved — that is your app now. Tap Connect Spotify.');
 };
 $('#clearId').onclick = () => { LS.removeItem('bf_client_id'); $('#ownId').value=''; showWhichApp(); toast('Using the default app.'); };
-$('#disconnect').onclick = async () => {
+/* Both of these are async with nothing catching them, which is the shape that
+ * turns any throw inside into a button that does nothing and says nothing —
+ * the same failure the delegated handlers all go through guard() to avoid. */
+$('#disconnect').onclick = guard(async () => {
   LS.removeItem('bf_tok'); LS.removeItem('bf_autoconnect');
   await idb.clear(); location.href = REDIRECT;
-};
-$('#settingsResync').onclick = async () => {
+});
+$('#settingsResync').onclick = guard(async () => {
   const btn = $('#settingsResync');
   btn.disabled = true; btn.textContent = 'Re-reading your library…';
-  openSettings(false);
-  try { await start(true); }
+  try { openSettings(false); await start(true); }
   finally { btn.disabled = false; btn.textContent = 'Re-sync library from Spotify'; }
-};
+});
 
 $('#syncSection').hidden = !syncAvailable();
 

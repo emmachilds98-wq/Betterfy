@@ -10,7 +10,7 @@ import vm from 'node:vm';
 
 const BUNDLE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
 
-function load({ top = {}, recent = [], playlists = [], idbStore = new Map() } = {}) {
+function load({ top = {}, recent = [], playlists = [], liked = [], idbStore = new Map() } = {}) {
   const i = BUNDLE.indexOf('async function listeningSeeds()');
   const j = BUNDLE.indexOf('async function runDiscovery(');
   assert.ok(i > 0 && j > i, 'seed block not found — rebuild with npm run build:web');
@@ -21,7 +21,11 @@ function load({ top = {}, recent = [], playlists = [], idbStore = new Map() } = 
   assert.ok(p > 0 && pEnd > p, 'profile.mjs block not found — rebuild with npm run build:web');
   const calls = [];
   const sandbox = {
-    LIB: { playlists },
+    LIB: { playlists, liked },
+    // The app's own predicate, as buildReports defines it: the "All Songs"
+    // mirror is a copy of the library, so counting it towards the filed floor
+    // would weight every artist in the library exactly twice.
+    isMirrorPlaylist: pl => pl?.name === 'All Songs — Betterfy',
     idb: { get: async k => idbStore.get(k), set: async (k, v) => idbStore.set(k, v) },
     sp: async path => {
       calls.push(path);
@@ -159,4 +163,24 @@ test('a failed fetch is never cached, so the next call tries Spotify again rathe
   vm.runInContext('sp = async () => { throw new Error("500"); }', app.sandbox);
   await app.seeds();
   assert.equal(idbStore.get('listening_raw'), undefined, 'a genuine failure must not freeze an empty result for the whole TTL');
+});
+
+test('liked songs count towards the filed floor, the same as the Node side', async () => {
+  // listening.mjs has always folded lib.liked into libraryArtists; the browser
+  // build only walked the playlists, so the same library weighted differently
+  // depending on which half of the project you asked.
+  const app = load({ liked: Array.from({ length: 40 }, () => ({ artists: [{ name: 'Only Liked' }] })) });
+  const seeds = await app.seeds();
+  assert.ok(own(seeds).some(s => s.name === 'Only Liked'),
+    'an artist you have only ever liked still seeds a run');
+});
+
+test('the All Songs mirror does not weight every artist in the library twice', async () => {
+  const shelf = filed('House', 30);
+  const plain = load({ playlists: [shelf] });
+  const mirrored = load({ playlists: [shelf,
+    { id: 'as1', name: 'All Songs — Betterfy', tracks: shelf.tracks.map(t => ({ ...t })) }] });
+  const w = async app => (await app.run('listeningSeeds()')).get('House');
+  assert.equal(await w(mirrored), await w(plain),
+    'a mirror of the library is not a second opinion about it');
 });
