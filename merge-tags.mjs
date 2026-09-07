@@ -17,6 +17,7 @@
 // Which means the validation below is the real security boundary: writes are
 // unauthenticated, so nothing is trusted until it has been through it.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createSign } from 'node:crypto';
 
 /** Spotify IDs are 22 base62 characters. Anything else was not written by the app. */
 const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/;
@@ -102,6 +103,67 @@ function fromBuiltPage(re) {
   try { return readFileSync('docs/index.html', 'utf8').match(re)?.[1] ?? null; } catch { return null; }
 }
 
+/**
+ * A signed JWT a Google service account can exchange for an OAuth2 access
+ * token, scoped to Firestore only (`datastore`) — the narrowest scope that
+ * still permits a delete, so a leaked token is not a leaked "do anything to
+ * this Google Cloud project" credential.
+ * @param {{client_email: string, private_key: string}} account
+ */
+export function serviceAccountAssertion(account, now = Date.now()) {
+  const b64url = obj => Buffer.from(JSON.stringify(obj)).toString('base64url');
+  const iat = Math.floor(now / 1000);
+  const signingInput = `${b64url({ alg: 'RS256', typ: 'JWT' })}.${b64url({
+    iss: account.client_email,
+    scope: 'https://www.googleapis.com/auth/datastore',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat, exp: iat + 3600,
+  })}`;
+  const signature = createSign('RSA-SHA256').update(signingInput).sign(account.private_key, 'base64url');
+  return `${signingInput}.${signature}`;
+}
+
+async function serviceAccountToken(account) {
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: serviceAccountAssertion(account),
+    }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`Google OAuth2 token exchange failed: ${res.status} ${JSON.stringify(body)}`);
+  return body.access_token;
+}
+
+/**
+ * Delete every contribution this run has already read and accounted for.
+ * Nothing further is ever needed from any of them: one that merged now lives
+ * in docs/tags.json, and one that was rejected cannot become valid without a
+ * new document id — Firestore's create-only rules mean the same id can never
+ * be corrected in place. Left in place, both kinds do nothing but grow the
+ * collection and cost the next run a bigger read for no benefit.
+ *
+ * Best-effort per document: one failure does not stop the rest, and anything
+ * left undeleted is picked up by the next run rather than lost.
+ * @returns {Promise<{deleted: number, failed: string[]}>}
+ */
+export async function pruneContributions(project, account, ids) {
+  if (!ids.length) return { deleted: 0, failed: [] };
+  const token = await serviceAccountToken(account);
+  const base = `https://firestore.googleapis.com/v1/projects/${project}/databases/(default)/documents/tagContributions`;
+  let deleted = 0;
+  const failed = [];
+  for (const id of ids) {
+    const res = await fetch(`${base}/${encodeURIComponent(id)}`, {
+      method: 'DELETE', headers: { authorization: `Bearer ${token}` },
+    }).catch(() => null);
+    if (res?.ok) deleted++; else failed.push(id);
+  }
+  return { deleted, failed };
+}
+
 async function fetchContributions(project, key) {
   const base = `https://firestore.googleapis.com/v1/projects/${project}/databases/(default)`
     + `/documents/tagContributions`;
@@ -144,15 +206,38 @@ async function main() {
 
   if (!added.length) {
     console.error(`nothing new (${covered.length} already covered, ${rejected.length} rejected)`);
-    return;
+  } else {
+    // Sorted, so the diff of a 400KB file is readable and two runs that add
+    // the same artists produce the same bytes.
+    const sorted = Object.fromEntries(Object.keys(merged).sort().map(k => [k, merged[k]]));
+    writeFileSync('docs/tags.json', JSON.stringify(sorted));
+    console.error(`docs/tags.json — ${before} → ${Object.keys(sorted).length} artists `
+      + `(+${added.length}, ${covered.length} already covered, ${rejected.length} rejected)`);
   }
 
-  // Sorted, so the diff of a 400KB file is readable and two runs that add the
-  // same artists produce the same bytes.
-  const sorted = Object.fromEntries(Object.keys(merged).sort().map(k => [k, merged[k]]));
-  writeFileSync('docs/tags.json', JSON.stringify(sorted));
-  console.error(`docs/tags.json — ${before} → ${Object.keys(sorted).length} artists `
-    + `(+${added.length}, ${covered.length} already covered, ${rejected.length} rejected)`);
+  // Optional, same as everything else here: with no service account this
+  // collection just keeps every contribution forever, which is safe (nothing
+  // reads it but this script) but grows unbounded for no benefit. Every
+  // contribution fetched this run has now been accounted for — merged,
+  // already-covered, or permanently rejected — so all of them are safe to
+  // remove regardless of which.
+  const serviceAccountJSON = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!serviceAccountJSON) {
+    console.error('FIREBASE_SERVICE_ACCOUNT not set — leaving processed contributions in Firestore '
+      + '(harmless, just an unbounded collection; see README for how to enable pruning)');
+  } else if (contributions.length) {
+    try {
+      const account = JSON.parse(serviceAccountJSON);
+      const { deleted, failed } = await pruneContributions(project, account, contributions.map(c => c.id));
+      console.error(`pruned ${deleted}/${contributions.length} processed contribution(s) from Firestore`
+        + (failed.length ? ` — ${failed.length} failed and are left for the next run` : ''));
+    } catch (e) {
+      // Never the reason the merge itself fails — tags.json is already
+      // written by this point, and a stuck prune is a tidiness problem, not
+      // a data problem.
+      console.error(`skipping prune: ${e.message}`);
+    }
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await main();
