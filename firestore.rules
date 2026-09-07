@@ -1,0 +1,48 @@
+rules_version = '2';
+
+// The shared tag table: artist tags that a listener's own Last.fm key just
+// fetched, offered so the next person with the same gap does not have to ask
+// again. The opposite posture to storage.rules — the whole point here is that
+// the data is public, because every contribution is published in docs/tags.json
+// within a day of arriving.
+//
+// Writes are unauthenticated. That is deliberate: requiring a sign-in to
+// contribute a public API's answer would add an identity to a page whose entire
+// sign-in story is one Spotify button, to protect data that is about to be
+// committed to a public repo. So these rules are a shape check, not a trust
+// boundary — the real validation is normaliseContribution() in merge-tags.mjs,
+// which nothing reaches docs/tags.json without passing.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /tagContributions/{artistId} {
+
+      // Readable because it is about to be public anyway, and because the merge
+      // job then needs no service account and this repo needs no secret.
+      allow read: if true;
+
+      // Exactly the three fields the client sends, nothing else, and small.
+      // `tags` is a JSON string rather than an array so the size cap below is
+      // one check instead of a walk over nested values.
+      allow create: if request.resource.data.keys().hasOnly(['tags', 'source', 'at'])
+                    && request.resource.data.tags is string
+                    && request.resource.data.tags.size() < 2000
+                    && request.resource.data.source == 'lastfm'
+                    && request.resource.data.at is int;
+
+      // First contribution for an artist wins. No edits, no deletes, nothing to
+      // reconcile, and no way to revise an answer after the merge job has read
+      // it — the create-with-documentId the client uses simply bounces with a
+      // 409 the second time, which is the intended outcome rather than an error.
+      allow update, delete: if false;
+    }
+
+    // Nothing else in this database is reachable. Stated rather than left
+    // implicit: silence here is easy to misread as an oversight instead of a
+    // decision.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

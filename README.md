@@ -103,30 +103,25 @@ Three more things keep it cheap and dull:
   reason your own tag fetch went wrong. A fork with no Firebase behaves exactly
   as Betterfy did before any of this existed.
 
-Setting it up: create a Firebase project, enable Firestore, publish the rules
-below, then build with the project id and web key —
-`npm run build:web -- --tags-project=<id> --tags-key=<key>` (or put
-`TAGS_PROJECT` / `TAGS_KEY` in `.env`). Both are public: a Firebase web key
-names a project, it does not authorise anything.
+The live project is **`betterfy-1a983`**, and the build already carries it —
+`docs/index.html` has `TAGS_PROJECT` and `TAGS_KEY` baked in, both public (a
+Firebase web key names a project, it does not authorise anything; `firestore.rules`
+does the real work). To point a fork somewhere else:
+`npm run build:web -- --tags-project=<id> --tags-key=<key>`, or put
+`TAGS_PROJECT` / `TAGS_KEY` in `.env`.
+
+The rules live in `firestore.rules` rather than only in a console tab, so they
+are reviewable in a diff and deployable:
 
 ```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{db}/documents {
-    match /tagContributions/{artistId} {
-      // Readable because every contribution is published in this repo the
-      // moment it merges — there is nothing here that is not about to be public.
-      allow read: if true;
-      allow create: if request.resource.data.keys().hasOnly(['tags','source','at'])
-                    && request.resource.data.tags is string
-                    && request.resource.data.tags.size() < 2000
-                    && request.resource.data.source == 'lastfm';
-      // First contribution for an artist wins; no edits, nothing to reconcile.
-      allow update, delete: if false;
-    }
-  }
-}
+npx firebase-tools deploy --only firestore:rules
 ```
+
+**Until those rules are deployed, contributions are refused** — Firestore
+defaults to deny-all, so every write comes back `403 PERMISSION_DENIED`. Which
+is silent and harmless by design, and also means nothing is collected. That
+deploy is the one step between this being wired up and this being on. It needs
+no billing: Firestore runs on the free Spark plan.
 
 Discogs results are deliberately **not** shared yet. Last.fm returns a 0–100
 confidence that maps cleanly onto the 0–10 scale `tags.json` stores, but
@@ -558,6 +553,9 @@ guess, and everything downstream reads the file, not the rules.
 |---|---|
 | `spotify.mjs` | API client — token refresh, pagination, 429 retry |
 | `merge-tags.mjs` | Folds contributed Last.fm tags into `docs/tags.json` |
+| `firestore.rules` | Shared tag table — deliberately public, shape-checked |
+| `storage.rules` | Per-account private blobs — not provisioned yet, see `FIREBASE.md` |
+| `FIREBASE.md` | Verified project state, console steps, and the cross-device sync plan |
 | `norm.mjs` / `credits.mjs` | track identity and collaboration-credit splitting |
 | `profile.mjs` | tag vectors, playlist centroids, IDF, ranking |
 | `enrich-lastfm.mjs` / `enrich-discogs.mjs` / `tagstore.mjs` | fetch and merge genre tags — Discogs only ever fills what Last.fm left empty |

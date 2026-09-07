@@ -14,16 +14,20 @@ import vm from 'node:vm';
 const BUNDLE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
 
 /**
- * The contributor, with config injected the way a configured build would have
- * baked it in. The shipped build carries empty strings, which is the off state.
+ * The contributor, with config injected rather than read from the build, so
+ * both the on and off states can be driven whatever the shipped build carries.
  */
 function load({ project = 'betterfy-tags', key = 'AIza' + 'x'.repeat(30), raw = {} } = {}) {
   const from = BUNDLE.indexOf('const TAGS_PROJECT =');
   const to = BUNDLE.indexOf('async function discogsTags');
   assert.ok(from > 0 && to > from, 'contributeTags not found — rebuild with npm run build:web');
+  // Whatever the build baked in, swap it for what this test wants. Matching the
+  // line rather than one particular value, so these keep working whether the
+  // shipped build has sharing on or off.
   const src = BUNDLE.slice(from, to)
-    .replace("const TAGS_PROJECT = '', TAGS_KEY = '';",
+    .replace(/const TAGS_PROJECT = '[^']*', TAGS_KEY = '[^']*';/,
       `const TAGS_PROJECT = ${JSON.stringify(project)}, TAGS_KEY = ${JSON.stringify(key)};`);
+  assert.ok(src.includes(`TAGS_PROJECT = ${JSON.stringify(project)}`), 'config injection missed');
 
   const calls = [];
   const sandbox = {
@@ -39,9 +43,12 @@ function load({ project = 'betterfy-tags', key = 'AIza' + 'x'.repeat(30), raw = 
 const TAGS = [['jungle', 100], ['breakbeat', 60]];
 const ARTIST = '4Z8W4fKeB5YxbusRsdQVPb';
 
-test('the shipped build has sharing off, so a plain fork contributes nothing', () => {
+test('the build carries a real project or nothing — never an unreplaced placeholder', () => {
+  // A placeholder that survived the build would read as configured to a human
+  // and as nonsense to Firestore. sharingTags() refuses it either way, but the
+  // build should not be producing one in the first place.
   assert.match(BUNDLE, /const TAGS_PROJECT = '(|[a-z][a-z0-9-]{3,39})', TAGS_KEY = '[^']*';/,
-    'the build must carry either a real project or nothing — never a placeholder');
+    'unreplaced __TAGS_PROJECT__ / __TAGS_KEY__ in the shipped build');
 });
 
 test('with no project configured, not a single request goes out', () => {

@@ -1,0 +1,9 @@
+{
+  "//": "Deploy one product at a time — `firebase deploy --only firestore:rules` or `--only storage`. A bare `firebase deploy` also tries Storage, which fails until the bucket exists (see FIREBASE.md).",
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  }
+}
