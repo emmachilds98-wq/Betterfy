@@ -603,6 +603,14 @@ Last.fm tags. Each playlist becomes the centroid of its members. Tags are
 IDF-weighted, otherwise "electronic" — true of half this library — dominates
 every comparison and every playlist looks alike.
 
+Last.fm's cloud is not all one kind of thing, though, so `tagFacet()` sorts
+each tag into **genre / mood / era / occasion / descriptor** first — "deep
+house" is a sound, "chill" is a feel, "90s" is a decade, "workout" is a
+Saturday, "british" is a passport. Each axis then weighs them for the question
+it is actually asking: a genre bucket is scored almost entirely on sound, a
+mood bucket leads on feel with sound underneath. Nothing is dropped to zero, so
+an artist with no mood tags at all still scores on what it has.
+
 Playlists are classified onto axes in `playlists.config.json`
 (genre / mood / era / event / DJ set / context / inbox). Only genre and mood
 playlists receive automatic filing; a track is only compared against playlists
@@ -620,15 +628,55 @@ guess, and everything downstream reads the file, not the rules.
 - **Within a playlist vs across playlists.** The same track twice in one
   playlist is a mistake. The same track in five playlists is usually deliberate,
   so it is surfaced for review and never auto-removed.
-- **Axes are guessed from names, then from dates.** A playlist named for a club
-  or a decade says what it is. One named for whoever you were with that night
-  does not, and used to fall through to *genre* — where it competed for
-  suggestions with the real genre buckets and turned up in Misfiles as noise.
-  A playlist whose tracks all landed within a few days and which has had
-  nothing added for over a month is read as an event instead. Both halves are
-  needed: "added in one go" alone would catch a playlist someone built last
-  week by dropping fifty tracks in at once. Every playlist on the Playlists
-  screen says what its guess was made from, and correcting one overrides both.
+- **Axes are guessed from names, then from dates, then from the tags.** A
+  playlist named for a club or a decade says what it is. One named for whoever
+  you were with that night does not, and used to fall through to *genre* —
+  where it competed for suggestions with the real genre buckets and turned up
+  in Misfiles as noise. A playlist whose tracks all landed within a few days
+  and which has had nothing added for over a month is read as an event instead.
+  Both halves are needed: "added in one go" alone would catch a playlist
+  someone built last week by dropping fifty tracks in at once. With neither
+  saying anything, the tags get the last word — see the next bullet. Every
+  playlist on the Playlists screen says what its guess was made from, and
+  correcting one overrides all three.
+- **Not every tag is a genre, and reading them as if they were hid real
+  misfiles.** Last.fm hands back one flat cloud per artist with no type in it,
+  and every tag in it used to count equally as evidence of what a track sounds
+  like. Measured on a two-bucket fixture where House and Jungle happen to share
+  "chill / 90s / party / british": a jungle track sitting in the house playlist
+  scored **0.499** at home — enough to bury it in the lowest confidence band —
+  purely on that coincidence of feel, decade, occasion and nationality. Reading
+  the genre tags as the genre evidence puts the same track at **0.085** and the
+  top band. On the Playlists screen every row now shows what its tracks are
+  actually tagged with ("64% genre · 19% mood"), and tag chips throughout the
+  app draw the non-genre ones back, so you can see how much of your "genre
+  data" is really genre. The vocabulary is Last.fm's, which is global — this is
+  not one listener's playlist names, so it works for an account nobody has
+  tuned for. Whole tag only, never a substring: "chill" is a mood, "chillstep"
+  is a genre, the same lesson the name rules learned. And anything unrecognised
+  stays a genre, because being wrong in that direction only costs the status
+  quo.
+- **A playlist that says nothing in its name is asked what it is made of.**
+  The one thing left after the name and the dates is the tags, read as a
+  facet mix against *your own library's* baseline rather than a fixed share —
+  mood tags are a small slice of anybody's cloud, and a threshold tuned on one
+  library would be wrong for the next. A playlist carrying getting on for twice
+  the mood weight of everything else you own is a mood playlist in your
+  vocabulary, whatever the raw percentage. Decades read as an era, occasions
+  as context. It is a last resort by construction: it never overrules a name,
+  a date or a correction of yours, so nothing that was already being read
+  correctly starts being read differently. (This is not the tag-coherence rule
+  that was tried and rejected — that asked how *tightly* a playlist's tags
+  agree, which turned out to measure how broad it is. This asks which *kind* of
+  tag holds it together.)
+- **Spotify's own playlists are an inflow, not a destination.** Discover
+  Weekly, Release Radar, On Repeat, Daily Mix, Your Top Songs, My Shazam
+  Tracks — everyone has them under exactly those names, so this needs no
+  vocabulary of yours at all. Read as genre buckets they were filing targets,
+  which meant Tidy offering to move your music into a playlist Spotify
+  overwrites every Monday. Playlists named for a situation (Gym, Study, Road
+  Trip, a wedding) are read as context for the same reason: there is no genre
+  in them for anything to be compared against.
 - **A playlist can go wrong two ways: one track, or the whole thing drifting.**
   Misfiles catches the first — a track that fits another playlist on the same
   axis far better than the one it's actually in, flagged only past a wide
@@ -691,6 +739,26 @@ guess, and everything downstream reads the file, not the rules.
   suddenly "in more than one playlist", so Cross-filed swelled to the whole
   library; and two pressings of one record, happily filed apart, met inside it
   and were reported as a repeat.
+- **The mirror is remembered by id, and three things used to break that.**
+  *Renaming it* — the first thing anyone does to a playlist they mean to keep —
+  made a lookup by name unable to find it, so the next refresh built a second
+  one and poured a copy of the whole library into that; the id survives a
+  rename, and the name is only the fallback for the first refresh after this
+  change. It is still looked up *inside* your playlist list rather than fetched
+  by id, because Spotify never really deletes a playlist, it unfollows it, and
+  `GET /playlists/{id}` keeps answering for one you threw away — requiring it
+  to still be in your library is what makes deleting it and pressing the button
+  mean "build me a new one". *Track relinking* is the second: Spotify swaps a
+  track for whichever pressing is playable in your market and hands the
+  original back under `linked_from`, so the id you added is often not the id
+  you read back — matched on the visible id alone, every relinked track looked
+  missing on every single refresh and was added again each time. Both ids now
+  count as present. *And the damage from before that* is cleared out: a track
+  in the mirror more than once has its surplus copies removed, deleted by
+  position from the end backwards (deleting by URI would take out the copy
+  that should stay, and a local file with no id still holds its slot, so
+  positions have to be counted including the ones that carry nothing). The
+  shuffled `🔀` playlist is pinned by id for the same reason.
 - **The mark is a sorted list that is also a play button.** Five stacked bars
   whose widths grow then shrink, so their right edge forms a play triangle. In
   the app it is inline SVG and keeps its five colours whatever accent you pick; at
