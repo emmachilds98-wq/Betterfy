@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-07-0051">
+<meta name="bf-build" content="2026-09-07-0203">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -868,7 +868,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-07-0051</span>
+    <span class="mono">build 2026-09-07-0203</span>
   </p>
 
   <div class="feat">
@@ -964,7 +964,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-07-0051</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-07-0203</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1005,7 +1005,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-07-0051</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-07-0203</span>
   </div>
 </div>
 
@@ -1670,7 +1670,7 @@ initSettingsPanel();
 initSheet();
 bindAppGestures();
 
-const DEFAULT_CLIENT_ID = '7e79f50acaf24fb6ae40cb339bdde382';
+const DEFAULT_CLIENT_ID = '93cc948547fd40a1b438530854e864dc';
 // Always the directory form with a trailing slash. Spotify matches the redirect
 // URI byte-for-byte, so visiting /Betterfy and /Betterfy/ must not send two
 // different values — only one of them could ever be registered.
@@ -1705,7 +1705,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-07-0051';
+const BUILD = '2026-09-07-0203';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2026,7 +2026,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-09-07-0051', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-09-07-0203', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -2068,12 +2068,21 @@ async function sp(path, opts = {}) {
     }
     if (res.status === 429) {
       const after = (+res.headers.get('retry-after') || 0) * 1000;
+      // A quota-exceeded 429 carries a reason Spotify only added recently: the
+      // app's whole request budget for the period is gone, not a busy moment,
+      // so neither a quiet hold nor a counted-down retry is ever going to
+      // change the answer — saying otherwise, with a countdown promising it
+      // will "carry on by itself", would be worse than saying nothing.
+      const body = await res.json().catch(() => null);
+      const quotaExceeded = body?.error?.reason === 'QUOTA_EXCEEDED';
       const wait = after || Math.min(2000 * 2 ** i, 60000);
       setGap(gap * 2);
-      if (wait <= AUTO_HOLD_MAX && held + wait <= AUTO_HOLD_BUDGET
+      if (!quotaExceeded && wait <= AUTO_HOLD_MAX && held + wait <= AUTO_HOLD_BUDGET
           && heldRun + wait <= HOLD_BUDGET_RUN) {
         held += wait; heldRun += wait; await hold(wait); continue;
       }
+      if (quotaExceeded) throw authError('This app’s Spotify request quota is used up for now — '
+        + 'waiting will not change that, however long. Your own Spotify app has a quota nobody else can spend; see below.', 429);
       // wait, not after: after is only ever this one response's own Retry-After
       // (or 0), and what the fallback screen needs to wait out is whatever this
       // attempt actually asked for — the backoff estimate when Spotify sent none.
@@ -2569,7 +2578,7 @@ async function undoAction(at) {
   } else if (e.op === 'add') {
     await delTracks(e.playlistId, e.trackIds);
   } else if (e.op === 'unlike') {
-    await sp('/me/tracks?ids=' + e.trackIds.join(','), { method:'PUT' });
+    await libraryCall('PUT', e.trackIds);
   } else throw new Error(`Cannot undo "${e.op}"`);
   await logAction({ op:'undo', of:at, playlistId:e.playlistId, trackIds:e.trackIds });
 }
@@ -2590,6 +2599,16 @@ async function plCall(id, method, body) {
 }
 const addTracks = (id, ids) => Promise.all(chunk(ids,100).map(c => plCall(id,'POST',{ uris:c.map(x=>'spotify:track:'+x) })));
 const delTracks = (id, ids) => plCall(id,'DELETE',{ tracks: ids.map(x=>({ uri:'spotify:track:'+x })) });
+
+/** Spotify replaced PUT/DELETE /me/tracks?ids= with /me/library?uris= for a
+ *  client ID created after Feb 2026; this page's own grandfathered id still
+ *  serves the old form, so try the new path first and fall back like plCall
+ *  does above for playlists. */
+async function libraryCall(method, ids) {
+  const uris = ids.map(x => 'spotify:track:' + x).join(',');
+  try { return await sp('/me/library?uris=' + uris, { method }); }
+  catch (e) { if (!/^40[34]/.test(e.message)) throw e; return await sp('/me/tracks?ids=' + ids.join(','), { method }); }
+}
 
 /* ---------- player: Spotify Connect ----------
  * The Web Playback SDK does not run on iOS, so the card drives whatever device
@@ -4017,7 +4036,7 @@ document.addEventListener('click', guard(async e => {
   }
 
   const like = e.target.closest('[data-like]');
-  if (like) { try { await sp('/me/tracks?ids='+like.dataset.like, { method:'PUT' });
+  if (like) { try { await libraryCall('PUT', [like.dataset.like]);
       await logAction({ op:'add-liked', trackIds:[like.dataset.like], reason:'from discovery' });
       like.textContent = 'Liked'; like.disabled = true; toast('Added to your Liked Songs.'); }
     catch (err) { toast('Failed: '+err.message); } return; }
@@ -4250,7 +4269,7 @@ async function inboxAct(a) {
   }
   if (a === 'unlike') {
     try {
-      await sp('/me/tracks?ids='+t.id, { method:'DELETE' });
+      await libraryCall('DELETE', [t.id]);
       await logAction({ op:'unlike', trackIds:[t.id], reason:'from inbox' });
       const at = (await getLog())[0]?.at;
       toast(`Unliked “${t.title}”.`, () => undoAction(at));
@@ -4523,6 +4542,15 @@ async function start(force) {
       blocked(e.message, () => start(force), e.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER);
       return;
     }
+    // Spotify lets a non-allowlisted account complete sign-in and only refuses
+    // the API calls that follow, with a 403 — so this is discovered here, on
+    // the very first read (/me, the playlist list, or liked songs; a 403 on an
+    // individual playlist is already tolerated inside syncLibrary and never
+    // reaches this catch). It is the exact same fix access_denied already
+    // offers, just found one step later. Reload into it rather than rebuilding
+    // the panel here: stage() above has already overwritten #land's pristine
+    // markup, panel and wiring included, and only a fresh load has that back.
+    if (e.status === 403) { location.href = REDIRECT + '?setup&reason=not_allowlisted'; return; }
     // Whatever went wrong here, signing out is almost never the fix — and it
     // used to be the only button on the screen. Clearing the token sent people
     // back to the accounts service, which is rate-limited per app, which
@@ -4557,9 +4585,36 @@ const FRIENDLY = {
 (async () => {
   if (T.rememberFilters) { if (T.crossMin) S.crossMin = T.crossMin; if (T.mfBand) S.mfBand = T.mfBand; }
 
+  // Insert the "use your own app" hint shared by access_denied and a 403
+  // discovered after sign-in (the reason=not_allowlisted branch below).
+  // Idempotent: a page that already shows the hint does not get a second one.
+  function offerOwnAppHint(html) {
+    if ($('#landSetupHint')) return;
+    const hint = document.createElement('p');
+    hint.id = 'landSetupHint'; hint.className = 'fineprint';
+    hint.innerHTML = html;
+    $('.cta')?.after(hint);
+  }
+
   const q = new URLSearchParams(location.search);
   if (q.get('setup') !== null) { $('#setupPanel').hidden = false; LS.setItem('bf_setup','1'); }
   else if (LS.getItem('bf_setup')) $('#setupPanel').hidden = false;
+
+  // A 403 discovered mid-sync (see start()'s catch) reloads to this exact URL
+  // rather than rebuilding the setup panel in place: by the time that 403
+  // happens, stage() has already overwritten #land's pristine markup — panel,
+  // wiring and all — so only a fresh load has it to reveal. Stop here rather
+  // than falling through to start() below: it would just hit the same 403 again.
+  if (q.get('reason') === 'not_allowlisted') {
+    history.replaceState({}, '', REDIRECT + '?setup');
+    $('#ownAppDetails').open = true;
+    offerOwnAppHint('Sign-in went through, but Spotify is still refusing requests for this account until '
+      + 'it’s approved — you don’t need to ask to be added, though: '
+      + '<a href="#ownAppDetails">use your own Spotify app</a> instead, set up in about a minute, '
+      + 'sharing nothing with whoever sent you this link.');
+    toast('This Spotify account isn’t on the approved list for this app yet.');
+    return;
+  }
 
   // Arrived here from "Update now": the cache-busting parameter has done its
   // job, so tidy it out of the address bar.
@@ -4574,19 +4629,16 @@ const FRIENDLY = {
     $('#land').hidden = false;
     toast(FRIENDLY[code] ?? `Sign-in failed (${code}). Try again.`);
     // access_denied covers both "you tapped cancel" and "this app has a
-    // 25-account cap and you're not on the list" — Spotify doesn't say which.
+    // user cap and you're not on the list" — Spotify doesn't say which.
     // Rather than send everyone back to whoever runs this page to be added by
     // email, hand them the way to skip that approval entirely: their own free
     // Spotify app, registered under their own account, needing nobody's say-so.
-    if (code === 'access_denied' && !$('#landSetupHint')) {
+    if (code === 'access_denied') {
       $('#setupPanel').hidden = false;
       $('#ownAppDetails').open = true;
       LS.setItem('bf_setup', '1');
-      const hint = document.createElement('p');
-      hint.id = 'landSetupHint'; hint.className = 'fineprint';
-      hint.innerHTML = 'If this account isn’t on the approved list, you don’t need to ask to be added — '
-        + '<a href="#ownAppDetails">use your own Spotify app</a> instead, set up in about a minute, sharing nothing with whoever sent you this link.';
-      $('.cta')?.after(hint);
+      offerOwnAppHint('If this account isn’t on the approved list, you don’t need to ask to be added — '
+        + '<a href="#ownAppDetails">use your own Spotify app</a> instead, set up in about a minute, sharing nothing with whoever sent you this link.');
     }
     history.replaceState({},'',REDIRECT);
     return;
