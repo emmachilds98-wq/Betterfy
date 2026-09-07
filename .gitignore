@@ -2,6 +2,9 @@
 .env.local
 .tokens.json
 library.json
+# Your Rekordbox collection, matched to your Spotify library — personal, and
+# `npm run rekordbox -- --write` drops it in the repo root.
+rekordbox.json
 tags-lastfm.json
 tags-discogs.json
 cache-*.json

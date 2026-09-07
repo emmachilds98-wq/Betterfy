@@ -70,8 +70,39 @@ const html = readFileSync('docs/app.template.html', 'utf8')
   .replace('__TAGS_KEY__', TAGS_KEY)
   .replaceAll('__BUILD__', BUILD);
 
-if (/SPOTIFY_CLIENT_SECRET|LASTFM_SHARED_SECRET|DISCOGS_TOKEN/.test(html))
-  throw new Error('Refusing to build: a secret leaked into the web bundle.');
+/* The old guard matched the *names* SPOTIFY_CLIENT_SECRET, LASTFM_SHARED_SECRET
+ * and DISCOGS_TOKEN, which only catches a leak that happens to arrive carrying
+ * its own label. A value pasted into the template by hand, or interpolated by
+ * some future build step, has no name attached to it at all — exactly the shape
+ * a real accident takes. So check the values too: anything in .env that is not
+ * meant to ship must not appear in the output.
+ *
+ * The allowlist is short and deliberate. A Spotify client ID and a Firebase web
+ * key are public by design — they name a thing, they do not authorise anything,
+ * and the whole PKCE-and-rules design depends on being able to ship them. */
+const PUBLIC_BY_DESIGN = new Set(['SPOTIFY_CLIENT_ID', 'SPOTIFY_REDIRECT_URI',
+  'TAGS_PROJECT', 'TAGS_KEY']);
+
+/** @returns {string|null} the name of the first .env value found in `out`. */
+function leakedSecret(out) {
+  let env;
+  try { env = readFileSync('.env', 'utf8'); } catch { return null; }
+  for (const line of env.split('\n')) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.+?)\s*$/);
+    if (!m) continue;
+    const [, name, value] = m;
+    if (PUBLIC_BY_DESIGN.has(name)) continue;
+    // Short values are placeholders, or too common to match on without crying
+    // wolf over every "true" and "1" someone leaves in a config.
+    if (value.length >= 8 && out.includes(value)) return name;
+  }
+  return null;
+}
+
+const named = html.match(/SPOTIFY_CLIENT_SECRET|LASTFM_SHARED_SECRET|LASTFM_API_KEY|DISCOGS_TOKEN/);
+const valued = leakedSecret(html);
+if (named || valued)
+  throw new Error(`Refusing to build: ${valued ?? named[0]} leaked into the web bundle.`);
 
 // A page with no client ID looks fine and cannot sign anyone in, which is the
 // worst way for a build to fail — so it fails here instead.

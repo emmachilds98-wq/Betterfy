@@ -382,6 +382,33 @@ tiles" toggle governed have been replaced by the coloured cards on Home.
 Settings is reachable from the landing screen too, though re-sync only appears
 once there is a library to re-read.
 
+### What ships, and what must never
+
+Three values are baked into `docs/index.html` on purpose, and it is worth being
+able to tell them apart from the ones that would be a real leak:
+
+| Ships | Why it is safe |
+|---|---|
+| `SPOTIFY_CLIENT_ID` | Names an app. Authentication is PKCE, so no secret is involved — this is the design, not a compromise. |
+| `TAGS_PROJECT` | A Firebase project name. |
+| `TAGS_KEY` | A Firebase *web* key. It identifies a project rather than authorising anything; `firestore.rules` is what actually decides. |
+
+| Never ships | |
+|---|---|
+| `SPOTIFY_CLIENT_SECRET` | Only `auth.mjs` / `spotify.mjs` use it, locally, and only because the local app refreshes tokens the classic way. The web build has no use for it at all. |
+| `LASTFM_API_KEY`, `LASTFM_SHARED_SECRET` | The hosted page asks each listener for their own key, kept in their browser. |
+| `DISCOGS_TOKEN` | Same. |
+
+`build-web.mjs` refuses to write a page containing any of the second group. It
+checks the **values** in `.env`, not just the variable names — a secret pasted
+into the template by hand arrives with no name attached, which is the shape a
+real accident takes. `test/buildguard.test.mjs` runs the real build script
+against a poisoned copy of the repo to prove the guard fires.
+
+`.tokens.json` (your Spotify refresh token), `library.json`, `rekordbox.json`
+and the `report-*.json` files are all gitignored — they are yours, and none of
+them belongs in a public repo.
+
 ## Why it uses Last.fm and Discogs
 
 Verified against a freshly registered Spotify app in September 2026:
