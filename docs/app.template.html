@@ -1365,6 +1365,10 @@ initSheet();
 bindAppGestures();
 
 const DEFAULT_CLIENT_ID = '__CLIENT_ID__';
+// Blank unless whoever built this page opted in: no stranger's inbox is baked
+// into a fork of this repo by default. Shown as a "Request access" mailto
+// alongside "use your own Spotify app" wherever that hint appears.
+const CONTACT_EMAIL = '__CONTACT_EMAIL__';
 // Always the directory form with a trailing slash. Spotify matches the redirect
 // URI byte-for-byte, so visiting /Betterfy and /Betterfy/ must not send two
 // different values — only one of them could ever be registered.
@@ -4282,11 +4286,17 @@ const FRIENDLY = {
   // Insert the "use your own app" hint shared by access_denied and a 403
   // discovered after sign-in (the reason=not_allowlisted branch below).
   // Idempotent: a page that already shows the hint does not get a second one.
+  // CONTACT_EMAIL is blank unless whoever built this page opted in (see
+  // build-web.mjs), so a fork of this repo never ships a stranger's inbox —
+  // the extra sentence just does not exist for it.
   function offerOwnAppHint(html) {
     if ($('#landSetupHint')) return;
     const hint = document.createElement('p');
     hint.id = 'landSetupHint'; hint.className = 'fineprint';
-    hint.innerHTML = html;
+    hint.innerHTML = html + (CONTACT_EMAIL ? ' Or, if you would rather not: '
+      + `<a href="mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Betterfy access')}`
+      + `&body=${encodeURIComponent('My Spotify account email is: ')}">ask to be added</a> instead — `
+      + 'no setup on your end, just a wait for a reply.' : '');
     $('.cta')?.after(hint);
   }
 

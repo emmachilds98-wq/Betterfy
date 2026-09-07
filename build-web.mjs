@@ -54,6 +54,11 @@ const TAGS_PROJECT = arg('tags-project') ?? readEnv('TAGS_PROJECT')
 const TAGS_KEY = arg('tags-key') ?? readEnv('TAGS_KEY')
   ?? built(/TAGS_KEY = '([A-Za-z0-9_-]{20,})'/) ?? '';
 
+// Same optional, same read order: blank means the "Request access" mailto
+// link is never shown, so nobody who forks this repo ships a stranger's inbox.
+const CONTACT_EMAIL = arg('contact-email') ?? readEnv('CONTACT_EMAIL')
+  ?? built(/const CONTACT_EMAIL = '([^'@]+@[^'@]+\.[^']+)'/) ?? '';
+
 // Strip module syntax so these can be concatenated into one classic script.
 const bundle = file => readFileSync(file, 'utf8')
   .replace(/^\s*import[^;]*;$/gm, '')
@@ -68,6 +73,7 @@ const html = readFileSync('docs/app.template.html', 'utf8')
   .replace('__CLIENT_ID__', CLIENT_ID)
   .replace('__TAGS_PROJECT__', TAGS_PROJECT)
   .replace('__TAGS_KEY__', TAGS_KEY)
+  .replace('__CONTACT_EMAIL__', CONTACT_EMAIL)
   .replaceAll('__BUILD__', BUILD);
 
 /* The old guard matched the *names* SPOTIFY_CLIENT_SECRET, LASTFM_SHARED_SECRET
@@ -81,7 +87,7 @@ const html = readFileSync('docs/app.template.html', 'utf8')
  * key are public by design — they name a thing, they do not authorise anything,
  * and the whole PKCE-and-rules design depends on being able to ship them. */
 const PUBLIC_BY_DESIGN = new Set(['SPOTIFY_CLIENT_ID', 'SPOTIFY_REDIRECT_URI',
-  'TAGS_PROJECT', 'TAGS_KEY']);
+  'TAGS_PROJECT', 'TAGS_KEY', 'CONTACT_EMAIL']);
 
 /** @returns {string|null} the name of the first .env value found in `out`. */
 function leakedSecret(out) {
@@ -112,4 +118,5 @@ if (!CLIENT_ID && !process.argv.includes('--allow-missing-id'))
 
 writeFileSync('docs/index.html', html);
 console.log(`docs/index.html — ${(html.length / 1024).toFixed(0)} KB, client id ${CLIENT_ID ? 'embedded' : 'MISSING'}`
-  + `, shared tags ${TAGS_PROJECT && TAGS_KEY ? `→ ${TAGS_PROJECT}` : 'off'}`);
+  + `, shared tags ${TAGS_PROJECT && TAGS_KEY ? `→ ${TAGS_PROJECT}` : 'off'}`
+  + `, request-access link ${CONTACT_EMAIL ? `→ ${CONTACT_EMAIL}` : 'off'}`);

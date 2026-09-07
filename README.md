@@ -27,6 +27,14 @@ sign-in and only refuses the actual API requests after, with a 403 — the app
 now catches that first 403 too and routes it to the same *use your own
 Spotify app* panel, rather than a bare error.
 
+If whoever built the page has set `CONTACT_EMAIL` (see `.env.example`), that
+same panel also offers **ask to be added** — a plain `mailto:` link,
+pre-addressed and pre-filled with a place to paste the Spotify account email
+that needs allowlisting. Nothing is stored or sent anywhere by the page
+itself; it just opens the visitor's own mail client. Left blank, the option
+does not exist at all — no fork of this repo ships a stranger's inbox by
+default.
+
 **Sharing it with a couple of friends.** Send them the page, but send them
 [`?setup`](https://emmachilds98-wq.github.io/Betterfy/?setup) with it — that
 opens the *Use a different Spotify app* panel, which is also linked from the
