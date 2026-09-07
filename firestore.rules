@@ -38,6 +38,58 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Cross-device sync: small, private, per-listener state (skip/reject
+    // feedback, tag corrections, axis overrides) — never anyone else's
+    // Spotify data, only what Betterfy itself derived from decisions made in
+    // this app. The opposite trust model to tagContributions above: writes
+    // here are authenticated (Firebase Anonymous Auth — no email, no
+    // password, invisible to whoever is using the page), because this data
+    // is not meant to be public.
+    //
+    // A sync group's id is a randomly generated UUID, generated locally and
+    // never displayed — it is the real secret here, the same trust model as
+    // an unguessable "anyone with the link" share. A short-lived linkCode is
+    // only how a *second* device learns a group's id, so two people don't
+    // have to read a UUID aloud to each other; knowing the code is what
+    // grants access to it, the same trust model as a password-reset link.
+    // See FIREBASE.md for the full design this implements.
+    match /syncGroups/{groupId} {
+
+      match /members/{uid} {
+        // Any signed-in device can check membership; only its own uid can be
+        // added, and only ever added, never edited or removed (leaving is
+        // "start a new group" client-side, not a moderation action here).
+        allow get: if request.auth != null;
+        allow create: if request.auth != null && request.auth.uid == uid;
+        allow update, delete: if false;
+      }
+
+      match /state/{doc} {
+        allow read, write: if request.auth != null && exists(
+          /databases/$(database)/documents/syncGroups/$(groupId)/members/$(request.auth.uid));
+      }
+    }
+
+    match /linkCodes/{code} {
+      // Exactly what createLinkCode() sends, nothing else. createdAt lets a
+      // redeemer refuse an expired code client-side; rules alone cannot
+      // cheaply express "reject if older than N" against a clock they do not
+      // control, so that check is advisory, not the security boundary — the
+      // security boundary is the code being short-lived *and* deleted by
+      // whoever redeems it, same as any single-use link.
+      allow create: if request.auth != null
+                    && request.resource.data.keys().hasOnly(['groupId', 'createdAt'])
+                    && request.resource.data.groupId is string
+                    && request.resource.data.createdAt is int;
+      allow get: if request.auth != null;
+      // Redeemed codes are deleted by whoever redeems them; an unredeemed one
+      // is harmless left in place past its own expiry, since nothing here
+      // trusts createdAt for security — but any signed-in device may still
+      // tidy one up.
+      allow delete: if request.auth != null;
+      allow update: if false;
+    }
+
     // Nothing else in this database is reachable. Stated rather than left
     // implicit: silence here is easy to misread as an oversight instead of a
     // decision.
