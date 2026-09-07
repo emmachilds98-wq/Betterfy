@@ -15,13 +15,17 @@ Built because Spotify's Web API stopped providing the data this needs.
 
 ### Using the hosted version
 
-Click **Connect Spotify**. If sign-in is refused, that is Spotify's 25-user cap
+Click **Connect Spotify**. If sign-in is refused, that is Spotify's user cap
 on development-mode apps — the page now offers *use your own Spotify app*
 right there when that happens, so nobody has to hand their account email to
 the person running the page just to be added to a list. Registering one takes
 about a minute and needs no secret — authentication uses PKCE — or the owner
 can still add your email under **User Management** in their app's dashboard
-if they'd rather manage it that way.
+if they'd rather manage it that way. Note that being *signed in* is not the
+same as being *approved*: Spotify lets a non-allowlisted account complete
+sign-in and only refuses the actual API requests after, with a 403 — the app
+now catches that first 403 too and routes it to the same *use your own
+Spotify app* panel, rather than a bare error.
 
 **Sharing it with a couple of friends.** Send them the page, but send them
 [`?setup`](https://emmachilds98-wq.github.io/Betterfy/?setup) with it — that
@@ -29,13 +33,26 @@ opens the *Use a different Spotify app* panel, which is also linked from the
 landing page's fineprint. Two things make their own app worth the minute it
 takes rather than a fallback for when something breaks:
 
-- **The 25-user cap** is per app, so on the default app they need the owner to
-  add their account email first. On their own app they are the only user.
-- **The rate limit is per app too, not per listener.** Every account signing in
-  with the default app spends the same budget, and a cold library read is
-  several hundred calls — so two people reading their libraries on the same
-  afternoon is exactly the "Spotify is handling too many requests" screen. Their
-  own app has a budget nobody else can touch.
+- **The user cap is per app**, and small: as of the February 2026 developer
+  access update, a development-mode app registered from here on only gets
+  **5 users**, down from the 25 it used to be. (An app created before that
+  change keeps whoever it already had.) On the default app, each new friend
+  needs the owner to add their account email first, and the fifth one is the
+  last one who can be added at all without their own app. On their own app
+  they are the only user.
+- **The rate limit is per app too, not per listener** — and, as of the same
+  update, that quota is now pooled **per developer account**, across every
+  client ID that account owns (up to 25 of them from July 2026), not per
+  client ID. So handing friends separate client IDs registered under *your*
+  account buys nothing; each friend's app has to be registered under *their
+  own* Spotify account to get a quota nobody else can spend. A cold library
+  read is several hundred calls, so two people reading their libraries on the
+  same afternoon on the shared default app is exactly the "Spotify is
+  handling too many requests" screen.
+- **Registering an app now requires Spotify Premium on the owner's account.**
+  That's the account that *creates* the app, not every account that signs
+  into it — a Free-tier friend can still use the default app (as one of its
+  five allowlisted users) but cannot register their own.
 
 Nothing else changes: same page, same features, no secret, nothing shared with
 whoever sent the link. Paste the redirect URI the setup panel shows into the
@@ -51,13 +68,13 @@ actually in use, so "I set my own client ID" and "I am still on the shared
 one" stop being indistinguishable.
 
 There is no setting that removes the cap for everyone without Spotify's
-involvement: Spotify's own **Extended Quota Mode** is the only way to let any
-Spotify account sign in with no allow-list at all, and that's an application
-the developer submits through their dashboard for Spotify to review — not a
-switch this project can flip on its own, and not guaranteed for a small,
-non-commercial app. Bringing your own app sidesteps the cap entirely in the
-meantime, since each person's app has only ever needed to authorise its own
-creator.
+involvement, and as of the same update **Extended Quota Mode is no longer
+something this project could apply for even if it wanted to**: since 15 May
+2025 Spotify only accepts Extended Quota applications from a legally
+registered business, with an already-launched service, 250,000+ monthly
+active users, and an application sent from a company email address. Betterfy
+meets none of those. Bringing your own app sidesteps the cap entirely instead,
+since each person's app has only ever needed to authorise its own creator.
 
 The prebuilt genre tags shipped with the page cover one person's artists, so
 your suggestions may start thin. The **Playlists** view shows your tag coverage
@@ -281,9 +298,13 @@ quota stays busy. So the fallback screen says so immediately and offers the
 actual fix — **Use your own Spotify app** — which takes about a minute to
 set up and gives you a quota nobody else can spend; *Try again* right above
 it still works too, for whenever waiting it out is good enough. The same
-escape hatch already existed for the 25-account cap (`access_denied`); this
+escape hatch already existed for the user cap (`access_denied`); this
 is it surfacing for a persistent rate limit too, rather than only when Spotify has
-flatly refused the account.
+flatly refused the account. It also now surfaces on a 403 discovered *after*
+sign-in succeeded — Spotify lets a non-allowlisted account complete the OAuth
+round trip and only refuses the API calls that follow, so a fresh sign-in
+that hits a 403 on its first read gets routed here too, instead of a bare
+error with nothing to do about it.
 
 **When the pause never ends.** The per-call budget above never trips in the
 case that actually bit: a quota that is simply gone answers the *first* call of
@@ -299,6 +320,14 @@ offered nothing to do but watch.
 That last point is the important one: waiting does not fix this. The quota
 belongs to the *app*, not to the listener, so it is being spent by everyone
 else who has the page open on the same client ID.
+
+Spotify's 429 response now carries a `reason` field, and `QUOTA_EXCEEDED` is
+the honest version of that last point: it means the app's whole budget for
+the period is gone, so no amount of waiting — quiet or counted down — is
+going to change the answer. Betterfy reads it and skips straight to that
+message and **Use your own Spotify app**, rather than counting down to a
+retry that was never going to succeed. An ordinary rate limit, with no such
+reason, still gets the countdown as before.
 
 **If it says "Spotify asked for a pause".** A short throttle while reading a
 large library is waited out on its own, counting down on screen. A longer one
@@ -420,6 +449,7 @@ Verified against a freshly registered Spotify app in September 2026:
 | `GET /artists/{id}` → `genres` | field absent entirely — 0 tags across 956 artists |
 | `GET /playlists/{id}/tracks` | `403` — renamed to `/playlists/{id}/items` |
 | `POST /users/{id}/playlists` | `403` — use `POST /me/playlists` |
+| `PUT`/`DELETE /me/tracks?ids=` | removed on a client ID created after Feb 2026 — use `PUT`/`DELETE /me/library?uris=` (comma-separated `spotify:track:{id}`, max 40) instead. A grandfathered client ID still serves the old form, so every like/unlike call in this project tries the new path first and falls back to the old one, rather than picking one and breaking the other kind of app. |
 
 So Spotify can no longer tell you the genre, mood or tempo of anything. Genre
 signal comes from **Last.fm** artist tags — the backbone, covering most of a

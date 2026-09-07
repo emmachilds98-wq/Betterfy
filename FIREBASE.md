@@ -73,18 +73,15 @@ done yet. Three of the four things this feature needs are missing.
 
 ### Firestore, separately
 
-The unmerged branch `claude/shared-tag-cache` implements a public shared tag
-table on Firestore and is a different feature from this one. It is currently
-inert for two independent reasons, both worth knowing so they are not
-rediscovered later:
-
-- its build baked `TAGS_PROJECT = ''`, `TAGS_KEY = ''`, so the client never
-  makes the request; and
-- Firestore's rules are still deny-all, so the write would be rejected if it did
-  (`GET .../documents/tagContributions` → 403 `PERMISSION_DENIED`, which also
-  confirms the database itself exists).
-
-Leaving those rules deny-all is the correct state until that branch ships.
+The shared tag table — a public `tagContributions` collection that lets one
+listener's freshly-fetched Last.fm tags fill the gap for the next one — is a
+different feature from Cloud Storage sync, and it has since shipped (#28):
+`firestore.rules` in the repo root is deployed, `TAGS_PROJECT` and `TAGS_KEY`
+are baked into `docs/index.html`, and `GET .../documents/tagContributions`
+now returns `200 {}` rather than the `403 PERMISSION_DENIED` this section used
+to describe. Contribution is live. See `README.md`'s "The shared tag table"
+for how it works and `merge-tags.mjs` for the job that folds contributions
+back into `docs/tags.json`.
 
 ---
 

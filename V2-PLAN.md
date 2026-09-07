@@ -214,8 +214,11 @@ Tag coverage is the ceiling on every suggestion in the app.
 
 ### E. Be honest about multi-user
 
-The hosted build is capped at 25 users by Spotify's development mode, and
-extended quota is effectively unavailable to individual developers. Stop
+The hosted build is capped at 5 users by Spotify's development mode (down
+from 25 as of the February 2026 developer access update), and Extended Quota
+Mode is no longer even something an individual can apply for — since May 2025
+it requires a registered business, a launched service, 250,000+ monthly
+active users, and a company email address. Stop
 optimising for "share with friends"; make **bring-your-own-client-ID the primary
 path** — a 90-second guided setup with the copy-paste redirect URI the landing
 page already half-provides.

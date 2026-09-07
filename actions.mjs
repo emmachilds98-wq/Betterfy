@@ -72,9 +72,17 @@ export async function moveTrack(fromId, fromName, toId, toName, trackId, reason)
   return { from: fromName, to: toName, txn };
 }
 
+/** Spotify replaced PUT/DELETE /me/tracks?ids= with /me/library?uris= for a
+ *  client ID created after Feb 2026; try the new path first and fall back for
+ *  a grandfathered one that still serves the old form. */
+async function libraryCall(method, trackId) {
+  try { return await api(`/me/library?uris=spotify:track:${trackId}`, { method }); }
+  catch (e) { if (!/^40[34]/.test(e.message)) throw e; return await api(`/me/tracks?ids=${trackId}`, { method }); }
+}
+
 /** Unlike a track, recording enough to re-like it on undo. */
 export async function unlikeTrack(trackId, trackMeta) {
-  await api(`/me/tracks?ids=${trackId}`, { method: 'DELETE' });
+  await libraryCall('DELETE', trackId);
   return log({ op: 'unlike', trackIds: [trackId], trackMeta, undoable: true });
 }
 
@@ -112,7 +120,7 @@ export async function undo(entry) {
     return { removed: entry.trackIds.length };
   }
   if (entry.op === 'unlike') {
-    await api(`/me/tracks?ids=${entry.trackIds[0]}`, { method: 'PUT' });
+    await libraryCall('PUT', entry.trackIds[0]);
     log({ op: 'undo-unlike', of: entry.at, trackIds: entry.trackIds });
     return { restored: 1 };
   }

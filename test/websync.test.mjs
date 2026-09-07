@@ -57,7 +57,7 @@ const track = (id, name) => ({ id, name, duration_ms: 1000, external_ids: { isrc
  * `saved`           seeds stored state — for what a reopened page remembers.
  */
 function load({ playlists = [], liked = [], limit = () => 0, refuse = () => false,
-                fail = () => 0, saved = {} } = {}) {
+                fail = () => 0, quota = () => false, saved = {} } = {}) {
   const calls = [];
   const idb = fakeIndexedDB();
   const body = url => {
@@ -96,6 +96,8 @@ function load({ playlists = [], liked = [], limit = () => 0, refuse = () => fals
         json: async () => ({ error: { message: 'Server error' } }) };
       if (refuse(url)) return { ok: false, status: 403, headers: { get: () => null },
         json: async () => ({ error: { message: 'Forbidden' } }) };
+      if (quota(url, nth)) return { ok: false, status: 429, headers: { get: () => null },
+        json: async () => ({ error: { status: 429, message: 'Too many requests', reason: 'QUOTA_EXCEEDED' } }) };
       const retry = limit(url, nth);
       if (retry) return { ok: false, status: 429, headers: { get: h => h === 'retry-after' ? String(retry) : null },
         json: async () => { throw new SyntaxError('plain text'); } };
@@ -489,4 +491,27 @@ test('the budget resets per read, so each retry gets a fresh allowance', async (
   stop.on = false;
   const lib = await app.syncLibrary(false, () => {});
   assert.equal(lib.playlists.length, 3, 'the retry is not still carrying the last attempt’s spent budget');
+});
+
+// A QUOTA_EXCEEDED 429 means the app's whole request budget for the period is
+// gone, not a busy moment — so, unlike an ordinary 429, it must never be sat
+// through quietly nor answered with a countdown promising a retry that was
+// never going to succeed.
+test('a quota-exceeded 429 is surfaced immediately rather than quietly absorbed', async () => {
+  const app = load({ ...LIB, quota: url => url.includes('/playlists/p1/') });
+  const began = Date.now();
+  await assert.rejects(() => app.syncLibrary(false, () => {}), e => {
+    assert.equal(e.retryable, true, 'still worth a manual Try again — the quota may reset');
+    assert.equal(e.retryAfterMs, undefined, 'no countdown: waiting will not fix this on its own');
+    assert.match(e.message, /quota/i);
+    return true;
+  });
+  assert.ok(Date.now() - began < 5000, 'must not sit through it first, unlike an ordinary short pause');
+});
+
+test('a quota-exceeded 429 still leaves the read resumable, like any other retryable failure', async () => {
+  const app = load({ ...LIB, quota: (url, nth) => url.includes('/playlists/p1/') && nth === 1 });
+  await assert.rejects(() => app.syncLibrary(false, () => {}));
+  const lib = await app.syncLibrary(false, () => {});
+  assert.equal(lib.playlists.length, 3, 'the retry (nth=2) is past the one quota-exceeded response and succeeds');
 });

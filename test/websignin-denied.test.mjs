@@ -38,17 +38,17 @@ function fakeDom() {
   };
 }
 
-async function run(errorCode) {
+async function boot(search) {
   const dom = fakeDom();
   const toasts = [];
   const sandbox = {
     T: {}, S: {}, REDIRECT: 'https://example.test/Betterfy/',
-    location: { search: errorCode ? `?error=${errorCode}` : '' },
+    location: { search },
     URLSearchParams,
     $: dom.$,
     document: dom.document,
     LS: { store: {}, setItem(k, v) { this.store[k] = v; }, getItem(k) { return this.store[k]; } },
-    history: { replaceState() {} },
+    history: { calls: [], replaceState(...a) { this.calls.push(a); } },
     setTimeout: () => {},
     checkForUpdate: () => {},
     toast: m => toasts.push(m),
@@ -65,6 +65,8 @@ async function run(errorCode) {
   await vm.runInContext(friendly + `(async () => {\n${body}\n})()`, sandbox);
   return { dom, toasts, sandbox };
 }
+
+const run = errorCode => boot(errorCode ? `?error=${errorCode}` : '');
 
 test('access_denied reveals the "bring your own app" setup panel, expanded', async () => {
   const { dom } = await run('access_denied');
@@ -92,5 +94,37 @@ test('a different error code does not touch the setup panel at all', async () =>
 
 test('the access_denied toast itself points at the same escape hatch', async () => {
   const { toasts } = await run('access_denied');
+  assert.match(toasts[0], /approved/i);
+});
+
+// Spotify lets a non-allowlisted account complete sign-in and only refuses the
+// API calls that follow, with a 403 — discovered one step later than
+// access_denied, but the fix is identical. start()'s catch (untested here —
+// it needs the whole app booted) reloads to ?setup&reason=not_allowlisted
+// rather than rebuilding the panel in place, since by then stage() has already
+// overwritten #land's pristine markup. These pin what that reload lands on.
+
+test('a 403-after-sign-in reload reveals the same setup panel access_denied does', async () => {
+  const { dom } = await boot('?setup&reason=not_allowlisted');
+  assert.equal(dom.els.get('setupPanel').hidden, false);
+  assert.equal(dom.els.get('ownAppDetails').open, true);
+});
+
+test('a 403-after-sign-in reload leaves the same persistent explanation', async () => {
+  const { dom } = await boot('?setup&reason=not_allowlisted');
+  assert.ok(dom.cta._after, 'a fineprint hint is inserted after the CTA');
+  assert.match(dom.cta._after.innerHTML, /use your own Spotify app/);
+  assert.match(dom.cta._after.innerHTML, /#ownAppDetails/);
+});
+
+test('a 403-after-sign-in reload does not loop: the reason is stripped from the URL', async () => {
+  const { sandbox } = await boot('?setup&reason=not_allowlisted');
+  // The {} first argument crosses a vm realm boundary, so compare the URL
+  // alone rather than the whole call with assert.deepEqual.
+  assert.equal(sandbox.history.calls[0][2], 'https://example.test/Betterfy/?setup');
+});
+
+test('a 403-after-sign-in reload toasts too, distinctly from access_denied', async () => {
+  const { toasts } = await boot('?setup&reason=not_allowlisted');
   assert.match(toasts[0], /approved/i);
 });
