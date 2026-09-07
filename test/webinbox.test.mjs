@@ -127,3 +127,69 @@ test('toggleFileSel adds and removes, and re-renders either way', () => {
   assert.ok(!app.S.fileSel.has('p1'));
   assert.equal(app.calls.rendered, 2);
 });
+
+/* ---- the queue position the buttons act on ---- */
+/*
+ * vInbox() clamps its index to the end of the queue; every action used to read
+ * R.backlog[S.inboxAt] raw. Tapping a card under "Next up to file" moves that
+ * index, and filing then shortens the queue underneath it — so the card on
+ * screen and the track the buttons wrote to could be different rows, and at the
+ * very end of the queue there was no row at all and File, Skip and Unlike each
+ * returned in silence.
+ */
+
+test('the buttons act on the track the card is showing, not on a stale index', async () => {
+  const app = load({ backlog: [track('t1'), track('t2'), track('t3')], inboxAt: 5 });
+  assert.match(app.vInbox(), /Rinse It/);            // clamped to the last row
+  await app.fileCurrent('p1');
+  assert.deepEqual(app.calls.add, [['p1', 't3']], 'the last row is what gets filed');
+  assert.deepEqual(app.R.backlog.map(t => t.id), ['t1', 't2']);
+});
+
+test('the last track in the queue can actually be filed', async () => {
+  const app = load({ backlog: [track('t1'), track('t2')], inboxAt: 1 });
+  await app.fileCurrent('p1');
+  assert.deepEqual(app.R.backlog.map(t => t.id), ['t1']);
+  // The index now points past the end. Filing again must still work.
+  await app.fileCurrent('p1');
+  assert.deepEqual(app.calls.add, [['p1', 't2'], ['p1', 't1']]);
+  assert.equal(app.R.backlog.length, 0, 'the queue empties rather than jamming on its last row');
+});
+
+test('skipping the last track in the queue actually moves on from it', async () => {
+  // It goes to the back — where it already was — so staying put showed the very
+  // card that had just been skipped, and Skip looked like it did nothing.
+  const app = load({ backlog: [track('t1'), track('t2'), track('t3')], inboxAt: 2 });
+  app.recordSkip = async () => {};
+  await app.inboxAct('skip');
+  assert.deepEqual(app.R.backlog.map(t => t.id), ['t1', 't2', 't3']);
+  assert.equal(app.S.inboxAt, 0, 'the queue wraps to the front rather than re-showing the skipped card');
+});
+
+test('skipping in the middle of the queue holds its place', async () => {
+  const app = load({ backlog: [track('t1'), track('t2'), track('t3')], inboxAt: 0 });
+  app.recordSkip = async () => {};
+  await app.inboxAct('skip');
+  assert.deepEqual(app.R.backlog.map(t => t.id), ['t2', 't3', 't1'], 'the skipped card goes to the back');
+  assert.equal(app.S.inboxAt, 0, 'and the next one is already under it');
+});
+
+test('unliking the last track in the queue removes that track', async () => {
+  const app = load({ backlog: [track('t1'), track('t2')], inboxAt: 1 });
+  app.libraryCall = async () => {};
+  await app.inboxAct('unlike');
+  assert.deepEqual(app.R.backlog.map(t => t.id), ['t1']);
+});
+
+test('"Next up to file" opens the track that was tapped', () => {
+  // The cards under it show the head of the queue, so their index is an
+  // absolute position in it. Adding it to wherever the queue had been left
+  // instead opened a different track than the one under the finger.
+  const i = BUNDLE.indexOf("const gi = e.target.closest('[data-goinbox]')");
+  assert.ok(i > 0, 'the Next-up handler is missing — rebuild with npm run build:web');
+  const body = BUNDLE.slice(i, i + 400);
+  assert.match(body, /S\.inboxAt = Math\.min\(\+gi\.dataset\.goinbox \|\| 0,/);
+  assert.doesNotMatch(body, /S\.inboxAt \+ \(\+gi\.dataset\.goinbox/);
+  assert.match(BUNDLE, /const upNext = R\.backlog\.slice\(0, 4\);/,
+    'which is only an absolute position because the cards come off the head of the queue');
+});
