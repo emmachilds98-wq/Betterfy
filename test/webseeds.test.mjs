@@ -10,7 +10,7 @@ import vm from 'node:vm';
 
 const BUNDLE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
 
-function load({ top = {}, recent = [], playlists = [] } = {}) {
+function load({ top = {}, recent = [], playlists = [], idbStore = new Map() } = {}) {
   const i = BUNDLE.indexOf('async function listeningSeeds()');
   const j = BUNDLE.indexOf('async function runDiscovery(');
   assert.ok(i > 0 && j > i, 'seed block not found — rebuild with npm run build:web');
@@ -22,6 +22,7 @@ function load({ top = {}, recent = [], playlists = [] } = {}) {
   const calls = [];
   const sandbox = {
     LIB: { playlists },
+    idb: { get: async k => idbStore.get(k), set: async (k, v) => idbStore.set(k, v) },
     sp: async path => {
       calls.push(path);
       const m = path.match(/time_range=(\w+)/);
@@ -36,7 +37,7 @@ function load({ top = {}, recent = [], playlists = [] } = {}) {
   vm.runInContext(BUNDLE.slice(p, pEnd), sandbox);
   vm.runInContext(BUNDLE.slice(i, j), sandbox);
   const run = expr => vm.runInContext(expr, sandbox);
-  return { calls, sandbox, run,
+  return { calls, sandbox, run, idbStore,
     seeds: async () => run('listeningSeeds()').then(w => run('rankSeeds')(w)) };
 }
 
@@ -112,4 +113,50 @@ test('playlist radio asks Spotify nothing about your listening', () => {
   const app = load({ top: { short_term: ['Elsewhere'] } });
   app.run('rankSeeds')(app.run('playlistSeeds')({ tracks: [{ artists: [{ name: 'X' }] }] }));
   assert.deepEqual(app.calls, [], 'a playlist seed is local, and costs no requests');
+});
+
+/* ---------- caching the listening fetch across page loads ----------
+ * LISTENING_CACHE only saves a second caller *within one session* — every
+ * fresh load used to spend all four calls again a minute later, for a signal
+ * that barely moves within a few hours. */
+
+test('a fresh IndexedDB cache is filled after the first fetch', async () => {
+  const app = load({ top: { short_term: ['A'] }, recent: ['B'] });
+  await app.seeds();
+  const cached = app.idbStore.get('listening_raw');
+  assert.ok(cached, 'nothing was cached');
+  assert.equal(cached.data.topWindows[0].items[0], 'A');
+  assert.equal(cached.data.recentArtists[0], 'B');
+  assert.ok(Date.now() - cached.at < 1000);
+});
+
+test('a cache still inside its TTL is used instead of asking Spotify again', async () => {
+  const idbStore = new Map([['listening_raw', {
+    at: Date.now() - 1000,
+    data: { topWindows: [{ range: 'short_term', weight: 3, items: ['Cached Artist'] }], recentArtists: [] },
+  }]]);
+  const app = load({ top: { short_term: ['Should Not Be Seen'] }, idbStore });
+  const seeds = await app.seeds();
+  assert.deepEqual(app.calls, [], 'the cache answered — Spotify was never asked');
+  assert.deepEqual(own(seeds.map(s => s.name)), ['Cached Artist']);
+});
+
+test('a cache past its TTL is refreshed rather than trusted forever', async () => {
+  const FOUR_HOURS = 4 * 60 * 60 * 1000;
+  const idbStore = new Map([['listening_raw', {
+    at: Date.now() - FOUR_HOURS - 1000,
+    data: { topWindows: [{ range: 'short_term', weight: 3, items: ['Stale Artist'] }], recentArtists: [] },
+  }]]);
+  const app = load({ top: { short_term: ['Fresh Artist'] }, idbStore });
+  const seeds = await app.seeds();
+  assert.ok(app.calls.length > 0, 'an expired cache must not stop Spotify being asked');
+  assert.deepEqual(own(seeds.map(s => s.name)), ['Fresh Artist']);
+});
+
+test('a failed fetch is never cached, so the next call tries Spotify again rather than trusting an empty answer', async () => {
+  const idbStore = new Map();
+  const app = load({ idbStore });
+  vm.runInContext('sp = async () => { throw new Error("500"); }', app.sandbox);
+  await app.seeds();
+  assert.equal(idbStore.get('listening_raw'), undefined, 'a genuine failure must not freeze an empty result for the whole TTL');
 });

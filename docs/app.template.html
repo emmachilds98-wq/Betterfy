@@ -2923,20 +2923,37 @@ async function listeningSeeds() {
 // is not only what happened this month. Kept aside so getListening() below
 // can reuse the same raw fetch for the recently-active set, rather than
 // hitting Spotify a second time for it.
+//
+// This costs four calls (three top-artists windows plus recently-played), and
+// LISTENING_CACHE above only saves the second and third caller *within one
+// page session* — every fresh load spent all four again, even one minute
+// later, for a signal that barely moves within a few hours. Cached in
+// IndexedDB with a TTL for exactly that reason.
+const LISTENING_TTL = 4 * 60 * 60 * 1000;
 async function fetchListeningRaw() {
+  const cached = await idb.get('listening_raw');
+  if (cached && Date.now() - cached.at < LISTENING_TTL) return cached.data;
+
   const topWindows = [];
+  let anyFailure = false;
   for (const [range, weight] of [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]]) {
     try {
       const r = await sp(`/me/top/artists?limit=50&time_range=${range}`);
       topWindows.push({ range, weight, items: (r?.items ?? []).map(a => a.name) });
-    } catch {}
+    } catch { anyFailure = true; }
   }
   let recentArtists = [];
   try {
     const r = await sp('/me/player/recently-played?limit=50');
     recentArtists = (r?.items ?? []).flatMap(p => (p.track?.artists ?? []).map(a => a.name));
-  } catch {}
-  return { topWindows, recentArtists };
+  } catch { anyFailure = true; }
+
+  const data = { topWindows, recentArtists };
+  // A genuine failure keeps no cache, so the next call asks Spotify again
+  // rather than freezing a partial or empty answer for the whole TTL — the
+  // same principle syncLibrary already applies to a playlist Spotify refused.
+  if (!anyFailure) await idb.set('listening_raw', { at: Date.now(), data });
+  return data;
 }
 
 // Memoized for the session: whichever feature asks first (Discovery, the
