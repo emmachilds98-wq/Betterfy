@@ -109,20 +109,31 @@ Optionally, the browser now offers each freshly-fetched answer to a shared
 Firestore collection, and `npm run tags` folds those back into the file
 everyone downloads.
 
-What makes it safe to share is the split: **only what a public API returned**
-goes up. Last.fm's tags for an artist are the same answer for everyone,
-re-fetchable by anyone, so there is nothing to trust and nothing to poison.
-Corrections you make in the tag editor are opinionated and stay on your device.
+What makes it *mostly* safe to share is the split: **only what a public API
+returned** goes up, and only for an artist the shipped table doesn't already
+cover — Last.fm's tags for an artist are the same answer for everyone,
+re-fetchable by anyone, and an existing entry is never overwritten. That
+doesn't make it unpoisonable, though: the write is unauthenticated, and
+`merge-tags.mjs` checks a contribution's *shape* (a real Spotify artist ID
+format, sane tag names and counts), not whether it's *true*. Someone who looks
+up a real, uncovered artist ID could submit a plausible but false tag for it,
+and nothing here would catch that on its own — see the review-gate bullet
+below for what does. Corrections you make in the tag editor are opinionated
+and stay on your device regardless.
 
-Three more things keep it cheap and dull:
+Four more things keep it cheap, dull, and (mostly) safe:
 
 - **Nothing reads the database at runtime.** Browsers only write. A scheduled
   Action merges and commits, so the page's read path is unchanged and no
   listener pays a per-artist database read — the shipped table just gets better.
 - **Gaps only.** An artist already in `tags.json` is never overwritten, so the
   worst an unauthenticated write can do is add an artist nobody had. Validation
-  in `merge-tags.mjs` is the real boundary, and the commit diff is the audit
-  trail.
+  in `merge-tags.mjs` is the shape check; a human is the truth check — see next.
+- **The merge opens a PR, it doesn't push.** `.github/workflows/tags.yml` used
+  to commit straight to `main`, so a bad contribution shipped to every listener
+  the same night. It now opens (or updates) a PR against a rolling
+  `shared-tags-update` branch instead, so the diff — usually a handful of new
+  artists — gets a human's eyes before `docs/tags.json` actually changes.
 - **Entirely optional**, per the rule in `CLAUDE.md`. With no project configured
   the page makes no request, and however the request fails it is never the
   reason your own tag fetch went wrong. A fork with no Firebase behaves exactly
@@ -142,11 +153,39 @@ are reviewable in a diff and deployable:
 npx firebase-tools deploy --only firestore:rules
 ```
 
-**Until those rules are deployed, contributions are refused** — Firestore
-defaults to deny-all, so every write comes back `403 PERMISSION_DENIED`. Which
-is silent and harmless by design, and also means nothing is collected. That
-deploy is the one step between this being wired up and this being on. It needs
-no billing: Firestore runs on the free Spark plan.
+They're deployed and live on `betterfy-1a983` — a fresh `firebase deploy` is
+only needed if you change them, or point a fork at a different project. Until
+they're deployed, contributions are silently refused (`403 PERMISSION_DENIED`
+from Firestore's own deny-all default), which is harmless — it just means
+nothing is collected yet. Firestore runs on the free Spark plan either way.
+
+### App Check — closing the one open door
+
+The write above is unauthenticated by design, which is also its one real
+exposure: anyone can script it, at whatever volume they like, cheaper than the
+review gate above can keep up with. [App
+Check](https://firebase.google.com/docs/app-check) closes that without adding
+a sign-in — a reCAPTCHA v3 solve is exchanged for a token Firestore can be told
+to require on every write, so scripting the endpoint stops working even though
+nobody ever signs in.
+
+Off by default, same pattern as everything else here — set `APPCHECK_SITE_KEY`
+and `APPCHECK_APP_ID` in `.env` (see `.env.example` for what each is and where
+to get it) and rebuild, or the reCAPTCHA script never loads and no token is
+ever requested. Turn on **enforcement** for Cloud Firestore in the App Check
+console only after confirming real tokens are arriving there in **Monitor**
+mode — enforcing first risks rejecting every contribution, your own included.
+
+### Keeping the collection from growing forever
+
+`merge-tags.mjs` reads every contribution on every run but, without more,
+never deletes any of them — a processed one (merged, already covered, or
+rejected) just sits in Firestore forever, costing the next run a bigger read
+for nothing. Set `FIREBASE_SERVICE_ACCOUNT` (a service account JSON key with
+Firestore access, as a GitHub Actions secret) and the merge job deletes each
+contribution once it's accounted for. Left unset, this is a no-op — the merge
+runs exactly as before, and the collection just keeps growing (harmlessly, for
+a long time, on a small group's worth of contributions).
 
 Discogs results are deliberately **not** shared yet. Last.fm returns a 0–100
 confidence that maps cleanly onto the 0–10 scale `tags.json` stores, but

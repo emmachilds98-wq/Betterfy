@@ -7,9 +7,21 @@
 #
 # Deliberately a build-time job rather than a runtime read: the page's read path
 # does not change at all, so no listener pays a per-artist database read and the
-# free tier is never in play. Nothing here needs a secret — contributions are
-# public tag data this workflow is about to publish anyway, and the config it
-# needs is already baked into the published page.
+# free tier is never in play. The merge itself needs no secret — contributions
+# are public tag data this workflow is about to publish anyway, and the config
+# it needs is already baked into the published page. Only the optional prune
+# step (deleting contributions this run has already accounted for, so the
+# collection does not grow forever) needs one: FIREBASE_SERVICE_ACCOUNT, a
+# service account JSON key with Firestore access. Left unset, the merge still
+# runs exactly as before — pruning is a tidiness feature, not a dependency.
+#
+# Writes to tagContributions are unauthenticated by design, which means the
+# validation in merge-tags.mjs checks *shape*, not *truth* — anyone can look up
+# a real Spotify artist ID the shipped table doesn't cover yet and submit a
+# plausible but false genre tag for it. This used to push straight to main, so
+# a bad one shipped to every listener the same night, review-if-ever. It now
+# opens a PR instead: the diff is small (usually a handful of new artists) and
+# gets a human's eyes before anything goes live.
 name: Shared tags
 
 on:
@@ -17,10 +29,9 @@ on:
     - cron: '17 4 * * *'      # daily, off the hour so it is not queued with everything else
   workflow_dispatch:          # and on demand, for when you want to watch it work
 
-# The commit is the audit trail: contributions are unauthenticated, so the diff
-# is where a bad one gets noticed, and `git revert` is the undo.
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: shared-tags
@@ -40,6 +51,8 @@ jobs:
       - run: node --test
 
       - name: Merge contributions
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node merge-tags.mjs
 
       # tags.json is fetched with a cache-busting build stamp, so a new table
@@ -47,7 +60,9 @@ jobs:
       - name: Rebuild the page
         run: npm run build:web
 
-      - name: Commit if anything changed
+      - name: Open a PR if anything changed
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet -- docs/tags.json; then
             echo "No new artists — nothing to commit."
@@ -57,7 +72,18 @@ jobs:
             console.log(Object.keys(JSON.parse(fs.readFileSync("docs/tags.json","utf8"))).length))')
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # One rolling branch rather than a new one per run, so a quiet week
+          # does not leave a pile of stale PRs to sort through.
+          BRANCH=shared-tags-update
+          git checkout -B "$BRANCH"
           git add docs/tags.json docs/index.html
           git commit -m "Shared tags: ${count} artists covered" \
                      -m "Contributed Last.fm tags for artists the shipped table did not cover."
-          git push
+          git push -f origin "$BRANCH"
+          if gh pr view "$BRANCH" --json state --jq .state 2>/dev/null | grep -q OPEN; then
+            echo "PR already open on $BRANCH — the push above updated it."
+          else
+            gh pr create --base main --head "$BRANCH" \
+              --title "Shared tags: ${count} artists covered" \
+              --body "Unauthenticated contributions folded in since the last run — review the diff in \`docs/tags.json\` before merging. See the workflow comment in \`.github/workflows/tags.yml\` for why this is a PR rather than a direct push."
+          fi

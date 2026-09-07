@@ -94,7 +94,9 @@ test('the values that are public by design still ship', t => {
     + `SPOTIFY_REDIRECT_URI=https://emmachilds98-wq.github.io/Betterfy/\n`
     + `TAGS_PROJECT=betterfy-1a983\n`
     + `TAGS_KEY=AIzaSyBEom-MoIBCnC9g48dIeQ0MIRPeVptrBLQ\n`
-    + `CONTACT_EMAIL=access@example.test\n` });
+    + `CONTACT_EMAIL=access@example.test\n`
+    + `APPCHECK_SITE_KEY=6Le-example-site-key\n`
+    + `APPCHECK_APP_ID=1:940770314231:web:f3579103449980316b90f2\n` });
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const { ok, out } = build(dir);
   assert.ok(ok, `a build carrying only public values should succeed:\n${out}`);
@@ -102,6 +104,8 @@ test('the values that are public by design still ship', t => {
   assert.ok(html.includes(CLIENT_ID), 'the client ID is meant to be in there');
   assert.ok(html.includes('betterfy-1a983'));
   assert.ok(html.includes('access@example.test'), 'an explicitly configured contact email is meant to ship too');
+  assert.ok(html.includes('6Le-example-site-key'), 'a configured App Check site key is meant to ship too');
+  assert.ok(html.includes('1:940770314231:web:f3579103449980316b90f2'));
 });
 
 test('with no CONTACT_EMAIL set and no prior build to inherit from, none is baked in', t => {
@@ -117,6 +121,7 @@ test('with no CONTACT_EMAIL set and no prior build to inherit from, none is bake
   assert.ok(ok, out);
   const html = readFileSync(join(dir, 'docs', 'index.html'), 'utf8');
   assert.match(html, /const CONTACT_EMAIL = '';/);
+  assert.match(html, /const APPCHECK_SITE_KEY = '', APPCHECK_APP_ID = '';/);
 });
 
 test('a short or empty .env value never cries wolf', t => {

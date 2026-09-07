@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normaliseContribution, mergeContributions } from '../merge-tags.mjs';
+import { generateKeyPairSync, createVerify } from 'node:crypto';
+import { normaliseContribution, mergeContributions, serviceAccountAssertion, pruneContributions }
+  from '../merge-tags.mjs';
 
 /* Contributions arrive from unauthenticated browsers, so this validation is the
  * whole security boundary — nothing else stands between a stranger's POST and a
@@ -135,4 +137,95 @@ test('what merges is exactly the shape the page expects to load', () => {
     assert.equal(typeof pair[1], 'number');
     assert.ok(pair[1] >= 1 && pair[1] <= 10, `${pair[1]} is off the 0-10 scale`);
   }
+});
+
+/* ---------- pruning: deleting contributions this run already accounted for ----------
+ * Firestore's rules deny delete to everyone, including this script's own
+ * unauthenticated key — the whole point of the shared table's security model
+ * is that nobody, this script included, can rewrite or erase a contribution
+ * just by asking. Pruning therefore needs real service-account credentials,
+ * exchanged for an access token the same way any Google Cloud client would. */
+
+const { publicKey: TEST_PUBLIC, privateKey: TEST_PRIVATE } = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+});
+const ACCOUNT = { client_email: 'bot@betterfy-1a983.iam.gserviceaccount.com', private_key: TEST_PRIVATE };
+
+const decodePart = b64url => JSON.parse(Buffer.from(b64url, 'base64url').toString('utf8'));
+
+test('the assertion is a JWT signed with the service account\'s own key', () => {
+  const jwt = serviceAccountAssertion(ACCOUNT, Date.parse('2026-01-01T00:00:00Z'));
+  const [header, claim, signature] = jwt.split('.');
+  assert.deepEqual(decodePart(header), { alg: 'RS256', typ: 'JWT' });
+  assert.deepEqual(decodePart(claim), {
+    iss: ACCOUNT.client_email,
+    scope: 'https://www.googleapis.com/auth/datastore',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: 1767225600, exp: 1767229200,
+  });
+  const verified = createVerify('RSA-SHA256').update(`${header}.${claim}`)
+    .verify(TEST_PUBLIC, Buffer.from(signature, 'base64url'));
+  assert.ok(verified, 'must verify against the key that supposedly signed it');
+});
+
+test('the assertion is scoped to Firestore only, not the whole Google Cloud project', () => {
+  // A leaked prune credential must not be a blank cheque against the project.
+  const { scope } = decodePart(serviceAccountAssertion(ACCOUNT).split('.')[1]);
+  assert.equal(scope, 'https://www.googleapis.com/auth/datastore');
+});
+
+test('a tampered claim no longer verifies against the same signature', () => {
+  const jwt = serviceAccountAssertion(ACCOUNT);
+  const [header, claim, signature] = jwt.split('.');
+  const forged = Buffer.from(JSON.stringify({ ...decodePart(claim), scope: 'https://www.googleapis.com/auth/cloud-platform' }))
+    .toString('base64url');
+  const verified = createVerify('RSA-SHA256').update(`${header}.${forged}`)
+    .verify(TEST_PUBLIC, Buffer.from(signature, 'base64url'));
+  assert.equal(verified, false, 'widening the scope after signing must invalidate the signature');
+});
+
+test('pruning fetches a token once, then deletes each id with it', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url: String(url), method: opts?.method, auth: opts?.headers?.authorization });
+    if (String(url).includes('oauth2.googleapis.com')) return { ok: true, json: async () => ({ access_token: 'tok-123' }) };
+    return { ok: true, json: async () => ({}) };
+  };
+  try {
+    const { deleted, failed } = await pruneContributions('betterfy-1a983', ACCOUNT, ['a1', 'a2']);
+    assert.equal(deleted, 2);
+    assert.deepEqual(failed, []);
+    const deletes = calls.filter(c => c.method === 'DELETE');
+    assert.equal(deletes.length, 2);
+    assert.ok(deletes.every(c => c.auth === 'Bearer tok-123'), 'every delete carries the fetched token');
+    assert.ok(deletes[0].url.endsWith('/tagContributions/a1'));
+    assert.ok(deletes[1].url.endsWith('/tagContributions/a2'));
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('one failed delete does not stop the rest, and is reported rather than lost', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    if (String(url).includes('oauth2.googleapis.com')) return { ok: true, json: async () => ({ access_token: 'tok' }) };
+    return { ok: !String(url).endsWith('/bad'), json: async () => ({}) };
+  };
+  try {
+    const { deleted, failed } = await pruneContributions('p', ACCOUNT, ['good1', 'bad', 'good2']);
+    assert.equal(deleted, 2);
+    assert.deepEqual(failed, ['bad']);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('an empty id list never spends a token exchange', async () => {
+  const realFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => { called = true; return { ok: true, json: async () => ({}) }; };
+  try {
+    const result = await pruneContributions('p', ACCOUNT, []);
+    assert.deepEqual(result, { deleted: 0, failed: [] });
+    assert.equal(called, false);
+  } finally { globalThis.fetch = realFetch; }
 });

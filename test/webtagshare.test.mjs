@@ -17,28 +17,44 @@ const BUNDLE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf
  * The contributor, with config injected rather than read from the build, so
  * both the on and off states can be driven whatever the shipped build carries.
  */
-function load({ project = 'betterfy-tags', key = 'AIza' + 'x'.repeat(30), raw = {} } = {}) {
+function load({ project = 'betterfy-tags', key = 'AIza' + 'x'.repeat(30), raw = {},
+                appCheckSiteKey = '', appCheckAppId = '', fetchImpl = null } = {}) {
   const from = BUNDLE.indexOf('const TAGS_PROJECT =');
   const to = BUNDLE.indexOf('async function discogsTags');
   assert.ok(from > 0 && to > from, 'contributeTags not found — rebuild with npm run build:web');
   // Whatever the build baked in, swap it for what this test wants. Matching the
   // line rather than one particular value, so these keep working whether the
-  // shipped build has sharing on or off.
+  // shipped build has sharing (or App Check) on or off.
   const src = BUNDLE.slice(from, to)
     .replace(/const TAGS_PROJECT = '[^']*', TAGS_KEY = '[^']*';/,
-      `const TAGS_PROJECT = ${JSON.stringify(project)}, TAGS_KEY = ${JSON.stringify(key)};`);
+      `const TAGS_PROJECT = ${JSON.stringify(project)}, TAGS_KEY = ${JSON.stringify(key)};`)
+    .replace(/const APPCHECK_SITE_KEY = '[^']*', APPCHECK_APP_ID = '[^']*';/,
+      `const APPCHECK_SITE_KEY = ${JSON.stringify(appCheckSiteKey)}, APPCHECK_APP_ID = ${JSON.stringify(appCheckAppId)};`);
   assert.ok(src.includes(`TAGS_PROJECT = ${JSON.stringify(project)}`), 'config injection missed');
 
   const calls = [];
+  const defaultFetch = async (url, opts, ms) => {
+    calls.push({ url, opts, ms });
+    if (String(url).includes('firebaseappcheck.googleapis.com'))
+      return { ok: true, json: async () => ({ token: 'app-check-token-abc', ttl: '3600s' }) };
+    return { ok: true, json: async () => ({}) };
+  };
   const sandbox = {
     RAW_TAGS: raw,
-    fetchDeadline: async (url, opts, ms) => { calls.push({ url, opts, ms }); return { ok: true }; },
-    Date, JSON, encodeURIComponent, console,
+    fetchDeadline: fetchImpl ? (url, opts, ms) => fetchImpl(url, opts, ms, calls) : defaultFetch,
+    // Only ever touched when App Check is configured — harmless stubs otherwise.
+    document: { head: { appendChild: s => s.onload?.() }, createElement: () => ({}) },
+    grecaptcha: { ready: cb => cb(), execute: () => Promise.resolve('recaptcha-token') },
+    Date, JSON, encodeURIComponent, console, setTimeout,
   };
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox);
   return Object.assign(sandbox, { calls });
 }
+
+/** contributeTags kicks off async work (the App Check exchange) without the
+ *  caller awaiting anything, by design — this lets a test wait for it to settle. */
+const settle = () => new Promise(r => setTimeout(r, 0));
 
 const TAGS = [['jungle', 100], ['breakbeat', 60]];
 const ARTIST = '4Z8W4fKeB5YxbusRsdQVPb';
@@ -133,4 +149,87 @@ test('the request carries a deadline, like every other one in the page', () => {
   app.contributeTags(ARTIST, TAGS);
   const { ms } = app.calls[0];
   assert.ok(ms > 0 && ms <= 20000, `${ms}ms is not a sane deadline for a background gift`);
+});
+
+/* ---------- App Check: closing the one open door on an unauthenticated write ----------
+ * The write itself is unauthenticated by design (Firestore's rules are a shape
+ * check, not a trust boundary), so it is the one place in the whole app open
+ * to being scripted at volume. App Check closes that without a sign-in: a
+ * reCAPTCHA v3 solve is exchanged for a token Firestore can be told to
+ * require. Same optional pattern as sharing itself — off unless configured,
+ * and never the reason a contribution fails to go out. */
+
+const APP_ID = '1:940770314231:web:f3579103449980316b90f2';
+
+test('with no App Check configured, contributing makes exactly the one Firestore call', () => {
+  const app = load();
+  app.contributeTags(ARTIST, TAGS);
+  assert.equal(app.calls.length, 1);
+  assert.ok(app.calls[0].url.startsWith('https://firestore.googleapis.com/'));
+  assert.equal(app.calls[0].opts.headers['X-Firebase-AppCheck'], undefined);
+});
+
+test('an unreplaced App Check placeholder counts as off, like the tag-sharing ones do', () => {
+  const app = load({ appCheckSiteKey: '__APPCHECK_SITE_KEY__', appCheckAppId: '__APPCHECK_APP_ID__' });
+  app.contributeTags(ARTIST, TAGS);
+  assert.equal(app.calls.length, 1);
+  assert.equal(app.calls[0].opts.headers['X-Firebase-AppCheck'], undefined);
+});
+
+test('a bare site key with no app id also counts as off — both are required', () => {
+  const app = load({ appCheckSiteKey: 'a-real-looking-site-key', appCheckAppId: '' });
+  app.contributeTags(ARTIST, TAGS);
+  assert.equal(app.calls.length, 1);
+  assert.equal(app.calls[0].opts.headers['X-Firebase-AppCheck'], undefined);
+});
+
+test('with App Check configured, a token is exchanged and attached before the write goes out', async () => {
+  const app = load({ appCheckSiteKey: 'site-key-123456', appCheckAppId: APP_ID });
+  app.contributeTags(ARTIST, TAGS);
+  await settle();
+  assert.equal(app.calls.length, 2, 'the token exchange, then the actual write');
+  const exchange = app.calls.find(c => c.url.includes('firebaseappcheck.googleapis.com'));
+  assert.ok(exchange, 'no exchange call was made');
+  assert.ok(exchange.url.includes(`/projects/940770314231/apps/${APP_ID}:exchangeRecaptchaV3Token`),
+    'the project number comes from the app id, not TAGS_PROJECT');
+  assert.equal(JSON.parse(exchange.opts.body).recaptchaV3Token, 'recaptcha-token');
+  const write = app.calls.find(c => c.url.includes('firestore.googleapis.com'));
+  assert.equal(write.opts.headers['X-Firebase-AppCheck'], 'app-check-token-abc');
+});
+
+test('a failed token exchange still lets the write go out, just without the header', async () => {
+  const app = load({
+    appCheckSiteKey: 'site-key-123456', appCheckAppId: APP_ID,
+    fetchImpl: async (url, opts, ms, calls) => {
+      if (String(url).includes('firebaseappcheck')) return { ok: false, status: 403, json: async () => ({}) };
+      calls.push({ url, opts, ms });
+      return { ok: true, json: async () => ({}) };
+    },
+  });
+  app.contributeTags(ARTIST, TAGS);
+  await settle();
+  assert.equal(app.calls.length, 1, 'the write itself still happened');
+  assert.ok(app.calls[0].url.startsWith('https://firestore.googleapis.com/'));
+  assert.equal(app.calls[0].opts.headers['X-Firebase-AppCheck'], undefined);
+});
+
+test('a cached token is reused rather than re-exchanged on every contribution', async () => {
+  let exchanges = 0;
+  const app = load({
+    appCheckSiteKey: 'site-key-123456', appCheckAppId: APP_ID,
+    fetchImpl: async (url, opts, ms, calls) => {
+      if (String(url).includes('firebaseappcheck')) {
+        exchanges++;
+        return { ok: true, json: async () => ({ token: 'app-check-token-abc', ttl: '3600s' }) };
+      }
+      calls.push({ url, opts, ms });
+      return { ok: true, json: async () => ({}) };
+    },
+  });
+  app.contributeTags(ARTIST, TAGS);
+  await settle();
+  app.contributeTags('anotherArtistId12345678', TAGS);
+  await settle();
+  assert.equal(exchanges, 1, 'the second contribution reused the cached token');
+  assert.equal(app.calls.length, 2, 'but both writes still went out');
 });

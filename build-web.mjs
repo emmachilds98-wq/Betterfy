@@ -59,6 +59,13 @@ const TAGS_KEY = arg('tags-key') ?? readEnv('TAGS_KEY')
 const CONTACT_EMAIL = arg('contact-email') ?? readEnv('CONTACT_EMAIL')
   ?? built(/const CONTACT_EMAIL = '([^'@]+@[^'@]+\.[^']+)'/) ?? '';
 
+// Same again: blank means the shared-tag write never loads reCAPTCHA or asks
+// for an App Check token, and behaves exactly as it did before either existed.
+const APPCHECK_SITE_KEY = arg('appcheck-site-key') ?? readEnv('APPCHECK_SITE_KEY')
+  ?? built(/const APPCHECK_SITE_KEY = '([^']{10,})'/) ?? '';
+const APPCHECK_APP_ID = arg('appcheck-app-id') ?? readEnv('APPCHECK_APP_ID')
+  ?? built(/APPCHECK_APP_ID = '(\d+:\d+:web:[^']+)'/) ?? '';
+
 // Strip module syntax so these can be concatenated into one classic script.
 const bundle = file => readFileSync(file, 'utf8')
   .replace(/^\s*import[^;]*;$/gm, '')
@@ -74,6 +81,8 @@ const html = readFileSync('docs/app.template.html', 'utf8')
   .replace('__TAGS_PROJECT__', TAGS_PROJECT)
   .replace('__TAGS_KEY__', TAGS_KEY)
   .replace('__CONTACT_EMAIL__', CONTACT_EMAIL)
+  .replace('__APPCHECK_SITE_KEY__', APPCHECK_SITE_KEY)
+  .replace('__APPCHECK_APP_ID__', APPCHECK_APP_ID)
   .replaceAll('__BUILD__', BUILD);
 
 /* The old guard matched the *names* SPOTIFY_CLIENT_SECRET, LASTFM_SHARED_SECRET
@@ -87,7 +96,7 @@ const html = readFileSync('docs/app.template.html', 'utf8')
  * key are public by design — they name a thing, they do not authorise anything,
  * and the whole PKCE-and-rules design depends on being able to ship them. */
 const PUBLIC_BY_DESIGN = new Set(['SPOTIFY_CLIENT_ID', 'SPOTIFY_REDIRECT_URI',
-  'TAGS_PROJECT', 'TAGS_KEY', 'CONTACT_EMAIL']);
+  'TAGS_PROJECT', 'TAGS_KEY', 'CONTACT_EMAIL', 'APPCHECK_SITE_KEY', 'APPCHECK_APP_ID']);
 
 /** @returns {string|null} the name of the first .env value found in `out`. */
 function leakedSecret(out) {
@@ -119,4 +128,5 @@ if (!CLIENT_ID && !process.argv.includes('--allow-missing-id'))
 writeFileSync('docs/index.html', html);
 console.log(`docs/index.html — ${(html.length / 1024).toFixed(0)} KB, client id ${CLIENT_ID ? 'embedded' : 'MISSING'}`
   + `, shared tags ${TAGS_PROJECT && TAGS_KEY ? `→ ${TAGS_PROJECT}` : 'off'}`
-  + `, request-access link ${CONTACT_EMAIL ? `→ ${CONTACT_EMAIL}` : 'off'}`);
+  + `, request-access link ${CONTACT_EMAIL ? `→ ${CONTACT_EMAIL}` : 'off'}`
+  + `, App Check ${APPCHECK_SITE_KEY && APPCHECK_APP_ID ? 'on' : 'off'}`);
