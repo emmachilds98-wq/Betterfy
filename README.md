@@ -187,6 +187,25 @@ contribution once it's accounted for. Left unset, this is a no-op — the merge
 runs exactly as before, and the collection just keeps growing (harmlessly, for
 a long time, on a small group's worth of contributions).
 
+### Syncing skip/reject feedback across your own devices
+
+A different feature again, using the same Firebase project: Settings →
+**Sync across devices** lets two of your own signed-in devices share
+skip/reject feedback (how many times a track's been skipped, and which
+playlists it's been rejected for), so a decision made on your phone doesn't
+have to be re-made on your laptop. Nothing else syncs yet — tag corrections
+and axis overrides still stay local to whichever device set them.
+
+It signs each device in to Firebase **anonymously** (no email, no password,
+invisible — this has nothing to do with your Spotify account) so Firestore
+can tell "a device this app trusts" from "anyone on the internet," and links
+a second device with a short-lived six-digit code rather than making anyone
+type a UUID. Hidden entirely unless `TAGS_PROJECT`/`TAGS_KEY` are configured,
+same as sharing itself, and inert even then until you actually tap **Link
+another device** — opening the page never creates an identity or writes
+anything on its own. Full design, the Firestore rules, and how the merge
+works in `FIREBASE.md`.
+
 Discogs results are deliberately **not** shared yet. Last.fm returns a 0–100
 confidence that maps cleanly onto the 0–10 scale `tags.json` stores, but
 `discogsTags()` returns a count of releases carrying each style — a different
