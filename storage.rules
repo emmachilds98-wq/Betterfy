@@ -1,0 +1,47 @@
+rules_version = '2';
+
+// Cloud Storage holds one thing: a private per-account copy of the library
+// snapshot the browser already keeps in IndexedDB, so a backlog started at a
+// desk can be finished on a sofa. It is not shared, not published, and not
+// readable by anyone else — the opposite posture to the tag table, where the
+// whole point is that the data is public.
+//
+// Which means the rule that matters is the boring one: a signed-in account can
+// touch its own prefix and nothing else. The bucket lives behind a public web
+// API key on a static GitHub Pages site, so there is no server to check this
+// later — if these rules are wrong, the data is simply open.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Everything Betterfy writes lives under the writer's own Firebase uid.
+    // {file=**} rather than {file} so nested paths (parts/, snapshots/) stay
+    // inside the same fence instead of falling through to no rule at all.
+    match /users/{uid}/{file=**} {
+
+      function mine() { return request.auth != null && request.auth.uid == uid; }
+
+      allow read: if mine();
+
+      // create and update are spelled out rather than folded into `write`,
+      // because `write` also covers delete — and on a delete `request.resource`
+      // is null, so a size check written that way rejects every deletion.
+      //
+      // 32 MiB against a library.json that is ~11 MB raw and well under 3 MB
+      // gzipped: room for a library several times the size of the one this was
+      // built on, and still far inside the 5 GB no-cost tier at one blob per
+      // account. The cap is here so a bug in the client cannot quietly turn a
+      // sync into a bill.
+      allow create, update: if mine()
+        && request.resource.size < 32 * 1024 * 1024
+        && request.resource.contentType.matches('application/.*');
+
+      allow delete: if mine();
+    }
+
+    // No rule matches anything else, so nothing else is reachable. Stated
+    // rather than left implicit: the default bucket is shared with anything
+    // else this project ever adds, and silence here is easy to misread as
+    // "nobody got round to it" instead of "deliberately closed".
+  }
+}

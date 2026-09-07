@@ -28,6 +28,7 @@ const own = x => JSON.parse(JSON.stringify(x));
 /** In-memory idb.tags_extra, just enough for the functions under test. */
 function load({ tags = {}, rawTags = {}, key = 'lfm-key', fetchTags = null } = {}) {
   let store = {};
+  const shared = [];
   const sandbox = {
     TAGS: JSON.parse(JSON.stringify(tags)),
     RAW_TAGS: JSON.parse(JSON.stringify(rawTags)),
@@ -38,6 +39,8 @@ function load({ tags = {}, rawTags = {}, key = 'lfm-key', fetchTags = null } = {
       set: async (k, v) => { if (k === 'tags_extra') store = JSON.parse(JSON.stringify(v)); },
     },
     LS: { getItem: k => (k === 'bf_lfm' ? key : null) },
+    // Refetching offers the fresh tags to the shared table on its way past.
+    contributeTags: (...a) => shared.push(a),
     fetch: async () => ({ json: async () => fetchTags ?? { toptags: { tag: [] } } }),
     toast: () => {},
     esc: s => String(s ?? ''),
@@ -46,7 +49,7 @@ function load({ tags = {}, rawTags = {}, key = 'lfm-key', fetchTags = null } = {
   };
   vm.createContext(sandbox);
   vm.runInContext(slice("/* ---------- correcting one artist's tags", 'const VIEWS = ', 'tag-correction block'), sandbox);
-  return Object.assign(sandbox, { store: () => store });
+  return Object.assign(sandbox, { store: () => store, shared });
 }
 
 test('saveArtistTags overrides the shipped tags and rebuilds reports', async () => {

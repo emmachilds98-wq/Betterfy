@@ -1,0 +1,63 @@
+# Fold contributed Last.fm tags into docs/tags.json.
+#
+# Tag coverage is the ceiling on every suggestion Betterfy makes, and the
+# shipped table only ever covered one person's artists. Browsers offer what
+# Last.fm told them; this folds it back into the file everyone downloads, so
+# nobody re-solves a gap someone else has already filled.
+#
+# Deliberately a build-time job rather than a runtime read: the page's read path
+# does not change at all, so no listener pays a per-artist database read and the
+# free tier is never in play. Nothing here needs a secret — contributions are
+# public tag data this workflow is about to publish anyway, and the config it
+# needs is already baked into the published page.
+name: Shared tags
+
+on:
+  schedule:
+    - cron: '17 4 * * *'      # daily, off the hour so it is not queued with everything else
+  workflow_dispatch:          # and on demand, for when you want to watch it work
+
+# The commit is the audit trail: contributions are unauthenticated, so the diff
+# is where a bad one gets noticed, and `git revert` is the undo.
+permissions:
+  contents: write
+
+concurrency:
+  group: shared-tags
+  cancel-in-progress: false   # never interrupt a run partway through a commit
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # If the merge is wrong, everything downstream is wrong inside a 400KB
+      # file nobody reads by hand. Same gate as CI, before anything is written.
+      - run: node --test
+
+      - name: Merge contributions
+        run: node merge-tags.mjs
+
+      # tags.json is fetched with a cache-busting build stamp, so a new table
+      # needs a new build before it reaches anyone.
+      - name: Rebuild the page
+        run: npm run build:web
+
+      - name: Commit if anything changed
+        run: |
+          if git diff --quiet -- docs/tags.json; then
+            echo "No new artists — nothing to commit."
+            exit 0
+          fi
+          count=$(node -e 'import("node:fs").then(fs =>
+            console.log(Object.keys(JSON.parse(fs.readFileSync("docs/tags.json","utf8"))).length))')
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/tags.json docs/index.html
+          git commit -m "Shared tags: ${count} artists covered" \
+                     -m "Contributed Last.fm tags for artists the shipped table did not cover."
+          git push

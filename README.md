@@ -72,6 +72,64 @@ just to get started. A free
 Playlists, is optional and only ever fills an artist Last.fm has nothing on
 at all — a real Last.fm tag always wins.
 
+### The shared tag table
+
+Tag coverage is the ceiling on every suggestion Betterfy makes, and
+`docs/tags.json` ships **4,866 artists** — one person's library. Everyone
+else's gaps used to get filled by their own Last.fm key, into their own
+browser's IndexedDB, where the answer helped nobody else and died the moment
+they cleared site data. Every listener re-solved the same gaps from scratch.
+
+Optionally, the browser now offers each freshly-fetched answer to a shared
+Firestore collection, and `npm run tags` folds those back into the file
+everyone downloads.
+
+What makes it safe to share is the split: **only what a public API returned**
+goes up. Last.fm's tags for an artist are the same answer for everyone,
+re-fetchable by anyone, so there is nothing to trust and nothing to poison.
+Corrections you make in the tag editor are opinionated and stay on your device.
+
+Three more things keep it cheap and dull:
+
+- **Nothing reads the database at runtime.** Browsers only write. A scheduled
+  Action merges and commits, so the page's read path is unchanged and no
+  listener pays a per-artist database read — the shipped table just gets better.
+- **Gaps only.** An artist already in `tags.json` is never overwritten, so the
+  worst an unauthenticated write can do is add an artist nobody had. Validation
+  in `merge-tags.mjs` is the real boundary, and the commit diff is the audit
+  trail.
+- **Entirely optional**, per the rule in `CLAUDE.md`. With no project configured
+  the page makes no request, and however the request fails it is never the
+  reason your own tag fetch went wrong. A fork with no Firebase behaves exactly
+  as Betterfy did before any of this existed.
+
+The live project is **`betterfy-1a983`**, and the build already carries it —
+`docs/index.html` has `TAGS_PROJECT` and `TAGS_KEY` baked in, both public (a
+Firebase web key names a project, it does not authorise anything; `firestore.rules`
+does the real work). To point a fork somewhere else:
+`npm run build:web -- --tags-project=<id> --tags-key=<key>`, or put
+`TAGS_PROJECT` / `TAGS_KEY` in `.env`.
+
+The rules live in `firestore.rules` rather than only in a console tab, so they
+are reviewable in a diff and deployable:
+
+```
+npx firebase-tools deploy --only firestore:rules
+```
+
+**Until those rules are deployed, contributions are refused** — Firestore
+defaults to deny-all, so every write comes back `403 PERMISSION_DENIED`. Which
+is silent and harmless by design, and also means nothing is collected. That
+deploy is the one step between this being wired up and this being on. It needs
+no billing: Firestore runs on the free Spark plan.
+
+Discogs results are deliberately **not** shared yet. Last.fm returns a 0–100
+confidence that maps cleanly onto the 0–10 scale `tags.json` stores, but
+`discogsTags()` returns a count of releases carrying each style — a different
+scale entirely, and baking that mismatch into a file everyone downloads would
+skew every suggestion those artists take part in. The `source` field is there
+so it can be added once it is normalised.
+
 **A wrong suggestion is usually a wrong tag, not a wrong model.** Last.fm's
 tags are per *artist*, not per track, and crowd-submitted — a same-named act,
 a stray scrobble, or a niche artist with three taggers is enough to mistag
@@ -324,6 +382,33 @@ tiles" toggle governed have been replaced by the coloured cards on Home.
 Settings is reachable from the landing screen too, though re-sync only appears
 once there is a library to re-read.
 
+### What ships, and what must never
+
+Three values are baked into `docs/index.html` on purpose, and it is worth being
+able to tell them apart from the ones that would be a real leak:
+
+| Ships | Why it is safe |
+|---|---|
+| `SPOTIFY_CLIENT_ID` | Names an app. Authentication is PKCE, so no secret is involved — this is the design, not a compromise. |
+| `TAGS_PROJECT` | A Firebase project name. |
+| `TAGS_KEY` | A Firebase *web* key. It identifies a project rather than authorising anything; `firestore.rules` is what actually decides. |
+
+| Never ships | |
+|---|---|
+| `SPOTIFY_CLIENT_SECRET` | Only `auth.mjs` / `spotify.mjs` use it, locally, and only because the local app refreshes tokens the classic way. The web build has no use for it at all. |
+| `LASTFM_API_KEY`, `LASTFM_SHARED_SECRET` | The hosted page asks each listener for their own key, kept in their browser. |
+| `DISCOGS_TOKEN` | Same. |
+
+`build-web.mjs` refuses to write a page containing any of the second group. It
+checks the **values** in `.env`, not just the variable names — a secret pasted
+into the template by hand arrives with no name attached, which is the shape a
+real accident takes. `test/buildguard.test.mjs` runs the real build script
+against a poisoned copy of the repo to prove the guard fires.
+
+`.tokens.json` (your Spotify refresh token), `library.json`, `rekordbox.json`
+and the `report-*.json` files are all gitignored — they are yours, and none of
+them belongs in a public repo.
+
 ## Why it uses Last.fm and Discogs
 
 Verified against a freshly registered Spotify app in September 2026:
@@ -494,6 +579,10 @@ guess, and everything downstream reads the file, not the rules.
 | | |
 |---|---|
 | `spotify.mjs` | API client — token refresh, pagination, 429 retry |
+| `merge-tags.mjs` | Folds contributed Last.fm tags into `docs/tags.json` |
+| `firestore.rules` | Shared tag table — deliberately public, shape-checked |
+| `storage.rules` | Per-account private blobs — not provisioned yet, see `FIREBASE.md` |
+| `FIREBASE.md` | Verified project state, console steps, and the cross-device sync plan |
 | `norm.mjs` / `credits.mjs` | track identity and collaboration-credit splitting |
 | `profile.mjs` | tag vectors, playlist centroids, IDF, ranking |
 | `enrich-lastfm.mjs` / `enrich-discogs.mjs` / `tagstore.mjs` | fetch and merge genre tags — Discogs only ever fills what Last.fm left empty |

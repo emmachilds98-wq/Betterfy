@@ -31,6 +31,29 @@ function builtClientId() {
   } catch { return null; }
 }
 
+/* The shared tag table, which is optional in a way the client ID is not: with
+ * no project configured the page simply never contributes, and behaves exactly
+ * as it did before any of this existed. Same read order as the client ID —
+ * argv, .env, then whatever the last build baked in — so a rebuild in a fresh
+ * clone cannot silently switch sharing off. Both values are public: a Firebase
+ * web key identifies a project, it does not authorise anything. The Firestore
+ * rules do that. */
+const readEnv = k => {
+  try {
+    const line = readFileSync('.env', 'utf8').split('\n').find(l => l.startsWith(k + '='));
+    return line?.slice(k.length + 1).trim() || null;
+  } catch { return null; }
+};
+const built = re => {
+  try { return readFileSync('docs/index.html', 'utf8').match(re)?.[1] ?? null; } catch { return null; }
+};
+const arg = k => process.argv.slice(2).find(a => a.startsWith(`--${k}=`))?.split('=').slice(1).join('=');
+
+const TAGS_PROJECT = arg('tags-project') ?? readEnv('TAGS_PROJECT')
+  ?? built(/const TAGS_PROJECT = '([a-z][a-z0-9-]{3,39})'/) ?? '';
+const TAGS_KEY = arg('tags-key') ?? readEnv('TAGS_KEY')
+  ?? built(/TAGS_KEY = '([A-Za-z0-9_-]{20,})'/) ?? '';
+
 // Strip module syntax so these can be concatenated into one classic script.
 const bundle = file => readFileSync(file, 'utf8')
   .replace(/^\s*import[^;]*;$/gm, '')
@@ -43,10 +66,43 @@ const core = ['norm.mjs', 'credits.mjs', 'profile.mjs'].map(f =>
 const html = readFileSync('docs/app.template.html', 'utf8')
   .replace('__CORE__', core)
   .replace('__CLIENT_ID__', CLIENT_ID)
+  .replace('__TAGS_PROJECT__', TAGS_PROJECT)
+  .replace('__TAGS_KEY__', TAGS_KEY)
   .replaceAll('__BUILD__', BUILD);
 
-if (/SPOTIFY_CLIENT_SECRET|LASTFM_SHARED_SECRET|DISCOGS_TOKEN/.test(html))
-  throw new Error('Refusing to build: a secret leaked into the web bundle.');
+/* The old guard matched the *names* SPOTIFY_CLIENT_SECRET, LASTFM_SHARED_SECRET
+ * and DISCOGS_TOKEN, which only catches a leak that happens to arrive carrying
+ * its own label. A value pasted into the template by hand, or interpolated by
+ * some future build step, has no name attached to it at all — exactly the shape
+ * a real accident takes. So check the values too: anything in .env that is not
+ * meant to ship must not appear in the output.
+ *
+ * The allowlist is short and deliberate. A Spotify client ID and a Firebase web
+ * key are public by design — they name a thing, they do not authorise anything,
+ * and the whole PKCE-and-rules design depends on being able to ship them. */
+const PUBLIC_BY_DESIGN = new Set(['SPOTIFY_CLIENT_ID', 'SPOTIFY_REDIRECT_URI',
+  'TAGS_PROJECT', 'TAGS_KEY']);
+
+/** @returns {string|null} the name of the first .env value found in `out`. */
+function leakedSecret(out) {
+  let env;
+  try { env = readFileSync('.env', 'utf8'); } catch { return null; }
+  for (const line of env.split('\n')) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.+?)\s*$/);
+    if (!m) continue;
+    const [, name, value] = m;
+    if (PUBLIC_BY_DESIGN.has(name)) continue;
+    // Short values are placeholders, or too common to match on without crying
+    // wolf over every "true" and "1" someone leaves in a config.
+    if (value.length >= 8 && out.includes(value)) return name;
+  }
+  return null;
+}
+
+const named = html.match(/SPOTIFY_CLIENT_SECRET|LASTFM_SHARED_SECRET|LASTFM_API_KEY|DISCOGS_TOKEN/);
+const valued = leakedSecret(html);
+if (named || valued)
+  throw new Error(`Refusing to build: ${valued ?? named[0]} leaked into the web bundle.`);
 
 // A page with no client ID looks fine and cannot sign anyone in, which is the
 // worst way for a build to fail — so it fails here instead.
@@ -55,4 +111,5 @@ if (!CLIENT_ID && !process.argv.includes('--allow-missing-id'))
     + 'set SPOTIFY_CLIENT_ID in .env, or pass --allow-missing-id if you really mean it.');
 
 writeFileSync('docs/index.html', html);
-console.log(`docs/index.html — ${(html.length / 1024).toFixed(0)} KB, client id ${CLIENT_ID ? 'embedded' : 'MISSING'}`);
+console.log(`docs/index.html — ${(html.length / 1024).toFixed(0)} KB, client id ${CLIENT_ID ? 'embedded' : 'MISSING'}`
+  + `, shared tags ${TAGS_PROJECT && TAGS_KEY ? `→ ${TAGS_PROJECT}` : 'off'}`);
