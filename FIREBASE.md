@@ -1,56 +1,157 @@
-# Firebase — Cloud Storage for cross-device library sync
+# Firebase — cross-device sync
 
-Status as of 2026-09-07, verified against the live project rather than assumed.
-Read the "Blocker" section first: the bucket does not exist yet and cannot be
-created from here.
+Status as of 2026-09-07, verified against the live project rather than assumed
+where noted below.
 
 ---
 
-## What Betterfy wants Cloud Storage for
+## What this is for
 
 `V2-PLAN.md` §2.3 — *"It only works where you're sitting."* Everything the
 browser build knows lives in one origin's IndexedDB (`betterfy`/`kv`) and
-`localStorage`: the library snapshot, artist tags, the skip/reject feedback map,
-axis overrides. Clear site data and it is gone; open the page on a phone and it
-starts from an empty library and a multi-minute sync.
-
-Cloud Storage holds **one private blob per account** — a gzipped copy of that kv
-store — so a filing backlog started at a desk can be finished on a sofa.
+`localStorage`: the library snapshot, artist tags, the skip/reject feedback
+map, tag corrections, axis overrides. Clear site data and it is gone; sign in
+on a phone and it starts from an empty library and a multi-minute sync — with
+no memory of anything decided on the desktop.
 
 This is a bonus feature under `CLAUDE.md`'s rule, not infrastructure: with no
 Firebase config baked into the build the page must make no requests, show no
-sign-in, and behave exactly as it does today. Nothing in the filing, tagging or
-misfile model may lean on it.
+sign-in, and behave exactly as it does today. Nothing in the filing, tagging
+or misfile model may lean on it.
 
-### Why Cloud Storage and not Firestore
+## The recommended design: sync the small state through Firestore
 
-The blob is ~11 MB raw and under 3 MB gzipped — past Firestore's 1 MB document
-limit, so Firestore would mean chunking it across documents and paying a read
-per chunk. One object per account is the cheaper and duller shape. The cost is
-the blocker below: Firestore runs on the free Spark plan, Cloud Storage does not.
+**Not** the ~11 MB library snapshot — that's re-derivable from Spotify on any
+device, so losing it costs a re-sync, not data. What's worth syncing is the
+small, non-re-derivable state: skip/reject feedback, tag corrections, axis
+overrides, the action log. That's kilobytes, fits Firestore's free Spark plan
+comfortably, and gets per-field merge instead of last-writer-wins on a blob —
+which also sidesteps the "a stale phone flattens a desktop's afternoon of
+filing" problem a whole-blob sync has to solve with custom metadata guards.
+The first read on a new device stays slow either way, because that's
+Spotify's rate limit, not storage.
 
----
+(An earlier version of this file proposed Cloud Storage for a full library
+blob instead. See "Considered and rejected" below for why — kept for the
+record, not as a live option.)
 
-## Blocker: Cloud Storage requires the Blaze plan
+### The identity problem, and why it doesn't need a server
 
-`betterfy-1a983` is on **Spark (billing not enabled)**. Since September 2024,
-provisioning a default Cloud Storage bucket requires the pay-as-you-go **Blaze**
-plan — on Spark the console redirects to an upgrade page and the API returns
-402/403. Verified two ways:
+Firebase Auth and Spotify's OAuth are two unrelated systems. There's no way
+for a Firestore security rule to check "this write is really from whoever
+owns Spotify account X" without something server-side vouching for that link
+— normally a Cloud Function that mints a Firebase custom token from a
+verified Spotify token, giving one sign-in and `uid = Spotify user id`. That's
+the *right* design, but it needs Blaze (Functions isn't on Spark) and a
+function to maintain, in a project whose whole identity is "no server." Not
+worth it for kilobytes of feedback data.
 
-- `firebase_get_environment` reports `Billing Enabled: No`.
-- `GET https://firebasestorage.googleapis.com/v0/b/betterfy-1a983.firebasestorage.app/o`
-  → **404 Not Found**. The bucket named in the SDK config does not exist. (The
-  `storageBucket` field is populated from the project's intended default name
-  whether or not the bucket has been created — it is not evidence of a bucket.)
+The alternative that needs neither a server nor a second real sign-in:
+**Firebase Anonymous Auth, plus an explicit device-link step.**
 
-Blaze needs a card on file. It still includes the no-cost tier, and this
-workload sits far inside it: 5 GB stored, 1 GB/day egress, 5,000 uploads and
-50,000 downloads per month, against one ~3 MB blob written a few times a day.
-Set a budget alert anyway.
+1. Each device signs in to Firebase anonymously (free, no UI, no password) —
+   this is what gives it write access under the rules below at all. It has
+   nothing to do with *which* Spotify account is signed in; two anonymous
+   devices are unrelated until linked.
+2. The *first* device to ever sync generates a random sync-group id (a UUID,
+   generated locally, no server round trip) and creates
+   `syncGroups/{groupId}` with itself as the sole member. All the small state
+   lives under `syncGroups/{groupId}/state/*` from then on.
+3. **Linking a second device**: the first device shows a short code (six
+   digits, expires in ~10 minutes) and writes it to `linkCodes/{code} = {
+   groupId, createdAt }`. The second device's owner types that code in; the
+   second device reads that one document (the code is the secret — anyone
+   who doesn't have it can't guess it in the window it's valid), learns the
+   group id, adds its own anonymous uid to that group's `members`, and
+   deletes the code so it can't be reused.
+4. From then on, every device with its own uid in `syncGroups/{groupId}.members`
+   can read and write `syncGroups/{groupId}/state/*` — enforced entirely by
+   Firestore rules checking `request.auth.uid in
+   get(/databases/$(database)/documents/syncGroups/$(groupId)).data.members`,
+   no server involved.
 
-**Emma has to do this step** — nobody else should be putting a payment method on
-her account.
+Draft rules for this shape (write these into `firestore.rules` as a new
+`match` block alongside the existing `tagContributions` one — they're
+independent collections and can coexist):
+
+```
+match /syncGroups/{groupId} {
+  allow get: if request.auth != null && request.auth.uid in resource.data.members;
+  allow create: if request.auth != null
+                && request.resource.data.members == [request.auth.uid];
+  // Joining (via a redeemed link code) may only ever add the caller's own
+  // uid, never remove or replace anyone else's.
+  allow update: if request.auth != null
+                && request.auth.uid in resource.data.members.concat([request.auth.uid])
+                && request.resource.data.members ==
+                   resource.data.members.concat([request.auth.uid]);
+
+  match /state/{doc} {
+    allow read, write: if request.auth != null && request.auth.uid in
+      get(/databases/$(database)/documents/syncGroups/$(groupId)).data.members;
+  }
+}
+
+match /linkCodes/{code} {
+  // The code itself is short-lived and single-use; anyone holding it can
+  // redeem it, same trust model as a "forgot password" email link.
+  allow create: if request.auth != null && request.resource.data.groupId is string;
+  allow get, delete: if request.auth != null;
+}
+```
+
+### What's needed before this can be built
+
+**Firebase Auth must be enabled with the Anonymous provider** — currently
+`identitytoolkit` on `betterfy-1a983` returns `CONFIGURATION_NOT_FOUND` (see
+the verified state below), meaning no Auth provider is on at all yet. This is
+a console step, not something a build or a script can do:
+
+1. Firebase console → Build → Authentication → Get started.
+2. Sign-in method → Anonymous → Enable.
+3. Authentication → Settings → Authorized domains → confirm
+   `emmachilds98-wq.github.io` is listed (it should be added automatically,
+   but double-check — a missing entry fails sign-in on the live site with
+   `auth/unauthorized-domain` while working fine on localhost).
+
+Nothing else about the project needs to change — this stays on Spark, no
+Blaze, no card on file.
+
+### Client wiring — the shape to build once Auth is on
+
+- **Load the Auth SDK in a separate `<script type="module">`** that resolves
+  a ready promise on `window`, the same reason `TAGS_PROJECT`/App Check avoid
+  it: `app.template.html` is one concatenated classic script, and the
+  Firebase v12 SDK is ESM-only.
+- **Sign in anonymously on first load, silently** — no button, no visible
+  step. `onAuthStateChanged` gives the uid once it resolves.
+- **The device-link UI** lives in the More sheet, near Disconnect: "Link
+  another device" shows a code and starts polling `linkCodes/{code}` for
+  deletion (meaning it was redeemed); "I have a code" is the input on the
+  joining device.
+- **Sync is additive/merge, never a snapshot overwrite.** Feedback and
+  overrides are keyed by track/artist id already — writing `state/feedback`
+  as a map keyed the same way means two devices editing different tracks
+  never conflict, and the same track edited on both takes whichever write
+  landed last (acceptable for this data; unlike a library blob, there's no
+  large piece to lose).
+- **Optional, per `CLAUDE.md`, same as everything else here.** No
+  `APPCHECK`-style build-time flag exists for this yet because it needs a
+  second SDK either way — the natural gate is simply whether the Auth SDK
+  resolved a uid. No uid, no sync, page behaves exactly as it does today.
+- **Failure is never fatal.** Same rule tag contribution follows: local
+  IndexedDB/localStorage stays the source of truth, and a sync that fails is
+  a toast, not a broken session.
+
+Tests belong in `test/websync-firestore.test.mjs`, following the pattern in
+`test/webtagshare.test.mjs` and `test/websignin-denied.test.mjs` — slice the
+function out of the built `docs/index.html` and run it in a `vm` sandbox
+against a scripted Firestore/Auth stub, so "degrades silently with no uid" and
+"the rules enforce membership" are pinned rather than asserted. The rules
+themselves are worth a `firebase-tools` emulator test if that becomes
+practical in CI; short of that, the membership logic above should at least be
+read by a second pair of eyes before it goes live, since a rules bug here is a
+privacy bug (someone else's feedback data), not just a broken feature.
 
 ---
 
@@ -61,66 +162,58 @@ her account.
 | Project | `betterfy-1a983` (number `940770314231`), created 2026-09-07, ACTIVE |
 | Web app | registered, display name `https://emmachilds98-wq.github.io/Betterfy/` |
 | App ID | `1:940770314231:web:f3579103449980316b90f2` |
-| Billing | **Spark — not enabled** |
-| Cloud Storage | **bucket does not exist** (404) |
-| Firebase Auth | **not enabled** — `identitytoolkit` returns `CONFIGURATION_NOT_FOUND` |
-| Firestore | exists, rules are the default deny-all |
-| Repo | no Firebase reference anywhere on `main` |
+| Billing | **Spark — not enabled** (and this plan doesn't need it to change) |
+| Cloud Storage | **bucket does not exist** (404) — irrelevant to this plan |
+| Firebase Auth | **not enabled** — `identitytoolkit` returns `CONFIGURATION_NOT_FOUND`. **This is the one blocker** — see "What's needed before this can be built" above. |
+| Firestore | exists, rules deployed. `tagContributions` (shared tags, #28) is live; `syncGroups`/`linkCodes` for this feature don't exist yet |
+| Repo | `firestore.rules`, `.firebaserc`, `firebase.json` are in the repo root and point at this project |
 
-So the project has been *created* correctly — right name, right web app, app
-named after the actual Pages URL — and then nothing after that step has been
-done yet. Three of the four things this feature needs are missing.
+### Firestore, separately: the shared tag table
 
-### Firestore, separately
-
-The shared tag table — a public `tagContributions` collection that lets one
-listener's freshly-fetched Last.fm tags fill the gap for the next one — is a
-different feature from Cloud Storage sync, and it has since shipped (#28):
-`firestore.rules` in the repo root is deployed, `TAGS_PROJECT` and `TAGS_KEY`
-are baked into `docs/index.html`, and `GET .../documents/tagContributions`
-now returns `200 {}` rather than the `403 PERMISSION_DENIED` this section used
-to describe. Contribution is live. See `README.md`'s "The shared tag table"
-for how it works and `merge-tags.mjs` for the job that folds contributions
-back into `docs/tags.json`.
+A different feature from this one, already shipped (#28, #31) — a public
+`tagContributions` collection that lets one listener's freshly-fetched Last.fm
+tags fill the gap for the next one. See `README.md`'s "The shared tag table"
+for how it works, `merge-tags.mjs` for the job that folds contributions back
+into `docs/tags.json`, and `.github/workflows/tags.yml` for the review gate
+and optional pruning around it. Nothing about it changes with the sync
+feature above — different collections, different trust models (that one is
+intentionally public and unauthenticated; this one is intentionally private
+and auth-gated).
 
 ---
 
-## Console steps (in order)
+## Considered and rejected: Cloud Storage for a full library blob
 
-1. **Upgrade to Blaze.** Firebase console → ⚙ → Usage and billing → Modify plan.
-   Set a budget alert while you are there.
-2. **Create the default Storage bucket.** Build → Storage → Get started. Take
-   the default name `betterfy-1a983.firebasestorage.app`. Choose a
-   **`us-central1`, `us-east1` or `us-west1`** location — the always-free egress
-   quota only applies in those three, and the location cannot be changed later.
-   Start in locked mode; the rules below replace whatever it creates.
-3. **Enable Authentication** with the **Google** provider. Storage rules cannot
-   scope anything to an account without it, and a bucket behind a public web API
-   key with no auth is an open bucket.
-4. **Add the authorized domain.** Authentication → Settings → Authorized
-   domains → add `emmachilds98-wq.github.io`. Without it sign-in fails on the
-   live site with `auth/unauthorized-domain` while working fine on localhost.
-5. **Deploy the rules** (from the repo root, after step 2 — this needs the
-   bucket to exist):
+An earlier pass proposed one private ~11 MB gzipped blob per account in Cloud
+Storage, mirroring the whole IndexedDB `kv` store rather than just the small
+state. Rejected because:
 
-   ```
-   npx firebase-tools deploy --only storage
-   ```
+- **It needs Blaze.** Since September 2024, provisioning a default Cloud
+  Storage bucket requires the pay-as-you-go plan — on Spark the console
+  redirects to an upgrade page and the API returns 402/403. Confirmed live:
+  `GET https://firebasestorage.googleapis.com/v0/b/betterfy-1a983.firebasestorage.app/o`
+  → `404 Not Found` (the bucket named in the SDK config doesn't exist yet;
+  the `storageBucket` field is populated from the project's intended default
+  name regardless of whether the bucket has been created, so it's not
+  evidence of one). Blaze needs a card on file, and while the free tier
+  covers this workload comfortably (5 GB stored, 1 GB/day egress, 5,000
+  uploads/50,000 downloads a month against one ~3 MB blob written a few times
+  a day), that's still a step **only Emma should take** — nobody else should
+  be putting a payment method on her account.
+- **It solves the wrong problem.** The library itself is fully re-derivable
+  from Spotify on any device; syncing it is convenience, not data recovery.
+  What actually can't be recovered — feedback, corrections, overrides — is
+  exactly the small state the Firestore design above targets directly,
+  without needing Blaze at all.
+- **A blob needs a stale-write guard the small state doesn't.** Overwriting
+  a whole snapshot risks a stale phone flattening a desktop's afternoon of
+  filing; that needs device-id-and-timestamp metadata checks before every
+  write. Per-field merge on small, id-keyed state sidesteps the problem
+  rather than solving it.
 
-Steps 2–5 are all reversible. Step 1 is the one with a card attached.
-
----
-
-## Config, corrected
-
-`.firebaserc`, `firebase.json` and `storage.rules` are now in the repo and point
-at `betterfy-1a983`. The rules give each account its own prefix and nothing
-else; the reasoning is in the comments in `storage.rules`, including why
-`create, update` and `delete` are spelled out separately rather than folded into
-`write`.
-
-The web SDK config for the registered app, read from the project rather than
-retyped:
+If a genuinely large, non-derivable blob shows up later (there isn't one
+today), this is the place to revisit Cloud Storage — the SDK config below is
+still accurate if that day comes:
 
 ```js
 {
@@ -134,52 +227,7 @@ retyped:
 }
 ```
 
-All of it is public — a Firebase web key names a project, it does not authorise
-anything; `storage.rules` does the real work. Same posture the shared-tag branch
-already documents for `TAGS_KEY`.
-
-Bake it at build time the way `build-web.mjs` already handles `SPOTIFY_CLIENT_ID`
-— argv, then `.env`, then whatever the last build left in `docs/index.html`.
-That last fallback exists because `.env` is gitignored, and without it a rebuild
-in a fresh clone silently ships a page with the feature switched off. Add
-`FIREBASE_CONFIG` (the JSON above, one line) to `.env.example` with a note that
-it is public and optional.
-
----
-
-## App wiring — the shape to build
-
-Not yet written. The constraints that should drive it:
-
-- **Optional, per `CLAUDE.md`.** No config baked in → no SDK loaded, no sign-in
-  UI, no request. A fork with no Firebase behaves exactly as Betterfy does now.
-- **Load the SDK in a separate `<script type="module">`** that resolves a ready
-  promise on `window`. `app.template.html` is one concatenated classic script
-  and the Firebase v12 SDK is ESM-only; module scripts are deferred, so the
-  classic script has to await that promise rather than assume it.
-- **`signInWithPopup`, not `signInWithRedirect`.** The site is on
-  `github.io` while the auth handler is on `firebaseapp.com`, and redirect
-  sign-in is the flow that browsers' third-party-cookie blocking breaks. Handle
-  a blocked popup with a real message, not a silent failure.
-- **Two identities is a real cost.** Signing into Google *as well as* Spotify is
-  friction on a page whose whole sign-in story is currently one Spotify button.
-  Anonymous auth avoids it but gives a different uid per device, which is
-  exactly the thing cross-device sync needs to not happen — it would need an
-  explicit device-linking step. A Cloud Function minting a custom token from the
-  Spotify token would give one sign-in and `uid = Spotify user id`, at the cost
-  of a function to maintain. Worth deciding deliberately rather than defaulting.
-- **Set `contentType` explicitly on upload** (`application/gzip`). The rules
-  match on it, and an upload with no content type is denied.
-- **Gzip with `CompressionStream('gzip')`** — no library needed.
-- **Guard the overwrite.** Store the device id and a timestamp in the object's
-  custom metadata and check them before writing, so a stale phone cannot
-  silently flatten a desktop's afternoon of filing. The existing action log is
-  the thing that makes a bad merge recoverable; it should go up with the blob.
-- **Failure is never fatal.** Same rule the tag contribution follows: the local
-  IndexedDB copy is the source of truth, and a sync that fails is a toast, not a
-  broken session.
-
-Tests belong in `test/webcloud.test.mjs`, following the pattern in
-`test/webstorage.test.mjs` — slice the function out of the built
-`docs/index.html` and run it in a `vm` sandbox against a hostile stub, so the
-"it must degrade silently" claims above are pinned rather than asserted.
+All of it is public — a Firebase web key names a project, it does not
+authorise anything; the rules do the real work, same posture already
+documented for `TAGS_KEY`. `storage.rules` in the repo root still gives each
+account its own prefix, for whenever (if ever) this gets revisited.
