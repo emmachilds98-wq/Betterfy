@@ -128,6 +128,37 @@ test('the mirror is recognised wherever the reports ask, by id as well as by nam
   assert.match(body, /const pinnedAllSongs = \(\) => LS\.getItem\(ALL_SONGS_KEY\)/);
 });
 
+/* ---- artistHistory fallback: the mirror must never count as evidence ---- */
+
+test('an unfiled track from an artist with no tag data at all still gets a suggestion, from filing history', () => {
+  const { lib, cfg } = library({ mirrored: false });
+  // "Nobody" is not in TAGS at all — the first-login gap this exists for —
+  // but two of their other tracks are already filed in Jungle.
+  lib.playlists[0].tracks.push(track('h9', 'Nobody', 'Some Roller'), track('h10', 'Nobody', 'Another Roller'));
+  lib.liked.push(track('new1', 'Nobody', 'Brand New One'));
+
+  const row = own(reports(lib, cfg, TAGS).backlog).find(b => b.id === 'new1');
+  assert.ok(row, 'the new track sits in the backlog, unfiled');
+  assert.equal(row.suggest[0]?.via, 'history');
+  assert.equal(row.suggest[0]?.id, 'p1');
+  assert.equal(row.suggest[0]?.count, 2);
+  assert.equal(row.suggest[0]?.total, 2);
+});
+
+test('the mirror never inflates a filing-history count, even though the same tracks sit inside it too', () => {
+  const { lib, cfg } = library({ mirrored: true });
+  const h1 = track('h9', 'Nobody', 'Some Roller'), h2 = track('h10', 'Nobody', 'Another Roller');
+  lib.playlists[0].tracks.push(h1, h2);   // Jungle — the only real filing target
+  lib.playlists[2].tracks.push(h1, h2);   // also present in the mirror, as it would be in practice
+  lib.liked.push(track('new1', 'Nobody', 'Brand New One'));
+
+  const row = own(reports(lib, cfg, TAGS).backlog).find(b => b.id === 'new1');
+  assert.equal(row.suggest[0]?.via, 'history');
+  assert.equal(row.suggest[0]?.id, 'p1', 'Jungle, never the mirror — cfg marks it target: false');
+  assert.equal(row.suggest[0]?.count, 2, 'the mirror copies do not double the count');
+  assert.equal(row.suggest[0]?.total, 2);
+});
+
 test('a renamed mirror is still treated as a view of the library, not a playlist', () => {
   const { lib, cfg } = library({ mirrored: true });
   const mirror = lib.playlists.find(p => p.name === MIRROR);

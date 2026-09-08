@@ -2,7 +2,7 @@
 //   1. Is anything filed somewhere that fits another playlist much better?
 //   2. Where should the 850 unfiled liked songs go — and what has no home at all?
 import { readFileSync, writeFileSync } from 'node:fs';
-import { buildProfiles, rank, topTags, trackVec, applyIdf, cosine, findMisfiled, findDrift, isThinSignal } from './profile.mjs';
+import { buildProfiles, rank, topTags, trackVec, applyIdf, cosine, findMisfiled, findDrift, isThinSignal, artistHistory } from './profile.mjs';
 import { loadTags } from './tagstore.mjs';
 import { fetchListening } from './listening.mjs';
 
@@ -52,17 +52,28 @@ const filed = new Set();
 for (const p of lib.playlists) for (const t of p.tracks) filed.add(t.id);
 const unfiled = lib.liked.filter(t => t?.id && !filed.has(t.id));
 
+// Tag-based fit is the stronger signal whenever there is any. The artist's
+// own filing history only ever steps in when rank() has nothing confident to
+// say — exactly the gap a thin or missing Last.fm answer leaves open — and it
+// costs no fetch at all: it's just where the user already put this artist's
+// other tracks.
+let viaHistory = 0;
 const placed = [], homeless = [];
 for (const t of unfiled) {
   const best = rank(t, tags, profiles, idf, { top: 3 });
+  const confident = best.length && best[0].score >= 0.30;
+  const history = confident ? [] : artistHistory(t, lib, targets);
+  if (history.length) viaHistory++;
   const row = {
     id: t.id, artist: t.artists?.[0]?.name, title: t.name,
     added: (t.added_at ?? '').slice(0, 10),
-    suggest: best.map(b => ({ name: b.name, score: +b.score.toFixed(3) })),
+    suggest: confident
+      ? best.map(b => ({ name: b.name, score: +b.score.toFixed(3), via: 'tags' }))
+      : history.map(h => ({ name: h.name, score: +h.score.toFixed(3), count: h.count, total: h.total, via: 'history' })),
     tags: topTags(t, tags, idf),
     thinData: isThinSignal(t, tags),
   };
-  (best.length && best[0].score >= 0.30 ? placed : homeless).push(row);
+  (confident || history.length ? placed : homeless).push(row);
 }
 placed.sort((a, b) => b.suggest[0].score - a.suggest[0].score);
 
@@ -106,7 +117,7 @@ for (const d of drift)
   console.log(`  ${d.playlistName} — recent ${d.recentTags.join(', ')} vs older ${d.olderTags.join(', ')} (similarity ${d.similarity.toFixed(2)})`);
 
 console.log(`\n\n=== UNFILED BACKLOG: ${unfiled.length} ===`);
-console.log(`  confident home:  ${placed.length}`);
+console.log(`  confident home:  ${placed.length}` + (viaHistory ? ` (${viaHistory} from filing history, no tags)` : ''));
 console.log(`  no good home:    ${homeless.length}`);
 console.log('\n  top 15 confident placements:');
 for (const p of placed.slice(0, 15))

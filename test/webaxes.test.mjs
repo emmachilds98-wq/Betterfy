@@ -83,6 +83,16 @@ test('a genre name that contains a mood word as a substring is not mood', () => 
   assert.equal(of('e').axis, 'mood');
 });
 
+test('the All Songs mirror is never treated as a filing target, however it would otherwise classify', () => {
+  // It holds a copy of every track by construction, so left eligible it would
+  // always "win" as a destination — a centroid of the whole library, and (once
+  // artistHistory() existed) every artist's own placement trivially
+  // "confirmed" by their own copy sitting inside it.
+  const of = axisOf([pl('as1', 'All Songs — Betterfy')]);
+  assert.equal(of('as1').axis, 'genre', 'falls through to genre exactly like any other unnamed playlist');
+  assert.equal(of('as1').target, false, 'but is never offered as a destination');
+});
+
 test('a playlist built in one night and never touched since reads as an event', () => {
   // Named for who you were with, so the name gives nothing away.
   const of = axisOf([pl('x', 'me tash and liv', { span: 1, since: 200 })]);
