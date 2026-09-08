@@ -21,13 +21,14 @@
 // core model depends on.
 //
 // UNVERIFIED against a live response: this environment's network policy has
-// no route to musicbrainz.org, so the parser below is written from MB's
+// no route to musicbrainz.org, so the parsers below are written from MB's
 // documented ws/2 JSON shape rather than a fetched sample. extractArtistMbid()
-// is deliberately defensive — it tries the shapes MB's docs describe and
-// returns null on anything else — so a shape mismatch degrades to "no MBID
-// found" (falls back to the name-based Last.fm lookup) rather than breaking
-// the run. Confirm the real shape once MUSICBRAINZ_CONTACT is set and adjust
-// extractArtistMbid() if it differs.
+// and extractGenresAndTags() are both deliberately defensive — they try the
+// shapes MB's docs describe and return null/empty on anything else — so a
+// shape mismatch degrades to "nothing found" (identity resolution falls back
+// to the name-based Last.fm lookup; genres/tags just contribute nothing)
+// rather than breaking the run. Confirm the real shapes once
+// MUSICBRAINZ_CONTACT is set and adjust either function if they differ.
 import { retry, sleep } from './cache.mjs';
 
 const UA_VERSION = 'Betterfy/1.0';
@@ -85,4 +86,43 @@ export async function resolveMbids(pairs, contact) {
     await sleep(1000);
   }
   return out;
+}
+
+/**
+ * Pull an artist's `genres` and community `tags` out of a MusicBrainz artist
+ * lookup response, folded into one tally the way trackVec() expects: MB's
+ * per-tag `count` is how many users applied it, a small integer (often 1-5),
+ * nothing like Last.fm's 0-100 relative scale — rescaled the same way
+ * Discogs' release count already is, so the two sources land on one scale
+ * rather than one drowning out the other in an average.
+ */
+export function extractGenresAndTags(json) {
+  const entries = [...(json?.genres ?? []), ...(json?.tags ?? [])];
+  const tally = new Map();
+  for (const e of entries) {
+    if (!e?.name || !Number.isFinite(e.count)) continue;
+    const name = e.name.toLowerCase();
+    tally.set(name, Math.max(tally.get(name) ?? 0, e.count));
+  }
+  const ranked = [...tally].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const most = ranked[0]?.[1] || 1;
+  return ranked.map(([name, n]) => [name, Math.round(100 * n / most)]);
+}
+
+/**
+ * Fetch genres/tags for an artist MusicBrainz identity resolution has
+ * already found an id for — no second identity lookup, just one more field
+ * on the same entity. Never throws; an unreachable server or an artist with
+ * neither genres nor tags both come back as "nothing here".
+ */
+export async function fetchArtistGenres(mbid, contact) {
+  const url = `https://musicbrainz.org/ws/2/artist/${mbid}?` + new URLSearchParams({
+    inc: 'genres+tags', fmt: 'json',
+  });
+  try {
+    const json = await retry(() => fetch(url, {
+      headers: { 'User-Agent': `${UA_VERSION} ( ${contact} )` },
+    }).then(r => r.json()), 2);
+    return extractGenresAndTags(json);
+  } catch { return []; }
 }

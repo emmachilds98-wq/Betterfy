@@ -2,7 +2,7 @@
   "name": "music-filer",
   "version": "0.1.0",
   "private": true,
-  "description": "File, de-duplicate and discover music across a large Spotify library, using Last.fm and Discogs for the genre data Spotify no longer provides.",
+  "description": "File, de-duplicate and discover music across a large Spotify library, using Last.fm, MusicBrainz, Discogs and iTunes for the genre data Spotify no longer provides.",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -12,6 +12,7 @@
     "snapshot": "node snapshot.mjs",
     "enrich": "node enrich-lastfm.mjs",
     "enrich:discogs": "node enrich-discogs.mjs",
+    "enrich:itunes": "node enrich-itunes.mjs",
     "axes": "node axes.mjs",
     "dupes": "node dupes.mjs",
     "misfile": "node misfile.mjs",
@@ -21,7 +22,7 @@
     "build:review": "node build-review.mjs",
     "test": "node --test",
     "start": "node server.mjs",
-    "setup": "node auth.mjs && node snapshot.mjs && node enrich-lastfm.mjs && node enrich-discogs.mjs && node axes.mjs",
+    "setup": "node auth.mjs && node snapshot.mjs && node enrich-lastfm.mjs && node enrich-discogs.mjs && node enrich-itunes.mjs && node axes.mjs",
     "build:web": "node build-web.mjs",
     "build:icons": "node make-icons.mjs",
     "rekordbox": "node rekordbox.mjs",
