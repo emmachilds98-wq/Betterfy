@@ -64,7 +64,11 @@ function load({ artists = [], answers = {}, cache = {}, discogs = null } = {}) {
 test('a real "no tags anywhere" answer is cached, so it costs nothing next time', async () => {
   const app = load({ artists: ['Nobody'], answers: { Nobody: lfmTags([]) } });
   await app.enrichMissing();
-  assert.deepEqual(JSON.parse(JSON.stringify(app.store()['a-Nobody'])), { tags: [] });
+  const stored = JSON.parse(JSON.stringify(app.store()['a-Nobody']));
+  assert.deepEqual(stored.tags, []);
+  // Stamped so a later run knows how long ago this was actually checked,
+  // rather than re-asking Last.fm about it on every single run forever.
+  assert.equal(typeof stored.checkedAt, 'number');
 });
 
 test('a request that never landed is not cached as "this artist has no tags"', async () => {
@@ -95,11 +99,26 @@ test('a failed artist is picked up by a later run', async () => {
 test('the count on the button and the run agree about what is missing', async () => {
   // tagCoverage() counts an artist with an empty tag list as missing. The run
   // used to skip anything with an entry at all, so the button offered to fetch
-  // tags for artists it then reported as "Nothing missing."
-  const app = load({ artists: ['Nobody'], cache: { 'a-Nobody': { tags: [] } } });
+  // tags for artists it then reported as "Nothing missing." Stamped as freshly
+  // checked so this run reads it from cache rather than re-asking Last.fm —
+  // that re-ask path (for a genuinely stale answer) is covered separately.
+  const app = load({ artists: ['Nobody'], cache: { 'a-Nobody': { tags: [], checkedAt: Date.now() } } });
   await app.enrichMissing();
   assert.doesNotMatch(app.told ?? '', /Nothing missing/);
   assert.match(app.told, /1 have no tags anywhere|no tags anywhere/);
+});
+
+test('a thin answer from long ago is asked about again, and a fresh one is not', async () => {
+  const longAgo = Date.now() - 1000 * 60 * 60 * 24 * 200; // past the ~6 month window
+  const stale = load({ artists: ['Old Gap'], cache: { 'a-Old Gap': { tags: [], checkedAt: longAgo } },
+                       answers: { 'Old Gap': lfmTags(['jungle']) } });
+  await stale.enrichMissing();
+  assert.ok(stale.asked.includes('Old Gap'), 'stale and thin — worth a real request');
+  assert.deepEqual(stale.store()['a-Old Gap'].tags, [['jungle', 90]]);
+
+  const fresh = load({ artists: ['Recent Gap'], cache: { 'a-Recent Gap': { tags: [], checkedAt: Date.now() } } });
+  await fresh.enrichMissing();
+  assert.deepEqual(fresh.asked, [], 'answered recently — no upside to asking again yet');
 });
 
 test('Discogs styles arrive on the same 0-100 scale Last.fm uses', async () => {

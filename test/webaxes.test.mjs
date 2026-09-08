@@ -233,8 +233,8 @@ test('a playlist held together by decades is read as an era', () => {
   const tags = {};
   const lists = [
     tagged('e', 'the good ones', 12, ['90s', '80s', 'oldies', 'pop'], tags),
-    tagged('g1', 'first thing', 14, ['techno', 'industrial techno'], tags),
-    tagged('g2', 'second thing', 14, ['jungle', 'breakbeat'], tags),
+    tagged('g1', 'first thing', 14, ['techno', 'industrial techno', 'hard techno'], tags),
+    tagged('g2', 'second thing', 14, ['jungle', 'breakbeat', 'hardcore'], tags),
   ];
   const of = axisOf(lists, {}, tags);
   assert.equal(of('e').axis, 'era');
