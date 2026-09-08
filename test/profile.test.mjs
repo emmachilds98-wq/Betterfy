@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildProfiles, findMisfiled, trackVec, applyIdf, cosine, listeningWeights, byListening, findDrift } from '../profile.mjs';
+import { buildProfiles, findMisfiled, trackVec, applyIdf, cosine, listeningWeights, byListening, findDrift, artistHistory } from '../profile.mjs';
 
 // findMisfiled is the "goes against the pattern of this playlist" check —
 // shared between the Node pipeline and the browser build. These exercise it
@@ -247,6 +247,76 @@ test('a playlist too small to split into a trustworthy recent/older pair is skip
 
   assert.doesNotThrow(() => findDrift(lib, tags, new Set(['p-tiny']), idf));
   assert.equal(findDrift(lib, tags, new Set(['p-tiny']), idf).length, 0);
+});
+
+/* ---- artistHistory: a zero-third-party fallback for a track with no tag data ---- */
+
+const target = (id, name, tracks) => ({ id, name, tracks });
+const targetsOf = (...playlists) => new Set(playlists.map(p => p.id));
+
+test('an artist whose other tracks mostly live in one playlist is suggested there', () => {
+  const home = target('p-house', 'House', [
+    trk('h1', 'artist-x'), trk('h2', 'artist-x'), trk('h3', 'artist-x'),
+  ]);
+  const elsewhere = target('p-jungle', 'Jungle', [trk('j1', 'artist-x')]);
+  const lib = { playlists: [home, elsewhere] };
+  const unfiled = trk('new1', 'artist-x');
+
+  const hit = artistHistory(unfiled, lib, targetsOf(home, elsewhere));
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0].id, 'p-house');
+  assert.equal(hit[0].count, 3);
+  assert.equal(hit[0].total, 4);
+  assert.ok(Math.abs(hit[0].score - 0.75) < 1e-9);
+});
+
+test('a single prior placement is a coincidence, not a pattern', () => {
+  const home = target('p-house', 'House', [trk('h1', 'artist-x')]);
+  const lib = { playlists: [home] };
+  assert.deepEqual(artistHistory(trk('new1', 'artist-x'), lib, targetsOf(home)), []);
+});
+
+test('a placement history split with no real majority suggests nothing', () => {
+  const a = target('p-house', 'House', [trk('h1', 'artist-x'), trk('h2', 'artist-x')]);
+  const b = target('p-jungle', 'Jungle', [trk('j1', 'artist-x'), trk('j2', 'artist-x')]);
+  const lib = { playlists: [a, b] };
+  assert.deepEqual(artistHistory(trk('new1', 'artist-x'), lib, targetsOf(a, b)), []);
+});
+
+test('a track with no credited artist at all is never matched', () => {
+  const home = target('p-house', 'House', [trk('h1', 'artist-x')]);
+  const lib = { playlists: [home] };
+  assert.deepEqual(artistHistory({ id: 'new1', artists: [] }, lib, targetsOf(home)), []);
+});
+
+test('a playlist outside targets contributes nothing to the count', () => {
+  const home = target('p-house', 'House', [trk('h1', 'artist-x'), trk('h2', 'artist-x')]);
+  const notATarget = target('p-inbox', 'Discover Weekly', [trk('d1', 'artist-x'), trk('d2', 'artist-x'), trk('d3', 'artist-x')]);
+  const lib = { playlists: [home, notATarget] };
+  // Only p-house is a real filing target — the inbox-like playlist, however
+  // large, is never counted as evidence.
+  const hit = artistHistory(trk('new1', 'artist-x'), lib, targetsOf(home));
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0].total, 2);
+});
+
+test('only the primary, first-billed artist is matched — a feature\'s history is not credited to them', () => {
+  const home = target('p-house', 'House', [
+    { id: 'h1', name: 'h1', artists: [{ id: 'feature-y', name: 'feature-y' }] },
+    { id: 'h2', name: 'h2', artists: [{ id: 'feature-y', name: 'feature-y' }] },
+  ]);
+  const lib = { playlists: [home] };
+  // The new track is a collab: artist-x billed first, feature-y second.
+  // feature-y's own placements above must not count toward artist-x's history.
+  const unfiled = { id: 'new1', artists: [{ id: 'artist-x', name: 'artist-x' }, { id: 'feature-y', name: 'feature-y' }] };
+  assert.deepEqual(artistHistory(unfiled, lib, targetsOf(home)), []);
+});
+
+test('the track itself is never counted as its own history, even if it somehow already appears', () => {
+  const home = target('p-house', 'House', [trk('new1', 'artist-x'), trk('h2', 'artist-x')]);
+  const lib = { playlists: [home] };
+  // Only h2 is real corroborating evidence — one track is below the floor.
+  assert.deepEqual(artistHistory(trk('new1', 'artist-x'), lib, targetsOf(home)), []);
 });
 
 test('a playlist outside targets is never checked for drift', () => {

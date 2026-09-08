@@ -716,6 +716,29 @@ guess, and everything downstream reads the file, not the rules.
   confirmed against a live MusicBrainz response from every environment this
   runs in — see `musicbrainz.mjs` for what to check if a shape mismatch ever
   shows up as "MusicBrainz never seems to match anything."
+- **At first login there is no third-party data at all, and the model used to
+  have nothing to say about that.** Coverage on day one is whatever fraction
+  of a brand-new account's artists happen to already be in the shipped
+  `docs/tags.json` — for a library that doesn't overlap much with it, `rank()`
+  returns nothing for most of the backlog and the Inbox looks broken rather
+  than merely under-tagged. `artistHistory()` (`profile.mjs`) is a fallback
+  that needs no tags and no third-party call at all: if most of an artist's
+  *other* tracks already live in one of your own playlists, an unfiled track
+  by them is suggested there on that basis alone, and it only ever steps in
+  when tag-based ranking has nothing confident to say. It's a placement
+  count, not a similarity score, so it's shown as "4 of 5 other tracks by
+  this artist are already here" rather than a misleading tag-fit percentage.
+  Only the primary, first-billed artist is matched, same billing-order
+  reasoning as `trackVec()`'s confidence weighting above.
+
+  Finding a real use for this surfaced a latent bug it would otherwise have
+  tripped over: the "All Songs" mirror playlist holds a copy of every track
+  by construction, so `classify()` and `axes.mjs` were both letting it become
+  a filing target — meaning it would always "win" a history count (every
+  artist's own copy sitting inside it) and, for the existing tag-based model
+  too, contribute a same-as-average-of-everything centroid to every ranking.
+  Both now exclude it explicitly, the same way it was already excluded from
+  the tag baseline.
 - **A playlist that says nothing in its name is asked what it is made of.**
   The one thing left after the name and the dates is the tags, read as a
   facet mix against *your own library's* baseline rather than a fixed share —
@@ -848,7 +871,7 @@ guess, and everything downstream reads the file, not the rules.
 | `storage.rules` | Per-account private blobs — not provisioned yet, see `FIREBASE.md` |
 | `FIREBASE.md` | Verified project state, console steps, and the cross-device sync plan |
 | `norm.mjs` / `credits.mjs` | track identity and collaboration-credit splitting |
-| `profile.mjs` | tag vectors, playlist centroids, IDF, ranking, the tag gate |
+| `profile.mjs` | tag vectors, playlist centroids, IDF, ranking, the tag gate, the filing-history fallback |
 | `enrich-lastfm.mjs` / `enrich-discogs.mjs` / `tagstore.mjs` | fetch and merge genre tags — Discogs fills a total gap and blends into a thin one |
 | `musicbrainz.mjs` | resolves a Spotify artist to a MusicBrainz id, so enrich-lastfm.mjs can ask Last.fm by id instead of a name — Node-only, optional |
 | `listening.mjs` | real listening behaviour (top artists, recent plays) as a weight per artist — best-effort, works with no Spotify auth available too |

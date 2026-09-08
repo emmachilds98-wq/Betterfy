@@ -54,6 +54,23 @@ test('tapping a suggested playlist only selects it — nothing is written yet', 
   assert.deepEqual(app.calls.add, []);
 });
 
+/* ---- a suggestion built from filing history, not tags (see profile.mjs's artistHistory) ---- */
+
+test('a history-based suggestion reads as a placement count, not a misleading tag-fit percentage', () => {
+  const html = load({ backlog: [track('t1', {
+    suggest: [{ id: 'p1', name: 'Jungle & Breaks', axis: 'genre', score: 0.8, count: 4, total: 5, via: 'history' }],
+  })] }).vInbox();
+  assert.match(html, /4 of 5 other tracks by this artist are already here/);
+  assert.match(html, />no tags yet</);
+  assert.doesNotMatch(html, />80%</, 'never shown as if it were a tag-cosine fit');
+});
+
+test('a tag-based suggestion is unaffected by the history rendering path', () => {
+  const html = load({ backlog: [track('t1')] }).vInbox(); // default fixture: via is unset, i.e. 'tags'
+  assert.match(html, />60%</);
+  assert.doesNotMatch(html, /other tracks by this artist/);
+});
+
 test('the confirm button is disabled with nothing to file and no fallback pick', () => {
   const app = load({ backlog: [track('t2', { suggest: [] })] });
   const html = app.vInbox();

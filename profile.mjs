@@ -367,6 +367,52 @@ export function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis
   return out.sort((a, b) => b.score - a.score).slice(0, top);
 }
 
+// An artist Last.fm has nothing on at all leaves rank() with an empty vector
+// and nothing to say — the exact gap a brand-new account sees before ever
+// touching a Last.fm key, since coverage at first login is only whatever the
+// shipped tag table happens to already know. But the user's own playlists
+// are themselves evidence, free of any third party: if most of this artist's
+// other tracks already live in one place, that is worth suggesting even with
+// zero tag data. Only the primary, first-billed artist is matched — the same
+// billing-order reasoning trackVec() uses — so a guest feature's history
+// never gets credited to someone else's track.
+const HISTORY_MIN_TRACKS = 2;   // one placement is a coincidence, not a pattern
+const HISTORY_MIN_SHARE = 0.6;  // the leading playlist needs a real majority
+
+/**
+ * Where an artist's other tracks already live, as a fallback suggestion for
+ * one that isn't filed anywhere — needs no tag data at all. Only ever points
+ * at a real filing target (`targets`), and only when the artist's own
+ * placements agree strongly enough to trust: returns at most one pick, not a
+ * ranked list of maybes, because a placement count is corroborating evidence
+ * rather than a similarity score, and mixing it into rank()'s cosine scale
+ * would misrepresent both.
+ */
+export function artistHistory(track, lib, targets) {
+  const artistId = track?.artists?.[0]?.id;
+  if (!artistId) return [];
+
+  const counts = new Map(); // playlistId -> count
+  let total = 0;
+  for (const p of lib.playlists ?? []) {
+    if (!targets.has(p.id)) continue;
+    for (const t of p.tracks ?? []) {
+      if (t.id === track.id) continue;
+      if (t.artists?.[0]?.id !== artistId) continue;
+      counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
+      total++;
+    }
+  }
+  if (total < HISTORY_MIN_TRACKS) return [];
+
+  const [topId, topCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  const share = topCount / total;
+  if (share < HISTORY_MIN_SHARE) return [];
+
+  const home = lib.playlists.find(p => p.id === topId);
+  return [{ id: topId, name: home?.name ?? topId, score: share, count: topCount, total }];
+}
+
 /** The strongest tags on a track, for explaining a suggestion. */
 export function topTags(track, tags, idf, n = 5) {
   const v = applyIdf(trackVec(track, tags), idf);

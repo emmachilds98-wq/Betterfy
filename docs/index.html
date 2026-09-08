@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-07-2238">
+<meta name="bf-build" content="2026-09-08-0443">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -875,7 +875,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-07-2238</span>
+    <span class="mono">build 2026-09-08-0443</span>
   </p>
 
   <div class="feat">
@@ -971,7 +971,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-07-2238</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-08-0443</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1012,7 +1012,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-07-2238</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-08-0443</span>
   </div>
 </div>
 
@@ -1532,6 +1532,52 @@ function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis = null
   return out.sort((a, b) => b.score - a.score).slice(0, top);
 }
 
+// An artist Last.fm has nothing on at all leaves rank() with an empty vector
+// and nothing to say — the exact gap a brand-new account sees before ever
+// touching a Last.fm key, since coverage at first login is only whatever the
+// shipped tag table happens to already know. But the user's own playlists
+// are themselves evidence, free of any third party: if most of this artist's
+// other tracks already live in one place, that is worth suggesting even with
+// zero tag data. Only the primary, first-billed artist is matched — the same
+// billing-order reasoning trackVec() uses — so a guest feature's history
+// never gets credited to someone else's track.
+const HISTORY_MIN_TRACKS = 2;   // one placement is a coincidence, not a pattern
+const HISTORY_MIN_SHARE = 0.6;  // the leading playlist needs a real majority
+
+/**
+ * Where an artist's other tracks already live, as a fallback suggestion for
+ * one that isn't filed anywhere — needs no tag data at all. Only ever points
+ * at a real filing target (`targets`), and only when the artist's own
+ * placements agree strongly enough to trust: returns at most one pick, not a
+ * ranked list of maybes, because a placement count is corroborating evidence
+ * rather than a similarity score, and mixing it into rank()'s cosine scale
+ * would misrepresent both.
+ */
+function artistHistory(track, lib, targets) {
+  const artistId = track?.artists?.[0]?.id;
+  if (!artistId) return [];
+
+  const counts = new Map(); // playlistId -> count
+  let total = 0;
+  for (const p of lib.playlists ?? []) {
+    if (!targets.has(p.id)) continue;
+    for (const t of p.tracks ?? []) {
+      if (t.id === track.id) continue;
+      if (t.artists?.[0]?.id !== artistId) continue;
+      counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
+      total++;
+    }
+  }
+  if (total < HISTORY_MIN_TRACKS) return [];
+
+  const [topId, topCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  const share = topCount / total;
+  if (share < HISTORY_MIN_SHARE) return [];
+
+  const home = lib.playlists.find(p => p.id === topId);
+  return [{ id: topId, name: home?.name ?? topId, score: share, count: topCount, total }];
+}
+
 /** The strongest tags on a track, for explaining a suggestion. */
 function topTags(track, tags, idf, n = 5) {
   const v = applyIdf(trackVec(track, tags), idf);
@@ -2022,7 +2068,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-07-2238';
+const BUILD = '2026-09-08-0443';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2343,7 +2389,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-09-07-2238', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-09-08-0443', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -2805,7 +2851,13 @@ function classify(lib, tags = null, now = Date.now()) {
     }
 
     cfg[p.id] = { name:n, axis, why, tracks:p.tracks.length,
-                  target: (axis === 'genre' || axis === 'mood') && p.tracks.length >= MIN_FOR_TARGET };
+                  // The mirror holds a copy of every track by construction, so
+                  // left eligible it would always "win" as a target — a
+                  // centroid of the whole library, and every artist's own
+                  // placement trivially "confirmed" by their own copy sitting
+                  // in it. Never a filing destination, same as it's never
+                  // read into the tag baseline above.
+                  target: (axis === 'genre' || axis === 'mood') && p.tracks.length >= MIN_FOR_TARGET && !isMirrorPlaylist(p) };
   }
   const saved = JSON.parse(LS.getItem('bf_axes') || '{}');
   for (const [id, v] of Object.entries(saved)) if (cfg[id]) Object.assign(cfg[id], v, { why:'set by you' });
@@ -2921,14 +2973,21 @@ function buildReports(lib, cfg, tags) {
     const ranked = rank(t, tags, profiles, idf, { top: 8 })
       .filter(b => !fb?.rejected?.includes(b.id))
       .slice(0, 3)
-      .map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null }));
+      .map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null, via: 'tags' }));
+    // Tag-based fit already found something worth trusting; the artist's own
+    // filing history only ever steps in when it hasn't — no fetch, no third
+    // party, just where the user already put this artist's other tracks.
+    const suggest = (ranked.length && ranked[0].score >= 0.30) ? ranked
+      : artistHistory(t, lib, targets)
+          .filter(h => !fb?.rejected?.includes(h.id))
+          .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
     return { id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
       album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
       tags: topTags(t, tags, idf),
       thinData: isThinSignal(t, tags),
       artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })),
       skips: fb?.skips ?? 0,
-      suggest: ranked };
+      suggest };
   })
     // Newest first, but anything already skipped sinks below everything you
     // have not seen yet — so the queue moves on instead of reopening on the
@@ -3397,13 +3456,15 @@ function vInbox() {
           <button class="pick ${n === 0 ? 'best' : ''}" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
-            <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis ?? '')} playlist</span></span>
-            <span class="rt"><span class="sc">${(sg.score * 100).toFixed(0)}%</span>
+            <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
+              ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
+              : `${esc(sg.axis ?? '')} playlist`}</span></span>
+            <span class="rt"><span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
             <span class="nope" data-reject="${esc(sg.id)}" role="button" tabindex="0"
               title="Never suggest ${esc(sg.name)} for this track">✕</span>
           </button>`).join('')}</div>`
-        : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, or it fits nothing you have. Pick a playlist below.</p>`}
+        : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
         ${[...S.fileSel].filter(id => !t.suggest.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
           ${[...S.fileSel].filter(id => !t.suggest.some(sg => sg.id === id)).map(id =>
             `<button class="chip" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}

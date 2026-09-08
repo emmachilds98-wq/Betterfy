@@ -108,8 +108,13 @@ for (const p of lib.playlists) {
     // tracks matches almost anything, so such a playlist is never *suggested*.
     // Hand-editing the axis is respected; hand-raising a tiny playlist to a
     // suggestion target is not, because the model cannot support it.
+    // Never the mirror: it holds a copy of the whole library, so left
+    // eligible it would always "win" as a target — a centroid of everything,
+    // and every artist's own placement trivially "confirmed" by their own
+    // copy sitting in it. Same exclusion the tag baseline above already uses.
     target: TARGET_AXES.has(axis)
       && p.tracks.length >= MIN_FOR_TARGET
+      && !isMirror(p)
       && (forced !== undefined ? true : (old?.target ?? true)),
     tracks: p.tracks.length,
   };
