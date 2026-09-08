@@ -15,6 +15,18 @@ lib.liked.forEach(add);
 const cache = new Cache('tags-lastfm.json');
 let todo = [...artists].filter(([id]) => worthReasking(cache.get(id)));
 
+// Whatever this run doesn't finish should at least have covered what you
+// actually listen to — a 20-minute fetch interrupted partway still leaves
+// the artists behind your real suggestions tagged first. This has to happen
+// before the MusicBrainz block below, not after: that block runs its own
+// two sub-fetches (mbid resolution, then genres/tags) over `todo` at ~1
+// req/s each, so an interrupted run needs those weighted too, not just the
+// final Last.fm loop.
+try {
+  const { weights } = await fetchListening(lib);
+  todo = byListening(todo, weights);
+} catch { /* no Spotify auth available here, or offline — library order is fine */ }
+
 // Identity glue, ahead of the Last.fm fetch itself: resolving to a MusicBrainz
 // id first means the tags below can be asked for by mbid= instead of a name
 // autocorrect might match onto the wrong, same-named artist. Off entirely with
@@ -53,14 +65,6 @@ if (env.MUSICBRAINZ_CONTACT) {
 } else {
   console.error('No MUSICBRAINZ_CONTACT in .env — identity resolution is optional, skipping.');
 }
-
-// Whatever this run doesn't finish should at least have covered what you
-// actually listen to — a 20-minute fetch interrupted partway still leaves
-// the artists behind your real suggestions tagged first.
-try {
-  const { weights } = await fetchListening(lib);
-  todo = byListening(todo, weights);
-} catch { /* no Spotify auth available here, or offline — library order is fine */ }
 
 console.error(`artists: ${artists.size} | cached: ${cache.size} | to fetch: ${todo.length}`);
 
