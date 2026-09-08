@@ -17,9 +17,14 @@ bother getting) — if so, it's a bonus feature, not infrastructure, and
 should be scoped and described that way.
 
 Spotify's own audio-feature endpoints (`/audio-features`, `/recommendations`)
-are dead — `403`/`404`, verified against a real app registration (see
-README's "Why it uses Last.fm and Discogs"). There is no tempo/energy/valence
-signal left to read from Spotify itself, for anyone. Don't go looking for one.
+are dead — `403`/`404` — **and so is the plain `genres` field on the Artist
+object** (`GET /artists/{id}`): field absent entirely, 0 tags across 956
+artists, both verified against a real app registration (see README's "Why it
+uses Last.fm, MusicBrainz, Discogs and iTunes"). There is no tempo/energy/
+valence *or* genre signal left to read from Spotify itself, for anyone.
+Don't go looking for one — an enrich script for Spotify's own genres was
+built, tested and thrown away in one session because this line wasn't
+checked first; check it first.
 
 What *is* real, universal, Spotify-native signal, already flowing but not
 fully used: `/me/top/artists` (three time windows) and recently-played,

@@ -26,8 +26,13 @@ const lfmTags = names => ({ toptags: { tag: names.map(n => ({ name: n, count: 90
 /**
  * @param answers artist name -> a Last.fm body, or a thrown error for a
  *   request that never landed.
+ * @param noKey when true, no Last.fm key is configured at all — only the
+ *   keyless iTunes pass can run.
+ * @param itunesAnswers artist name -> primaryGenreName, as iTunes' Search
+ *   API would answer for it.
  */
-function load({ artists = [], answers = {}, cache = {}, discogs = null } = {}) {
+function load({ artists = [], answers = {}, cache = {}, discogs = null, noKey = false,
+                itunesAnswers = {} } = {}) {
   const store = { tags_extra: JSON.parse(JSON.stringify(cache)) };
   const asked = [];
   const sandbox = {
@@ -36,11 +41,22 @@ function load({ artists = [], answers = {}, cache = {}, discogs = null } = {}) {
            liked: [] },
     CFG: {},
     TAGS: Object.fromEntries(Object.entries(cache).map(([k, v]) => [k, v])),
-    LS: { getItem: k => (k === 'bf_lfm' ? 'lfm-key' : k === 'bf_discogs' ? discogs : null) },
+    LS: { getItem: k => (k === 'bf_lfm' ? (noKey ? null : 'lfm-key') : k === 'bf_discogs' ? discogs : null) },
     idb: { get: async k => JSON.parse(JSON.stringify(store[k] ?? null)),
            set: async (k, v) => { store[k] = JSON.parse(JSON.stringify(v)); } },
+    // Last.fm and Discogs both key their search on `artist=`, so those two
+    // stay on the original path (and count toward `asked`); iTunes uses
+    // `term=` on a different host entirely and is handled on its own —
+    // otherwise it reads as a Last.fm-shaped request for the literal string
+    // "null" and pollutes every existing assertion on `asked`.
     fetch: async url => {
-      const name = decodeURIComponent(new URL(url).searchParams.get('artist'));
+      const u = new URL(url);
+      if (u.hostname === 'itunes.apple.com') {
+        const term = decodeURIComponent(u.searchParams.get('term') ?? '');
+        const genre = itunesAnswers[term];
+        return { json: async () => ({ results: genre ? [{ primaryGenreName: genre }] : [] }) };
+      }
+      const name = decodeURIComponent(u.searchParams.get('artist'));
       asked.push(name);
       const a = answers[name];
       if (a instanceof Error) throw a;
@@ -141,4 +157,56 @@ test('Discogs is only asked when Last.fm actually answered, and answered empty',
   await app.enrichMissing();
   assert.ok(!app.asked.some(a => a === 'Ghost' && app.asked.length > 1),
     'a dropped Last.fm request is not a reason to spend a Discogs request too');
+});
+
+/* ---- iTunes: keyless, needs no Last.fm key at all ---- */
+
+test('with no Last.fm key at all, iTunes still fills the gap', async () => {
+  const app = load({ artists: ['Nobody'], noKey: true, itunesAnswers: { Nobody: 'House' } });
+  await app.enrichMissing();
+  assert.deepEqual(app.store()['a-Nobody'].tags, [['house', 55]]);
+  assert.match(app.told, /iTunes/);
+  assert.equal(app.asked.length, 0, 'no Last.fm key — no Last.fm request at all');
+});
+
+test('iTunes blends into a thin Last.fm answer without displacing it', async () => {
+  const app = load({ artists: ['Barely Tagged'], answers: { 'Barely Tagged': lfmTags(['jungle']) },
+    itunesAnswers: { 'Barely Tagged': 'Breakbeat' } });
+  await app.enrichMissing();
+  const tags = app.store()['a-Barely Tagged'].tags;
+  assert.deepEqual(tags[0], ['jungle', 90], 'Last.fm\'s own tag still leads');
+  assert.deepEqual(tags[1], ['breakbeat', 55], 'iTunes only adds what Last.fm didn\'t already have');
+});
+
+test('a well-tagged Last.fm answer is never touched by iTunes at all', async () => {
+  const rich = lfmTags(['jungle', 'breakbeat', 'amen break', 'hardcore']);
+  const app = load({ artists: ['Well Known'], answers: { 'Well Known': rich },
+    itunesAnswers: { 'Well Known': 'Drum and Bass' } });
+  await app.enrichMissing();
+  assert.deepEqual(app.store()['a-Well Known'].tags.map(t => t[0]),
+    ['jungle', 'breakbeat', 'amen break', 'hardcore'], 'three or more real tags is enough — iTunes is never even asked');
+});
+
+test('a dropped Last.fm request does not stop iTunes getting a real turn in the same run', async () => {
+  const app = load({ artists: ['Ghost'], answers: { Ghost: new TypeError('Load failed') },
+    itunesAnswers: { Ghost: 'Techno' } });
+  await app.enrichMissing();
+  assert.deepEqual(app.store()['a-Ghost'].tags, [['techno', 55]]);
+});
+
+test('an artist iTunes has nothing on either is stamped checked, not asked forever', async () => {
+  const app = load({ artists: ['Truly Obscure'], noKey: true });
+  await app.enrichMissing();
+  const stored = app.store()['a-Truly Obscure'];
+  assert.deepEqual(stored.tags, []);
+  assert.equal(typeof stored.checkedAt, 'number');
+});
+
+test('a dropped Last.fm request with iTunes also finding nothing leaves no record at all', async () => {
+  // Neither source actually answered this run — the artist must still look
+  // fully unchecked next time, not "answered empty" by a source that never
+  // really ran a check at all.
+  const app = load({ artists: ['Tim Reaper'], answers: { 'Tim Reaper': new TypeError('Load failed') } });
+  await app.enrichMissing();
+  assert.equal(app.store()['a-Tim Reaper'], undefined);
 });

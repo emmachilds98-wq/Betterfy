@@ -9,7 +9,7 @@
 // for the same set it would use either way.
 import { readFileSync } from 'node:fs';
 import { env } from './env.mjs';
-import { Cache, sleep, retry, worthReasking, REASK_TAG_FLOOR } from './cache.mjs';
+import { Cache, sleep, retry, worthReasking, combinedTagCount, REASK_TAG_FLOOR } from './cache.mjs';
 import { fetchListening } from './listening.mjs';
 import { byListening } from './profile.mjs';
 
@@ -24,10 +24,11 @@ const add = t => { for (const a of t?.artists ?? []) if (a.id) artists.set(a.id,
 for (const p of lib.playlists) p.tracks.forEach(add);
 lib.liked.forEach(add);
 
-// The gap Last.fm left open, total or thin — this never overrides a real,
-// well-tagged Last.fm answer.
-const lastfm = new Cache('tags-lastfm.json');
-const empty = [...artists].filter(([id]) => (lastfm.get(id)?.tags?.length ?? 0) < REASK_TAG_FLOOR);
+// The gap Last.fm and MusicBrainz's genres/tags (fetched in the same pass as
+// Last.fm — see enrich-lastfm.mjs) left open, total or thin — this never
+// overrides a real, well-tagged answer from either.
+const priors = [new Cache('tags-lastfm.json'), new Cache('tags-musicbrainz.json')];
+const empty = [...artists].filter(([id]) => combinedTagCount(id, priors) < REASK_TAG_FLOOR);
 
 const cache = new Cache('tags-discogs.json');
 let todo = empty.filter(([id]) => worthReasking(cache.get(id)));

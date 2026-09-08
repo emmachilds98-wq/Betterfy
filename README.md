@@ -520,7 +520,7 @@ against a poisoned copy of the repo to prove the guard fires.
 and the `report-*.json` files are all gitignored — they are yours, and none of
 them belongs in a public repo.
 
-## Why it uses Last.fm and Discogs
+## Why it uses Last.fm, MusicBrainz, Discogs and iTunes
 
 Verified against a freshly registered Spotify app in September 2026:
 
@@ -533,16 +533,23 @@ Verified against a freshly registered Spotify app in September 2026:
 | `POST /users/{id}/playlists` | `403` — use `POST /me/playlists` |
 | `PUT`/`DELETE /me/tracks?ids=` | removed on a client ID created after Feb 2026 — use `PUT`/`DELETE /me/library?uris=` (comma-separated `spotify:track:{id}`, max 40) instead. A grandfathered client ID still serves the old form, so every like/unlike call in this project tries the new path first and falls back to the old one, rather than picking one and breaking the other kind of app. |
 
-So Spotify can no longer tell you the genre, mood or tempo of anything. Genre
-signal comes from **Last.fm** artist tags — the backbone, covering most of a
-library — with **Discogs** release styles as the fallback for an artist
-Last.fm has nothing on at all: Discogs' per-release `style` field (Jungle,
-Deep House, Electro) is tallied across an artist's catalogue the same way
-Last.fm's tag counts are, so it plugs straight into the same model rather
-than needing one of its own. It only ever fills a total gap and never
-outranks a real Last.fm tag. `MUSICBRAINZ_CONTACT` is still in
-`.env.example` for a planned identity-resolution pass — nothing reads it yet,
-so leave it blank until that lands.
+So Spotify can no longer tell you the genre, mood or tempo of anything — its
+own `genres` field on the Artist object is as dead as audio-features and
+recommendations, confirmed in the table above. Genre signal comes from
+**Last.fm** artist tags — the backbone, covering most of a library — behind
+which every other source only ever fills a total gap or blends into a thin
+answer, strongest first, never outranking what a stronger one already said
+(`mergeTagSources()` in `tagstore.mjs` states this ordering once, rather than
+each source reasoning about the last one pairwise): **MusicBrainz** genres
+and tags (needs `MUSICBRAINZ_CONTACT`, an exact-id lookup off the same
+identity resolution used for the Last.fm fetch itself), then **Discogs**
+release styles (needs a token; per-release `style` — Jungle, Deep House,
+Electro — tallied across an artist's catalogue the same way Last.fm's tag
+counts are), then **iTunes**' one flat genre per artist (no key or signup at
+all, but a name search, so it's consulted last). Every one of these but
+Last.fm itself is entirely optional — `npm run setup` skips whichever aren't
+configured rather than failing on them, and the model runs the same either
+way, just with less to go on.
 
 ## Setup
 
@@ -561,9 +568,13 @@ Requires Node 22+ (uses built-in `fetch`; no dependencies).
 4. **MusicBrainz contact** (optional, no signup) — any string identifying you
    or this install, e.g. an email address. Lets `npm run enrich` resolve each
    artist's exact MusicBrainz id ahead of the Last.fm fetch, so a same-named
-   artist can't get autocorrected onto by mistake. Leave it blank and every
-   artist is looked up by name exactly as before this existed.
-5. Copy `.env.example` to `.env` and fill it in.
+   artist can't get autocorrected onto by mistake, and fetch that artist's
+   MusicBrainz genres/tags as one more blended source. Leave it blank and
+   every artist is looked up by name exactly as before this existed.
+5. **iTunes** needs nothing at all — no key, no signup — and runs
+   automatically wherever every other source above still leaves an artist
+   thin. Nothing to configure for this one.
+6. Copy `.env.example` to `.env` and fill it in.
 
 ```bash
 npm run setup     # authorise, snapshot the library, fetch tags, classify playlists
@@ -571,9 +582,13 @@ npm run setup     # authorise, snapshot the library, fetch tags, classify playli
 
 `npm run setup` opens a browser once for Spotify authorisation. The Last.fm
 fetch takes roughly 20 minutes for ~5,600 artists and is resumable — rerun it
-if interrupted and it continues from where it stopped. The Discogs pass that
-follows only touches artists still empty after that, so it's a much shorter
-run — or an instant no-op with no `DISCOGS_TOKEN` set.
+if interrupted and it continues from where it stopped. Every pass after that
+— MusicBrainz genres, Discogs, iTunes — only ever touches artists still thin
+once the ones before it have had their turn, so each is a much shorter run,
+right down to an instant no-op with nothing configured for it. iTunes is the
+one exception worth planning around: it needs no config at all so it always
+runs, but its informal ~20/min rate limit makes it the slowest of the four
+for a large leftover gap.
 
 ## Use
 
@@ -716,6 +731,29 @@ guess, and everything downstream reads the file, not the rules.
   confirmed against a live MusicBrainz response from every environment this
   runs in — see `musicbrainz.mjs` for what to check if a shape mismatch ever
   shows up as "MusicBrainz never seems to match anything."
+- **Once an identity is resolved, its genres are one more field on the same
+  lookup — and a fourth-and-fifth source needed one place to reason about
+  precedence, not four pairwise blends.** `musicbrainz.mjs`'s `mbid` already
+  identifies the artist exactly, so `fetchArtistGenres()` asks for
+  `inc=genres+tags` on that same id and folds the result in as another
+  blended source, no second identity lookup needed. `enrich-itunes.mjs`
+  fills whatever every real-id source still leaves thin — the most keyless
+  thing here (no signup at all), but a name search, so it carries the same
+  same-named-artist risk Last.fm's autocorrect does, which is why it's
+  consulted last. `tagstore.mjs`'s `mergeTagSources()` became variadic
+  (`...sources`, strongest first) so this ordering is stated once rather
+  than reasoned about per pair: Last.fm leads, MusicBrainz and Discogs blend
+  in behind it, iTunes only gets asked about whatever is still thin after
+  all three.
+
+  Spotify's own `genres` field was tried again here too — an exact-id
+  lookup, no name risk at all, would have outranked iTunes — and dropped:
+  the verification table above already confirmed it dead this same month
+  (0 tags across 956 artists), which a `git blame` on `tagstore.mjs` would
+  otherwise not explain. `enrich-spotify-genres.mjs` existed briefly during
+  development and was deleted rather than shipped, rather than spend a real
+  batch call on every artist for nothing. Re-check that table before ever
+  rebuilding it.
 - **At first login there is no third-party data at all, and the model used to
   have nothing to say about that.** Coverage on day one is whatever fraction
   of a brand-new account's artists happen to already be in the shipped
@@ -872,8 +910,8 @@ guess, and everything downstream reads the file, not the rules.
 | `FIREBASE.md` | Verified project state, console steps, and the cross-device sync plan |
 | `norm.mjs` / `credits.mjs` | track identity and collaboration-credit splitting |
 | `profile.mjs` | tag vectors, playlist centroids, IDF, ranking, the tag gate, the filing-history fallback |
-| `enrich-lastfm.mjs` / `enrich-discogs.mjs` / `tagstore.mjs` | fetch and merge genre tags — Discogs fills a total gap and blends into a thin one |
-| `musicbrainz.mjs` | resolves a Spotify artist to a MusicBrainz id, so enrich-lastfm.mjs can ask Last.fm by id instead of a name — Node-only, optional |
+| `enrich-lastfm.mjs` / `enrich-discogs.mjs` / `enrich-itunes.mjs` / `tagstore.mjs` | fetch and merge genre tags — each optional source fills a total gap or blends into a thin one, strongest first |
+| `musicbrainz.mjs` | resolves a Spotify artist to a MusicBrainz id, so enrich-lastfm.mjs can ask Last.fm by id instead of a name, and fetches that artist's MusicBrainz genres/tags too — Node-only, optional |
 | `listening.mjs` | real listening behaviour (top artists, recent plays) as a weight per artist — best-effort, works with no Spotify auth available too |
 | `snapshot.mjs` | dumps the whole library to `library.json` |
 | `actions.mjs` | every library mutation, with the undo log |
@@ -891,9 +929,11 @@ refuses to build if a secret appears in the output.
 |---|---|
 | **Last.fm** artist tags | The genre backbone. Good coverage, sends `access-control-allow-origin: *` so it works from the browser too. |
 | **Discogs** release styles | Wired as a fallback: only queried for an artist Last.fm returned nothing for at all *and actually answered about* (a dropped request is not an empty answer), tallying `style` across that artist's releases (Breakbeat / Techno / Electro — finer than Last.fm's one flat tag per artist) and rescaling the tally to Last.fm's 0–100 so the two can be averaged at all. Needs a token in the `Authorization` header from Node, so this side is verified; the browser build sends it as a query param instead to avoid a custom header, which has **not** been checked against a real response — confirm it under Playlists once you have a token. |
-| **MusicBrainz** | Identity glue, wired into `npm run enrich` (`musicbrainz.mjs`): resolves a Spotify artist to an exact MusicBrainz id from the Spotify URL on its artist page, so the Last.fm fetch that follows can ask by id instead of a name autocorrect might match onto a same-named artist. No key, but wants a contact string in the User-Agent (`MUSICBRAINZ_CONTACT`) — off with none set. Node-only: the custom header a browser `fetch` cannot set is exactly what this needs, so the hosted page is unaffected either way. The response shape it parses is written from MusicBrainz's documented ws/2 JSON, unconfirmed against a live response from every environment — see `musicbrainz.mjs`. |
+| **MusicBrainz** | Identity glue *and* a second tag source, both wired into `npm run enrich` (`musicbrainz.mjs`): resolves a Spotify artist to an exact MusicBrainz id from the Spotify URL on its artist page, so the Last.fm fetch that follows can ask by id instead of a name autocorrect might match onto a same-named artist — and, with the same id already in hand, fetches that artist's MusicBrainz genres/tags as one more blended source. No key, but wants a contact string in the User-Agent (`MUSICBRAINZ_CONTACT`) — off with none set. Node-only: the custom header a browser `fetch` cannot set is exactly what this needs, so the hosted page is unaffected either way. Both response shapes it parses are written from MusicBrainz's documented ws/2 JSON, unconfirmed against a live response from every environment — see `musicbrainz.mjs`. |
+| **iTunes Search API** | The most keyless of everything here — no signup at all, not even a free account. One `primaryGenreName` per artist, coarser than Last.fm's cloud and *found by name*, not an exact id, so it carries the same same-named-artist risk Last.fm's autocorrect does — ranked last of every source for exactly that reason. Its rate limit is informal and undocumented (~20/min is the widely reported figure), which makes it the slowest enrich step for a large gap; `enrich-itunes.mjs` and the browser's `enrichMissing()` both cap or pace around it rather than pretending it's fast. Needs no Last.fm key either, so it's the one source that helps a brand-new account from the very first click of **Fetch missing tags**. |
+| **Spotify's own `genres` field** | Tried again for this round of enrichment (an exact-id lookup, no name-matching risk at all, would have ranked above iTunes) and dropped: confirmed dead in the verification table above, same fate as audio-features and recommendations. `enrich-spotify-genres.mjs` existed briefly during development and was removed rather than shipped — it would have spent a real batch call on every artist for zero benefit against production Spotify. Worth re-trying only if Spotify ever brings the field back; check the table above first. |
 | **GetSongBPM** | Tempo, key and Camelot notation — but only **20% coverage** measured over a 40-track sample of a current UK electronic library. Superseded by the Rekordbox import below; nothing calls it. |
-| **Deezer** | Has a public BPM field, but it was empty for 4 of 5 tested tracks. Not worth wiring. |
+| **Deezer** | Has a public BPM field, but it was empty for 4 of 5 tested tracks. Not worth wiring for tempo. Its genre data was considered for this round too, but shelved unbuilt — the artist-genre relationship isn't a clean single field the way iTunes' is, and getting the shape right needs a live response to check against, which this environment couldn't reach. Worth a proper look with real network access rather than a guess. |
 
 Tempo and musical key now come from **your own Rekordbox collection**, not a
 third-party lookup — `npm run rekordbox -- "path/to/collection.xml" --write`
