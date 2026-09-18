@@ -11,6 +11,7 @@
     "auth": "node auth.mjs",
     "snapshot": "node snapshot.mjs",
     "enrich": "node enrich-lastfm.mjs",
+    "enrich:tracks": "node enrich-lastfm-tracks.mjs",
     "enrich:discogs": "node enrich-discogs.mjs",
     "axes": "node axes.mjs",
     "dupes": "node dupes.mjs",
@@ -25,7 +26,9 @@
     "build:web": "node build-web.mjs",
     "build:icons": "node make-icons.mjs",
     "rekordbox": "node rekordbox.mjs",
-    "tags": "node merge-tags.mjs"
+    "tags": "node merge-tags.mjs",
+    "benchmark": "node core/benchmark/run.mjs",
+    "benchmark:compare": "node core/benchmark/compare.mjs"
   },
   "license": "MIT"
 }

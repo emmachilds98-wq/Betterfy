@@ -879,11 +879,39 @@ guess, and everything downstream reads the file, not the rules.
 | `actions.mjs` | every library mutation, with the undo log |
 | `server.mjs` + `ui/` | the local app |
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
+| `core/` | the v3 evidence engine — ontology, identity, evidence, providers, classifier, benchmark. Not wired into the app; see `docs/ENGINE-V3-ARCHITECTURE.md` |
+| `enrich-lastfm-tracks.mjs` | track-level Last.fm tags, prioritised by what you play and what the engine is least sure about — optional, resumable |
 | `make-icons.mjs` | renders the logo to the PNG sizes browsers and phones ask for |
 
 `build-web.mjs` bundles `norm`, `credits` and `profile` verbatim into the page,
 so the browser and local builds score identically and cannot drift apart. It
 refuses to build if a secret appears in the output.
+
+### The v3 engine (`core/`), built beside v1, not instead of it
+
+`core/` holds an evidence-based classification engine: a versioned genre
+ontology, a common evidence record every provider maps into, and a
+deterministic classifier that reconciles up and down the genre hierarchy and
+is allowed to answer "not enough evidence". Nothing in it is wired into the
+app — `profile.mjs` still produces every suggestion, misfile flag and playlist
+axis you see. It runs beside v1 so the two can be measured against each other
+on the same data:
+
+```sh
+npm run benchmark           # accuracy and false-positive rate, per confidence band
+npm run benchmark:compare   # v1 against v3 on the same fixtures
+npm run enrich:tracks       # optional: track-level Last.fm tags, prioritised
+```
+
+The one thing v3 asks for that v1 never did is **track-level** Last.fm tags
+(`npm run enrich:tracks`, same key, no new configuration). That is what fixes
+the defect neither engine could reach around otherwise: a diverse artist
+currently hands the same tag cloud to every record they ever made. Without it
+v3 still works — it reads the artist caches v1 already keeps and reports lower
+confidence, which is the honest answer.
+
+Full write-up, including the measured v1-vs-v3 baseline and what is
+deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.
 
 ## Data sources, and what they're worth
 
