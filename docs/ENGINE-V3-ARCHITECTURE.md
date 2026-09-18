@@ -21,7 +21,7 @@ record of *why*.
 | 5 — audio analysis | **not started** — the provider interface exists, no provider does |
 | 6 — playlist intelligence | done: fingerprints, clustering, name semantics, multi-dimensional type |
 | 7 — playlist relationships | done: duplicate / view / event-copy / subset / variant / related, and §19 collections |
-| 8 — personal layer | **not started**; v1's feedback store is still the only one |
+| 8 — personal layer | done: append-only correction log, v1 feedback import, listening relevance, §35 review queue |
 | 9 — AI reconciliation | **not started** |
 | 10-11 — recommendations, UI | **not started**; v1 still answers every question the app asks |
 
@@ -40,8 +40,9 @@ Captured on the commit this work branched from, before any change:
 node --test    431 tests, 431 pass, 0 fail
 ```
 
-After phases 0-4: 509 tests. After phases 6-7: **545 tests, 545 pass**. The 431
-originals are unmodified throughout.
+After phases 0-4: 509 tests. After phases 6-7: 545. After phase 8 and the
+review queue: **569 tests, 569 pass**. The 431 originals are unmodified
+throughout.
 
 Measured engine baseline, on the benchmark fixtures in
 `core/benchmark/fixtures.mjs` (`npm run benchmark:compare`):
@@ -164,7 +165,8 @@ Spotify library (snapshot.mjs / the browser's own sync)
 | `merge-tags.mjs` | folds contributions into the shipped table | unchanged; the shipped table becomes the `shared-tags` provider |
 | `axes.mjs` | playlist axis guessing, incl. the one-library OVERRIDE table | `playlists/{name,classify,fingerprint}.mjs` — done, and with no per-playlist overrides |
 | `misfile.mjs` | misfile + backlog + clusters | Music DNA placement analysis (Phase 10); `playlists/clustering.mjs` already replaces its cluster pass |
-| `listening.mjs` | top artists, recently played | personal behaviour signal (Phase 8); already used by `enrich-lastfm-tracks.mjs` to prioritise |
+| `listening.mjs` | top artists, recently played | `personal/relevance.mjs` — done. Priority only; nothing in `analysis/` imports it |
+| browser `FB` feedback store | skips and per-track rejections | `personal/corrections.mjs`, via `fromV1Feedback()` — imported, not discarded |
 | `discover.mjs` | recommendation consumer | Phase 10 |
 | `analyse.mjs` | diagnostics | joined by `libraryReport()` in `core/engine.mjs` |
 | `norm.mjs`, `credits.mjs` | string identity | consumed by `identity/track-identity.mjs` |
@@ -191,6 +193,9 @@ core/
   playlists/name.mjs          name semantics via the ontology + structure
   playlists/classify.mjs      playlist type, multi-dimensional
   playlists/relationships.mjs overlap, derivation, §19 collections
+  personal/corrections.mjs    append-only log, v1 import, global vs personal
+  personal/relevance.mjs      listening as priority; never reaches the classifier
+  review/queue.mjs            §35's prioritised queue, collapsed by question
   benchmark/{fixtures,run,compare,playlists}.mjs
 enrich-lastfm-tracks.mjs      track-level Last.fm, prioritised by use × uncertainty
 ```
@@ -313,6 +318,62 @@ An event copy and a plain subset are structurally *identical*; only the
 smaller playlist's own type separates them. That is why relationships are
 computed after classification rather than beside it.
 
+### A correction never touches evidence, and evidence never touches a correction
+
+The two directions matter for different reasons. Provider evidence stays
+untouched so that reclassifying after an ontology change cannot silently
+discard a year of somebody's corrections. Corrections stay out of the global
+model because a personal taxonomy is true of one library and not of the world
+— if you file all your minimal techno under "Techno" because that is how your
+brain works, the engine should do that for you and not learn it as a fact.
+
+So `personalView()` returns both answers and says which applies. The log is
+append-only: "I moved this in March and back in June" is a different fact from
+"this is Tech House", and the second is recoverable from the first while the
+reverse is not. Append-only also makes cross-device merge safe — there is no
+field to pick a winner for, so no device can lose what another recorded, and
+syncing twice is a no-op.
+
+v1's `{skips, lastSkip, rejected[]}` store is imported rather than dropped.
+Somebody sat and told that app "no, not there" one track at a time; discarding
+it because the new schema is nicer would be the worst possible upgrade.
+
+### The ontology grows from real libraries, through the queue
+
+`conceptQueue()` surfaces the tags nothing could place, ranked by how many
+tracks are waiting on each. A person answers one — "schranz is a kind of hard
+techno" — and it resolves for every track carrying that tag, in their runs
+only. It is applied at normalisation time and never written into the ontology,
+and it is consulted only for strings the ontology itself declined, so a
+correction can fill a gap and never overrule a known concept.
+
+This is also how the benchmark §26 asks for becomes reachable. A queue that
+asks the right two hundred questions turns a real library into reviewed data;
+asking in playlist order would just exhaust the person.
+
+### One question, asked once
+
+A review queue that asks the same thing repeatedly loses the person it is for.
+Eight tracks by one artist, with no track-level evidence between them, rest on
+the same tag cloud and produce the same answer — they are one question with
+eight tracks riding on it. Rows are collapsed on (credited artists, answer,
+confidence, unmapped tags), so a track the engine reached a *different*
+conclusion about stays its own question. On the playlist fixture this takes
+110 rows to 12.
+
+The counterpart is knowing what NOT to ask. `THIN_IDENTITY` fires only below
+the confidence a bare Spotify id already gives, because most tracks in most
+libraries have no ISRC and no MusicBrainz match — flagging that would put the
+whole library in the queue and say nothing.
+
+### Listening is priority, never genre
+
+§22, enforced structurally: nothing in `core/analysis/` imports
+`personal/relevance.mjs`, and a test greps for it. "What is this track" and
+"is it worth my attention" are different questions, and the second is where
+listening belongs — ranking the queue, and ordering which tracks
+`enrich-lastfm-tracks.mjs` spends requests on.
+
 ### What is NOT here
 
 - **No audio analysis.** Spotify's `/audio-features` and `/recommendations`
@@ -324,7 +385,8 @@ computed after classification rather than beside it.
   Deterministic evidence now works; AI is still Phase 9.
 - **Misfile detection on Music DNA (§21).** The fingerprints and clusters it
   needs now exist; `misfile.mjs` still runs on v1 tag vectors.
-- **The personal layer, recommendations and the UI** (phases 8, 10, 11).
+- **Recommendations and the UI** (phases 10, 11). The review queue produces
+  the rows §33/§34 describe; nothing renders them.
 
 ---
 
@@ -381,3 +443,8 @@ behaviour and that is the bug.
    place the new engine would change what a user sees, and it should not
    happen until the benchmark above is real — a misfile flag is an
    instruction to move somebody's music.
+
+Note that (1) and (2) now have a mechanism: run the engine over a real
+library, work the review queue, and the answers are benchmark rows. That is
+the intended order — the queue exists so the benchmark can be built without
+anybody inspecting thousands of tracks by hand.

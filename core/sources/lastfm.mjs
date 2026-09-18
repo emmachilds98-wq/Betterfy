@@ -67,8 +67,10 @@ export function extractTags(json, { minCount = MIN_TAG_COUNT, max = MAX_TAGS } =
  * @param {number} [ctx.retrievedAt]
  */
 export function toEvidence(json, { entityType, entityId = null, matchedBy = 'name-autocorrect',
-                                   retrievedAt = Date.now(), minCount = MIN_TAG_COUNT } = {}) {
+                                   retrievedAt = Date.now(), minCount = MIN_TAG_COUNT,
+                                   conceptMap = null } = {}) {
   return normaliseValues(extractTags(json, { minCount }), {
+    conceptMap,
     source: LASTFM.id,
     entityType,
     entityId,

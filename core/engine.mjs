@@ -54,11 +54,12 @@ export function buildRegistry({ lastfm = false, discogs = false, shared = false,
  *
  * @param {{lastfm?: object, discogs?: object, shared?: object, mbids?: object, now?: number}} caches
  */
-export function indexCaches({ lastfm = null, discogs = null, shared = null, mbids = null, now = Date.now() } = {}) {
+export function indexCaches({ lastfm = null, discogs = null, shared = null, mbids = null,
+                              now = Date.now(), conceptMap = null } = {}) {
   return {
-    lastfm: lastfm ? cacheToEvidence(lastfm, { source: LASTFM.id, scale: SCALES.lastfm, mbids, now }) : new Map(),
-    discogs: discogs ? cacheToEvidence(discogs, { source: DISCOGS.id, matchedBy: 'name-exact', scale: SCALES.discogs, now }) : new Map(),
-    shared: shared ? cacheToEvidence(shared, { source: SHARED_TABLE.id, scale: SCALES.shared, now }) : new Map(),
+    lastfm: lastfm ? cacheToEvidence(lastfm, { source: LASTFM.id, scale: SCALES.lastfm, mbids, now, conceptMap }) : new Map(),
+    discogs: discogs ? cacheToEvidence(discogs, { source: DISCOGS.id, matchedBy: 'name-exact', scale: SCALES.discogs, now, conceptMap }) : new Map(),
+    shared: shared ? cacheToEvidence(shared, { source: SHARED_TABLE.id, scale: SCALES.shared, now, conceptMap }) : new Map(),
     present: { lastfm: !!lastfm, discogs: !!discogs, shared: !!shared, musicbrainz: !!mbids },
   };
 }

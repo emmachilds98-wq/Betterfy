@@ -51,9 +51,11 @@ export const SCALES = { lastfm: 100, discogs: 100, shared: 10 };
  * @param {string} [ctx.matchedBy]    how v1 addressed the request
  * @param {number} [ctx.now]          used when the entry has no checkedAt
  */
-export function entryToEvidence(entry, { artistId, source, matchedBy = 'name-autocorrect', now = Date.now() } = {}) {
+export function entryToEvidence(entry, { artistId, source, matchedBy = 'name-autocorrect',
+                                         now = Date.now(), conceptMap = null } = {}) {
   if (!entry?.tags?.length) return [];
   return normaliseValues(entry.tags, {
+    conceptMap,
     source,
     entityType: 'artist',
     entityId: artistId,
@@ -76,13 +78,14 @@ export function entryToEvidence(entry, { artistId, source, matchedBy = 'name-aut
  * @returns {Map<string, Readonly<import('../evidence/evidence.mjs').Evidence>[]>}
  */
 export function cacheToEvidence(cache, { source = LASTFM.id, matchedBy = 'name-autocorrect',
-                                         scale = SCALES.lastfm, mbids = null, now = Date.now() } = {}) {
+                                         scale = SCALES.lastfm, mbids = null, now = Date.now(),
+                                         conceptMap = null } = {}) {
   const out = new Map();
   for (const [artistId, entry] of Object.entries(cache ?? {})) {
     const tags = normaliseScale(entry?.tags, scale);
     if (!tags.length) continue;
     const how = mbids?.[artistId] ? 'mbid-artist' : matchedBy;
-    const records = entryToEvidence({ ...entry, tags }, { artistId, source, matchedBy: how, now });
+    const records = entryToEvidence({ ...entry, tags }, { artistId, source, matchedBy: how, now, conceptMap });
     if (records.length) out.set(artistId, records);
   }
   return out;

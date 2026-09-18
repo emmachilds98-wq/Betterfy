@@ -925,6 +925,20 @@ person's playlist names has no equivalent here.
 npm run benchmark:playlists # playlist type + relationship accuracy
 ```
 
+Your corrections live in their own append-only layer (`core/personal/`) that
+never touches provider evidence and is never touched by it — so the library
+can be reclassified after an engine change without losing a year of your
+corrections, and your own filing habits never get learned as facts about
+music. v1's existing skip/reject store is imported, not discarded.
+
+On top of that sits a review queue (`core/review/`) that works out what is
+actually worth asking you: conflicting evidence first, then low confidence,
+then tracks you play a lot or that are filed in several places. It collapses
+questions — eight tracks by one artist with the same evidence are one
+question, not eight — and it surfaces the tags nothing could place, so
+answering one ("schranz is a kind of hard techno") fixes every track carrying
+it, for your library only.
+
 Full write-up, including the measured v1-vs-v3 baseline and what is
 deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.
 

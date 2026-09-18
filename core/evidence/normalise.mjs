@@ -34,7 +34,10 @@ const FIELD_OF_FACET = { genre: 'genre', mood: 'mood', context: 'context', era: 
 // suffix hit ("dark techno" -> techno) is an inference we made, correct far
 // more often than not but still ours rather than theirs, so it is discounted
 // and its provenance says so.
-const VIA_FACTOR = { alias: 1, year: 1, suffix: 0.7, descriptor: 1, unknown: 1, empty: 0 };
+// A person telling us what a tag means is not a provider claim at all — it is
+// the most reliable statement available about their own library, and it is
+// not discounted.
+const VIA_FACTOR = { alias: 1, year: 1, fallback: 1, suffix: 0.7, descriptor: 1, unknown: 1, user: 1, empty: 0 };
 
 /**
  * Turn one provider's weighted value list into evidence records.
@@ -53,6 +56,7 @@ const VIA_FACTOR = { alias: 1, year: 1, suffix: 0.7, descriptor: 1, unknown: 1, 
 export function normaliseValues(values, {
   source, entityType, entityId = null, identityConfidence = 0.5,
   sourceReliability = 1, retrievedAt = Date.now(), provenance = {},
+  conceptMap = null,
 } = {}) {
   const list = (values ?? []).filter(v => Array.isArray(v) && v[0] != null);
   if (!list.length) return [];
@@ -67,7 +71,19 @@ export function normaliseValues(values, {
     // missing, they are statements about the tagger. One rule, shared with v1.
     if (!usableTag(text.toLowerCase())) continue;
 
-    const c = resolveConcept(text);
+    let c = resolveConcept(text);
+    // §8's loop, closed: the review queue surfaces a tag the ontology cannot
+    // place, a person says what it means, and their answer resolves it from
+    // then on — for THEIR runs only. It is applied here rather than written
+    // into the ontology because §23 is explicit that a personal taxonomy must
+    // not corrupt the global model: somebody's idea of what "hard groove"
+    // covers is true of their library and not necessarily of the world.
+    // Only ever consulted for a string the ontology itself declined, so a
+    // correction can fill a gap and never overrule a known concept.
+    if (!c.concept && conceptMap) {
+      const own = conceptMap.get?.(text.toLowerCase());
+      if (own) c = { ...resolveConcept(own), via: 'user', raw: text };
+    }
     const field = c.concept ? FIELD_OF_FACET[c.facet] ?? 'unknown' : 'unknown';
     out.push(evidence({
       source, entityType, entityId,
