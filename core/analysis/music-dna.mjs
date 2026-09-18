@@ -76,12 +76,21 @@ export function musicProfile(set, { registry = null, now = Date.now() } = {}) {
       confidence: genre.confidence,
       score: genre.score,
       share: genre.share,
+      // How many independent groups backed THIS answer — not how many
+      // providers said anything at all. Spotify supplies an era for every
+      // track with a release date, so the second number is ~everything and
+      // reads as corroboration when it is nothing of the kind.
+      independentGroups: genre.independentGroups,
+      sources: genre.sources,
       candidates: genre.candidates,
     },
     mood, context, era,
     musical,
     confidence: {
       genre: genre.confidence,
+      // Independent voices behind the genre answer specifically. This is the
+      // one to read when asking "can this be trusted".
+      genreCoverage: genre.independentGroups,
       identity: +(set?.identity?.confidence ?? 0).toFixed(3),
       // Coverage is how many independent voices contributed anything at all.
       // It is the number that says "this answer is one crowd's opinion"

@@ -881,6 +881,7 @@ guess, and everything downstream reads the file, not the rules.
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
 | `core/` | the v3 evidence engine — ontology, identity, evidence, providers, track classifier, playlist intelligence, benchmarks. Not wired into the app; see `docs/ENGINE-V3-ARCHITECTURE.md` |
 | `enrich-lastfm-tracks.mjs` | track-level Last.fm tags, prioritised by what you play and what the engine is least sure about — optional, resumable |
+| `analyse-v3.mjs` | runs the v3 engine over your `library.json` and existing caches: bands, playlist types, relationships, and the review queue |
 | `make-icons.mjs` | renders the logo to the PNG sizes browsers and phones ask for |
 
 `build-web.mjs` bundles `norm`, `credits` and `profile` verbatim into the page,
@@ -938,6 +939,22 @@ questions — eight tracks by one artist with the same evidence are one
 question, not eight — and it surfaces the tags nothing could place, so
 answering one ("schranz is a kind of hard techno") fixes every track carrying
 it, for your library only.
+
+To point all of it at your own library — no network, no new configuration,
+nothing written back to your caches:
+
+```sh
+npm run analyse:v3            # confidence bands, playlist types and relationships
+npm run analyse:v3 -- --queue # plus the questions worth answering, written out
+npm run benchmark:fit         # which of the engine's numbers are actually validated
+```
+
+That last one is worth being blunt about: `benchmark:fit` sweeps every
+threshold in the engine and reports which ones the benchmark constrains. Four
+of fifteen are currently *unconstrained* — uncontradicted rather than
+validated. None are set to a value that scores worse, and a test fails the
+build if that changes, but the numbers are priors until the benchmark is real.
+That is why none of this is wired into the app yet.
 
 Full write-up, including the measured v1-vs-v3 baseline and what is
 deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.

@@ -197,6 +197,8 @@ core/
   personal/relevance.mjs      listening as priority; never reaches the classifier
   review/queue.mjs            §35's prioritised queue, collapsed by question
   benchmark/{fixtures,run,compare,playlists}.mjs
+  benchmark/fit.mjs           §9: sweep each declared prior against the benchmark
+analyse-v3.mjs                run the whole engine over a real library.json
 enrich-lastfm-tracks.mjs      track-level Last.fm, prioritised by use × uncertainty
 ```
 
@@ -374,6 +376,37 @@ whole library in the queue and say nothing.
 listening belongs — ranking the queue, and ordering which tracks
 `enrich-lastfm-tracks.mjs` spends requests on.
 
+### Which numbers are actually validated, and which are not
+
+`npm run benchmark:fit` sweeps every threshold and specificity through a
+plausible range and re-runs the benchmark. As of this writing:
+
+- **No parameter is set to a value the benchmark scores worse at.** A test
+  asserts this, so mistuning one fails the build.
+- **4 of 15 are FLAT** — the benchmark never distinguished *any* value in the
+  swept range. `HIGH_LEADER_SHARE`, `HIGH_MARGIN_RATIO`,
+  `EVENT_SETTLED_DAYS` and `CONTENT_LIFT` are uncontradicted, not validated,
+  and those are different claims.
+- Most of the rest sit on wide plateaus. `SPECIFICITY.artist` — the number
+  §4.1's entire fix rests on — passes anywhere in [0.15 .. 0.85] against 0.35.
+
+That is the honest state of §9, and it is a request for benchmark rows rather
+than a reason to trust the numbers. A flat parameter also usually points at a
+gap in the fixtures: `EVENT_SETTLED_DAYS` reads flat because every event
+playlist in the fixture is 200 days old, so no threshold under 180 could tell
+them apart.
+
+### Running it against a real library
+
+`analyse-v3.mjs` reads `library.json` plus whichever of the v1 caches exist
+and runs the whole engine — no network, no new configuration, nothing written
+back. It prints the confidence bands, the playlist types and relationships,
+the playlists whose name disagrees with their music, and the review queue;
+`--queue` writes the queue out to work through.
+
+This is the mechanism the two open items above need. Work the queue, and the
+answers are both corrections for your own library and benchmark rows.
+
 ### What is NOT here
 
 - **No audio analysis.** Spotify's `/audio-features` and `/recommendations`
@@ -397,6 +430,10 @@ npm test                    # 509 tests, including the ontology validator
 npm run benchmark           # the §26 metric set, per confidence band
 npm run benchmark:compare   # v1 against v3, same fixtures
 npm run benchmark:playlists # playlist type + relationship accuracy
+npm run benchmark:fit       # which weights the benchmark actually constrains
+
+npm run analyse:v3          # the whole engine over YOUR library.json
+npm run analyse:v3 -- --queue
 
 npm run enrich:tracks       # track-level Last.fm, needs only a Last.fm key
 npm run enrich:tracks -- --limit=200
@@ -432,10 +469,11 @@ behaviour and that is the bug.
 1. **Grow the benchmark.** Twelve synthetic cases is a harness, not a
    benchmark. §26 asks for ~500 reviewed tracks. The harness takes them as
    data; nothing in `run.mjs` changes.
-2. **Re-fit the weights against it.** Every number in `THRESHOLDS`,
-   `SPECIFICITY` and each provider's `reliability` is a declared prior chosen
-   by reasoning. §9 is explicit that they must be validated against real data,
-   and none of them have been.
+2. **Re-fit the weights against it.** `npm run benchmark:fit` now says
+   exactly which numbers the benchmark constrains and which it does not — 4
+   of 15 are entirely unconstrained. Provider `reliability` values are not
+   swept at all yet, because a registry is built per run rather than read
+   from a mutable table.
 3. **Verify the MusicBrainz recording lookup** against a live response. Like
    the v1 artist lookup it sits beside, it is written from the documented JSON
    shape and degrades to "not found" on anything else.

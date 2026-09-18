@@ -33,7 +33,8 @@ export const REASONS = {
 };
 
 /** Tracks a person could usefully be asked about, most useful first. */
-export function trackQueue(profiles, lib, { weights = null, log = null, limit = 200 } = {}) {
+export function trackQueue(profiles, lib, { weights = null, recentlyActive = null,
+                                            log = null, limit = 200 } = {}) {
   const reach = playlistReach(lib);
   const answered = new Set(log?.entries?.filter(c => c.kind === 'genre' || c.kind === 'not-sure')
     .map(c => c.trackId) ?? []);
@@ -54,11 +55,24 @@ export function trackQueue(profiles, lib, { weights = null, log = null, limit = 
     const conf = profile?.genre?.confidence;
     if (conf === CONFIDENCE.AMBIGUOUS) reasons.push('CONFLICTING_EVIDENCE');
     if (conf === CONFIDENCE.INSUFFICIENT_DATA) reasons.push('LOW_CONFIDENCE');
+    // Ordering and the HIGH_USE *reason* use different signals on purpose.
+    //
+    // listeningWeights() blends real plays with a floor derived from how much
+    // of an artist you have filed, which is a fair weak relevance signal and
+    // fine for ordering. It is NOT "you play this a lot": in a library with
+    // no listening history at all, the floor alone pushes every well-stocked
+    // artist over any threshold, and the queue tells everybody they play
+    // everything. `recentlyActive` is the short-term and recently-played
+    // artists — actual plays, nothing else — which is what v1 already uses
+    // where it says the same sentence.
     const played = relevanceOf(track, weights);
-    if (played > 1.5) reasons.push('HIGH_USE');
+    if (recentlyActive?.has?.(track.artists?.[0]?.name)) reasons.push('HIGH_USE');
     if ((reach.get(id) ?? 0) >= 3) reasons.push('MANY_PLAYLISTS');
     if (profile?.unknown?.length) reasons.push('UNKNOWN_CONCEPT');
-    if ((profile?.confidence?.coverage ?? 0) <= 1 && profile?.genre?.primary) reasons.push('SINGLE_SOURCE');
+    // The genre answer's own backing, not "did any provider say anything".
+    // Read from `coverage` this was dead code: Spotify supplies an era for
+    // every dated track, so coverage was never 1 and the reason never fired.
+    if ((profile?.confidence?.genreCoverage ?? 0) <= 1 && profile?.genre?.primary) reasons.push('SINGLE_SOURCE');
     // Strictly WORSE than the universal floor. A plain Spotify track with no
     // ISRC and no MusicBrainz match scores exactly the floor, and that is the
     // normal state of most of most libraries — flagging it would put the
@@ -207,9 +221,10 @@ export function conceptQueue(profiles, { log = null, limit = 40 } = {}) {
 
 /** The whole queue, in the three sections a person would work through. */
 export function reviewQueue(profiles, lib, { classifications = new Map(), relationships = [],
-                                             weights = null, log = null, limits = {} } = {}) {
+                                             weights = null, recentlyActive = null,
+                                             log = null, limits = {} } = {}) {
   return {
-    tracks: trackQueue(profiles, lib, { weights, log, limit: limits.tracks ?? 200 }),
+    tracks: trackQueue(profiles, lib, { weights, recentlyActive, log, limit: limits.tracks ?? 200 }),
     playlists: playlistQueue(classifications, relationships, { log, limit: limits.playlists ?? 50 }),
     concepts: conceptQueue(profiles, { log, limit: limits.concepts ?? 40 }),
     version: QUEUE_VERSION,

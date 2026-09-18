@@ -14,6 +14,9 @@ tags-lastfm-tracks.json
 mbid.json
 cache-*.json
 report-*.json
+# The v3 review queue and your answers to it: yours, not the project's.
+review-queue.json
+corrections.json
 playlists.config.json
 review.build.html
 node_modules/
