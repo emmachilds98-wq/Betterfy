@@ -19,7 +19,8 @@ record of *why*.
 | 3 — ontology | done, versioned and validated |
 | 4 — track classification | done |
 | 5 — audio analysis | **not started** — the provider interface exists, no provider does |
-| 6-7 — playlist intelligence and relationships | **not started**, deliberately (§32: only once the track engine is stable) |
+| 6 — playlist intelligence | done: fingerprints, clustering, name semantics, multi-dimensional type |
+| 7 — playlist relationships | done: duplicate / view / event-copy / subset / variant / related, and §19 collections |
 | 8 — personal layer | **not started**; v1's feedback store is still the only one |
 | 9 — AI reconciliation | **not started** |
 | 10-11 — recommendations, UI | **not started**; v1 still answers every question the app asks |
@@ -39,7 +40,8 @@ Captured on the commit this work branched from, before any change:
 node --test    431 tests, 431 pass, 0 fail
 ```
 
-After this change: **509 tests, 509 pass**. The 431 originals are unmodified.
+After phases 0-4: 509 tests. After phases 6-7: **545 tests, 545 pass**. The 431
+originals are unmodified throughout.
 
 Measured engine baseline, on the benchmark fixtures in
 `core/benchmark/fixtures.mjs` (`npm run benchmark:compare`):
@@ -49,6 +51,13 @@ Measured engine baseline, on the benchmark fixtures in
 | cases with a knowable answer (n=7) | 0.429 | **1.000** |
 | cases that should be declined (n=5) | 1.000 | 1.000 |
 | overall (n=12) | 0.667 | **1.000** |
+
+And at the playlist level (`npm run benchmark:playlists`), 12/12 cases:
+playlist-type accuracy 1.000, relationship accuracy 1.000. There is no v1
+column for that table because v1 has no notion of a playlist relationship at
+all — it would model the event playlist in the worked example as a filing
+destination and flag most of it as misfiled out of the playlist it is a
+deliberate copy of.
 
 Read that second row carefully before treating it as a tie. v1 scores 1.000
 there because on these cases its answer happened to be nothing at all — it
@@ -153,8 +162,8 @@ Spotify library (snapshot.mjs / the browser's own sync)
 | `enrich-discogs.mjs` | gap-fill only | `sources/discogs.mjs` — a first-class release-level source, no longer a fallback |
 | `musicbrainz.mjs` | artist MBID via Spotify URL | `sources/musicbrainz.mjs` wraps it and adds ISRC→recording |
 | `merge-tags.mjs` | folds contributions into the shipped table | unchanged; the shipped table becomes the `shared-tags` provider |
-| `axes.mjs` | playlist axis guessing | playlist classifier + fingerprint (Phase 6) |
-| `misfile.mjs` | misfile + backlog + clusters | Music DNA placement analysis (Phase 7) |
+| `axes.mjs` | playlist axis guessing, incl. the one-library OVERRIDE table | `playlists/{name,classify,fingerprint}.mjs` — done, and with no per-playlist overrides |
+| `misfile.mjs` | misfile + backlog + clusters | Music DNA placement analysis (Phase 10); `playlists/clustering.mjs` already replaces its cluster pass |
 | `listening.mjs` | top artists, recently played | personal behaviour signal (Phase 8); already used by `enrich-lastfm-tracks.mjs` to prioritise |
 | `discover.mjs` | recommendation consumer | Phase 10 |
 | `analyse.mjs` | diagnostics | joined by `libraryReport()` in `core/engine.mjs` |
@@ -177,7 +186,12 @@ core/
   sources/{spotify,lastfm,discogs,musicbrainz,legacy}.mjs
   analysis/classify.mjs       classifyGenre(), classifyFlatFacet(), calibration
   analysis/music-dna.mjs      MusicProfile, Music DNA, DNA similarity
-  benchmark/{fixtures,run,compare}.mjs
+  playlists/fingerprint.mjs   distributions, concentration, added shape, coherence
+  playlists/clustering.mjs    musical regions inside one playlist
+  playlists/name.mjs          name semantics via the ontology + structure
+  playlists/classify.mjs      playlist type, multi-dimensional
+  playlists/relationships.mjs overlap, derivation, §19 collections
+  benchmark/{fixtures,run,compare,playlists}.mjs
 enrich-lastfm-tracks.mjs      track-level Last.fm, prioritised by use × uncertainty
 ```
 
@@ -243,6 +257,62 @@ libraries are actually tagged with, rather than from guesswork. Collection
 cruft ("seen live", "albums i own") is the one thing dropped outright: it
 names the tagger, not a concept the ontology is missing.
 
+### Playlist type is how it is organised, not what it is made of
+
+The single most important rule in `playlists/classify.mjs`. Every playlist is
+made of *some* genre and *some* mood — those claims are present for all of
+them and so discriminate between none. So evidence is ranked in two tiers:
+anything the name or the structure claimed (a title, a date, a burst of
+additions, one artist dominating) says how the listener organised it; anything
+only the tracks claimed says what went in. A content claim decides the type
+only when nothing organisational speaks at all.
+
+That last case — a silent name — is precisely what `axes.mjs` needs a
+hand-written `OVERRIDE` entry per playlist for. "Lyricism" is a judgement
+about wordplay, not a sound; v1 needs to be told, v3 falls through to the
+content and files it correctly with no table.
+
+The musical identity is reported separately and always, which is §34: the
+playlists worth looking at are exactly the ones where the name and the music
+disagree, and `nameVsMusic()` lists them.
+
+### No venue list, anywhere
+
+v1's `EVENT` regex names Drumsheds, Fabric, Printworks and E1. That is an
+excellent classifier for one library and worth nothing for the next account.
+v3 recognises an event by *shape* — a date, plus at least one word that
+resolves to nothing the ontology knows — because the unknown word is exactly
+the venue that cannot be enumerated. It gets "Fabric September 2026" and
+"Warehouse 12.04" right, and would get a club in Seoul right too. A test
+greps the module (comments stripped) to keep it that way.
+
+The second event signal needs no words at all: built in one sitting and never
+touched again. That is carried over from the browser build unchanged, because
+it is the one content rule there that holds up.
+
+### A playlist is named from its tracks' answers, not their ancestry
+
+Every Tech House track contributes weight to tech-house, house *and*
+electronic. Summed over forty identical tracks the parent outweighs the
+answer, and a pure Tech House bucket reported itself as "house" — with a
+genre entropy of 0.98, because a three-deep ancestry always looks evenly
+spread. So the fingerprint keeps two distributions: the lineage-weighted one
+for comparing playlists, and the tracks' actual answers for naming one and
+measuring its spread. When no single answer holds a majority the playlist
+backs off to what its leading answers have in common — the same reconciliation
+the track classifier does, one level up.
+
+### Containment, not Jaccard
+
+A 74-track playlist can be almost entirely inside a 600-track one while their
+Jaccard similarity is 0.11. Jaccard calls that unrelated, which is exactly
+backwards, so every structural relationship is measured by containment from
+the smaller side.
+
+An event copy and a plain subset are structurally *identical*; only the
+smaller playlist's own type separates them. That is why relationships are
+computed after classification rather than beside it.
+
 ### What is NOT here
 
 - **No audio analysis.** Spotify's `/audio-features` and `/recommendations`
@@ -252,7 +322,9 @@ names the tagger, not a concept the ontology is missing.
   fill; nothing fills it.
 - **No AI.** §4.5 puts AI reconciliation after deterministic evidence works.
   Deterministic evidence now works; AI is still Phase 9.
-- **No playlist work.** §32 Task 12 gates it on the track engine being stable.
+- **Misfile detection on Music DNA (§21).** The fingerprints and clusters it
+  needs now exist; `misfile.mjs` still runs on v1 tag vectors.
+- **The personal layer, recommendations and the UI** (phases 8, 10, 11).
 
 ---
 
@@ -262,6 +334,7 @@ names the tagger, not a concept the ontology is missing.
 npm test                    # 509 tests, including the ontology validator
 npm run benchmark           # the §26 metric set, per confidence band
 npm run benchmark:compare   # v1 against v3, same fixtures
+npm run benchmark:playlists # playlist type + relationship accuracy
 
 npm run enrich:tracks       # track-level Last.fm, needs only a Last.fm key
 npm run enrich:tracks -- --limit=200
@@ -304,4 +377,7 @@ behaviour and that is the bug.
 3. **Verify the MusicBrainz recording lookup** against a live response. Like
    the v1 artist lookup it sits beside, it is written from the documented JSON
    shape and degrades to "not found" on anything else.
-4. **Then** playlist intelligence (Phase 6).
+4. **Migrate misfile detection onto Music DNA** (§21). This is the first
+   place the new engine would change what a user sees, and it should not
+   happen until the benchmark above is real — a misfile flag is an
+   instruction to move somebody's music.

@@ -28,6 +28,7 @@
     "rekordbox": "node rekordbox.mjs",
     "tags": "node merge-tags.mjs",
     "benchmark": "node core/benchmark/run.mjs",
+    "benchmark:playlists": "node core/benchmark/playlists.mjs",
     "benchmark:compare": "node core/benchmark/compare.mjs"
   },
   "license": "MIT"

@@ -21,6 +21,10 @@ import { SPOTIFY, toEvidence as spotifyEvidence } from './sources/spotify.mjs';
 import { MUSICBRAINZ } from './sources/musicbrainz.mjs';
 import { SHARED_TABLE, cacheToEvidence, SCALES } from './sources/legacy.mjs';
 import { musicProfile, musicDNA } from './analysis/music-dna.mjs';
+import { fingerprintLibrary } from './playlists/fingerprint.mjs';
+import { clusterTracks } from './playlists/clustering.mjs';
+import { classifyPlaylist, libraryBaseline } from './playlists/classify.mjs';
+import { findRelationships, collections } from './playlists/relationships.mjs';
 
 export const ENGINE_VERSION = '3.0.0';
 
@@ -155,4 +159,69 @@ export function libraryReport(profiles) {
     bands,
     unknownConcepts: [...unknown].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([raw, count]) => ({ raw, count })),
   };
+}
+
+/**
+ * Phase 6 + 7 in one pass: fingerprint every playlist, cluster it, classify
+ * it against the library's own baseline, and work out how they relate.
+ *
+ * The order is forced and worth stating. Baselines need every fingerprint, so
+ * fingerprinting comes first; classification needs the baseline and the
+ * clusters; and relationships need the classifications, because the
+ * structural facts about an event copy and a plain subset are identical and
+ * only the type tells them apart.
+ *
+ * `isMirror` identifies Betterfy's own "All Songs" playlist, which holds a
+ * copy of the whole library by construction. Left in, it is a superset of
+ * everything you own and a centroid of everything you listen to — it would
+ * bury every real relationship and win every filing comparison. The browser
+ * build already learned this the hard way; the predicate is passed in rather
+ * than guessed at here because the app remembers it by id, not by name.
+ *
+ * @param {object} lib
+ * @param {Map<string, {profile: object, dna: object}>} profiles  profileLibrary()
+ * @param {{isMirror?: (p: object) => boolean, now?: number}} [opts]
+ */
+export function analysePlaylists(lib, profiles, { isMirror = () => false, now = Date.now() } = {}) {
+  const fingerprints = fingerprintLibrary(lib, profiles, { now });
+
+  const clusters = new Map();
+  for (const p of lib?.playlists ?? []) {
+    if (!p?.id) continue;
+    const members = (p.tracks ?? [])
+      .map(t => { const e = profiles?.get?.(t?.id); return e ? { id: t.id, name: t.name, dna: e.dna } : null; })
+      .filter(Boolean);
+    clusters.set(p.id, clusterTracks(members));
+  }
+
+  const mirrorByFp = fp => isMirror({ id: fp?.id, name: fp?.name });
+  const baseline = libraryBaseline(fingerprints, { isMirror: mirrorByFp });
+
+  const knownArtists = new Set();
+  for (const p of lib?.playlists ?? []) for (const t of p.tracks ?? [])
+    for (const a of t?.artists ?? []) if (a?.name) knownArtists.add(a.name.toLowerCase());
+
+  const classifications = new Map();
+  for (const [id, fp] of fingerprints)
+    classifications.set(id, classifyPlaylist(fp, {
+      clusters: clusters.get(id) ?? [], baseline, knownArtists, isMirror: mirrorByFp(fp), now,
+    }));
+
+  const relationships = findRelationships(lib, fingerprints, classifications, { isMirror });
+
+  return { fingerprints, clusters, classifications, baseline, relationships,
+           collections: collections(relationships) };
+}
+
+/** Playlists whose name and whose music disagree — §34's whole point. */
+export function nameVsMusic(classifications) {
+  const out = [];
+  for (const c of classifications.values()) {
+    const named = c.nameSaid.find(d => d.kind === 'genre' || d.kind === 'subgenre')?.value ?? null;
+    const actual = c.musicalIdentity.primary;
+    if (!named || !actual || named === actual) continue;
+    out.push({ id: c.id, name: c.name, named, actual, type: c.type,
+               shape: c.musicalIdentity.shape, coherence: c.musicalIdentity.coherence });
+  }
+  return out;
 }

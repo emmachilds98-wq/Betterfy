@@ -51,7 +51,7 @@ export const MOODS = {
 export const CONTEXTS = {
   'club':       { aliases: ['club', 'clubbing', 'night out', 'nightlife', 'dancefloor', 'rave'] },
   'festival':   { aliases: ['festival', 'festivals', 'carnival', 'boiler room'] },
-  'party':      { aliases: ['party', 'partying', 'house party', 'pregame', 'pre drinks', 'afters', 'after party'] },
+  'party':      { aliases: ['party', 'partying', 'house party', 'pregame', 'pre drinks', 'afters', 'after party', 'friday night', 'saturday night', 'weekend'] },
   'late-night': { aliases: ['late night', 'after hours', 'afterhours', '3am'] },
   'driving':    { aliases: ['driving', 'road trip', 'roadtrip', 'commute', 'travel'] },
   'workout':    { aliases: ['workout', 'work out', 'gym', 'running', 'jogging', 'exercise', 'fitness', 'yoga', 'training'] },
@@ -61,7 +61,10 @@ export const CONTEXTS = {
   // "chill" as a mood, and two tables cannot both own it.
   'downtime':   { aliases: ['chilling', 'lounging', 'sunday morning', 'hangover'] },
   'sleep':      { aliases: ['sleep', 'sleeping', 'bedtime', 'insomnia'] },
-  'summer':     { aliases: ['summer', 'beach', 'poolside', 'bbq', 'barbecue', 'holiday', 'holidays', 'ibiza'] },
+// Place names deliberately absent. A location is exactly the kind of word
+  // that signals an EVENT playlist when it turns up beside a date, and
+  // claiming it as a context here is what would stop that being seen.
+  'summer':     { aliases: ['summer', 'beach', 'poolside', 'bbq', 'barbecue', 'holiday', 'holidays'] },
   'winter':     { aliases: ['winter', 'rainy day', 'christmas', 'xmas', 'halloween'] },
   'celebration':{ aliases: ['wedding', 'birthday', 'new year', 'nye', 'graduation'] },
   'gaming':     { aliases: ['gaming', 'video games'] },

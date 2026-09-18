@@ -879,7 +879,7 @@ guess, and everything downstream reads the file, not the rules.
 | `actions.mjs` | every library mutation, with the undo log |
 | `server.mjs` + `ui/` | the local app |
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
-| `core/` | the v3 evidence engine — ontology, identity, evidence, providers, classifier, benchmark. Not wired into the app; see `docs/ENGINE-V3-ARCHITECTURE.md` |
+| `core/` | the v3 evidence engine — ontology, identity, evidence, providers, track classifier, playlist intelligence, benchmarks. Not wired into the app; see `docs/ENGINE-V3-ARCHITECTURE.md` |
 | `enrich-lastfm-tracks.mjs` | track-level Last.fm tags, prioritised by what you play and what the engine is least sure about — optional, resumable |
 | `make-icons.mjs` | renders the logo to the PNG sizes browsers and phones ask for |
 
@@ -909,6 +909,21 @@ the defect neither engine could reach around otherwise: a diverse artist
 currently hands the same tag cloud to every record they ever made. Without it
 v3 still works — it reads the artist caches v1 already keeps and reports lower
 confidence, which is the honest answer.
+
+It also reads playlists: what each one actually is (genre, mood, occasion,
+event, era, artist, DJ set, mixed), how confident that is, and how they relate
+to each other — which ones are duplicates, which are views of one collection
+("Tech House" / "Tech House — Favourites"), and which are event-specific
+copies of a bigger bucket rather than genre playlists in their own right.
+Notably with **no venue list**: an event is recognised by shape (a date, plus
+a word the ontology has never heard of, which is exactly the venue you cannot
+enumerate) and by the vocabulary-free signal of a playlist built in one
+sitting and never touched again. `axes.mjs`'s hand-written table of one
+person's playlist names has no equivalent here.
+
+```sh
+npm run benchmark:playlists # playlist type + relationship accuracy
+```
 
 Full write-up, including the measured v1-vs-v3 baseline and what is
 deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.
