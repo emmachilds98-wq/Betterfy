@@ -11,8 +11,10 @@
     "auth": "node auth.mjs",
     "snapshot": "node snapshot.mjs",
     "enrich": "node enrich-lastfm.mjs",
+    "enrich:tracks": "node enrich-lastfm-tracks.mjs",
     "enrich:discogs": "node enrich-discogs.mjs",
     "axes": "node axes.mjs",
+    "analyse:v3": "node analyse-v3.mjs",
     "dupes": "node dupes.mjs",
     "misfile": "node misfile.mjs",
     "discover": "node discover.mjs",
@@ -25,7 +27,11 @@
     "build:web": "node build-web.mjs",
     "build:icons": "node make-icons.mjs",
     "rekordbox": "node rekordbox.mjs",
-    "tags": "node merge-tags.mjs"
+    "tags": "node merge-tags.mjs",
+    "benchmark": "node core/benchmark/run.mjs",
+    "benchmark:playlists": "node core/benchmark/playlists.mjs",
+    "benchmark:fit": "node core/benchmark/fit.mjs",
+    "benchmark:compare": "node core/benchmark/compare.mjs"
   },
   "license": "MIT"
 }
