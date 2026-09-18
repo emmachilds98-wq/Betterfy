@@ -22,7 +22,7 @@ record of *why*.
 | 6 — playlist intelligence | done: fingerprints, clustering, name semantics, multi-dimensional type |
 | 7 — playlist relationships | done: duplicate / view / event-copy / subset / variant / related, and §19 collections |
 | 8 — personal layer | done: append-only correction log, v1 feedback import, listening relevance, §35 review queue |
-| 9 — AI reconciliation | **not started** |
+| 9 — AI reconciliation | constraint layer done; no vendor wired, `ask` is injected |
 | 10-11 — recommendations, UI | **not started**; v1 still answers every question the app asks |
 
 Nothing in `core/` is wired into the shipping app. v1 is untouched and still
@@ -41,8 +41,9 @@ node --test    431 tests, 431 pass, 0 fail
 ```
 
 After phases 0-4: 509 tests. After phases 6-7: 545. After phase 8 and the
-review queue: **569 tests, 569 pass**. The 431 originals are unmodified
-throughout.
+review queue: 569. After the diagnostics CLI and weight sweep: 578. After
+phase 9's constraint layer: **601 tests, 601 pass**. The 431 originals are
+unmodified throughout.
 
 Measured engine baseline, on the benchmark fixtures in
 `core/benchmark/fixtures.mjs` (`npm run benchmark:compare`):
@@ -196,6 +197,7 @@ core/
   personal/corrections.mjs    append-only log, v1 import, global vs personal
   personal/relevance.mjs      listening as priority; never reaches the classifier
   review/queue.mjs            §35's prioritised queue, collapsed by question
+  ai/reconcile.mjs            §24's constraint layer; no vendor, `ask` injected
   benchmark/{fixtures,run,compare,playlists}.mjs
   benchmark/fit.mjs           §9: sweep each declared prior against the benchmark
 analyse-v3.mjs                run the whole engine over a real library.json
@@ -407,6 +409,42 @@ the playlists whose name disagrees with their music, and the review queue;
 This is the mechanism the two open items above need. Work the queue, and the
 answers are both corrections for your own library and benchmark rows.
 
+### AI chooses; it does not propose
+
+§24 is mostly a list of things AI must not be allowed to do, so `core/ai/` is
+mostly a constraint layer. Four rules, each enforced structurally rather than
+by prompt wording:
+
+- **It never sees a question the evidence answered.** `shouldAsk()` fires only
+  on `AMBIGUOUS` with two or more candidates, or on an unmapped tag.
+  Re-opening a settled answer with a language model is how a good answer gets
+  talked out of.
+- **The choice set is closed.** Every candidate in the request was produced by
+  the deterministic classifier from real evidence, and a response naming
+  anything else is rejected. That makes "inventing a genre from the title"
+  impossible rather than discouraged — and note the subtler case is covered
+  too: a *real* ontology genre that nothing in this track supports is still
+  refused (`NOT_A_CHOICE`), where a naive "is it a valid genre" check would
+  pass it.
+- **It cannot manufacture certainty.** A reconciled answer is capped at
+  `LIKELY` and carries `reconciledBy: 'ai'`. The evidence was divided before
+  the model spoke and it is divided still; what changed is which side we act
+  on.
+- **It never touches the evidence.** Reconciliation reorders a decision among
+  existing candidates and adds no records, so the next classification run
+  starts from exactly the same inputs.
+
+Unmapped tags are a separate task with a separate rule: a model may *propose*
+that "schranz" means hard techno, and the proposal goes to the review queue
+for a human. It is never applied.
+
+The tests are an adversary — a model that throws, invents genres, names real
+genres nothing supports, claims HIGH confidence, and returns a bare string.
+A constraint layer tested against a well-behaved mock proves nothing.
+
+No vendor is named anywhere in the module and it makes no network calls;
+`ask` is injected. A test greps for both.
+
 ### What is NOT here
 
 - **No audio analysis.** Spotify's `/audio-features` and `/recommendations`
@@ -414,8 +452,9 @@ answers are both corrections for your own library and benchmark rows.
   read. `SPOTIFY.capabilities` is `['identity', 'era']` and says so.
   `MEASURED_FIELDS` in `music-dna.mjs` is the shape a licensed provider would
   fill; nothing fills it.
-- **No AI.** §4.5 puts AI reconciliation after deterministic evidence works.
-  Deterministic evidence now works; AI is still Phase 9.
+- **No AI model.** The §24 constraint layer is built and tested; no vendor is
+  wired to it, and `ask` is injected. Nothing in the engine calls a model
+  today — which also means the accuracy numbers above owe nothing to one.
 - **Misfile detection on Music DNA (§21).** The fingerprints and clusters it
   needs now exist; `misfile.mjs` still runs on v1 tag vectors.
 - **Recommendations and the UI** (phases 10, 11). The review queue produces

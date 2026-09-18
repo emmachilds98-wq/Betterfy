@@ -926,6 +926,14 @@ person's playlist names has no equivalent here.
 npm run benchmark:playlists # playlist type + relationship accuracy
 ```
 
+There is an AI reconciliation layer (`core/ai/`), but read what it is before
+assuming: it is a constraint layer, and no model is wired to it. When one is,
+it will only ever be asked about tracks the evidence genuinely could not
+settle, it can only choose between candidates the deterministic engine already
+produced from real evidence, its answer is capped at "likely" and labelled as
+not-evidence, and it can never add to or replace what a provider said. None of
+the accuracy numbers above involve a model.
+
 Your corrections live in their own append-only layer (`core/personal/`) that
 never touches provider evidence and is never touched by it — so the library
 can be reclassified after an engine change without losing a year of your
