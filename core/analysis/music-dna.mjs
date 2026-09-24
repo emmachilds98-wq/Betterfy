@@ -82,6 +82,9 @@ export function musicProfile(set, { registry = null, now = Date.now() } = {}) {
       // reads as corroboration when it is nothing of the kind.
       independentGroups: genre.independentGroups,
       sources: genre.sources,
+      // Entity levels backing the answer, carried through so a consumer can
+      // tell a statement about this recording from one about its artist.
+      entities: genre.entities ?? [],
       candidates: genre.candidates,
     },
     mood, context, era,
@@ -132,9 +135,22 @@ export function musicDNA(profile) {
 
   const dist = facet => Object.fromEntries((facet?.values ?? []).map(v => [v.concept, v.weight]));
 
+  // The most specific level anything said the genre at. Two artist-basis
+  // profiles for the same artist are the same records read twice, not two
+  // tracks that resemble each other, and anything comparing DNA has to be
+  // able to see that.
+  const levels = profile.genre?.entities ?? [];
+  const basis = levels.includes('track') ? 'track'
+    : levels.includes('release') ? 'release'
+    : levels.includes('artist') ? 'artist' : null;
+
   return {
     id: profile.identity?.spotifyId ?? null,
     key: profile.identity?.key ?? null,
+    // Credited artists, for the same reason: shared credits plus an artist
+    // basis is what makes two vectors identical by construction.
+    artistIds: (profile.identity?.artists ?? []).map(a => a.spotifyId).filter(Boolean),
+    basis,
     genre: Object.fromEntries(genre),
     primaryGenre: profile.genre?.primary ?? null,
     genreConfidence: profile.genre?.confidence ?? CONFIDENCE.INSUFFICIENT_DATA,

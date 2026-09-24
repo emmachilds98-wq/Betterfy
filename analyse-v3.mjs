@@ -14,10 +14,11 @@
 //
 //   node analyse-v3.mjs                 the report
 //   node analyse-v3.mjs --queue         plus the review queue, written out
+//   node analyse-v3.mjs --suggest       plus what each bucket is missing
 //   node analyse-v3.mjs --json          machine-readable, for diffing runs
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { indexCaches, buildRegistry, profileLibrary, libraryReport,
-         analysePlaylists, nameVsMusic, ENGINE_VERSION } from './core/engine.mjs';
+         analysePlaylists, nameVsMusic, recommend, ENGINE_VERSION } from './core/engine.mjs';
 import { reviewQueue } from './core/review/queue.mjs';
 import { CorrectionLog, fromV1Feedback } from './core/personal/corrections.mjs';
 import { ONTOLOGY_VERSION } from './core/ontology/index.mjs';
@@ -133,6 +134,43 @@ if (queue.concepts.length) {
   for (const c of queue.concepts.slice(0, 15)) console.log(`    ${String(c.tracks).padStart(5)}  ${c.raw}`);
 }
 
+/* ---------- §25: what you own and never filed ----------
+ *
+ * Proposals only. Nothing here says a track is in the wrong place — that is
+ * §21, which is not built, because a misfile flag is an instruction to move
+ * somebody's music and the weights behind it are not fitted yet. */
+const suggest = recommend(lib, profiles, analysis, { corrections, listening: { recentlyActive } });
+
+const loose = suggest.unfiled({ top: 20 });
+console.log(`\n=== OWNED, LIKED, FILED NOWHERE: ${loose.unfiled} ===`);
+console.log(`  ${loose.withDestination} of them have a bucket that fits`);
+for (const r of loose.results.slice(0, 10))
+  console.log(`  ${r.artist} — ${r.name}  [${r.genre ?? 'unclassified'}]`
+    + (r.suggested ? `\n      -> ${r.suggested.name} (${r.suggested.score})` : '\n      -> nothing fits well enough to suggest'));
+
+const thin = suggest.underservedGenres();
+if (thin.declined) {
+  console.log(`\n=== PLAYED BUT BARELY FILED: not available ===\n  ${thin.why}`);
+} else if (thin.results.length) {
+  console.log(`\n=== PLAYED BUT BARELY FILED ===`);
+  console.log('  (artists you are actually playing, against how much of that genre is in a playlist)');
+  for (const r of thin.results.slice(0, 10))
+    console.log(`  ${r.concept.padEnd(20)} ${String(r.played).padStart(4)} played  ${String(r.filed).padStart(4)} filed`);
+}
+
+if (flag('--suggest')) {
+  const targets = [...analysis.classifications.values()].filter(c => c.isTarget);
+  console.log(`\n=== MISSING FROM YOUR BUCKETS (${targets.length} take suggestions) ===`);
+  for (const c of targets) {
+    const m = suggest.missingFromPlaylist(c.id, { top: 8 });
+    if (!m.results?.length) continue;
+    console.log(`  ${c.name} [${m.target}] — ${m.results.length} candidates, ${m.strays} filed nowhere else`);
+    for (const r of m.results)
+      console.log(`     ${r.artist} — ${r.name}  (${r.score}, ${r.confidence}`
+        + `${r.filedIn ? `, already in ${r.filedIn}` : ', filed nowhere else'})`);
+  }
+}
+
 const out = {
   generatedAt: new Date().toISOString(),
   versions: { engine: ENGINE_VERSION, ontology: ONTOLOGY_VERSION, classifier: CLASSIFIER_VERSION,
@@ -145,6 +183,8 @@ const out = {
   relationships: analysis.relationships,
   collections: analysis.collections,
   nameVsMusic: disagreeing,
+  unfiled: { count: loose.unfiled, withDestination: loose.withDestination, top: loose.results },
+  underservedGenres: thin.results ?? [],
 };
 writeFileSync('report-v3.json', JSON.stringify(out, null, 2));
 console.log('\nwrote report-v3.json');

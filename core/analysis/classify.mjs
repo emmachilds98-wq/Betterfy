@@ -312,6 +312,13 @@ export function classifyGenre(set, { registry = null, now = Date.now() } = {}) {
     score: primary ? +primary.score.toFixed(4) : 0,
     share: +leaderShare(primary, ranked).toFixed(3),
     sources: primary ? [...new Set(primary.records.map(r => r.source))] : [],
+    // Which entity levels actually back this answer. Downstream this is the
+    // difference between "these two tracks are alike" and "these two tracks
+    // are by the same artist and nobody has said anything about either of
+    // them" — two statements a cosine over the resulting vectors cannot tell
+    // apart, because in that case it is comparing one set of records to
+    // itself.
+    entities: primary ? [...new Set(primary.records.map(r => r.entityType))] : [],
     independentGroups: groupCount,
     candidates: ranked.slice(0, 6).map(c => ({
       concept: c.concept, score: +c.score.toFixed(4),

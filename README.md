@@ -879,7 +879,7 @@ guess, and everything downstream reads the file, not the rules.
 | `actions.mjs` | every library mutation, with the undo log |
 | `server.mjs` + `ui/` | the local app |
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
-| `core/` | the v3 evidence engine — ontology, identity, evidence, providers, track classifier, playlist intelligence, benchmarks. Not wired into the app; see `docs/ENGINE-V3-ARCHITECTURE.md` |
+| `core/` | the v3 evidence engine — ontology, identity, evidence, providers, track classifier, playlist intelligence, recommendations, benchmarks. Not wired into the app; see `docs/ENGINE-V3-ARCHITECTURE.md` |
 | `enrich-lastfm-tracks.mjs` | track-level Last.fm tags, prioritised by what you play and what the engine is least sure about — optional, resumable |
 | `analyse-v3.mjs` | runs the v3 engine over your `library.json` and existing caches: bands, playlist types, relationships, and the review queue |
 | `make-icons.mjs` | renders the logo to the PNG sizes browsers and phones ask for |
@@ -948,13 +948,30 @@ question, not eight — and it surfaces the tags nothing could place, so
 answering one ("schranz is a kind of hard techno") fixes every track carrying
 it, for your library only.
 
+It also suggests — and only suggests (`core/recommend/`): more like this
+track, what a bucket is missing, music you liked and then filed nowhere, and
+genres you are actually playing but have barely filed. Nothing in that layer
+produces a move or a removal; a test enforces it. Telling you a track is in
+the *wrong* place reads the same similarity numbers with far more authority,
+and that stays on v1 until the weights below are earned.
+
+Two things it does that v1's ranking cannot. It declines: a track the engine
+cannot classify gets no recommendations rather than a weak list that looks
+like a strong one. And it will not pass off a tag cloud as a resemblance —
+two tracks by one artist, neither with evidence of its own, have identical
+profiles *because they were computed from the same records*, so a plain
+cosine puts the seed artist's own catalogue at the top of every "more like
+this" at a similarity of 1.0. Those matches are marked for what they are and
+dropped by default.
+
 To point all of it at your own library — no network, no new configuration,
 nothing written back to your caches:
 
 ```sh
-npm run analyse:v3            # confidence bands, playlist types and relationships
-npm run analyse:v3 -- --queue # plus the questions worth answering, written out
-npm run benchmark:fit         # which of the engine's numbers are actually validated
+npm run analyse:v3              # confidence bands, playlist types and relationships
+npm run analyse:v3 -- --queue   # plus the questions worth answering, written out
+npm run analyse:v3 -- --suggest # plus what each bucket is missing
+npm run benchmark:fit           # which of the engine's numbers are actually validated
 ```
 
 That last one is worth being blunt about: `benchmark:fit` sweeps every
@@ -962,7 +979,11 @@ threshold in the engine and reports which ones the benchmark constrains. Four
 of fifteen are currently *unconstrained* — uncontradicted rather than
 validated. None are set to a value that scores worse, and a test fails the
 build if that changes, but the numbers are priors until the benchmark is real.
-That is why none of this is wired into the app yet.
+That is why none of this is wired into the app yet. The recommendation layer's
+own thresholds are not in that sweep at all — there is no recommendation
+benchmark to sweep them against, and the synthetic fixtures cannot be one,
+since every track in them inherits its artist's cloud and so has no ground
+truth for "was that a sensible suggestion".
 
 Full write-up, including the measured v1-vs-v3 baseline and what is
 deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.

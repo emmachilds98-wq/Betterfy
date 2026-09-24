@@ -42,8 +42,8 @@ node --test    431 tests, 431 pass, 0 fail
 
 After phases 0-4: 509 tests. After phases 6-7: 545. After phase 8 and the
 review queue: 569. After the diagnostics CLI and weight sweep: 578. After
-phase 9's constraint layer: **601 tests, 601 pass**. The 431 originals are
-unmodified throughout.
+phase 9's constraint layer: 601. After the §25 recommendation layer:
+**625 tests, 625 pass**. The 431 originals are unmodified throughout.
 
 Measured engine baseline, on the benchmark fixtures in
 `core/benchmark/fixtures.mjs` (`npm run benchmark:compare`):
@@ -198,6 +198,8 @@ core/
   personal/relevance.mjs      listening as priority; never reaches the classifier
   review/queue.mjs            §35's prioritised queue, collapsed by question
   ai/reconcile.mjs            §24's constraint layer; no vendor, `ask` injected
+  recommend/similarity.mjs    §25 primitives; the shared-artist-cloud guard
+  recommend/suggest.mjs       more-like-this, missing-from, unfiled, builder
   benchmark/{fixtures,run,compare,playlists}.mjs
   benchmark/fit.mjs           §9: sweep each declared prior against the benchmark
 analyse-v3.mjs                run the whole engine over a real library.json
@@ -445,6 +447,57 @@ A constraint layer tested against a well-behaved mock proves nothing.
 No vendor is named anywhere in the module and it makes no network calls;
 `ask` is injected. A test greps for both.
 
+### Similarity between two artist-basis profiles measures one tag cloud twice
+
+The recommendation layer (`core/recommend/`) is the first thing that compares
+two profiles to each other rather than reading one. That turns out to
+reintroduce §4.1's failure from a new direction.
+
+Most tracks have no evidence of their own; their genre comes from their
+artist's tag cloud. Two such tracks by one artist therefore have *identical*
+DNA — not because they resemble each other, but because both vectors were
+computed from the same records. A cosine reads 1.0 and cannot distinguish
+that from a real match, so the top of any "more like this" is the seed
+artist's own catalogue, ranked above everything genuinely similar. It is the
+same defect the whole engine exists to avoid, wearing a different hat: v1's
+`rank()` has it too, and there it is invisible because a ranking is always
+returned.
+
+So `compare()` reports two numbers. `score` is the raw cosine, kept intact so
+it stays comparable with v1's and with playlist coherence. `rank` is what a
+list is ordered by, discounted when the pair shares a credited artist *and*
+neither answer rests on anything more specific than that artist. The reason
+travels with the row (`basis: 'same-artist-cloud'`), and such matches are
+dropped from "more like this" by default — asking for more like a track is not
+asking for more by its artist, and if it were, that question needs no engine.
+
+This is why `musicDNA()` carries `artistIds` and `basis`, and why
+`classifyGenre()` now reports the `entities` behind its answer. Without them
+the distinction is not representable.
+
+### A suggestion says whether the track is filed anywhere else
+
+`missingFromPlaylist()` scores a stray and a track already in three other
+buckets identically, because they are the same music. They are not the same
+suggestion: one says "you lost this", the other says "this could also live
+here". In a library where cross-filing is normal the second kind is far more
+common, and without a count the first gets buried. Each row carries
+`filedIn`, and the report carries `strays`.
+
+### Recommendations propose; they never move
+
+Everything in `core/recommend/` proposes additions. Nothing returns a move or
+a removal, and a test greps the modules (comments stripped) to keep it that
+way. §21's misfile detection reads the *same* similarity numbers and turns
+them into "this track is in the wrong place" — the one output that can lose
+somebody their filing — and it is deliberately not built on top of this while
+`npm run benchmark:fit` still reports four of fifteen thresholds as
+uncontradicted rather than validated.
+
+The `SIMILARITY` thresholds this layer adds are **not swept at all**, because
+there is no recommendation benchmark to sweep them against. They are declared
+priors, and the module says so where they are defined.
+
 ### What is NOT here
 
 - **No audio analysis.** Spotify's `/audio-features` and `/recommendations`
@@ -455,24 +508,31 @@ No vendor is named anywhere in the module and it makes no network calls;
 - **No AI model.** The §24 constraint layer is built and tested; no vendor is
   wired to it, and `ask` is injected. Nothing in the engine calls a model
   today — which also means the accuracy numbers above owe nothing to one.
-- **Misfile detection on Music DNA (§21).** The fingerprints and clusters it
-  needs now exist; `misfile.mjs` still runs on v1 tag vectors.
-- **Recommendations and the UI** (phases 10, 11). The review queue produces
-  the rows §33/§34 describe; nothing renders them.
+- **Misfile detection on Music DNA (§21).** The fingerprints, clusters and
+  similarity primitives it needs now all exist; `misfile.mjs` still runs on v1
+  tag vectors, and that is a decision rather than a gap (above).
+- **External discovery.** §25's Discover has two halves. The half that needs a
+  network source — music you do *not* own — still belongs to v1's
+  `discover.mjs` and its Last.fm similar-artist graph, because Spotify's
+  `/recommendations` is gone. v3 adds only the half that needs nothing:
+  `unfiled()` and `underservedGenres()`.
+- **The UI** (phase 11). The review queue produces the rows §33/§34 describe,
+  and the recommendation layer produces §25's; nothing renders either.
 
 ---
 
 ## 6. Running it
 
 ```sh
-npm test                    # 509 tests, including the ontology validator
+npm test                    # 625 tests, including the ontology validator
 npm run benchmark           # the §26 metric set, per confidence band
 npm run benchmark:compare   # v1 against v3, same fixtures
 npm run benchmark:playlists # playlist type + relationship accuracy
 npm run benchmark:fit       # which weights the benchmark actually constrains
 
 npm run analyse:v3          # the whole engine over YOUR library.json
-npm run analyse:v3 -- --queue
+npm run analyse:v3 -- --queue     # plus the questions worth answering
+npm run analyse:v3 -- --suggest   # plus what each bucket is missing
 
 npm run enrich:tracks       # track-level Last.fm, needs only a Last.fm key
 npm run enrich:tracks -- --limit=200
@@ -520,6 +580,11 @@ behaviour and that is the bug.
    place the new engine would change what a user sees, and it should not
    happen until the benchmark above is real — a misfile flag is an
    instruction to move somebody's music.
+5. **Benchmark the recommendations.** The §25 layer has tests but no accuracy
+   metric, so its `SIMILARITY` thresholds are outside the fit sweep entirely.
+   The fixture library cannot supply one: every track in it inherits its
+   artist's cloud, so "did this recommendation make sense" has no ground
+   truth there. This needs the same real reviewed rows as (1).
 
 Note that (1) and (2) now have a mechanism: run the engine over a real
 library, work the review queue, and the answers are benchmark rows. That is

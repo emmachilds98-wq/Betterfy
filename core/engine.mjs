@@ -25,6 +25,8 @@ import { fingerprintLibrary } from './playlists/fingerprint.mjs';
 import { clusterTracks } from './playlists/clustering.mjs';
 import { classifyPlaylist, libraryBaseline } from './playlists/classify.mjs';
 import { findRelationships, collections } from './playlists/relationships.mjs';
+import { libraryTracks, placements, moreLikeThis, missingFromPlaylist, unfiled,
+         underservedGenres, buildPlaylist } from './recommend/suggest.mjs';
 
 export const ENGINE_VERSION = '3.0.0';
 
@@ -225,4 +227,36 @@ export function nameVsMusic(classifications) {
                shape: c.musicalIdentity.shape, coherence: c.musicalIdentity.coherence });
   }
   return out;
+}
+
+/**
+ * The §25 recommendation surface, bound to one library pass.
+ *
+ * Returned as closures over an already-indexed track table rather than as
+ * four functions each re-walking the library, because every one of them is
+ * asked repeatedly as a person clicks around and the walk is the expensive
+ * part. Everything here is read-only: no suggestion in this object moves an
+ * existing placement, which is §21's job and is not built.
+ */
+export function recommend(lib, profiles, analysis, { corrections = null, listening = null } = {}) {
+  const tracks = libraryTracks(lib, profiles);
+  // Both walks are over the whole library and both are asked once per
+  // playlist by any caller showing a report, so they are done once here.
+  const filedIn = placements(lib);
+  const ctx = { lib, profiles, tracks, filedIn,
+                fingerprints: analysis?.fingerprints, classifications: analysis?.classifications,
+                corrections };
+  // Per-call options tune the question (top, perArtist, allowSameArtist); the
+  // library context is pinned after them, because `tracks` and `filedIn` were
+  // derived from this `lib` and letting a caller swap one of the three would
+  // answer from two libraries at once.
+  const bind = opts => ({ ...ctx, ...opts, lib, profiles, tracks, filedIn });
+  return {
+    tracks, filedIn,
+    moreLikeThis: (trackId, opts = {}) => moreLikeThis(trackId, bind(opts)),
+    missingFromPlaylist: (playlistId, opts = {}) => missingFromPlaylist(playlistId, bind(opts)),
+    unfiled: (opts = {}) => unfiled(bind(opts)),
+    underservedGenres: (opts = {}) => underservedGenres({ listening, ...bind(opts) }),
+    buildPlaylist: (spec, opts = {}) => buildPlaylist(spec, bind(opts)),
+  };
 }
