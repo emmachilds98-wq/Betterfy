@@ -21,6 +21,7 @@
     "shuffle": "node shuffle.mjs",
     "consolidate": "node consolidate.mjs",
     "build:review": "node build-review.mjs",
+    "build:review:v3": "node build-review-v3.mjs",
     "test": "node --test",
     "start": "node server.mjs",
     "setup": "node auth.mjs && node snapshot.mjs && node enrich-lastfm.mjs && node enrich-discogs.mjs && node axes.mjs",
