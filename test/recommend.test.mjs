@@ -7,6 +7,9 @@ import { libraryTracks, moreLikeThis, missingFromPlaylist, unfiled,
          underservedGenres, buildPlaylist } from '../core/recommend/suggest.mjs';
 import { CONFIDENCE } from '../core/analysis/classify.mjs';
 import { CorrectionLog, correction } from '../core/personal/corrections.mjs';
+import { mirrorsOf } from '../core/playlists/mirror.mjs';
+import { placements } from '../core/recommend/suggest.mjs';
+import { playlistReach } from '../core/personal/relevance.mjs';
 import { buildFixtureLibrary, NOW } from '../core/benchmark/playlists.mjs';
 import { indexCaches, buildRegistry, profileLibrary, analysePlaylists, recommend } from '../core/engine.mjs';
 
@@ -316,4 +319,90 @@ test('a track in no playlist at all is reported as a stray', () => {
   assert.ok(row, 'a stray that fits the bucket should be suggested for it');
   assert.equal(row.filedIn, 0);
   assert.equal(out.strays, 1);
+});
+
+/* ---------- record-of-everything playlists ----------
+ *
+ * A playlist holding your whole library is not a place you filed anything.
+ * The engine's plumbing has always accepted an `isMirror` predicate and
+ * nothing ever passed one, so the default `() => false` meant every track in
+ * such a library read as FILED and was never offered a home.
+ */
+test('a playlist holding the whole library is detected by shape, not by name', () => {
+  const { lib } = world();
+  const everything = [];
+  for (const p of lib.playlists) for (const t of p.tracks) everything.push(t);
+  const lib2 = { ...lib, playlists: [...lib.playlists,
+    { id: 'p-all', name: 'Remember Everything', tracks: everything }] };
+
+  const m = mirrorsOf(lib2);
+  assert.deepEqual([...m.ids], ['p-all']);
+  assert.equal(m.rows[0].by, 'coverage', 'detected from what it holds, not from what it is called');
+  assert.ok(m.rows[0].share >= 0.9);
+});
+
+test('an ordinary genre bucket is never mistaken for a record of everything', () => {
+  const { lib } = world();
+  assert.equal(mirrorsOf(lib).ids.size, 0, 'the largest fixture playlist is 40 of 111 tracks');
+});
+
+test('a caller that knows its own mirror is believed without clearing the threshold', () => {
+  const { lib } = world();
+  const small = lib.playlists.find(p => p.id === 'p-thfav');
+  const m = mirrorsOf(lib, { also: p => p.id === 'p-thfav' });
+  assert.ok(m.ids.has('p-thfav'));
+  assert.equal(m.rows.find(r => r.id === 'p-thfav').by, 'caller');
+  assert.ok(small.tracks.length / 111 < 0.9, 'and it is nowhere near the coverage threshold');
+});
+
+test('a track filed only in the record of everything is unfiled', () => {
+  const { lib } = world();
+  const everything = [];
+  for (const p of lib.playlists) for (const t of p.tracks) everything.push(t);
+  const stray = { ...lib.playlists[0].tracks[0], id: 'only-in-all', name: 'Only In All' };
+  const lib2 = { ...lib,
+    playlists: [...lib.playlists, { id: 'p-all', name: 'Remember Everything', tracks: [...everything, stray] }],
+    liked: [stray] };
+
+  const where = placements(lib2);
+  assert.equal(where.get('only-in-all'), undefined, 'the record is not a filing decision');
+  assert.ok(!where.has('p-all'));
+
+  // And the blast radius of an ordinary track does not gain one from it.
+  const filed = lib.playlists[0].tracks[0];
+  const reach = playlistReach(lib2);
+  const real = lib.playlists.filter(p => p.tracks.some(t => t.id === filed.id)).length;
+  assert.equal(reach.get(filed.id), real, 'reach is the real playlists, and only those');
+  assert.ok(playlistReach(lib2, { isMirror: () => false }).get(filed.id) > real,
+    'counting the record of everything inflates it');
+});
+
+test('the record of everything is never a filing destination', () => {
+  const { lib, profiles } = world();
+  const everything = [];
+  for (const p of lib.playlists) for (const t of p.tracks) everything.push(t);
+  const lib2 = { ...lib, playlists: [...lib.playlists,
+    { id: 'p-all', name: 'Remember Everything', tracks: everything }] };
+  const analysis2 = analysePlaylists(lib2, profiles, { now: NOW });
+
+  assert.equal(analysis2.classifications.get('p-all').isTarget, false);
+  assert.deepEqual(analysis2.mirrors.rows.map(r => r.id), ['p-all']);
+  // It is also kept out of every relationship, where as a superset of
+  // everything it would otherwise "contain" each playlist in the library.
+  assert.ok(!analysis2.relationships.some(r => r.a.id === 'p-all' || r.b.id === 'p-all'));
+});
+
+
+/*
+ * Reach is "how many playlists a track sits in", which is what its own doc
+ * says and what the queue's MANY_PLAYLISTS reason means. It counted
+ * placements, so a playlist holding the same track twice — a duplicate, which
+ * this project has a whole report about — inflated the blast radius of
+ * exactly the tracks most likely to be duplicated.
+ */
+test('a track duplicated inside one playlist still sits in one playlist', () => {
+  const { lib } = world();
+  const t = lib.playlists[0].tracks[0];
+  const doubled = { ...lib, playlists: [{ id: 'p-dup', name: 'Dup', tracks: [t, t, t] }] };
+  assert.equal(playlistReach(doubled).get(t.id), 1);
 });

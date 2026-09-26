@@ -42,8 +42,9 @@ node --test    431 tests, 431 pass, 0 fail
 
 After phases 0-4: 509 tests. After phases 6-7: 545. After phase 8 and the
 review queue: 569. After the diagnostics CLI and weight sweep: 578. After
-phase 9's constraint layer: 601. After the §25 recommendation layer:
-**625 tests, 625 pass**. The 431 originals are unmodified throughout.
+phase 9's constraint layer: 601. After the §25 recommendation layer: 625.
+After the mirror fix and the benchmark importer:
+**638 tests, 638 pass**. The 431 originals are unmodified throughout.
 
 Measured engine baseline, on the benchmark fixtures in
 `core/benchmark/fixtures.mjs` (`npm run benchmark:compare`):
@@ -200,6 +201,10 @@ core/
   ai/reconcile.mjs            §24's constraint layer; no vendor, `ask` injected
   recommend/similarity.mjs    §25 primitives; the shared-artist-cloud guard
   recommend/suggest.mjs       more-like-this, missing-from, unfiled, builder
+  playlists/mirror.mjs        record-of-everything playlists, by shape not name
+  benchmark/import.mjs        §26's missing half: reviewed library -> cases
+review-v3.html                the §33/§34/§35 review page (phase 11)
+build-review-v3.mjs           bakes report + queue into it
   benchmark/{fixtures,run,compare,playlists}.mjs
   benchmark/fit.mjs           §9: sweep each declared prior against the benchmark
 analyse-v3.mjs                run the whole engine over a real library.json
@@ -484,6 +489,36 @@ here". In a library where cross-filing is normal the second kind is far more
 common, and without a count the first gets buried. Each row carries
 `filedIn`, and the report carries `strays`.
 
+### A playlist holding your whole library is a record, not a home
+
+Betterfy makes one ("All Songs"); listeners make their own ("Remember
+Everything", "Archive"). Left in, one does four kinds of damage at once, all
+silent: every track reads as FILED so nothing is ever offered a home; every
+track's blast radius gains one, so the review queue thinks a wrong answer
+spreads further than it does; it is a superset of every playlist, so it buries
+every real relationship under "contains"; and it is a centroid of everything
+you own, so it wins every filing comparison it is allowed into.
+
+The engine's plumbing has always accepted an `isMirror` predicate — and
+nothing ever passed one. The default was `() => false`, so on any real library
+all four were happening. `analysePlaylists()` and `recommend()` now default to
+detecting them.
+
+Detected by **shape, not by name**. v1's browser build matches the exact
+string `"All Songs — Betterfy"`, which catches the one Betterfy makes and
+misses every one a listener made themselves — the same failure as `axes.mjs`'s
+venue regex, one layer down. A playlist holding nine of every ten distinct
+tracks you own cannot be telling you where anything belongs, whatever it is
+called and in whatever language. A caller that knows better (the app remembers
+the one it built, by id) still passes its own predicate, and that is taken in
+addition to the structural answer rather than instead of it. Detected mirrors
+are reported, never silently dropped.
+
+`playlistReach()` was fixed in the same pass: it counted placements rather
+than distinct playlists, so a playlist containing the same track twice — a
+duplicate, which this project has a whole report about — inflated the blast
+radius of exactly the tracks most likely to be duplicated.
+
 ### Recommendations propose; they never move
 
 Everything in `core/recommend/` proposes additions. Nothing returns a move or
@@ -524,11 +559,13 @@ priors, and the module says so where they are defined.
 ## 6. Running it
 
 ```sh
-npm test                    # 625 tests, including the ontology validator
+npm test                    # 638 tests, including the ontology validator
 npm run benchmark           # the §26 metric set, per confidence band
 npm run benchmark:compare   # v1 against v3, same fixtures
 npm run benchmark:playlists # playlist type + relationship accuracy
 npm run benchmark:fit       # which weights the benchmark actually constrains
+npm run benchmark:import    # your reviewed answers -> benchmark cases
+npm run build:review:v3     # the queue as a page you can work through
 
 npm run analyse:v3          # the whole engine over YOUR library.json
 npm run analyse:v3 -- --queue     # plus the questions worth answering
@@ -566,11 +603,19 @@ behaviour and that is the bug.
 ## 8. Immediate next steps
 
 1. **Grow the benchmark.** Twelve synthetic cases is a harness, not a
-   benchmark. §26 asks for ~500 reviewed tracks. The harness takes them as
-   data; nothing in `run.mjs` changes.
-2. **Re-fit the weights against it.** `npm run benchmark:fit` now says
-   exactly which numbers the benchmark constrains and which it does not — 4
-   of 15 are entirely unconstrained. Provider `reliability` values are not
+   benchmark. §26 asks for ~500 reviewed tracks, and there is now a way to
+   *produce* them: `core/benchmark/import.mjs` turns a reviewed library into
+   cases in exactly the shape `fixtures.mjs` defines, and `allCases()` picks
+   them up. They land in a gitignored file, because committing real tags
+   republishes a third party's data and goes stale — so what CI reports stays
+   the synthetic seed while a real library constrains the weights locally.
+   Step-by-step: **`docs/TUNING.md`**.
+2. **Re-fit the weights against it.** `npm run benchmark:fit` says exactly
+   which numbers the benchmark constrains and which it does not — 4 of 15 are
+   entirely unconstrained — and now also names, per parameter, the *case
+   shape* that would constrain each flat one. A flat parameter is a gap in
+   the fixture set rather than a shortage of rows: 500 more tracks of a shape
+   already covered would move none of them. Provider `reliability` values are not
    swept at all yet, because a registry is built per run rather than read
    from a mutable table.
 3. **Verify the MusicBrainz recording lookup** against a live response. Like

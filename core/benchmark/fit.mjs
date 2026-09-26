@@ -17,8 +17,10 @@
 //               is a different and much weaker claim.
 //
 // With twelve cases most parameters will read flat, and saying so plainly is
-// the point. A flat result is a request for more benchmark rows, not a
-// licence to trust the number.
+// the point. A flat result is not a licence to trust the number — and it is
+// not a request for more rows either. It is a gap in the *shape* of the
+// fixture set, so CONSTRAINED_BY names the case that would close each one;
+// 500 more tracks of a shape already covered would move none of them.
 import { THRESHOLDS } from '../analysis/classify.mjs';
 import { SPECIFICITY } from '../evidence/weights.mjs';
 import { runBenchmark } from './run.mjs';
@@ -50,6 +52,33 @@ export const PLAYLIST_SWEEPS = [
   { name: 'PLAYLIST.MIXED_ENTROPY', obj: () => PLAYLIST_THRESHOLDS, key: 'MIXED_ENTROPY', from: 0.20, to: 1.00, step: 0.05 },
   { name: 'PLAYLIST.HYBRID_MARGIN', obj: () => PLAYLIST_THRESHOLDS, key: 'HYBRID_MARGIN', from: 0.40, to: 1.00, step: 0.05 },
 ];
+
+/**
+ * What kind of case would actually pin each parameter down.
+ *
+ * "4 of 15 are FLAT — add more rows" is true and nearly useless: 500 more
+ * tracks of the shape already in the fixture would move none of them. A flat
+ * parameter is a *gap in the fixture set*, and the gap is specific. Each line
+ * below names the case that would make the benchmark care about that number,
+ * so working the review queue can be aimed rather than hoped at.
+ */
+export const CONSTRAINED_BY = {
+  'THRESHOLDS.MIN_TOTAL_WEIGHT': 'a track whose only evidence is one thin artist tag — the floor between "barely answered" and "not answered"',
+  'THRESHOLDS.MIN_LEADER_SHARE': 'a track where the leading genre holds roughly a third of the weight and the rest is spread',
+  'THRESHOLDS.AMBIGUOUS_RATIO': 'two genres from different branches at nearly equal weight — a real disagreement, not a winner and a runner-up',
+  'THRESHOLDS.HIGH_LEADER_SHARE': 'a track that SHOULD be HIGH and one that should stop at LIKELY, differing only in how much of the weight the leader holds',
+  'THRESHOLDS.HIGH_MARGIN_RATIO': 'a well-corroborated track with a close second place — corroborated enough for HIGH, contested enough that it must not be',
+  'THRESHOLDS.HIGH_MIN_WEIGHT': 'a unanimous answer resting on very little evidence — agreement without substance',
+  'THRESHOLDS.SPECIFIC_ENOUGH': 'a parent genre whose children split the evidence at around half — the "House, or Tech House?" case',
+  'SPECIFICITY.artist': 'a track whose TRACK-level tags disagree with its ARTIST-level tags, and the track is right. Needs npm run enrich:tracks',
+  'SPECIFICITY.release': 'a track where a release-level source and an artist-level source disagree',
+  'PLAYLIST.EVENT_SPAN_DAYS': 'a playlist built over several days that is still one event, and one built over several days that is not',
+  'PLAYLIST.EVENT_SETTLED_DAYS': 'a RECENT event playlist — every event in the fixture is 200 days old, so no threshold under 180 can separate them',
+  'PLAYLIST.ARTIST_CONCENTRATION': 'a playlist dominated by one artist that is still a genre bucket, and a genuine artist playlist with a guest or two',
+  'PLAYLIST.CONTENT_LIFT': 'a playlist whose name says nothing and whose contents lean only mildly towards one genre',
+  'PLAYLIST.MIXED_ENTROPY': 'a playlist of two genres in equal measure, and one of a genre plus a handful of strays',
+  'PLAYLIST.HYBRID_MARGIN': 'a playlist that is genuinely both a genre and a mood, and one that merely looks like it',
+};
 
 const round = (x, dp = 4) => +x.toFixed(dp);
 
@@ -132,11 +161,20 @@ function main() {
 
   const flat = [...tracks, ...playlists].filter(r => r.flat).length;
   const move = [...tracks, ...playlists].filter(r => !r.flat && !r.currentIsBest);
+  const flatRows = [...tracks, ...playlists].filter(r => r.flat);
+  if (flatRows.length) {
+    console.log('\n=== WHAT WOULD CONSTRAIN THE FLAT ONES ===');
+    console.log('  A flat parameter is a gap in the fixture set, not a shortage of rows —');
+    console.log('  500 more tracks of a shape already covered would move none of them.\n');
+    for (const r of flatRows)
+      console.log(`  ${r.name}\n      needs: ${CONSTRAINED_BY[r.name] ?? 'a case that distinguishes its ends'}`);
+  }
+
   console.log(`\n${flat}/${tracks.length + playlists.length} parameters are FLAT: the benchmark never`);
   console.log('distinguished any value in the swept range, so those numbers are uncontradicted');
-  console.log('rather than validated. That is a request for more benchmark rows (§26 asks for');
-  console.log('~500 reviewed tracks; there are currently 12 synthetic cases), not a reason to');
-  console.log('trust them.');
+  console.log('rather than validated. Each one above names the case that would change that —');
+  console.log('aim the review queue at those shapes and re-run this, rather than adding rows');
+  console.log('at random.');
   if (move.length) {
     console.log(`\n${move.length} parameter(s) would score BETTER at a different value — worth a look:`);
     for (const r of move) console.log(`  ${r.name}: currently ${r.current}, best in [${r.plateau?.join(' .. ')}]`);

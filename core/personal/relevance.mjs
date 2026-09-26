@@ -14,6 +14,7 @@
 // understood, rather than to whichever came first in playlist order.
 import { listeningWeights } from '../../profile.mjs';
 import { CONFIDENCE } from '../analysis/classify.mjs';
+import { mirrorPredicate } from '../playlists/mirror.mjs';
 
 export const RELEVANCE_VERSION = '3.0.0';
 
@@ -57,10 +58,25 @@ export function relevanceOf(track, weights) {
  * one wrong about a track filed in six places is six wrong answers, and it
  * also drags six centroids.
  */
-export function playlistReach(lib) {
+export function playlistReach(lib, { isMirror = null } = {}) {
+  const mirror = isMirror ?? mirrorPredicate(lib);
   const reach = new Map();
-  for (const p of lib?.playlists ?? [])
-    for (const t of p.tracks ?? []) if (t?.id) reach.set(t.id, (reach.get(t.id) ?? 0) + 1);
+  for (const p of lib?.playlists ?? []) {
+    // A record-of-everything playlist adds one to every track alike, which is
+    // not blast radius — it is a constant, and it pushed the whole library
+    // over the queue's MANY_PLAYLISTS threshold at once.
+    if (mirror(p)) continue;
+    // Distinct playlists, not placements. A playlist that contains the same
+    // track twice is a duplicate — which this project has a whole report
+    // about — and counting it twice inflated the blast radius of exactly the
+    // tracks most likely to be duplicated.
+    const seen = new Set();
+    for (const t of p.tracks ?? []) {
+      if (!t?.id || seen.has(t.id)) continue;
+      seen.add(t.id);
+      reach.set(t.id, (reach.get(t.id) ?? 0) + 1);
+    }
+  }
   return reach;
 }
 

@@ -27,6 +27,7 @@ import { classifyPlaylist, libraryBaseline } from './playlists/classify.mjs';
 import { findRelationships, collections } from './playlists/relationships.mjs';
 import { libraryTracks, placements, moreLikeThis, missingFromPlaylist, unfiled,
          underservedGenres, buildPlaylist } from './recommend/suggest.mjs';
+import { mirrorPredicate, mirrorsOf } from './playlists/mirror.mjs';
 
 export const ENGINE_VERSION = '3.0.0';
 
@@ -174,18 +175,26 @@ export function libraryReport(profiles) {
  * structural facts about an event copy and a plain subset are identical and
  * only the type tells them apart.
  *
- * `isMirror` identifies Betterfy's own "All Songs" playlist, which holds a
- * copy of the whole library by construction. Left in, it is a superset of
- * everything you own and a centroid of everything you listen to — it would
- * bury every real relationship and win every filing comparison. The browser
- * build already learned this the hard way; the predicate is passed in rather
- * than guessed at here because the app remembers it by id, not by name.
+ * `isMirror` identifies playlists that hold a copy of the whole library —
+ * Betterfy's own "All Songs" and whatever the listener called theirs. Left
+ * in, such a playlist is a superset of everything you own and a centroid of
+ * everything you listen to: it buries every real relationship and wins every
+ * filing comparison.
+ *
+ * The default used to be `() => false` and nothing ever passed anything else,
+ * so on any real library all of that was happening. It now defaults to
+ * detecting them by shape (core/playlists/mirror.mjs). A caller that knows
+ * better — the app remembers the one it built, by id — still passes its own
+ * predicate, and that answer is taken in addition to, not instead of, the
+ * structural one.
  *
  * @param {object} lib
  * @param {Map<string, {profile: object, dna: object}>} profiles  profileLibrary()
  * @param {{isMirror?: (p: object) => boolean, now?: number}} [opts]
  */
-export function analysePlaylists(lib, profiles, { isMirror = () => false, now = Date.now() } = {}) {
+export function analysePlaylists(lib, profiles, { isMirror = null, now = Date.now() } = {}) {
+  const structural = mirrorPredicate(lib, { also: isMirror ?? undefined });
+  const isMirrorAny = p => structural(p) || !!isMirror?.(p);
   const fingerprints = fingerprintLibrary(lib, profiles, { now });
 
   const clusters = new Map();
@@ -197,7 +206,7 @@ export function analysePlaylists(lib, profiles, { isMirror = () => false, now = 
     clusters.set(p.id, clusterTracks(members));
   }
 
-  const mirrorByFp = fp => isMirror({ id: fp?.id, name: fp?.name });
+  const mirrorByFp = fp => isMirrorAny({ id: fp?.id, name: fp?.name });
   const baseline = libraryBaseline(fingerprints, { isMirror: mirrorByFp });
 
   const knownArtists = new Set();
@@ -210,9 +219,12 @@ export function analysePlaylists(lib, profiles, { isMirror = () => false, now = 
       clusters: clusters.get(id) ?? [], baseline, knownArtists, isMirror: mirrorByFp(fp), now,
     }));
 
-  const relationships = findRelationships(lib, fingerprints, classifications, { isMirror });
+  const relationships = findRelationships(lib, fingerprints, classifications, { isMirror: isMirrorAny });
 
   return { fingerprints, clusters, classifications, baseline, relationships,
+           // Reported, never silent: a playlist quietly dropped from filing
+           // is exactly the kind of thing that should be visible.
+           mirrors: mirrorsOf(lib, { also: isMirror ?? undefined }),
            collections: collections(relationships) };
 }
 
@@ -238,11 +250,15 @@ export function nameVsMusic(classifications) {
  * part. Everything here is read-only: no suggestion in this object moves an
  * existing placement, which is §21's job and is not built.
  */
-export function recommend(lib, profiles, analysis, { corrections = null, listening = null } = {}) {
+export function recommend(lib, profiles, analysis, { corrections = null, listening = null,
+                                                    isMirror = null } = {}) {
   const tracks = libraryTracks(lib, profiles);
   // Both walks are over the whole library and both are asked once per
   // playlist by any caller showing a report, so they are done once here.
-  const filedIn = placements(lib);
+  // Mirror-aware: a record-of-everything playlist is not somewhere a track
+  // was filed, and counting it made every track look housed already.
+  const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
+  const filedIn = placements(lib, { isMirror: mirror });
   const ctx = { lib, profiles, tracks, filedIn,
                 fingerprints: analysis?.fingerprints, classifications: analysis?.classifications,
                 corrections };

@@ -21,3 +21,4 @@ playlists.config.json
 review.build.html
 node_modules/
 *.tmp
+benchmark-cases.json

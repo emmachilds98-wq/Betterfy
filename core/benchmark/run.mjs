@@ -25,6 +25,7 @@ import { SPOTIFY, toEvidence as spotifyEvidence } from '../sources/spotify.mjs';
 import { SHARED_TABLE } from '../sources/legacy.mjs';
 import { musicProfile } from '../analysis/music-dna.mjs';
 import { CASES } from './fixtures.mjs';
+import { loadImported } from './import.mjs';
 
 const ADAPTERS = {
   lastfm: lastfmEvidence,
@@ -94,7 +95,21 @@ export function evaluate(c, { now = Date.UTC(2026, 0, 1) } = {}) {
 }
 
 /** Run everything and roll the results up into the §26 metric set. */
-export function runBenchmark(cases = CASES, opts = {}) {
+/**
+ * The cases the benchmark runs on: the committed synthetic seed, plus any
+ * real reviewed cases imported from your own library.
+ *
+ * Real cases cannot be committed — they republish a third party's tags and go
+ * stale — so they live in a gitignored file and are picked up only if you
+ * have produced some. That keeps the number CI reports honest (it is the
+ * synthetic seed, always) while letting a real library actually constrain the
+ * weights locally, which is the whole point of §26.
+ */
+export function allCases() {
+  return [...CASES, ...loadImported()];
+}
+
+export function runBenchmark(cases = allCases(), opts = {}) {
   const results = cases.map(c => evaluate(c, opts));
   const known = results.filter(r => cases.find(c => c.id === r.id).expectGenre !== null);
   const bad = results.filter(r => cases.find(c => c.id === r.id).expectGenre === null);
@@ -134,8 +149,12 @@ export function runBenchmark(cases = CASES, opts = {}) {
 }
 
 function main() {
-  const r = runBenchmark();
-  console.log(`=== BETTERFY ENGINE v3 BENCHMARK ===\n`);
+  const cases = allCases();
+  const imported = cases.length - CASES.length;
+  const r = runBenchmark(cases);
+  console.log(`=== BETTERFY ENGINE v3 BENCHMARK ===`);
+  console.log(`${CASES.length} synthetic${imported ? ` + ${imported} reviewed from your library` : ''}`
+    + `${imported ? '' : '  (none imported — see npm run benchmark:import)'}\n`);
   for (const res of r.results) {
     console.log(`${res.pass ? 'PASS' : 'FAIL'}  ${res.id}`);
     for (const k of res.checks) if (!k.ok || process.argv.includes('-v')) console.log(`        ${k.ok ? 'ok  ' : 'BAD '} ${k.name}: ${k.detail}`);

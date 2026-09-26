@@ -86,6 +86,17 @@ for (const [band, n] of Object.entries(report.bands).sort((a, b) => b[1] - a[1])
 const corroborated = [...profiles.values()].filter(p => (p.profile.confidence.genreCoverage ?? 0) > 1).length;
 console.log(`  genre corroborated by more than one independent source: ${corroborated} (${pct(corroborated / report.tracks)})`);
 
+// Said before anything that depends on it. A playlist holding your whole
+// library is a record rather than a filing decision, and it is excluded from
+// what counts as filed, from blast radius and from filing targets — which is
+// too consequential to do silently.
+if (analysis.mirrors.rows.length) {
+  console.log(`\n=== RECORD-OF-EVERYTHING PLAYLISTS: ${analysis.mirrors.rows.length} ===`);
+  console.log('  (not counted as filing — a playlist holding your whole library is a record, not a home)');
+  for (const m of analysis.mirrors.rows)
+    console.log(`  ${m.name} — ${m.covers} of ${analysis.mirrors.library} tracks (${pct(m.share)}, by ${m.by})`);
+}
+
 console.log(`\n=== PLAYLISTS: ${analysis.classifications.size} ===`);
 const byType = {};
 for (const c of analysis.classifications.values()) (byType[c.type] ??= []).push(c);
@@ -181,6 +192,7 @@ const out = {
     musicalIdentity: c.musicalIdentity, dimensions: c.dimensions, nameSaid: c.nameSaid,
   })),
   relationships: analysis.relationships,
+  mirrors: analysis.mirrors,
   collections: analysis.collections,
   nameVsMusic: disagreeing,
   unfiled: { count: loose.unfiled, withDestination: loose.withDestination, top: loose.results },

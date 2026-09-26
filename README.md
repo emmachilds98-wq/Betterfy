@@ -985,6 +985,12 @@ benchmark to sweep them against, and the synthetic fixtures cannot be one,
 since every track in them inherits its artist's cloud and so has no ground
 truth for "was that a sensible suggestion".
 
+`benchmark:fit` now also names, for each flat parameter, the *kind of case*
+that would constrain it. A flat number is a gap in the shape of the fixture
+set rather than a shortage of rows — 500 more tracks of a shape already
+covered would move none of them — so the reviewing can be aimed rather than
+ground out.
+
 Full write-up, including the measured v1-vs-v3 baseline and what is
 deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.
 

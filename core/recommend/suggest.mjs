@@ -17,6 +17,7 @@
 import { similarTracks, fitToPlaylist, compare, SIMILARITY, RECOMMEND_VERSION } from './similarity.mjs';
 import { CONFIDENCE } from '../analysis/classify.mjs';
 import { lineageOf } from '../ontology/index.mjs';
+import { mirrorPredicate } from '../playlists/mirror.mjs';
 
 /** Every distinct track in a library, once, with its profile entry attached. */
 export function libraryTracks(lib, profiles) {
@@ -39,14 +40,20 @@ export function libraryTracks(lib, profiles) {
  * asked once per bucket — rebuilding it inside each call makes the cost
  * quadratic in playlists for no reason.
  */
-export function placements(lib) {
+export function placements(lib, { isMirror = null } = {}) {
+  const mirror = isMirror ?? mirrorPredicate(lib);
   const where = new Map();
-  for (const p of lib?.playlists ?? [])
+  for (const p of lib?.playlists ?? []) {
+    // A playlist holding your whole library is a record, not a filing
+    // decision. Counting it made every track read as filed, so nothing was
+    // ever offered a home — see core/playlists/mirror.mjs.
+    if (mirror(p)) continue;
     for (const t of p.tracks ?? []) {
       if (!t?.id) continue;
       if (!where.has(t.id)) where.set(t.id, new Set());
       where.get(t.id).add(p.id);
     }
+  }
   return where;
 }
 
