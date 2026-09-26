@@ -7,9 +7,18 @@ library.json
 rekordbox.json
 tags-lastfm.json
 tags-discogs.json
+# Track-level Last.fm tags (npm run enrich:tracks) and the artist->MusicBrainz
+# id map enrich-lastfm.mjs builds: both are generated caches of your own
+# library, same as the two above.
+tags-lastfm-tracks.json
+mbid.json
 cache-*.json
 report-*.json
+# The v3 review queue and your answers to it: yours, not the project's.
+review-queue.json
+corrections.json
 playlists.config.json
 review.build.html
 node_modules/
 *.tmp
+benchmark-cases.json

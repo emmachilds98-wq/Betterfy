@@ -879,11 +879,120 @@ guess, and everything downstream reads the file, not the rules.
 | `actions.mjs` | every library mutation, with the undo log |
 | `server.mjs` + `ui/` | the local app |
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
+| `core/` | the v3 evidence engine — ontology, identity, evidence, providers, track classifier, playlist intelligence, recommendations, benchmarks. Not wired into the app; see `docs/ENGINE-V3-ARCHITECTURE.md` |
+| `enrich-lastfm-tracks.mjs` | track-level Last.fm tags, prioritised by what you play and what the engine is least sure about — optional, resumable |
+| `analyse-v3.mjs` | runs the v3 engine over your `library.json` and existing caches: bands, playlist types, relationships, and the review queue |
 | `make-icons.mjs` | renders the logo to the PNG sizes browsers and phones ask for |
 
 `build-web.mjs` bundles `norm`, `credits` and `profile` verbatim into the page,
 so the browser and local builds score identically and cannot drift apart. It
 refuses to build if a secret appears in the output.
+
+### The v3 engine (`core/`), built beside v1, not instead of it
+
+`core/` holds an evidence-based classification engine: a versioned genre
+ontology, a common evidence record every provider maps into, and a
+deterministic classifier that reconciles up and down the genre hierarchy and
+is allowed to answer "not enough evidence". Nothing in it is wired into the
+app — `profile.mjs` still produces every suggestion, misfile flag and playlist
+axis you see. It runs beside v1 so the two can be measured against each other
+on the same data:
+
+```sh
+npm run benchmark           # accuracy and false-positive rate, per confidence band
+npm run benchmark:compare   # v1 against v3 on the same fixtures
+npm run enrich:tracks       # optional: track-level Last.fm tags, prioritised
+```
+
+The one thing v3 asks for that v1 never did is **track-level** Last.fm tags
+(`npm run enrich:tracks`, same key, no new configuration). That is what fixes
+the defect neither engine could reach around otherwise: a diverse artist
+currently hands the same tag cloud to every record they ever made. Without it
+v3 still works — it reads the artist caches v1 already keeps and reports lower
+confidence, which is the honest answer.
+
+It also reads playlists: what each one actually is (genre, mood, occasion,
+event, era, artist, DJ set, mixed), how confident that is, and how they relate
+to each other — which ones are duplicates, which are views of one collection
+("Tech House" / "Tech House — Favourites"), and which are event-specific
+copies of a bigger bucket rather than genre playlists in their own right.
+Notably with **no venue list**: an event is recognised by shape (a date, plus
+a word the ontology has never heard of, which is exactly the venue you cannot
+enumerate) and by the vocabulary-free signal of a playlist built in one
+sitting and never touched again. `axes.mjs`'s hand-written table of one
+person's playlist names has no equivalent here.
+
+```sh
+npm run benchmark:playlists # playlist type + relationship accuracy
+```
+
+There is an AI reconciliation layer (`core/ai/`), but read what it is before
+assuming: it is a constraint layer, and no model is wired to it. When one is,
+it will only ever be asked about tracks the evidence genuinely could not
+settle, it can only choose between candidates the deterministic engine already
+produced from real evidence, its answer is capped at "likely" and labelled as
+not-evidence, and it can never add to or replace what a provider said. None of
+the accuracy numbers above involve a model.
+
+Your corrections live in their own append-only layer (`core/personal/`) that
+never touches provider evidence and is never touched by it — so the library
+can be reclassified after an engine change without losing a year of your
+corrections, and your own filing habits never get learned as facts about
+music. v1's existing skip/reject store is imported, not discarded.
+
+On top of that sits a review queue (`core/review/`) that works out what is
+actually worth asking you: conflicting evidence first, then low confidence,
+then tracks you play a lot or that are filed in several places. It collapses
+questions — eight tracks by one artist with the same evidence are one
+question, not eight — and it surfaces the tags nothing could place, so
+answering one ("schranz is a kind of hard techno") fixes every track carrying
+it, for your library only.
+
+It also suggests — and only suggests (`core/recommend/`): more like this
+track, what a bucket is missing, music you liked and then filed nowhere, and
+genres you are actually playing but have barely filed. Nothing in that layer
+produces a move or a removal; a test enforces it. Telling you a track is in
+the *wrong* place reads the same similarity numbers with far more authority,
+and that stays on v1 until the weights below are earned.
+
+Two things it does that v1's ranking cannot. It declines: a track the engine
+cannot classify gets no recommendations rather than a weak list that looks
+like a strong one. And it will not pass off a tag cloud as a resemblance —
+two tracks by one artist, neither with evidence of its own, have identical
+profiles *because they were computed from the same records*, so a plain
+cosine puts the seed artist's own catalogue at the top of every "more like
+this" at a similarity of 1.0. Those matches are marked for what they are and
+dropped by default.
+
+To point all of it at your own library — no network, no new configuration,
+nothing written back to your caches:
+
+```sh
+npm run analyse:v3              # confidence bands, playlist types and relationships
+npm run analyse:v3 -- --queue   # plus the questions worth answering, written out
+npm run analyse:v3 -- --suggest # plus what each bucket is missing
+npm run benchmark:fit           # which of the engine's numbers are actually validated
+```
+
+That last one is worth being blunt about: `benchmark:fit` sweeps every
+threshold in the engine and reports which ones the benchmark constrains. Four
+of fifteen are currently *unconstrained* — uncontradicted rather than
+validated. None are set to a value that scores worse, and a test fails the
+build if that changes, but the numbers are priors until the benchmark is real.
+That is why none of this is wired into the app yet. The recommendation layer's
+own thresholds are not in that sweep at all — there is no recommendation
+benchmark to sweep them against, and the synthetic fixtures cannot be one,
+since every track in them inherits its artist's cloud and so has no ground
+truth for "was that a sensible suggestion".
+
+`benchmark:fit` now also names, for each flat parameter, the *kind of case*
+that would constrain it. A flat number is a gap in the shape of the fixture
+set rather than a shortage of rows — 500 more tracks of a shape already
+covered would move none of them — so the reviewing can be aimed rather than
+ground out.
+
+Full write-up, including the measured v1-vs-v3 baseline and what is
+deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.
 
 ## Data sources, and what they're worth
 
