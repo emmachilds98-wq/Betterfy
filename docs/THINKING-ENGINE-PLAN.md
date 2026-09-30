@@ -471,7 +471,7 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
 |---|---|---|---|
 | 0 — feasibility & harness | `in progress` — built, **gate unrun** | intrinsic-only ≥ v1 on a real library | 29 tests; 667 suite-wide. Needs `library.json` to answer. |
 | 1 — browser bundling bridge | `done` | bundled `core` parity test passes | 16 tests; parity asserted; page rendered in Chromium with 0 errors |
-| 2 — engine & explanations | `not started` | weights enter the fit sweep | — |
+| 2 — engine & explanations | `done` | weights enter the fit sweep | 42 intrinsic tests; sweep + componentValue against real filing |
 | 3 — cold-start ladder | `not started` | rung fixtures pass, incl. empty library | — |
 | 4 — Rekordbox bonus layer | `not started` | absence-is-free guard test passes | — |
 | 5 — in-app queue & shadow | `not started` | queue renders on the phone build | — |
@@ -580,6 +580,37 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
   `BetterfyValidate.placementAccuracy` all run in the browser, also with zero
   errors. `norm('  Déjà Vu ')` returns the identical string in Node and in
   Chromium.
+
+- **Phase 2 deviated from the planned file split, deliberately.** The plan named
+  `definitions.mjs` and `place.mjs`, but `space.mjs` already held learned
+  definitions and scoring, so those files would have been a rename with extra
+  indirection. What was actually missing was `explain.mjs` and `reports.mjs`.
+  The plan is the argument, not a contract to be honoured past the point of
+  usefulness.
+
+- **An explanation that is true of every bucket is a horoscope.** The first
+  version emitted "a single, and 100% of this bucket is too" — perfectly true,
+  and identical under every alternative, so it made the reasoning look thorough
+  while helping nobody choose. Format and era clauses are now compared against
+  the library-wide base rate and dropped unless they *distinguish* this bucket.
+  The same IDF instinct that stopped "electronic" dominating every tag
+  comparison, one layer up.
+
+- **"Fits no bucket" cannot be defined by a low score.** A record by artists the
+  library has never seen still matches every bucket on format, era and
+  popularity, so generic shape clears any absolute threshold and the first
+  version of `unnamedClusters()` reported that every stranger was comfortably
+  placed. It now asks which *kind* of evidence was available: a placement with
+  no artist-graph component at all is the engine guessing from the shape of the
+  object, and that is what homeless means.
+
+- **The sweep asks whether a component earns its place before asking how to tune
+  it.** `componentValue()` reports what removing each weight entirely would
+  cost, because "best at 0.1" invites tuning while "removing it costs nothing"
+  invites deleting it — usually the better answer, and never the one a sweep
+  volunteers. A test asserts that zeroing the artist graph measurably *hurts*
+  accuracy, so if the graph ever stops being load-bearing the suite says so
+  rather than the engine quietly running on format.
 
 - **v1 already contains a narrow version of this idea.** `artistHistory()` in
   `profile.mjs` places a track by where its primary artist's other tracks

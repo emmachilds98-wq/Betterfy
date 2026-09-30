@@ -104,7 +104,8 @@ const rate = (n, d) => (d > 0 ? +(n / d).toFixed(4) : null);
  * @param {Function} [opts.isMirror]
  */
 export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
-                                         limit = null, isMirror = null } = {}) {
+                                         limit = null, isMirror = null,
+                                         weights = null } = {}) {
   const truth = truthOf(lib, { isMirror });
   const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
 
@@ -140,7 +141,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       const want = truth.get(id);
       if (!want?.size) continue;
 
-      const out = placements(track, space, { limit: 3 });
+      const out = placements(track, space, { limit: 3, ...(weights ? { weights } : {}) });
       stats.scored++;
 
       const band = out.band ?? BANDS.NONE;

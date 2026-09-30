@@ -12,8 +12,10 @@
 // the account's own library is a real fitness surface with thousands of rows,
 // and `core/validate/loo.mjs` computes it.
 import { cooccurrence, trackVector, cosine, centroid } from './cooccurrence.mjs';
-import { registrantIndex, profileOf, shapeScores } from './features.mjs';
+import { registrantIndex, profileOf, shapeScores, registrantOf, registrantWeight,
+         formatOf, eraOf } from './features.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
+import { explain } from './explain.mjs';
 
 export const SPACE_VERSION = '4.0.0';
 
@@ -89,17 +91,62 @@ export function buildSpace(lib, { skip = null, isMirror = null } = {}) {
     if (!p?.id || isStructuralMirror(p)) continue;
     const tracks = (p.tracks ?? []).filter(t => t?.id && !skip?.has(t.id));
     if (tracks.length < MIN_DEFINITION_TRACKS) continue;
+    // Counts rather than only membership, because an explanation has to be able
+    // to say "who are in this playlist 12 times" — a set can say that an artist
+    // is here, which is not the same claim and is far less convincing.
+    const artistCounts = new Map();
+    const registrantCounts = new Map();
+    for (const t of tracks) {
+      for (const a of t.artists ?? []) {
+        if (!a?.id) continue;
+        const row = artistCounts.get(a.id) ?? { name: a.name ?? null, n: 0 };
+        row.n++;
+        if (!row.name && a.name) row.name = a.name;
+        artistCounts.set(a.id, row);
+      }
+      const r = registrantOf(t);
+      if (r) registrantCounts.set(r, (registrantCounts.get(r) ?? 0) + 1);
+    }
+
     destinations.set(p.id, {
       id: p.id,
       name: p.name ?? null,
       n: tracks.length,
       profile: profileOf(p, { skip }),
       centroid: centroid(tracks.map(t => trackVector(t, graph))),
-      artists: new Set(tracks.flatMap(t => (t.artists ?? []).map(a => a?.id).filter(Boolean))),
+      artists: new Set(artistCounts.keys()),
+      artistCounts,
+      registrantCounts,
+      // Membership by id, so overlap between two buckets can be measured
+      // without walking either one again.
+      trackIds: new Set(tracks.map(t => t.id)),
     });
   }
 
-  return { graph, registrants, destinations, version: SPACE_VERSION };
+  // Library-wide base rates, so an explanation can tell a distinguishing fact
+  // from a universal one. "A single, and 100% of this bucket is too" is not a
+  // reason to choose this bucket when 100% of every bucket is a single — it is
+  // a horoscope. The same IDF instinct that stopped "electronic" dominating
+  // every tag comparison, applied to explanations.
+  const everyTrack = [];
+  for (const d of destinations.values()) everyTrack.push(d);
+  const baseline = { albumType: new Map(), era: new Map(), n: 0 };
+  for (const d of everyTrack) {
+    for (const [k, share] of d.profile.albumType) {
+      baseline.albumType.set(k, (baseline.albumType.get(k) ?? 0) + share * d.n);
+    }
+    for (const [k, share] of d.profile.era) {
+      baseline.era.set(k, (baseline.era.get(k) ?? 0) + share * d.n);
+    }
+    baseline.n += d.n;
+  }
+  if (baseline.n) {
+    for (const m of [baseline.albumType, baseline.era]) {
+      for (const [k, v] of m) m.set(k, v / baseline.n);
+    }
+  }
+
+  return { graph, registrants, destinations, baseline, version: SPACE_VERSION };
 }
 
 /**
@@ -110,10 +157,10 @@ export function buildSpace(lib, { skip = null, isMirror = null } = {}) {
  * distinction the tag engine could never make and the reason it always returned
  * its strongest guess.
  */
-export function combine(parts) {
+export function combine(parts, weights = WEIGHTS) {
   let num = 0, den = 0;
   const used = {};
-  for (const [k, w] of Object.entries(WEIGHTS)) {
+  for (const [k, w] of Object.entries(weights)) {
     const v = parts[k];
     if (v === null || v === undefined || !Number.isFinite(v)) continue;
     num += w * v;
@@ -124,14 +171,19 @@ export function combine(parts) {
 }
 
 /**
- * Rank this account's buckets for one track.
- *
  * Returns `{ declined }` rather than a weak list when there is nothing to go
  * on — the same refusal the v3 classifier makes, for the same reason: a ranking
  * is always *producible*, which is exactly why producing one is not evidence
  * that it means anything.
  */
-export function placements(track, space, { limit = 5, exclude = null } = {}) {
+/**
+ * Rank this account's buckets for one track.
+ *
+ * `why` is off by default because the harness scores thousands of tracks and
+ * none of them needs prose. A UI asks for it; a sweep does not.
+ */
+export function placements(track, space, { limit = 5, exclude = null, why = false,
+                                           weights = WEIGHTS } = {}) {
   if (!track?.id) return { declined: 'NO_TRACK', results: [] };
   if (!space?.destinations?.size) return { declined: 'NO_DESTINATIONS', results: [] };
 
@@ -141,7 +193,7 @@ export function placements(track, space, { limit = 5, exclude = null } = {}) {
     if (exclude?.has(d.id)) continue;
     const shape = shapeScores(track, d.profile, { registrants: space.registrants });
     const graph = vec.size && d.centroid.size ? cosine(vec, d.centroid) : null;
-    const { score, used, judged } = combine({ graph, ...shape });
+    const { score, used, judged } = combine({ graph, ...shape }, weights);
     if (!judged) continue;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
     rows.push({ playlistId: d.id, name: d.name, score: +score.toFixed(4),
@@ -159,11 +211,18 @@ export function placements(track, space, { limit = 5, exclude = null } = {}) {
   else if (margin < THRESHOLDS.AMBIGUOUS_MARGIN) band = BANDS.AMBIGUOUS;
   else if (top.score >= THRESHOLDS.HIGH_SCORE && margin >= THRESHOLDS.HIGH_MARGIN) band = BANDS.HIGH;
 
+  const results = rows.slice(0, limit);
+  if (why) {
+    for (const r of results) {
+      r.why = explain(track, space.destinations.get(r.playlistId), space);
+    }
+  }
+
   return {
     declined: band === BANDS.NONE ? 'WEAK_SIGNAL' : null,
     band,
     margin: +margin.toFixed(4),
-    results: rows.slice(0, limit),
+    results,
     version: SPACE_VERSION,
   };
 }

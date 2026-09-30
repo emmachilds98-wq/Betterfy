@@ -10,8 +10,11 @@ import {
   sessionsOf, profileOf, shapeScores, numericCloseness,
 } from '../core/intrinsic/features.mjs';
 import { buildSpace, placements, combine, WEIGHTS, BANDS } from '../core/intrinsic/space.mjs';
+import { sweepWeights, componentValue, SWEEP } from '../core/intrinsic/fit.mjs';
 import { placementAccuracy, foldOf, truthOf } from '../core/validate/loo.mjs';
 import { baselineAccuracy, libraryWithout } from '../core/validate/baseline.mjs';
+import { explain, summarise, MARKS } from '../core/intrinsic/explain.mjs';
+import { bucketPairs, boundaryTracks, drift, unnamedClusters } from '../core/intrinsic/reports.mjs';
 
 /* ---------- a fixture library with real structure ----------
  *
@@ -460,4 +463,171 @@ test('a track v1 has no tags for is a miss, not an abstention — it has no way 
   assert.equal(base.scored, placementAccuracy(lib, { folds: 5 }).scored,
     'the denominator stays the whole library: returning nothing is not a free pass');
   assert.ok(base.top1 < 0.5, 'and it costs accuracy, which is the honest accounting');
+});
+
+/* ---------- explanations ---------- */
+
+test('an explanation is countable facts about the listener\'s own library', () => {
+  const lib = fixture();
+  const space = buildSpace(lib);
+  const t = lib.playlists[0].tracks[3];
+  const out = placements(t, space, { why: true, limit: 1 });
+  const text = summarise(out.results[0].why);
+
+  assert.ok(out.results[0].why.length > 0);
+  assert.match(text, /already here \d+ times?/, 'it should count, not assert');
+  assert.ok(!/genre|house|techno|jungle|ambient/i.test(text),
+    `an explanation must name no genre at all, got: ${text}`);
+  for (const line of out.results[0].why) {
+    assert.ok(Object.values(MARKS).includes(line.mark));
+    assert.equal(typeof line.text, 'string');
+  }
+});
+
+test('a clause true of every bucket is left out — an explanation is not a horoscope', () => {
+  // Every track in this fixture is a single from the 2020s, so "a single, and
+  // 100% of this bucket is too" would appear identically under every
+  // alternative: true, thorough-looking, and no help choosing.
+  const lib = fixture();
+  const space = buildSpace(lib);
+  const out = placements(lib.playlists[0].tracks[3], space, { why: true, limit: 1 });
+  const text = summarise(out.results[0].why);
+  assert.ok(!/is too/.test(text), `a non-distinguishing format clause must be dropped, got: ${text}`);
+
+  // Whereas a genuinely distinguishing one is kept. Give one bucket a format
+  // the rest of the library does not have.
+  const odd = fixture();
+  for (const t of odd.playlists[1].tracks) { t.albumType = 'compilation'; t.albumTracks = 30; }
+  const space2 = buildSpace(odd);
+  const out2 = placements(odd.playlists[1].tracks[2], space2, { why: true, limit: 1 });
+  assert.match(summarise(out2.results[0].why), /compilation/,
+    'a format that does distinguish this bucket should be said');
+});
+
+test('a truncated artist list does not attach its count to more artists than it names', () => {
+  const lib = fixture();
+  const space = buildSpace(lib);
+  const out = placements(lib.playlists[0].tracks[3], space, { why: true, limit: 1 });
+  const nearby = out.results[0].why.find(l => l.text.startsWith('sits with'));
+  if (nearby && /more of this bucket/.test(nearby.text)) {
+    assert.match(nearby.text, /who appear here \d+ times?, and \d+ more/,
+      'the count must belong to the named artists, with the remainder stated separately');
+  }
+});
+
+/* ---------- the difference reports ---------- */
+
+test('a view of another bucket is identified as a view, not as a rival', () => {
+  const lib = fixture();
+  // Favourites is built from the front of tech and deep, so it is contained.
+  const pairs = bucketPairs(buildSpace(lib));
+  const favs = pairs.filter(p => p.a.id === 'p-favs' || p.b.id === 'p-favs');
+  assert.ok(favs.length > 0, 'a contained bucket should be reported');
+  assert.ok(favs.some(p => p.verdict === 'view'), 'and reported as a view');
+});
+
+test('two buckets that hold different records but sit in the same place are flagged as indistinguishable', () => {
+  const lib = fixture();
+  // Split one family into two buckets with NO shared tracks. The listener keeps
+  // them apart; the library cannot tell them apart.
+  const tech = lib.playlists.find(p => p.id === 'p-tech').tracks;
+  lib.playlists.push({ id: 'p-split-a', name: 'Split A', tracks: tech.slice(0, 6) });
+  lib.playlists.push({ id: 'p-split-b', name: 'Split B', tracks: tech.slice(6, 12) });
+
+  const pairs = bucketPairs(buildSpace(lib));
+  const hit = pairs.find(p =>
+    (p.a.id === 'p-split-a' && p.b.id === 'p-split-b') ||
+    (p.a.id === 'p-split-b' && p.b.id === 'p-split-a'));
+  assert.ok(hit, 'the pair should be reported');
+  assert.equal(hit.sharedTracks, 0, 'they share no records');
+  assert.equal(hit.verdict, 'indistinguishable',
+    'a distinction the library cannot see is the finding worth surfacing');
+});
+
+test('boundary tracks are the ones the engine genuinely cannot split', () => {
+  const lib = fixture();
+  const rows = boundaryTracks(lib, buildSpace(lib), { limit: 20 });
+  for (const r of rows) {
+    assert.equal(r.between.length, 2);
+    assert.ok(r.gap >= 0);
+    assert.ok(Array.isArray(r.filedIn));
+  }
+  // Sorted tightest-first, because that is the order worth asking about.
+  for (let i = 1; i < rows.length; i++) assert.ok(rows[i].gap >= rows[i - 1].gap);
+});
+
+test('drift compares a bucket\'s newer half with its older half, not with itself', () => {
+  const lib = fixture();
+  const rows = drift(lib, buildSpace(lib), { recent: 5 });
+  for (const r of rows) {
+    assert.ok(r.similarity >= 0 && r.similarity <= 1);
+    assert.ok(r.older > 0 && r.newer > 0);
+  }
+});
+
+test('a pile of tracks that fits no bucket is offered as a bucket that does not exist yet', () => {
+  const lib = fixture();
+  const space = buildSpace(lib);
+  // Eight records by artists the library has never seen, all sharing a credit
+  // so they hang together.
+  const strangers = Array.from({ length: 8 }, (_, i) => ({
+    id: `new-${i}`, name: `stranger ${i}`,
+    artists: [{ id: 'stranger-1', name: 'Stranger One' }, { id: `stranger-${i + 2}` }],
+    albumType: 'single', albumTracks: 2, released: '2024-01-01',
+    duration_ms: 360000, popularity: 10,
+  }));
+  const clusters = unnamedClusters(strangers, space, { minCluster: 5, similarity: 0.3 });
+  assert.ok(clusters.length >= 1, 'a coherent pile with no home should surface');
+  assert.ok(clusters[0].size >= 5);
+});
+
+test('tracks the engine can already place are not offered as a missing bucket', () => {
+  const lib = fixture();
+  const space = buildSpace(lib);
+  // These are squarely inside an existing bucket.
+  const clusters = unnamedClusters(lib.playlists[0].tracks.slice(0, 10), space, { minCluster: 3 });
+  assert.equal(clusters.length, 0, 'a well-placed track is not evidence of a missing bucket');
+});
+
+/* ---------- the weight sweep ---------- */
+
+test('the sweep reports a verdict per weight, and FLAT means the library could not tell', () => {
+  const lib = fixture();
+  const { rows } = sweepWeights(lib, { folds: 3 });
+  assert.equal(rows.length, Object.keys(SWEEP).length);
+  for (const r of rows) {
+    assert.ok(r.scores.length > 1);
+    assert.ok(r.spread >= 0);
+    assert.equal(typeof r.verdict, 'string');
+    if (r.spread === 0) assert.match(r.verdict, /FLAT/,
+      'a weight the data cannot distinguish must say so rather than look validated');
+  }
+});
+
+test('every sweep includes zero, because "does this earn its place" comes first', () => {
+  for (const values of Object.values(SWEEP)) assert.ok(values.includes(0));
+});
+
+test('componentValue says what removing each component would cost', () => {
+  const lib = fixture();
+  const rows = componentValue(lib, { folds: 3 });
+  assert.equal(rows.length, Object.keys(WEIGHTS).length);
+  for (const r of rows) {
+    assert.ok(Number.isFinite(r.costOfRemoving));
+    assert.ok(r.withAll >= 0 && r.without >= 0);
+  }
+  // Sorted by what it costs to remove, so the load-bearing components are first.
+  for (let i = 1; i < rows.length; i++) {
+    assert.ok(rows[i].costOfRemoving <= rows[i - 1].costOfRemoving);
+  }
+});
+
+test('dropping the artist graph costs accuracy on a library that has one', () => {
+  // If this ever stops being true, the engine is not doing what it claims and
+  // the shape features are carrying it.
+  const lib = fixture();
+  const withGraph = placementAccuracy(lib, { folds: 5 }).top1;
+  const without = placementAccuracy(lib, { folds: 5, weights: { ...WEIGHTS, graph: 0 } }).top1;
+  assert.ok(withGraph > without,
+    `the co-occurrence graph must earn its keep (with ${withGraph}, without ${without})`);
 });

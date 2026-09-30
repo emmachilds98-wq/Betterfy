@@ -10,12 +10,17 @@
 //
 //   npm run validate:placement
 //   npm run validate:placement -- --folds=10 --limit=2000
+//   npm run validate:placement -- --reports   what it sees in your library
+//   npm run validate:placement -- --sweep     which weights the library constrains
 import { readFileSync } from 'node:fs';
 import { placementAccuracy } from './core/validate/loo.mjs';
 import { baselineAccuracy } from './core/validate/baseline.mjs';
 import { cooccurrence } from './core/intrinsic/cooccurrence.mjs';
 import { registrantIndex } from './core/intrinsic/features.mjs';
-import { buildSpace } from './core/intrinsic/space.mjs';
+import { buildSpace, placements } from './core/intrinsic/space.mjs';
+import { bucketPairs, boundaryTracks, drift, unnamedClusters } from './core/intrinsic/reports.mjs';
+import { sweepWeights, componentValue } from './core/intrinsic/fit.mjs';
+import { summarise } from './core/intrinsic/explain.mjs';
 import { loadTags } from './tagstore.mjs';
 
 const arg = (name, fallback) => {
@@ -155,3 +160,95 @@ if (!base) {
   console.log('  being wrong.');
 }
 console.log();
+
+
+/* ---------- what the account's own structure says about itself ---------- */
+
+if (process.argv.includes('--reports')) {
+  console.log('\n=== BUCKETS THAT MAY BE THE SAME THING TWICE ===\n');
+  const pairs = bucketPairs(space);
+  if (!pairs.length) {
+    console.log('  None. Every bucket holds different records and sits somewhere different.');
+  } else {
+    console.log('  view              one bucket is largely contained in the other');
+    console.log('  indistinguishable different records, same place in your library\n');
+    for (const p of pairs.slice(0, 15)) {
+      console.log(`  ${String(p.verdict).padEnd(18)} ${String(p.a.name ?? p.a.id).slice(0, 24).padEnd(26)}`
+        + `${String(p.b.name ?? p.b.id).slice(0, 24).padEnd(26)} sim ${p.similarity.toFixed(2)}  shared ${p.sharedTracks}`);
+    }
+    console.log('\n  "indistinguishable" is the one worth reading: you keep those apart and');
+    console.log('  they hold different records, but nothing in your library separates them.');
+    console.log('  Either the distinction lives somewhere this cannot see, or it has');
+    console.log('  quietly stopped being one. Only you can say which.');
+  }
+
+  console.log('\n=== TRACKS ON A BORDER ===\n');
+  console.log('  The engine cannot split these. They are the best things to be asked about:');
+  console.log('  answering one settles a boundary rather than a single record.\n');
+  const edge = boundaryTracks(lib, space, { limit: 12 });
+  for (const b of edge) {
+    const who = b.artists.slice(0, 2).join(', ');
+    console.log(`  ${String(b.name ?? b.trackId).slice(0, 30).padEnd(32)} ${who.slice(0, 22).padEnd(24)}`
+      + `${String(b.between[0].name ?? b.between[0].id).slice(0, 16)} / ${String(b.between[1].name ?? b.between[1].id).slice(0, 16)}`);
+  }
+  if (!edge.length) console.log('  None — every track has a clear leader.');
+
+  console.log('\n=== BUCKETS DRIFTING FROM THEMSELVES ===\n');
+  const moved = drift(lib, space).slice(0, 10);
+  for (const d of moved) {
+    console.log(`  ${String(d.name ?? d.id).slice(0, 30).padEnd(32)} newer ${String(d.newer).padStart(3)} vs older ${String(d.older).padStart(4)}`
+      + `   similarity ${d.similarity.toFixed(2)}`);
+  }
+  if (!moved.length) console.log('  Nothing with enough dated history to judge.');
+  else console.log('\n  Low similarity is not automatically wrong — taste moves. It is worth');
+  console.log('  saying, because otherwise the engine keeps filing into what the bucket was.');
+
+  const liked = (lib.liked ?? []).filter(t => t?.id);
+  if (liked.length) {
+    console.log('\n=== PILES WITH NO BUCKET ===\n');
+    const clusters = unnamedClusters(liked, space, { limit: 6 });
+    for (const c of clusters) {
+      console.log(`  ${c.size} tracks — e.g. ${c.tracks.slice(0, 3).map(t => t.name ?? t.id).join(', ')}`);
+    }
+    if (!clusters.length) console.log('  None big enough to be a missing bucket.');
+  }
+
+  // One worked example, because a table of numbers does not show whether the
+  // reasoning is any good.
+  const sample = (lib.playlists ?? []).flatMap(p => p.tracks ?? []).find(t => t?.id);
+  if (sample) {
+    const r = placements(sample, space, { why: true, limit: 1 });
+    if (r.results?.[0]?.why?.length) {
+      console.log('\n=== ONE PLACEMENT, EXPLAINED ===\n');
+      console.log(`  ${sample.name ?? sample.id} -> ${r.results[0].name ?? r.results[0].playlistId}`);
+      for (const l of r.results[0].why) console.log(`    ${l.mark} ${l.text}`);
+    }
+  }
+}
+
+/* ---------- which numbers the library actually pins down ---------- */
+
+if (process.argv.includes('--sweep')) {
+  console.log('\n=== WHAT REMOVING EACH COMPONENT WOULD COST ===\n');
+  console.log('  Asked before the sweep on purpose: "best at 0.1" invites tuning, while');
+  console.log('  "removing it entirely costs nothing" invites deleting it, which is');
+  console.log('  usually the better answer and never the one a sweep volunteers.\n');
+  for (const c of componentValue(lib, { folds, limit })) {
+    const verdict = c.costOfRemoving > 0.005 ? 'earns its place'
+                  : c.costOfRemoving < -0.005 ? 'ACTIVELY HURTS — consider removing'
+                  : 'costs nothing to remove';
+    console.log(`  ${c.name.padEnd(12)} ${pct(c.withAll)}% -> ${pct(c.without)}%   ${verdict}`);
+  }
+
+  console.log('\n=== WEIGHT SWEEP, AGAINST YOUR OWN FILING ===\n');
+  process.stderr.write('  (sweeping');
+  const { rows } = sweepWeights(lib, { folds, limit, onStep: () => process.stderr.write('.') });
+  process.stderr.write(')\n');
+  console.log('  weight       current  best   verdict');
+  console.log('  ' + '-'.repeat(64));
+  for (const r of rows) {
+    console.log(`  ${r.name.padEnd(12)} ${String(r.current).padStart(6)}  ${String(r.best).padStart(5)}   ${r.verdict}`);
+  }
+  console.log('\n  FLAT means this library could not tell any value in the range apart —');
+  console.log('  a statement about the evidence, never about the number being fine.');
+}
