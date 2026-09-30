@@ -469,7 +469,7 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
 
 | Phase | Status | Gate | Evidence |
 |---|---|---|---|
-| 0 — feasibility & harness | `not started` | intrinsic-only ≥ v1 on a real library | — |
+| 0 — feasibility & harness | `in progress` — built, **gate unrun** | intrinsic-only ≥ v1 on a real library | 29 tests; 667 suite-wide. Needs `library.json` to answer. |
 | 1 — browser bundling bridge | `not started` | bundled `core` parity test passes | — |
 | 2 — engine & explanations | `not started` | weights enter the fit sweep | — |
 | 3 — cold-start ladder | `not started` | rung fixtures pass, incl. empty library | — |
@@ -502,3 +502,47 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
   corrected in §1. The argument that replaces it is stronger: coverage is
   biased to one library's taste, the shared write path is shape-checked rather
   than truth-checked, and granularity is still one cloud per artist.
+
+- **Phase 0, three fixture and metric defects, each found by running it rather
+  than reading it.** Recorded because the same traps are waiting in Phase 2.
+
+  1. *An empty graph that looked like a working one.* The first fixture gave
+     every artist exactly one playlist, so `MIN_ARTIST_PLAYLISTS` dropped all
+     of them and the artist graph was **entirely empty** — yet held-out
+     accuracy came out at 0.78 on shape features alone. A number that high
+     reads as proof the graph works. The general lesson for a real library:
+     if most artists sit in exactly one bucket, co-occurrence has nothing to
+     say and the engine is quietly running on format and era. The CLI now
+     prints that share and warns past 80%.
+  2. *A ceiling that blinded the canary.* With each family given its own era,
+     album type and popularity, every track was placeable from shape alone and
+     both the honest and the leaky path scored exactly 1.000 — so the canary
+     could not detect leakage even in principle. A fixture must leave the
+     honest path room to be wrong, or the test that guards the harness is
+     itself untested.
+  3. *A per-bucket metric no view could ever win.* Crediting a bucket only when
+     it ranks first gave every crossover playlist exactly 0.0, because a
+     "Favourites" view always loses to the tighter bucket its tracks also live
+     in — the engine was right and the metric said otherwise. Replaced with
+     three numbers: `rank1`, `inTop3` (fair to both kinds, and what the worst-
+     bucket table now sorts by) and `exclusive` (rank 1 among tracks whose only
+     home is that bucket).
+
+- **The two engines fail on correlated cases, which makes synthetic comparison
+  worthless in both directions.** The intrinsic engine is weakest on a record
+  whose artists appear nowhere else in the library. Those are obscure artists —
+  which is exactly who Last.fm and the shipped tag table have least on. So a
+  real comparison could go either way, and a synthetic one tells you only about
+  the fixture: giving every artist a family-named tag, as the test fixture
+  does, hands v1 a perfect answer key precisely where reality would hand it
+  nothing. Two consequences worth carrying into later phases: the Phase 0 gate
+  is meaningless until it runs on a real library, and Layer 2 tie-breaking is
+  most valuable exactly where intrinsic signal is thinnest, which is an
+  independent argument for the §7 ladder rather than a concession.
+
+- **v1 already contains a narrow version of this idea.** `artistHistory()` in
+  `profile.mjs` places a track by where its primary artist's other tracks
+  already live, and its comment says outright that "the user's own playlists
+  are themselves evidence, free of any third party". It fires only as a
+  fallback, only on the first-billed artist, and only on a strong majority.
+  This build generalises that instinct rather than introducing it.
