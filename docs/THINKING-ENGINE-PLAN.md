@@ -1,0 +1,406 @@
+# The thinking engine — build plan
+
+An engine that learns what **this account's** playlists mean from the account
+itself, files against those learned meanings, and needs no key, no second
+website and no crowd opinion to do it.
+
+This document is the plan, not the implementation.
+
+---
+
+## 1. The problem, stated plainly
+
+`CLAUDE.md` says external enrichment must be "a fully optional bonus, silently
+absent and zero-cost for anyone who doesn't have it, never something the core
+filing/tagging/misfile model leans on."
+
+The build does not honour that. Both engines lean on it completely:
+
+- v1 builds every track's signal from its artists' **Last.fm** tags. Remove the
+  key and `rank()` has nothing to rank with.
+- v3 replaces the *reasoning* over those tags with something far better, but the
+  tags are still the input. `core/sources/spotify.mjs` declares
+  `capabilities: ['identity', 'era']` — the only provider that needs no setup
+  asserts nothing about what a record *sounds like*.
+
+So the hosted app asks every listener for a Last.fm key before it can do its
+main job, and the quality of its main job is capped by a crowd vocabulary that
+is global, coarse (one flat tag cloud per artist) and sometimes wrong.
+
+Spotify cannot fill the gap. Verified September 2026, and re-confirmed against
+the repo's own measurements:
+
+| Endpoint | Status |
+|---|---|
+| `GET /audio-features/{id}` | `403` |
+| `GET /recommendations` | `404` |
+| `GET /artists/{id}` → `genres` | **field absent entirely — 0 tags across 956 artists** |
+| `GET /artists/{id}/related-artists` | gone |
+
+There is no genre vocabulary to be had from Spotify, for anyone, ever again.
+Any plan that waits for one is not a plan.
+
+---
+
+## 2. The reframe
+
+The engine currently asks **"what genre is this track?"** and then matches that
+answer to a playlist. That question *requires* an external vocabulary.
+
+It should ask **"which of this account's playlists does this track belong
+with?"** — and that question needs no vocabulary at all, because the account
+already contains the answer key.
+
+**A playlist is a labelled training set.** A "Tech House" playlist holding 200
+tracks is 200 examples, labelled by hand, of what *this person* means by tech
+house. Nobody has to agree with them. The label cannot be "false", because it
+is definitionally what they meant.
+
+Three things follow, and they are the whole reason to do this:
+
+1. **Adaptability stops being configuration and becomes structure.** Two
+   accounts with a playlist called "House" get different learned definitions,
+   because they are learned from different members. That is correct — they
+   *do* mean different things.
+2. **External data moves from infrastructure to presentation.** Last.fm and
+   Discogs stop deciding anything and start supplying human-readable *names*
+   for clusters the engine already found. Without a key the app still files;
+   it says "belongs with these 200 tracks" instead of naming a genre.
+3. **Validation becomes free.** Held-out playlist membership *is* ground truth.
+   See §6 — this is the part that changes the project's economics.
+
+---
+
+## 3. What the account gives us, with nothing to configure
+
+Already on disk after `npm run snapshot`, per `snapshot.mjs`'s field mask:
+
+| Per track | Per playlist | Per account |
+|---|---|---|
+| `id`, `name` | `name`, `description` | liked songs |
+| `artists[]` **in billing order** | `public`, `collaborative` | top artists × 3 windows |
+| `albumId`, `album`, `albumType`, `albumTracks`, `trackNo` | full membership | top tracks × 3 windows |
+| `released` | **`added_at` per track** | recently played |
+| `duration_ms`, `explicit`, `popularity` | | following (needs scope) |
+| **`isrc`** | | |
+
+Not captured, and worth one batched call later: album `label`, which lives only
+on the *full* album object (`GET /albums?ids=`, 20 per call). Unverified against
+a live response — one call decides it. Out of the critical path either way,
+because §4.2 gets most of the same signal for free.
+
+---
+
+## 4. The six intrinsic signals
+
+None needs a key. None is an opinion. All but §4.7 are already on disk.
+
+### 4.1 Artist co-occurrence — the load-bearing signal
+
+Build the bipartite incidence of playlists × artists over the account's own
+playlists, **excluding mirrors** (`core/playlists/mirror.mjs` already detects
+a record-of-everything playlist by shape; a playlist holding the whole library
+co-occurs everything with everything and would flatten the graph).
+
+Two artists are close if they co-occur more than chance. Raw counts are wrong
+for the same reason raw tag counts were wrong — a prolific artist co-occurs
+with everybody — so score pairs by **positive pointwise mutual information**:
+
+```
+ppmi(a,b) = max(0, log( P(a,b) / (P(a)·P(b)) ))
+```
+
+Each artist's PPMI row is its **neighbourhood vector**. A track's vector is the
+billing-order-weighted mean of its credited artists' vectors — billing order is
+captured, and the first credit carries the record.
+
+This says *"in this person's world, these two sit together"* with zero external
+data. Nothing in the repo does it today; `grep` for co-occurrence finds only
+unrelated uses in `classify.mjs`, `genres.mjs` and `shuffle.mjs`.
+
+**Bounding it for a phone.** Keep only artists in ≥2 playlists, and cap each
+artist's neighbourhood to its top *K* by PPMI (start K=50). A 200-playlist,
+5000-artist library then holds ≤250k sparse entries, which is tractable in a
+browser — but this must be **measured on a real library, not assumed** (§9).
+
+### 4.2 Label family, from the ISRC registrant — free, already captured, unused
+
+An ISRC is `CC-XXX-YY-NNNNN`. `XXX` is the **registrant**: effectively the label
+or its distributor. Tracks sharing a registrant are label-siblings. This is
+factual metadata, not crowd opinion, and `isrc` is already in `library.json` —
+today it is used only as an identity key in `core/identity/track-identity.mjs`.
+
+**The aggregator problem, and its self-correcting fix.** Plenty of independent
+releases carry a distributor's registrant (DistroKid and friends) rather than a
+label's, which dilutes the signal. The fix is the one already used for tags:
+down-weight registrants by how many distinct playlists they span. A real label
+concentrates; an aggregator appears everywhere and weights itself out.
+
+You never need the label's *name* for affinity to work, which is why this needs
+no lookup.
+
+### 4.3 Add-session cohesion
+
+`added_at` is captured per playlist entry. Tracks added to one playlist inside
+one sitting are one crate — a strong "these go together" signal that is purely
+behavioural. Across playlists, same-day adds are a weak session signal.
+
+`core/playlists/fingerprint.mjs` already computes `addedShape()` and calls it
+one of "the two structural signals that need no vocabulary". The instinct is
+in the codebase; it is just peripheral while the genre picture hangs off tags.
+
+### 4.4 Format shape
+
+`duration_ms` + `albumType` + `albumTracks` + `trackNo` separates a seven-minute
+cut on a two-track single (a club record) from a three-minute cut on a
+twelve-track album (a song). That distinction matters enormously in this
+library and costs nothing.
+
+Critically, **this is the only signal that works at zero filing** — see §7.
+
+### 4.5 Era
+
+`released` → `eraOfYear()`, which exists. Carries the caveat
+`core/sources/spotify.mjs` already documents: a release date is the date of
+*that pressing*, so a reissued 1994 record reads 2019.
+
+### 4.6 Popularity
+
+Bucketed. Weak, plausibly correlated with underground-vs-mainstream, and
+entirely capable of encoding a bias nobody wanted. It goes in the fit sweep
+(§6.3) and earns its weight or gets zeroed.
+
+### 4.7 Tempo and key — the optional bonus layer
+
+`rekordbox.json` already exists as `{ [trackId]: { bpm, key, camelot, … } }`
+and nothing reads it. It is genuinely the user's own factual data rather than a
+third party's opinion, so it fits the bonus rule — but it must be **absent by
+default and structurally incapable of mattering**:
+
+- Missing file, or a track not in it, changes nothing.
+- A guard test asserts identical placements and identical confidence bands for
+  every track not present in the file, with and without it loaded.
+
+That test is the contract. Without it this becomes exactly the dependency
+`CLAUDE.md` forbids.
+
+---
+
+## 5. The learned playlist definition
+
+For each **filing destination** — reuse the existing axis rule, so only genre
+and mood playlists qualify, and mirrors never do:
+
+- **Definition** = centroid of its members in the combined intrinsic space,
+  plus a spread measure (the intrinsic analogue of the fingerprint's entropy).
+- **Distinctiveness** = how separably its members sit from every other
+  destination's members. A bucket with low distinctiveness is either broad or a
+  duplicate, and saying so is a *finding*, not a failure.
+
+Scoring a track produces a ranked list of destinations with a confidence band
+and — the part that matters for trust — **an explanation in the account's own
+terms**, carrying no genre word at all:
+
+> sits with Enzo Siragusa and Seb Zito, who are in this playlist 12 times ·
+> same label family as 7 tracks here · seven-minute single, like 80% of this
+> bucket · 2023, and this bucket is 70% post-2020
+
+Compare with what the current engine can say, which is "tag cosine 0.71".
+
+---
+
+## 6. Validation — the part that changes the project's economics
+
+### 6.1 Leave-one-out placement accuracy
+
+Held-out membership is ground truth. For each track in a destination playlist:
+remove it, ask the engine where it goes, compare to where the account actually
+put it.
+
+Metrics: top-1 and top-3 accuracy; **per-playlist** accuracy, which finds the
+buckets the engine does not understand; abstention quality (when it declines,
+would it have been wrong?); and calibration (does HIGH actually mean high?).
+
+The current blocker — ~500 manually reviewed tracks before any weight is
+trustworthy — **largely dissolves for placement**. The harness computes its own
+answer key, per account, in seconds.
+
+### 6.2 Leakage is the single biggest correctness risk in this build
+
+A held-out track must not feed the centroid it is scored against, nor the
+co-occurrence matrix used to score it. Leak either and accuracy jumps toward
+1.0 and the whole exercise becomes a lie that looks like a triumph.
+
+Mitigation is a **deliberate leakage canary**: a test that scores with the
+track left in, asserts near-perfect accuracy, then scores correctly and asserts
+the number drops. If the canary ever stops distinguishing the two, the harness
+is broken. This test is not optional and not a nicety.
+
+### 6.3 What it buys the existing fit sweep
+
+`npm run benchmark:fit` currently reports **4 of 15 parameters FLAT** —
+`HIGH_LEADER_SHARE`, `HIGH_MARGIN_RATIO`, `EVENT_SETTLED_DAYS`, `CONTENT_LIFT`
+are uncontradicted rather than validated, because twelve synthetic cases cannot
+distinguish them. Intrinsic weights go into the same sweep, scored against
+leave-one-out accuracy on a real library instead. That is a fitness surface
+with thousands of rows rather than twelve.
+
+### 6.4 The honest limit
+
+Leave-one-out measures **consistency with the account's habits, not musical
+truth.** It cannot detect a systematically misfiled library, and it will
+faithfully reproduce existing mistakes. For a filing tool whose job is "put it
+where you'd have put it", that is the right target — but it is not a claim
+about genre, and nothing in the UI should imply it is.
+
+---
+
+## 7. Cold start — and where the requirement genuinely conflicts
+
+The engine must work on a near-empty account. It must also **say which rung it
+is standing on**, because silently degrading is how a tool loses trust.
+
+| Rung | Condition | What it does |
+|---|---|---|
+| 0 | nothing filed | No placement suggestions — there is nowhere to place. Instead: **cluster and name.** Group liked songs by format shape, era and artist identity, and offer the groups as candidate playlists. This bootstraps the labels the rest of the engine needs. |
+| 1 | <10 playlists | PPMI too sparse to mean anything. Direct artist-identity match (this artist is already in this bucket) + format + era. Low confidence, mode stated. |
+| 2 | ~10+ playlists | PPMI meaningful. Full intrinsic engine. |
+| 3 | established | Everything, with label families and session structure at full weight. |
+
+**The conflict, stated rather than hidden.** "Works from a near-empty account"
+and "does not rely on external data" cannot both be fully satisfied at rung 0,
+because an account with nothing filed contains no internal structure to learn
+from — that is arithmetic, not a design failure.
+
+The resolution: a near-empty account gets **help building its taxonomy**, not
+accurate filing into buckets that do not exist yet. Accurate filing there is
+not a well-posed problem. Where a Last.fm key *is* present, Layer 2 may break
+ties at rungs 0–1 only, labelled as such, and is forbidden from overriding
+intrinsic evidence at rungs 2–3. That confines the crutch to the rungs where
+the gap is real and makes it visible when used.
+
+---
+
+## 8. Phases
+
+Each phase ends in something measurable. Phase 0 is the one that decides
+whether the rest happens.
+
+### Phase 0 — Feasibility, measured. No user-visible change.
+
+New: `core/intrinsic/cooccurrence.mjs` (PPMI graph, bounded per §4.1),
+`core/intrinsic/features.mjs` (§4.2–4.6 from fields already captured),
+`core/intrinsic/space.mjs` (combined vector, cosine),
+`core/validate/loo.mjs` (the harness and its leakage canary).
+
+CLI: `npm run validate:placement` — top-1/top-3 for **intrinsic-only vs v1 vs
+v3-with-tags** on the same library.
+
+**Gate:** does intrinsic-only match or beat v1 on your library? If it does not,
+stop and re-plan rather than building six phases on a premise that failed. The
+cost of finding out is roughly a day.
+
+### Phase 1 — The browser bridge. Prerequisite for anything in-app.
+
+`build-web.mjs` bundles exactly `norm.mjs`, `credits.mjs`, `profile.mjs`, by
+regex-stripping imports and concatenating. `core/` is 34 modules with a real
+dependency graph, so **no part of v3 can currently reach the phone.** That, not
+just the benchmark, is why v3 is unwired.
+
+The graph is a clean DAG, so: extend `build-web.mjs` with a topological-sort
+bundler over `core/`. No new dependency — the project's zero-dependency
+property is worth keeping.
+
+- Exclude Node-only modules. `core/sources/musicbrainz.mjs` pulls
+  `musicbrainz.mjs`, which needs a `User-Agent` a browser `fetch` cannot set.
+- Fail loudly on a cycle and on a duplicate top-level name, rather than
+  emitting a file that half-works.
+- Keep the single-file output and the existing secret guard intact.
+- Tests: order validity, cycle detection, collision detection, and a parity
+  test proving bundled `core` behaves identically to imported `core`.
+
+This phase is independently valuable: it unblocks *all* of v3, not just this.
+
+### Phase 2 — The engine, and its explanations.
+
+`core/intrinsic/definitions.mjs` (learned definitions + distinctiveness),
+`core/intrinsic/place.mjs` (scoring, bands, explanation objects per §5).
+
+Reports that answer "the differences between genres, playlists and more":
+
+- **Distinct vs duplicate buckets** — two destinations whose learned
+  definitions are inseparable. Complements the existing §19 containment
+  relationships with a *learned* measure rather than an overlap one.
+- **Boundary tracks** — tracks sitting between two buckets. Also the best
+  review-queue fodder there is.
+- **Drift** — a playlist whose recent add-sessions sit away from its own
+  centroid. `misfile.mjs` has a tag-based `findDrift`; this is its intrinsic
+  twin.
+- **Unnamed clusters** — groups that hang together in intrinsic space and
+  belong to no playlist: candidate new buckets, learned rather than
+  tag-clustered.
+
+Intrinsic weights enter `core/benchmark/fit.mjs`, scored against §6.1.
+`analyse-v3.mjs` gains shadow mode: both engines, side by side, same library.
+
+### Phase 3 — The cold-start ladder.
+
+Rung detection, explicit mode reporting, and the rung-0 cluster-and-name flow.
+Fixtures per rung, including a three-playlist library and an empty one — the
+cases that will otherwise be discovered by a new user rather than by a test.
+
+### Phase 4 — Rekordbox as a bonus layer.
+
+`core/intrinsic/bonus-rekordbox.mjs`, absent by default, plus the guard test
+from §4.7 that makes its absence structurally free.
+
+### Phase 5 — In-app: the queue screen, and shadow filing.
+
+Needs Phase 1. The review queue becomes a real screen rather than the
+standalone `review-v3.html`: boundary tracks, unmapped concepts, playlist-type
+questions. Answers write through the existing `CorrectionLog`, which is
+append-only and already separate from provider evidence in both directions.
+
+While shadowing, the File screen can show the disagreement — "v1 says Deep
+House, the new engine says Lyricism" — which is both a trust-builder and a
+free source of corrections.
+
+### Phase 6 — The cutover gate, and misfile.
+
+Per your choice, filing switches to intrinsic **only when leave-one-out
+accuracy beats v1 on your own library**, with the number shown rather than
+asserted. v1 stays reachable as a fallback for one release.
+
+Then misfile migrates onto the intrinsic space, so "this is in the wrong place"
+arrives with the evidence trail from §5 instead of a bare flag. This is the
+first place the engine tells you to move music, so it goes last on purpose.
+
+---
+
+## 9. Risks, and what each one costs
+
+| Risk | Why it bites | Answer |
+|---|---|---|
+| **Leakage in the harness** | Inflates accuracy toward 1.0 and looks like success | The canary test in §6.2. Non-negotiable. |
+| **Circularity** | Learning from membership and then suggesting membership reinforces what is already there and never surprises you | Discovery stays a separate path. The engine is explicitly a *filer*, not a recommender. |
+| **Aggregator ISRCs** | Dilutes the label signal | Playlist-span down-weighting (§4.2). Self-correcting. |
+| **Popularity bias** | Encodes something nobody asked for | In the fit sweep; earns its weight or is zeroed. |
+| **Phone performance** | PPMI over thousands of artists in a browser | Bounded per §4.1, cached per snapshot, and **measured on a real library before Phase 5 rather than assumed**. |
+| **Bundle-order fragility** | A silently mis-ordered bundle half-works | Cycle + collision detection that fails the build, plus the parity test. |
+| **Cold-start honesty** | A rung-0 account could be shown confident nonsense | Rung is reported, not inferred by the user from vibes. |
+| **`docs/index.html` is the shipped page** | Phase 5 touches it | Existing secret guard and build-guard tests stay; the page is rebuilt and diffed, never hand-edited. |
+
+---
+
+## 10. What this does not change
+
+The v3 work stands. Ontology, `TrackIdentity`, the evidence record, the
+append-only correction log, the review queue's prioritisation, mirror
+detection, the AI constraint layer and the recommendation layer's refusal to
+move anything all survive untouched.
+
+What changes is **which layer decides**. And one honest note on shape: the
+co-occurrence space is *not* a `defineProvider` adapter. It asserts no concept
+from a source; it computes a space. It sits beside `core/analysis/classify.mjs`
+rather than inside the provider registry, and pretending otherwise to make the
+architecture diagram tidier would be a mistake.

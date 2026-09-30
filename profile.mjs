@@ -13,7 +13,11 @@
 // ("funk_add_to_lidarr_batch_26", "albums i own", "seen live"). These describe
 // the tagger, not the music, and skew a centroid badly at low tag counts.
 const JUNK = /_|^seen live$|^albums? i|^my |^favou?rites?$|^\d+$|^under \d|lidarr|spotify|^check out|^to listen|^love(d)?$|^awesome$|^cool$|^good$|^best|^all$/i;
-const usableTag = t => t.length > 1 && t.length < 32 && !JUNK.test(t);
+// Exported so the v3 evidence layer (core/evidence/normalise.mjs) filters
+// provider junk through exactly this rule rather than a second copy of it
+// that can drift. The browser bundle strips the `export` keyword, so nothing
+// about the shipped page changes.
+export const usableTag = t => t.length > 1 && t.length < 32 && !JUNK.test(t);
 
 /* ---------- tag facets ----------
  *
