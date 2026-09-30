@@ -994,6 +994,65 @@ ground out.
 Full write-up, including the measured v1-vs-v3 baseline and what is
 deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.
 
+### The account-native engine (`core/intrinsic/`), which needs no key at all
+
+Both engines above lean on Last.fm. `CLAUDE.md` says external enrichment must be
+"silently absent and zero-cost for anyone who doesn't have it, never something
+the core filing model leans on", and the core model leans on it completely — so
+this is the part that fixes that, and it is being built on a branch rather than
+here.
+
+The reframe is the whole idea. "What genre is this track?" needs an outside
+vocabulary. **"Which of this account's playlists does this track belong with?"
+needs none**, because a playlist is already a labelled training set: 200 tracks
+in a bucket are 200 hand-labelled examples of what *you* mean by it, and that
+label cannot be wrong because it is definitionally what you meant. Two accounts
+with a playlist called "House" get different learned definitions, correctly,
+because they are learned from different members.
+
+Six signals, five of them already sitting in `library.json` after a snapshot:
+
+| Signal | Where it comes from |
+|---|---|
+| Artist co-occurrence, as PPMI over **your own** playlists | playlist membership |
+| Label family, from the **ISRC registrant** | `isrc`, until now used only as an identity key |
+| Add-session cohesion | `added_at` |
+| Format shape — a seven-minute cut on a two-track release is a club record, a three-minute cut at track four of twelve is an album song | duration, album type, track counts |
+| Era | release date |
+| Tempo and key | your Rekordbox import, and **only** if you have one |
+
+The ISRC trick is worth a sentence: `CC-XXX-YY-NNNNN` identifies the registrant,
+which is effectively the label. Plenty of independent releases carry a
+distributor's code instead, which would link unrelated records — so registrants
+are weighted by how many playlists they span, and an aggregator that appears
+everywhere weights itself to zero without anybody maintaining a list of who the
+aggregators are.
+
+**Held-out placement accuracy is the thing that makes this testable at all.**
+Your filing *is* the answer key: hide a track, ask where it goes, compare. That
+replaces the ~500 manually reviewed rows §26 asks for, for anything about
+placement, and runs per account in seconds. Leakage is therefore the one thing
+that could quietly make it a lie, so the harness carries a canary — score with
+held-out tracks left in, assert it beats the honest path, and treat convergence
+as proof the folds have stopped excluding anything.
+
+It also says which **rung** your account is on rather than only a confidence,
+because "low confidence" and "not enough of your library filed yet" are
+different sentences and only the second tells you what would fix it. With
+nothing filed it stops trying to place things — there is nowhere to place them —
+and proposes groups for you to name instead.
+
+```sh
+npm run validate:placement              # the intrinsic engine against v1, on YOUR library
+npm run validate:placement -- --reports # which of your buckets are the same thing twice
+npm run validate:placement -- --sweep   # which weights your library actually pins down
+```
+
+That first command is a gate that is allowed to fail, and the answer is not in
+yet: it needs a real `library.json`, and a synthetic one cannot settle it in
+either direction. Plan, execution log and the measured numbers:
+**`docs/THINKING-ENGINE-PLAN.md`**.
+
 ## Data sources, and what they're worth
 
 | Source | Verdict |
