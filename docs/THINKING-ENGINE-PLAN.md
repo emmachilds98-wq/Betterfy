@@ -543,8 +543,29 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
 | 2 — engine & explanations | `done` | weights enter the fit sweep | 42 intrinsic tests; sweep + componentValue against real filing |
 | 3 — cold-start ladder | `done` | rung fixtures pass, incl. empty library | 50 intrinsic tests; rung 0 and rung 1 both exercised through the CLI |
 | 4 — Rekordbox bonus layer | `done` | absence-is-free guard test passes | guard asserts byte-identical output for every unknown track |
-| 5 — in-app queue & shadow | `not started` | queue renders on the phone build | — |
+| 5 — in-app queue & shadow | `not started` — groundwork done | queue renders on the phone build | bundler (Phase 1) and space caching both in place; UI deliberately not started, see below |
 | 6 — cutover & misfile | `not started` | leave-one-out beats v1, number shown | — |
+
+### Why Phase 5's UI was deliberately not started
+
+Two reasons, and the second only became visible by doing the work.
+
+1. **It is the riskiest thing to do unattended.** It is surgery on
+   `docs/app.template.html`, the 300 KB file that *is* the shipped page, in a
+   design system with its own theme tokens, tab bar, sheet behaviour and swipe
+   navigation. Producing something that looks plausible and is subtly wrong, with
+   nobody to look at it, is the likely outcome rather than the unlucky one.
+
+2. **It had an unmet prerequisite that the measurement found.** Building the
+   space costs one to four seconds and hundreds of megabytes (§12), so a screen
+   that builds on load would freeze the phone. That prerequisite is now met —
+   `core/intrinsic/persist.mjs` revives a space 10–12× faster than building it —
+   but it did not exist when Phase 5 was planned, and building the screen first
+   would have produced exactly that freeze.
+
+So the groundwork is done and the screen is not. What remains is genuinely UI
+work against a settled engine, which is the right shape for a session where
+somebody can look at the result.
 
 ### Decisions taken, and by whom
 
