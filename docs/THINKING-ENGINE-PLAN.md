@@ -23,9 +23,48 @@ The build does not honour that. Both engines lean on it completely:
   `capabilities: ['identity', 'era']` — the only provider that needs no setup
   asserts nothing about what a record *sounds like*.
 
-So the hosted app asks every listener for a Last.fm key before it can do its
-main job, and the quality of its main job is capped by a crowd vocabulary that
-is global, coarse (one flat tag cloud per artist) and sometimes wrong.
+### What the shipped tag table does and does not fix
+
+One correction, because the first draft of this argument overstated it.
+
+`docs/tags.json` ships **4,866 artists** baked into the page, and the browser
+reads it at runtime with no key and no setup. So a hosted listener is *not*
+signal-less without a Last.fm key. They have coverage for those 4,866 artists
+for free, and a key only extends it to artists outside the table.
+
+That is a real mitigation, and it moves the problem rather than removing it —
+in three ways that all matter more than the one it solves:
+
+1. **The table is one library's taste.** It was built from this account. A
+   listener whose taste overlaps gets good coverage; a listener whose does not
+   falls off a cliff. Both get the same interface, the same confidence
+   language, and no indication which of the two they are. That is the
+   "excellent classifier for one library, worth nothing for the next account"
+   failure that `axes.mjs` is criticised for, one layer up and much harder to
+   see.
+2. **It can be false, by documented design.** The shared Firestore path that
+   grows the table takes unauthenticated writes and `merge-tags.mjs` checks a
+   contribution's *shape* — "a real Spotify artist ID format, sane tag names
+   and counts" — not whether it is true. The README says so plainly: somebody
+   could submit a plausible but false tag for a real uncovered artist and
+   nothing in the pipeline would catch it. A PR gate puts human eyes on the
+   diff, which is a good control and not the same as verification.
+3. **It is still one flat tag cloud per artist.** Coverage does not fix
+   granularity. A diverse artist hands the same answer to every record they
+   ever made, whether the cloud arrived from a key, the shipped table or a
+   stranger's contribution.
+
+So the accurate statement is not "no key, no signal". It is: *the core model's
+quality depends on how much a stranger's library resembles this one, on a
+table that is checked for shape rather than truth, at a granularity that cannot
+separate one artist's records from each other* — and the app cannot tell the
+listener which of those is currently limiting it.
+
+The intrinsic signals in §4 have none of those three properties. Their coverage
+is 100% by construction, because they are computed from the listener's own
+library; they cannot be poisoned by a third party, because no third party is
+involved; and they are per-track, because format, era, session and label are
+properties of the record rather than of its artist.
 
 Spotify cannot fill the gap. Verified September 2026, and re-confirmed against
 the repo's own measurements:
@@ -274,10 +313,23 @@ from — that is arithmetic, not a design failure.
 
 The resolution: a near-empty account gets **help building its taxonomy**, not
 accurate filing into buckets that do not exist yet. Accurate filing there is
-not a well-posed problem. Where a Last.fm key *is* present, Layer 2 may break
-ties at rungs 0–1 only, labelled as such, and is forbidden from overriding
-intrinsic evidence at rungs 2–3. That confines the crutch to the rungs where
-the gap is real and makes it visible when used.
+not a well-posed problem.
+
+At rungs 0–1 the shipped tag table (§1) and a Last.fm key if present may break
+ties, labelled as doing so, and are forbidden from overriding intrinsic
+evidence at rungs 2–3. That confines the crutch to the rungs where the gap is
+genuinely arithmetic and makes it visible whenever it is load-bearing.
+
+Two things follow that the UI has to carry, or the honesty is decorative:
+
+- **Report the rung**, not just the confidence. "Low confidence" and "not
+  enough of your library filed yet to be confident" are different sentences and
+  only the second tells the listener what would fix it.
+- **Report tag-table coverage as a first-class number.** How many of this
+  account's artists the shipped table actually covers is the single best
+  predictor of how well the *old* model will do for them, and it is currently
+  computed nowhere. `misfile.mjs` does a coverage check for its own report;
+  nothing surfaces it to a listener.
 
 ---
 
@@ -404,3 +456,49 @@ co-occurrence space is *not* a `defineProvider` adapter. It asserts no concept
 from a source; it computes a space. It sits beside `core/analysis/classify.mjs`
 rather than inside the provider registry, and pretending otherwise to make the
 architecture diagram tidier would be a mistake.
+
+---
+
+## 11. Execution log
+
+This section is the build's memory. It is updated in the same commit as the
+work it describes, so the state of the build is readable from the repository
+rather than from anybody's recollection.
+
+Status values: `not started` · `in progress` · `done` · `blocked` · `abandoned`.
+
+| Phase | Status | Gate | Evidence |
+|---|---|---|---|
+| 0 — feasibility & harness | `not started` | intrinsic-only ≥ v1 on a real library | — |
+| 1 — browser bundling bridge | `not started` | bundled `core` parity test passes | — |
+| 2 — engine & explanations | `not started` | weights enter the fit sweep | — |
+| 3 — cold-start ladder | `not started` | rung fixtures pass, incl. empty library | — |
+| 4 — Rekordbox bonus layer | `not started` | absence-is-free guard test passes | — |
+| 5 — in-app queue & shadow | `not started` | queue renders on the phone build | — |
+| 6 — cutover & misfile | `not started` | leave-one-out beats v1, number shown | — |
+
+### Decisions taken, and by whom
+
+- **Cutover policy:** shadow until it beats v1, then one switch. *(Owner's
+  choice, 2026-09-30.)*
+- **Cold start:** must work from a near-empty account. *(Owner's choice.)* The
+  arithmetic conflict this creates is resolved in §7 rather than hidden.
+- **Rekordbox:** in scope as a pure bonus layer, gated by the §4.7 guard test.
+  *(Owner's choice.)*
+- **Scope:** engine + in-app queue + misfile migration. *(Owner's choice.)*
+- **v3 is substrate, not competition.** The owner's instruction was to
+  disregard the previous build where that produces a better outcome. The
+  judgement taken here: keep what is independently correct and reusable — the
+  ontology, `TrackIdentity`, the evidence record, the append-only correction
+  log, mirror detection, the queue's prioritisation, the recommendation
+  layer's refusal to move anything — and replace only the inference path that
+  made external tags load-bearing. Discarding 638 passing tests to prove
+  independence would be loyalty to a gesture rather than to the outcome.
+
+### Findings that changed the plan after it was written
+
+- **2026-09-30.** `docs/tags.json` ships 4,866 artists and the page reads it
+  with no key, so the original claim "no key, no signal" was wrong and is
+  corrected in §1. The argument that replaces it is stronger: coverage is
+  biased to one library's taste, the shared write path is shape-checked rather
+  than truth-checked, and granularity is still one cloud per artist.
