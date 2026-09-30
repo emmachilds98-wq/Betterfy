@@ -504,6 +504,21 @@ engine **must build the space once per snapshot and persist it**, not rebuild it
 per page load. That was already a line in the risk table; it is now a
 requirement with numbers behind it.
 
+**And then made viable.** `core/intrinsic/persist.mjs` serialises a space to
+plain JSON and revives it, refusing any cache written by a different engine
+version or built from a different library — a fingerprint over playlist
+membership, which ignores the noise (`captured_at`, a drifting `popularity`)
+that would otherwise invalidate every cache and mean it was never used.
+
+| Library | Build | Cache size | Parse + revive |
+|---|---|---|---|
+| 60 playlists · 2k tracks | 726 ms | 2.8 MB | 72 ms (**10× faster**) |
+| 200 playlists · 6k tracks | 2,372 ms | 11.8 MB | 196 ms (**12× faster**) |
+
+A test asserts that every track in the fixture places *identically* from a
+revived space, including its explanation — the cache has to skip the work
+without changing the answer, or it is not a cache, it is a second engine.
+
 `MAX_PAIRWISE_ARTISTS` was deliberately left at 400 rather than lowered to buy
 back the remaining cost. Lowering it would drop pairwise evidence from exactly
 the biggest buckets, and there is no way to measure what that costs in accuracy

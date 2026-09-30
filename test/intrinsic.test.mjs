@@ -13,6 +13,7 @@ import { buildSpace, placements, combine, WEIGHTS, BANDS } from '../core/intrins
 import { sweepWeights, componentValue, SWEEP } from '../core/intrinsic/fit.mjs';
 import { rungOf, RUNGS, tagCoverage, proposeBuckets } from '../core/intrinsic/coldstart.mjs';
 import { bonusIndex, bonusScores, keyCompatibility, KEY_MATCH, MIN_KNOWN } from '../core/intrinsic/bonus-rekordbox.mjs';
+import { serialiseSpace, reviveSpace, fingerprint, ENGINE_STAMP } from '../core/intrinsic/persist.mjs';
 import { placementAccuracy, foldOf, truthOf } from '../core/validate/loo.mjs';
 import { baselineAccuracy, libraryWithout } from '../core/validate/baseline.mjs';
 import { explain, summarise, MARKS } from '../core/intrinsic/explain.mjs';
@@ -831,4 +832,82 @@ test('where the file DOES cover both sides, tempo and key actually contribute', 
   const out = placements(deep.tracks[3], space, { limit: 1 });
   assert.ok('bpm' in out.results[0].parts || 'key' in out.results[0].parts,
     'a track the file knows, against a bucket it knows, must be judged on tempo or key');
+});
+
+/* ---------- caching the space ---------- */
+
+test('a revived space produces identical placements to the one it was built from', () => {
+  // The whole point: the phone must be able to skip the expensive build without
+  // getting different answers for having done so.
+  const lib = fixture();
+  const built = buildSpace(lib);
+  const revived = reviveSpace(JSON.parse(JSON.stringify(serialiseSpace(built, lib))), lib);
+  assert.ok(revived, 'a fresh cache must revive');
+
+  const strip = o => JSON.parse(JSON.stringify(o));
+  for (const p of lib.playlists) {
+    for (const t of p.tracks ?? []) {
+      assert.deepEqual(strip(placements(t, revived, { why: true })),
+                       strip(placements(t, built, { why: true })),
+                       `${t.id} must place identically from a cache`);
+    }
+  }
+});
+
+test('a cache survives the round trip a browser would put it through', () => {
+  const lib = fixture();
+  const json = serialiseSpace(buildSpace(lib), lib);
+  // structuredClone is what IndexedDB does; JSON is what a file does. Both.
+  assert.ok(reviveSpace(structuredClone(json), lib));
+  assert.ok(reviveSpace(JSON.parse(JSON.stringify(json)), lib));
+});
+
+test('a cache built from a different library is refused', () => {
+  const lib = fixture();
+  const json = serialiseSpace(buildSpace(lib), lib);
+
+  const changed = fixture();
+  changed.playlists[0].tracks = changed.playlists[0].tracks.slice(0, 10);
+  assert.equal(reviveSpace(json, changed), null,
+    'filing three tracks changes the graph; serving yesterday\'s answers is a bug nobody can see');
+});
+
+test('a cache written by a different engine version is refused', () => {
+  const lib = fixture();
+  const json = serialiseSpace(buildSpace(lib), lib);
+  assert.equal(reviveSpace({ ...json, stamp: 'something-else' }, lib), null);
+});
+
+test('a malformed cache is refused rather than half-revived', () => {
+  const lib = fixture();
+  for (const bad of [null, undefined, 'nonsense', 42, {}, { stamp: ENGINE_STAMP }]) {
+    assert.equal(reviveSpace(bad, lib), null, `${JSON.stringify(bad)} should be refused`);
+  }
+});
+
+test('the fingerprint tracks what the engine reads, and ignores what it does not', () => {
+  const a = fixture();
+  const b = fixture();
+  assert.equal(fingerprint(a), fingerprint(b), 'the same library fingerprints the same');
+
+  // Noise the engine never reads must not invalidate a cache, or it is never used.
+  const noisy = fixture();
+  noisy.captured_at = new Date().toISOString();
+  for (const t of noisy.playlists[0].tracks) t.popularity = (t.popularity ?? 0) + 1;
+  assert.equal(fingerprint(noisy), fingerprint(a),
+    'a drifting popularity score must not throw away an otherwise valid cache');
+
+  // Membership must.
+  const moved = fixture();
+  moved.playlists[0].tracks.pop();
+  assert.notEqual(fingerprint(moved), fingerprint(a));
+});
+
+test('fingerprinting does not depend on the order things happen to be in', () => {
+  const a = fixture();
+  const b = fixture();
+  b.playlists.reverse();
+  for (const p of b.playlists) p.tracks.reverse();
+  assert.equal(fingerprint(a), fingerprint(b),
+    'a reordered library is the same library');
 });
