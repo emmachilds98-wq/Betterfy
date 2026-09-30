@@ -11,7 +11,7 @@
 // thresholds, these have somewhere to go: leave-one-out placement accuracy over
 // the account's own library is a real fitness surface with thousands of rows,
 // and `core/validate/loo.mjs` computes it.
-import { cooccurrence, trackVector, cosine, centroid } from './cooccurrence.mjs';
+import { cooccurrence, trackVector, cosine, centroid, norm } from './cooccurrence.mjs';
 import { registrantIndex, profileOf, shapeScores, registrantOf, registrantWeight,
          formatOf, eraOf } from './features.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
@@ -119,12 +119,14 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
       if (r) registrantCounts.set(r, (registrantCounts.get(r) ?? 0) + 1);
     }
 
+    const centroidVec = centroid(tracks.map(t => trackVector(t, graph)));
     destinations.set(p.id, {
       id: p.id,
       name: p.name ?? null,
       n: tracks.length,
       profile: profileOf(p, { skip }),
-      centroid: centroid(tracks.map(t => trackVector(t, graph))),
+      centroid: centroidVec,
+      centroidNorm: norm(centroidVec),
       artists: new Set(artistCounts.keys()),
       artistCounts,
       registrantCounts,
@@ -200,11 +202,13 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
   if (!space?.destinations?.size) return { declined: 'NO_DESTINATIONS', results: [] };
 
   const vec = trackVector(track, space.graph);
+  const vecNorm = norm(vec);
   const rows = [];
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
     const shape = shapeScores(track, d.profile, { registrants: space.registrants });
-    const graph = vec.size && d.centroid.size ? cosine(vec, d.centroid) : null;
+    const graph = vec.size && d.centroid.size
+      ? cosine(vec, d.centroid, vecNorm, d.centroidNorm) : null;
     const extra = space.bonus?.size ? bonusScores(track, d.bonusProfile, space.bonus)
                                     : { bpm: null, key: null };
     const { score, used, judged } = combine({ graph, ...shape, ...extra }, weights);

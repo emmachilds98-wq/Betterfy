@@ -437,7 +437,7 @@ first place the engine tells you to move music, so it goes last on purpose.
 | **Circularity** | Learning from membership and then suggesting membership reinforces what is already there and never surprises you | Discovery stays a separate path. The engine is explicitly a *filer*, not a recommender. |
 | **Aggregator ISRCs** | Dilutes the label signal | Playlist-span down-weighting (§4.2). Self-correcting. |
 | **Popularity bias** | Encodes something nobody asked for | In the fit sweep; earns its weight or is zeroed. |
-| **Phone performance** | PPMI over thousands of artists in a browser | Bounded per §4.1, cached per snapshot, and **measured on a real library before Phase 5 rather than assumed**. |
+| **Phone performance** | PPMI over thousands of artists in a browser | **Measured — see §12.** Two fixes took build 2.3× faster and heap down a third; a large library still needs the space cached per snapshot rather than rebuilt per page load. |
 | **Bundle-order fragility** | A silently mis-ordered bundle half-works | Cycle + collision detection that fails the build, plus the parity test. |
 | **Cold-start honesty** | A rung-0 account could be shown confident nonsense | Rung is reported, not inferred by the user from vibes. |
 | **`docs/index.html` is the shipped page** | Phase 5 touches it | Existing secret guard and build-guard tests stay; the page is rebuilt and diffed, never hand-edited. |
@@ -456,6 +456,60 @@ co-occurrence space is *not* a `defineProvider` adapter. It asserts no concept
 from a source; it computes a space. It sits beside `core/analysis/classify.mjs`
 rather than inside the provider registry, and pretending otherwise to make the
 architecture diagram tidier would be a mistake.
+
+---
+
+## 12. Measured: does it run on a phone?
+
+The risk table said to measure rather than assume, so this is the measurement.
+Synthetic libraries shaped like real ones — a Zipf-ish artist distribution, a
+long tail seen once, buckets from 6 to 400 tracks, and a record-of-everything
+playlist — on a development machine, which is generous compared with a phone.
+
+**Before any optimisation:**
+
+| Library | Graph build | Space build | One placement | Heap |
+|---|---|---|---|---|
+| 60 playlists · 2k tracks | 981 ms | 1,286 ms | 13.1 ms | 151 MB |
+| 200 playlists · 6k tracks | 3,363 ms | 4,561 ms | 11.3 ms | 216 MB |
+| 400 playlists · 15k tracks | 10,310 ms | 15,234 ms | 51.7 ms | **1,173 MB** |
+
+A gigabyte of heap is not something a phone has, and 52 ms per placement is
+about 20 a second, which is not an interactive list. Two causes, both found by
+looking rather than guessing:
+
+1. **Pair counts were keyed by `` `${a}\0${b}` ``**, allocating one string per
+   pair — 5.2 million of them at the top size. Now a nested map, which reuses
+   the outer artist id and allocates nothing per pair.
+2. **`cosine()` recomputed both norms on every call.** Ranking one track against
+   400 buckets recomputed each bucket centroid's norm every time, and a centroid
+   can hold thousands of entries. Centroid norms are computed once in
+   `buildSpace` and passed in.
+
+**After:**
+
+| Library | Graph build | Space build | One placement | Heap |
+|---|---|---|---|---|
+| 60 playlists · 2k tracks | 417 ms | 619 ms | 4.0 ms | 54 MB |
+| 200 playlists · 6k tracks | 1,082 ms | 2,115 ms | 4.7 ms | 311 MB |
+| 400 playlists · 15k tracks | 4,415 ms | 7,787 ms | 19.4 ms | 784 MB |
+
+The 5-fold harness over 1,500 tracks went from 44 s to 20 s.
+
+**What this means for Phase 5, stated plainly.** A mid-sized library is now fine
+to place against interactively — 4.7 ms a track is a responsive list. Building
+the space is not: one to four seconds and hundreds of megabytes is a page load
+nobody should pay, on a device that may kill the tab for it. So the in-app
+engine **must build the space once per snapshot and persist it**, not rebuild it
+per page load. That was already a line in the risk table; it is now a
+requirement with numbers behind it.
+
+`MAX_PAIRWISE_ARTISTS` was deliberately left at 400 rather than lowered to buy
+back the remaining cost. Lowering it would drop pairwise evidence from exactly
+the biggest buckets, and there is no way to measure what that costs in accuracy
+without a real library — trading unmeasurable accuracy for measurable speed is
+the kind of tuning this project is careful about. It is in the sweep, so a real
+library can settle it.
 
 ---
 
