@@ -470,7 +470,7 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
 | Phase | Status | Gate | Evidence |
 |---|---|---|---|
 | 0 — feasibility & harness | `in progress` — built, **gate unrun** | intrinsic-only ≥ v1 on a real library | 29 tests; 667 suite-wide. Needs `library.json` to answer. |
-| 1 — browser bundling bridge | `not started` | bundled `core` parity test passes | — |
+| 1 — browser bundling bridge | `done` | bundled `core` parity test passes | 16 tests; parity asserted; page rendered in Chromium with 0 errors |
 | 2 — engine & explanations | `not started` | weights enter the fit sweep | — |
 | 3 — cold-start ladder | `not started` | rung fixtures pass, incl. empty library | — |
 | 4 — Rekordbox bonus layer | `not started` | absence-is-free guard test passes | — |
@@ -539,6 +539,47 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
   is meaningless until it runs on a real library, and Layer 2 tie-breaking is
   most valuable exactly where intrinsic signal is thinnest, which is an
   independent argument for the §7 ladder rather than a concession.
+
+- **Phase 1 found that two unused lines were keeping v3 off the phone.**
+  `core/sources/musicbrainz.mjs` re-exported the root module's `resolveMbid`
+  and `extractArtistMbid` as a convenience — and **nothing ever imported them
+  from there**; `enrich-lastfm.mjs` and the tests both go to `musicbrainz.mjs`
+  directly. Those two lines were the only reason the engine graph reached
+  `musicbrainz.mjs` -> `cache.mjs` -> `node:fs`, which is what made the whole
+  graph unbundleable for a browser. Deleting them changed no behaviour.
+
+- **The bundler's first design was wrong, and the build said so immediately.**
+  It kept flat concatenation and added a name-collision check, on the theory
+  that a duplicate should fail the build rather than let the second declaration
+  win. Run against the real graph it refused at once: **every provider adapter
+  exports `toEvidence`**, which is the provider interface working exactly as
+  designed rather than a mess to tidy. Renaming five adapters to suit the
+  bundler would have been the tail wagging the dog, so the bundler changed
+  instead — each module gets its own scope and returns its exports, which makes
+  duplicate names across modules a non-issue rather than something to police.
+  `profile.mjs`'s `cosine` and `core/intrinsic/cooccurrence.mjs`'s `cosine` now
+  coexist, and a test asserts they are different functions.
+
+- **Four web tests and the build guard were coupled to the old flat layout.**
+  They sliced `docs/index.html` between module header comments and ran the
+  fragment, which only worked because concatenation put everything at top level.
+  They now run the whole generated bundle, which is strictly more faithful —
+  they exercise the file a browser actually gets, including the exposure lines,
+  rather than a hand-cut fragment of it.
+
+- **Shipping decision: `--with-core` is off by default.** The bundler can now
+  put the v3 engine on the phone, and doing so adds ~234 KB to a 323 KB page.
+  Until a screen uses it that is a download every listener pays for nothing, so
+  the flag exists and stays off until Phase 5 turns it on. Building the bridge
+  is not a reason to drive traffic over it.
+
+- **Verified by rendering, not by reading.** The built page was loaded in
+  headless Chromium: v1's functions are present as globals, `tagFacet`,
+  `norm` and `rank` behave, and there are zero console errors. With
+  `--with-core`, `BetterfyIntrinsic.buildSpace` / `placements` and
+  `BetterfyValidate.placementAccuracy` all run in the browser, also with zero
+  errors. `norm('  Déjà Vu ')` returns the identical string in Node and in
+  Chromium.
 
 - **v1 already contains a narrow version of this idea.** `artistHistory()` in
   `profile.mjs` places a track by where its primary artist's other tracks

@@ -4,6 +4,7 @@
 // web build and the local app score identically and cannot drift apart.
 // Only the public client ID is embedded — the client secret is never read here.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { bundleModules } from './bundler.mjs';
 
 // argv, then .env, then whatever the last build baked into docs/index.html.
 // That last fallback is the important one: .env is gitignored, so a rebuild in
@@ -66,14 +67,34 @@ const APPCHECK_SITE_KEY = arg('appcheck-site-key') ?? readEnv('APPCHECK_SITE_KEY
 const APPCHECK_APP_ID = arg('appcheck-app-id') ?? readEnv('APPCHECK_APP_ID')
   ?? built(/APPCHECK_APP_ID = '(\d+:\d+:web:[^']+)'/) ?? '';
 
-// Strip module syntax so these can be concatenated into one classic script.
-const bundle = file => readFileSync(file, 'utf8')
-  .replace(/^\s*import[^;]*;$/gm, '')
-  .replace(/^export\s+(const|function|class|let)\b/gm, '$1')
-  .replace(/^export\s*\{[^}]*\};?$/gm, '');
+/* The scoring modules, bundled by `bundler.mjs` rather than concatenated.
+ *
+ * v1's three files are exposed as globals, because the page's inline script
+ * calls `rank()` and `trackVec()` as bare identifiers and used to get them from
+ * a flat concatenation. Checked rather than assumed: of the 26 private top-level
+ * declarations in those files, the template references none — the only near miss
+ * was `dot`, which appears in the page as a CSS class for the pager dots.
+ *
+ * `--with-core` additionally ships the v3 engine, which the bundler can now
+ * reach for the first time. Off by default on purpose: until a screen actually
+ * uses it, that is ~270 KB of JavaScript on a phone doing nothing, and "we built
+ * the bridge" is not a reason to make every listener download the traffic. Phase
+ * 5 of docs/THINKING-ENGINE-PLAN.md is what turns it on. */
+const WITH_CORE = process.argv.includes('--with-core');
 
-const core = ['norm.mjs', 'credits.mjs', 'profile.mjs'].map(f =>
-  `/* ---- ${f} ---- */\n${bundle(f)}`).join('\n');
+const V1_MODULES = ['norm.mjs', 'credits.mjs', 'profile.mjs'];
+const V3_ENTRIES = ['core/engine.mjs', 'core/intrinsic/space.mjs', 'core/validate/loo.mjs'];
+
+const { code: core, files: bundled } = bundleModules(
+  WITH_CORE ? [...V1_MODULES, ...V3_ENTRIES] : V1_MODULES,
+  {
+    expose: V1_MODULES,
+    namespace: WITH_CORE ? {
+      BetterfyEngine: 'core/engine.mjs',
+      BetterfyIntrinsic: 'core/intrinsic/space.mjs',
+      BetterfyValidate: 'core/validate/loo.mjs',
+    } : {},
+  });
 
 const html = readFileSync('docs/app.template.html', 'utf8')
   .replace('__CORE__', core)
@@ -126,7 +147,8 @@ if (!CLIENT_ID && !process.argv.includes('--allow-missing-id'))
     + 'set SPOTIFY_CLIENT_ID in .env, or pass --allow-missing-id if you really mean it.');
 
 writeFileSync('docs/index.html', html);
-console.log(`docs/index.html — ${(html.length / 1024).toFixed(0)} KB, client id ${CLIENT_ID ? 'embedded' : 'MISSING'}`
+console.log(`docs/index.html — ${(html.length / 1024).toFixed(0)} KB, ${bundled.length} modules bundled`
+  + `${WITH_CORE ? ' (incl. the v3 engine)' : ''}, client id ${CLIENT_ID ? 'embedded' : 'MISSING'}`
   + `, shared tags ${TAGS_PROJECT && TAGS_KEY ? `→ ${TAGS_PROJECT}` : 'off'}`
   + `, request-access link ${CONTACT_EMAIL ? `→ ${CONTACT_EMAIL}` : 'off'}`
   + `, App Check ${APPCHECK_SITE_KEY && APPCHECK_APP_ID ? 'on' : 'off'}`);

@@ -20,7 +20,10 @@ const ROOT = new URL('..', import.meta.url).pathname;
 /** A disposable copy of the repo with the given .env and template tweak. */
 function sandbox({ env = '', poison = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'bf-build-'));
-  for (const f of ['build-web.mjs', 'norm.mjs', 'credits.mjs', 'profile.mjs'])
+  // bundler.mjs is a real dependency of the build now — build-web.mjs imports it
+  // to resolve core/'s dependency graph, and a sandbox missing it fails at module
+  // resolution rather than at anything this file is trying to test.
+  for (const f of ['build-web.mjs', 'bundler.mjs', 'norm.mjs', 'credits.mjs', 'profile.mjs'])
     cpSync(join(ROOT, f), join(dir, f));
   cpSync(join(ROOT, 'docs'), join(dir, 'docs'), { recursive: true });
   writeFileSync(join(dir, '.env'), env);
