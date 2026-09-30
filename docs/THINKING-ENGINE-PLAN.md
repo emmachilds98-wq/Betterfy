@@ -473,7 +473,7 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
 | 1 — browser bundling bridge | `done` | bundled `core` parity test passes | 16 tests; parity asserted; page rendered in Chromium with 0 errors |
 | 2 — engine & explanations | `done` | weights enter the fit sweep | 42 intrinsic tests; sweep + componentValue against real filing |
 | 3 — cold-start ladder | `done` | rung fixtures pass, incl. empty library | 50 intrinsic tests; rung 0 and rung 1 both exercised through the CLI |
-| 4 — Rekordbox bonus layer | `not started` | absence-is-free guard test passes | — |
+| 4 — Rekordbox bonus layer | `done` | absence-is-free guard test passes | guard asserts byte-identical output for every unknown track |
 | 5 — in-app queue & shadow | `not started` | queue renders on the phone build | — |
 | 6 — cutover & misfile | `not started` | leave-one-out beats v1, number shown | — |
 
@@ -629,6 +629,23 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
   of how the *tag* engine treats a given listener and was computed nowhere they
   could see. Under 50% the CLI names it for what it is: what the shipped table
   being one library's taste looks like from the outside.
+
+- **The bonus guard is asserted, not claimed.** For every track the Rekordbox
+  file does not cover, the test compares the full placement output — ranking,
+  scores and band — with and without the file loaded, and requires them to be
+  deep-equal. A second test requires the layer to be *capable* of mattering
+  where the file does cover both sides, since a guard is trivially satisfied by
+  a feature that never does anything.
+
+- **A finite number is not a usable one.** The first version of `bonusIndex()`
+  kept a row whose bpm was `-1` and which had no key, because `-1` is finite —
+  an entry that exists and says nothing, which is worse than no entry, since
+  `bonusProfileOf` would count it toward the threshold that decides whether a
+  bucket has enough tempo data to judge on. Caught by its own test.
+
+- **Half and double time are deliberately not a tempo match.** The arithmetic
+  works and the records do not belong together: a 140 bpm track is not at home
+  in a 70 bpm bucket.
 
 - **v1 already contains a narrow version of this idea.** `artistHistory()` in
   `profile.mjs` places a track by where its primary artist's other tracks

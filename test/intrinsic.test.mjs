@@ -12,6 +12,7 @@ import {
 import { buildSpace, placements, combine, WEIGHTS, BANDS } from '../core/intrinsic/space.mjs';
 import { sweepWeights, componentValue, SWEEP } from '../core/intrinsic/fit.mjs';
 import { rungOf, RUNGS, tagCoverage, proposeBuckets } from '../core/intrinsic/coldstart.mjs';
+import { bonusIndex, bonusScores, keyCompatibility, KEY_MATCH, MIN_KNOWN } from '../core/intrinsic/bonus-rekordbox.mjs';
 import { placementAccuracy, foldOf, truthOf } from '../core/validate/loo.mjs';
 import { baselineAccuracy, libraryWithout } from '../core/validate/baseline.mjs';
 import { explain, summarise, MARKS } from '../core/intrinsic/explain.mjs';
@@ -732,4 +733,102 @@ test('a proposal too small to be a bucket is not offered as one', () => {
     { id: 'b', artists: [{ id: 'y' }], duration_ms: 200000 },
   ], { minProposal: 4 });
   assert.equal(out.length, 0);
+});
+
+/* ---------- the bonus layer, and the guard that keeps it one ---------- */
+
+test('THE BONUS GUARD: a track the file does not know gets byte-identical output', () => {
+  // This is the contract. CLAUDE.md requires external enrichment to be
+  // "silently absent and zero-cost for anyone who doesn't have it", and most
+  // people will never export a Rekordbox library. Without this test, the bonus
+  // layer is exactly the dependency that rule forbids.
+  const lib = fixture();
+
+  // Tempo and key for the deep family only. Every tech, jungle and ambient
+  // track is unknown to the file.
+  const rb = {};
+  for (const t of lib.playlists.find(p => p.id === 'p-deep').tracks) {
+    rb[t.id] = { bpm: 124, key: 'Am', camelot: '8A' };
+  }
+
+  const without = buildSpace(lib);
+  const withFile = buildSpace(lib, { rekordbox: rb });
+  assert.ok(withFile.bonus.size > 0, 'the fixture must actually exercise the layer');
+
+  const strip = o => JSON.parse(JSON.stringify(o));
+  for (const fam of ['tech', 'jungle', 'ambient']) {
+    for (const t of lib.playlists.find(p => p.id === `p-${fam}`).tracks) {
+      assert.ok(!rb[t.id], 'precondition: this track is not in the file');
+      assert.deepEqual(
+        strip(placements(t, withFile)),
+        strip(placements(t, without)),
+        `${t.id} is not in the Rekordbox file, so loading it must change nothing at all`,
+      );
+    }
+  }
+});
+
+test('with no file at all the layer is not merely quiet, it is absent', () => {
+  const lib = fixture();
+  const space = buildSpace(lib);
+  assert.equal(space.bonus.size, 0);
+  for (const d of space.destinations.values()) {
+    assert.equal(d.bonusProfile, null, 'no file means no per-bucket tempo shape is even computed');
+  }
+  assert.deepEqual(bonusScores(lib.playlists[0].tracks[0], null, space.bonus), { bpm: null, key: null });
+});
+
+test('a malformed or missing rekordbox file is the ordinary case, not an error', () => {
+  for (const bad of [null, undefined, 'nonsense', 42, [], { x: null }, { y: 'no' }, { z: {} }]) {
+    const idx = bonusIndex(bad);
+    assert.equal(idx.size, 0, `bonusIndex(${JSON.stringify(bad)}) should be empty, not throw`);
+  }
+  // A row with a usable bpm but no key is still worth keeping.
+  assert.equal(bonusIndex({ t1: { bpm: 128 } }).size, 1);
+  assert.equal(bonusIndex({ t1: { bpm: -1, camelot: null } }).size, 0);
+});
+
+test('the Camelot wheel mixes the way a DJ expects, and wraps', () => {
+  assert.equal(keyCompatibility('8A', '8A'), KEY_MATCH.same);
+  assert.equal(keyCompatibility('8a', '8B'), KEY_MATCH.relative, 'relative major/minor, and case is cosmetic');
+  assert.equal(keyCompatibility('8A', '9A'), KEY_MATCH.adjacent);
+  assert.equal(keyCompatibility('12A', '1A'), KEY_MATCH.adjacent, 'the wheel wraps at 12');
+  assert.equal(keyCompatibility('8A', '2A'), KEY_MATCH.clash);
+  assert.equal(keyCompatibility('8A', 'nonsense'), null, 'unreadable is null, never a clash');
+});
+
+test('half and double time are not treated as a tempo match', () => {
+  // The arithmetic works and the records do not belong together; a 140 bpm
+  // track is not at home in a 70 bpm bucket.
+  const prof = { n: 10, bpmCount: 10, bpm: { mean: 70 }, keys: new Map(), keyCount: 0 };
+  const bonus = bonusIndex({ t: { bpm: 140 } });
+  const { bpm } = bonusScores({ id: 't' }, prof, bonus);
+  assert.ok(bpm !== null);
+  assert.ok(bpm < 0.1, `double time should score near zero, got ${bpm}`);
+});
+
+test('a bucket with too little tempo data does not get to judge on it', () => {
+  const lib = fixture();
+  const deep = lib.playlists.find(p => p.id === 'p-deep');
+  // Only two known tracks — below MIN_KNOWN.
+  const rb = { [deep.tracks[0].id]: { bpm: 124, camelot: '8A' },
+               [deep.tracks[1].id]: { bpm: 125, camelot: '8A' } };
+  const space = buildSpace(lib, { rekordbox: rb });
+  const prof = space.destinations.get('p-deep').bonusProfile;
+  assert.ok(prof.n < MIN_KNOWN);
+  assert.deepEqual(bonusScores(deep.tracks[0], prof, space.bonus), { bpm: null, key: null },
+    'three records is a coincidence, not a tempo');
+});
+
+test('where the file DOES cover both sides, tempo and key actually contribute', () => {
+  // The layer has to be capable of mattering, or the guard above is trivially
+  // satisfied by a feature that never does anything.
+  const lib = fixture();
+  const deep = lib.playlists.find(p => p.id === 'p-deep');
+  const rb = {};
+  for (const t of deep.tracks) rb[t.id] = { bpm: 124, camelot: '8A' };
+  const space = buildSpace(lib, { rekordbox: rb });
+  const out = placements(deep.tracks[3], space, { limit: 1 });
+  assert.ok('bpm' in out.results[0].parts || 'key' in out.results[0].parts,
+    'a track the file knows, against a bucket it knows, must be judged on tempo or key');
 });

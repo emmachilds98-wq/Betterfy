@@ -16,6 +16,7 @@ import { registrantIndex, profileOf, shapeScores, registrantOf, registrantWeight
          formatOf, eraOf } from './features.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
 import { explain } from './explain.mjs';
+import { bonusIndex, bonusProfileOf, bonusScores } from './bonus-rekordbox.mjs';
 
 export const SPACE_VERSION = '4.0.0';
 
@@ -36,6 +37,12 @@ export const WEIGHTS = {
   albumType:   0.20,
   albumTracks: 0.15,
   popularity:  0.10,
+  // Bonus layer (§4.7). Present only for a listener who has imported a
+  // Rekordbox collection, and null for every track that import does not cover —
+  // which `combine()` drops rather than scoring zero, so the weights below
+  // cannot affect anybody who does not have the file.
+  bpm:         0.40,
+  key:         0.25,
 };
 
 /**
@@ -75,7 +82,11 @@ export const THRESHOLDS = {
  * flags are generated from one person's library — an account-native engine
  * cannot start by reading a file that assumes whose account it is.
  */
-export function buildSpace(lib, { skip = null, isMirror = null } = {}) {
+export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null } = {}) {
+  // Absent by default and absent for almost everybody. `bonusIndex(null)` is an
+  // empty lookup, which makes every bonus score null, which makes the whole
+  // layer free.
+  const bonus = bonusIndex(rekordbox);
   const graph = cooccurrence(lib, { skip, isMirror });
   const registrants = registrantIndex(lib, { skip, isMirror });
 
@@ -120,6 +131,7 @@ export function buildSpace(lib, { skip = null, isMirror = null } = {}) {
       // Membership by id, so overlap between two buckets can be measured
       // without walking either one again.
       trackIds: new Set(tracks.map(t => t.id)),
+      bonusProfile: bonus.size ? bonusProfileOf(p, bonus, { skip }) : null,
     });
   }
 
@@ -146,7 +158,7 @@ export function buildSpace(lib, { skip = null, isMirror = null } = {}) {
     }
   }
 
-  return { graph, registrants, destinations, baseline, version: SPACE_VERSION };
+  return { graph, registrants, destinations, baseline, bonus, version: SPACE_VERSION };
 }
 
 /**
@@ -193,7 +205,9 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
     if (exclude?.has(d.id)) continue;
     const shape = shapeScores(track, d.profile, { registrants: space.registrants });
     const graph = vec.size && d.centroid.size ? cosine(vec, d.centroid) : null;
-    const { score, used, judged } = combine({ graph, ...shape }, weights);
+    const extra = space.bonus?.size ? bonusScores(track, d.bonusProfile, space.bonus)
+                                    : { bpm: null, key: null };
+    const { score, used, judged } = combine({ graph, ...shape, ...extra }, weights);
     if (!judged) continue;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
     rows.push({ playlistId: d.id, name: d.name, score: +score.toFixed(4),
