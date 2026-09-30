@@ -472,7 +472,7 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
 | 0 — feasibility & harness | `in progress` — built, **gate unrun** | intrinsic-only ≥ v1 on a real library | 29 tests; 667 suite-wide. Needs `library.json` to answer. |
 | 1 — browser bundling bridge | `done` | bundled `core` parity test passes | 16 tests; parity asserted; page rendered in Chromium with 0 errors |
 | 2 — engine & explanations | `done` | weights enter the fit sweep | 42 intrinsic tests; sweep + componentValue against real filing |
-| 3 — cold-start ladder | `not started` | rung fixtures pass, incl. empty library | — |
+| 3 — cold-start ladder | `done` | rung fixtures pass, incl. empty library | 50 intrinsic tests; rung 0 and rung 1 both exercised through the CLI |
 | 4 — Rekordbox bonus layer | `not started` | absence-is-free guard test passes | — |
 | 5 — in-app queue & shadow | `not started` | queue renders on the phone build | — |
 | 6 — cutover & misfile | `not started` | leave-one-out beats v1, number shown | — |
@@ -611,6 +611,24 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
   volunteers. A test asserts that zeroing the artist graph measurably *hurts*
   accuracy, so if the graph ever stops being load-bearing the suite says so
   rather than the engine quietly running on format.
+
+- **The rung is about evidence, not library size.** A listener with 4,000 tracks
+  in two buckets is on a lower rung than one with 400 across twenty, because the
+  second has told the engine far more about what they mean. A test asserts
+  exactly that, since "big library must mean good signal" is the intuitive and
+  wrong reading.
+
+- **Rung 0 has to be a different product, not a degraded one.** With nothing
+  filed there is nowhere to place anything, so the engine proposes groups to
+  name — by lead artist where somebody has enough records, and by the shape of
+  the release otherwise — rather than answering a question that is not
+  well-posed. The CLI prints this instead of the accuracy table and says plainly
+  that nothing below it will mean much yet.
+
+- **Tag-table coverage is now a first-class number.** It is the best predictor
+  of how the *tag* engine treats a given listener and was computed nowhere they
+  could see. Under 50% the CLI names it for what it is: what the shipped table
+  being one library's taste looks like from the outside.
 
 - **v1 already contains a narrow version of this idea.** `artistHistory()` in
   `profile.mjs` places a track by where its primary artist's other tracks

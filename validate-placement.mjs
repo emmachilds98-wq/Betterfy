@@ -21,6 +21,7 @@ import { buildSpace, placements } from './core/intrinsic/space.mjs';
 import { bucketPairs, boundaryTracks, drift, unnamedClusters } from './core/intrinsic/reports.mjs';
 import { sweepWeights, componentValue } from './core/intrinsic/fit.mjs';
 import { summarise } from './core/intrinsic/explain.mjs';
+import { rungOf, RUNGS, tagCoverage, proposeBuckets } from './core/intrinsic/coldstart.mjs';
 import { loadTags } from './tagstore.mjs';
 
 const arg = (name, fallback) => {
@@ -46,6 +47,9 @@ const pct = v => (v === null || v === undefined ? '    —' : (v * 100).toFixed(
 const graph = cooccurrence(lib);
 const regs = registrantIndex(lib);
 const space = buildSpace(lib);
+
+let tags = null;
+try { tags = loadTags(); } catch { /* no caches: v1 simply cannot be scored */ }
 
 const distinct = new Set();
 for (const p of lib.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id) distinct.add(t.id);
@@ -76,15 +80,49 @@ if (graph.df.size) {
 
 /* ---------- the gate ---------- */
 
+/* ---------- which rung this account is on ---------- */
+
+// Printed before any accuracy number, because it decides how to read them. A
+// confidence tells you how sure the engine is; a rung tells you what would make
+// it surer, and only the second is actionable.
+const rung = rungOf(lib, space);
+console.log(`\n=== WHERE THIS ACCOUNT STANDS: ${rung.name.toUpperCase()} (rung ${rung.rung}/3) ===\n`);
+console.log(`  ${rung.reason}.`);
+if (rung.rung === RUNGS.NOTHING) {
+  console.log('\n  So the engine will not suggest placements: there is nowhere to place');
+  console.log('  anything, and answering a question that is not well-posed is how an');
+  console.log('  empty account gets shown confident nonsense. What it can do is group');
+  console.log('  what you already have, for you to name:\n');
+  const liked0 = (lib.liked ?? []).filter(t => t?.id);
+  for (const p of proposeBuckets(liked0)) {
+    console.log(`    ${String(p.size).padStart(4)}  ${p.kind.padEnd(7)} ${p.label}`);
+    console.log(`          e.g. ${p.examples.slice(0, 2).map(e => e.name ?? e.id).join(', ')}`);
+  }
+  console.log('\n  Nothing below this line will mean much until some of that is filed.');
+} else if (rung.mayUseExternalTiebreak) {
+  console.log('\n  At this rung an outside tag source is allowed to break ties, labelled as');
+  console.log('  doing so. Above it, intrinsic evidence is never overridden by tags.');
+}
+
+// The single best predictor of how the OLD engine treats a given listener, and
+// until now computed nowhere they could see.
+if (tags && Object.keys(tags).length) {
+  const cov = tagCoverage(lib, tags);
+  console.log(`\n  tag-table coverage: ${cov.covered}/${cov.artists} of your artists `
+    + `(${cov.share === null ? '—' : (cov.share * 100).toFixed(0)}%)`);
+  if (cov.share !== null && cov.share < 0.5) {
+    console.log('  Under half. The tag engine is working from very little for this account,');
+    console.log("  which is what the shipped table being one library's taste looks like");
+    console.log('  from the outside.');
+  }
+}
+
 console.log('\n=== HELD-OUT PLACEMENT ACCURACY ===\n');
 console.log(`  ${folds}-fold. Each track is scored against a library that never saw it.`);
 console.log('  Truth is the set of buckets it really lives in, so being right about');
 console.log('  either of two legitimate homes counts as right.\n');
 
 const mine = placementAccuracy(lib, { folds, limit });
-
-let tags = null;
-try { tags = loadTags(); } catch { /* no caches: v1 simply cannot be scored */ }
 const base = tags && Object.keys(tags).length
   ? baselineAccuracy(lib, tags, { folds })
   : null;

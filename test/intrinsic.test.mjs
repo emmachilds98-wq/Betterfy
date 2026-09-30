@@ -11,6 +11,7 @@ import {
 } from '../core/intrinsic/features.mjs';
 import { buildSpace, placements, combine, WEIGHTS, BANDS } from '../core/intrinsic/space.mjs';
 import { sweepWeights, componentValue, SWEEP } from '../core/intrinsic/fit.mjs';
+import { rungOf, RUNGS, tagCoverage, proposeBuckets } from '../core/intrinsic/coldstart.mjs';
 import { placementAccuracy, foldOf, truthOf } from '../core/validate/loo.mjs';
 import { baselineAccuracy, libraryWithout } from '../core/validate/baseline.mjs';
 import { explain, summarise, MARKS } from '../core/intrinsic/explain.mjs';
@@ -630,4 +631,105 @@ test('dropping the artist graph costs accuracy on a library that has one', () =>
   const without = placementAccuracy(lib, { folds: 5, weights: { ...WEIGHTS, graph: 0 } }).top1;
   assert.ok(withGraph > without,
     `the co-occurrence graph must earn its keep (with ${withGraph}, without ${without})`);
+});
+
+/* ---------- the cold-start ladder ---------- */
+
+test('an empty library is rung 0, and says what would change that', () => {
+  const space = buildSpace({ playlists: [] });
+  const r = rungOf({ playlists: [] }, space);
+  assert.equal(r.rung, RUNGS.NOTHING);
+  assert.equal(r.destinations, 0);
+  assert.match(r.reason, /nowhere to place/);
+  assert.match(r.reason, /\d+ tracks/, 'the reason must name the threshold that would be crossed');
+});
+
+test('a library whose buckets are all too small is still rung 0', () => {
+  // Filed, but nothing filed *enough* — a real and easily-missed case.
+  const lib = { playlists: Array.from({ length: 6 }, (_, i) => ({
+    id: `p${i}`, name: `p${i}`,
+    tracks: [{ id: `t${i}a`, artists: [{ id: `a${i}` }] }, { id: `t${i}b`, artists: [{ id: `a${i}` }] }],
+  })) };
+  assert.equal(rungOf(lib, buildSpace(lib)).rung, RUNGS.NOTHING);
+});
+
+test('a handful of buckets is rung 1: placement runs, but on identity and shape', () => {
+  const lib = fixture();
+  lib.playlists = lib.playlists.slice(0, 3);
+  const r = rungOf(lib, buildSpace(lib));
+  assert.equal(r.rung, RUNGS.SPARSE);
+  assert.match(r.reason, /bucket/);
+  assert.equal(r.mayUseExternalTiebreak, true,
+    'at the rungs where the intrinsic gap is arithmetic, an outside source may break ties');
+});
+
+test('an established library is above the rungs where an outside source may interfere', () => {
+  const lib = fixture();
+  // Enough buckets to clear MIN_BUCKETS_FOR_GRAPH, built from the same families
+  // so artists genuinely span them.
+  for (let i = 0; i < 6; i++) {
+    lib.playlists.push({ id: `p-extra-${i}`, name: `Extra ${i}`,
+      tracks: lib.playlists[i % 4].tracks.slice(i, i + 7) });
+  }
+  const r = rungOf(lib, buildSpace(lib));
+  assert.ok(r.rung >= RUNGS.WORKING, `expected a working rung, got ${r.rung}: ${r.reason}`);
+  assert.equal(r.mayUseExternalTiebreak, false,
+    'above the sparse rungs, intrinsic evidence must never be overridden by tags');
+});
+
+test('the rung is about evidence, not about how many tracks somebody owns', () => {
+  // Thousands of tracks in two buckets tells the engine far less than a few
+  // hundred across twenty.
+  const big = { playlists: [
+    { id: 'p1', name: 'A', tracks: Array.from({ length: 2000 }, (_, i) => ({ id: `x${i}`, artists: [{ id: `ax${i % 50}` }] })) },
+    { id: 'p2', name: 'B', tracks: Array.from({ length: 2000 }, (_, i) => ({ id: `y${i}`, artists: [{ id: `ay${i % 50}` }] })) },
+  ]};
+  assert.equal(rungOf(big, buildSpace(big)).rung, RUNGS.SPARSE,
+    '4,000 tracks in two buckets is still a sparse account');
+});
+
+test('tag coverage is reported as a number, because it decides how the old engine treats you', () => {
+  const lib = fixture();
+  const all = {};
+  for (const p of lib.playlists) for (const t of p.tracks ?? []) for (const a of t.artists ?? []) {
+    all[a.id] = { tags: [['x', 100]] };
+  }
+  const full = tagCoverage(lib, all);
+  assert.equal(full.share, 1);
+  assert.equal(full.missing.length, 0);
+
+  const none = tagCoverage(lib, {});
+  assert.equal(none.share, 0);
+  assert.ok(none.artists > 0);
+  assert.ok(none.missing.length > 0, 'and it names who is missing, so the gap is actionable');
+});
+
+test('at rung 0 the engine proposes buckets instead of pretending to file', () => {
+  const tracks = [
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, name: `prolific ${i}`,
+      artists: [{ id: 'busy', name: 'Busy Producer' }], duration_ms: 400000,
+      albumType: 'single', released: '2022-01-01', isrc: 'GBAAA2200001' })),
+    ...Array.from({ length: 5 }, (_, i) => ({ id: `s${i}`, name: `short ${i}`,
+      artists: [{ id: `one-off-${i}`, name: `One Off ${i}` }], duration_ms: 180000,
+      albumType: 'album', released: '1998-01-01' })),
+  ];
+  const out = proposeBuckets(tracks);
+  assert.ok(out.length >= 2, 'both an artist group and a shape group should surface');
+
+  const byArtist = out.find(p => p.kind === 'artist');
+  assert.equal(byArtist.label, 'Busy Producer');
+  assert.equal(byArtist.size, 6);
+  assert.ok(byArtist.labels.includes('GBAAA'), 'a shared label family is worth showing');
+
+  const byShape = out.find(p => p.kind === 'shape');
+  assert.ok(byShape, 'records by artists with too little history still group by shape');
+  assert.match(byShape.label, /short|album|unknown/);
+});
+
+test('a proposal too small to be a bucket is not offered as one', () => {
+  const out = proposeBuckets([
+    { id: 'a', artists: [{ id: 'x' }], duration_ms: 200000 },
+    { id: 'b', artists: [{ id: 'y' }], duration_ms: 200000 },
+  ], { minProposal: 4 });
+  assert.equal(out.length, 0);
 });
