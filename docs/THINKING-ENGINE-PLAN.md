@@ -543,29 +543,77 @@ Status values: `not started` · `in progress` · `done` · `blocked` · `abandon
 | 2 — engine & explanations | `done` | weights enter the fit sweep | 42 intrinsic tests; sweep + componentValue against real filing |
 | 3 — cold-start ladder | `done` | rung fixtures pass, incl. empty library | 50 intrinsic tests; rung 0 and rung 1 both exercised through the CLI |
 | 4 — Rekordbox bonus layer | `done` | absence-is-free guard test passes | guard asserts byte-identical output for every unknown track |
-| 5 — in-app queue & shadow | `not started` — groundwork done | queue renders on the phone build | bundler (Phase 1) and space caching both in place; UI deliberately not started, see below |
+| 5 — in-app queue & shadow | `done` | queue renders on the phone build | the Engine screen, lazily loaded; renders under test out of the real built page |
 | 6 — cutover & misfile | `not started` | leave-one-out beats v1, number shown | — |
 
-### Why Phase 5's UI was deliberately not started
+### Phase 5: the Engine screen
 
-Two reasons, and the second only became visible by doing the work.
+A screen behind **More**, in the app's own design system, that shows what the
+account-native engine would do and files nothing. Four parts:
 
-1. **It is the riskiest thing to do unattended.** It is surgery on
-   `docs/app.template.html`, the 300 KB file that *is* the shipped page, in a
-   design system with its own theme tokens, tab bar, sheet behaviour and swipe
-   navigation. Producing something that looks plausible and is subtly wrong, with
-   nobody to look at it, is the likely outcome rather than the unlucky one.
+1. **How much it has to go on** — the cold-start rung, with its reason, because
+   "low confidence" and "not enough of your library filed yet" are different
+   sentences and only the second says what would fix it.
+2. **What it would do differently** — the next 40 tracks waiting to be filed,
+   today's suggestion beside this engine's, each row opening onto the
+   explanation clauses.
+3. **Is it actually any better?** — the held-out score, both engines, same
+   tracks, same folds.
+4. **Playlists it can't tell apart** — `bucketPairs`, which is usually a fact
+   about the library rather than a fault in the engine.
 
-2. **It had an unmet prerequisite that the measurement found.** Building the
-   space costs one to four seconds and hundreds of megabytes (§12), so a screen
-   that builds on load would freeze the phone. That prerequisite is now met —
-   `core/intrinsic/persist.mjs` revives a space 10–12× faster than building it —
-   but it did not exist when Phase 5 was planned, and building the screen first
-   would have produced exactly that freeze.
+**The gate moved into the browser, which matters more than the screen does.**
+Phase 0's kill gate needed a `library.json` export and a Node checkout, which is
+exactly the "works for one desktop, not for an account" shape `CLAUDE.md` rules
+out — the one number that decides whether this engine is worth switching to was
+the one number a hosted listener could not get. The browser already holds the
+library, so the screen runs the same harness on it and prints the comparison.
 
-So the groundwork is done and the screen is not. What remains is genuinely UI
-work against a settled engine, which is the right shape for a session where
-somebody can look at the result.
+**Shipped as a second file, not inlined.** `docs/engine.js` is ~145 KB fetched on
+first use of the screen. Inlining it was the obvious thing and the wrong thing:
+every listener would download it on every cold load to run a screen most of them
+will never open. `profile.mjs` is consequently in both bundles, paid twice by
+whoever opens the screen; left deliberately, because cross-bundle import plumbing
+to save 29 KB on one screen is worse than the duplication.
+
+#### What building it found
+
+Four defects, three of them in code written earlier in this build:
+
+- **`validate-placement.mjs` passed `--limit` to one engine only.** The intrinsic
+  side scored N tracks, v1 scored the whole library, and the CLI printed both
+  side by side as though they measured the same thing. Any quick pass of the gate
+  would have been wrong. `baselineAccuracy` now takes `limit` with the same
+  semantics, and a test asserts both sides score the same count.
+- **The build's secret-leak guard ran over the page alone.** Adding a second
+  output file silently moved a chunk of shipped JavaScript outside the only thing
+  standing between `.env` and GitHub Pages. The guard iterates outputs now, and
+  the sandbox test poisons a `core/` module to prove it.
+- **A track by an artist the account has never filed still places, on shape
+  alone, and scored `LIKELY`.** Honest arithmetic and a misleading thing to show
+  unqualified: a seven-minute single from the 2020s fits a playlist of
+  seven-minute singles from the 2020s, which is true and is not much. The row now
+  carries a `shape only` mark whenever no clause bears the strong mark, and says
+  to treat it as a shrug whatever the percentage says.
+- **The summary vanished exactly when it mattered.** The shape-only count sat
+  inside the "is there anything to compare" branch, so for a listener whose tag
+  coverage gives v1 no suggestions at all — the case this engine exists for —
+  the whole summary disappeared and took the one real caveat with it.
+
+The first two were found by writing `test/webengine.test.mjs`, which runs the
+screen out of the real built page against the real engine bundle. That test is
+the phase gate: "renders on the phone build" is not something a unit test for
+`placements()` can establish.
+
+#### What it does not do
+
+No shadow *filing*: nothing is written, and the File screen's suggestions are
+untouched. Cutover stays Phase 6 and stays gated on the number.
+
+The build blocks the main thread for one to four seconds, and the validation for
+most of a minute. A worker would fix both and is the obvious next improvement;
+it needs the bundle as a worker entry point, which is build work rather than
+engine work.
 
 ### Decisions taken, and by whom
 

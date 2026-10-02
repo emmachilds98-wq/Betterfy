@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-09-30-0538">
+<meta name="bf-build" content="2026-10-02-0414">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -249,6 +249,7 @@
   [data-v="shuffle"]{--vc:var(--m4); --vc-ink:var(--m4-ink)}
   [data-v="new"]{--vc:var(--m2); --vc-ink:var(--m2-ink)}
   [data-v="lists"]{--vc:var(--m4); --vc-ink:var(--m4-ink)}
+  [data-v="engine"]{--vc:var(--m2); --vc-ink:var(--m2-ink)}
   [data-v="history"]{--vc:var(--m3); --vc-ink:var(--m3-ink)}
   /* Behind More on a desktop as well as on a phone: five destinations is the
      whole point of the fold, and the sheet lists them on both. */
@@ -401,6 +402,27 @@
      nationality — is still shown, drawn back, so you can see at a glance how
      much of a track's "genre data" is really genre. */
   .tag.f-off{background:transparent; color:var(--ink-3); box-shadow:inset 0 0 0 1px var(--line)}
+  /* Three tones for a verdict chip. The palette already carries ok/warn/idle for
+     exactly this, so no new colour is invented here. */
+  .tag.ok{background:var(--ok-soft); color:var(--ok)}
+  .tag.warn{background:var(--warn-soft); color:var(--warn)}
+  .tag.idle{background:var(--surface-3); color:var(--ink-3)}
+  /* Two answers side by side — the Engine screen's one genuinely new shape. */
+  .cmp{display:flex; gap:9px; flex-wrap:wrap; margin-top:11px}
+  .cmp>div{flex:1 1 140px; min-width:0; background:var(--surface-2); border:1px solid var(--line);
+           border-radius:12px; padding:9px 11px}
+  .cmp em{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.12em;
+          text-transform:uppercase; color:var(--ink-3); font-style:normal; margin-bottom:3px}
+  .cmp b{font-weight:600; font-size:14.5px; overflow-wrap:anywhere}
+  .cmp i{color:var(--ink-3); font-size:14px}
+  .whylist{margin:8px 0 0; padding:0; list-style:none; font-size:13.5px; color:var(--ink-2); line-height:1.65}
+  .whylist li{display:flex; gap:8px}
+  .whylist .wmark{flex:none; width:1em; text-align:center; font-family:var(--mono); color:var(--ink-3)}
+  .whynone{margin:8px 0 0; font-size:13.5px; color:var(--ink-3); line-height:1.6; max-width:62ch}
+  /* The row is the disclosure control, so it needs no marker of its own. */
+  .engrow>summary{cursor:pointer; list-style:none; display:block}
+  .engrow>summary::-webkit-details-marker{display:none}
+  .engrow>summary:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:12px}
   .axmix{font-size:11.5px; color:var(--ink-3); margin-left:9px}
   .axmix::before{content:"· "}
   .picks{display:flex; flex-direction:column; gap:9px; margin-top:24px}
@@ -875,7 +897,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-09-30-0538</span>
+    <span class="mono">build 2026-10-02-0414</span>
   </p>
 
   <div class="feat">
@@ -964,6 +986,7 @@
       <button class="nav" data-v="shuffle"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 4.5 20.5 7 17 9.5"/><path d="M17 14.5 20.5 17 17 19.5"/><path d="M3.5 7h3.2c1.2 0 2.3.6 3 1.6l4.6 6.8c.7 1 1.8 1.6 3 1.6h3.2"/><path d="M3.5 17h3.2c1.2 0 2.3-.6 3-1.6l.9-1.3"/><path d="M14.4 9.9l.9-1.3c.7-1 1.8-1.6 3-1.6h2.2"/></svg></span><span class="lbl">Shuffle</span></button>
       <button class="nav" data-v="new" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11.5v5"/><path d="M9.5 14h5"/></svg></span><span class="lbl">New playlists</span><span class="c" data-count="new"></span></button>
       <button class="nav" data-v="lists" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Playlists</span><span class="c" data-count="lists"></span></button>
+      <button class="nav" data-v="engine" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.1"/><path d="M12 4.2V7"/><path d="M12 17v2.8"/><path d="M4.2 12H7"/><path d="M17 12h2.8"/><path d="M6.5 6.5 8.4 8.4"/><path d="M15.6 15.6l1.9 1.9"/><path d="M17.5 6.5 15.6 8.4"/><path d="M8.4 15.6 6.5 17.5"/></svg></span><span class="lbl">Engine</span></button>
       <button class="nav" data-v="history" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 12a8.4 8.4 0 1 0 2.6-6"/><path d="M3.4 3.6v4.2h4.2"/><path d="M12 7.8V12l3 1.8"/></svg></span><span class="lbl">History</span></button>
     </div>
     <!-- The screens that don't sit on the bar, on a phone and on a desktop. -->
@@ -971,7 +994,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-30-0538</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-02-0414</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1012,7 +1035,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-09-30-0538</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-02-0414</span>
   </div>
 </div>
 
@@ -2084,7 +2107,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-09-30-0538';
+const BUILD = '2026-10-02-0414';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2405,7 +2428,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-09-30-0538', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-10-02-0414', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -3051,15 +3074,15 @@ const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist
 
 // Bar order, which is also swipe order: swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
-const VORDER = ['home','inbox','tidy','discover','shuffle','new','lists','history'];
+const VORDER = ['home','inbox','tidy','discover','shuffle','new','lists','engine','history'];
 // The five colours of the mark, one per screen — see the [data-v=…] rules in
 // the stylesheet, which have to agree with this.
 const VHUE = { home:'accent', inbox:'m0', tidy:'m1', discover:'m3', shuffle:'m4',
-               new:'m2', lists:'m4', history:'m3' };
+               new:'m2', lists:'m4', engine:'m2', history:'m3' };
 const VTITLE = { home:'Home', inbox:'File', tidy:'Tidy', discover:'Discover', shuffle:'Shuffle',
-                 new:'New playlists', lists:'Playlists', history:'History' };
+                 new:'New playlists', lists:'Playlists', engine:'Engine', history:'History' };
 // The three that live behind "More" rather than on the bar.
-const SECONDARY = new Set(['new','lists','history']);
+const SECONDARY = new Set(['new','lists','engine','history']);
 let toastT;
 function toast(msg, undoFn) {
   const el = $('#toast');
@@ -4789,7 +4812,8 @@ function tagEditorHTML(id, name) {
 }
 
 const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
-                new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists, history:vHistory };
+                new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
+                engine:vEngine, history:vHistory };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -5054,6 +5078,347 @@ const guard = fn => (...a) => {
 /** Start an async action nobody is awaiting, and put any failure on screen. */
 const fire = p => { Promise.resolve(p).catch(actionFailed); };
 
+/* ======================= the account-native engine =======================
+ * One screen, and the only place in the app that reads `core/intrinsic/`. The
+ * engine learns what this account's playlists mean from the account itself — who
+ * you file together, which label, what shape of record, what era — with no key,
+ * no second website and no genre list written by somebody else.
+ *
+ * It is a shadow, by the owner's explicit choice: nothing here writes to Spotify
+ * and nothing here changes what the File screen suggests. The point is to be able
+ * to judge it before it is allowed near anybody's library. See
+ * docs/THINKING-ENGINE-PLAN.md, phases 5 and 6.
+ * ======================================================================== */
+
+/** Fetched on first use, so a listener who never opens this screen never pays
+ *  the ~145 KB for it. Null again on failure, so a retry actually retries. */
+let ENGINE_JS = null;
+function engineLoad() {
+  return ENGINE_JS ??= new Promise((ok, bad) => {
+    if (globalThis.BetterfyIntrinsic) return ok(true);
+    const s = document.createElement('script');
+    s.src = 'engine.js?v=2026-10-02-0414';
+    s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
+      : bad(new Error('engine.js loaded but defined nothing'));
+    s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
+    document.head.appendChild(s);
+  }).catch(e => { ENGINE_JS = null; throw e; });
+}
+
+const ENG = { status:'idle', err:null, space:null, rung:null, shadow:null,
+              pairs:null, val:null, valRunning:false, ms:0, from:null };
+
+/** How many waiting tracks the comparison covers: a screenful of evidence,
+ *  not a report nobody reads. */
+const SHADOW_N = 40;
+/** And how many filed tracks the score covers. The cost is k rebuilds of the
+ *  whole space, so this is the dial between seconds and minutes. */
+const VALIDATE_N = 600;
+
+/** Let the browser paint before something long and synchronous.
+ *  Not `paint`: `bindSwipeCard` has a local of that name meaning something
+ *  entirely different, and one shadowing the other would be a trap. */
+const yieldToPaint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+
+const SPACE_KEY = 'engine-space';
+
+/**
+ * Revive the learned space, or build it.
+ *
+ * Building costs one to four seconds on a real library and blocks the main
+ * thread while it does — measured, in the plan's §12. So it happens once, behind
+ * a tap somebody chose to make, and the result is kept. `reviveSpace` returns
+ * null whenever the cache was written by a different engine version or by a
+ * library that has since changed, which is the only reason it is safe to trust.
+ */
+async function engineSpace() {
+  const t0 = performance.now();
+  let space = null, from = 'built';
+  try {
+    const cached = await idb.get(SPACE_KEY);
+    if (cached) space = BetterfyPersist.reviveSpace(cached, LIB);
+    if (space) from = 'cache';
+  } catch { /* a cache that cannot be read is the same situation as no cache */ }
+
+  if (!space) {
+    await yieldToPaint();
+    space = BetterfyIntrinsic.buildSpace(LIB, { isMirror: isMirrorPlaylist });
+    try { await idb.set(SPACE_KEY, BetterfyPersist.serialiseSpace(space, LIB)); }
+    catch { /* nowhere to remember it is not a reason to refuse to use it */ }
+  }
+  return { space, from, ms: Math.round(performance.now() - t0) };
+}
+
+/** Learn the account, then show what this engine would do with the same tracks
+ *  the File screen is currently offering the tag engine's answer for. */
+const engineAnalyse = guard(async () => {
+  ENG.status = 'working'; ENG.err = null; render();
+  try {
+    await engineLoad();
+    const { space, from, ms } = await engineSpace();
+    Object.assign(ENG, { space, from, ms });
+    ENG.rung = BetterfyColdStart.rungOf(LIB, space);
+
+    const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
+    const rows = [];
+    for (const b of R.backlog.slice(0, SHADOW_N)) {
+      const raw = likedById.get(b.id);
+      if (!raw) continue;
+      const out = BetterfyIntrinsic.placements(raw, space, { why: true, limit: 3 });
+      const mine = out.results?.[0] ?? null;
+      const theirs = b.suggest?.[0] ?? null;
+      rows.push({ id: b.id, title: b.title, artist: b.artist,
+        theirs: theirs ? { id: theirs.id, name: theirs.name } : null,
+        mine: mine ? { id: mine.playlistId, name: mine.name, score: mine.score } : null,
+        band: out.band ?? null, declined: !!out.declined, why: mine?.why ?? null,
+        // Whether anything it said is about *this record* rather than about its
+        // shape. A track by an artist the account has never filed still places,
+        // on duration and release type and era alone — and that is a far weaker
+        // claim than the confidence band on its own suggests, because generic
+        // shape fits a generic bucket comfortably. The strong mark is the engine's
+        // own flag for evidence that names something, so its absence is the test.
+        shapeOnly: !!mine && !(mine.why ?? []).some(w => w.mark === BetterfyExplain.MARKS.strong) });
+    }
+    const judged = rows.filter(r => r.theirs && r.mine);
+    ENG.shadow = { rows, judged: judged.length,
+      agree: judged.filter(r => r.theirs.id === r.mine.id).length,
+      onlyMine: rows.filter(r => r.mine && !r.theirs).length,
+      onlyTheirs: rows.filter(r => r.theirs && !r.mine).length,
+      shapeOnly: rows.filter(r => r.shapeOnly).length };
+
+    try { ENG.pairs = (BetterfyReports.bucketPairs(space) ?? []).slice(0, 6); }
+    catch { ENG.pairs = null; }
+
+    ENG.status = 'ready';
+  } catch (e) {
+    ENG.status = 'error'; ENG.err = e?.message ?? String(e);
+  }
+  render();
+});
+
+/**
+ * The gate, run here rather than on somebody's laptop.
+ *
+ * This is the number that decides whether this engine should ever take over, and
+ * until now getting it meant exporting a `library.json` and running Node — which
+ * is exactly the "works for one desktop, not for an account" shape CLAUDE.md
+ * rules out. The browser already holds the library, so it can answer for itself.
+ *
+ * Both engines are scored over the same folds and the same capped track set. The
+ * tag engine is only scored when there are tags to score it with: handing it an
+ * empty table and reporting that it lost would be rigging the comparison.
+ */
+const engineValidate = guard(async () => {
+  ENG.valRunning = true; ENG.val = null; render();
+  try {
+    await engineLoad();
+    await yieldToPaint();
+    const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist };
+    const t0 = performance.now();
+    const mine = BetterfyValidate.placementAccuracy(LIB, common);
+    await yieldToPaint();
+    const base = TAGS && Object.keys(TAGS).length
+      ? BetterfyBaseline.baselineAccuracy(LIB, TAGS, common) : null;
+    ENG.val = { mine, base, ms: Math.round(performance.now() - t0) };
+  } catch (e) {
+    ENG.val = { error: e?.message ?? String(e) };
+  }
+  ENG.valRunning = false; render();
+});
+
+/** Forget the learned space, so the next analysis rebuilds from the library. */
+const engineReset = guard(async () => {
+  try { await idb.del(SPACE_KEY); } catch {}
+  Object.assign(ENG, { status:'idle', space:null, rung:null, shadow:null,
+                       pairs:null, val:null, ms:0, from:null });
+  toast('Cleared. The next analysis rebuilds from your library.');
+  render();
+});
+
+/** 0 nothing filed, 1 sparse, 2 working, 3 established. */
+const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
+
+function vEngine() {
+  const head = `<h1>Engine</h1>
+    <p class="lede">A second opinion that reads nothing but your own playlists. No key, no other website,
+      no genre list written by somebody else — just who you file together, on which label, in what shape
+      of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do.</p>`;
+
+  if (ENG.status === 'idle') return `${head}
+    <div class="card">
+      <h2 style="margin:0 0 12px; font-size:19px">Learn my library</h2>
+      <p>Reads your ${LIB.playlists.length.toLocaleString()} playlists once and works out what each one means.
+        Takes a few seconds, and is remembered afterwards so it is a one-off. It runs on this device —
+        nothing is sent anywhere.</p>
+      <div class="rowbtns" style="margin-top:18px">
+        <button class="b big go" data-eng="go">Learn my library</button>
+      </div>
+    </div>`;
+
+  if (ENG.status === 'working') return `${head}
+    <div class="card">
+      <h2 style="margin:0 0 12px; font-size:19px">Working…</h2>
+      <p>Working out what your playlists mean. On a big library this holds the page up for a moment —
+        it is doing the arithmetic for every pair of artists you file together, and it only happens once.</p>
+    </div>`;
+
+  if (ENG.status === 'error') return `${head}
+    <div class="card">
+      <h2 style="margin:0 0 12px; font-size:19px">That didn't work</h2>
+      <p class="why">${esc(ENG.err ?? 'Unknown error')}</p>
+      <div class="rowbtns" style="margin-top:16px"><button class="b" data-eng="go">Try again</button></div>
+    </div>`;
+
+  const r = ENG.rung, sh = ENG.shadow;
+
+  const rungCard = `<div class="card">
+    <h2 style="margin:0 0 4px; font-size:19px">How much it has to go on
+      <span class="tag ${RUNG_TONE[r.rung] ?? 'warn'}" style="margin-left:6px; vertical-align:middle">${esc(r.name)}</span></h2>
+    <p>${esc(r.reason)}.</p>
+    <div class="facts" style="margin-top:16px">
+      <div><span>Playlists it can file into</span><b class="mono">${r.destinations.toLocaleString()}</b></div>
+      <div><span>Artists with neighbours</span><b class="mono">${r.artistsConnected.toLocaleString()}</b></div>
+      <div><span>Artists in more than one playlist</span><b class="mono">${Math.round((r.connectedShare ?? 0) * 100)}%</b></div>
+      ${r.rung <= 1 ? `<hr><p>Filing more of your library into more playlists is what raises this —
+        not waiting, and not any setting.</p>` : ''}
+    </div>
+  </div>`;
+
+  // Agreement is not accuracy, and dressing it as accuracy would be the whole
+  // failure this screen exists to avoid: these tracks are unfiled, so there is
+  // no right answer to measure against. It says how often the two engines would
+  // hand you a different playlist. The score is the next card down.
+  const pc = sh.judged ? Math.round((sh.agree / sh.judged) * 100) : null;
+  const shadowCard = `<div class="card">
+    <h2 style="margin:0 0 12px; font-size:19px">What it would do differently</h2>
+    <p>The next ${sh.rows.length} ${sh.rows.length === 1 ? 'track' : 'tracks'} waiting to be filed, with today's
+      suggestion beside this engine's. These are unfiled, so neither column is <i>known</i> to be right —
+      this is only where the two disagree.</p>
+    ${/* The shape-only count sits outside the `judged` branch deliberately. It used
+          to be inside it, so on a backlog where today's engine has no suggestions
+          at all — a listener with no tag coverage, which is the case this screen
+          exists for — the whole summary vanished and took the one caveat that
+          mattered with it. */''}
+    ${sh.rows.length ? `<div class="facts" style="margin-top:16px">
+      ${sh.judged ? `<div><span>Same playlist</span><b class="mono">${pc}% (${sh.agree} of ${sh.judged})</b></div>
+      <div><span>Only this engine had an answer</span><b class="mono">${sh.onlyMine}</b></div>
+      <div><span>Only today's engine did</span><b class="mono">${sh.onlyTheirs}</b></div>`
+      : `<div><span>Nothing to compare against</span><b class="mono">today's engine suggested nothing for any of these</b></div>
+      <div><span>This engine had an answer for</span><b class="mono">${sh.onlyMine} of ${sh.rows.length}</b></div>`}
+      ${sh.shapeOnly ? `<div><span>Placed on shape alone, with nothing about the artist</span><b class="mono">${sh.shapeOnly}</b></div>` : ''}
+    </div>` : ''}
+    ${sh.rows.length ? `<div class="rows" style="margin-top:18px">
+      ${sh.rows.map(row => {
+        const same = row.theirs && row.mine && row.theirs.id === row.mine.id;
+        return `<div class="row"><details class="engrow">
+          <summary>
+            <div class="main">
+              <div class="ttl">${esc(row.title)}
+                <span class="tag ${same ? 'ok' : row.mine ? 'warn' : 'idle'}" style="margin-left:6px">${
+                  same ? 'agree' : row.mine && row.theirs ? 'differ' : row.mine ? 'new answer' : 'no answer'}</span>${
+                  row.shapeOnly ? '<span class="tag idle" style="margin-left:4px">shape only</span>' : ''}</div>
+              <div class="sub">${esc(row.artist)}</div>
+            </div>
+            <div class="cmp">
+              <div><em>today</em>${row.theirs ? `<b>${esc(row.theirs.name)}</b>` : '<i>no suggestion</i>'}</div>
+              <div><em>this engine</em>${row.mine ? `<b>${esc(row.mine.name)}</b>` : '<i>won&rsquo;t guess</i>'}</div>
+            </div>
+          </summary>
+          <div style="padding:2px 0 2px">
+            ${row.mine ? `<p class="why">${Math.round(row.mine.score * 100)}% fit${
+              row.band ? ` · ${esc(String(row.band).toLowerCase())} confidence` : ''}${
+              row.declined ? ' · and it declined to commit to it' : ''}</p>` : ''}
+            ${row.shapeOnly ? `<p class="whynone">Nothing below is about this record in particular — it has
+              never seen you file this artist, and does not know the label. A seven-minute single from the
+              2020s fits a playlist of seven-minute singles from the 2020s, which is true and is not much.
+              Treat this one as a shrug, whatever the percentage says.</p>` : ''}
+            ${/* Each clause is {mark, text}: ✓ carries the placement, · supports it,
+                  ! argues against. The mark is the engine's own confidence in
+                  that one piece of evidence, so it is shown rather than flattened
+                  away. */''}
+            ${row.why?.length ? `<ul class="whylist">${row.why.map(w =>
+              `<li><span class="wmark">${esc(w.mark ?? '')}</span> ${esc(w.text ?? w)}</li>`).join('')}</ul>`
+              : `<p class="whynone">${row.mine
+                ? 'Nothing it could say about this would distinguish one of your playlists from another, so it says nothing rather than padding the answer out.'
+                : 'It has no evidence for this track that separates your playlists at all — an artist it has never seen you file, on a label it does not know. It would rather say nothing than guess.'}</p>`}
+          </div>
+        </details></div>`;
+      }).join('')}
+    </div>` : ''}
+  </div>`;
+
+  const p = x => x == null ? '—' : Math.round(x * 100) + '%';
+  const v = ENG.val;
+  const verdict = v && !v.error && v.base
+    ? (v.mine.top1 > v.base.top1 ? 'ahead' : v.mine.top1 < v.base.top1 ? 'behind' : 'level') : null;
+  const valCard = `<div class="card">
+    <h2 style="margin:0 0 12px; font-size:19px">Is it actually any better?</h2>
+    <p>The honest test, and the one that decides whether this engine should ever take over. Your
+      already-filed tracks are the answer key: hold one out, rebuild from a library that never saw it,
+      and see whether each engine puts it back where you had it. Both are scored on the same
+      ${VALIDATE_N.toLocaleString()} tracks, over the same folds.</p>
+    <p class="why">It measures agreement with <b>your</b> habits, not musical truth. If your library is
+      systematically misfiled it will reproduce that faithfully, and it cannot tell you so.</p>
+    ${v?.error ? `<p class="why" style="margin-top:12px">That didn't work: ${esc(v.error)}</p>` : ''}
+    ${v && !v.error ? `<div class="facts" style="margin-top:16px">
+      <div><span><b>This engine</b> — right first time</span><b class="mono">${p(v.mine.top1)}</b></div>
+      <div><span>…in its top three</span><b class="mono">${p(v.mine.top3)}</b></div>
+      ${v.base ? `<hr>
+      <div><span><b>Today's engine</b> — right first time</span><b class="mono">${p(v.base.top1)}</b></div>
+      <div><span>…in its top three</span><b class="mono">${p(v.base.top3)}</b></div>` : ''}
+      <hr>
+      <div><span>Tracks scored, each engine</span><b class="mono">${v.mine.scored.toLocaleString()}</b></div>
+      ${v.base?.noAnswer ? `<p>Today's engine had no tags at all for ${v.base.noAnswer.toLocaleString()} of them.
+        Counted as misses: a filing tool that returns nothing has not filed anything.</p>` : ''}
+      ${!v.base ? `<p>No tag data is loaded, so there is nothing to compare against — the figure above
+        stands on its own.</p>` : ''}
+      <p>Took ${v.ms < 950 ? `${v.ms}ms` : `${(v.ms / 1000).toFixed(1)}s`}.</p>
+    </div>
+    ${verdict ? `<p class="why" style="margin-top:14px"><b>${
+      verdict === 'ahead' ? 'Ahead.' : verdict === 'behind' ? 'Behind.' : 'Level.'}</b> ${
+      verdict === 'ahead' ? 'On your library, reading nothing but your own filing beats reading the tag table.'
+      : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
+      : 'There is nothing to choose between them on your library.'}</p>` : ''}` : ''}
+    <div class="rowbtns" style="margin-top:18px">
+      <button class="b ${v ? '' : 'go'}" data-eng="validate" ${ENG.valRunning ? 'disabled' : ''}>${
+        ENG.valRunning ? 'Scoring…' : v ? 'Run it again' : 'Score both engines'}</button>
+    </div>
+    ${ENG.valRunning ? `<p class="why" style="margin-top:12px">Learning your library from scratch ten times over —
+      five folds, two engines. On a big library that is most of a minute, and the page will freeze in bursts
+      while it happens. Capping the tracks scored does not make it quicker: the rebuilds are the cost,
+      and there are ten of them either way.</p>` : ''}
+  </div>`;
+
+  const pairCard = ENG.pairs?.length ? `<div class="card">
+    <h2 style="margin:0 0 12px; font-size:19px">Playlists it can't tell apart</h2>
+    <p>Usually a fact about the library rather than a fault in the engine: two playlists holding the same
+      kind of music, or one that is really a view of another. Worth knowing, because a track landing in
+      either would be defensible.</p>
+    <div class="rows" style="margin-top:16px">
+      ${/* bucketPairs only ever returns pairs it could NOT separate, so there is
+            no "distinct" case to render here. */ ''}
+      ${ENG.pairs.map(pr => `<div class="row"><div class="main">
+        <div class="ttl">${esc(pr.a?.name ?? '?')} &nbsp;·&nbsp; ${esc(pr.b?.name ?? '?')}</div>
+        <div class="sub">${pr.verdict === 'view'
+          ? `one looks like a view of the other — ${Math.round((pr.overlap ?? 0) * 100)}% of the smaller sits in the larger`
+          : 'it cannot separate these two by the music in them'}</div>
+      </div><span class="tag warn">${esc(pr.verdict)}</span></div>`).join('')}
+    </div>
+  </div>` : '';
+
+  return `${head}
+    <p class="mono" style="font-size:11.5px; color:var(--ink-3); margin:-10px 0 18px">${
+      ENG.from === 'cache' ? 'revived from this device' : 'learned'} in ${ENG.ms.toLocaleString()}ms${
+      idb.durable ? '' : ' · not remembered, because this browser is not letting the app store anything'}</p>
+    ${rungCard}
+    ${shadowCard}
+    ${valCard}
+    ${pairCard}
+    <div class="rowbtns" style="margin:20px 0 0">
+      <button class="b sm" data-eng="reset">Forget and learn again</button>
+    </div>`;
+}
+
 document.addEventListener('click', guard(async e => {
   const nav = e.target.closest('.nav');
   if (nav) {
@@ -5135,6 +5500,13 @@ document.addEventListener('click', guard(async e => {
   if (un) { un.disabled = true;
     try { await undoAction(un.dataset.undo); toast('Restored.'); S.history = await getLog(); render(); }
     catch (err) { toast('Undo failed: '+err.message); un.disabled = false; } return; }
+  const eng = e.target.closest('[data-eng]');
+  if (eng) {
+    if (eng.dataset.eng === 'go') return engineAnalyse();
+    if (eng.dataset.eng === 'validate') return engineValidate();
+    if (eng.dataset.eng === 'reset') return engineReset();
+    return;
+  }
   const gto = e.target.closest('[data-go]'); if (gto) return go(gto.dataset.go);
   const ti = e.target.closest('[data-tidy]'); if (ti) { S.tidySec = ti.dataset.tidy; return render(); }
   // A card under "Next up to file" opens the queue on that track, not at the top.

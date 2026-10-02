@@ -47,7 +47,8 @@ export function libraryWithout(lib, skip) {
  * v1 the way it actually ships.
  */
 export function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = null,
-                                              axisOf = null, isMirror = null } = {}) {
+                                              axisOf = null, isMirror = null,
+                                              limit = null } = {}) {
   const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
   const truth = truthOf(lib, { isMirror });
 
@@ -60,8 +61,15 @@ export function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = n
     for (const t of p.tracks ?? []) if (t?.id && !byId.has(t.id)) byId.set(t.id, t);
   }
 
+  // Capped exactly as `placementAccuracy` caps: the same sort, the same slice,
+  // before grouping. Not a convenience — a capped comparison where the two
+  // engines scored different track sets would be meaningless, and the two are
+  // only comparable because `limit` picks the same tracks on both sides.
+  let ids = [...byId.keys()].sort();
+  if (limit && ids.length > limit) ids = ids.slice(0, limit);
+
   const groups = new Map();
-  for (const id of [...byId.keys()].sort()) {
+  for (const id of ids) {
     const f = foldOf(id, folds);
     if (!groups.has(f)) groups.set(f, []);
     groups.get(f).push(id);

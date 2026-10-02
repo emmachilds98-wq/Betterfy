@@ -449,6 +449,23 @@ test('the baseline reports the same fields, so the two engines are comparable at
   for (const k of ['top1', 'top3', 'scored']) assert.ok(k in base && k in mine);
 });
 
+test('a capped comparison caps both engines on exactly the same tracks', () => {
+  const lib = fixture();
+  const tags = tagsFor(lib);
+  // The CLI's quick pass (`--limit`) was handing `limit` to the intrinsic engine
+  // only, so a capped run scored one engine on N tracks and the other on the
+  // whole library, then printed both as though they measured the same thing.
+  const n = 12;
+  const base = baselineAccuracy(lib, tags, { folds: 5, limit: n });
+  const mine = placementAccuracy(lib, { folds: 5, limit: n });
+  assert.equal(base.scored, mine.scored,
+    'a capped comparison is only a comparison if both sides cap identically');
+  assert.ok(base.scored <= n);
+  // And uncapped must still cover more, or the cap did nothing and the test
+  // would pass for the wrong reason.
+  assert.ok(placementAccuracy(lib, { folds: 5 }).scored > base.scored);
+});
+
 test('with good tag coverage the tag engine scores well — the harness is not rigged against it', () => {
   const lib = fixture();
   const base = baselineAccuracy(lib, tagsFor(lib), { folds: 5 });

@@ -999,8 +999,7 @@ deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.
 Both engines above lean on Last.fm. `CLAUDE.md` says external enrichment must be
 "silently absent and zero-cost for anyone who doesn't have it, never something
 the core filing model leans on", and the core model leans on it completely — so
-this is the part that fixes that, and it is being built on a branch rather than
-here.
+this is the part that fixes that.
 
 The reframe is the whole idea. "What genre is this track?" needs an outside
 vocabulary. **"Which of this account's playlists does this track belong with?"
@@ -1042,16 +1041,33 @@ different sentences and only the second tells you what would fix it. With
 nothing filed it stops trying to place things — there is nowhere to place them —
 and proposes groups for you to name instead.
 
+There is an **Engine** screen for it, behind More, and it files nothing — it
+shows what the engine *would* do so you can judge it first. The rung it is on and
+why, the next 40 tracks waiting to be filed with today's suggestion beside this
+engine's, each row opening onto its reasons, and which of your playlists it
+cannot tell apart. The engine is a separate ~145 KB file fetched the first time
+you open that screen, so it costs nothing to anyone who never does.
+
+The screen also runs the comparison itself, which is the part that matters:
+
 ```sh
 npm run validate:placement              # the intrinsic engine against v1, on YOUR library
 npm run validate:placement -- --reports # which of your buckets are the same thing twice
 npm run validate:placement -- --sweep   # which weights your library actually pins down
 ```
 
-That first command is a gate that is allowed to fail, and the answer is not in
-yet: it needs a real `library.json`, and a synthetic one cannot settle it in
-either direction. Plan, execution log and the measured numbers:
-**`docs/THINKING-ENGINE-PLAN.md`**.
+That first command is a gate that is allowed to fail — and it used to be the only
+way to get the number, which meant a `library.json` export and a Node checkout for
+a figure every account needs about itself. The browser already has your library,
+so **Is it actually any better?** on the Engine screen scores both engines on your
+own filing, same held-out folds, same tracks, and tells you which won. If this
+engine loses on your library it should not take over, and that is what the test is
+for.
+
+It measures agreement with *your* habits, not musical truth: a systematically
+misfiled library will be reproduced faithfully, and the engine cannot tell you so.
+
+Plan, execution log and the measured numbers: **`docs/THINKING-ENGINE-PLAN.md`**.
 
 ## Data sources, and what they're worth
 

@@ -123,8 +123,12 @@ console.log('  Truth is the set of buckets it really lives in, so being right ab
 console.log('  either of two legitimate homes counts as right.\n');
 
 const mine = placementAccuracy(lib, { folds, limit });
+// `limit` goes to both sides or the comparison is not one: without it here, a
+// `--limit=2000` run scored the intrinsic engine on 2,000 tracks and v1 on the
+// whole library, and printed the two numbers side by side as though they were
+// measured on the same thing.
 const base = tags && Object.keys(tags).length
-  ? baselineAccuracy(lib, tags, { folds })
+  ? baselineAccuracy(lib, tags, { folds, limit })
   : null;
 
 console.log('  engine                     top-1   top-3   scored');
