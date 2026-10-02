@@ -23,9 +23,48 @@ The build does not honour that. Both engines lean on it completely:
   `capabilities: ['identity', 'era']` — the only provider that needs no setup
   asserts nothing about what a record *sounds like*.
 
-So the hosted app asks every listener for a Last.fm key before it can do its
-main job, and the quality of its main job is capped by a crowd vocabulary that
-is global, coarse (one flat tag cloud per artist) and sometimes wrong.
+### What the shipped tag table does and does not fix
+
+One correction, because the first draft of this argument overstated it.
+
+`docs/tags.json` ships **4,866 artists** baked into the page, and the browser
+reads it at runtime with no key and no setup. So a hosted listener is *not*
+signal-less without a Last.fm key. They have coverage for those 4,866 artists
+for free, and a key only extends it to artists outside the table.
+
+That is a real mitigation, and it moves the problem rather than removing it —
+in three ways that all matter more than the one it solves:
+
+1. **The table is one library's taste.** It was built from this account. A
+   listener whose taste overlaps gets good coverage; a listener whose does not
+   falls off a cliff. Both get the same interface, the same confidence
+   language, and no indication which of the two they are. That is the
+   "excellent classifier for one library, worth nothing for the next account"
+   failure that `axes.mjs` is criticised for, one layer up and much harder to
+   see.
+2. **It can be false, by documented design.** The shared Firestore path that
+   grows the table takes unauthenticated writes and `merge-tags.mjs` checks a
+   contribution's *shape* — "a real Spotify artist ID format, sane tag names
+   and counts" — not whether it is true. The README says so plainly: somebody
+   could submit a plausible but false tag for a real uncovered artist and
+   nothing in the pipeline would catch it. A PR gate puts human eyes on the
+   diff, which is a good control and not the same as verification.
+3. **It is still one flat tag cloud per artist.** Coverage does not fix
+   granularity. A diverse artist hands the same answer to every record they
+   ever made, whether the cloud arrived from a key, the shipped table or a
+   stranger's contribution.
+
+So the accurate statement is not "no key, no signal". It is: *the core model's
+quality depends on how much a stranger's library resembles this one, on a
+table that is checked for shape rather than truth, at a granularity that cannot
+separate one artist's records from each other* — and the app cannot tell the
+listener which of those is currently limiting it.
+
+The intrinsic signals in §4 have none of those three properties. Their coverage
+is 100% by construction, because they are computed from the listener's own
+library; they cannot be poisoned by a third party, because no third party is
+involved; and they are per-track, because format, era, session and label are
+properties of the record rather than of its artist.
 
 Spotify cannot fill the gap. Verified September 2026, and re-confirmed against
 the repo's own measurements:
@@ -274,10 +313,23 @@ from — that is arithmetic, not a design failure.
 
 The resolution: a near-empty account gets **help building its taxonomy**, not
 accurate filing into buckets that do not exist yet. Accurate filing there is
-not a well-posed problem. Where a Last.fm key *is* present, Layer 2 may break
-ties at rungs 0–1 only, labelled as such, and is forbidden from overriding
-intrinsic evidence at rungs 2–3. That confines the crutch to the rungs where
-the gap is real and makes it visible when used.
+not a well-posed problem.
+
+At rungs 0–1 the shipped tag table (§1) and a Last.fm key if present may break
+ties, labelled as doing so, and are forbidden from overriding intrinsic
+evidence at rungs 2–3. That confines the crutch to the rungs where the gap is
+genuinely arithmetic and makes it visible whenever it is load-bearing.
+
+Two things follow that the UI has to carry, or the honesty is decorative:
+
+- **Report the rung**, not just the confidence. "Low confidence" and "not
+  enough of your library filed yet to be confident" are different sentences and
+  only the second tells the listener what would fix it.
+- **Report tag-table coverage as a first-class number.** How many of this
+  account's artists the shipped table actually covers is the single best
+  predictor of how well the *old* model will do for them, and it is currently
+  computed nowhere. `misfile.mjs` does a coverage check for its own report;
+  nothing surfaces it to a listener.
 
 ---
 
@@ -385,7 +437,7 @@ first place the engine tells you to move music, so it goes last on purpose.
 | **Circularity** | Learning from membership and then suggesting membership reinforces what is already there and never surprises you | Discovery stays a separate path. The engine is explicitly a *filer*, not a recommender. |
 | **Aggregator ISRCs** | Dilutes the label signal | Playlist-span down-weighting (§4.2). Self-correcting. |
 | **Popularity bias** | Encodes something nobody asked for | In the fit sweep; earns its weight or is zeroed. |
-| **Phone performance** | PPMI over thousands of artists in a browser | Bounded per §4.1, cached per snapshot, and **measured on a real library before Phase 5 rather than assumed**. |
+| **Phone performance** | PPMI over thousands of artists in a browser | **Measured — see §12.** Two fixes took build 2.3× faster and heap down a third; a large library still needs the space cached per snapshot rather than rebuilt per page load. |
 | **Bundle-order fragility** | A silently mis-ordered bundle half-works | Cycle + collision detection that fails the build, plus the parity test. |
 | **Cold-start honesty** | A rung-0 account could be shown confident nonsense | Rung is reported, not inferred by the user from vibes. |
 | **`docs/index.html` is the shipped page** | Phase 5 touches it | Existing secret guard and build-guard tests stay; the page is rebuilt and diffed, never hand-edited. |
@@ -404,3 +456,338 @@ co-occurrence space is *not* a `defineProvider` adapter. It asserts no concept
 from a source; it computes a space. It sits beside `core/analysis/classify.mjs`
 rather than inside the provider registry, and pretending otherwise to make the
 architecture diagram tidier would be a mistake.
+
+---
+
+## 12. Measured: does it run on a phone?
+
+The risk table said to measure rather than assume, so this is the measurement.
+Synthetic libraries shaped like real ones — a Zipf-ish artist distribution, a
+long tail seen once, buckets from 6 to 400 tracks, and a record-of-everything
+playlist — on a development machine, which is generous compared with a phone.
+
+**Before any optimisation:**
+
+| Library | Graph build | Space build | One placement | Heap |
+|---|---|---|---|---|
+| 60 playlists · 2k tracks | 981 ms | 1,286 ms | 13.1 ms | 151 MB |
+| 200 playlists · 6k tracks | 3,363 ms | 4,561 ms | 11.3 ms | 216 MB |
+| 400 playlists · 15k tracks | 10,310 ms | 15,234 ms | 51.7 ms | **1,173 MB** |
+
+A gigabyte of heap is not something a phone has, and 52 ms per placement is
+about 20 a second, which is not an interactive list. Two causes, both found by
+looking rather than guessing:
+
+1. **Pair counts were keyed by `` `${a}\0${b}` ``**, allocating one string per
+   pair — 5.2 million of them at the top size. Now a nested map, which reuses
+   the outer artist id and allocates nothing per pair.
+2. **`cosine()` recomputed both norms on every call.** Ranking one track against
+   400 buckets recomputed each bucket centroid's norm every time, and a centroid
+   can hold thousands of entries. Centroid norms are computed once in
+   `buildSpace` and passed in.
+
+**After:**
+
+| Library | Graph build | Space build | One placement | Heap |
+|---|---|---|---|---|
+| 60 playlists · 2k tracks | 417 ms | 619 ms | 4.0 ms | 54 MB |
+| 200 playlists · 6k tracks | 1,082 ms | 2,115 ms | 4.7 ms | 311 MB |
+| 400 playlists · 15k tracks | 4,415 ms | 7,787 ms | 19.4 ms | 784 MB |
+
+The 5-fold harness over 1,500 tracks went from 44 s to 20 s.
+
+**What this means for Phase 5, stated plainly.** A mid-sized library is now fine
+to place against interactively — 4.7 ms a track is a responsive list. Building
+the space is not: one to four seconds and hundreds of megabytes is a page load
+nobody should pay, on a device that may kill the tab for it. So the in-app
+engine **must build the space once per snapshot and persist it**, not rebuild it
+per page load. That was already a line in the risk table; it is now a
+requirement with numbers behind it.
+
+**And then made viable.** `core/intrinsic/persist.mjs` serialises a space to
+plain JSON and revives it, refusing any cache written by a different engine
+version or built from a different library — a fingerprint over playlist
+membership, which ignores the noise (`captured_at`, a drifting `popularity`)
+that would otherwise invalidate every cache and mean it was never used.
+
+| Library | Build | Cache size | Parse + revive |
+|---|---|---|---|
+| 60 playlists · 2k tracks | 726 ms | 2.8 MB | 72 ms (**10× faster**) |
+| 200 playlists · 6k tracks | 2,372 ms | 11.8 MB | 196 ms (**12× faster**) |
+
+A test asserts that every track in the fixture places *identically* from a
+revived space, including its explanation — the cache has to skip the work
+without changing the answer, or it is not a cache, it is a second engine.
+
+`MAX_PAIRWISE_ARTISTS` was deliberately left at 400 rather than lowered to buy
+back the remaining cost. Lowering it would drop pairwise evidence from exactly
+the biggest buckets, and there is no way to measure what that costs in accuracy
+without a real library — trading unmeasurable accuracy for measurable speed is
+the kind of tuning this project is careful about. It is in the sweep, so a real
+library can settle it.
+
+---
+
+## 11. Execution log
+
+This section is the build's memory. It is updated in the same commit as the
+work it describes, so the state of the build is readable from the repository
+rather than from anybody's recollection.
+
+Status values: `not started` · `in progress` · `done` · `blocked` · `abandoned`.
+
+| Phase | Status | Gate | Evidence |
+|---|---|---|---|
+| 0 — feasibility & harness | `in progress` — built, **gate unrun** | intrinsic-only ≥ v1 on a real library | 29 tests; 667 suite-wide. Needs `library.json` to answer. |
+| 1 — browser bundling bridge | `done` | bundled `core` parity test passes | 16 tests; parity asserted; page rendered in Chromium with 0 errors |
+| 2 — engine & explanations | `done` | weights enter the fit sweep | 42 intrinsic tests; sweep + componentValue against real filing |
+| 3 — cold-start ladder | `done` | rung fixtures pass, incl. empty library | 50 intrinsic tests; rung 0 and rung 1 both exercised through the CLI |
+| 4 — Rekordbox bonus layer | `done` | absence-is-free guard test passes | guard asserts byte-identical output for every unknown track |
+| 5 — in-app queue & shadow | `done` | queue renders on the phone build | the Engine screen, lazily loaded; renders under test out of the real built page |
+| 6 — cutover & misfile | `not started` | leave-one-out beats v1, number shown | — |
+
+### Phase 5: the Engine screen
+
+A screen behind **More**, in the app's own design system, that shows what the
+account-native engine would do and files nothing. Four parts:
+
+1. **How much it has to go on** — the cold-start rung, with its reason, because
+   "low confidence" and "not enough of your library filed yet" are different
+   sentences and only the second says what would fix it.
+2. **What it would do differently** — the next 40 tracks waiting to be filed,
+   today's suggestion beside this engine's, each row opening onto the
+   explanation clauses.
+3. **Is it actually any better?** — the held-out score, both engines, same
+   tracks, same folds.
+4. **Playlists it can't tell apart** — `bucketPairs`, which is usually a fact
+   about the library rather than a fault in the engine.
+
+**The gate moved into the browser, which matters more than the screen does.**
+Phase 0's kill gate needed a `library.json` export and a Node checkout, which is
+exactly the "works for one desktop, not for an account" shape `CLAUDE.md` rules
+out — the one number that decides whether this engine is worth switching to was
+the one number a hosted listener could not get. The browser already holds the
+library, so the screen runs the same harness on it and prints the comparison.
+
+**Shipped as a second file, not inlined.** `docs/engine.js` is ~145 KB fetched on
+first use of the screen. Inlining it was the obvious thing and the wrong thing:
+every listener would download it on every cold load to run a screen most of them
+will never open. `profile.mjs` is consequently in both bundles, paid twice by
+whoever opens the screen; left deliberately, because cross-bundle import plumbing
+to save 29 KB on one screen is worse than the duplication.
+
+#### What building it found
+
+Four defects, three of them in code written earlier in this build:
+
+- **`validate-placement.mjs` passed `--limit` to one engine only.** The intrinsic
+  side scored N tracks, v1 scored the whole library, and the CLI printed both
+  side by side as though they measured the same thing. Any quick pass of the gate
+  would have been wrong. `baselineAccuracy` now takes `limit` with the same
+  semantics, and a test asserts both sides score the same count.
+- **The build's secret-leak guard ran over the page alone.** Adding a second
+  output file silently moved a chunk of shipped JavaScript outside the only thing
+  standing between `.env` and GitHub Pages. The guard iterates outputs now, and
+  the sandbox test poisons a `core/` module to prove it.
+- **A track by an artist the account has never filed still places, on shape
+  alone, and scored `LIKELY`.** Honest arithmetic and a misleading thing to show
+  unqualified: a seven-minute single from the 2020s fits a playlist of
+  seven-minute singles from the 2020s, which is true and is not much. The row now
+  carries a `shape only` mark whenever no clause bears the strong mark, and says
+  to treat it as a shrug whatever the percentage says.
+- **The summary vanished exactly when it mattered.** The shape-only count sat
+  inside the "is there anything to compare" branch, so for a listener whose tag
+  coverage gives v1 no suggestions at all — the case this engine exists for —
+  the whole summary disappeared and took the one real caveat with it.
+
+The first two were found by writing `test/webengine.test.mjs`, which runs the
+screen out of the real built page against the real engine bundle. That test is
+the phase gate: "renders on the phone build" is not something a unit test for
+`placements()` can establish.
+
+#### What it does not do
+
+No shadow *filing*: nothing is written, and the File screen's suggestions are
+untouched. Cutover stays Phase 6 and stays gated on the number.
+
+The build blocks the main thread for one to four seconds, and the validation for
+most of a minute. A worker would fix both and is the obvious next improvement;
+it needs the bundle as a worker entry point, which is build work rather than
+engine work.
+
+### Decisions taken, and by whom
+
+- **Cutover policy:** shadow until it beats v1, then one switch. *(Owner's
+  choice, 2026-09-30.)*
+- **Cold start:** must work from a near-empty account. *(Owner's choice.)* The
+  arithmetic conflict this creates is resolved in §7 rather than hidden.
+- **Rekordbox:** in scope as a pure bonus layer, gated by the §4.7 guard test.
+  *(Owner's choice.)*
+- **Scope:** engine + in-app queue + misfile migration. *(Owner's choice.)*
+- **v3 is substrate, not competition.** The owner's instruction was to
+  disregard the previous build where that produces a better outcome. The
+  judgement taken here: keep what is independently correct and reusable — the
+  ontology, `TrackIdentity`, the evidence record, the append-only correction
+  log, mirror detection, the queue's prioritisation, the recommendation
+  layer's refusal to move anything — and replace only the inference path that
+  made external tags load-bearing. Discarding 638 passing tests to prove
+  independence would be loyalty to a gesture rather than to the outcome.
+
+### Findings that changed the plan after it was written
+
+- **2026-09-30.** `docs/tags.json` ships 4,866 artists and the page reads it
+  with no key, so the original claim "no key, no signal" was wrong and is
+  corrected in §1. The argument that replaces it is stronger: coverage is
+  biased to one library's taste, the shared write path is shape-checked rather
+  than truth-checked, and granularity is still one cloud per artist.
+
+- **Phase 0, three fixture and metric defects, each found by running it rather
+  than reading it.** Recorded because the same traps are waiting in Phase 2.
+
+  1. *An empty graph that looked like a working one.* The first fixture gave
+     every artist exactly one playlist, so `MIN_ARTIST_PLAYLISTS` dropped all
+     of them and the artist graph was **entirely empty** — yet held-out
+     accuracy came out at 0.78 on shape features alone. A number that high
+     reads as proof the graph works. The general lesson for a real library:
+     if most artists sit in exactly one bucket, co-occurrence has nothing to
+     say and the engine is quietly running on format and era. The CLI now
+     prints that share and warns past 80%.
+  2. *A ceiling that blinded the canary.* With each family given its own era,
+     album type and popularity, every track was placeable from shape alone and
+     both the honest and the leaky path scored exactly 1.000 — so the canary
+     could not detect leakage even in principle. A fixture must leave the
+     honest path room to be wrong, or the test that guards the harness is
+     itself untested.
+  3. *A per-bucket metric no view could ever win.* Crediting a bucket only when
+     it ranks first gave every crossover playlist exactly 0.0, because a
+     "Favourites" view always loses to the tighter bucket its tracks also live
+     in — the engine was right and the metric said otherwise. Replaced with
+     three numbers: `rank1`, `inTop3` (fair to both kinds, and what the worst-
+     bucket table now sorts by) and `exclusive` (rank 1 among tracks whose only
+     home is that bucket).
+
+- **The two engines fail on correlated cases, which makes synthetic comparison
+  worthless in both directions.** The intrinsic engine is weakest on a record
+  whose artists appear nowhere else in the library. Those are obscure artists —
+  which is exactly who Last.fm and the shipped tag table have least on. So a
+  real comparison could go either way, and a synthetic one tells you only about
+  the fixture: giving every artist a family-named tag, as the test fixture
+  does, hands v1 a perfect answer key precisely where reality would hand it
+  nothing. Two consequences worth carrying into later phases: the Phase 0 gate
+  is meaningless until it runs on a real library, and Layer 2 tie-breaking is
+  most valuable exactly where intrinsic signal is thinnest, which is an
+  independent argument for the §7 ladder rather than a concession.
+
+- **Phase 1 found that two unused lines were keeping v3 off the phone.**
+  `core/sources/musicbrainz.mjs` re-exported the root module's `resolveMbid`
+  and `extractArtistMbid` as a convenience — and **nothing ever imported them
+  from there**; `enrich-lastfm.mjs` and the tests both go to `musicbrainz.mjs`
+  directly. Those two lines were the only reason the engine graph reached
+  `musicbrainz.mjs` -> `cache.mjs` -> `node:fs`, which is what made the whole
+  graph unbundleable for a browser. Deleting them changed no behaviour.
+
+- **The bundler's first design was wrong, and the build said so immediately.**
+  It kept flat concatenation and added a name-collision check, on the theory
+  that a duplicate should fail the build rather than let the second declaration
+  win. Run against the real graph it refused at once: **every provider adapter
+  exports `toEvidence`**, which is the provider interface working exactly as
+  designed rather than a mess to tidy. Renaming five adapters to suit the
+  bundler would have been the tail wagging the dog, so the bundler changed
+  instead — each module gets its own scope and returns its exports, which makes
+  duplicate names across modules a non-issue rather than something to police.
+  `profile.mjs`'s `cosine` and `core/intrinsic/cooccurrence.mjs`'s `cosine` now
+  coexist, and a test asserts they are different functions.
+
+- **Four web tests and the build guard were coupled to the old flat layout.**
+  They sliced `docs/index.html` between module header comments and ran the
+  fragment, which only worked because concatenation put everything at top level.
+  They now run the whole generated bundle, which is strictly more faithful —
+  they exercise the file a browser actually gets, including the exposure lines,
+  rather than a hand-cut fragment of it.
+
+- **Shipping decision: `--with-core` is off by default.** The bundler can now
+  put the v3 engine on the phone, and doing so adds ~234 KB to a 323 KB page.
+  Until a screen uses it that is a download every listener pays for nothing, so
+  the flag exists and stays off until Phase 5 turns it on. Building the bridge
+  is not a reason to drive traffic over it.
+
+- **Verified by rendering, not by reading.** The built page was loaded in
+  headless Chromium: v1's functions are present as globals, `tagFacet`,
+  `norm` and `rank` behave, and there are zero console errors. With
+  `--with-core`, `BetterfyIntrinsic.buildSpace` / `placements` and
+  `BetterfyValidate.placementAccuracy` all run in the browser, also with zero
+  errors. `norm('  Déjà Vu ')` returns the identical string in Node and in
+  Chromium.
+
+- **Phase 2 deviated from the planned file split, deliberately.** The plan named
+  `definitions.mjs` and `place.mjs`, but `space.mjs` already held learned
+  definitions and scoring, so those files would have been a rename with extra
+  indirection. What was actually missing was `explain.mjs` and `reports.mjs`.
+  The plan is the argument, not a contract to be honoured past the point of
+  usefulness.
+
+- **An explanation that is true of every bucket is a horoscope.** The first
+  version emitted "a single, and 100% of this bucket is too" — perfectly true,
+  and identical under every alternative, so it made the reasoning look thorough
+  while helping nobody choose. Format and era clauses are now compared against
+  the library-wide base rate and dropped unless they *distinguish* this bucket.
+  The same IDF instinct that stopped "electronic" dominating every tag
+  comparison, one layer up.
+
+- **"Fits no bucket" cannot be defined by a low score.** A record by artists the
+  library has never seen still matches every bucket on format, era and
+  popularity, so generic shape clears any absolute threshold and the first
+  version of `unnamedClusters()` reported that every stranger was comfortably
+  placed. It now asks which *kind* of evidence was available: a placement with
+  no artist-graph component at all is the engine guessing from the shape of the
+  object, and that is what homeless means.
+
+- **The sweep asks whether a component earns its place before asking how to tune
+  it.** `componentValue()` reports what removing each weight entirely would
+  cost, because "best at 0.1" invites tuning while "removing it costs nothing"
+  invites deleting it — usually the better answer, and never the one a sweep
+  volunteers. A test asserts that zeroing the artist graph measurably *hurts*
+  accuracy, so if the graph ever stops being load-bearing the suite says so
+  rather than the engine quietly running on format.
+
+- **The rung is about evidence, not library size.** A listener with 4,000 tracks
+  in two buckets is on a lower rung than one with 400 across twenty, because the
+  second has told the engine far more about what they mean. A test asserts
+  exactly that, since "big library must mean good signal" is the intuitive and
+  wrong reading.
+
+- **Rung 0 has to be a different product, not a degraded one.** With nothing
+  filed there is nowhere to place anything, so the engine proposes groups to
+  name — by lead artist where somebody has enough records, and by the shape of
+  the release otherwise — rather than answering a question that is not
+  well-posed. The CLI prints this instead of the accuracy table and says plainly
+  that nothing below it will mean much yet.
+
+- **Tag-table coverage is now a first-class number.** It is the best predictor
+  of how the *tag* engine treats a given listener and was computed nowhere they
+  could see. Under 50% the CLI names it for what it is: what the shipped table
+  being one library's taste looks like from the outside.
+
+- **The bonus guard is asserted, not claimed.** For every track the Rekordbox
+  file does not cover, the test compares the full placement output — ranking,
+  scores and band — with and without the file loaded, and requires them to be
+  deep-equal. A second test requires the layer to be *capable* of mattering
+  where the file does cover both sides, since a guard is trivially satisfied by
+  a feature that never does anything.
+
+- **A finite number is not a usable one.** The first version of `bonusIndex()`
+  kept a row whose bpm was `-1` and which had no key, because `-1` is finite —
+  an entry that exists and says nothing, which is worse than no entry, since
+  `bonusProfileOf` would count it toward the threshold that decides whether a
+  bucket has enough tempo data to judge on. Caught by its own test.
+
+- **Half and double time are deliberately not a tempo match.** The arithmetic
+  works and the records do not belong together: a 140 bpm track is not at home
+  in a 70 bpm bucket.
+
+- **v1 already contains a narrow version of this idea.** `artistHistory()` in
+  `profile.mjs` places a track by where its primary artist's other tracks
+  already live, and its comment says outright that "the user's own playlists
+  are themselves evidence, free of any third party". It fires only as a
+  fallback, only on the first-billed artist, and only on a strong majority.
+  This build generalises that instinct rather than introducing it.
