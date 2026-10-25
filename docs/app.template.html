@@ -3646,13 +3646,16 @@ function vLists() {
     <div class="rowbtns" style="margin-bottom:8px">
       <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(LS.getItem('bf_lfm') || '')}">
       <button class="b" id="saveLfm">Save key</button>
-      <button class="b p" id="enrich" ${LS.getItem('bf_lfm') ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button>
+      <button class="b p" id="enrich" ${cov.missing ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button>
       <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
     </div>
     <p class="sub" style="margin:8px 0">
-      Optional — a free <b>Discogs</b> token fills in artists Last.fm has nothing on at all, from the styles on
-      their own releases (Jungle, Deep House, Electro — finer than Last.fm's one flat tag per artist). It never
-      overrides a real Last.fm tag, only ever fills a total gap, and runs automatically as part of the button above.</p>
+      A Last.fm key is optional too, not required to press the button above — <b>iTunes</b> needs no key at all
+      and runs either way, it's just one coarse genre per artist rather than Last.fm's crowd-tagged cloud. Add a
+      key for the richer, more granular answer. A free <b>Discogs</b> token fills in artists Last.fm has nothing on at all,
+      from the styles on their own releases (Jungle, Deep House, Electro — finer than Last.fm's one flat tag per
+      artist). Nothing here ever overrides a stronger source, only ever fills a gap, and all of it runs
+      automatically as part of the button above.</p>
     <div class="rowbtns" style="margin-bottom:8px">
       <input id="discogsKey" placeholder="Discogs personal access token" size="34" value="${esc(LS.getItem('bf_discogs') || '')}">
       <button class="b" id="saveDiscogs">Save token</button>
@@ -4009,14 +4012,46 @@ const REASK_TAG_FLOOR = 3;
 const REASK_AFTER_MS = 1000 * 60 * 60 * 24 * 180; // ~6 months
 const worthReasking = e => !e || (e.tags?.length ?? 0) < REASK_TAG_FLOOR && (Date.now() - (e.checkedAt ?? 0)) > REASK_AFTER_MS;
 
-/** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
+// How many iTunes lookups one click will spend: it's a name search (the
+// same same-named-artist risk Last.fm's autocorrect has, and the reason it
+// runs last of everything here) and its rate limit is informal and slow —
+// unlike Last.fm, unpacking a large gap in one click would make the
+// button look hung for the better part of an hour. Capped, so the run
+// finishes; "run it again" picks up the rest.
+const ITUNES_BATCH_CAP = 60;
+
+/** Fold new tags for one artist into `cached`/TAGS the same gap-fill-or-blend
+ *  way tagstore.mjs's mergeTagSources() does: replaces a total gap outright,
+ *  adds to a thin answer without displacing it, and never touches one that
+ *  already cleared REASK_TAG_FLOOR. Stamps checkedAt whenever it finds
+ *  something, or when nothing failed this run for this artist — an artist a
+ *  source genuinely has nothing on is an answer worth keeping, the same
+ *  reasoning worthReasking() is built on. `skipStamp` is the one exception:
+ *  Last.fm's own request for this artist dropped this run, so a *different*
+ *  source's real-but-empty answer must not be allowed to look like the
+ *  artist was fully checked — that would leave the dropped Last.fm request
+ *  never retried, healed over by an unrelated source's success. */
+function blendIn(cached, id, extra, skipStamp = false) {
+  const own = cached[id]?.tags ?? [];
+  const seen = new Set(own.map(([t]) => t));
+  const fresh = extra.filter(([t]) => !seen.has(t));
+  if (!fresh.length && skipStamp) return false;
+  cached[id] = { tags: fresh.length ? [...own, ...fresh] : own, checkedAt: Date.now() };
+  return fresh.length > 0;
+}
+
+/** Fill tag gaps for artists the shipped set doesn't cover. Last.fm (with the
+ *  viewer's own key) is the backbone; iTunes needs no key at all, so it
+ *  still runs — and helps — even for someone who has never touched a
+ *  Last.fm key. (Spotify's own Artist `genres` field was tried and dropped:
+ *  verified dead in September 2026, 0 tags across 956 artists — see "Why it
+ *  uses Last.fm, MusicBrainz, Discogs and iTunes" in the README.) */
 async function enrichMissing() {
   const key = LS.getItem('bf_lfm');
-  if (!key) return toast('Add a Last.fm key first.');
   const discogsToken = LS.getItem('bf_discogs');
   // "Missing" means thin, not just "no entry at all" — fewer tags than
-  // REASK_TAG_FLOOR is treated the same as zero, so a gap Last.fm barely
-  // answered still gets a real second look rather than staying thin forever.
+  // REASK_TAG_FLOOR is treated the same as zero, so a gap barely answered
+  // still gets a real second look rather than staying thin forever.
   const gap = id => (TAGS[id]?.tags?.length ?? 0) < REASK_TAG_FLOOR;
   const names = new Map();
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
@@ -4030,54 +4065,90 @@ async function enrichMissing() {
   try { todo = byListening(todo, (await getListening()).weights); } catch { /* library order is fine */ }
 
   const cached = (await idb.get('tags_extra')) ?? {};
-  let done = 0, viaDiscogs = 0, failed = 0, blank = 0;
-  for (const [id, name] of todo) {
-    // Already asked about, and not stale-thin enough to be worth asking
-    // again yet. A real, well-tagged answer is never re-asked — there's no
-    // upside — and a thin or empty one only gets a second look after
-    // REASK_AFTER_MS, so a re-run mostly costs no requests at all.
-    if (cached[id] && !worthReasking(cached[id])) { TAGS[id] = cached[id]; if (cached[id].tags?.length) done++; else blank++; continue; }
-    let tags = [];
-    // "Last.fm has nothing for this artist" and "that request failed" are the
-    // same empty array, and only the first is an answer worth keeping. Caching
-    // both wrote the network's bad afternoon into IndexedDB as a permanent
-    // verdict: the artist was never asked about again, on any later run.
-    let answered = false;
-    try {
-      const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
-        method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
-      if (r?.error) throw new Error(r.message || `Last.fm error ${r.error}`);
-      tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
-      answered = true;
-      contributeTags(id, tags);
-    } catch { tags = []; failed++; }
-    await new Promise(r => setTimeout(r, 200));   // Last.fm's documented ~5/s
+  // Snapshotted before any pass below runs: "was this artist due for another
+  // look at all, as of the start of this click" — evaluated live instead,
+  // the iTunes pass would see the checkedAt Last.fm's own pass just wrote
+  // moments earlier and skip a source that never actually got a turn. Every
+  // pass below stamps checkedAt on whatever it touches (blendIn does this
+  // unconditionally, found something new or not), so a second click still
+  // correctly leaves alone whatever every source already had its turn on.
+  const dueForRecheck = new Map(todo.map(([id]) => [id, worthReasking(cached[id])]));
+  // Artists whose Last.fm request itself dropped this run — see blendIn()'s
+  // skipStamp for why the iTunes pass below needs to know this.
+  const lastfmFailed = new Set();
+  let done = 0, viaDiscogs = 0, viaItunes = 0, failed = 0, blank = 0;
 
-    // Last.fm's answer is thin or empty — blend in Discogs release styles
-    // rather than leaving it that way. A total gap is filled outright; a thin
-    // answer keeps its own tags in front and only gets Discogs tags it didn't
-    // already have added alongside them (see mergeTagSources in tagstore.mjs
-    // for the Node-side twin of this).
-    if (answered && tags.length < REASK_TAG_FLOOR && discogsToken) {
+  // ---- Last.fm + Discogs, exactly as before — skipped entirely with no
+  // Last.fm key, so nothing here changes for anyone who already has one. ----
+  if (key) {
+    for (const [id, name] of todo) {
+      // Already asked about, and not stale-thin enough to be worth asking
+      // again yet. A real, well-tagged answer is never re-asked — there's no
+      // upside — and a thin or empty one only gets a second look after
+      // REASK_AFTER_MS, so a re-run mostly costs no requests at all.
+      if (cached[id] && !worthReasking(cached[id])) { TAGS[id] = cached[id]; if (cached[id].tags?.length) done++; else blank++; continue; }
+      let tags = [];
+      // "Last.fm has nothing for this artist" and "that request failed" are
+      // the same empty array, and only the first is an answer worth keeping.
+      let answered = false;
       try {
-        const extra = await discogsTags(name, discogsToken);
-        const seen = new Set(tags.map(([t]) => t));
-        const fresh = extra.filter(([t]) => !seen.has(t));
-        if (fresh.length) { tags = [...tags, ...fresh]; viaDiscogs++; }
-      } catch { /* leave it as Last.fm had it */ }
-      await new Promise(r => setTimeout(r, 1100));  // Discogs: 60 req/min with a token
-    }
+        const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
+          method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
+        if (r?.error) throw new Error(r.message || `Last.fm error ${r.error}`);
+        tags = (r.toptags?.tag ?? []).filter(t => +t.count >= 10).slice(0, 10).map(t => [t.name.toLowerCase(), +t.count]);
+        answered = true;
+        contributeTags(id, tags);
+      } catch { tags = []; failed++; lastfmFailed.add(id); }
+      await new Promise(r => setTimeout(r, 200));   // Last.fm's documented ~5/s
 
-    if (answered) { cached[id] = { tags, checkedAt: Date.now() }; TAGS[id] = { tags }; done++; }
-    if (done && done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
+      // Last.fm's answer is thin or empty — blend in Discogs release styles
+      // rather than leaving it that way (see mergeTagSources in tagstore.mjs
+      // for the Node-side twin of this).
+      if (answered && tags.length < REASK_TAG_FLOOR && discogsToken) {
+        try {
+          const extra = await discogsTags(name, discogsToken);
+          const seen = new Set(tags.map(([t]) => t));
+          const fresh = extra.filter(([t]) => !seen.has(t));
+          if (fresh.length) { tags = [...tags, ...fresh]; viaDiscogs++; }
+        } catch { /* leave it as Last.fm had it */ }
+        await new Promise(r => setTimeout(r, 1100));  // Discogs: 60 req/min with a token
+      }
+
+      if (answered) { cached[id] = { tags, checkedAt: Date.now() }; TAGS[id] = { tags }; done++; }
+      if (done && done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
+    }
+    await idb.set('tags_extra', cached);
   }
-  await idb.set('tags_extra', cached);
+
+  // ---- iTunes: keyless, but a name search — a real (if small) same-named-
+  // artist risk, and an informal, slow rate limit — so it's the last resort,
+  // only for whatever is still thin after the pass above (everything, if
+  // there was no Last.fm key at all), and capped per click so the button
+  // doesn't hang for the better part of an hour. ----
+  const itunesEligible = todo.filter(([id]) => (TAGS[id]?.tags?.length ?? 0) < REASK_TAG_FLOOR && dueForRecheck.get(id));
+  const stillThin2 = itunesEligible.slice(0, ITUNES_BATCH_CAP);
+  if (stillThin2.length) stage(`Checking iTunes for what's left…`, 0.7);
+  for (const [id, name] of stillThin2) {
+    try {
+      const r = await fetch('https://itunes.apple.com/search?' + new URLSearchParams({
+        term: name, entity: 'musicArtist', limit: '1' })).then(x => x.json());
+      const genre = r.results?.[0]?.primaryGenreName;
+      const found = genre ? [[genre.toLowerCase(), 55]] : [];
+      if (blendIn(cached, id, found, lastfmFailed.has(id))) { TAGS[id] = { tags: cached[id].tags }; viaItunes++; }
+    } catch { /* leave for next run */ }
+    await new Promise(r => setTimeout(r, 3500)); // iTunes' informal ~20/min ceiling
+  }
+  if (stillThin2.length) await idb.set('tags_extra', cached);
+
   R = buildReports(LIB, CFG, TAGS);
   $('#land').hidden = true; $('#app').hidden = false;
-  toast(`Tags filled for ${done} of ${todo.length} artists.`
+  const itunesLeft = itunesEligible.length > stillThin2.length;
+  toast(`Tags filled for ${done + viaItunes} of ${todo.length} artists.`
     + (viaDiscogs ? ` ${viaDiscogs} from Discogs, where Last.fm had nothing.` : '')
+    + (viaItunes ? ` ${viaItunes} from iTunes.` : '')
     + (blank ? ` ${blank} have no tags anywhere.` : '')
-    + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : ''));
+    + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : '')
+    + (itunesLeft ? ` Run it again to keep going through the rest via iTunes.` : ''));
   render();
 }
 

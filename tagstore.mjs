@@ -11,40 +11,66 @@ import { tagGate, gateTags } from './profile.mjs';
 const THIN_TAG_FLOOR = 3;
 
 /**
- * Fold Discogs release styles in behind Last.fm. A total gap is filled
- * outright; a thin answer (fewer than THIN_TAG_FLOOR tags) gets Discogs'
- * styles added alongside what Last.fm already said, never replacing or
- * reordering it — re-running enrich-lastfm.mjs later (say, after autocorrect
- * or a MusicBrainz match improves) still leaves Last.fm's own tags in place
- * and in front.
+ * Fold any number of tag sources together, strongest first. The first source
+ * is the backbone, taken as-is; each source after that only ever fills a
+ * total gap outright or, short of that, blends its tags in alongside a thin
+ * answer (fewer than THIN_TAG_FLOOR tags) — never replacing or reordering
+ * what a stronger source already said. Re-running an earlier enrich script
+ * later (say, after autocorrect or a MusicBrainz match improves) still leaves
+ * everything already-confident in place and in front.
+ *
+ * Order matters and is the caller's call: loadTags() below lists it once, in
+ * one place, rather than leaving several pairwise blends to reason about
+ * separately. Two things decide the order: how granular a source is, and how
+ * it identifies the artist in the first place. MusicBrainz's genres are
+ * looked up by an exact id — no name involved, no same-named-artist risk —
+ * so they outrank iTunes, which searches by name and can misfire the exact
+ * way Last.fm's autocorrect can. Last.fm's crowd tags are the most granular
+ * of all, so they lead regardless.
+ *
+ * Spotify's own `genres` field on the Artist object was tried and dropped:
+ * verified dead in September 2026 (0 tags across 956 artists — see "Why it
+ * uses Last.fm, MusicBrainz, Discogs and iTunes" in the README), the same fate as the
+ * audio-features/recommendations endpoints. Worth re-checking if Spotify
+ * ever brings it back, but not worth spending a batch call on today.
  */
-export function mergeTagSources(lastfm, discogs) {
-  const tags = { ...lastfm };
-  for (const [id, entry] of Object.entries(discogs)) {
-    if (!entry.tags?.length) continue;
-    const own = tags[id]?.tags ?? [];
-    if (!own.length) { tags[id] = entry; continue; }
-    if (own.length >= THIN_TAG_FLOOR) continue; // Last.fm already has enough to stand on its own
-    const seen = new Set(own.map(([t]) => t));
-    const extra = entry.tags.filter(([t]) => !seen.has(t));
-    if (extra.length) tags[id] = { ...tags[id], tags: [...own, ...extra] };
+export function mergeTagSources(...sources) {
+  const [primary, ...rest] = sources;
+  const tags = { ...primary };
+  for (const source of rest) {
+    for (const [id, entry] of Object.entries(source)) {
+      if (!entry.tags?.length) continue;
+      const own = tags[id]?.tags ?? [];
+      if (!own.length) { tags[id] = entry; continue; }
+      if (own.length >= THIN_TAG_FLOOR) continue; // already enough to stand on its own
+      const seen = new Set(own.map(([t]) => t));
+      const extra = entry.tags.filter(([t]) => !seen.has(t));
+      if (extra.length) tags[id] = { ...tags[id], tags: [...own, ...extra] };
+    }
   }
   return tags;
 }
 
+const readIfExists = file => existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+
 /**
- * Load and merge every tag source, then drop whatever a library-wide gate
- * doesn't trust — a tag attested by only one artist is indistinguishable, at
- * the model level, from a misspelling or a same-named-artist mismatch. See
- * tagGate() in profile.mjs for what this costs a genuinely one-artist niche
- * genre (real, but rare enough in the caller's own library).
+ * Load and merge every tag source, strongest first, then drop whatever a
+ * library-wide gate doesn't trust — a tag attested by only one artist is
+ * indistinguishable, at the model level, from a misspelling or a same-named-
+ * artist mismatch. See tagGate() in profile.mjs for what this costs a
+ * genuinely one-artist niche genre (real, but rare enough in the caller's
+ * own library). Every source but Last.fm itself is optional — this runs the
+ * same whether `npm run setup` fetched all of them or none.
  */
 export function loadTags() {
   if (!existsSync('tags-lastfm.json'))
     throw new Error('No tags yet — run: node enrich-lastfm.mjs');
   const lastfm = JSON.parse(readFileSync('tags-lastfm.json', 'utf8'));
-  const merged = existsSync('tags-discogs.json')
-    ? mergeTagSources(lastfm, JSON.parse(readFileSync('tags-discogs.json', 'utf8')))
-    : lastfm;
+  const merged = mergeTagSources(
+    lastfm,
+    readIfExists('tags-musicbrainz.json'),
+    readIfExists('tags-discogs.json'),
+    readIfExists('tags-itunes.json'),
+  );
   return gateTags(merged, tagGate(merged));
 }

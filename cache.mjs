@@ -43,6 +43,20 @@ export function worthReasking(entry, { floor = REASK_TAG_FLOOR, staleMs = REASK_
   return now - (entry.checkedAt ?? 0) > staleMs;
 }
 
+/**
+ * Distinct tag count for one artist across several already-loaded Cache
+ * instances — how much evidence has accumulated from every source consulted
+ * so far in an enrich chain (Last.fm, then Discogs, then whatever keyless
+ * source runs after). A `Cache` over a file that doesn't exist is just
+ * empty, so passing caches for sources that haven't run yet (or never will,
+ * with no token configured) is always safe.
+ */
+export function combinedTagCount(id, caches) {
+  const seen = new Set();
+  for (const c of caches) for (const [tag] of c.get(id)?.tags ?? []) seen.add(tag);
+  return seen.size;
+}
+
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // Retry wrapper for flaky network / soft rate limits.

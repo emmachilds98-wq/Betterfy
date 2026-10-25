@@ -61,3 +61,47 @@ test('the input tables are not mutated', () => {
   assert.equal(JSON.stringify(lastfm), beforeLastfm);
   assert.equal(JSON.stringify(discogs), beforeDiscogs);
 });
+
+/* ---------- more than two sources: each only ever tops up what came before it ---------- */
+
+test('a chain of sources fills a total gap outright from the first one with anything at all', () => {
+  const lastfm = { a1: { tags: [] } };
+  const musicbrainz = { a1: { tags: [] } };
+  // Enough tags to clear THIN_TAG_FLOOR, so this is a real "stand on its
+  // own" answer, not one more source down the chain could still add to.
+  const discogs = { a1: { tags: [['jungle', 3], ['breakbeat', 2], ['amen break', 1]] } };
+  const spotify = { a1: { tags: [['drum and bass', 60]] } };
+  const merged = mergeTagSources(lastfm, musicbrainz, discogs, spotify);
+  assert.deepEqual(merged.a1.tags, [['jungle', 3], ['breakbeat', 2], ['amen break', 1]],
+    'Discogs is enough on its own — Spotify\'s tag never appears');
+});
+
+test('a thin answer from the second source in the chain still blends in a third', () => {
+  const lastfm = { a1: { tags: [['jungle', 90]] } };       // thin: 1 tag
+  const musicbrainz = { a1: { tags: [] } };                 // nothing at all
+  const discogs = { a1: { tags: [['breakbeat', 40], ['jungle', 30]] } };
+  const merged = mergeTagSources(lastfm, musicbrainz, discogs);
+  assert.deepEqual(merged.a1.tags, [['jungle', 90], ['breakbeat', 40]],
+    'Discogs blends in what Last.fm didn\'t have; the duplicate "jungle" is never added twice');
+});
+
+test('once any prior source clears the thin floor, later sources are never even consulted', () => {
+  const lastfm = { a1: { tags: [] } };
+  const musicbrainz = { a1: { tags: [['jungle', 80], ['breakbeat', 60], ['amen break', 40]] } }; // 3 tags — enough
+  const discogs = { a1: { tags: [['drum and bass', 90]] } };
+  const merged = mergeTagSources(lastfm, musicbrainz, discogs);
+  assert.deepEqual(merged.a1.tags, [['jungle', 80], ['breakbeat', 60], ['amen break', 40]],
+    'MusicBrainz alone is enough — Discogs\'s tag never appears');
+});
+
+test('a single source behaves exactly like a plain copy', () => {
+  const only = { a1: { name: 'Solo', tags: [['house', 90]] } };
+  assert.deepEqual(mergeTagSources(only), only);
+});
+
+test('an artist missing from every source but the first is left exactly as the first had it', () => {
+  const lastfm = { a1: { tags: [['house', 90]] }, a2: { tags: [] } };
+  const discogs = { a1: { tags: [['deep house', 5]] } }; // says nothing about a2 at all
+  const merged = mergeTagSources(lastfm, discogs);
+  assert.deepEqual(merged.a2, { tags: [] });
+});

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractArtistMbid, resolveMbid, resolveMbids } from '../musicbrainz.mjs';
+import { extractArtistMbid, resolveMbid, resolveMbids, extractGenresAndTags, fetchArtistGenres } from '../musicbrainz.mjs';
 
 // Identity glue: an exact match on the Spotify URL MusicBrainz has on file for
 // an artist, so there is no name-fuzziness for a same-named act to exploit.
@@ -76,5 +76,63 @@ test('resolveMbids maps every pair that resolved, and omits the gaps', async () 
   try {
     const out = await resolveMbids([['a1', 'Has One'], ['a2', 'Has None']], 'c@example.com');
     assert.deepEqual([...out.entries()], [['a1', 'mbid-a1']]);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+/* ---------- genres/tags: one more field on an identity already resolved ---------- */
+
+test('genres and tags are folded into one tally, rescaled so the top entry is 100', () => {
+  const json = {
+    genres: [{ name: 'Jungle', count: 4 }, { name: 'Drum and Bass', count: 2 }],
+    tags: [{ name: 'uk', count: 8 }, { name: 'jungle', count: 1 }], // lowercase dup of the genre above
+  };
+  const out = extractGenresAndTags(json);
+  assert.deepEqual(out[0], ['uk', 100], 'the highest count of any entry leads, genre or tag alike');
+  // "jungle" appears as both a genre (count 4) and a tag (count 1) — the
+  // higher of the two wins rather than the two adding together, since they
+  // describe the same fact about the artist, not two independent votes.
+  const jungle = out.find(([name]) => name === 'jungle');
+  assert.deepEqual(jungle, ['jungle', 50]);
+});
+
+test('an artist with neither genres nor tags comes back empty, not a throw', () => {
+  assert.deepEqual(extractGenresAndTags({}), []);
+  assert.deepEqual(extractGenresAndTags(null), []);
+  assert.deepEqual(extractGenresAndTags({ genres: [], tags: [] }), []);
+});
+
+test('an entry with no name or a non-numeric count is skipped rather than corrupting the tally', () => {
+  const json = { genres: [{ name: 'Jungle', count: 3 }, { count: 5 }, { name: 'Techno', count: 'lots' }] };
+  assert.deepEqual(extractGenresAndTags(json), [['jungle', 100]]);
+});
+
+test('at most ten entries are kept, strongest first', () => {
+  const genres = Array.from({ length: 15 }, (_, i) => ({ name: `g${i}`, count: i + 1 }));
+  const out = extractGenresAndTags({ genres });
+  assert.equal(out.length, 10);
+  assert.equal(out[0][0], 'g14', 'the highest count leads');
+});
+
+test('fetchArtistGenres sends the same identifiable User-Agent, keyed on the resolved mbid', async () => {
+  const realFetch = globalThis.fetch;
+  let seenUrl, seenUA;
+  globalThis.fetch = async (url, opts) => {
+    seenUrl = String(url); seenUA = opts?.headers?.['User-Agent'];
+    return { json: async () => ({ genres: [{ name: 'techno', count: 5 }] }) };
+  };
+  try {
+    const tags = await fetchArtistGenres('mbid-123', 'contact@example.com');
+    assert.deepEqual(tags, [['techno', 100]]);
+    assert.ok(seenUrl.includes('mbid-123'));
+    assert.ok(seenUrl.includes('inc=genres%2Btags') || seenUrl.includes('inc=genres+tags'));
+    assert.ok(seenUA.includes('contact@example.com'));
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('fetchArtistGenres never throws — a network failure is just "nothing here"', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('offline'); };
+  try {
+    assert.deepEqual(await fetchArtistGenres('mbid-x', 'c@example.com'), []);
   } finally { globalThis.fetch = realFetch; }
 });

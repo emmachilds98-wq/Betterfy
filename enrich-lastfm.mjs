@@ -4,7 +4,7 @@ import { env } from './env.mjs';
 import { Cache, sleep, retry, worthReasking } from './cache.mjs';
 import { fetchListening } from './listening.mjs';
 import { byListening } from './profile.mjs';
-import { resolveMbid } from './musicbrainz.mjs';
+import { resolveMbid, fetchArtistGenres } from './musicbrainz.mjs';
 
 const lib = JSON.parse(readFileSync('library.json', 'utf8'));
 const artists = new Map();
@@ -14,6 +14,18 @@ lib.liked.forEach(add);
 
 const cache = new Cache('tags-lastfm.json');
 let todo = [...artists].filter(([id]) => worthReasking(cache.get(id)));
+
+// Whatever this run doesn't finish should at least have covered what you
+// actually listen to — a 20-minute fetch interrupted partway still leaves
+// the artists behind your real suggestions tagged first. This has to happen
+// before the MusicBrainz block below, not after: that block runs its own
+// two sub-fetches (mbid resolution, then genres/tags) over `todo` at ~1
+// req/s each, so an interrupted run needs those weighted too, not just the
+// final Last.fm loop.
+try {
+  const { weights } = await fetchListening(lib);
+  todo = byListening(todo, weights);
+} catch { /* no Spotify auth available here, or offline — library order is fine */ }
 
 // Identity glue, ahead of the Last.fm fetch itself: resolving to a MusicBrainz
 // id first means the tags below can be asked for by mbid= instead of a name
@@ -28,6 +40,10 @@ const needsMbidLookup = id => {
   const e = mbidCache.get(id);
   return !e || (!e.mbid && Date.now() - (e.checkedAt ?? 0) > MBID_STALE_MS);
 };
+// Once an id is resolved, its genres/tags are one more field on the same
+// entity — no second identity lookup, and a separate cache/source so a
+// mismatch there can never affect identity resolution or vice versa.
+const mbGenres = new Cache('tags-musicbrainz.json');
 if (env.MUSICBRAINZ_CONTACT) {
   const lookups = todo.filter(([id]) => needsMbidLookup(id));
   if (lookups.length) console.error(`resolving MusicBrainz ids for ${lookups.length} artist(s)…`);
@@ -37,17 +53,18 @@ if (env.MUSICBRAINZ_CONTACT) {
     await sleep(1000); // MusicBrainz's courtesy limit is ~1 req/s
   }
   mbidCache.flush();
+
+  const genreLookups = todo.filter(([id]) => mbidCache.get(id)?.mbid && worthReasking(mbGenres.get(id)));
+  if (genreLookups.length) console.error(`fetching MusicBrainz genres/tags for ${genreLookups.length} artist(s)…`);
+  for (const [id, name] of genreLookups) {
+    const tags = await fetchArtistGenres(mbidCache.get(id).mbid, env.MUSICBRAINZ_CONTACT);
+    mbGenres.set(id, { name, tags, checkedAt: Date.now() });
+    await sleep(1000);
+  }
+  mbGenres.flush();
 } else {
   console.error('No MUSICBRAINZ_CONTACT in .env — identity resolution is optional, skipping.');
 }
-
-// Whatever this run doesn't finish should at least have covered what you
-// actually listen to — a 20-minute fetch interrupted partway still leaves
-// the artists behind your real suggestions tagged first.
-try {
-  const { weights } = await fetchListening(lib);
-  todo = byListening(todo, weights);
-} catch { /* no Spotify auth available here, or offline — library order is fine */ }
 
 console.error(`artists: ${artists.size} | cached: ${cache.size} | to fetch: ${todo.length}`);
 
