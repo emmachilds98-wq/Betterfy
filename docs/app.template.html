@@ -4462,6 +4462,47 @@ function engineLoad() {
 const ENG = { status:'idle', err:null, space:null, rung:null, shadow:null,
               pairs:null, val:null, valRunning:false, ms:0, from:null };
 
+/* The engine runs in a worker when it can, so learning and scoring a big library
+ * leave the page usable instead of freezing it for seconds at a time (measured:
+ * 6.2s for scoring a 250-playlist library on a desktop CPU, several times that on
+ * a phone). `false` means a worker is not available here, and everything falls
+ * back to the main thread exactly as before — slower to sit through, same answer. */
+let ENGINE_WORKER = null, ENGINE_SEQ = 0;
+const ENGINE_WAIT = new Map();
+function engineWorker() {
+  if (ENGINE_WORKER !== null) return ENGINE_WORKER;
+  try {
+    if (typeof Worker !== 'function') return ENGINE_WORKER = false;
+    const w = new Worker('engine-worker.js?v=__BUILD__');
+    w.onmessage = e => {
+      const wait = ENGINE_WAIT.get(e.data?.id);
+      if (!wait) return;
+      ENGINE_WAIT.delete(e.data.id);
+      e.data.ok ? wait.ok(e.data) : wait.bad(new Error(e.data.error));
+    };
+    // A worker that cannot start (offline, a blocked script) fails here rather
+    // than per message. Give up on it for the session and let callers fall back.
+    w.onerror = ev => {
+      ev?.preventDefault?.();
+      for (const wait of ENGINE_WAIT.values()) wait.bad(new Error(ev?.message || 'the engine worker stopped'));
+      ENGINE_WAIT.clear();
+      ENGINE_WORKER = false;
+      try { w.terminate(); } catch {}
+    };
+    return ENGINE_WORKER = w;
+  } catch { return ENGINE_WORKER = false; }
+}
+/** Run one engine op in the worker. Null when there is no worker to run it in. */
+function inEngineWorker(op, payload) {
+  const w = engineWorker();
+  if (!w) return null;
+  return new Promise((ok, bad) => {
+    const id = ++ENGINE_SEQ;
+    ENGINE_WAIT.set(id, { ok, bad });
+    w.postMessage({ id, op, mirrorIds: LIB.playlists.filter(isMirrorPlaylist).map(p => p.id), ...payload });
+  });
+}
+
 /** How many waiting tracks the comparison covers: a screenful of evidence,
  *  not a report nobody reads. */
 const SHADOW_N = 40;
@@ -4487,20 +4528,33 @@ const SPACE_KEY = 'engine-space';
  */
 async function engineSpace() {
   const t0 = performance.now();
-  let space = null, from = 'built';
+  let space = null, from = 'built', pairs;
   try {
     const cached = await idb.get(SPACE_KEY);
     if (cached) space = BetterfyPersist.reviveSpace(cached, LIB);
-    if (space) from = 'cache';
+    if (space) { from = 'cache'; pairs = cached.pairs; }
   } catch { /* a cache that cannot be read is the same situation as no cache */ }
 
   if (!space) {
-    await yieldToPaint();
-    space = BetterfyIntrinsic.buildSpace(LIB, { isMirror: isMirrorPlaylist });
-    try { await idb.set(SPACE_KEY, BetterfyPersist.serialiseSpace(space, LIB)); }
+    // Built in the worker and posted back serialised — the same object the
+    // cache keeps — so the page only pays for reviving it, not building it.
+    let json = null;
+    try { json = (await inEngineWorker('build', { lib: LIB }))?.result ?? null; }
+    catch { json = null; }
+    space = json ? BetterfyPersist.reviveSpace(json, LIB) : null;
+    if (space) { ENG.where = 'worker'; pairs = json.pairs; }
+    else {
+      ENG.where = 'page';
+      await yieldToPaint();
+      space = BetterfyIntrinsic.buildSpace(LIB, { isMirror: isMirrorPlaylist });
+      json = null;
+    }
+    try { await idb.set(SPACE_KEY, json ?? BetterfyPersist.serialiseSpace(space, LIB)); }
     catch { /* nowhere to remember it is not a reason to refuse to use it */ }
   }
-  return { space, from, ms: Math.round(performance.now() - t0) };
+  // `pairs` is undefined when nothing worked it out yet, which tells the caller
+  // to; null is a real answer ("it failed"), and is not asked again.
+  return { space, from, pairs, ms: Math.round(performance.now() - t0) };
 }
 
 /** Learn the account, then show what this engine would do with the same tracks
@@ -4509,7 +4563,7 @@ const engineAnalyse = guard(async () => {
   ENG.status = 'working'; ENG.err = null; render();
   try {
     await engineLoad();
-    const { space, from, ms } = await engineSpace();
+    const { space, from, ms, pairs } = await engineSpace();
     Object.assign(ENG, { space, from, ms });
     ENG.rung = BetterfyColdStart.rungOf(LIB, space);
 
@@ -4540,8 +4594,11 @@ const engineAnalyse = guard(async () => {
       onlyTheirs: rows.filter(r => r.theirs && !r.mine).length,
       shapeOnly: rows.filter(r => r.shapeOnly).length };
 
-    try { ENG.pairs = (BetterfyReports.bucketPairs(space) ?? []).slice(0, 6); }
-    catch { ENG.pairs = null; }
+    if (pairs !== undefined) ENG.pairs = pairs;
+    else {
+      try { ENG.pairs = (BetterfyReports.bucketPairs(space) ?? []).slice(0, 6); }
+      catch { ENG.pairs = null; }
+    }
 
     ENG.status = 'ready';
   } catch (e) {
@@ -4565,19 +4622,77 @@ const engineAnalyse = guard(async () => {
 const engineValidate = guard(async () => {
   ENG.valRunning = true; ENG.val = null; render();
   try {
-    await engineLoad();
-    await yieldToPaint();
-    const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist };
+    const tags = TAGS && Object.keys(TAGS).length ? TAGS : null;
     const t0 = performance.now();
-    const mine = BetterfyValidate.placementAccuracy(LIB, common);
-    await yieldToPaint();
-    const base = TAGS && Object.keys(TAGS).length
-      ? BetterfyBaseline.baselineAccuracy(LIB, TAGS, common) : null;
-    ENG.val = { mine, base, ms: Math.round(performance.now() - t0) };
+    let done = null;
+    try { done = await inEngineWorker('validate', { lib: LIB, tags, opts: { folds: 5, limit: VALIDATE_N } }); }
+    catch { done = null; }
+    if (done?.result?.mine) {
+      ENG.val = { ...done.result, ms: Math.round(performance.now() - t0), where: 'worker' };
+    } else {
+      // No worker, or it failed: the original main-thread path, same answer.
+      await engineLoad();
+      await yieldToPaint();
+      const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist };
+      const mine = BetterfyValidate.placementAccuracy(LIB, common);
+      await yieldToPaint();
+      const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
+      ENG.val = { mine, base, ms: Math.round(performance.now() - t0), where: 'page' };
+    }
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }
   ENG.valRunning = false; render();
+});
+
+/** Whether long engine work will run off the main thread. */
+const engineInBackground = () => typeof Worker === 'function' && ENGINE_WORKER !== false;
+
+/** The playlists the engine understands least: offered in its top three least
+ *  often for tracks that really are in them. Five or more tracks, so one odd
+ *  record cannot put a playlist on the list by itself. */
+function weakBuckets(v, n = 5) {
+  const names = new Map((LIB?.playlists ?? []).map(p => [p.id, p.name]));
+  return (v?.mine?.playlists ?? [])
+    .filter(b => b.n >= 5 && b.inTop3 != null)
+    .slice(0, n)                       // already sorted weakest first
+    .map(b => ({ ...b, name: names.get(b.id) ?? b.id }));
+}
+
+/**
+ * The score as plain text, to paste into a message.
+ *
+ * Deliberately carries no track or artist names — only counts, rates and the
+ * names of the user's own weakest playlists — so pasting it somewhere shares
+ * how the engine did, not what the library holds beyond that.
+ */
+function engineSummary() {
+  const v = ENG.val, r = ENG.rung;
+  if (!v || v.error) return '';
+  const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
+  const lines = [
+    `Betterfy engine score — build __BUILD__`,
+    `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
+    r ? `Rung: ${r.name} — ${r.reason}` : null,
+    r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
+    `This engine: top-1 ${pc(v.mine.top1)}, top-3 ${pc(v.mine.top3)} (${v.mine.scored} tracks)`,
+    v.base ? `Today's engine: top-1 ${pc(v.base.top1)}, top-3 ${pc(v.base.top3)}${v.base.noAnswer ? `, no tags for ${v.base.noAnswer}` : ''}`
+           : `Today's engine: not scored (no tag data loaded)`,
+    v.mine.declined ? `Declined: ${v.mine.declined}, of which would have been right: ${v.mine.declinedWouldHaveBeenRight ?? 0}` : null,
+    weakBuckets(v).length ? `Weakest: ${weakBuckets(v).map(b => `${b.name} ${pc(b.inTop3)} of ${b.n}`).join('; ')}` : null,
+    ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
+    `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
+const engineCopy = guard(async () => {
+  const text = engineSummary();
+  if (!text) return;
+  try { await navigator.clipboard.writeText(text); return toast('Copied — paste it wherever you like.'); }
+  catch { /* no clipboard permission: offer the share sheet, then a manual copy */ }
+  try { if (navigator.share) { await navigator.share({ text }); return; } } catch { return; }
+  prompt('Copy this:', text);
 });
 
 /** Forget the learned space, so the next analysis rebuilds from the library. */
@@ -4612,8 +4727,9 @@ function vEngine() {
   if (ENG.status === 'working') return `${head}
     <div class="card">
       <h2 style="margin:0 0 12px; font-size:19px">Working…</h2>
-      <p>Working out what your playlists mean. On a big library this holds the page up for a moment —
-        it is doing the arithmetic for every pair of artists you file together, and it only happens once.</p>
+      <p>Working out what your playlists mean — the arithmetic for every pair of artists you file together.
+        ${engineInBackground() ? 'It runs in the background' : 'On a big library this holds the page up for a moment'},
+        and it only happens once.</p>
     </div>`;
 
   if (ENG.status === 'error') return `${head}
@@ -4732,15 +4848,24 @@ function vEngine() {
       verdict === 'ahead' ? 'Ahead.' : verdict === 'behind' ? 'Behind.' : 'Level.'}</b> ${
       verdict === 'ahead' ? 'On your library, reading nothing but your own filing beats reading the tag table.'
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
-      : 'There is nothing to choose between them on your library.'}</p>` : ''}` : ''}
+      : 'There is nothing to choose between them on your library.'}</p>` : ''}
+    ${weakBuckets(v).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+      <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
+        Low here means the engine has no real idea what that playlist is for.</p>
+      <div class="facts" style="margin-top:10px">${weakBuckets(v).map(b =>
+        `<div><span>${esc(b.name)} <span class="sub">· ${b.n} tracks</span></span><b class="mono">${p(b.inTop3)}</b></div>`).join('')}
+      </div>` : ''}` : ''}
     <div class="rowbtns" style="margin-top:18px">
       <button class="b ${v ? '' : 'go'}" data-eng="validate" ${ENG.valRunning ? 'disabled' : ''}>${
         ENG.valRunning ? 'Scoring…' : v ? 'Run it again' : 'Score both engines'}</button>
+      ${v && !v.error && !ENG.valRunning ? `<button class="b" data-eng="copy">Copy results</button>` : ''}
     </div>
     ${ENG.valRunning ? `<p class="why" style="margin-top:12px">Learning your library from scratch ten times over —
-      five folds, two engines. On a big library that is most of a minute, and the page will freeze in bursts
-      while it happens. Capping the tracks scored does not make it quicker: the rebuilds are the cost,
-      and there are ten of them either way.</p>` : ''}
+      five folds, two engines. ${engineInBackground()
+        ? 'It runs in the background, so the app stays usable — just leave this screen open until it finishes.'
+        : 'On a big library that can take a while, and the page will freeze in bursts while it happens.'}
+      Capping the tracks scored does not make it quicker: the rebuilds are the cost, and there are ten of
+      them either way.</p>` : ''}
   </div>`;
 
   const pairCard = ENG.pairs?.length ? `<div class="card">
@@ -4858,6 +4983,7 @@ document.addEventListener('click', guard(async e => {
   if (eng) {
     if (eng.dataset.eng === 'go') return engineAnalyse();
     if (eng.dataset.eng === 'validate') return engineValidate();
+    if (eng.dataset.eng === 'copy') return engineCopy();
     if (eng.dataset.eng === 'reset') return engineReset();
     return;
   }
