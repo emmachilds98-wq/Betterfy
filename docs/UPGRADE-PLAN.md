@@ -2,7 +2,8 @@
 
 Written 2026-10-31 from a review of `main`, the three open draft PRs and
 every plan in `docs/`. Facts marked *checked* were verified in this review,
-not copied from an earlier doc.
+not copied from an earlier doc. **Updated the same day:** #43 and #44 are
+merged, and the engine now runs in the background (§4).
 
 ---
 
@@ -10,10 +11,11 @@ not copied from an earlier doc.
 
 | # | You | Time | Why it matters |
 |---|---|---|---|
-| 1 | **Merge PR #43** (the account-native engine) | 2 min | Puts the Engine screen on the live site. It files nothing, so it can't move any music |
-| 2 | On the device your library is synced on: **More → Engine → Score both engines**, then send me the numbers (a screenshot is fine) | ~3 min | This is the one number that decides what gets built next (§2) |
-| 3 | Say **yes/no to PR #41** (keyless iTunes + MusicBrainz tags) | 1 min | I'll make it mergeable after #43. You merge it, or tell me to |
+| 1 | ~~Merge PR #43~~ | — | **Done**: merged and live |
+| 2 | On the device your library is synced on: **More → Engine → Learn my library**, then **Score both engines**, then **Copy results** and paste it to me | ~3 min | This is the one number that decides what gets built next (§2). It can only come from your library: your library lives on your device, and nothing here can read it |
+| 3 | Say **yes/no to PR #41** (keyless iTunes + MusicBrainz tags) | 1 min | I'll make it mergeable. You merge it, or tell me to |
 | 4 | Answer the **three Release Radar questions** (§5), or say "use your defaults" | 1 min | The only thing blocking that build |
+| 5 | Say **yes/no to filing into collaborative playlists** (§4) | 1 min | It adds new places the app can suggest, so it's your call |
 
 Nothing else needs you. No new keys, no Spotify dashboard changes, no Firebase
 changes. Every step below that isn't on this list is mine.
@@ -65,20 +67,19 @@ whichever engine the made-up data happens to suit. So it needs you, once.
 
 ### Your steps
 
-1. **Merge #43.** On GitHub, open the PR, press **Ready for review**, then
-   **Merge pull request**. (Or tell me "merge 43".)
-2. Wait about ten minutes for GitHub Pages, then open Betterfy and press
-   **⬇ Check for updates**. Take the update if it offers one.
-3. Use the device where your library is already synced, so it doesn't spend
+1. Open Betterfy and press **⬇ Check for updates**. Take the update if it
+   offers one.
+2. Use the device where your library is already synced, so it doesn't spend
    minutes re-reading Spotify.
-4. **More → Engine.** The top of the screen shows which *rung* it's on (how
-   much of your library is filed to learn from). Then press
-   **Score both engines**.
-5. **Leave the screen alone for up to a minute.** It freezes while it works,
-   which is a known limit, and moving it off the main thread is on my list.
-   Then it shows both engines' scores and which one won.
-6. **Send me a screenshot**, or the numbers: both engines' *top-1* and
-   *top-3*, the rung, and any playlists it lists as weak.
+3. **More → Engine → Learn my library.** A few seconds. The top card then
+   shows which *rung* it's on (how much of your library is filed to learn
+   from).
+4. Scroll to *Is it actually any better?* and press **Score both engines**.
+   It runs in the background now, so the page stays usable. Just leave the
+   screen open until it finishes.
+5. Press **Copy results** and paste it to me. The summary holds rates,
+   counts and the names of the playlists it understands least. It holds no
+   track or artist names.
 
 If you have a computer with the repo checked out, `npm run validate:placement`
 gives the same comparison from the command line. That's optional; the phone is
@@ -125,19 +126,32 @@ and push. Then you merge it, or tell me to.
 
 In rough order of value:
 
-1. **Engine in a Web Worker** (§2). Removes the 1–4 s freeze and the
-   minute-long freeze while scoring.
-2. **Collaborative playlists.** Read playlists you can edit but don't own,
-   so you can file into them. Needs no new scopes: `playlist-read-collaborative`
-   is already requested.
-3. **Duplicates past 60.** Page the list instead of cutting it off.
-4. **Misfile speed.** Index the liked songs once instead of searching them
-   per track (`misfile.mjs:84`).
-5. **Sync tag corrections and axis overrides across devices.** Feedback
-   already syncs (`FIREBASE.md`). These two still live on one device. The
-   pattern exists and the Firestore free plan covers the size.
+**Done (same day):**
 
-None of these changes what the app suggests, so none needs the gate.
+- **Engine in a Web Worker.** Measured in Chromium against the live build,
+  with a 250-playlist, 21,000-entry test library: the longest freeze while
+  scoring went from **6.2 s to 0.06 s**, and while learning from **1.7 s to
+  0.35 s**. Tests hold the background and on-page paths to identical
+  answers, and the page falls back to the old path if a worker can't start.
+- **Copy results**, and a list of the playlists the engine understands
+  least, on the score card.
+- **Every Tidy list reaches the end.** Repeats stopped at 60, Cross-filed
+  and Misfiles at 80. A test library with 1,578 cross-filed tracks showed 60
+  with no way to the rest. They now show a page at a time with **Show more**.
+- **Misfile speed.** `misfile.mjs` indexes liked songs once.
+
+**Still to do:**
+
+- **Sync tag corrections and axis overrides across devices.** Feedback
+  already syncs (`FIREBASE.md`). These two still live on one device. The
+  pattern exists and the Firestore free plan covers the size. Needs nothing
+  from you.
+- **Collaborative playlists: your call.** Playlists you can edit but don't
+  own are never read, so you can't file into them. Reading them needs no new
+  permission (`playlist-read-collaborative` is already requested), but it
+  *adds new destinations*, so it changes what the app suggests. An earlier
+  version of this list said it didn't, which was wrong. Say yes and I'll add
+  it, with a switch to leave any of them out.
 
 ---
 
@@ -202,9 +216,10 @@ learned space as well as evidence for v3.
 ## Order of work
 
 ```
-you: merge #43 ──► you: Score both engines ──► me: phase 6 (if it wins)
-                                           └─► me: re-plan + audio (if it loses)
-me:  Worker, small fixes (§4) ─────────── any time
+done: merge #43, Worker, Tidy paging
+you: Learn + Score + Copy results ──► me: phase 6 (if it wins)
+                                  └─► me: re-plan + audio (if it loses)
+me:  corrections/overrides sync (§4) ─── any time
 me:  #41 rebased ──► you: merge #41
 you: 3 Radar answers ──► me: Radar phases 0–5
 ```
