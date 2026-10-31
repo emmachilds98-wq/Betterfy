@@ -55,9 +55,12 @@ export function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = n
   const allowed = targets ?? new Set((lib?.playlists ?? [])
     .filter(p => p?.id && !mirror(p)).map(p => p.id));
 
+  // Only tracks filed in an allowed playlist are scored, exactly as
+  // `placementAccuracy` does with the same `targets`, so the two engines are
+  // asked the same question about the same tracks.
   const byId = new Map();
   for (const p of lib?.playlists ?? []) {
-    if (!p?.id || mirror(p)) continue;
+    if (!p?.id || mirror(p) || !allowed.has(p.id)) continue;
     for (const t of p.tracks ?? []) if (t?.id && !byId.has(t.id)) byId.set(t.id, t);
   }
 
@@ -82,7 +85,8 @@ export function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = n
     const { profiles, idf } = buildProfiles(held, tags, allowed, axisOf);
 
     for (const id of members) {
-      const want = truth.get(id);
+      const all = truth.get(id);
+      const want = all ? new Set([...all].filter(pid => allowed.has(pid))) : null;
       if (!want?.size) continue;
       scored++;
       const ranked = rank(byId.get(id), tags, profiles, idf, { top: 3 });

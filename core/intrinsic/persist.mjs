@@ -113,6 +113,10 @@ export function serialiseSpace(space, lib) {
       },
     }]),
     version: space.version,
+    // Which playlists it was allowed to file into. A space built for one set
+    // of genre playlists answers the wrong question for another, so a caller
+    // compares this before trusting a cached space.
+    targets: space.targets ?? null,
   };
 }
 
@@ -172,6 +176,7 @@ export function reviveSpace(json, lib) {
         },
       }])),
       version: json.version ?? null,
+      targets: json.targets ?? null,
       revived: true,
     };
   } catch {

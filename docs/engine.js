@@ -2224,7 +2224,12 @@ const THRESHOLDS = {
  * flags are generated from one person's library — an account-native engine
  * cannot start by reading a file that assumes whose account it is.
  */
-function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null } = {}) {
+function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targets = null } = {}) {
+  // `targets`, when given, is the set of playlists the listener files into —
+  // their genre playlists. Only those become destinations. Every playlist still
+  // feeds the artist graph below: a "Sunday" playlist is not somewhere to file
+  // a track, but it is still evidence of which artists belong together.
+  const allowed = targets ? new Set(targets) : null;
   // Absent by default and absent for almost everybody. `bonusIndex(null)` is an
   // empty lookup, which makes every bonus score null, which makes the whole
   // layer free.
@@ -2242,6 +2247,7 @@ function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null } = {}
   const destinations = new Map();
   for (const p of lib?.playlists ?? []) {
     if (!p?.id || isStructuralMirror(p)) continue;
+    if (allowed && !allowed.has(p.id)) continue;
     const tracks = (p.tracks ?? []).filter(t => t?.id && !skip?.has(t.id));
     if (tracks.length < MIN_DEFINITION_TRACKS) continue;
     // Counts rather than only membership, because an explanation has to be able
@@ -2302,7 +2308,8 @@ function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null } = {}
     }
   }
 
-  return { graph, registrants, destinations, baseline, bonus, version: SPACE_VERSION };
+  return { graph, registrants, destinations, baseline, bonus, version: SPACE_VERSION,
+           targets: allowed ? [...allowed].sort() : null };
 }
 
 /**
@@ -2979,6 +2986,10 @@ function serialiseSpace(space, lib) {
       },
     }]),
     version: space.version,
+    // Which playlists it was allowed to file into. A space built for one set
+    // of genre playlists answers the wrong question for another, so a caller
+    // compares this before trusting a cached space.
+    targets: space.targets ?? null,
   };
 }
 
@@ -3038,6 +3049,7 @@ function reviveSpace(json, lib) {
         },
       }])),
       version: json.version ?? null,
+      targets: json.targets ?? null,
       revived: true,
     };
   } catch {
@@ -3158,14 +3170,18 @@ const rate = (n, d) => (d > 0 ? +(n / d).toFixed(4) : null);
  */
 function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
-                                         weights = null } = {}) {
+                                         weights = null, targets = null } = {}) {
   const truth = truthOf(lib, { isMirror });
   const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
+  // With `targets`, the question is "which of my genre playlists", so only
+  // tracks filed in one are scored and only those playlists count as right.
+  const allowed = targets ? new Set(targets) : null;
 
   // One row per distinct filed track, with the track object to score.
   const byId = new Map();
   for (const p of lib?.playlists ?? []) {
     if (!p?.id || mirror(p)) continue;
+    if (allowed && !allowed.has(p.id)) continue;
     for (const t of p.tracks ?? []) if (t?.id && !byId.has(t.id)) byId.set(t.id, t);
   }
 
@@ -3187,11 +3203,12 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
   for (const [, members] of groups) {
     const skip = leaky ? null : new Set(members);
-    const space = buildSpace(lib, { skip, isMirror });
+    const space = buildSpace(lib, { skip, isMirror, targets: allowed });
 
     for (const id of members) {
       const track = byId.get(id);
-      const want = truth.get(id);
+      const all = truth.get(id);
+      const want = allowed && all ? new Set([...all].filter(pid => allowed.has(pid))) : all;
       if (!want?.size) continue;
 
       const out = placements(track, space, { limit: 3, ...(weights ? { weights } : {}) });
@@ -3342,9 +3359,12 @@ function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = null,
   const allowed = targets ?? new Set((lib?.playlists ?? [])
     .filter(p => p?.id && !mirror(p)).map(p => p.id));
 
+  // Only tracks filed in an allowed playlist are scored, exactly as
+  // `placementAccuracy` does with the same `targets`, so the two engines are
+  // asked the same question about the same tracks.
   const byId = new Map();
   for (const p of lib?.playlists ?? []) {
-    if (!p?.id || mirror(p)) continue;
+    if (!p?.id || mirror(p) || !allowed.has(p.id)) continue;
     for (const t of p.tracks ?? []) if (t?.id && !byId.has(t.id)) byId.set(t.id, t);
   }
 
@@ -3369,7 +3389,8 @@ function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = null,
     const { profiles, idf } = buildProfiles(held, tags, allowed, axisOf);
 
     for (const id of members) {
-      const want = truth.get(id);
+      const all = truth.get(id);
+      const want = all ? new Set([...all].filter(pid => allowed.has(pid))) : null;
       if (!want?.size) continue;
       scored++;
       const ranked = rank(byId.get(id), tags, profiles, idf, { top: 3 });

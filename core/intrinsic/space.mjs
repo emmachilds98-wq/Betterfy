@@ -82,7 +82,12 @@ export const THRESHOLDS = {
  * flags are generated from one person's library — an account-native engine
  * cannot start by reading a file that assumes whose account it is.
  */
-export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null } = {}) {
+export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targets = null } = {}) {
+  // `targets`, when given, is the set of playlists the listener files into —
+  // their genre playlists. Only those become destinations. Every playlist still
+  // feeds the artist graph below: a "Sunday" playlist is not somewhere to file
+  // a track, but it is still evidence of which artists belong together.
+  const allowed = targets ? new Set(targets) : null;
   // Absent by default and absent for almost everybody. `bonusIndex(null)` is an
   // empty lookup, which makes every bonus score null, which makes the whole
   // layer free.
@@ -100,6 +105,7 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
   const destinations = new Map();
   for (const p of lib?.playlists ?? []) {
     if (!p?.id || isStructuralMirror(p)) continue;
+    if (allowed && !allowed.has(p.id)) continue;
     const tracks = (p.tracks ?? []).filter(t => t?.id && !skip?.has(t.id));
     if (tracks.length < MIN_DEFINITION_TRACKS) continue;
     // Counts rather than only membership, because an explanation has to be able
@@ -160,7 +166,8 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
     }
   }
 
-  return { graph, registrants, destinations, baseline, bonus, version: SPACE_VERSION };
+  return { graph, registrants, destinations, baseline, bonus, version: SPACE_VERSION,
+           targets: allowed ? [...allowed].sort() : null };
 }
 
 /**

@@ -2114,6 +2114,30 @@ const OCCASION = /\b(part(y|ies)|pre ?drinks|pregame|workout|gym|running|yoga|st
 const MOOD  = /\b(chill|chilled|mellow|wasted|vibin|vibes|groove|sleepy|late night|hi energy|high energy|early night|relax(ing|ed)?|calm|hype|sad|happy|angry|moody|dreamy|melanchol(y|ic)|euphoric|uplifting|upbeat|feel ?good|emotional|romantic|sexy|co[sz]y|soft|energetic)\b/i;
 const MIN_FOR_TARGET = 12;
 
+/* A genre playlist is one whose name names a genre.
+ *
+ * Every playlist with nothing else in its name used to be *defaulted* to
+ * genre, and every genre playlist took filing suggestions — so "Sunday",
+ * "Bangers", "Car" and "Favourites" were all treated as genre buckets, and
+ * both engines filed tracks into them. Asking for positive evidence instead
+ * means a playlist only receives suggestions when its name says what genre it
+ * is, against the same vocabulary the engine reads tags with (baked in at
+ * build time from core/ontology). Anything else lands under "Needs your
+ * input" on the Playlists screen, where one tap makes it a genre playlist. */
+const GENRE_WORDS = new Set('__GENRE_WORDS__');
+const NO_SIGNAL = 'no genre in the name — not filed into until you say so';
+
+/** The genre a playlist's name names, longest phrase first, or null. */
+function genreInName(name) {
+  const words = canonTag(String(name ?? '')).replace(/[^\p{L}\p{N} ]+/gu, ' ').split(' ').filter(Boolean);
+  for (let len = Math.min(4, words.length); len >= 1; len--)
+    for (let i = 0; i + len <= words.length; i++) {
+      const phrase = canonTag(words.slice(i, i + len).join(' '));
+      if (GENRE_WORDS.has(phrase)) return phrase;
+    }
+  return null;
+}
+
 /* An event playlist named for the club gives itself away; one named for who
  * you were with that night looks like any other playlist, and falls through to
  * genre — where it competes for suggestions with the real genre buckets and
@@ -2220,16 +2244,22 @@ function classify(lib, tags = null, now = Date.now()) {
     : null;
   for (const p of lib.playlists) {
     const n = p.name;
+    // A named genre beats a mood word — "Happy Hardcore", "Dark Techno", "Deep
+    // House" are genre playlists — but not an inbox, an event, a set, a decade
+    // or an occasion, which say what the playlist is *for*.
+    const genre = genreInName(n);
     const named = INBOX.test(n) ? 'inbox' : EVENT.test(n) ? 'event' : DJSET.test(n) ? 'djset'
-                : ERA.test(n) ? 'era' : OCCASION.test(n) ? 'context' : MOOD.test(n) ? 'mood' : null;
+                : ERA.test(n) ? 'era' : OCCASION.test(n) ? 'context'
+                : genre ? null : MOOD.test(n) ? 'mood' : null;
     let axis = named ?? 'genre';
-    let why = named ? 'from the name' : 'no signal in the name — treated as genre';
+    let why = named ? 'from the name' : genre ? `“${genre}” in the name` : NO_SIGNAL;
 
     // Built in one sitting and never touched again: a night out, a party, a
     // trip. This is the one content signal that holds up, and it needs no
-    // vocabulary — so it works for a library nobody has tuned for.
+    // vocabulary — so it works for a library nobody has tuned for. A playlist
+    // named for a genre is a genre playlist however quickly it was built.
     const shape = addedShape(p, now);
-    if (shape && shape.spanDays <= EVENT_SPAN_DAYS && shape.sinceDays >= EVENT_SETTLED_DAYS) {
+    if (!genre && !named && shape && shape.spanDays <= EVENT_SPAN_DAYS && shape.sinceDays >= EVENT_SETTLED_DAYS) {
       axis = 'event';
       why = `built in ${shape.spanDays < 1 ? 'a day' : Math.round(shape.spanDays) + ' days'}, nothing added since`;
     }
@@ -2238,7 +2268,7 @@ function classify(lib, tags = null, now = Date.now()) {
     // nothing in the dates, ask what the tracks are actually tagged with. It
     // never overrules a name or a date, so a playlist that was already being
     // read correctly cannot start being read differently.
-    if (!named && why.startsWith('no signal')) {
+    if (!named && why === NO_SIGNAL) {
       const guess = facetAxis(p, tags, base);
       if (guess) { axis = guess.axis; why = guess.why; }
     }
@@ -2250,7 +2280,10 @@ function classify(lib, tags = null, now = Date.now()) {
                   // placement trivially "confirmed" by their own copy sitting
                   // in it. Never a filing destination, same as it's never
                   // read into the tag baseline above.
-                  target: (axis === 'genre' || axis === 'mood') && p.tracks.length >= MIN_FOR_TARGET && !isMirrorPlaylist(p) };
+                  // Only a playlist that names its genre takes suggestions by
+                  // default. Mood playlists and unnamed ones can still be
+                  // switched on, one tap each, on the Playlists screen.
+                  target: axis === 'genre' && !!genre && p.tracks.length >= MIN_FOR_TARGET && !isMirrorPlaylist(p) };
   }
   const saved = JSON.parse(LS.getItem('bf_axes') || '{}');
   for (const [id, v] of Object.entries(saved)) if (cfg[id]) Object.assign(cfg[id], v, { why:'set by you' });
@@ -3610,7 +3643,6 @@ function vHistory() {
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
 // The exact fallback classify() writes when a playlist's name gives it no clue
 // at all — a silent guess, not a real signal, and the one worth confirming.
-const NO_SIGNAL = 'no signal in the name — treated as genre';
 
 /* The facet mix of every playlist, for the Playlists screen. A full pass over
  * every track, so it is cached against the library it was built from rather
@@ -3663,18 +3695,19 @@ function vLists() {
   const { mix: mixes, base } = playlistMixes();
   const row = p => axisRowHTML(p, mixes.get(p.id));
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
-  // Everything classify() could not read from the name or the dates — it
-  // defaulted to genre rather than ask, which is exactly the silent guess
-  // that later shows up as a wrong Tidy suggestion. Worth confirming once.
+  // Everything classify() could not read from the name or the dates. Nothing
+  // is filed into these until the listener says which ones are genre
+  // playlists — the silent "treat it as genre" default used to be exactly what
+  // turned "Sunday" or "Favourites" into a wrong suggestion.
   const undecided = rows.filter(p => p.why === NO_SIGNAL);
   return `<h1>Playlists</h1>
-    <p class="lede">How each of your playlists is treated. Only <b>genre</b> and <b>mood</b> playlists receive suggestions, and a track is only ever compared against playlists on its own axis — so a metal track in a mood playlist is not flagged as misfiled. Each guess says what it was made from — the name, the dates the tracks were filed, or what kind of tags they carry — and correcting one is remembered on this device.</p>
+    <p class="lede">How each of your playlists is treated. Tracks are only filed into playlists marked <b>receives suggestions</b> — by default, the ones whose name says what genre they are (“Donk”, “D&amp;B Rollers”, “Tech House”). Tick any other playlist to file into it too. A track is only ever compared against playlists on its own axis — so a metal track in a mood playlist is not flagged as misfiled. Each guess says what it was made from — the name, the dates the tracks were filed, or what kind of tags they carry — and correcting one is remembered on this device.</p>
     <p class="lede" style="margin-top:-8px">The percentages on each row are what its tracks are tagged with. Only the <b>genre</b> share tells a genre playlist apart from another one; the mood, decade and occasion tags are what a <b>mood</b> or <b>context</b> playlist is really held together by, and each axis now weighs them accordingly instead of pouring the lot into one pile.</p>
 
     ${undecided.length ? `<h2>Needs your input</h2>
-    <p class="lede">${undecided.length} playlist${undecided.length===1?' has':'s have'} nothing to go on — no clue in ${undecided.length===1?'its':'their'} name,
-      nothing in the dates, and no strong lean in the tags either — so ${undecided.length===1?'it was':'they were'} defaulted to <b>genre</b>
-      rather than asked about. That default is exactly what turns a mood or context playlist into noisy Tidy suggestions — set the real one below.</p>
+    <p class="lede">${undecided.length} playlist${undecided.length===1?' has':'s have'} no genre in ${undecided.length===1?'its':'their'} name,
+      nothing in the dates, and no strong lean in the tags either — so nothing is filed into ${undecided.length===1?'it':'them'} until you say so.
+      If one of these <i>is</i> a genre playlist, tick <b>receives suggestions</b> (or set it to genre); otherwise set what it really is.</p>
     <div class="rows">${undecided.map(row).join('')}</div>` : ''}
 
     <h2>Genre data</h2>
@@ -4511,6 +4544,10 @@ function engineWorker() {
     return ENGINE_WORKER = w;
   } catch { return ENGINE_WORKER = false; }
 }
+/** The playlists both engines may file into: the ones taking suggestions on the
+ *  Playlists screen. Sorted, so it can be compared with a cached space's. */
+const engineTargets = () => Object.entries(CFG ?? {}).filter(([, v]) => v.target).map(([id]) => id).sort();
+
 /** Run one engine op in the worker. Null when there is no worker to run it in. */
 function inEngineWorker(op, payload) {
   const w = engineWorker();
@@ -4518,7 +4555,8 @@ function inEngineWorker(op, payload) {
   return new Promise((ok, bad) => {
     const id = ++ENGINE_SEQ;
     ENGINE_WAIT.set(id, { ok, bad });
-    w.postMessage({ id, op, mirrorIds: LIB.playlists.filter(isMirrorPlaylist).map(p => p.id), ...payload });
+    w.postMessage({ id, op, mirrorIds: LIB.playlists.filter(isMirrorPlaylist).map(p => p.id),
+                    targets: engineTargets(), ...payload });
   });
 }
 
@@ -4548,9 +4586,12 @@ const SPACE_KEY = 'engine-space';
 async function engineSpace() {
   const t0 = performance.now();
   let space = null, from = 'built', pairs;
+  const targets = engineTargets();
   try {
     const cached = await idb.get(SPACE_KEY);
     if (cached) space = BetterfyPersist.reviveSpace(cached, LIB);
+    // Built for a different set of genre playlists: right library, wrong question.
+    if (space && JSON.stringify(space.targets ?? null) !== JSON.stringify(targets)) space = null;
     if (space) { from = 'cache'; pairs = cached.pairs; }
   } catch { /* a cache that cannot be read is the same situation as no cache */ }
 
@@ -4565,7 +4606,7 @@ async function engineSpace() {
     else {
       ENG.where = 'page';
       await yieldToPaint();
-      space = BetterfyIntrinsic.buildSpace(LIB, { isMirror: isMirrorPlaylist });
+      space = BetterfyIntrinsic.buildSpace(LIB, { isMirror: isMirrorPlaylist, targets });
       json = null;
     }
     try { await idb.set(SPACE_KEY, json ?? BetterfyPersist.serialiseSpace(space, LIB)); }
@@ -4652,7 +4693,7 @@ const engineValidate = guard(async () => {
       // No worker, or it failed: the original main-thread path, same answer.
       await engineLoad();
       await yieldToPaint();
-      const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist };
+      const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()) };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
@@ -4731,6 +4772,16 @@ function vEngine() {
     <p class="lede">A second opinion that reads nothing but your own playlists. No key, no other website,
       no genre list written by somebody else — just who you file together, on which label, in what shape
       of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do.</p>`;
+
+  // Nothing to file into is a setting, not a result: say where it is fixed.
+  if (!engineTargets().length) return `${head}
+    <div class="card">
+      <h2 style="margin:0 0 12px; font-size:19px">No genre playlists yet</h2>
+      <p>Both engines only file into playlists marked <b>receives suggestions</b>, and none of yours are — none of
+        their names say what genre they are. Mark the ones that are genre playlists on the Playlists screen, then
+        come back.</p>
+      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-eng="lists">Open Playlists</button></div>
+    </div>`;
 
   if (ENG.status === 'idle') return `${head}
     <div class="card">
@@ -5003,6 +5054,7 @@ document.addEventListener('click', guard(async e => {
     if (eng.dataset.eng === 'go') return engineAnalyse();
     if (eng.dataset.eng === 'validate') return engineValidate();
     if (eng.dataset.eng === 'copy') return engineCopy();
+    if (eng.dataset.eng === 'lists') return go('lists');
     if (eng.dataset.eng === 'reset') return engineReset();
     return;
   }
@@ -5176,7 +5228,10 @@ document.addEventListener('change', guard(async e => {
       // done here too so a playlist just fixed drops out of "Needs your input"
       // immediately rather than waiting for the next full sync.
       CFG[id].why = 'set by you';
-      if (!['genre','mood'].includes(ax.value)) CFG[id].target = false;
+      // Saying a playlist is a genre playlist is saying "file into it", so it
+      // starts taking suggestions; any axis that takes none stops.
+      if (ax.value === 'genre') CFG[id].target = CFG[id].tracks >= MIN_FOR_TARGET && !isMirrorPlaylist({ id, name: CFG[id].name });
+      else if (ax.value !== 'mood') CFG[id].target = false;
     } else {
       CFG[id].target = tg.checked;
     }

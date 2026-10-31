@@ -105,14 +105,18 @@ const rate = (n, d) => (d > 0 ? +(n / d).toFixed(4) : null);
  */
 export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
-                                         weights = null } = {}) {
+                                         weights = null, targets = null } = {}) {
   const truth = truthOf(lib, { isMirror });
   const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
+  // With `targets`, the question is "which of my genre playlists", so only
+  // tracks filed in one are scored and only those playlists count as right.
+  const allowed = targets ? new Set(targets) : null;
 
   // One row per distinct filed track, with the track object to score.
   const byId = new Map();
   for (const p of lib?.playlists ?? []) {
     if (!p?.id || mirror(p)) continue;
+    if (allowed && !allowed.has(p.id)) continue;
     for (const t of p.tracks ?? []) if (t?.id && !byId.has(t.id)) byId.set(t.id, t);
   }
 
@@ -134,11 +138,12 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
   for (const [, members] of groups) {
     const skip = leaky ? null : new Set(members);
-    const space = buildSpace(lib, { skip, isMirror });
+    const space = buildSpace(lib, { skip, isMirror, targets: allowed });
 
     for (const id of members) {
       const track = byId.get(id);
-      const want = truth.get(id);
+      const all = truth.get(id);
+      const want = allowed && all ? new Set([...all].filter(pid => allowed.has(pid))) : all;
       if (!want?.size) continue;
 
       const out = placements(track, space, { limit: 3, ...(weights ? { weights } : {}) });
