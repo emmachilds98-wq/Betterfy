@@ -61,9 +61,11 @@ function library() {
 }
 
 /** The app shell the screen reads, and nothing it does not. */
-function screen({ lib = library(), backlog = null, tags = {}, durable = true } = {}) {
+function screen({ lib = library(), backlog = null, tags = {}, durable = true,
+                  worker = null, isMirror = () => false } = {}) {
   const store = new Map();
   const sandbox = {
+    ...(worker ? { Worker: worker } : {}),
     console, performance, setTimeout, clearTimeout,
     requestAnimationFrame: fn => setTimeout(fn, 0),
     LIB: lib,
@@ -76,7 +78,7 @@ function screen({ lib = library(), backlog = null, tags = {}, durable = true } =
     ] },
     esc: s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])),
     guard: fn => fn,
-    isMirrorPlaylist: () => false,
+    isMirrorPlaylist: isMirror,
     renders: 0,
     toasts: [],
     idb: {
@@ -273,4 +275,146 @@ test('the screen is reachable: it is in the view table, the order and the bar', 
   assert.match(PAGE, /SECONDARY = new Set\(\[[^\]]*'engine'/, 'it belongs behind More, not on the bar');
   assert.match(PAGE, /data-v="engine"/, 'and a nav button must exist');
   assert.match(PAGE, /\[data-v="engine"\]\{--vc:/, 'with a screen colour, like every other view');
+});
+
+
+/* ---------- the worker ----------
+ *
+ * Learning and scoring run in docs/engine-worker.js when the browser has workers,
+ * because on a big library they froze the page for seconds (6.2s measured for
+ * scoring a 250-playlist library on the live build). These run the real generated
+ * worker in its own sandbox, joined to the page's by structuredClone'd messages
+ * the way a browser joins them, and hold it to one rule: the worker path must
+ * give exactly the answer the main-thread path gives.
+ */
+
+const WORKER_SRC = readFileSync(new URL('../docs/engine-worker.js', import.meta.url), 'utf8');
+
+/** A Worker built from the real worker file. `log` records every op it ran. */
+function fakeWorker({ log = [], failToStart = false } = {}) {
+  return class {
+    constructor(url) {
+      if (failToStart) throw new Error('workers are blocked here');
+      this.url = url;
+      const self = {};
+      const ctx = { self, performance, Set, Map, Object, Math, JSON, Date, Error, String, Number, Array,
+        importScripts: () => vm.runInContext(ENGINE, ctx) };
+      self.postMessage = msg => setTimeout(() => this.onmessage?.({ data: structuredClone(msg) }), 0);
+      vm.createContext(ctx);
+      vm.runInContext(WORKER_SRC, ctx);
+      this.self = self;
+    }
+    postMessage(msg) {
+      log.push(msg.op);
+      const data = structuredClone(msg);
+      setTimeout(() => this.self.onmessage({ data }), 0);
+    }
+    terminate() {}
+  };
+}
+
+const strip = v => { const { ms, where, ...rest } = v; return JSON.parse(JSON.stringify(rest)); };
+
+test('the generated worker loads the engine from the same build as the page', () => {
+  const page = PAGE.match(/engine-worker\.js\?v=([\w-]+)/)?.[1];
+  const engine = WORKER_SRC.match(/importScripts\('engine\.js\?v=([\w-]+)'\)/)?.[1];
+  assert.ok(page && engine, 'both stamps should be present — rebuild with npm run build:web');
+  assert.equal(engine, page, 'a worker importing a different engine build would answer for another version');
+});
+
+test('learning in the worker gives exactly what learning on the page gives', async () => {
+  const log = [];
+  const viaWorker = screen({ worker: fakeWorker({ log }) });
+  await vm.runInContext('engineAnalyse()', viaWorker);
+  assert.equal(vm.runInContext('ENG.status', viaWorker), 'ready', vm.runInContext('ENG.err ?? ""', viaWorker));
+  assert.equal(vm.runInContext('ENG.where', viaWorker), 'worker');
+  assert.deepEqual(log, ['build']);
+
+  const onPage = screen();
+  await vm.runInContext('engineAnalyse()', onPage);
+  assert.equal(vm.runInContext('ENG.where', onPage), 'page');
+
+  for (const k of ['rung', 'shadow', 'pairs'])
+    assert.deepEqual(JSON.parse(vm.runInContext(`JSON.stringify(ENG.${k})`, viaWorker)),
+                     JSON.parse(vm.runInContext(`JSON.stringify(ENG.${k})`, onPage)), `${k} differs`);
+});
+
+test('scoring in the worker gives exactly what scoring on the page gives', async () => {
+  const tags = { 'ar-House0': { tags: [['house', 100]] }, 'ar-Amb0': { tags: [['ambient', 100]] } };
+  const viaWorker = screen({ tags, worker: fakeWorker() });
+  await vm.runInContext('engineValidate()', viaWorker);
+  const w = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', viaWorker));
+  assert.ok(!w.error, w.error);
+  assert.equal(w.where, 'worker');
+
+  const onPage = screen({ tags });
+  await vm.runInContext('engineValidate()', onPage);
+  const p = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', onPage));
+  assert.equal(p.where, 'page');
+  assert.ok(w.mine.scored > 0 && w.base, 'both engines should actually have been scored');
+  assert.deepEqual(strip(w), strip(p));
+});
+
+test('a mirror playlist is excluded in the worker exactly as on the page', async () => {
+  // The worker cannot call isMirrorPlaylist — it reads the page's settings — so
+  // the page sends the ids. Get that wrong and a record-of-everything playlist
+  // floods the worker's graph while the page's stays clean.
+  const lib = library();
+  lib.playlists.push({ id: 'p-all', name: 'All Songs',
+    tracks: lib.playlists.flatMap(p => p.tracks).concat(lib.liked) });
+  const isMirror = p => p?.id === 'p-all';
+  const viaWorker = screen({ lib, isMirror, worker: fakeWorker() });
+  const onPage = screen({ lib, isMirror });
+  await vm.runInContext('engineValidate()', viaWorker);
+  await vm.runInContext('engineValidate()', onPage);
+  const w = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', viaWorker));
+  const p = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', onPage));
+  assert.equal(w.where, 'worker');
+  assert.deepEqual(strip(w), strip(p));
+  assert.ok(!w.mine.playlists.some(b => b.id === 'p-all'), 'the mirror must never be a destination');
+});
+
+test('a worker that cannot start falls back to the page, with the same answer', async () => {
+  const s = screen({ worker: fakeWorker({ failToStart: true }) });
+  await vm.runInContext('engineAnalyse()', s);
+  assert.equal(vm.runInContext('ENG.status', s), 'ready');
+  assert.equal(vm.runInContext('ENG.where', s), 'page');
+  await vm.runInContext('engineValidate()', s);
+  assert.equal(vm.runInContext('ENG.val.where', s), 'page');
+  assert.ok(!vm.runInContext('ENG.val.error', s));
+  // And the screen must stop promising it runs in the background.
+  vm.runInContext('ENG.valRunning = true', s);
+  assert.match(vm.runInContext('vEngine()', s), /page will freeze/);
+});
+
+test('the score can be copied as plain text that names no track or artist', async () => {
+  const tags = { 'ar-House0': { tags: [['house', 100]] } };
+  const s = screen({ tags, worker: fakeWorker() });
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  const html = vm.runInContext('vEngine()', s);
+  assert.match(html, /data-eng="copy"/);
+
+  const text = vm.runInContext('engineSummary()', s);
+  assert.match(text, /This engine: top-1 \d+%, top-3 \d+%/);
+  assert.match(text, /Today's engine: top-1 \d+%/);
+  assert.match(text, /Rung: /);
+  assert.match(text, /in the background/);
+  assert.ok(!/undefined|NaN|\[object Object\]/.test(text), text);
+  // Counts and the listener's own playlist names, never what is in them.
+  assert.ok(!/Track \w+|House0|Amb0/.test(text), 'the summary must not leak track or artist names');
+});
+
+test('the weakest playlists are named, weakest first, and only with enough tracks to judge', async () => {
+  const s = screen({ worker: fakeWorker() });
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  const weak = JSON.parse(vm.runInContext('JSON.stringify(weakBuckets(ENG.val))', s));
+  assert.ok(weak.length > 0, 'the fixture has three playlists with enough tracks');
+  for (const b of weak) {
+    assert.ok(b.n >= 5);
+    assert.ok(['Tech House', 'Ambient', 'Late Night'].includes(b.name), `named by the listener's own name: ${b.name}`);
+  }
+  for (let i = 1; i < weak.length; i++) assert.ok(weak[i - 1].inTop3 <= weak[i].inTop3);
+  assert.match(vm.runInContext('vEngine()', s), /Playlists it understands least/);
 });
