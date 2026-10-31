@@ -5,6 +5,8 @@
 // Only the public client ID is embedded — the client secret is never read here.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { bundleModules } from './bundler.mjs';
+import { GENRES } from './core/ontology/genres.mjs';
+import { canonTag } from './profile.mjs';
 
 // argv, then .env, then whatever the last build baked into docs/index.html.
 // That last fallback is the important one: .env is gitignored, so a rebuild in
@@ -144,7 +146,7 @@ self.onmessage = function (e) {
     if (m.op === 'build') {
       // Posted back serialised: the page revives it far faster than it could
       // build it, and the same object is what gets cached in IndexedDB.
-      var space = BetterfyIntrinsic.buildSpace(m.lib, { isMirror: isMirror });
+      var space = BetterfyIntrinsic.buildSpace(m.lib, { isMirror: isMirror, targets: m.targets || null });
       result = BetterfyPersist.serialiseSpace(space, m.lib);
       // The "can't tell apart" report costs more than the build on a big
       // library (2.9s for 250 playlists) and needs nothing but the space, so it
@@ -152,7 +154,8 @@ self.onmessage = function (e) {
       try { result.pairs = (BetterfyReports.bucketPairs(space) || []).slice(0, 6); }
       catch (e) { result.pairs = null; }
     } else if (m.op === 'validate') {
-      var common = Object.assign({}, m.opts, { isMirror: isMirror });
+      var common = Object.assign({}, m.opts, { isMirror: isMirror,
+                                                targets: m.targets ? new Set(m.targets) : null });
       result = { mine: BetterfyValidate.placementAccuracy(m.lib, common),
                  base: m.tags ? BetterfyBaseline.baselineAccuracy(m.lib, m.tags, common) : null };
     } else {
@@ -165,7 +168,23 @@ self.onmessage = function (e) {
 };
 `;
 
+/* Every name the ontology knows a genre by, in the one spelling profile.mjs
+ * counts tags under, baked into the page so classify() can tell a genre
+ * playlist ("Donk", "D&B Rollers", "Tech House") from one that only happens to
+ * have no other signal in its name. ~4 KB, and it means one vocabulary for the
+ * whole app rather than a second list to keep in step with the ontology.
+ *
+ * A few single words are left out because, alone as a playlist name, they are
+ * as likely to be a place or an ordinary word as a genre ("Goa", "Detroit",
+ * "Lounge"). Their longer forms still count: "detroit techno", "liquid dnb". */
+const NOT_ALONE = new Set(['goa', 'detroit', 'lounge', 'niche', 'liquid', 'neuro', 'score', 'fusion', 'wonky']);
+const GENRE_WORDS = [...new Set(Object.entries(GENRES)
+  .flatMap(([slug, g]) => [slug.replace(/-/g, ' '), ...(g.aliases ?? [])])
+  .map(canonTag)
+  .filter(w => w && !NOT_ALONE.has(w)))].sort();
+
 const html = readFileSync('docs/app.template.html', 'utf8')
+  .replace("'__GENRE_WORDS__'", JSON.stringify(GENRE_WORDS))
   .replace('__CORE__', core)
   .replace('__CLIENT_ID__', CLIENT_ID)
   .replace('__TAGS_PROJECT__', TAGS_PROJECT)

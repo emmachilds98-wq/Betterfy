@@ -37,6 +37,9 @@ over anything that needs a file most users won't have.
   accurate and worth reading before a big change.
 - `docs/UPGRADE-PLAN.md` — the current order of work across the open PRs
   and plans, and what is waiting on the owner. Start here.
+- `docs/GENRE-RECOGNITION-PLAN.md` — why filing went into non-genre
+  playlists, what was fixed, and the ranked signals for genres crowd tags
+  can't see (donk: 4 artists tagged in the whole shipped table).
 - `docs/AUDIO-ANALYSIS-PLAN.md` — v3 phase 5: track-level genre/mood/
   similarity from 30-second Deezer previews (looked up by the ISRC Spotify
   already gives) run through an ONNX model in the listener's browser. Plan

@@ -32,7 +32,7 @@
 // unknown candidate, so a gap here costs recall, never data.
 
 /** Bumped whenever a genre is added, removed, re-parented or re-aliased. */
-export const GENRE_ONTOLOGY_VERSION = '3.0.0';
+export const GENRE_ONTOLOGY_VERSION = '3.1.0';
 
 /** @typedef {{parent: string|null, aliases?: string[], related?: string[], contradicts?: string[]}} GenreNode */
 
@@ -53,6 +53,15 @@ export const GENRES = {
   'garage-house': { parent: 'house', aliases: ['soulful house', 'vocal house', 'new jersey sound'] },
   'minimal-house': { parent: 'house', aliases: ['micro house', 'microhouse'], related: ['minimal-techno'] },
   'bass-house': { parent: 'house', aliases: ['basshouse'], related: ['uk-bass'] },
+  // 3.1.0: the UK hard-dance family. Before this, "scouse house", "bouncy
+  // house" and "donk house" all fell through to plain House, so a donk playlist
+  // and a deep-house playlist looked like neighbours. Donk sits under hard house
+  // because that is where it came from and where its records are pressed.
+  'hard-house': { parent: 'house', aliases: ['hardhouse', 'uk hard house', 'nrg', 'hard nrg', 'pumping house'],
+                  related: ['hard-trance', 'hardstyle'] },
+  'donk': { parent: 'hard-house', aliases: ['donk house', 'scouse house', 'bouncy house', 'uk bounce', 'bounce house',
+                                            'scouse bounce', 'hard bounce', 'donk music'],
+            related: ['hardcore', 'makina'] },
 
   'techno': { parent: 'electronic', aliases: ['techno music'] },
   'minimal-techno': { parent: 'techno', aliases: ['minimal', 'minimal tech'] },
@@ -72,7 +81,8 @@ export const GENRES = {
   'uk-breaks': { parent: 'breakbeat', aliases: ['nu skool breaks', 'nu-skool breaks', 'progressive breaks'] },
   'breakcore': { parent: 'breakbeat', aliases: [], related: ['jungle', 'hardcore'] },
 
-  'drum-and-bass': { parent: 'electronic', aliases: ['drum n bass', 'drum & bass', 'drum and bass', 'dnb', 'd&b', 'dandb', 'drumandbass', 'drum bass'] },
+  'drum-and-bass': { parent: 'electronic', aliases: ['drum n bass', 'drum & bass', 'drum and bass', 'dnb', 'd&b', 'dandb', 'drumandbass', 'drum bass',
+                                                    "drum'n'bass", 'drum n\' bass', 'rollers', 'dnb rollers', 'deep dnb', 'dancefloor drum and bass'] },
   'jungle': { parent: 'drum-and-bass', aliases: ['ragga jungle', 'jungle techno'] },
   'liquid-dnb': { parent: 'drum-and-bass', aliases: ['liquid', 'liquid funk', 'liquid drum and bass', 'liquid dnb'] },
   'neurofunk': { parent: 'drum-and-bass', aliases: ['neuro', 'techstep'] },
@@ -83,6 +93,7 @@ export const GENRES = {
   'bassline': { parent: 'uk-garage', aliases: ['niche', 'bassline house'] },
   'future-garage': { parent: 'uk-garage', aliases: ['futuregarage'], related: ['dubstep'] },
   'grime': { parent: 'uk-garage', aliases: [], related: ['hip-hop', 'uk-bass'] },
+  'uk-funky': { parent: 'uk-garage', aliases: ['uk funky house'], related: ['afro-house'] },
 
   'dubstep': { parent: 'electronic', aliases: ['dub step'] },
   'brostep': { parent: 'dubstep', aliases: ['riddim'] },
@@ -91,6 +102,14 @@ export const GENRES = {
   'hardcore': { parent: 'electronic', aliases: ['hardcore techno', 'happy hardcore', 'rave', 'oldskool', 'old skool rave'] },
   'gabber': { parent: 'hardcore', aliases: ['gabba'] },
   'hardstyle': { parent: 'hardcore', aliases: ['hardjump', 'rawstyle'] },
+  'jumpstyle': { parent: 'hardstyle', aliases: [] },
+  'makina': { parent: 'hardcore', aliases: [], related: ['hard-trance', 'donk'] },
+
+  // 3.1.0: club styles with no home before, so a playlist named for them was
+  // read as a word the engine did not know rather than as a genre.
+  'jersey-club': { parent: 'electronic', aliases: ['jerseyclub', 'baltimore club', 'bmore club'], related: ['footwork'] },
+  'footwork': { parent: 'electronic', aliases: ['juke', 'chicago juke', 'footwork juke'], related: ['jungle'] },
+  'gqom': { parent: 'electronic', aliases: [], related: ['afro-house'] },
 
   'ambient': { parent: 'electronic', aliases: ['ambient music', 'drone', 'dark ambient'] },
   // 'chillout' deliberately absent: profile.mjs reads it as a mood, and it
@@ -108,6 +127,8 @@ export const GENRES = {
   'uk-hip-hop': { parent: 'hip-hop', aliases: ['uk rap', 'british hip hop'] },
   'drill': { parent: 'hip-hop', aliases: ['uk drill'] },
   'trap': { parent: 'hip-hop', aliases: ['trap music'] },
+  'phonk': { parent: 'hip-hop', aliases: ['drift phonk', 'brazilian phonk', 'memphis phonk', 'cloud phonk', 'chill phonk',
+                                          'phonk house', 'real phonk'], related: ['trap'] },
   'boom-bap': { parent: 'hip-hop', aliases: ['boombap', 'golden age hip hop', 'east coast hip hop'] },
   'conscious-hip-hop': { parent: 'hip-hop', aliases: ['alternative hip hop', 'underground hip hop', 'jazz rap'] },
   'g-funk': { parent: 'hip-hop', aliases: ['west coast hip hop', 'gangsta rap'] },

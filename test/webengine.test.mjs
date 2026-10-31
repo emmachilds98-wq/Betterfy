@@ -62,7 +62,7 @@ function library() {
 
 /** The app shell the screen reads, and nothing it does not. */
 function screen({ lib = library(), backlog = null, tags = {}, durable = true,
-                  worker = null, isMirror = () => false } = {}) {
+                  worker = null, isMirror = () => false, cfg = null } = {}) {
   const store = new Map();
   const sandbox = {
     ...(worker ? { Worker: worker } : {}),
@@ -70,6 +70,9 @@ function screen({ lib = library(), backlog = null, tags = {}, durable = true,
     requestAnimationFrame: fn => setTimeout(fn, 0),
     LIB: lib,
     TAGS: tags,
+    // Which playlists take suggestions: every playlist in the fixture, unless a
+    // test says otherwise. Both engines file only into these.
+    CFG: cfg ?? Object.fromEntries(lib.playlists.map(p => [p.id, { name: p.name, target: !isMirror(p) }])),
     // What the File screen is currently offering, which is the thing the shadow
     // comparison is a comparison *against*.
     R: { backlog: backlog ?? [
@@ -417,4 +420,41 @@ test('the weakest playlists are named, weakest first, and only with enough track
   }
   for (let i = 1; i < weak.length; i++) assert.ok(weak[i - 1].inTop3 <= weak[i].inTop3);
   assert.match(vm.runInContext('vEngine()', s), /Playlists it understands least/);
+});
+
+
+/* ---------- genre playlists only ---------- */
+
+test('the engine files only into playlists that take suggestions', async () => {
+  // "Late Night" is not a genre playlist: it must never be offered, by either
+  // path, and the score must not count it as a right answer.
+  const lib = library();
+  const cfg = { 'p-house': { target: true }, 'p-amb': { target: true }, 'p-late': { target: false } };
+  for (const worker of [null, fakeWorker()]) {
+    const s = screen({ lib, cfg, ...(worker ? { worker } : {}) });
+    await vm.runInContext('engineAnalyse()', s);
+    const dest = JSON.parse(vm.runInContext('JSON.stringify([...ENG.space.destinations.keys()].sort())', s));
+    assert.deepEqual(dest, ['p-amb', 'p-house'], worker ? 'worker' : 'page');
+    await vm.runInContext('engineValidate()', s);
+    const v = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', s));
+    assert.ok(!v.mine.playlists.some(b => b.id === 'p-late'), 'never scored as a destination');
+  }
+});
+
+test('changing which playlists take suggestions rebuilds rather than reusing the cache', async () => {
+  const lib = library();
+  const s = screen({ lib });
+  await vm.runInContext('engineAnalyse()', s);
+  vm.runInContext('CFG["p-late"].target = false; ENG.status = "idle"; ENG.space = null;', s);
+  await vm.runInContext('engineAnalyse()', s);
+  assert.equal(vm.runInContext('ENG.from', s), 'built', 'a space built for other playlists answers another question');
+  assert.ok(!vm.runInContext('ENG.space.destinations.has("p-late")', s));
+});
+
+test('with no genre playlists the screen says where to mark some, instead of an empty result', () => {
+  const lib = library();
+  const s = screen({ lib, cfg: Object.fromEntries(lib.playlists.map(p => [p.id, { target: false }])) });
+  const html = vm.runInContext('vEngine()', s);
+  assert.match(html, /No genre playlists yet/);
+  assert.match(html, /data-eng="lists"/);
 });

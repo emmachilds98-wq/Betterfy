@@ -68,7 +68,8 @@ test('a name that says what it is still decides', () => {
   assert.equal(of('c').axis, 'era');
   assert.equal(of('d').axis, 'djset');
   assert.equal(of('e').axis, 'genre');
-  assert.equal(of('e').why, 'no signal in the name — treated as genre');
+  assert.equal(of('e').why, '“jungle” in the name');
+  assert.equal(of('e').target, true);
 });
 
 test('a genre name that contains a mood word as a substring is not mood', () => {
@@ -115,7 +116,7 @@ test('a genre bucket that grew over years is left alone', () => {
 test('a playlist somebody built last week is not an event yet', () => {
   // The whole false-positive case: a new listener drops fifty tracks into a
   // brand-new genre playlist in one sitting. Same shape as a night out.
-  const of = axisOf([pl('x', 'new bangers', { span: 1, since: 5 })]);
+  const of = axisOf([pl('x', 'new jungle', { span: 1, since: 5 })]);
   assert.equal(of('x').axis, 'genre', 'still growing, so still a bucket');
   assert.equal(of('x').target, true);
 });
@@ -265,7 +266,8 @@ test('the mood lean has to be a lean, not the whole library being tagged that wa
   const of = axisOf(lists, {}, tags);
   for (const id of ['a', 'b', 'c']) {
     assert.equal(of(id).axis, 'genre', id);
-    assert.equal(of(id).why, 'no signal in the name — treated as genre', id);
+    assert.equal(of(id).why, 'no genre in the name — not filed into until you say so', id);
+    assert.equal(of(id).target, false, `${id} has no genre in its name, so nothing is filed into it`);
   }
 });
 
@@ -300,4 +302,62 @@ test('your own correction still beats every one of them', () => {
   const of = axisOf(lists, { m: { axis: 'genre', target: true } }, tags);
   assert.equal(of('m').axis, 'genre');
   assert.equal(of('m').why, 'set by you');
+});
+
+
+/* ---------- only genre playlists are filed into ----------
+ *
+ * Every playlist with nothing else in its name used to default to genre and
+ * take suggestions, so both engines filed tracks into "Sunday", "Bangers" and
+ * "Favourites". A playlist now takes suggestions only when its name names a
+ * genre, from the same vocabulary the engine reads tags with.
+ */
+
+test('a playlist takes suggestions only when its name names a genre', () => {
+  const of = axisOf([
+    pl('a', 'Donk'), pl('b', 'D&B Rollers'), pl('c', 'DnB'), pl('d', 'Tech House'),
+    pl('e', 'UKG'), pl('f', 'jersey club'), pl('g', 'Sunday'), pl('h', 'Bangers'),
+    pl('i', 'Favourites'), pl('j', 'Car'),
+  ]);
+  for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) assert.equal(of(id).target, true, `${id} names a genre`);
+  for (const id of ['g', 'h', 'i', 'j']) {
+    assert.equal(of(id).target, false, `${id} names no genre, so nothing is filed into it`);
+    assert.equal(of(id).why, 'no genre in the name — not filed into until you say so');
+  }
+  assert.match(of('b').why, /^“drum and bass/, 'D&B resolves to the one spelling (longest phrase wins)');
+});
+
+test('a named genre beats a mood word, but not an occasion or a decade', () => {
+  const of = axisOf([pl('a', 'Happy Hardcore'), pl('b', 'Dark Techno'), pl('c', 'Deep House'),
+                     pl('d', 'Gym Techno'), pl('e', '90s House'), pl('f', 'chill vibes')]);
+  for (const id of ['a', 'b', 'c']) assert.deepEqual([of(id).axis, of(id).target], ['genre', true], id);
+  assert.equal(of('d').axis, 'context', 'a gym playlist is for the gym');
+  assert.equal(of('e').axis, 'era');
+  assert.equal(of('f').axis, 'mood');
+});
+
+test('a mood playlist no longer takes suggestions by default', () => {
+  const of = axisOf([pl('m', 'mellow emma')]);
+  assert.equal(of('m').axis, 'mood');
+  assert.equal(of('m').target, false);
+});
+
+test('a playlist named for a genre is a genre playlist however fast it was built', () => {
+  const of = axisOf([pl('x', 'Donk', { span: 1, since: 300 })]);
+  assert.deepEqual([of('x').axis, of('x').target], ['genre', true]);
+});
+
+test('a place on its own is not a genre, its longer form is', () => {
+  const of = axisOf([pl('a', 'Goa'), pl('b', 'Detroit'), pl('c', 'Detroit Techno'), pl('d', 'Liquid DnB')]);
+  assert.equal(of('a').target, false);
+  assert.equal(of('b').target, false);
+  assert.equal(of('c').target, true);
+  assert.equal(of('d').target, true);
+});
+
+test('what the listener set still wins', () => {
+  const of = axisOf([pl('g', 'Sunday'), pl('d', 'Donk')],
+                    { g: { axis: 'genre', target: true }, d: { axis: 'context', target: false } });
+  assert.equal(of('g').target, true);
+  assert.equal(of('d').target, false);
 });
