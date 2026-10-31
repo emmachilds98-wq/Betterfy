@@ -18,7 +18,7 @@ record of *why*.
 | 2 — evidence engine | done |
 | 3 — ontology | done, versioned and validated |
 | 4 — track classification | done |
-| 5 — audio analysis | **not started** — the provider interface exists, no provider does |
+| 5 — audio analysis | **not started** — the provider interface exists, no provider does; planned in `AUDIO-ANALYSIS-PLAN.md` |
 | 6 — playlist intelligence | done: fingerprints, clustering, name semantics, multi-dimensional type |
 | 7 — playlist relationships | done: duplicate / view / event-copy / subset / variant / related, and §19 collections |
 | 8 — personal layer | done: append-only correction log, v1 feedback import, listening relevance, §35 review queue |
