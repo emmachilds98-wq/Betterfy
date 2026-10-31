@@ -25,6 +25,11 @@ do it. I won't merge anything without you asking.
 
 ---
 
+> **Superseded in part (later on 2026-10-31):** the owner's first engine run
+> showed both engines filing into non-genre playlists and missing scene
+> genres. The diagnosis, the fixes, and the next steps for genre recognition
+> are in `docs/GENRE-RECOGNITION-PLAN.md`; its §5 is now the order of work.
+
 ## 1. Where things stand
 
 **Live (`main` → GitHub Pages):** the v1 app. It files, tags, finds
