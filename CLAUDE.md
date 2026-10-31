@@ -35,6 +35,8 @@ over anything that needs a file most users won't have.
 - `V2-PLAN.md` — the longer-range architecture review; still mostly
   aspirational, but the "what v1 actually is" and defects sections are
   accurate and worth reading before a big change.
+- `docs/UPGRADE-PLAN.md` — the current order of work across the open PRs
+  and plans, and what is waiting on the owner. Start here.
 - `docs/AUDIO-ANALYSIS-PLAN.md` — v3 phase 5: track-level genre/mood/
   similarity from 30-second Deezer previews (looked up by the ISRC Spotify
   already gives) run through an ONNX model in the listener's browser. Plan

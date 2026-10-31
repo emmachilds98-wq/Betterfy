@@ -1,6 +1,11 @@
 # Audio analysis — plan for v3 phase 5
 
-Status: **plan only, nothing built.** Every external fact below was checked
+Status: **plan only, nothing built.** Sequenced **after** the account-native
+engine's gate (PR #43, see `docs/UPGRADE-PLAN.md` §2): if that engine loses on
+tracks by artists the account has never filed, audio is the fix; if it wins,
+audio is a refinement. It also builds on #43: its `bundler.mjs` is how the
+audio worker reaches the page, and the embedding should enter #43's learned
+space as one more signal, not only v3 evidence. Every external fact below was checked
 from a live request on 2026-10-31 unless it says otherwise. Where a number is
 a guess, it says that too.
 
