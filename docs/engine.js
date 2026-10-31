@@ -378,7 +378,7 @@ __mod["core/ontology/genres.mjs"] = (function () {
 // unknown candidate, so a gap here costs recall, never data.
 
 /** Bumped whenever a genre is added, removed, re-parented or re-aliased. */
-const GENRE_ONTOLOGY_VERSION = '3.0.0';
+const GENRE_ONTOLOGY_VERSION = '3.1.0';
 
 /** @typedef {{parent: string|null, aliases?: string[], related?: string[], contradicts?: string[]}} GenreNode */
 
@@ -399,6 +399,15 @@ const GENRES = {
   'garage-house': { parent: 'house', aliases: ['soulful house', 'vocal house', 'new jersey sound'] },
   'minimal-house': { parent: 'house', aliases: ['micro house', 'microhouse'], related: ['minimal-techno'] },
   'bass-house': { parent: 'house', aliases: ['basshouse'], related: ['uk-bass'] },
+  // 3.1.0: the UK hard-dance family. Before this, "scouse house", "bouncy
+  // house" and "donk house" all fell through to plain House, so a donk playlist
+  // and a deep-house playlist looked like neighbours. Donk sits under hard house
+  // because that is where it came from and where its records are pressed.
+  'hard-house': { parent: 'house', aliases: ['hardhouse', 'uk hard house', 'nrg', 'hard nrg', 'pumping house'],
+                  related: ['hard-trance', 'hardstyle'] },
+  'donk': { parent: 'hard-house', aliases: ['donk house', 'scouse house', 'bouncy house', 'uk bounce', 'bounce house',
+                                            'scouse bounce', 'hard bounce', 'donk music'],
+            related: ['hardcore', 'makina'] },
 
   'techno': { parent: 'electronic', aliases: ['techno music'] },
   'minimal-techno': { parent: 'techno', aliases: ['minimal', 'minimal tech'] },
@@ -418,7 +427,8 @@ const GENRES = {
   'uk-breaks': { parent: 'breakbeat', aliases: ['nu skool breaks', 'nu-skool breaks', 'progressive breaks'] },
   'breakcore': { parent: 'breakbeat', aliases: [], related: ['jungle', 'hardcore'] },
 
-  'drum-and-bass': { parent: 'electronic', aliases: ['drum n bass', 'drum & bass', 'drum and bass', 'dnb', 'd&b', 'dandb', 'drumandbass', 'drum bass'] },
+  'drum-and-bass': { parent: 'electronic', aliases: ['drum n bass', 'drum & bass', 'drum and bass', 'dnb', 'd&b', 'dandb', 'drumandbass', 'drum bass',
+                                                    "drum'n'bass", 'drum n\' bass', 'rollers', 'dnb rollers', 'deep dnb', 'dancefloor drum and bass'] },
   'jungle': { parent: 'drum-and-bass', aliases: ['ragga jungle', 'jungle techno'] },
   'liquid-dnb': { parent: 'drum-and-bass', aliases: ['liquid', 'liquid funk', 'liquid drum and bass', 'liquid dnb'] },
   'neurofunk': { parent: 'drum-and-bass', aliases: ['neuro', 'techstep'] },
@@ -429,6 +439,7 @@ const GENRES = {
   'bassline': { parent: 'uk-garage', aliases: ['niche', 'bassline house'] },
   'future-garage': { parent: 'uk-garage', aliases: ['futuregarage'], related: ['dubstep'] },
   'grime': { parent: 'uk-garage', aliases: [], related: ['hip-hop', 'uk-bass'] },
+  'uk-funky': { parent: 'uk-garage', aliases: ['uk funky house'], related: ['afro-house'] },
 
   'dubstep': { parent: 'electronic', aliases: ['dub step'] },
   'brostep': { parent: 'dubstep', aliases: ['riddim'] },
@@ -437,6 +448,14 @@ const GENRES = {
   'hardcore': { parent: 'electronic', aliases: ['hardcore techno', 'happy hardcore', 'rave', 'oldskool', 'old skool rave'] },
   'gabber': { parent: 'hardcore', aliases: ['gabba'] },
   'hardstyle': { parent: 'hardcore', aliases: ['hardjump', 'rawstyle'] },
+  'jumpstyle': { parent: 'hardstyle', aliases: [] },
+  'makina': { parent: 'hardcore', aliases: [], related: ['hard-trance', 'donk'] },
+
+  // 3.1.0: club styles with no home before, so a playlist named for them was
+  // read as a word the engine did not know rather than as a genre.
+  'jersey-club': { parent: 'electronic', aliases: ['jerseyclub', 'baltimore club', 'bmore club'], related: ['footwork'] },
+  'footwork': { parent: 'electronic', aliases: ['juke', 'chicago juke', 'footwork juke'], related: ['jungle'] },
+  'gqom': { parent: 'electronic', aliases: [], related: ['afro-house'] },
 
   'ambient': { parent: 'electronic', aliases: ['ambient music', 'drone', 'dark ambient'] },
   // 'chillout' deliberately absent: profile.mjs reads it as a mood, and it
@@ -454,6 +473,8 @@ const GENRES = {
   'uk-hip-hop': { parent: 'hip-hop', aliases: ['uk rap', 'british hip hop'] },
   'drill': { parent: 'hip-hop', aliases: ['uk drill'] },
   'trap': { parent: 'hip-hop', aliases: ['trap music'] },
+  'phonk': { parent: 'hip-hop', aliases: ['drift phonk', 'brazilian phonk', 'memphis phonk', 'cloud phonk', 'chill phonk',
+                                          'phonk house', 'real phonk'], related: ['trap'] },
   'boom-bap': { parent: 'hip-hop', aliases: ['boombap', 'golden age hip hop', 'east coast hip hop'] },
   'conscious-hip-hop': { parent: 'hip-hop', aliases: ['alternative hip hop', 'underground hip hop', 'jazz rap'] },
   'g-funk': { parent: 'hip-hop', aliases: ['west coast hip hop', 'gangsta rap'] },
@@ -561,6 +582,60 @@ const usableTag = t => t.length > 1 && t.length < 32 && !JUNK.test(t);
 
 /** Lowercase, and treat "feel-good" / "old_school" as "feel good" / "old school". */
 const normTag = t => String(t).toLowerCase().trim().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ');
+
+/* ---------- one genre, one spelling ----------
+ *
+ * Every tag used to be its own dimension, letter for letter. Over the shipped
+ * table that split drum and bass across "drum and bass" (341 artists), "dnb"
+ * (116), "drum n bass" (50), "drum & bass", "drum'n'bass" and more — and an
+ * artist tagged "dnb" and one tagged "drum and bass" shared *nothing* in the
+ * vector space, so the engine could not see that they were the same music.
+ * UK garage was in six pieces the same way.
+ *
+ * This merges spellings, and deliberately nothing broader. "rave" is not
+ * folded into hardcore and "trip hop" is not folded into downtempo: those are
+ * distinctions this engine is good at, and erasing them would trade a real
+ * signal for a tidy one. The one considered exception is the donk family —
+ * donk, scouse house, bouncy house, UK bounce — which are names for one scene,
+ * each far too rare on its own (one to three artists apiece in the shipped
+ * table) to survive the tag gate below, and together enough to.
+ */
+const TAG_SPELLINGS = new Map(Object.entries({
+  // drum and bass
+  'drum n bass': 'drum and bass', 'drumnbass': 'drum and bass', 'drum bass': 'drum and bass',
+  'drumandbass': 'drum and bass', 'dandb': 'drum and bass',
+  'liquid funk': 'liquid drum and bass', 'liquid dnb': 'liquid drum and bass',
+  'jumpup': 'jump up',
+  // UK garage
+  'uk garage': 'uk garage', '2step': '2 step', 'two step': '2 step', '2 step garage': '2 step',
+  'uk funky house': 'uk funky',
+  // the donk family — see above
+  'donk house': 'donk', 'scouse house': 'donk', 'bouncy house': 'donk', 'uk bounce': 'donk',
+  'scouse bounce': 'donk', 'hard bounce': 'donk', 'bounce house': 'donk', 'donk music': 'donk',
+  // run-together and hyphen-dropped forms
+  'hardtechno': 'hard techno', 'hardtrance': 'hard trance', 'hardhouse': 'hard house',
+  'uk hard house': 'hard house', 'techhouse': 'tech house', 'deephouse': 'deep house',
+  'afrohouse': 'afro house', 'dub step': 'dubstep', 'hiphop': 'hip hop', 'triphop': 'trip hop',
+  'synthpop': 'synth pop', 'lofi': 'lo fi', 'oldschool': 'old school', 'old skool': 'old school',
+  'oldskool': 'old school', 'psy trance': 'psytrance', 'psychedelic trance': 'psytrance',
+  'neotrance': 'neo trance', 'eurotrance': 'euro trance', 'rnb': 'r and b',
+}));
+
+/**
+ * The one spelling a tag is counted under. Display is untouched — artists
+ * still show the tags Last.fm gave them — this is only the key a tag is
+ * counted and compared under.
+ */
+function canonTag(t) {
+  let k = normTag(t)
+    .replace(/&/g, ' and ')
+    .replace(/\s*[\u2019']n[\u2019']?\s*/g, ' and ')     // drum'n'bass, rock'n'roll
+    .replace(/(^|\s)n(?=\s)/g, '$1and')                  // drum n bass
+    .replace(/\s+/g, ' ').trim();
+  // Abbreviations inside longer tags too: "deep dnb", "atmospheric dnb", "ukg classics".
+  k = k.replace(/\b(dnb|d and b)\b/g, 'drum and bass').replace(/\bukg\b/g, 'uk garage');
+  return TAG_SPELLINGS.get(k) ?? k;
+}
 
 // How it feels.
 const MOOD_TAGS = new Set([
@@ -742,10 +817,15 @@ function trackVec(track, tags) {
   for (const [a, i] of credited) {
     const entry = tags[a.id];
     const w = (creditWeight(i) / totalWeight) * confidenceOf(entry);
+    // Merged per artist by maximum, not sum: an artist tagged both "dnb" (60)
+    // and "drum and bass" (100) is a drum and bass artist, not one and a half.
+    const own = new Map();
     for (const [tag, count] of entry.tags) {
-      if (!usableTag(tag)) continue;
-      v.set(tag, (v.get(tag) ?? 0) + (count / 100) * w);
+      const k = canonTag(tag);
+      if (!usableTag(k)) continue;
+      own.set(k, Math.max(own.get(k) ?? 0, count));
     }
+    for (const [k, count] of own) v.set(k, (v.get(k) ?? 0) + (count / 100) * w);
   }
   return v;
 }
@@ -784,7 +864,9 @@ function tagGate(tags, min = TAG_GATE_MIN_ARTISTS) {
   const byArtists = new Map();
   for (const entry of Object.values(tags)) {
     if (!entry?.tags?.length) continue;
-    const seen = new Set(entry.tags.map(([tag]) => String(tag).toLowerCase()));
+    // Counted under one spelling, so "scouse house" on one artist and "donk" on
+    // two is a tag on three artists rather than two tags too rare to keep.
+    const seen = new Set(entry.tags.map(([tag]) => canonTag(tag)));
     for (const t of seen) byArtists.set(t, (byArtists.get(t) ?? 0) + 1);
   }
   const gate = new Set();
@@ -797,7 +879,7 @@ function gateTags(tags, gate) {
   const out = {};
   for (const [id, entry] of Object.entries(tags)) {
     if (!entry?.tags?.length) { out[id] = entry; continue; }
-    out[id] = { ...entry, tags: entry.tags.filter(([tag]) => gate.has(String(tag).toLowerCase())) };
+    out[id] = { ...entry, tags: entry.tags.filter(([tag]) => gate.has(canonTag(tag))) };
   }
   return out;
 }
@@ -1088,7 +1170,7 @@ function findDrift(lib, tags, targets, idf) {
   drift.sort((a, b) => a.similarity - b.similarity);
   return drift;
 }
-return { usableTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, topTags, findMisfiled, listeningWeights, byListening, findDrift };
+return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, topTags, findMisfiled, listeningWeights, byListening, findDrift };
 })();
 /* ---- core/ontology/facets.mjs ---- */
 __mod["core/ontology/facets.mjs"] = (function () {

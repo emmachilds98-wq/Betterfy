@@ -49,6 +49,60 @@ export const usableTag = t => t.length > 1 && t.length < 32 && !JUNK.test(t);
 /** Lowercase, and treat "feel-good" / "old_school" as "feel good" / "old school". */
 const normTag = t => String(t).toLowerCase().trim().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ');
 
+/* ---------- one genre, one spelling ----------
+ *
+ * Every tag used to be its own dimension, letter for letter. Over the shipped
+ * table that split drum and bass across "drum and bass" (341 artists), "dnb"
+ * (116), "drum n bass" (50), "drum & bass", "drum'n'bass" and more — and an
+ * artist tagged "dnb" and one tagged "drum and bass" shared *nothing* in the
+ * vector space, so the engine could not see that they were the same music.
+ * UK garage was in six pieces the same way.
+ *
+ * This merges spellings, and deliberately nothing broader. "rave" is not
+ * folded into hardcore and "trip hop" is not folded into downtempo: those are
+ * distinctions this engine is good at, and erasing them would trade a real
+ * signal for a tidy one. The one considered exception is the donk family —
+ * donk, scouse house, bouncy house, UK bounce — which are names for one scene,
+ * each far too rare on its own (one to three artists apiece in the shipped
+ * table) to survive the tag gate below, and together enough to.
+ */
+const TAG_SPELLINGS = new Map(Object.entries({
+  // drum and bass
+  'drum n bass': 'drum and bass', 'drumnbass': 'drum and bass', 'drum bass': 'drum and bass',
+  'drumandbass': 'drum and bass', 'dandb': 'drum and bass',
+  'liquid funk': 'liquid drum and bass', 'liquid dnb': 'liquid drum and bass',
+  'jumpup': 'jump up',
+  // UK garage
+  'uk garage': 'uk garage', '2step': '2 step', 'two step': '2 step', '2 step garage': '2 step',
+  'uk funky house': 'uk funky',
+  // the donk family — see above
+  'donk house': 'donk', 'scouse house': 'donk', 'bouncy house': 'donk', 'uk bounce': 'donk',
+  'scouse bounce': 'donk', 'hard bounce': 'donk', 'bounce house': 'donk', 'donk music': 'donk',
+  // run-together and hyphen-dropped forms
+  'hardtechno': 'hard techno', 'hardtrance': 'hard trance', 'hardhouse': 'hard house',
+  'uk hard house': 'hard house', 'techhouse': 'tech house', 'deephouse': 'deep house',
+  'afrohouse': 'afro house', 'dub step': 'dubstep', 'hiphop': 'hip hop', 'triphop': 'trip hop',
+  'synthpop': 'synth pop', 'lofi': 'lo fi', 'oldschool': 'old school', 'old skool': 'old school',
+  'oldskool': 'old school', 'psy trance': 'psytrance', 'psychedelic trance': 'psytrance',
+  'neotrance': 'neo trance', 'eurotrance': 'euro trance', 'rnb': 'r and b',
+}));
+
+/**
+ * The one spelling a tag is counted under. Display is untouched — artists
+ * still show the tags Last.fm gave them — this is only the key a tag is
+ * counted and compared under.
+ */
+export function canonTag(t) {
+  let k = normTag(t)
+    .replace(/&/g, ' and ')
+    .replace(/\s*[\u2019']n[\u2019']?\s*/g, ' and ')     // drum'n'bass, rock'n'roll
+    .replace(/(^|\s)n(?=\s)/g, '$1and')                  // drum n bass
+    .replace(/\s+/g, ' ').trim();
+  // Abbreviations inside longer tags too: "deep dnb", "atmospheric dnb", "ukg classics".
+  k = k.replace(/\b(dnb|d and b)\b/g, 'drum and bass').replace(/\bukg\b/g, 'uk garage');
+  return TAG_SPELLINGS.get(k) ?? k;
+}
+
 // How it feels.
 const MOOD_TAGS = new Set([
   'chill', 'chilled', 'chillout', 'chill out', 'mellow', 'laid back', 'laidback',
@@ -229,10 +283,15 @@ export function trackVec(track, tags) {
   for (const [a, i] of credited) {
     const entry = tags[a.id];
     const w = (creditWeight(i) / totalWeight) * confidenceOf(entry);
+    // Merged per artist by maximum, not sum: an artist tagged both "dnb" (60)
+    // and "drum and bass" (100) is a drum and bass artist, not one and a half.
+    const own = new Map();
     for (const [tag, count] of entry.tags) {
-      if (!usableTag(tag)) continue;
-      v.set(tag, (v.get(tag) ?? 0) + (count / 100) * w);
+      const k = canonTag(tag);
+      if (!usableTag(k)) continue;
+      own.set(k, Math.max(own.get(k) ?? 0, count));
     }
+    for (const [k, count] of own) v.set(k, (v.get(k) ?? 0) + (count / 100) * w);
   }
   return v;
 }
@@ -271,7 +330,9 @@ export function tagGate(tags, min = TAG_GATE_MIN_ARTISTS) {
   const byArtists = new Map();
   for (const entry of Object.values(tags)) {
     if (!entry?.tags?.length) continue;
-    const seen = new Set(entry.tags.map(([tag]) => String(tag).toLowerCase()));
+    // Counted under one spelling, so "scouse house" on one artist and "donk" on
+    // two is a tag on three artists rather than two tags too rare to keep.
+    const seen = new Set(entry.tags.map(([tag]) => canonTag(tag)));
     for (const t of seen) byArtists.set(t, (byArtists.get(t) ?? 0) + 1);
   }
   const gate = new Set();
@@ -284,7 +345,7 @@ export function gateTags(tags, gate) {
   const out = {};
   for (const [id, entry] of Object.entries(tags)) {
     if (!entry?.tags?.length) { out[id] = entry; continue; }
-    out[id] = { ...entry, tags: entry.tags.filter(([tag]) => gate.has(String(tag).toLowerCase())) };
+    out[id] = { ...entry, tags: entry.tags.filter(([tag]) => gate.has(canonTag(tag))) };
   }
   return out;
 }

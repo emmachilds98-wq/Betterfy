@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-10-31-1628">
+<meta name="bf-build" content="2026-10-31-1653">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -897,7 +897,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-10-31-1628</span>
+    <span class="mono">build 2026-10-31-1653</span>
   </p>
 
   <div class="feat">
@@ -994,7 +994,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-31-1628</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-31-1653</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1035,7 +1035,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-31-1628</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-31-1653</span>
   </div>
 </div>
 
@@ -1245,6 +1245,60 @@ const usableTag = t => t.length > 1 && t.length < 32 && !JUNK.test(t);
 /** Lowercase, and treat "feel-good" / "old_school" as "feel good" / "old school". */
 const normTag = t => String(t).toLowerCase().trim().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ');
 
+/* ---------- one genre, one spelling ----------
+ *
+ * Every tag used to be its own dimension, letter for letter. Over the shipped
+ * table that split drum and bass across "drum and bass" (341 artists), "dnb"
+ * (116), "drum n bass" (50), "drum & bass", "drum'n'bass" and more — and an
+ * artist tagged "dnb" and one tagged "drum and bass" shared *nothing* in the
+ * vector space, so the engine could not see that they were the same music.
+ * UK garage was in six pieces the same way.
+ *
+ * This merges spellings, and deliberately nothing broader. "rave" is not
+ * folded into hardcore and "trip hop" is not folded into downtempo: those are
+ * distinctions this engine is good at, and erasing them would trade a real
+ * signal for a tidy one. The one considered exception is the donk family —
+ * donk, scouse house, bouncy house, UK bounce — which are names for one scene,
+ * each far too rare on its own (one to three artists apiece in the shipped
+ * table) to survive the tag gate below, and together enough to.
+ */
+const TAG_SPELLINGS = new Map(Object.entries({
+  // drum and bass
+  'drum n bass': 'drum and bass', 'drumnbass': 'drum and bass', 'drum bass': 'drum and bass',
+  'drumandbass': 'drum and bass', 'dandb': 'drum and bass',
+  'liquid funk': 'liquid drum and bass', 'liquid dnb': 'liquid drum and bass',
+  'jumpup': 'jump up',
+  // UK garage
+  'uk garage': 'uk garage', '2step': '2 step', 'two step': '2 step', '2 step garage': '2 step',
+  'uk funky house': 'uk funky',
+  // the donk family — see above
+  'donk house': 'donk', 'scouse house': 'donk', 'bouncy house': 'donk', 'uk bounce': 'donk',
+  'scouse bounce': 'donk', 'hard bounce': 'donk', 'bounce house': 'donk', 'donk music': 'donk',
+  // run-together and hyphen-dropped forms
+  'hardtechno': 'hard techno', 'hardtrance': 'hard trance', 'hardhouse': 'hard house',
+  'uk hard house': 'hard house', 'techhouse': 'tech house', 'deephouse': 'deep house',
+  'afrohouse': 'afro house', 'dub step': 'dubstep', 'hiphop': 'hip hop', 'triphop': 'trip hop',
+  'synthpop': 'synth pop', 'lofi': 'lo fi', 'oldschool': 'old school', 'old skool': 'old school',
+  'oldskool': 'old school', 'psy trance': 'psytrance', 'psychedelic trance': 'psytrance',
+  'neotrance': 'neo trance', 'eurotrance': 'euro trance', 'rnb': 'r and b',
+}));
+
+/**
+ * The one spelling a tag is counted under. Display is untouched — artists
+ * still show the tags Last.fm gave them — this is only the key a tag is
+ * counted and compared under.
+ */
+function canonTag(t) {
+  let k = normTag(t)
+    .replace(/&/g, ' and ')
+    .replace(/\s*[\u2019']n[\u2019']?\s*/g, ' and ')     // drum'n'bass, rock'n'roll
+    .replace(/(^|\s)n(?=\s)/g, '$1and')                  // drum n bass
+    .replace(/\s+/g, ' ').trim();
+  // Abbreviations inside longer tags too: "deep dnb", "atmospheric dnb", "ukg classics".
+  k = k.replace(/\b(dnb|d and b)\b/g, 'drum and bass').replace(/\bukg\b/g, 'uk garage');
+  return TAG_SPELLINGS.get(k) ?? k;
+}
+
 // How it feels.
 const MOOD_TAGS = new Set([
   'chill', 'chilled', 'chillout', 'chill out', 'mellow', 'laid back', 'laidback',
@@ -1425,10 +1479,15 @@ function trackVec(track, tags) {
   for (const [a, i] of credited) {
     const entry = tags[a.id];
     const w = (creditWeight(i) / totalWeight) * confidenceOf(entry);
+    // Merged per artist by maximum, not sum: an artist tagged both "dnb" (60)
+    // and "drum and bass" (100) is a drum and bass artist, not one and a half.
+    const own = new Map();
     for (const [tag, count] of entry.tags) {
-      if (!usableTag(tag)) continue;
-      v.set(tag, (v.get(tag) ?? 0) + (count / 100) * w);
+      const k = canonTag(tag);
+      if (!usableTag(k)) continue;
+      own.set(k, Math.max(own.get(k) ?? 0, count));
     }
+    for (const [k, count] of own) v.set(k, (v.get(k) ?? 0) + (count / 100) * w);
   }
   return v;
 }
@@ -1467,7 +1526,9 @@ function tagGate(tags, min = TAG_GATE_MIN_ARTISTS) {
   const byArtists = new Map();
   for (const entry of Object.values(tags)) {
     if (!entry?.tags?.length) continue;
-    const seen = new Set(entry.tags.map(([tag]) => String(tag).toLowerCase()));
+    // Counted under one spelling, so "scouse house" on one artist and "donk" on
+    // two is a tag on three artists rather than two tags too rare to keep.
+    const seen = new Set(entry.tags.map(([tag]) => canonTag(tag)));
     for (const t of seen) byArtists.set(t, (byArtists.get(t) ?? 0) + 1);
   }
   const gate = new Set();
@@ -1480,7 +1541,7 @@ function gateTags(tags, gate) {
   const out = {};
   for (const [id, entry] of Object.entries(tags)) {
     if (!entry?.tags?.length) { out[id] = entry; continue; }
-    out[id] = { ...entry, tags: entry.tags.filter(([tag]) => gate.has(String(tag).toLowerCase())) };
+    out[id] = { ...entry, tags: entry.tags.filter(([tag]) => gate.has(canonTag(tag))) };
   }
   return out;
 }
@@ -1771,7 +1832,7 @@ function findDrift(lib, tags, targets, idf) {
   drift.sort((a, b) => a.similarity - b.similarity);
   return drift;
 }
-return { usableTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, topTags, findMisfiled, listeningWeights, byListening, findDrift };
+return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, topTags, findMisfiled, listeningWeights, byListening, findDrift };
 })();
 Object.assign(globalThis, __mod["norm.mjs"]);
 Object.assign(globalThis, __mod["credits.mjs"]);
@@ -2107,7 +2168,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-10-31-1628';
+const BUILD = '2026-10-31-1653';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2428,7 +2489,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-10-31-1628', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-10-31-1653', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -5116,7 +5177,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-10-31-1628';
+    s.src = 'engine.js?v=2026-10-31-1653';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -5138,7 +5199,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-10-31-1628');
+    const w = new Worker('engine-worker.js?v=2026-10-31-1653');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -5336,7 +5397,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-10-31-1628`,
+    `Betterfy engine score — build 2026-10-31-1653`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
