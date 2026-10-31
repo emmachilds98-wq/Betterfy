@@ -4,6 +4,7 @@
 // web build and the local app score identically and cannot drift apart.
 // Only the public client ID is embedded — the client secret is never read here.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { bundleModules } from './bundler.mjs';
 
 // argv, then .env, then whatever the last build baked into docs/index.html.
 // That last fallback is the important one: .env is gitignored, so a rebuild in
@@ -66,14 +67,59 @@ const APPCHECK_SITE_KEY = arg('appcheck-site-key') ?? readEnv('APPCHECK_SITE_KEY
 const APPCHECK_APP_ID = arg('appcheck-app-id') ?? readEnv('APPCHECK_APP_ID')
   ?? built(/APPCHECK_APP_ID = '(\d+:\d+:web:[^']+)'/) ?? '';
 
-// Strip module syntax so these can be concatenated into one classic script.
-const bundle = file => readFileSync(file, 'utf8')
-  .replace(/^\s*import[^;]*;$/gm, '')
-  .replace(/^export\s+(const|function|class|let)\b/gm, '$1')
-  .replace(/^export\s*\{[^}]*\};?$/gm, '');
+/* The scoring modules, bundled by `bundler.mjs` rather than concatenated.
+ *
+ * v1's three files are exposed as globals, because the page's inline script
+ * calls `rank()` and `trackVec()` as bare identifiers and used to get them from
+ * a flat concatenation. Checked rather than assumed: of the 26 private top-level
+ * declarations in those files, the template references none — the only near miss
+ * was `dot`, which appears in the page as a CSS class for the pager dots.
+ *
+ * These are inlined because the page cannot draw a single screen without them. */
+const V1_MODULES = ['norm.mjs', 'credits.mjs', 'profile.mjs'];
 
-const core = ['norm.mjs', 'credits.mjs', 'profile.mjs'].map(f =>
-  `/* ---- ${f} ---- */\n${bundle(f)}`).join('\n');
+const { code: core, files: bundled } = bundleModules(V1_MODULES, { expose: V1_MODULES });
+
+/* The account-native engine goes in a **separate file the page fetches only when
+ * somebody opens the Engine screen**, rather than inline.
+ *
+ * Inlining it was the obvious thing and it is the wrong thing. It is ~144 KB
+ * that every listener would download on every cold load to run a screen most of
+ * them will never open — and `CLAUDE.md`'s rule about optional things being
+ * "zero-cost for anyone who doesn't have it" is about respecting someone's
+ * phone, which a mandatory download for an unused feature does not do. A second
+ * file makes the cost fall on whoever asked for it.
+ *
+ * `profile.mjs` is in both bundles, so v1's ~29 KB is paid twice by anyone who
+ * opens the screen. Left deliberately: the alternative is cross-bundle import
+ * plumbing to save 29 KB on one screen, and the simpler build is worth more than
+ * the bytes. Each bundle stays independently loadable, which is the property
+ * that matters.
+ *
+ * `core/engine.mjs` — the provider/evidence path — is deliberately NOT here. It
+ * is the part that needs Last.fm and Discogs keys, and the whole point of this
+ * screen is what the account can do without them. */
+const ENGINE_ENTRIES = [
+  'core/intrinsic/space.mjs',
+  'core/intrinsic/coldstart.mjs',
+  'core/intrinsic/explain.mjs',
+  'core/intrinsic/reports.mjs',
+  'core/intrinsic/persist.mjs',
+  'core/validate/loo.mjs',
+  'core/validate/baseline.mjs',
+];
+
+const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
+  namespace: {
+    BetterfyIntrinsic: 'core/intrinsic/space.mjs',
+    BetterfyColdStart: 'core/intrinsic/coldstart.mjs',
+    BetterfyExplain: 'core/intrinsic/explain.mjs',
+    BetterfyReports: 'core/intrinsic/reports.mjs',
+    BetterfyPersist: 'core/intrinsic/persist.mjs',
+    BetterfyValidate: 'core/validate/loo.mjs',
+    BetterfyBaseline: 'core/validate/baseline.mjs',
+  },
+});
 
 const html = readFileSync('docs/app.template.html', 'utf8')
   .replace('__CORE__', core)
@@ -114,10 +160,18 @@ function leakedSecret(out) {
   return null;
 }
 
-const named = html.match(/SPOTIFY_CLIENT_SECRET|LASTFM_SHARED_SECRET|LASTFM_API_KEY|DISCOGS_TOKEN/);
-const valued = leakedSecret(html);
-if (named || valued)
-  throw new Error(`Refusing to build: ${valued ?? named[0]} leaked into the web bundle.`);
+/* Every file this build writes, checked — not only the page.
+ *
+ * The guard used to run over `html` alone, which was complete while the page was
+ * the only output. Adding a second file silently moved a chunk of shipped
+ * JavaScript outside the only thing standing between .env and GitHub Pages, so
+ * the guard iterates outputs instead of naming one. */
+for (const [name, out] of [['docs/index.html', html], ['docs/engine.js', engine]]) {
+  const named = out.match(/SPOTIFY_CLIENT_SECRET|LASTFM_SHARED_SECRET|LASTFM_API_KEY|DISCOGS_TOKEN/);
+  const valued = leakedSecret(out);
+  if (named || valued)
+    throw new Error(`Refusing to build: ${valued ?? named[0]} leaked into ${name}.`);
+}
 
 // A page with no client ID looks fine and cannot sign anyone in, which is the
 // worst way for a build to fail — so it fails here instead.
@@ -126,7 +180,11 @@ if (!CLIENT_ID && !process.argv.includes('--allow-missing-id'))
     + 'set SPOTIFY_CLIENT_ID in .env, or pass --allow-missing-id if you really mean it.');
 
 writeFileSync('docs/index.html', html);
-console.log(`docs/index.html — ${(html.length / 1024).toFixed(0)} KB, client id ${CLIENT_ID ? 'embedded' : 'MISSING'}`
+writeFileSync('docs/engine.js', engine);
+console.log(`docs/engine.js  — ${(engine.length / 1024).toFixed(0)} KB, `
+  + `${engineFiles.length} modules, fetched only when the Engine screen is opened`);
+console.log(`docs/index.html — ${(html.length / 1024).toFixed(0)} KB, ${bundled.length} modules bundled`
+  + `, client id ${CLIENT_ID ? 'embedded' : 'MISSING'}`
   + `, shared tags ${TAGS_PROJECT && TAGS_KEY ? `→ ${TAGS_PROJECT}` : 'off'}`
   + `, request-access link ${CONTACT_EMAIL ? `→ ${CONTACT_EMAIL}` : 'off'}`
   + `, App Check ${APPCHECK_SITE_KEY && APPCHECK_APP_ID ? 'on' : 'off'}`);

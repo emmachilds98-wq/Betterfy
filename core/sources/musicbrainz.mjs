@@ -13,12 +13,17 @@
 // lookup needs an identifying User-Agent, which is both MusicBrainz's stated
 // policy and something a browser fetch cannot set. Absent, this provider is
 // simply not in the registry and nothing downstream changes.
+// Deliberately does NOT re-export the root module's `resolveMbid` /
+// `extractArtistMbid`. It used to, as a convenience nothing ever used —
+// `enrich-lastfm.mjs` and the tests both import them from `musicbrainz.mjs`
+// directly — and those two lines were the only reason this file pulled in
+// `musicbrainz.mjs` -> `cache.mjs` -> `node:fs`. Which made the whole engine
+// graph unbundleable for a browser: one unused convenience re-export kept v3
+// off the phone. Anything needing the artist-id resolver imports it from where
+// it lives.
 import { defineProvider } from './provider.mjs';
 import { normaliseValues } from '../evidence/normalise.mjs';
 import { linkConfidence } from '../identity/track-identity.mjs';
-import { resolveMbid, extractArtistMbid } from '../../musicbrainz.mjs';
-
-export { resolveMbid, extractArtistMbid };
 
 export const MUSICBRAINZ = defineProvider({
   id: 'musicbrainz',

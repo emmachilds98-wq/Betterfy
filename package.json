@@ -33,7 +33,8 @@
     "benchmark:playlists": "node core/benchmark/playlists.mjs",
     "benchmark:fit": "node core/benchmark/fit.mjs",
     "benchmark:import": "node core/benchmark/import.mjs",
-    "benchmark:compare": "node core/benchmark/compare.mjs"
+    "benchmark:compare": "node core/benchmark/compare.mjs",
+    "validate:placement": "node validate-placement.mjs"
   },
   "license": "MIT"
 }

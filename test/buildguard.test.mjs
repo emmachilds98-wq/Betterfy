@@ -18,12 +18,25 @@ import { join } from 'node:path';
 const ROOT = new URL('..', import.meta.url).pathname;
 
 /** A disposable copy of the repo with the given .env and template tweak. */
-function sandbox({ env = '', poison = null } = {}) {
+function sandbox({ env = '', poison = null, poisonCore = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'bf-build-'));
-  for (const f of ['build-web.mjs', 'norm.mjs', 'credits.mjs', 'profile.mjs'])
+  // bundler.mjs is a real dependency of the build now — build-web.mjs imports it
+  // to resolve core/'s dependency graph, and a sandbox missing it fails at module
+  // resolution rather than at anything this file is trying to test.
+  for (const f of ['build-web.mjs', 'bundler.mjs', 'norm.mjs', 'credits.mjs', 'profile.mjs'])
     cpSync(join(ROOT, f), join(dir, f));
+  // And core/, because the build now emits docs/engine.js from it on every run.
+  // The leak guard checks that file too, so a sandbox without core/ would not
+  // merely fail — it would quietly stop testing half of what ships.
+  cpSync(join(ROOT, 'core'), join(dir, 'core'), { recursive: true });
   cpSync(join(ROOT, 'docs'), join(dir, 'docs'), { recursive: true });
   writeFileSync(join(dir, '.env'), env);
+  if (poisonCore) {
+    // Into a module that ends up in docs/engine.js rather than in the page, which
+    // is the surface the guard did not cover when that second file was added.
+    const f = join(dir, 'core', 'intrinsic', 'features.mjs');
+    writeFileSync(f, `// ${poisonCore}\n` + readFileSync(f, 'utf8'));
+  }
   if (poison) {
     const t = join(dir, 'docs', 'app.template.html');
     writeFileSync(t, readFileSync(t, 'utf8').replace('<script>', `<script>\n/* ${poison} */`));
@@ -83,6 +96,62 @@ test('a Discogs token is caught', t => {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const { ok } = build(dir);
   assert.equal(ok, false);
+});
+
+test('a secret reaching the engine bundle stops the build too, not just the page', t => {
+  // docs/engine.js is a second shipped file. The guard originally ran over the
+  // page alone, so a credential that reached only the engine bundle would have
+  // been published by a build that reported success.
+  const dir = sandbox({
+    env: `SPOTIFY_CLIENT_ID=${CLIENT_ID}\nSPOTIFY_CLIENT_SECRET=${SECRET}\n`,
+    poisonCore: SECRET,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const { ok, out } = build(dir);
+  assert.equal(ok, false, 'the build shipped a secret inside engine.js');
+  assert.match(out, /engine\.js/, 'and it should say which file');
+});
+
+test('the engine bundle is emitted on an ordinary build, so the guard above has something to guard', t => {
+  const dir = sandbox({ env: `SPOTIFY_CLIENT_ID=${CLIENT_ID}\n` });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const { ok } = build(dir);
+  assert.ok(ok);
+  const js = readFileSync(join(dir, 'docs', 'engine.js'), 'utf8');
+  assert.match(js, /BetterfyIntrinsic/, 'the page looks this global up by name');
+  assert.match(js, /BetterfyValidate/);
+  // And it must stay out of the page, or the lazy load saved nobody anything.
+  const html = readFileSync(join(dir, 'docs', 'index.html'), 'utf8');
+  assert.ok(!html.includes('COOCCURRENCE_VERSION'),
+    'the engine must not also be inlined into the page');
+  assert.match(html, /engine\.js\?v=/, 'but the page must know how to fetch it');
+});
+
+test('every inline script in the built page actually parses', t => {
+  // A duplicate top-level declaration, or one stray backtick in a template
+  // string, is a SyntaxError that kills the whole script — so the page loads,
+  // renders nothing, and every other test here still passes because they only
+  // ever run slices of it. Cheap to check, and the failure it catches is total.
+  const dir = sandbox({ env: `SPOTIFY_CLIENT_ID=${CLIENT_ID}\n` });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.ok(build(dir).ok);
+  const html = readFileSync(join(dir, 'docs', 'index.html'), 'utf8');
+
+  const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+  let m, checked = 0;
+  while ((m = re.exec(html))) {
+    const body = m[1];
+    if (body.trim().length < 40) continue;
+    checked++;
+    // new Function parses without running: no DOM needed, no side effects.
+    assert.doesNotThrow(() => new Function(body),
+      `inline script ${checked} (${body.length} chars) does not parse`);
+  }
+  assert.ok(checked >= 1, 'the page should carry at least one substantial inline script');
+
+  // And the engine bundle, which is a script the page loads by URL.
+  assert.doesNotThrow(() => new Function(readFileSync(join(dir, 'docs', 'engine.js'), 'utf8')),
+    'docs/engine.js does not parse');
 });
 
 test('the values that are public by design still ship', t => {

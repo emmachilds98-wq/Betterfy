@@ -994,6 +994,81 @@ ground out.
 Full write-up, including the measured v1-vs-v3 baseline and what is
 deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.
 
+### The account-native engine (`core/intrinsic/`), which needs no key at all
+
+Both engines above lean on Last.fm. `CLAUDE.md` says external enrichment must be
+"silently absent and zero-cost for anyone who doesn't have it, never something
+the core filing model leans on", and the core model leans on it completely — so
+this is the part that fixes that.
+
+The reframe is the whole idea. "What genre is this track?" needs an outside
+vocabulary. **"Which of this account's playlists does this track belong with?"
+needs none**, because a playlist is already a labelled training set: 200 tracks
+in a bucket are 200 hand-labelled examples of what *you* mean by it, and that
+label cannot be wrong because it is definitionally what you meant. Two accounts
+with a playlist called "House" get different learned definitions, correctly,
+because they are learned from different members.
+
+Six signals, five of them already sitting in `library.json` after a snapshot:
+
+| Signal | Where it comes from |
+|---|---|
+| Artist co-occurrence, as PPMI over **your own** playlists | playlist membership |
+| Label family, from the **ISRC registrant** | `isrc`, until now used only as an identity key |
+| Add-session cohesion | `added_at` |
+| Format shape — a seven-minute cut on a two-track release is a club record, a three-minute cut at track four of twelve is an album song | duration, album type, track counts |
+| Era | release date |
+| Tempo and key | your Rekordbox import, and **only** if you have one |
+
+The ISRC trick is worth a sentence: `CC-XXX-YY-NNNNN` identifies the registrant,
+which is effectively the label. Plenty of independent releases carry a
+distributor's code instead, which would link unrelated records — so registrants
+are weighted by how many playlists they span, and an aggregator that appears
+everywhere weights itself to zero without anybody maintaining a list of who the
+aggregators are.
+
+**Held-out placement accuracy is the thing that makes this testable at all.**
+Your filing *is* the answer key: hide a track, ask where it goes, compare. That
+replaces the ~500 manually reviewed rows §26 asks for, for anything about
+placement, and runs per account in seconds. Leakage is therefore the one thing
+that could quietly make it a lie, so the harness carries a canary — score with
+held-out tracks left in, assert it beats the honest path, and treat convergence
+as proof the folds have stopped excluding anything.
+
+It also says which **rung** your account is on rather than only a confidence,
+because "low confidence" and "not enough of your library filed yet" are
+different sentences and only the second tells you what would fix it. With
+nothing filed it stops trying to place things — there is nowhere to place them —
+and proposes groups for you to name instead.
+
+There is an **Engine** screen for it, behind More, and it files nothing — it
+shows what the engine *would* do so you can judge it first. The rung it is on and
+why, the next 40 tracks waiting to be filed with today's suggestion beside this
+engine's, each row opening onto its reasons, and which of your playlists it
+cannot tell apart. The engine is a separate ~145 KB file fetched the first time
+you open that screen, so it costs nothing to anyone who never does.
+
+The screen also runs the comparison itself, which is the part that matters:
+
+```sh
+npm run validate:placement              # the intrinsic engine against v1, on YOUR library
+npm run validate:placement -- --reports # which of your buckets are the same thing twice
+npm run validate:placement -- --sweep   # which weights your library actually pins down
+```
+
+That first command is a gate that is allowed to fail — and it used to be the only
+way to get the number, which meant a `library.json` export and a Node checkout for
+a figure every account needs about itself. The browser already has your library,
+so **Is it actually any better?** on the Engine screen scores both engines on your
+own filing, same held-out folds, same tracks, and tells you which won. If this
+engine loses on your library it should not take over, and that is what the test is
+for.
+
+It measures agreement with *your* habits, not musical truth: a systematically
+misfiled library will be reproduced faithfully, and the engine cannot tell you so.
+
+Plan, execution log and the measured numbers: **`docs/THINKING-ENGINE-PLAN.md`**.
+
 ## Data sources, and what they're worth
 
 | Source | Verdict |
