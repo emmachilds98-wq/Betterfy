@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-10-31-1626">
+<meta name="bf-build" content="2026-10-31-1628">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -897,7 +897,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-10-31-1626</span>
+    <span class="mono">build 2026-10-31-1628</span>
   </p>
 
   <div class="feat">
@@ -994,7 +994,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-31-1626</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-31-1628</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1035,7 +1035,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-31-1626</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-31-1628</span>
   </div>
 </div>
 
@@ -2107,7 +2107,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-10-31-1626';
+const BUILD = '2026-10-31-1628';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2428,7 +2428,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-10-31-1626', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-10-31-1628', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -3070,7 +3070,23 @@ function buildReports(lib, cfg, tags) {
 /* ===================== UI ===================== */
 let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'home';
 const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null,
-            fileSel:new Set(), fileSelFor:null };
+            fileSel:new Set(), fileSelFor:null, shown:{} };
+
+/* How many rows of a long Tidy list are drawn. These lists used to stop dead at
+ * 60 or 80 — a library with 300 repeats showed 60 and gave no way to reach the
+ * rest, so most of what the tool found was unreachable. Rows are still drawn a
+ * page at a time, because thousands of rows of buttons is its own problem on a
+ * phone, but the rest is now one tap away rather than nowhere. Keyed by list,
+ * and by the list's current filter, so changing the filter starts from the top. */
+const TIDY_PAGE = 60;
+const shownOf = key => S.shown[key] ?? TIDY_PAGE;
+function moreButton(key, total) {
+  const n = shownOf(key);
+  if (total <= n) return '';
+  const next = Math.min(TIDY_PAGE, total - n);
+  return `<div class="rowbtns" style="margin-top:12px"><button class="b sm" data-more="${esc(key)}">Show ${next} more
+    <span class="mono" style="color:var(--ink-3)">· ${n.toLocaleString()} of ${total.toLocaleString()}</span></button></div>`;
+}
 
 // Bar order, which is also swipe order: swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
@@ -3544,17 +3560,18 @@ const TIDY_SECTIONS = [['misfile', 'Wrong place'], ['dupes', 'Repeats'], ['cross
 function secDupes() {
   const exact = R.within.filter(x => x.verdict === 'same-recording');
   const clash = R.within.filter(x => x.verdict !== 'same-recording');
-  const sec = (title, list, note) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
+  const sec = (title, list, note, key) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
     <p class="lede">${note}</p>
-    <div class="rows">${list.slice(0, 60).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
+    <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
     </div><div class="acts">${c.options.map(o =>
       `<button class="b sm" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z => z.id !== o.id).map(z => z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
-    </div></div>`).join('') || '<div class="empty"><b>None found</b>Nothing in your library matches this.</div>'}</div>`;
+    </div></div>`).join('') || '<div class="empty"><b>None found</b>Nothing in your library matches this.</div>'}</div>
+    ${moreButton(key, list.length)}`;
   return `<p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>
-    ${sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.')}
-    ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.')}`;
+    ${sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.', 'dupes-exact')}
+    ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash')}`;
 }
 
 function secCross() {
@@ -3562,13 +3579,14 @@ function secCross() {
   return `<p class="lede">Tracks in several playlists. Usually deliberate — nothing is preselected. Tap a playlist to remove the track from just that one.</p>
     <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
       `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
-    <div class="rows">${a.slice(0, 80).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
+    <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
         `<button class="chip" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
     </div></div>`).join('')
-      || `<div class="empty"><b>Nothing at ${S.crossMin}+ playlists</b>Lower the threshold to see tracks filed in fewer places.</div>`}</div>`;
+      || `<div class="empty"><b>Nothing at ${S.crossMin}+ playlists</b>Lower the threshold to see tracks filed in fewer places.</div>`}</div>
+    ${moreButton('cross-' + S.crossMin, a.length)}`;
 }
 
 function secMisfile() {
@@ -3588,7 +3606,7 @@ function secMisfile() {
   return `<p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Each row is a move, not a score — and every one of them lands in History.</p>
     <div class="rowbtns" style="margin-bottom:14px">${['high', 'medium', 'low'].map(b =>
       `<button class="b sm ${S.mfBand === b ? 'p' : ''}" data-mfb="${b}">${b} (${counts[b]})</button>`).join('')}</div>
-    <div class="rows">${m.slice(0, 80).map(x => {
+    <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
       const playedALot = recentlyActive?.has(x.artist);
@@ -3611,7 +3629,8 @@ function secMisfile() {
           ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
       </div>` : ''}</div>`;
     }).join('')
-      || `<div class="empty"><b>Nothing in this band</b>${S.mfBand === 'high' ? 'Everything is filed where it fits. Try the medium band for the speculative ones.' : 'Try another confidence band.'}</div>`}</div>`;
+      || `<div class="empty"><b>Nothing in this band</b>${S.mfBand === 'high' ? 'Everything is filed where it fits. Try the medium band for the speculative ones.' : 'Try another confidence band.'}</div>`}</div>
+    ${moreButton('misfile-' + S.mfBand, m.length)}`;
 }
 
 function vTidy() {
@@ -5097,7 +5116,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-10-31-1626';
+    s.src = 'engine.js?v=2026-10-31-1628';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -5119,7 +5138,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-10-31-1626');
+    const w = new Worker('engine-worker.js?v=2026-10-31-1628');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -5317,7 +5336,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-10-31-1626`,
+    `Betterfy engine score — build 2026-10-31-1628`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5641,6 +5660,8 @@ document.addEventListener('click', guard(async e => {
   // index is an absolute position in it. Adding it to wherever the queue
   // happened to be left instead opened a different track than the one tapped.
   if (gi) { S.inboxAt = Math.min(+gi.dataset.goinbox || 0, Math.max(R.backlog.length - 1, 0)); return go('inbox'); }
+  const more = e.target.closest('[data-more]');
+  if (more) { S.shown[more.dataset.more] = shownOf(more.dataset.more) + TIDY_PAGE; return render(); }
   const cmin = e.target.closest('[data-cmin]');
   if (cmin) { S.crossMin = +cmin.dataset.cmin; if (T.rememberFilters) { T.crossMin = S.crossMin; saveTheme(); } return render(); }
   const mfb = e.target.closest('[data-mfb]');

@@ -80,8 +80,11 @@ placed.sort((a, b) => b.suggest[0].score - a.suggest[0].score);
 // ---------- 3. clusters among the homeless: candidate NEW playlists ----------
 // Greedy agglomeration on tag vectors. A cluster of 6+ tracks that fits no
 // existing playlist is the signal that a genuinely new category is missing.
+// Indexed once: a .find() per homeless track made this quadratic in the size
+// of the liked library, which is the one number in it that grows without limit.
+const likedById = new Map(lib.liked.map(t => [t.id, t]));
 const vecs = homeless.map(h => ({
-  h, v: applyIdf(trackVec(lib.liked.find(t => t.id === h.id) ?? {}, tags), idf),
+  h, v: applyIdf(trackVec(likedById.get(h.id) ?? {}, tags), idf),
 })).filter(x => x.v.size >= 3);
 
 const clusters = [];

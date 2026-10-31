@@ -2424,7 +2424,23 @@ function buildReports(lib, cfg, tags) {
 /* ===================== UI ===================== */
 let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'home';
 const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null,
-            fileSel:new Set(), fileSelFor:null };
+            fileSel:new Set(), fileSelFor:null, shown:{} };
+
+/* How many rows of a long Tidy list are drawn. These lists used to stop dead at
+ * 60 or 80 — a library with 300 repeats showed 60 and gave no way to reach the
+ * rest, so most of what the tool found was unreachable. Rows are still drawn a
+ * page at a time, because thousands of rows of buttons is its own problem on a
+ * phone, but the rest is now one tap away rather than nowhere. Keyed by list,
+ * and by the list's current filter, so changing the filter starts from the top. */
+const TIDY_PAGE = 60;
+const shownOf = key => S.shown[key] ?? TIDY_PAGE;
+function moreButton(key, total) {
+  const n = shownOf(key);
+  if (total <= n) return '';
+  const next = Math.min(TIDY_PAGE, total - n);
+  return `<div class="rowbtns" style="margin-top:12px"><button class="b sm" data-more="${esc(key)}">Show ${next} more
+    <span class="mono" style="color:var(--ink-3)">· ${n.toLocaleString()} of ${total.toLocaleString()}</span></button></div>`;
+}
 
 // Bar order, which is also swipe order: swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
@@ -2898,17 +2914,18 @@ const TIDY_SECTIONS = [['misfile', 'Wrong place'], ['dupes', 'Repeats'], ['cross
 function secDupes() {
   const exact = R.within.filter(x => x.verdict === 'same-recording');
   const clash = R.within.filter(x => x.verdict !== 'same-recording');
-  const sec = (title, list, note) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
+  const sec = (title, list, note, key) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
     <p class="lede">${note}</p>
-    <div class="rows">${list.slice(0, 60).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
+    <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
     </div><div class="acts">${c.options.map(o =>
       `<button class="b sm" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z => z.id !== o.id).map(z => z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
-    </div></div>`).join('') || '<div class="empty"><b>None found</b>Nothing in your library matches this.</div>'}</div>`;
+    </div></div>`).join('') || '<div class="empty"><b>None found</b>Nothing in your library matches this.</div>'}</div>
+    ${moreButton(key, list.length)}`;
   return `<p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>
-    ${sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.')}
-    ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.')}`;
+    ${sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.', 'dupes-exact')}
+    ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash')}`;
 }
 
 function secCross() {
@@ -2916,13 +2933,14 @@ function secCross() {
   return `<p class="lede">Tracks in several playlists. Usually deliberate — nothing is preselected. Tap a playlist to remove the track from just that one.</p>
     <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
       `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
-    <div class="rows">${a.slice(0, 80).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
+    <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
         `<button class="chip" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
     </div></div>`).join('')
-      || `<div class="empty"><b>Nothing at ${S.crossMin}+ playlists</b>Lower the threshold to see tracks filed in fewer places.</div>`}</div>`;
+      || `<div class="empty"><b>Nothing at ${S.crossMin}+ playlists</b>Lower the threshold to see tracks filed in fewer places.</div>`}</div>
+    ${moreButton('cross-' + S.crossMin, a.length)}`;
 }
 
 function secMisfile() {
@@ -2942,7 +2960,7 @@ function secMisfile() {
   return `<p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Each row is a move, not a score — and every one of them lands in History.</p>
     <div class="rowbtns" style="margin-bottom:14px">${['high', 'medium', 'low'].map(b =>
       `<button class="b sm ${S.mfBand === b ? 'p' : ''}" data-mfb="${b}">${b} (${counts[b]})</button>`).join('')}</div>
-    <div class="rows">${m.slice(0, 80).map(x => {
+    <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
       const playedALot = recentlyActive?.has(x.artist);
@@ -2965,7 +2983,8 @@ function secMisfile() {
           ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
       </div>` : ''}</div>`;
     }).join('')
-      || `<div class="empty"><b>Nothing in this band</b>${S.mfBand === 'high' ? 'Everything is filed where it fits. Try the medium band for the speculative ones.' : 'Try another confidence band.'}</div>`}</div>`;
+      || `<div class="empty"><b>Nothing in this band</b>${S.mfBand === 'high' ? 'Everything is filed where it fits. Try the medium band for the speculative ones.' : 'Try another confidence band.'}</div>`}</div>
+    ${moreButton('misfile-' + S.mfBand, m.length)}`;
 }
 
 function vTidy() {
@@ -4995,6 +5014,8 @@ document.addEventListener('click', guard(async e => {
   // index is an absolute position in it. Adding it to wherever the queue
   // happened to be left instead opened a different track than the one tapped.
   if (gi) { S.inboxAt = Math.min(+gi.dataset.goinbox || 0, Math.max(R.backlog.length - 1, 0)); return go('inbox'); }
+  const more = e.target.closest('[data-more]');
+  if (more) { S.shown[more.dataset.more] = shownOf(more.dataset.more) + TIDY_PAGE; return render(); }
   const cmin = e.target.closest('[data-cmin]');
   if (cmin) { S.crossMin = +cmin.dataset.cmin; if (T.rememberFilters) { T.crossMin = S.crossMin; saveTheme(); } return render(); }
   const mfb = e.target.closest('[data-mfb]');
