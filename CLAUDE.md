@@ -45,6 +45,12 @@ over anything that needs a file most users won't have.
   already gives) run through an ONNX model in the listener's browser. Plan
   only; phase 0 is a coverage and speed measurement that can stop it. Read
   its §2 before re-checking any of the external facts it lists.
+- `docs/SMARTER-GENRES-PLAN.md` — the current genre plan: free
+  similar-artist bridges (Deezer, ListenBrainz via Wikidata, measured on the
+  owner's library), calibrated confidence, the Gaps screen for proposing new
+  playlists, and §3's reading of Spotify Developer Terms v10 (no Spotify
+  content into AI/ML models, no pooling it across accounts). Read §3 before
+  proposing any LLM feature or anything shared between users.
 - Tests are the source of truth for behavior, not comments: `npm test`
   before and after any change to `profile.mjs`, `axes.mjs`, or the browser
   build's mirrored classify()/buildReports() logic.
