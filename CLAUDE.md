@@ -35,9 +35,11 @@ over anything that needs a file most users won't have.
 - `V2-PLAN.md` — the longer-range architecture review; still mostly
   aspirational, but the "what v1 actually is" and defects sections are
   accurate and worth reading before a big change.
-- `docs/HANDOFF.md` — **start here**: the current state (open PR #88, what
-  waits on the owner), a file map of the sound features, and the ranked next
-  work. Newer than `UPGRADE-PLAN.md`.
+- `docs/HANDOFF.md` — **start here**: the current state (what's merged, what's
+  open on GitHub, what waits on the owner's machine), a file map of the sound
+  features, and the ranked next work. Newer than `UPGRADE-PLAN.md`.
+- `docs/SOUND-EVERYWHERE-PLAN.md` — the round that spread sound to Tidy,
+  Playlists, Shuffle and Discover (S1–S4 merged) and the key work (S5).
 - `docs/UPGRADE-PLAN.md` — the older (2026-10-31) order of work across the open PRs
   and plans, and what was waiting on the owner then.
 - `docs/GENRE-RECOGNITION-PLAN.md` — why filing went into non-genre

@@ -13,6 +13,12 @@ and counts on your own library only); byte-identical when there is no sound
 data; generated files are rebuilt, never hand-merged; `mel.mjs`/`record.mjs`
 frozen.
 
+## Status (end of round, 2026-11-14)
+
+S1 #92, S2 #93, S3 #94 and S4 #95 are merged. S5 (key) was still in progress
+at handoff and is merged only once its re-measured accuracy clears the bar;
+see `docs/HANDOFF.md` §1 for its state and what waits on the owner.
+
 ## Pieces (one PR each, run in parallel)
 
 | # | Piece | Owns (new files unless noted) | Template slice |
