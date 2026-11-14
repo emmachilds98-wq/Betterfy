@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-2005">
+<meta name="bf-build" content="2026-11-14-2010">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -646,11 +646,11 @@
   h2.newsec{margin:22px 0 6px; font-size:18px}
   .rows ~ .empty-state.compact{margin-top:22px}
   .row.prop{padding-left:20px}
-  .prop-eg{list-style:none; margin:8px 0 0; padding:0; display:grid; gap:3px; font-size:var(--fs-small, 13px)}
-  .prop-eg li{display:flex; gap:8px; min-width:0; color:var(--ink-2)}
+  .prop-eg{list-style:none; counter-reset:eg; margin:8px 0 0; padding:0; display:grid; gap:3px; font-size:var(--fs-small, 13px)}
+  .prop-eg li{counter-increment:eg; display:flex; gap:8px; min-width:0; color:var(--ink-2)}
   .prop-eg li b{font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .prop-eg li span{color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  .prop-eg li::before{content:counter(list-item); font-family:var(--mono); color:var(--ink-3); width:1.2em; flex:none}
+  .prop-eg li::before{content:counter(eg); font-family:var(--mono); color:var(--ink-3); width:1.2em; flex:none}
 
   @media (max-width: 760px){
     .seg.tidysecs, .seg.mfbands{display:flex; width:100%}
@@ -661,7 +661,7 @@
      down the left edge: a hybrid blends two hues, "new genre?" is broken, a
      toss-up is two plain halves. Painted as a background so the row keeps its
      own border and corners. */
-  .tag.snd{background:var(--c5-soft); color:var(--c5)}
+  .tag.snd{background:var(--c5-soft); color:color-mix(in srgb, var(--c5) 80%, black)}
   .row.prop{background-repeat:no-repeat; background-position:left top; background-size:5px 100%}
   .row.prop-hybrid{background-image:linear-gradient(180deg, var(--c6), var(--c3))}
   .row.prop-new{background-image:repeating-linear-gradient(180deg, var(--c1) 0 8px, transparent 8px 14px)}
@@ -685,7 +685,8 @@
                     border-left:2px dashed var(--ink); transform:translateX(-1px)}
   .pbar .trk>s.gate.met{border-left-color:var(--ok)}
   .gateline{display:flex; gap:10px; align-items:center; margin:14px 0 0; font-size:13.5px; color:var(--ink-2); line-height:1.5}
-  .gateline>s.gate{flex:none; width:0; height:18px; border-left:2px dashed var(--ink)}
+  .gateline{align-items:flex-start}
+  .gateline>s.gate{flex:none; width:0; height:18px; margin-top:2px; border-left:2px dashed var(--ink)}
   .gateverdict .tag{margin-right:6px}
   @media (max-width: 760px){ .pbar{grid-template-columns:64px 1fr 40px; gap:8px} }
   /* Marks the update button when a newer build is waiting on the server. */
@@ -961,7 +962,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-2005</span>
+    <span class="mono">build 2026-11-14-2010</span>
   </p>
 
   <div class="feat">
@@ -1058,7 +1059,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2005</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2010</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1099,7 +1100,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2005</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2010</span>
   </div>
 </div>
 
@@ -2300,7 +2301,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-2005';
+const BUILD = '2026-11-14-2010';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2621,7 +2622,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-2005', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-2010', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -4149,7 +4150,7 @@ function vNew() {
   // Every section empty is one answer. Some empty is one line under the rest,
   // naming each so nothing silently disappears from the screen.
   const none = !empty.length || g.card ? '' : !full.length && !sound
-    ? emptyState('Nothing to propose yet', `${empty.map(x => `<strong>${esc(x.title)}</strong> ${esc(x.none)}.`).join(' ')}
+    ? emptyState('Nothing to propose yet', `${empty.map(x => `<strong>${esc(x.title)}:</strong> ${esc(x.none)}.`).join(' ')}
       New ideas show up here as your library grows.`)
     : emptyState('Nothing else to propose', empty.map(x => `<strong>${esc(x.title)}:</strong> ${esc(x.none)}.`).join(' '), { compact: true });
   return `${head}
@@ -5805,7 +5806,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-2005';
+    s.src = 'engine.js?v=2026-11-14-2010';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -5827,7 +5828,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-2005');
+    const w = new Worker('engine-worker.js?v=2026-11-14-2010');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -6141,7 +6142,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-14-2005';
+    s.src = 'audio.js?v=2026-11-14-2010';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -6169,7 +6170,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2005', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2010', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -6544,8 +6545,8 @@ function audioCard(v, p) {
       ${pairBars('Right first time, artists not in any genre playlist yet',
         nf.top1, w.neverFiled?.top1, p, nf.top1 != null ? { at: nf.top1 + lift, label: `+${liftPts} points` } : null)}
     </div>
-    <p class="gateline"><s class="gate" aria-hidden="true"></s> The bar it has to clear: <b>+${liftPts} points</b> right first
-      time on never-filed artists, and no loss overall. Below it, sound is shown but changes no suggestion.</p>
+    <p class="gateline"><s class="gate" aria-hidden="true"></s><span>The bar it has to clear: <b>+${liftPts} points</b> right first
+      time on never-filed artists, and no loss overall. Below it, sound is shown but changes no suggestion.</span></p>
     <div class="facts" style="margin-top:10px">
       <div><span>Tracks by artists not in any genre playlist yet</span><b class="mono">${nf.scored.toLocaleString()}</b></div>
       <div><span>Scored tracks listened to</span><b class="mono">${w.heard.toLocaleString()} of ${v.mine.scored.toLocaleString()}</b></div>
@@ -6584,7 +6585,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-2005`,
+    `Betterfy engine score — build 2026-11-14-2010`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,

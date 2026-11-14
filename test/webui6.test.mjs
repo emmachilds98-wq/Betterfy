@@ -85,7 +85,7 @@ test('three empty sections collapse into one empty state that still names each',
   assert.equal(html.match(/class="empty-state/g).length, 1);
   assert.match(html, /Nothing to propose yet/);
   for (const t of ['Genres with no playlist', 'Playlists that are two genres', 'Groups in your backlog'])
-    assert.match(html, new RegExp(`<strong>${t}</strong>`));
+    assert.match(html, new RegExp(`<strong>${t}:</strong>`));
   assert.ok(!/<h2/.test(html), 'no headings over nothing');
 });
 

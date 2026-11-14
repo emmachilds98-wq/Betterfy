@@ -17,11 +17,11 @@
   h2.newsec{margin:22px 0 6px; font-size:18px}
   .rows ~ .empty-state.compact{margin-top:22px}
   .row.prop{padding-left:20px}
-  .prop-eg{list-style:none; margin:8px 0 0; padding:0; display:grid; gap:3px; font-size:var(--fs-small, 13px)}
-  .prop-eg li{display:flex; gap:8px; min-width:0; color:var(--ink-2)}
+  .prop-eg{list-style:none; counter-reset:eg; margin:8px 0 0; padding:0; display:grid; gap:3px; font-size:var(--fs-small, 13px)}
+  .prop-eg li{counter-increment:eg; display:flex; gap:8px; min-width:0; color:var(--ink-2)}
   .prop-eg li b{font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .prop-eg li span{color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  .prop-eg li::before{content:counter(list-item); font-family:var(--mono); color:var(--ink-3); width:1.2em; flex:none}
+  .prop-eg li::before{content:counter(eg); font-family:var(--mono); color:var(--ink-3); width:1.2em; flex:none}
 
   @media (max-width: 760px){
     .seg.tidysecs, .seg.mfbands{display:flex; width:100%}

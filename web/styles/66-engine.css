@@ -17,6 +17,7 @@
                     border-left:2px dashed var(--ink); transform:translateX(-1px)}
   .pbar .trk>s.gate.met{border-left-color:var(--ok)}
   .gateline{display:flex; gap:10px; align-items:center; margin:14px 0 0; font-size:13.5px; color:var(--ink-2); line-height:1.5}
-  .gateline>s.gate{flex:none; width:0; height:18px; border-left:2px dashed var(--ink)}
+  .gateline{align-items:flex-start}
+  .gateline>s.gate{flex:none; width:0; height:18px; margin-top:2px; border-left:2px dashed var(--ink)}
   .gateverdict .tag{margin-right:6px}
   @media (max-width: 760px){ .pbar{grid-template-columns:64px 1fr 40px; gap:8px} }
