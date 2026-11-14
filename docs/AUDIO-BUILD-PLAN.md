@@ -254,7 +254,25 @@ The coordinator's review is at high effort whatever the package used.
 | WP-0a `core/audio/mel.mjs` | **Done.** Worst error 2.1e-4 vs Essentia, frame rule pinned at 13 lengths, 38 ms per 30 s preview (#54) |
 | WP-0b `core/audio/record.mjs` | **Done.** Contract plus 6 tests: int8 embedding cosine > 0.999, ~2.5 KB per record with two windows (~4 KB with a full preview's section timeline) (#54) |
 | WP-0c phase 0 scripts | **Done**, `scripts/audio-phase0/` (#54) |
+| WP-V1 vocab | Merged, #55. Review: OK |
+| WP-A1 fetch | Merged, #56. Review: OK; preview URL never kept |
+| WP-A3 infer | Merged, #57. Review: OK (header patch count corrected) |
+| WP-H1 sections | Merged, #58. Review: OK |
+| WP-F1 heads | Merged, #59. Class order checked against the hosted models in #75 |
+| WP-A4 queue | Merged, #60. Review: OK; adds optional `targets`, `isMirror`, `now` |
+| WP-B1 worker | Merged, #61. Note for WP-D4: DSP and mel run on the two windows joined, so run tempo/key per window |
+| WP-E1 audio component | Merged, #62. Review: OK; byte-identical test passes |
+| WP-D3 loudness | Merged, #63. Energy weights hand-picked; check on real previews in WP-D4 |
+| WP-D2 key | Merged, #65. Synthetic only; not into records until the Rekordbox run is in §0 |
+| WP-S1 provider | Merged, #66. Review: OK; engine byte-identical hash pinned |
+| WP-A2 decode | Merged, #67. Reference is ffmpeg (Essentia not installable); top-5 through the model not run yet |
+| WP-D1 tempo | Merged, #68. Synthetic only; not into records until the Rekordbox run is in §0 |
+| WP-L1 learner | Merged, #76. Learner beats centroids by ~1 point top-1, ~3 top-2 on the phase 0 fixture |
+| WP-E2 engine + gate | Merged, #74. Sound changes no suggestion until the owner's Score run passes the gate |
+| WP-B2 page wiring | Merged, #75. Models in docs/models/; listening off by default |
 | Everything else | Not started |
+
+All 13 plus UI-0 (#64) merged to main on 2026-11-14; main passes the full suite (1047 pass, 1 skip). L1 (#76), E2 (#74) and B2 (#75) merged the same day.
 
 ## 5. Owner decisions recorded
 
