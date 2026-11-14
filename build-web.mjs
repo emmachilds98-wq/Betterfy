@@ -132,6 +132,9 @@ const ENGINE_ENTRIES = [
   // Genres with no playlist, and playlists that are two genres (plan phase 3).
   // Brings the ontology with it, which is why it lives in the lazy bundle.
   'core/recommend/gaps.mjs',
+  // The same screen's proposals by sound (docs/AUDIO-BUILD-PLAN.md WP-H2).
+  // Empty without audio records; brings the style vocabulary with it.
+  'core/recommend/audio-gaps.mjs',
 ];
 
 const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
@@ -148,6 +151,7 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyDeezer: 'core/sources/deezer.mjs',
     BetterfyCalibrate: 'core/intrinsic/calibrate.mjs',
     BetterfyGaps: 'core/recommend/gaps.mjs',
+    BetterfyAudioGaps: 'core/recommend/audio-gaps.mjs',
     BetterfyWikidata: 'core/sources/wikidata.mjs',
   },
 });
