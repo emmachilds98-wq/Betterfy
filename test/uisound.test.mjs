@@ -142,6 +142,7 @@ test('listenCard: status, meter while running, all-miss explained', () => {
   assert.match(off, /lcard-off/);
   assert.match(off, /<b>220<\/b> heard/);
   assert.doesNotMatch(off, /lpill/, 'no pill while off');
+  assert.doesNotMatch(r, /lp-txt/, 'the card’s bars carry no second copy of the count');
 });
 
 test('missedList: most common first, B2 wording, unknown codes shown as is', () => {

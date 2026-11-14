@@ -54,6 +54,7 @@
 /* listening card body (the controls above it are B2's) */
 .lcard{display:flex; flex-direction:column; gap:10px; margin:8px 0}
 .lc-head{display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px}
+.lc-bars{padding:5px 8px}
 .lc-title{color:var(--ink); font-weight:600}
 .lc-meter{height:6px; border-radius:3px; background:var(--surface-3); overflow:hidden}
 .lc-meter i{display:block; height:100%; border-radius:3px; background:linear-gradient(90deg, var(--m0), var(--m2), var(--m4))}

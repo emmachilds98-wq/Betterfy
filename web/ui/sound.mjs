@@ -250,7 +250,7 @@ export function listenCard(vm) {
   const meter = vm.state === 'running' && total
     ? `<div class="lc-meter" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${Math.min(done, total)}" aria-label="This run"><i style="width:${sPct(done / total)}"></i></div>` : '';
   return `<div class="lcard lcard-${sIsListen(vm) ? vm.state : 'off'}">
-    <div class="lc-head">${sIsListen(vm) ? listenPill(vm) : ''}<span class="lc-title">${sEsc(head)}</span></div>
+    <div class="lc-head">${sIsListen(vm) ? `<span class="lpill lpill-${vm.state} lc-bars">${sBars()}</span>` : ''}<span class="lc-title">${sEsc(head)}</span></div>
     ${meter}${stats.length ? `<div class="lc-stats">${stats.join('')}</div>` : ''}
     ${allMiss ? `<p class="lc-note">None of these could be heard yet. The reasons are below; most are tracks Deezer has no preview for.</p>` : ''}
     ${missedList(vm)}
