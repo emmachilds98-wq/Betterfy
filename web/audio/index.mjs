@@ -10,5 +10,5 @@ export { analyseOne } from '../../core/audio/worker.js';
 export { MISS, validRecord, isCurrent, RECORD_VERSION, MODEL } from '../../core/audio/record.mjs';
 export { MEL_VERSION } from '../../core/audio/mel.mjs';
 export { HEADS, summariseHeads } from '../../core/audio/heads.mjs';
-export { dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY } from './dsp-view.mjs';
+export { dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, DSP_UI_KEY } from './dsp-view.mjs';
 export { measureWindows, needsDsp, DSP_VERSION } from '../../core/audio/dsp/combine.mjs';
