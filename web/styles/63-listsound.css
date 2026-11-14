@@ -1,0 +1,18 @@
+
+  /* ---------- Playlists: "Two genres by sound" (SOUND-EVERYWHERE S2) ----------
+     Drawn only when listening has heard enough of a genre playlist to see two
+     groups that sound apart; without sound the screen is laid out as before. */
+  .row.lsplit{align-items:flex-start}
+  .lsplit-bar{display:flex; gap:2px; height:6px; max-width:280px; margin:8px 0 6px; border-radius:3px; overflow:hidden}
+  .lsplit-bar i{display:block; min-width:6px; background:var(--vc, var(--accent)); opacity:.75}
+  .lsplit-bar i.mv{background:var(--m3, var(--ink-3)); opacity:.9}
+  .lsplit .sub b{color:var(--ink); font-weight:600}
+  .lsplit-eg{margin:6px 0 0; padding-left:18px; font-size:12.5px; color:var(--ink-2)}
+  .lsplit-eg li{margin:2px 0; overflow-wrap:anywhere}
+  .lsplit-eg .sub{color:var(--ink-3)}
+  .lsplit .acts .b{white-space:normal; text-align:left; max-width:260px}
+  @media (max-width:560px){
+    .row.lsplit{flex-direction:column}
+    .lsplit .acts{width:100%}
+    .lsplit .acts .b{max-width:none}
+  }

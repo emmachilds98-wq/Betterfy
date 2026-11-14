@@ -77,15 +77,19 @@ test('with nothing found yet, the seed picker stands alone', () => {
   assert.doesNotMatch(html, /id="seek"/, 'no player until there is something to play');
 });
 
-test('without a Last.fm key the run button is disabled and an inline form offers one', () => {
-  // Used to just point at the Playlists screen and leave you to find your own
-  // way there; now the key can be pasted and saved right where it's needed.
+test('without a Last.fm key Discover still runs, and a key is offered as an optional extra', () => {
+  // CLAUDE.md: a feature only counts if every account can use it from its
+  // Spotify library alone. Without a key the candidates come from Deezer's and
+  // ListenBrainz's "fans also like" (core/audio/discover.mjs), so the run
+  // button works and the key form says what a key adds instead of gating.
   const html = load({ key: null }).vDiscover();
-  assert.match(html, /Discovery needs a free Last\.fm key/);
-  assert.match(html, /id="discRun" disabled/);
-  assert.match(html, /id="lfmKeyDisc"/, 'the key can be entered on this screen');
-  assert.match(html, /id="saveLfmDiscover"/, 'and saving it is one click, not a trip to another screen');
-  assert.match(html, /Add a key above to get started/, 'and the empty state points at the same form');
+  assert.doesNotMatch(html, /Discovery needs a free Last\.fm key/);
+  assert.match(html, /No key needed/);
+  assert.match(html, /<button class="b p" id="discRun" >/, 'the run button is not disabled');
+  assert.match(html, /id="lfmKeyDisc"/, 'a key can still be entered on this screen');
+  assert.match(html, /id="saveLfmDiscover"/);
+  assert.match(html, /Nothing found yet/, 'the empty state is the same one a key gets');
+  assert.doesNotMatch(html, /Add a key above to get started/);
 });
 
 test('with a key already saved, no inline form clutters the screen', () => {

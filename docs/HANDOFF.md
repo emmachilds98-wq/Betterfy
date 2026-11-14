@@ -1,48 +1,55 @@
 # Handoff — where the audio and genre work stands (2026-11-14)
 
-**Start here.** This is the current state of the work, written for the next
-agent. It supersedes the "order of work" in `docs/UPGRADE-PLAN.md`, which
-dates from 2026-10-31. The other plan docs are still accurate for their own
-areas; the map in "Read next" says which one covers what.
+**Start here.** This is the current state of the work, written for whoever
+picks it up next (updated 2026-11-14, end of the sound-everywhere round). It
+supersedes the "order of work" in `docs/UPGRADE-PLAN.md`. The other plan docs
+are still accurate for their own areas; "Read next" (§8) says which covers what.
 
 ---
 
 ## 1. State of the repo
 
-**`main`** has everything up to and including these PRs:
-- #82, record v2 with optional MAEST and CLAP ears;
-- #84, Deep listen settings;
-- #87, the build plan status table.
+**`main`** has all of audio plan B, #88 (sound-first filing, sound ID and
+matching, CLAP text table) and the four merged pieces of
+`docs/SOUND-EVERYWHERE-PLAN.md`:
 
-The audio pipeline (Option B) is merged on `main`:
-- listening;
-- records;
-- the learner;
-- the gate;
-- the UI layer.
-
-**Open draft PR: [#88](https://github.com/emmachilds98-wq/Betterfy/pull/88)**. Its branch is `claude/gifted-planck-bglamu`. Its body is the full write-up. It holds three things, newest first:
-
-| Part | Commit | What it is |
+| Piece | PR | What it added |
 |---|---|---|
-| Sound ID and matching | `e626b69` | Genre › sub-genre › BPM for heard tracks; sound-alikes and "mixes with"; tempo used in filing |
-| Sound-first filing | `9f0637e` | Heard tracks are filed by sound; the artist graph learns from genre playlists only |
-| CLAP text table (WP-C2 part 1) | `84d5c08`, `69c75d3` | The build-time text table, and the CLAP model id moves to `larger_clap_music_and_speech` |
+| S1 Tidy by sound + plumbing | #92 | `core/audio/misfit.mjs`; Tidy › By sound (move/undo, "Keep here", held-out caught/false-alarm line); File screen reuses the Engine's space (`soundShareable`/`soundAdopt`); records refresh mid-run (`audioMidRun`) |
+| S2 Playlist sound profiles | #93 | `core/audio/plprofile.mjs`; genre mix and BPM range per playlist; "two genres by sound" with a Make-playlist split |
+| S3 DJ order | #94 | `core/audio/order.mjs`; Shuffle's tempo- and sound-aware order with an optional energy arc, written to a `🎧` playlist |
+| S4 Discover by sound | #95 | `core/audio/discover.mjs`; picks are heard and re-ranked by fit to the seed; sound-led playlist picks; a **keyless** candidate path (Deezer + ListenBrainz neighbours), so Discover no longer needs Last.fm |
 
-At handoff, `npm test` gave **1295 pass, 0 fail, 1 skip**. Check #88's CI on its last push before merging.
+At the end of the round `npm test` gave **1355 pass, 0 fail, 1 skip** with
+all four merged, and CI was green on main.
 
-## 2. Waiting on the owner
+**Still open on GitHub:**
 
-1. **Merge #88.** It is a draft; the owner merges, or asks an agent to.
-2. **Real numbers.** Every number so far comes from the simulated library or synthetic fixtures. To get real ones:
-   - turn on **Listen to my music** and let it hear the default scope;
-   - then go to **Engine → Learn my library → Score both engines → Copy results**, and paste the text into an issue or the chat.
+| PR / branch | State | What it needs |
+|---|---|---|
+| S5 key detection (`core/audio/dsp/key.mjs`) | in progress in its own thread at handoff; if a PR exists it is a draft | Key is 30% exact, so it stays hidden. Merge only with a re-measured accuracy that clears the bar (`scripts/audio-dsp/beatport-eval.mjs`); only then use Camelot key in `mixesWith` and the DJ order |
+| #90 MAEST (WP-C1) | draft | The model file is not committed: run `scripts/audio-maest/export.py` on a machine that can reach essentia.upf.edu, add the file, then the owner's MAEST-vs-effnet Score run |
+| WP-C2 part 2, CLAP audio encoder | not started | Port `ClapFeatureExtractor` (48 kHz, 64 mel, 10 s) with a parity test, run `Xenova/larger_clap_music_and_speech` behind #84's opt-in. Cloud sessions can't download it (huggingface blocked). This switches on WP-C3 naming and "sounds like" search; the text table (#88) is already on main |
+| #41 MusicBrainz/iTunes tag sources | draft, old (2026-09) | Owner's decision (keyless tag sources) |
+| #89 UI-6 (paused) | closed: superseded by #81, which merged UI-6 | nothing |
+| branch `claude/project-thread-zoqwss` (UI-2) | stale, no PR: superseded by #80 | can be deleted |
 
-   The pasted text includes:
-   - "With sound (sound-first…)", which is filing accuracy;
-   - "Naming genres by sound", which is genre and sub-genre accuracy, model alone against with the library;
-   - tempo fit, and results by genre.
-3. Older open questions, still unanswered:
+Other `claude/*` branches whose PRs are merged are history only.
+
+## 2. Waiting on the owner (needs their machine or library)
+
+1. **Engine Score run on the real library.** Every number so far comes from
+   the simulated library or synthetic fixtures. Turn on **Listen to my music**,
+   let it hear the default scope, then **Engine → Learn my library → Score both
+   engines → Copy results** and paste the text into an issue. It reports
+   filing accuracy with sound, genre/sub-genre naming accuracy, tempo fit and
+   results by genre. Then also open **Tidy › By sound**: its line gives the
+   real caught and false-alarm rates.
+2. **Rekordbox tempo/key check.** `scripts/audio-dsp/tempo-vs-rekordbox.mjs`
+   and `key-vs-rekordbox.mjs` against the owner's Rekordbox export (needs
+   the export file, which lives only on their machine).
+3. **MAEST export** for #90 (above).
+4. Older open questions, still unanswered:
    - re-keying the shared tag table off Spotify ids (`SMARTER-GENRES-PLAN.md` §3 and §8);
    - PR #41, keyless tag sources;
    - the Release Radar questions (`UPGRADE-PLAN.md` §5).
@@ -118,21 +125,15 @@ When writing page tests, the sandbox needs:
 
 ## 6. Next work, ranked
 
-1. **Tune from the owner's Score run.** Use the numbers from §2 to adjust:
-   - `SOUND_FIRST_WEIGHTS` (space.mjs);
-   - identify's `SOURCES`, `SPECIFIC` and `MIN_GENRE`;
-   - the `TEMPO` ranges.
-
-   "By genre" shows which scenes are weak. Change one thing, re-score, compare.
-2. **Tidy by sound.** Flag filed tracks whose sound ID or sound-first placement strongly disagrees with their playlist ("sounds like jungle, sits in House"). `identify` and `placements(…, { soundFirst })` already give everything needed. Done when there is a sound tier on Tidy with the same move and undo flow, it is measured on held-out tracks, and nothing is shown without sound.
-3. **Playlist sound profiles.** Show each playlist's genre mix and BPM range on the Playlists screen. `profileRow`/ProfileVM in `web/ui/sound.mjs` already draws heard, BPM, energy and styles. Feed it `identify` results for members, and flag playlists that are two genres by sound.
-4. **BPM-aware Shuffle and DJ-set ordering.** Use `tempoRelation`/`mixesWith` to order a playlist so each next track can be beatmatched and sounds close.
-5. **WP-C2 part 2: the CLAP audio encoder in the page.** Port `ClapFeatureExtractor` (48 kHz, 64 mel, 10 s) with a parity test. Run `Xenova/larger_clap_music_and_speech` `onnx/audio_model_quantized.onnx` (78 MB) behind #84's opt-in, and store the result with `withEar()`. This switches on WP-C3 naming and search. Details are in AUDIO-BUILD-PLAN §4.
-6. **WP-C1: MAEST** as the second ear.
-7. **Key detection.** It is 30% exact, so it stays hidden. Improve `core/audio/dsp/key.mjs`, re-measure with `scripts/audio-dsp/beatport-eval.mjs`, and then use key in "mixes with".
-8. **Plumbing:**
-   - The File screen and the Engine screen each build their own space. Share `SOUND.space` with `ENG.space`.
-   - `AUDIO.records` refreshes only at the start and end of a listening run. Refreshing it every so often mid-run would let the File card show newly heard tracks sooner.
+1. **Tune from the owner's Score run** (§2.1). Change one thing, re-score, compare:
+   - `SOUND_FIRST_WEIGHTS` (space.mjs); identify's `SOURCES`, `SPECIFIC`, `MIN_GENRE`; the `TEMPO` ranges;
+   - Tidy by sound's `MISFIT` thresholds (misfit.mjs), against its caught/false-alarm line;
+   - playlist splits' `SPLIT_*`/`NEAR_GAP` (plprofile.mjs); Discover's 60/40 sound/artist blend (discover.mjs).
+2. **Key detection (S5)**, see §1. Then key in `mixesWith` and the DJ order.
+3. **WP-C2 part 2: the CLAP audio encoder in the page** (§1). Needs a machine that can reach huggingface.
+4. **WP-C1: MAEST** (#90), after the export.
+5. **Show the held-out measures together.** Tidy by sound, splits and Discover's fit each measure themselves on the account's own tracks; the Engine Score card could list them beside filing and naming accuracy.
+6. Built in this round (for reference): Tidy by sound, playlist profiles, DJ order, Discover by sound and keyless Discover, a shared sound space, mid-run record refresh.
 
 ## 7. Known limits
 
@@ -147,6 +148,7 @@ When writing page tests, the sandbox needs:
 
 | Doc | Covers |
 |---|---|
+| `docs/SOUND-EVERYWHERE-PLAN.md` | The S1–S5 round: what each piece owns and does |
 | `docs/AUDIO-BUILD-PLAN.md` | Packages, §4 status, §5 owner decisions, §7 contract log |
 | `docs/AUDIO-ANALYSIS-PLAN.md` | Phase 0 measurements (§0) and external facts (§2) |
 | `docs/SMARTER-GENRES-PLAN.md` | The rules (§3), the bridge, calibration, gaps |
