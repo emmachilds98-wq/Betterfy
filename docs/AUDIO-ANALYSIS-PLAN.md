@@ -1,6 +1,6 @@
 # Audio analysis — plan for v3 phase 5
 
-Status: **plan only, nothing built.** Sequenced **after** the account-native
+Status: **phase 0 measured (§0); nothing in the product built yet.** Sequenced **after** the account-native
 engine's gate (PR #43, see `docs/UPGRADE-PLAN.md` §2): if that engine loses on
 tracks by artists the account has never filed, audio is the fix; if it wins,
 audio is a refinement. It also builds on #43: its `bundler.mjs` is how the
@@ -8,6 +8,51 @@ audio worker reaches the page, and the embedding should enter #43's learned
 space as one more signal, not only v3 evidence. Every external fact below was checked
 from a live request on 2026-10-31 unless it says otherwise. Where a number is
 a guess, it says that too.
+
+---
+
+## 0. Phase 0 results (2026-11-14) and the options they leave
+
+Measured with `scripts/audio-phase0/` (see its README). Test sets:
+
+- **150 genre-labelled tracks.** Ten per genre across 15 genres, one track
+  per artist, taken from Deezer playlists whose *title* names the genre.
+  These labels are noisy: a "Melodic Techno" playlist is in the techno set,
+  and a DnB/bassline crossover playlist is in the bassline set.
+- **19 of the owner's recently played tracks**, read through their Spotify
+  connector. That connector can't list a playlist's tracks, so the owner's
+  playlist membership couldn't be used as ground truth yet.
+
+| Question | Result |
+|---|---|
+| Can it hear them at all? | 150/150 labelled and 18/19 of the owner's tracks had a Deezer preview |
+| **Do the model's 400 labels name the genre?** | **Weak on fine scene genres.** Across the 12 genres it has labels for: top-1 29%, top-3 58%, top-5 68%; a neighbouring genre in the top 3 80%. Good: UK rap (80% top-1), DnB (60%), trance (50%). Poor: hard house (0%, heard as Trance), techno (20%, heard as Electro House/Trance), speed garage (10%) |
+| **Placing by sound against example playlists** (leave-one-out nearest centroid of embeddings, about 9 examples per genre) | **58% top-1 and 76% top-2 across 15 genres** (chance is 7%), including the three it has no label for: phonk 50%, jersey club 80%, footwork 60%. Deep house 90%, hard house 80%, grime 80%, techno 80%. Confusions are between real neighbours: UKG↔bassline, trance↔donk, speed garage↔UKG/hard house |
+| Partial download (two ~10 s `Range` fetches: start and middle) | 206 responses. 330 KB instead of 480 KB (**31% saved**, not the 40% estimated). Same top-1 as the full preview 82% of the time; embedding cosine median 0.988 (minimum 0.897) |
+| Speed | Native onnxruntime: 40 ms per preview. **Browser (onnxruntime-web 1.31.1 WASM, single-threaded, headless Chromium, 4-core container): ~0.8 s per full preview, ~0.2 s for two 10 s windows, ~0.7 s one-off model load.** GitHub Pages can't enable cross-origin isolation, so plan on single-threaded. Phones are typically several times slower; that's estimated, not measured |
+| Mel front end without Essentia | `mel_np.py`, written from scratch, matches `TensorflowInputMusiCNN` to within 3e-4 with the same frame count. On a real preview, model activations differ by at most 1.2e-6 and the embedding cosine is 1.000000. Exact settings: Hann (not normalised), \|rfft\| of 512, **power** mel ×96, Slaney scale, `unit_tri`, 0–8 kHz, `log10(1+10000x)`. So `core/audio/mel.mjs` can be plain JS with no AGPL code |
+| Name matching as a fallback | Misfired on 1 of 19 (it matched a different track by the same artist). **Use ISRC only**; the iTunes name-match fallback stays out |
+| Mixed sections | Patch-level top-1 agreement within one preview ranges from 17% to 100% on the owner's tracks. Tracks that change between intro and drop show up clearly |
+| MAEST (the larger transformer) | 345 MB ONNX; reported mAP 27 vs effnet's PR-AUC 20.6. Too big for phones |
+
+**What this means.** The model works as an **ear** (its embedding). It
+doesn't work well as a **namer** for this owner's scene: the Discogs labels
+are too coarse and too dated. Placement learned from the account's own
+playlists already does about twice as well as the labels, from nine examples,
+including genres the model has never heard of. Real playlists have dozens of
+members, so this should improve; that's the next thing to measure, on the
+owner's real library.
+
+### The options
+
+| | A. Labels | **B. Learn from your playlists (recommended)** | C. B plus a laptop-only "deep listen" |
+|---|---|---|---|
+| What it does | Effnet's 400 labels become tags | Effnet is the ear. Each playlist becomes a sound fingerprint (centroid, then a small classifier trained in the browser from its members). Labels are only a secondary hint and a name for proposals. Small heads add mood/theme, voice/instrumental and danceability. BPM, key and energy come from our own JS signal processing | Option B, plus MAEST (better labels) and CLAP (text search like "dark rolling bassline", and names for clusters the labels miss), downloaded only on a laptop over Wi-Fi |
+| Measured basis | 29% top-1 | 58% top-1 / 76% top-2 from 9 examples | Not measured |
+| Download, once | 18 MB | ~22 MB | ~22 MB + 345 MB (MAEST) and/or ~80 MB (CLAP) |
+| New and hybrid genres | No | Yes: a playlist defines the genre, and top-2 drives "pick one of these two" | Yes, plus names for unlabelled clusters |
+| Phone | Yes | Yes | No (laptop only) |
+| Cost | Free | Free | Free (but heavy) |
 
 ---
 
