@@ -2197,9 +2197,13 @@ function secDupes() {
       <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
     </div><div class="acts">${c.options.map(o =>
       `<button class="b sm" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z => z.id !== o.id).map(z => z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
-    </div></div>`).join('') || '<div class="empty"><b>None found</b>Nothing in your library matches this.</div>'}</div>
+    </div></div>`).join('') || emptyState('None found', 'Nothing in your library matches this.', { compact: true })}</div>
     ${moreButton(key, list.length)}`;
-  return `<p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>
+  const lede = `<p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>`;
+  // Both lists empty is one answer, not two grey boxes under two headings.
+  if (!exact.length && !clash.length) return `${lede}
+    ${emptyState('No repeats', 'None of your playlists has the same track in it twice, as the same recording or as a different cut.')}`;
+  return `${lede}
     ${sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.', 'dupes-exact')}
     ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash')}`;
 }
@@ -2215,8 +2219,28 @@ function secCross() {
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
         `<button class="chip" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
     </div></div>`).join('')
-      || `<div class="empty"><b>Nothing at ${S.crossMin}+ playlists</b>Lower the threshold to see tracks filed in fewer places.</div>`}</div>
+      || (R.across.length
+        ? emptyState(`Nothing at ${S.crossMin}+ playlists`, 'Lower the threshold to see tracks filed in fewer places.', { compact: true })
+        : emptyState('Nothing cross-filed', 'Every track you have filed sits in one playlist only.'))}</div>
     ${moreButton('cross-' + S.crossMin, a.length)}`;
+}
+
+/** UI-1's empty state: the mark's five bars at rest, a title, one line, and
+ *  optionally what to do about it. `compact` sits inside a list or a card. */
+function emptyState(title, body, { compact = false, acts = '' } = {}) {
+  return `<div class="empty-state${compact ? ' compact' : ''}"><span class="es-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><div class="es-body"><b>${esc(title)}</b><p>${body}</p></div>${
+    acts ? `<div class="es-acts">${acts}</div>` : ''}</div>`;
+}
+
+/* The misfile confidence tiers, in calibrate's words (UI-BUILD-PLAN R5): the
+ * stored value stays high/medium/low so a remembered filter still works; what
+ * the listener reads is the same Sure / Likely / Unsure as everywhere else. */
+const MF_BANDS = [['high', 'HIGH', 'sure', 'Sure'], ['medium', 'LIKELY', 'likely', 'Likely'], ['low', 'AMBIGUOUS', 'unsure', 'Unsure']];
+const mfBandWord = b => (MF_BANDS.find(x => x[0] === b) ?? MF_BANDS[0])[3];
+/** UI-2's bandChip when it draws one, else the same chip in UI-1's classes. */
+function mfBandChip(b) {
+  const [, vm, cls, word] = MF_BANDS.find(x => x[0] === b) ?? MF_BANDS[0];
+  return (typeof bandChip === 'function' && bandChip(vm)) || `<span class="band band-${cls}">${word}</span>`;
 }
 
 function secMisfile() {
@@ -2234,8 +2258,8 @@ function secMisfile() {
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
   return `<p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Each row is a move, not a score — and every one of them lands in History.</p>
-    <div class="rowbtns" style="margin-bottom:14px">${['high', 'medium', 'low'].map(b =>
-      `<button class="b sm ${S.mfBand === b ? 'p' : ''}" data-mfb="${b}">${b} (${counts[b]})</button>`).join('')}</div>
+    ${R.misfiled.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
+      `<button type="button" aria-pressed="${S.mfBand === b}" data-mfb="${b}">${mfBandChip(b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
     <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
@@ -2259,7 +2283,10 @@ function secMisfile() {
           ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
       </div>` : ''}</div>`;
     }).join('')
-      || `<div class="empty"><b>Nothing in this band</b>${S.mfBand === 'high' ? 'Everything is filed where it fits. Try the medium band for the speculative ones.' : 'Try another confidence band.'}</div>`}</div>
+      || (R.misfiled.length
+        ? emptyState(`Nothing ${mfBandWord(S.mfBand)}`, S.mfBand === 'high'
+            ? 'Nothing is clearly in the wrong place. Likely has the more speculative ones.' : 'Try another of the three.', { compact: true })
+        : emptyState('Everything fits where it is', 'No track sits in a playlist that fits far worse than another one on the same axis. New ones show up here after a sync.'))}</div>
     ${moreButton('misfile-' + S.mfBand, m.length)}`;
 }
 
@@ -2267,8 +2294,8 @@ function vTidy() {
   const n = { misfile: R.misfiled.length, dupes: R.within.length, cross: R.across.length };
   const body = { misfile: secMisfile, dupes: secDupes, cross: secCross }[S.tidySec ?? 'misfile'];
   return `<h1>Tidy</h1>
-    <div class="rowbtns" style="margin:0 0 20px">${TIDY_SECTIONS.map(([id, label]) =>
-      `<button class="b sm ${(S.tidySec ?? 'misfile') === id ? 'p' : ''}" data-tidy="${id}">${label} <span class="mono">${n[id].toLocaleString()}</span></button>`).join('')}</div>
+    <div class="seg tidysecs" role="group" aria-label="Section">${TIDY_SECTIONS.map(([id, label]) =>
+      `<button type="button" aria-pressed="${(S.tidySec ?? 'misfile') === id}" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
     ${body()}`;
 }
 
