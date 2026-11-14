@@ -84,6 +84,11 @@
   .pick .bar{display:block; width:62px; height:5px; border-radius:3px; overflow:hidden;
         background:color-mix(in srgb, var(--ink-3) 30%, transparent)}
   .pick .bar i{display:block; height:100%; background:var(--ink-3)}
+  /* With a confidence band (UI-4), the band is the headline and the percentage
+     its footnote: still there for whoever wants the number, no longer shouting. */
+  .pick .band + .sc{font-size:11.5px; font-weight:500; color:var(--ink-3)}
+  .pick.best .band + .sc{color:color-mix(in srgb, var(--ok) 70%, var(--ink-3))}
+  .pick .mid .evs{margin-top:7px}
   /* Player. The scrubber is a real range input so it is draggable, keyboard
      operable and announced as a slider, with the native track and thumb
      restyled rather than replaced by divs. */
