@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-1918">
+<meta name="bf-build" content="2026-11-14-1925">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -587,10 +587,6 @@
   .why{font-size:12.5px; color:var(--ink-2); background:var(--surface-3); border-radius:5px; padding:4px 9px; display:inline-block; margin-top:6px}
   /* Every axis says what it was guessed from, so it can be checked rather
      than taken on trust — and a correction you made reads as yours. */
-  .axwhy{font-size:11.5px; color:var(--ink-3); margin-left:9px}
-  .axwhy::before{content:"· "}
-  .axwhy.mine{color:var(--ok)}
-  .axrow .acts{align-items:center}
   table.cmp{border-collapse:collapse; font-size:12.5px; margin-top:8px; width:100%}
   table.cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:0 10px 3px 0}
   table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
@@ -627,6 +623,73 @@
   .fab.spin{animation:spin .6s linear infinite}
   .fab.busy{animation:pulse 1s ease-in-out infinite}
   @keyframes pulse{50%{opacity:.4}}
+/* Playlists (axes table) and Sources — UI-3, docs/UI-BUILD-PLAN.md §6. */
+  [data-v="sources"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
+
+  /* ---- Playlists: coverage line and the axes table ---- */
+  .axcov{display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--ink-2); font-size:14px; margin:0 0 22px}
+  .axcov .mono{color:var(--ink); font-weight:600}
+  .axtable{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); overflow:hidden; margin-bottom:26px}
+  .axtbl{width:100%; border-collapse:collapse; font-size:14px}
+  .axtbl thead th{text-align:left; font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--ink-3); padding:12px 14px; border-bottom:1px solid var(--line); white-space:nowrap}
+  .axtbl td, .axtbl tbody th{padding:10px 14px; border-bottom:1px solid var(--line); vertical-align:middle; text-align:left; font-weight:400}
+  .axtbl tbody tr:last-child > *{border-bottom:0}
+  .axtbl tbody tr.axrow:hover{background:var(--surface-2)}
+  .axtbl .axn{text-align:right; color:var(--ink-2); width:1%; white-space:nowrap}
+  .axname{min-width:0}
+  .axname .ttl{font-weight:600; color:var(--ink)}
+  .axwhy{display:block; font-size:12px; color:var(--ink-3); margin-top:2px}
+  .axwhy.mine{color:var(--ok)}
+  .axtbl .axmix{font-size:12.5px; color:var(--ink-3); margin:0}
+  .axtbl .axmix::before, .axtbl .axmix span::before{content:none}
+  .axsel{width:1%; white-space:nowrap}
+  .axsel select{min-width:110px}
+  .axtg{width:1%; white-space:nowrap}
+  .axtg label{display:flex; align-items:center; gap:8px; cursor:pointer}
+  /* The column header already says it; the words stay for screen readers. */
+  .axtglbl{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
+
+  /* The sound-profile expander, only present when there is a profile. */
+  .axexp{appearance:none; border:0; background:none; cursor:pointer; width:22px; height:22px; margin:0 6px 0 -4px;
+    border-radius:6px; color:var(--ink-3); vertical-align:-5px; position:relative}
+  .axexp::before{content:""; position:absolute; left:8px; top:6px; border:5px solid transparent; border-left:6px solid currentColor;
+    transition:transform .15s}
+  .axexp[aria-expanded="true"]::before{transform:rotate(90deg) translate(1px, 1px)}
+  .axexp:hover{background:var(--surface-3); color:var(--ink)}
+  .axprof > td{background:var(--surface-2); padding:12px 14px 14px 44px}
+
+  /* ---- Sources ---- */
+  .srccov{color:var(--ink-2); font-size:14px; margin:0 0 20px}
+  .srccov b{color:var(--ink)}
+  .srcgrid{display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; align-items:start}
+  .srccard{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); padding:18px 20px 20px; min-width:0}
+  .srchead{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px}
+  .srchead h2{margin:0; font-size:17px}
+  .srcline{color:var(--ink-2); font-size:13.5px; margin:0 0 14px}
+  .srccard .rowbtns{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px}
+  .srccard input:not([type]), .srccard input[type="text"]{flex:1 1 180px; min-width:0; width:auto}
+  /* Listening spans the grid: it has more to say than a key and a button. */
+  .srclisten{grid-column:1 / -1}
+  .srclisten #audioPanel > p.sub{color:var(--ink-2); font-size:13px}
+  .srclisten progress{accent-color:var(--vc, var(--accent)); height:8px}
+  .srclisten .credit{font-size:11.5px; color:var(--ink-3); margin:12px 0 0}
+  .srclisten .credit a{color:inherit}
+
+  @media (max-width: 760px){
+    .srcgrid{grid-template-columns:1fr}
+    /* Each table row folds into a two-line card: name and count, then controls. */
+    .axtbl thead{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
+    .axtbl, .axtbl tbody{display:block}
+    .axtbl tr.axrow{display:grid; grid-template-columns:1fr auto; grid-template-areas:"name n" "mix mix" "sel tg";
+      gap:4px 10px; padding:12px 14px; border-bottom:1px solid var(--line); align-items:center}
+    .axtbl tbody tr:last-child{border-bottom:0}
+    .axtbl tr.axrow > *{padding:0; border:0}
+    .axtbl .axname{grid-area:name} .axtbl .axn{grid-area:n} .axtbl .axmix{grid-area:mix}
+    .axtbl .axsel{grid-area:sel; width:auto} .axtbl .axtg{grid-area:tg; width:auto}
+    .axtglbl{position:static; width:auto; height:auto; clip:auto; font-size:12.5px; color:var(--ink-2)}
+    .axtbl tr.axprof{display:block} .axprof > td{display:block; padding:10px 14px}
+  }
   /* Marks the update button when a newer build is waiting on the server. */
   .fab.hasUpdate{border-color:var(--accent); color:var(--accent)}
   .fab.hasUpdate::after{content:""; position:absolute; top:-3px; right:-3px; width:8px; height:8px;
@@ -900,7 +963,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-1918</span>
+    <span class="mono">build 2026-11-14-1925</span>
   </p>
 
   <div class="feat">
@@ -998,7 +1061,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1918</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1925</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1039,7 +1102,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1918</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1925</span>
   </div>
 </div>
 
@@ -2240,7 +2303,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-1918';
+const BUILD = '2026-11-14-1925';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2561,7 +2624,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-1918', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-1925', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -4731,7 +4794,7 @@ function vSources() {
         <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
       </div>`)}
 
-    <section class="srccard srclisten" id="src-listening" aria-label="Listening">${audioPanelHTML()}</section>
+    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>
     </div>`;
 }
 
@@ -5664,7 +5727,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-1918';
+    s.src = 'engine.js?v=2026-11-14-1925';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -5686,7 +5749,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-1918');
+    const w = new Worker('engine-worker.js?v=2026-11-14-1925');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -6000,7 +6063,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-14-1918';
+    s.src = 'audio.js?v=2026-11-14-1925';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -6028,7 +6091,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-1918', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-1925', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -6141,13 +6204,15 @@ function audioPanelHTML() {
     : vm.state === 'paused' ? `Stopped${vm.reason && vm.reason !== 'stopped' ? ': ' + esc(vm.reason) : ''}. It carries on where it left off.`
     : 'Ready.';
   return `<div id="audioPanel">
-    <h2>Listen to my music</h2>
-    <p class="lede">Betterfy can listen to a 20-second sample of each track (two short windows of Deezer’s
-      30-second preview, found by the track’s ISRC) and remember what it sounds like, so tracks can be
-      placed by sound against your own playlists, not only by tags. The audio is never stored, only a
+    <div class="srchead"><h2 id="src-listening-h">Listen to my music</h2><span class="tag ${!set.on ? 'idle' : running || vm.state === 'done' ? 'ok' : 'idle'}">${
+      !set.on ? 'Off' : running ? 'Listening' : vm.state === 'done' ? 'Up to date' : 'Paused'}</span></div>
+    <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. Off until you switch it on.</p>
+    <details class="how"><summary>How this works</summary>
+      <p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
+      30-second preview, found by the track’s ISRC) and remembers what it sounds like. The audio is never stored, only a
       ~2.5 KB summary on this device. Switching it on downloads the listening model once (about 37 MB),
       then about 330 KB per track. “What I’m playing + unfiled” also hears up to 20 tracks from each genre
-      playlist, so there is something to compare the rest against.</p>
+      playlist, so there is something to compare the rest against.</p></details>
     <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioOn" ${set.on ? 'checked' : ''}> Listen to my music</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioWifi" ${set.wifiOnly ? 'checked' : ''}> Wi-Fi only</label>
@@ -6165,7 +6230,7 @@ function audioPanelHTML() {
     ${missedList(vm) || (nMissed ? `<details class="sub" style="margin:8px 0"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
     ${AUDIO.err ? `<p class="sub">${esc(AUDIO.err)}</p>` : ''}
-    <p class="sub" style="margin:8px 0;font-size:12px">Listening model: Discogs-EffNet and its mood, voice and
+    <p class="sub credit">Listening model: Discogs-EffNet and its mood, voice and
       danceability heads by the Music Technology Group, Universitat Pompeu Fabra
       (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
       used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Previews from Deezer.</p>
@@ -6415,7 +6480,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-1918`,
+    `Betterfy engine score — build 2026-11-14-1925`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
