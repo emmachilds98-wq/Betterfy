@@ -14,3 +14,4 @@ export { dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY } from './dsp-view.mjs
 export { measureWindows, needsDsp, DSP_VERSION } from '../../core/audio/dsp/combine.mjs';
 export { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement,
   labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf } from './labels-view.mjs';
+export { readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB } from './deep-settings.mjs';
