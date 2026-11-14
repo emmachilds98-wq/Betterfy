@@ -89,6 +89,8 @@ __STYLES__</style>
     <div><b>Misfiles, by axis</b><p>A genre playlist is only ever compared with other genre playlists.</p></div>
     <div><b>Backlog inbox</b><p>Unfiled tracks, one at a time, each with a suggested home.</p></div>
     <div><b>Cross-filing left alone</b><p>Surfaced for you, never removed automatically.</p></div>
+    <!-- Behind a flag until listening ships (audio WP-B2 removes "hidden"). -->
+    <div class="wide" data-flag="listening" hidden><b>Listens, if you ask it to</b><p>Optional: places tracks by how they sound, from 30-second previews analysed on this device.</p></div>
   </div>
 
   <!-- Setup panel: only for whoever administers the Spotify app. Hidden unless
@@ -176,6 +178,10 @@ __STYLES__</style>
     <!-- The screens that don't sit on the bar, on a phone and on a desktop. -->
     <button class="tabmore" id="tabMore" aria-expanded="false" aria-controls="moreSheet">
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
+    <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): end of the top bar
+         on a desktop, floating above the tab bar on a phone. Empty — and so
+         invisible — until something calls setListen() with a ListenVM. -->
+    <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
       <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build __BUILD__</span>
@@ -1883,6 +1889,7 @@ const ACT_IC = {
   discover: '<circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/>',
   shuffle: '<path d="M17 4.5 20.5 7 17 9.5"/><path d="M17 14.5 20.5 17 17 19.5"/><path d="M3.5 7h3.2c1.2 0 2.3.6 3 1.6l4.6 6.8c.7 1 1.8 1.6 3 1.6h3.2"/><path d="M3.5 17h3.2c1.2 0 2.3-.6 3-1.6l.9-1.3"/><path d="M14.4 9.9l.9-1.3c.7-1 1.8-1.6 3-1.6h2.2"/>',
 };
+ACT_IC.heard = '<path d="M5 14.5v4"/><path d="M9.5 9.5v9"/><path d="M14 5v13.5"/><path d="M18.5 10.5v8"/>';
 const actIcon = v => `<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ACT_IC[v]}</svg></span>`;
 
@@ -1914,6 +1921,10 @@ function vHome() {
       found ? 'Built from what you actually played, minus everything you have.' : 'Run a search: weighted by what you played, minus what you own.'],
     ['shuffle', shufflable, 'playlists to re-order', 'Spacing that keeps the same artist from clumping.'],
   ];
+  // A fifth card once listening has ever run, and never before: a listener who
+  // never turns it on gets the same four cards, byte for byte.
+  if (listenEverRan()) acts.push(['heard', LISTEN.done, LISTEN.done === 1 ? 'track heard' : 'tracks heard',
+    'Previews listened to on this device, to place tracks by how they sound.']);
 
   // Where the library sits, as one bar over one population: your liked songs.
   // It used to mix three that came from different ones — liked-and-filed,
@@ -1955,8 +1966,8 @@ function vHome() {
       </div>
     </div>
 
-    <div class="acts4">${acts.map(([v, n, label, desc]) => `
-      <button class="act" data-go="${v}" style="--ac:var(--${VHUE[v]}); --ac-ink:var(--${VHUE[v]}-ink)">
+    <div class="acts4${acts.length > 4 ? ' five' : ''}">${acts.map(([v, n, label, desc]) => `
+      <button class="act" data-go="${v === 'heard' ? listenTarget() : v}"${v === 'heard' ? ' data-heard' : ''} style="--ac:var(--${VHUE[v] ?? HEARD_HUE}); --ac-ink:var(--${VHUE[v] ?? HEARD_HUE}-ink)">
         ${actIcon(v)}
         <span class="n">${n.toLocaleString()}</span>
         <span class="l">${esc(label)}</span>
@@ -1999,13 +2010,57 @@ function vHome() {
       const cover = t.art
         ? `<img class="cov" src="${esc(t.art)}" alt="" loading="lazy" decoding="async">`
         : `<span class="cov" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h + 48) % 360} 58% 44%))">${esc((t.title || '?').trim()[0] ?? '?')}</span>`;
-      return `<button class="u" data-goinbox="${i}">${cover}<span class="bd">
+      return `<button class="u" data-goinbox="${i}" title="${esc(t.title)} — ${esc(t.artist)}">${cover}<span class="bd">
         <span class="t">${esc(t.title)}</span>
         <span class="a">${esc(t.artist)}</span>
         <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
           ? `→ ${esc(best.name)} ${(best.score * 100).toFixed(0)}%` : '→ no confident pick'}</span>
       </span></button>`;
     }).join('')}</div>` : ''}`;
+}
+
+/* ---------- the listening indicator (docs/UI-BUILD-PLAN.md §2.5) ----------
+ * The chrome owns the slot; listenPill() (web/ui/sound.mjs) owns what is in it;
+ * the audio build owns the state and hands it over as a plain ListenVM through
+ * setListen(). Nothing here reads an AudioRecord or knows how listening works.
+ * With no ListenVM the slot stays empty and Home keeps its four cards. */
+let LISTEN = null;
+const HEARD_HUE = 'm2';
+/** Where a tap on the indicator or the Heard card goes: Sources → Listening once
+ *  that screen exists (UI-3), Playlists until then. */
+const listenTarget = () => (typeof VIEWS !== 'undefined' && VIEWS.sources) ? 'sources' : 'lists';
+const listenEverRan = () => !!LISTEN && (LISTEN.state !== 'off' || LISTEN.done > 0);
+
+/** The one entry point for the audio side: call with a ListenVM, or null to clear. */
+function setListen(vm) {
+  const had = listenEverRan();
+  LISTEN = vm ?? null;
+  paintListen();
+  if (typeof view === 'undefined' || view !== 'home' || !$('#main')) return;
+  // Only a card appearing or going re-draws Home; a count ticking up while
+  // listening runs updates in place, so the cards don't replay their entrance.
+  if (had !== listenEverRan()) return render();
+  const n = $('#main .act[data-heard] .n');
+  if (n) n.textContent = LISTEN.done.toLocaleString();
+}
+
+function paintListen() {
+  const slot = $('#listenSlot');
+  if (!slot) return;
+  const html = LISTEN ? listenPill(LISTEN) : '';
+  slot.innerHTML = html;
+  if (html) {
+    slot.setAttribute('role', 'button'); slot.tabIndex = 0;
+    slot.setAttribute('aria-label', 'Listening status — open Listening settings');
+  } else {
+    slot.removeAttribute('role'); slot.removeAttribute('tabindex'); slot.removeAttribute('aria-label');
+  }
+}
+{
+  const slot = document.getElementById('listenSlot');
+  const open = () => { if (slot.childElementCount || slot.textContent.trim()) go(listenTarget()); };
+  slot?.addEventListener('click', open);
+  slot?.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
 }
 
 /** A stable hue per track, for the tile shown when there's no artwork. */
