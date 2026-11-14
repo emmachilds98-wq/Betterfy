@@ -19,18 +19,24 @@ Firebase config baked into the build the page must make no requests, show no
 sign-in, and behave exactly as it does today. Nothing in the filing, tagging
 or misfile model may lean on it.
 
-## Status: feedback sync is live; corrections and overrides are not yet
+## Status: feedback, tag corrections and playlist types all sync
 
 Shipped: skip/reject feedback (the `FB` map — how many times a track has been
 skipped, and which playlists it's been rejected for) syncs across devices
 that have been linked to each other, through Firestore, on the free Spark
-plan. Not yet: tag corrections (`tags_extra`) and axis overrides (`bf_axes`)
-still only live on the device that set them — same reasoning, same design,
-just not built yet. Whoever picks that up next should follow the pattern
-`syncFeedback()` already sets in `docs/app.template.html`, most of which
-generalises directly (`syncSignIn`/`syncDoc`/`ensureSyncMembership`/link codes
-are all already state-agnostic; only a per-state merge function and a pull/push
-wrapper like `syncFeedback()` itself need writing per piece of state).
+plan. Since 2026-11-14, so do **hand tag corrections** (`state/corrections`)
+and **playlist types** (`state/axes`: genre, mood, event…, and whether a
+playlist takes suggestions).
+
+Corrections have their own store, `tag_corrections` in IndexedDB, written
+only by a deliberate edit, reset or refetch. They are not synced from
+`tags_extra`, because that is mostly bulk Last.fm and Discogs answers:
+thousands of artists, more than one Firestore document holds, and nothing
+another device can't fetch for itself. The first sync seeds the store from
+corrections made before it existed. An edited entry for an artist the
+shipped table tags with three or more tags can only be a hand edit, because
+the bulk fetch only touches thinner ones. Thin ones are ambiguous, so they
+start syncing the next time they are edited.
 
 **Not** the ~11 MB library snapshot — that's re-derivable from Spotify on any
 device, so losing it costs a re-sync, not data. What's worth syncing is the
@@ -145,11 +151,14 @@ only ever increases) and `lastSkip` takes the later timestamp. No entry is
 ever dropped, and merging is order-independent — two devices converge to the
 same state regardless of which one happened to sync first. This works
 because feedback's shape (a count, a timestamp, a set) has an obvious
-"combine, don't replace" rule; tag corrections and axis overrides are plain
-values with no natural union, so whoever builds those should expect a
-simpler "prefer local, fill gaps from remote" merge instead (never silently
-reverting a fresh local edit, but also not attempting to combine two
-different values for the same key).
+"combine, don't replace" rule. Tag corrections and playlist types are plain
+values with no natural union, so `mergeStamped()` does it per key: every
+entry carries the time it was set, and the newer one wins. That never reverts
+a fresh local edit, never combines two different values for one key, and
+converges whichever device syncs first. A plain "prefer local" rule would
+not converge: each device would keep its own value forever. A reset
+(putting the shipped tags back) is recorded as `tags: null` with its own
+time, so it travels like an edit.
 
 ### What was needed, and is now done
 

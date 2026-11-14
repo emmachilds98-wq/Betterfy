@@ -282,7 +282,7 @@ off.
 | **1** | Ship the bridge: `core/sources/deezer.mjs`, `listenbrainz.mjs`, `wikidata.mjs` (pure parse functions + thin fetch, fixture-tested like `discogs.mjs`); `core/intrinsic/bridge.mjs` as one more `combine()` component; per-artist cache; listening-ordered background fetch | Test proving that with no bridge cache the output is byte-identical to today |
 | **2** *(built 2026-11-14)* | Calibration + prediction sets (`core/intrinsic/calibrate.mjs`); show "right N% of the time" on the Engine screen | The stated rate holds on a second held-out fold within ±3 points |
 | **3** *(first half built 2026-11-14)* | **Gaps** screen: uncovered genre → create, split, twins, nameless cluster | Each proposal type has a fixture test. Nothing is written to Spotify without a tap (`verify-untouched.mjs` pattern) |
-| **4** | Teach queue, artist roll-forward, corrections + axis-override sync | Score after 20 teach answers beats the score before them |
+| **4** *(roll-forward and sync built 2026-11-14; teach queue waits on phase 1)* | Teach queue, artist roll-forward, corrections + axis-override sync | Score after 20 teach answers beats the score before them |
 | **5** | Audio (`AUDIO-ANALYSIS-PLAN.md`, its own phase 0 first), now feeding the blend, the Gaps naming and per-playlist audio fingerprints | That plan's gates |
 | **6** | Vocabulary pass for the still-unplaced tags (emo, industrial, EBM…). Offline, human-reviewed PR | Ontology tests |
 
@@ -380,6 +380,23 @@ only backlog clusters before. There's no separate Gaps screen.
   untagged cluster from the engine's "not sure" pile is waiting on phase 1:
   until similar artists are in placement, that pile is mostly what tags already
   can't name.
+
+**Phase 4, as built so far (2026-11-14):**
+
+- **Corrections and playlist types sync** across linked devices. Each change
+  is stamped with when it was made, and the newer change wins per key. The
+  design and the seeding of corrections made before syncing existed are in
+  `FIREBASE.md`.
+- **Artist roll-forward on the File screen.** After you file a track, it
+  offers that artist's other unfiled tracks for the same playlists. The list
+  is shown and each track can be unticked. Tracks already rejected for that
+  playlist are left out. It writes one History entry per playlist, with one
+  undo for the lot.
+- **The teach queue waits.** It ranks the File screen by where an answer
+  teaches the engine most, and shows the engine's checked short list as
+  one-tap choices. That would put the account-native engine into the main
+  filing flow before its gate has been run on a real library, which is the
+  thing every phase so far has refused to do.
 
 **Dropped or downgraded by this plan:** shared filing across users (R2), any
 runtime LLM over Spotify data (R1), Chrome's Prompt API (R1, and not
