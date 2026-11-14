@@ -3029,9 +3029,93 @@ function vTidy() {
     ${body()}`;
 }
 
+/* ======================= gaps: docs/SMARTER-GENRES-PLAN.md, phase 3 =======================
+ * "Make new playlists where I'm not covering genres." Two proposals on top of the
+ * backlog clusters this screen always had: genres you have music in but no genre
+ * playlist for, and genre playlists that are really two genres. Worked out from
+ * your tags, your genre playlists' names and what Spotify says you're playing, in
+ * core/recommend/gaps.mjs — fetched with the engine the first time this screen
+ * opens, since it brings the genre vocabulary with it.
+ *
+ * Nothing moves. Creating makes a new private playlist holding a copy of the
+ * tracks; a playlist being split is left exactly as it is.
+ * ======================================================================== */
+const GAPS = { status:'idle', err:null, gaps:null, splits:null, untagged:0, homeless:0, made:new Set(), for:null };
+
+/** Work the proposals out. Listening only reorders them, so failing to get it costs nothing. */
+async function gapsCompute() {
+  // R is rebuilt whenever the library, its tags or its genre playlists change,
+  // so the reports object this was worked out against says whether it is stale.
+  GAPS.status = 'working'; GAPS.err = null; GAPS.for = R;
+  try {
+    await engineLoad();
+    let active = null;
+    try { active = (await getListening())?.recentlyActive ?? null; } catch { active = null; }
+    const common = { lib: LIB, targets: engineTargets(), tagsOf: id => TAGS?.[id]?.tags ?? [], isMirror: isMirrorPlaylist };
+    const u = BetterfyGaps.uncoveredGenres({ ...common, active });
+    const split = BetterfyGaps.splitCandidates(common);
+    Object.assign(GAPS, { status:'ready', gaps:u.gaps, splits:split.splits, untagged:u.untagged, homeless:u.homeless });
+  } catch (e) {
+    GAPS.status = 'error'; GAPS.err = e?.message ?? String(e);
+  }
+  render();
+}
+
+/** Make a private playlist holding these tracks. Nothing else in the library changes. */
+async function gapsCreate(name, ids) {
+  const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
+  await addTracks(pl.id, ids);
+  GAPS.made.add(name.toLowerCase());
+  toast(`Created “${name}” with ${ids.length} tracks. It becomes a place to file into after your next sync.`);
+  render();
+}
+
+function gapsSections() {
+  if (GAPS.status === 'idle' || (GAPS.status === 'ready' && GAPS.for !== R)) {
+    GAPS.status = 'working';
+    fire(gapsCompute());
+  }
+  if (GAPS.status !== 'ready') return `<div class="card"><p class="why">${GAPS.status === 'error'
+    ? `Couldn't work out the gaps: ${esc(GAPS.err)} <button class="b sm" data-gapsretry>Try again</button>`
+    : 'Looking for genres you have no playlist for…'}</p></div>`;
+  const n = x => x.toLocaleString();
+  const made = name => GAPS.made.has(String(name).toLowerCase());
+  const gapRows = GAPS.gaps.map((g, i) => `<div class="row"><div class="main">
+      <div class="ttl">${esc(g.label)} <span class="tag">${n(g.size)} tracks</span>${
+        g.played ? ` <span class="tag ok">${n(g.played)} you're playing</span>` : ''}</div>
+      <div class="sub">e.g. ${esc(g.artists.join(', '))}${g.within ? `<br>Your ${esc(g.withinLabel)} playlist would
+        take these, but there are enough for one of their own.` : ''}</div>
+    </div><div class="acts">${made(g.label) ? '<span class="tag ok">created</span>'
+      : `<input id="gapnm${i}" aria-label="Name for the ${esc(g.label)} playlist" value="${esc(g.label)}">
+      <button class="b sm p" data-gap="${i}">Create with ${n(g.size)}</button>`}</div></div>`).join('');
+  const splitRows = GAPS.splits.map((s, i) => `<div class="row"><div class="main">
+      <div class="ttl">${esc(s.name)} <span class="tag">${n(s.total)} tracks</span></div>
+      <div class="sub">${s.parts.map(x => `${x.rest ? 'the rest of ' : ''}${esc(x.label)} ${n(x.size)} (${Math.round(x.share * 100)}%)`).join(' · ')}.
+        ${esc(s.name)} stays as it is.</div>
+    </div><div class="acts">${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
+      : `<button class="b sm" data-split="${i}:${k}">Make “${esc(x.label)}” (${n(x.size)})</button>`).join(' ')}</div></div>`).join('');
+  return `<h2 style="margin:22px 0 6px; font-size:18px">Genres with no playlist</h2>
+    <p class="why">Music you've liked or filed somewhere else, in a genre none of your genre playlists is for.
+      Genres nothing covers come first, then ones a broader playlist could take; what you're playing at the
+      moment comes before both.</p>
+    <div class="rows" style="margin-top:10px">${gapRows || `<div class="empty">Every genre you have ${BetterfyGaps.MIN_GAP} or more
+      unfiled tracks of already has a playlist.</div>`}</div>
+    ${GAPS.untagged ? `<p class="why" style="margin-top:8px">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
+      outside your genre playlists have no genre in their artists' tags, so they can't be placed in one here.
+      The groups at the bottom are where those turn up.</p>` : ''}
+    <h2 style="margin:22px 0 6px; font-size:18px">Playlists that are two genres</h2>
+    <p class="why">A genre playlist whose tracks split into two genres, each a real share of it. Making one
+      copies those tracks into a new playlist and leaves the original alone.</p>
+    <div class="rows" style="margin-top:10px">${splitRows || '<div class="empty">None of your genre playlists is two genres at once.</div>'}</div>`;
+}
+
 function vNew() {
   return `<h1>New playlists</h1>
-    <p class="lede">Groups in your unfiled backlog that fit none of your existing playlists.</p>
+    <p class="lede">Genres you have music in but no playlist for, playlists that are really two genres,
+      and groups in your backlog that fit nothing you have.</p>
+    ${gapsSections()}
+    <h2 style="margin:22px 0 6px; font-size:18px">Groups in your backlog</h2>
+    <p class="why">Unfiled tracks that sit together and fit none of your existing playlists.</p>
     <div class="rows">${R.clusters.map((x,i)=>`<div class="row"><div class="main">
       <div class="ttl">${x.size} tracks · ${esc(x.tags.slice(0,4).join(', '))}</div>
       <div class="sub">${esc(x.tracks.slice(0,4).join(' · '))}</div>
@@ -5514,6 +5598,27 @@ document.addEventListener('click', guard(async e => {
   if (refetch) { await refetchArtist(refetch.dataset.refetchtags, refetch.dataset.artistname); render(); return; }
   const reset = e.target.closest('[data-resettags]');
   if (reset) { await resetArtistTags(reset.dataset.resettags); render(); return; }
+
+  const gp = e.target.closest('[data-gap]');
+  if (gp) {
+    const g = GAPS.gaps?.[+gp.dataset.gap];
+    const name = $('#gapnm' + gp.dataset.gap)?.value.trim();
+    if (!g) return;
+    if (!name) return toast('Give it a name first.');
+    gp.disabled = true;
+    try { await gapsCreate(name, g.ids); } catch (err) { gp.disabled = false; toast('Failed: ' + err.message); }
+    return;
+  }
+  const spl = e.target.closest('[data-split]');
+  if (spl) {
+    const [i, k] = spl.dataset.split.split(':').map(Number);
+    const part = GAPS.splits?.[i]?.parts?.[k];
+    if (!part) return;
+    spl.disabled = true;
+    try { await gapsCreate(part.label, part.ids); } catch (err) { spl.disabled = false; toast('Failed: ' + err.message); }
+    return;
+  }
+  if (e.target.closest('[data-gapsretry]')) { GAPS.status = 'idle'; return render(); }
 
   const cl = e.target.closest('[data-cluster]');
   if (cl) {

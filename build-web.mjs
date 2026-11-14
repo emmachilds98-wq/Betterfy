@@ -115,6 +115,9 @@ const ENGINE_ENTRIES = [
   'core/intrinsic/bridge-fetch.mjs',
   // How sure it may sound, fitted on held-out filing (plan phase 2).
   'core/intrinsic/calibrate.mjs',
+  // Genres with no playlist, and playlists that are two genres (plan phase 3).
+  // Brings the ontology with it, which is why it lives in the lazy bundle.
+  'core/recommend/gaps.mjs',
 ];
 
 const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
@@ -130,6 +133,7 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyBridgeFetch: 'core/intrinsic/bridge-fetch.mjs',
     BetterfyDeezer: 'core/sources/deezer.mjs',
     BetterfyCalibrate: 'core/intrinsic/calibrate.mjs',
+    BetterfyGaps: 'core/recommend/gaps.mjs',
   },
 });
 

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-1507">
+<meta name="bf-build" content="2026-11-14-1545">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -897,7 +897,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-1507</span>
+    <span class="mono">build 2026-11-14-1545</span>
   </p>
 
   <div class="feat">
@@ -994,7 +994,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1507</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1545</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1035,7 +1035,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1507</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1545</span>
   </div>
 </div>
 
@@ -2168,7 +2168,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-1507';
+const BUILD = '2026-11-14-1545';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2489,7 +2489,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-1507', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-1545', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -3736,9 +3736,93 @@ function vTidy() {
     ${body()}`;
 }
 
+/* ======================= gaps: docs/SMARTER-GENRES-PLAN.md, phase 3 =======================
+ * "Make new playlists where I'm not covering genres." Two proposals on top of the
+ * backlog clusters this screen always had: genres you have music in but no genre
+ * playlist for, and genre playlists that are really two genres. Worked out from
+ * your tags, your genre playlists' names and what Spotify says you're playing, in
+ * core/recommend/gaps.mjs — fetched with the engine the first time this screen
+ * opens, since it brings the genre vocabulary with it.
+ *
+ * Nothing moves. Creating makes a new private playlist holding a copy of the
+ * tracks; a playlist being split is left exactly as it is.
+ * ======================================================================== */
+const GAPS = { status:'idle', err:null, gaps:null, splits:null, untagged:0, homeless:0, made:new Set(), for:null };
+
+/** Work the proposals out. Listening only reorders them, so failing to get it costs nothing. */
+async function gapsCompute() {
+  // R is rebuilt whenever the library, its tags or its genre playlists change,
+  // so the reports object this was worked out against says whether it is stale.
+  GAPS.status = 'working'; GAPS.err = null; GAPS.for = R;
+  try {
+    await engineLoad();
+    let active = null;
+    try { active = (await getListening())?.recentlyActive ?? null; } catch { active = null; }
+    const common = { lib: LIB, targets: engineTargets(), tagsOf: id => TAGS?.[id]?.tags ?? [], isMirror: isMirrorPlaylist };
+    const u = BetterfyGaps.uncoveredGenres({ ...common, active });
+    const split = BetterfyGaps.splitCandidates(common);
+    Object.assign(GAPS, { status:'ready', gaps:u.gaps, splits:split.splits, untagged:u.untagged, homeless:u.homeless });
+  } catch (e) {
+    GAPS.status = 'error'; GAPS.err = e?.message ?? String(e);
+  }
+  render();
+}
+
+/** Make a private playlist holding these tracks. Nothing else in the library changes. */
+async function gapsCreate(name, ids) {
+  const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
+  await addTracks(pl.id, ids);
+  GAPS.made.add(name.toLowerCase());
+  toast(`Created “${name}” with ${ids.length} tracks. It becomes a place to file into after your next sync.`);
+  render();
+}
+
+function gapsSections() {
+  if (GAPS.status === 'idle' || (GAPS.status === 'ready' && GAPS.for !== R)) {
+    GAPS.status = 'working';
+    fire(gapsCompute());
+  }
+  if (GAPS.status !== 'ready') return `<div class="card"><p class="why">${GAPS.status === 'error'
+    ? `Couldn't work out the gaps: ${esc(GAPS.err)} <button class="b sm" data-gapsretry>Try again</button>`
+    : 'Looking for genres you have no playlist for…'}</p></div>`;
+  const n = x => x.toLocaleString();
+  const made = name => GAPS.made.has(String(name).toLowerCase());
+  const gapRows = GAPS.gaps.map((g, i) => `<div class="row"><div class="main">
+      <div class="ttl">${esc(g.label)} <span class="tag">${n(g.size)} tracks</span>${
+        g.played ? ` <span class="tag ok">${n(g.played)} you're playing</span>` : ''}</div>
+      <div class="sub">e.g. ${esc(g.artists.join(', '))}${g.within ? `<br>Your ${esc(g.withinLabel)} playlist would
+        take these, but there are enough for one of their own.` : ''}</div>
+    </div><div class="acts">${made(g.label) ? '<span class="tag ok">created</span>'
+      : `<input id="gapnm${i}" aria-label="Name for the ${esc(g.label)} playlist" value="${esc(g.label)}">
+      <button class="b sm p" data-gap="${i}">Create with ${n(g.size)}</button>`}</div></div>`).join('');
+  const splitRows = GAPS.splits.map((s, i) => `<div class="row"><div class="main">
+      <div class="ttl">${esc(s.name)} <span class="tag">${n(s.total)} tracks</span></div>
+      <div class="sub">${s.parts.map(x => `${x.rest ? 'the rest of ' : ''}${esc(x.label)} ${n(x.size)} (${Math.round(x.share * 100)}%)`).join(' · ')}.
+        ${esc(s.name)} stays as it is.</div>
+    </div><div class="acts">${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
+      : `<button class="b sm" data-split="${i}:${k}">Make “${esc(x.label)}” (${n(x.size)})</button>`).join(' ')}</div></div>`).join('');
+  return `<h2 style="margin:22px 0 6px; font-size:18px">Genres with no playlist</h2>
+    <p class="why">Music you've liked or filed somewhere else, in a genre none of your genre playlists is for.
+      Genres nothing covers come first, then ones a broader playlist could take; what you're playing at the
+      moment comes before both.</p>
+    <div class="rows" style="margin-top:10px">${gapRows || `<div class="empty">Every genre you have ${BetterfyGaps.MIN_GAP} or more
+      unfiled tracks of already has a playlist.</div>`}</div>
+    ${GAPS.untagged ? `<p class="why" style="margin-top:8px">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
+      outside your genre playlists have no genre in their artists' tags, so they can't be placed in one here.
+      The groups at the bottom are where those turn up.</p>` : ''}
+    <h2 style="margin:22px 0 6px; font-size:18px">Playlists that are two genres</h2>
+    <p class="why">A genre playlist whose tracks split into two genres, each a real share of it. Making one
+      copies those tracks into a new playlist and leaves the original alone.</p>
+    <div class="rows" style="margin-top:10px">${splitRows || '<div class="empty">None of your genre playlists is two genres at once.</div>'}</div>`;
+}
+
 function vNew() {
   return `<h1>New playlists</h1>
-    <p class="lede">Groups in your unfiled backlog that fit none of your existing playlists.</p>
+    <p class="lede">Genres you have music in but no playlist for, playlists that are really two genres,
+      and groups in your backlog that fit nothing you have.</p>
+    ${gapsSections()}
+    <h2 style="margin:22px 0 6px; font-size:18px">Groups in your backlog</h2>
+    <p class="why">Unfiled tracks that sit together and fit none of your existing playlists.</p>
     <div class="rows">${R.clusters.map((x,i)=>`<div class="row"><div class="main">
       <div class="ttl">${x.size} tracks · ${esc(x.tags.slice(0,4).join(', '))}</div>
       <div class="sub">${esc(x.tracks.slice(0,4).join(' · '))}</div>
@@ -5210,7 +5294,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-1507';
+    s.src = 'engine.js?v=2026-11-14-1545';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -5232,7 +5316,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-1507');
+    const w = new Worker('engine-worker.js?v=2026-11-14-1545');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -5716,7 +5800,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-1507`,
+    `Betterfy engine score — build 2026-11-14-1545`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -6221,6 +6305,27 @@ document.addEventListener('click', guard(async e => {
   if (refetch) { await refetchArtist(refetch.dataset.refetchtags, refetch.dataset.artistname); render(); return; }
   const reset = e.target.closest('[data-resettags]');
   if (reset) { await resetArtistTags(reset.dataset.resettags); render(); return; }
+
+  const gp = e.target.closest('[data-gap]');
+  if (gp) {
+    const g = GAPS.gaps?.[+gp.dataset.gap];
+    const name = $('#gapnm' + gp.dataset.gap)?.value.trim();
+    if (!g) return;
+    if (!name) return toast('Give it a name first.');
+    gp.disabled = true;
+    try { await gapsCreate(name, g.ids); } catch (err) { gp.disabled = false; toast('Failed: ' + err.message); }
+    return;
+  }
+  const spl = e.target.closest('[data-split]');
+  if (spl) {
+    const [i, k] = spl.dataset.split.split(':').map(Number);
+    const part = GAPS.splits?.[i]?.parts?.[k];
+    if (!part) return;
+    spl.disabled = true;
+    try { await gapsCreate(part.label, part.ids); } catch (err) { spl.disabled = false; toast('Failed: ' + err.message); }
+    return;
+  }
+  if (e.target.closest('[data-gapsretry]')) { GAPS.status = 'idle'; return render(); }
 
   const cl = e.target.closest('[data-cluster]');
   if (cl) {
