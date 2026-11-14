@@ -12,7 +12,7 @@
 // `clap` field against the contract's CLAP_DIM and treats anything else as a
 // malformed record. A shrunken fixture would be thrown out before the code
 // under test ever saw it.
-import { packEmbedding, CLAP_DIM } from '../../core/audio/record.mjs';
+import { packEmbedding, CLAP_DIM, CLAP_MODEL } from '../../core/audio/record.mjs';
 
 export const DIM = CLAP_DIM;
 
@@ -37,7 +37,7 @@ export function table({ template = '{name} music' } = {}) {
   const broad = unit(Array.from({ length: DIM }, (_, i) => all.reduce((s, d) => s + d[i], 0)));
   const p = (text, kind, emb, concept) => ({ text, kind, ...(concept ? { concept } : {}), emb: packEmbedding(emb) });
   return {
-    v: 1, model: 'laion/larger_clap_music', revision: 'test', dim: DIM, template,
+    v: 1, model: 'laion/larger_clap_music_and_speech', revision: 'test', dim: DIM, template,
     prompts: [
       p('phonk music', 'genre', DIRS.phonk, 'phonk'),
       p('jersey club music', 'genre', DIRS.jersey, 'jersey-club'),
@@ -56,6 +56,6 @@ export function clapField(mix, noise = 0.35) {
   const r = rng(SEED++);
   const v = Array.from({ length: DIM }, (_, i) => noise * NOISE_SCALE * r()
     + Object.entries(mix).reduce((s, [k, w]) => s + w * DIRS[k][i], 0));
-  return { model: 'larger_clap_music-audio-q8-1', emb: packEmbedding(unit(v)) };
+  return { model: CLAP_MODEL, emb: packEmbedding(unit(v)) };
 }
 export const resetSeed = () => { SEED = 100; };

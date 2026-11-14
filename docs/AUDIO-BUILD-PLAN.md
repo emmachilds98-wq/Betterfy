@@ -217,7 +217,7 @@ Each entry gives: **files** it owns · **contract** · **done when** ·
   - Runs as a second ear: better style labels and a 768-d embedding.
   - Measured with the same with/without harness. It ships only if it beats B's ear on the owner's library.
 - **WP-C2 CLAP text table at build time:**
-  - `laion/larger_clap_music` (Apache-2.0) runs **only in a build script**, embedding a reviewed list of genre and description prompts into a small JSON table shipped with the page.
+  - `laion/larger_clap_music_and_speech` (Apache-2.0; *not* the music-only checkpoint, whose text tower is collapsed, see §7) runs **only in a build script**, embedding a reviewed list of genre and description prompts into a small JSON table shipped with the page.
   - The page downloads only CLAP's quantised **audio** encoder (~78 MB), on opt-in.
 - **WP-C3 Naming and text search:**
   - Unnamed clusters from H2 get CLAP's nearest prompt as a suggested name ("phonk?", "jersey club?"), which the owner confirms.
@@ -279,7 +279,8 @@ The coordinator's review is at high effort whatever the package used.
 | Record v2 contract (C1 + C2) | **Open, #82.** `main` merged in on 2026-11-14; the CLAP test fixture moved to the contract's 512 dimensions, because record v2 rejects any other size |
 | Deep listen settings (C1 + C2) | **Open, draft, #84.** `main` merged in on 2026-11-14 |
 | WP-C1 MAEST | Not started. Waits for #82 and #84 |
-| WP-C2 CLAP text table and audio encoder | Not started. Waits for #82 and #84. Unblocks C3 |
+| WP-C2 CLAP text table | **Done (this PR).** `scripts/audio-clap/` builds `docs/models/clap-text-table.json`: 154 prompts (all 108 ontology genres plus 46 reviewed descriptions), 512-d, from `laion/larger_clap_music_and_speech` at a pinned revision. Its test guards against a collapsed text space |
+| WP-C2 CLAP audio encoder in the page | **Not started.** Port CLAP's feature extractor (48 kHz, 64 mel bins, 10 s) to plain JS with a parity test against `transformers`' `ClapFeatureExtractor`. Run `Xenova/larger_clap_music_and_speech` `onnx/audio_model_quantized.onnx` (78 MB) on the #84 opt-in, and store the ear with `withEar()`. That turns on C3 |
 | WP-E2's gate on the owner's library | **Waiting on the owner:** Score both engines → Copy results |
 
 All 13 plus UI-0 (#64) merged to main on 2026-11-14; main passes the full suite (1047 pass, 1 skip). L1 (#76), E2 (#74) and B2 (#75) merged the same day. By the end of that day, #77–#86 above had merged too, and main passed 1250 tests (1 skip).
@@ -302,3 +303,4 @@ C is done when C1–C3 have each been measured the same way.
 - `mel.mjs` 1.0.0: initial.
 - `record.mjs` v1: initial.
 - `record.mjs` v2 (2026-11-14, for WP-C1 and WP-C2 together): optional second ears `maest: { model, styles, emb }` (768-d, Discogs400 order) and `clap: { model, emb }` (512-d), each with its own model id. `makeEar()`, `withEar()` (adds one ear to a stored record without re-hearing) and `earCurrent(rec, ear)` (a stale or missing second ear re-queues only that ear). `MIN_RECORD_VERSION = 1`: v1 records stay valid and current, so nobody re-listens. `validRecord` rejects a present-but-malformed ear and accepts null or absent.
+- `record.mjs` v2, model id only (2026-11-14): `CLAP_MODEL` is now `larger_clap_music_and_speech-audio-q8-1`. The record shape and `RECORD_VERSION` are unchanged, and no stored record had a `clap` ear yet. Reason: `laion/larger_clap_music`'s text tower is collapsed. All 154 prompts sit within cosine 0.999 of each other (mean vector norm 0.9996), and its neighbours stay noise even after centring. This holds under transformers 4.46 and 5.23 alike. `laion/larger_clap_music_and_speech` measures a mean pairwise cosine of 0.56 with sensible neighbours, has the same architecture and size, is Apache-2.0, and has a ready ONNX audio export (Xenova).

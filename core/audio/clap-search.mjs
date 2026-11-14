@@ -6,7 +6,7 @@
 //  - **The text table** (`docs/models/clap-text-table.json`): a reviewed list
 //    of prompts — every ontology genre by name, plus descriptions such as
 //    "dark rolling bassline" — embedded once, at build time, by
-//    laion/larger_clap_music's text encoder. Shape:
+//    laion/larger_clap_music_and_speech's text encoder. Shape:
 //      { v, model, revision?, dim, template?, prompts: [{ text, kind: 'genre'|'description',
 //        concept?, emb: {s, q} }] }
 //    with each `emb` L2-normalised before `packEmbedding`.
