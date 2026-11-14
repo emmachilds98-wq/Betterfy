@@ -139,6 +139,9 @@ const ENGINE_ENTRIES = [
   // mixes with, from the account's own heard tracks.
   'core/audio/match.mjs',
   'core/audio/identify.mjs',
+  // Discover by sound: re-rank picks by fit to the seed, and the keyless
+  // candidate path over the neighbour bridge's cached lookups.
+  'core/audio/discover.mjs',
 ];
 
 const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
@@ -159,6 +162,7 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyWikidata: 'core/sources/wikidata.mjs',
     BetterfyMatch: 'core/audio/match.mjs',
     BetterfyIdentify: 'core/audio/identify.mjs',
+    BetterfyDiscover: 'core/audio/discover.mjs',
   },
 });
 
@@ -228,7 +232,7 @@ const listMjs = dir => { try { return readdirSync(dir).filter(f => /\.(mjs|js)$/
 const AUDIO_INTRINSIC = readdirSync('core/intrinsic').filter(f => /^audio.*\.mjs$/.test(f)).sort().map(f => `core/intrinsic/${f}`);
 // Engine-side lookups over the sound space (sound ID, sound-alikes, mixes):
 // they ship in engine.js, and would only add the genre ontology (~100 KB) here.
-const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs']);
+const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs', 'core/audio/discover.mjs']);
 const AUDIO_ENTRIES = ['web/audio/index.mjs', ...listMjs('core/audio').filter(f => !ENGINE_SIDE.has(f)),
                        ...listMjs('core/audio/dsp'), ...AUDIO_INTRINSIC];
 const camel = f => f.replace(/^.*\//, '').replace(/\.m?js$/, '').split(/[-_]/).map(w => w[0].toUpperCase() + w.slice(1)).join('');
