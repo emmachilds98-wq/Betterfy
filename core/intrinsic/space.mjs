@@ -213,8 +213,13 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
  *
  *   { records, mel }   records, optionally dropping another mel front end's
  *   { index }          an `audioIndex` already built (reused across folds)
+ *   { feedback }       WP-L2: the listener's verdicts (audio-feedback.mjs
+ *                      reads a CorrectionLog or the page's feedback state),
+ *                      handed to the trainer with `skip`, the fold whose
+ *                      verdicts it must drop
  *   { learn }          a trainer, called once per space with
- *                      `{ index, profiles, minMembers }`: `profiles` is
+ *                      `{ index, profiles, minMembers }` (plus `skip` and
+ *                      `feedback` when feedback is given): `profiles` is
  *                      destination id → analysed members (`.ids`), already
  *                      without `skip`. It returns the learner: an object with
  *                      `learnedScores(track)` (WP-L1's name) or a function of
@@ -230,14 +235,16 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
 function audioLayer(audio, destinations, skip) {
   if (!audio) return {};
   const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
-    && ('records' in audio || 'index' in audio || 'learn' in audio) ? audio : { records: audio };
+    && ('records' in audio || 'index' in audio || 'learn' in audio || 'feedback' in audio) ? audio : { records: audio };
   const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
   if (!index.size) return {};
   const layer = buildAudioProfiles(destinations, index, { skip });
   const out = { audio: layer };
   const learn = opts.learn === undefined ? trainLearner : opts.learn;
   if (typeof learn === 'function' && layer.profiles.size) {
-    const learner = learn({ index, profiles: layer.profiles, minMembers: layer.minMembers });
+    // WP-L2: the listener's verdicts, and the fold they must not reach.
+    const fb = opts.feedback ? { skip: skip ?? null, feedback: opts.feedback } : {};
+    const learner = learn({ index, profiles: layer.profiles, minMembers: layer.minMembers, ...fb });
     const fn = typeof learner?.learnedScores === 'function' ? t => learner.learnedScores(t)
              : typeof learner === 'function' ? learner : null;
     if (fn) out.learned = fn;

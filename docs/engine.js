@@ -2934,9 +2934,122 @@ function audioScores(track, space, { leaveOneOut = false, minMembers = null } = 
 }
 return { AUDIO_COMPONENT_VERSION, MIN_AUDIO_MEMBERS, audioIndex, audioProfileOf, profileWithout, buildAudioProfiles, audioScores };
 })();
+/* ---- core/intrinsic/audio-feedback.mjs ---- */
+__mod["core/intrinsic/audio-feedback.mjs"] = (function () {
+// What the listener said about a filing, as examples for the sound learner.
+//
+// WP-L2 of docs/AUDIO-BUILD-PLAN.md. The learner (audio-learn.mjs) trains on
+// each playlist's analysed members. This turns the listener's verdicts into
+// two more kinds of example, per (track, playlist):
+//
+//   positive  "yes, this belongs there": an accepted suggestion, or the
+//             destination of a move. Counted as a member of that playlist
+//             even before the next sync shows it in the playlist.
+//   negative  "no, not there": a rejected suggestion, or the playlist a track
+//             was moved out of. Taken out of that playlist's members if it was
+//             one (a correction beats membership: the listener has heard the
+//             track, the snapshot is only where it happened to be) and used
+//             as evidence against that playlist's sound.
+//
+// The latest statement about a pair wins, so "rejected in March, accepted in
+// June" is a positive. A skip is not a verdict and teaches nothing here.
+//
+// Two places hold verdicts, and both are read:
+//   - core/personal/corrections.mjs: a CorrectionLog, its JSON, or its entries
+//     (accept / reject / move, oldest first by `at`)
+//   - the page's synced feedback state (docs/app.template.html `FB`, the same
+//     object `syncGroups/{id}/state/feedback` carries):
+//       { [trackId]: { skips, lastSkip, rejected: [playlistId], accepted?: [playlistId] } }
+//     It has no times, so within it a pair that is both accepted and rejected
+//     counts as rejected (the page only keeps a reject the listener meant).
+//
+// Nothing leaves the account: these are this listener's own verdicts on their
+// own playlists, used only to train their own learner
+// (docs/SMARTER-GENRES-PLAN.md §3).
+
+const AUDIO_FEEDBACK_VERSION = '1.0.0';
+
+const isFeedback = x => x && x.pos instanceof Map && x.neg instanceof Map;
+
+/** Deterministic map of track id → sorted playlist ids, sorted by track id. */
+function sortedPairs(m) {
+  return new Map([...m].filter(([, s]) => s.size).sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([id, s]) => [id, [...s].sort()]));
+}
+
+/**
+ * Every verdict in `sources`, folded into { pos, neg }: track id → playlist
+ * ids, each pair in at most one of the two. Later sources win over earlier
+ * ones for the same pair.
+ *
+ * @param {...*} sources  CorrectionLog | { entries } | Correction[] | page FB object | an earlier result | null
+ * @returns {{ pos: Map<string, string[]>, neg: Map<string, string[]>, n: number, version: string }}
+ */
+function feedbackExamples(...sources) {
+  const state = new Map(); // `${track}\u0000${playlist}` → 'pos' | 'neg'
+  const set = (t, p, v) => { if (t && p) state.set(`${t}\u0000${p}`, v); };
+
+  for (const src of sources) {
+    if (!src) continue;
+    if (isFeedback(src)) {
+      for (const [t, ps] of src.pos) for (const p of ps) set(t, p, 'pos');
+      for (const [t, ps] of src.neg) for (const p of ps) set(t, p, 'neg');
+      continue;
+    }
+    const entries = Array.isArray(src) ? src : Array.isArray(src.entries) ? src.entries : null;
+    if (entries) {
+      // Stable by time: equal times keep log order, which is append order.
+      const ordered = entries.map((c, i) => [c, i]).sort((a, b) => ((a[0]?.at ?? 0) - (b[0]?.at ?? 0)) || a[1] - b[1]);
+      for (const [c] of ordered) {
+        if (!c?.trackId) continue;
+        if (c.kind === 'accept') set(c.trackId, c.playlistId, 'pos');
+        else if (c.kind === 'reject') set(c.trackId, c.playlistId, 'neg');
+        else if (c.kind === 'move') {
+          if (c.fromPlaylistId && c.fromPlaylistId !== c.playlistId) set(c.trackId, c.fromPlaylistId, 'neg');
+          set(c.trackId, c.playlistId, 'pos');
+        }
+      }
+      continue;
+    }
+    if (typeof src === 'object') {
+      for (const id of Object.keys(src).sort()) {
+        const f = src[id];
+        for (const p of Array.isArray(f?.accepted) ? f.accepted : []) set(id, p, 'pos');
+        for (const p of Array.isArray(f?.rejected) ? f.rejected : []) set(id, p, 'neg');
+      }
+    }
+  }
+
+  const pos = new Map(), neg = new Map();
+  for (const [k, v] of state) {
+    const [t, p] = k.split('\u0000');
+    const m = v === 'pos' ? pos : neg;
+    (m.get(t) ?? m.set(t, new Set()).get(t)).add(p);
+  }
+  const out = { pos: sortedPairs(pos), neg: sortedPairs(neg), version: AUDIO_FEEDBACK_VERSION };
+  out.n = [...out.pos.values(), ...out.neg.values()].reduce((s, ps) => s + ps.length, 0);
+  return out;
+}
+
+/**
+ * The same verdicts with every pair about a track in `skip` removed. This is
+ * the honesty rule: a track being scored (a held-out fold) must not have the
+ * listener's verdict on it handed to the learner that scores it, any more
+ * than its playlist membership is.
+ */
+function withoutTracks(fb, skip) {
+  if (!fb || !skip?.size) return fb;
+  const drop = m => new Map([...m].filter(([t]) => !skip.has(t)));
+  const out = { pos: drop(fb.pos), neg: drop(fb.neg), version: fb.version };
+  out.n = [...out.pos.values(), ...out.neg.values()].reduce((s, ps) => s + ps.length, 0);
+  return out;
+}
+return { AUDIO_FEEDBACK_VERSION, feedbackExamples, withoutTracks };
+})();
 /* ---- core/intrinsic/audio-learn.mjs ---- */
 __mod["core/intrinsic/audio-learn.mjs"] = (function () {
 const { MIN_AUDIO_MEMBERS } = __mod["core/intrinsic/audio.mjs"];
+const { feedbackExamples, withoutTracks } = __mod["core/intrinsic/audio-feedback.mjs"];
 // What this account's playlists sound like, learned from their own members.
 //
 // WP-L1 of docs/AUDIO-BUILD-PLAN.md: the part that makes the audio "learn".
@@ -2972,6 +3085,13 @@ const { MIN_AUDIO_MEMBERS } = __mod["core/intrinsic/audio.mjs"];
 //
 // No import from space.mjs, for the reason audio.mjs gives (WP-E2 wires both
 // into space.mjs; bundler.mjs refuses a cycle).
+//
+// WP-L2 adds the listener's verdicts (`feedback`, read by audio-feedback.mjs):
+// an accepted filing is one more member of that playlist, a rejected one is
+// taken out of it and counts against it. See `trainingSet` for the rules and
+// `trainPrototypes` / `trainLogistic` for how a negative is used. With no
+// feedback every function here returns exactly what it did before WP-L2.
+
 
 
 const AUDIO_LEARN_VERSION = '1.0.0';
@@ -3007,6 +3127,17 @@ const LEARN_DEFAULTS = {
    *  the phase 0 fixture, 'auto' at 5 per playlist picked logistic 8 times in
    *  10 and lost a point of top-1 to the baseline (57.6% vs 58.8%). */
   minForLogistic: 10,
+  /** WP-L2: the listener's verdicts (anything `feedbackExamples` reads), or null. */
+  feedback: null,
+  /** How much one rejection counts against a playlist, in members: 1 would
+   *  cancel one member's pull. Capped per playlist so rejections never outweigh
+   *  half its members (see `trainPrototypes`). A quarter, because a rejected
+   *  track is by construction a borderline one, and pushing hard away from it
+   *  pushes away from the playlist's own edge too: on the phase 0 fixture
+   *  (start 5 per genre, 300 simulated verdicts, 3 folds) rejections alone
+   *  went 59.2% → 54.1% top-1 at 1, 56.2% at 0.5, 61.7% at 0.25, 60.2% at
+   *  0.1. Tuned on that fixture, so the owner's library is the real test. */
+  negWeight: 0.25,
 };
 
 const idOf = t => (typeof t === 'string' ? t : t?.id) || null;
@@ -3031,23 +3162,49 @@ function hash(s) {
  * analysed members. A track filed in two playlists is one example whose target
  * is split between them, not two contradicting examples.
  *
+ * With `feedback` (WP-L2; anything audio-feedback.mjs `feedbackExamples`
+ * reads), before the `minMembers` floor is applied:
+ *   - an accepted (track, playlist) adds the track to that playlist's members
+ *   - a rejected one removes it, even if the playlist holds it: the listener's
+ *     verdict beats where the track happens to be filed
+ * and each rejection whose playlist is a class becomes a negative example,
+ * `neg: [{ id, x, c }]`, which the trainers use as evidence against class c.
+ * Verdicts on tracks in `skip` are dropped with the tracks themselves: a
+ * held-out track's verdict is as much a leak as its membership.
+ * Verdicts on unheard tracks or unknown playlists are ignored.
+ *
  * @param {object|Map|Array} destinations  a space, its `.destinations` Map, or [{ id, tracks|trackIds }]
  * @param {Map} index  from audio.mjs `audioIndex` (unit embeddings)
- * @param {{ skip?: Set<string>, minMembers?: number }} [opts]
- * @returns {{ classes: string[], ids: string[], X: Float32Array[], Y: number[][], counts: number[], short: string[] }}
+ * @param {{ skip?: Set<string>, minMembers?: number, feedback?: * }} [opts]
+ * @returns {{ classes: string[], ids: string[], X: Float32Array[], Y: number[][], counts: number[], short: string[],
+ *             neg?: Array<{id: string, x: Float32Array, c: number}>, feedback?: object }}
  *          `Y[i]` lists the class indices example i belongs to. `short` names
- *          destinations that had some, but too few, analysed members.
+ *          destinations that had some, but too few, analysed members. `neg`
+ *          and `feedback` are present only when some verdict was used.
  */
-function trainingSet(destinations, index, { skip = null, minMembers = LEARN_DEFAULTS.minMembers } = {}) {
+function trainingSet(destinations, index, { skip = null, minMembers = LEARN_DEFAULTS.minMembers, feedback = null } = {}) {
   const src = destinations?.destinations ?? destinations;
   const list = src instanceof Map ? [...src.values()] : [...(src ?? [])];
+  const fb = feedback ? withoutTracks(feedbackExamples(feedback), skip) : null;
+  const heard = id => id && !skip?.has(id) && index?.has(id);
+  const byPlaylist = m => {
+    const out = new Map();
+    if (fb) for (const [t, ps] of m) if (heard(t)) for (const p of ps) (out.get(p) ?? out.set(p, []).get(p)).push(t);
+    return out;
+  };
+  const posBy = byPlaylist(fb?.pos ?? []), negBy = byPlaylist(fb?.neg ?? []);
+  const used = { accepted: 0, removed: 0 };
   const members = [], short = [];
   for (const d of list) {
     if (!d?.id) continue;
     const ids = new Set();
     for (const t of memberIdsOf(d) ?? []) {
       const id = idOf(t);
-      if (id && !skip?.has(id) && index?.has(id)) ids.add(id);
+      if (heard(id)) ids.add(id);
+    }
+    if (fb) {
+      for (const t of posBy.get(d.id) ?? []) if (!ids.has(t)) { ids.add(t); used.accepted++; }
+      for (const t of negBy.get(d.id) ?? []) if (ids.delete(t)) used.removed++;
     }
     if (ids.size >= minMembers) members.push([d.id, ids]);
     else if (ids.size) short.push(d.id);
@@ -3057,21 +3214,36 @@ function trainingSet(destinations, index, { skip = null, minMembers = LEARN_DEFA
   const rows = new Map();
   members.forEach(([, ids], c) => { for (const id of ids) (rows.get(id) ?? rows.set(id, []).get(id)).push(c); });
   const ids = [...rows.keys()].sort();
-  return {
+  const set = {
     classes, ids,
     X: ids.map(id => index.get(id).emb),
     Y: ids.map(id => rows.get(id)),
     counts: members.map(([, s]) => s.size),
     short,
   };
+  if (fb) {
+    const neg = [];
+    classes.forEach((p, c) => { for (const t of (negBy.get(p) ?? []).slice().sort()) neg.push({ id: t, x: index.get(t).emb, c }); });
+    if (neg.length || used.accepted || used.removed) {
+      set.neg = neg;
+      set.feedback = { accepted: used.accepted, removed: used.removed, rejected: neg.length };
+    }
+  }
+  return set;
 }
 
-/** Subset of a training set by example index (classes kept, counts recomputed). */
-function subset(set, keep) {
+/**
+ * Subset of a training set by example index (classes kept, counts recomputed).
+ * Negative examples are kept, except any about a track in `dropNeg`: pass the
+ * ids being scored, so a verdict on a test track never trains its scorer.
+ */
+function subset(set, keep, dropNeg = null) {
   const counts = new Array(set.classes.length).fill(0);
   for (const i of keep) for (const c of set.Y[i]) counts[c]++;
-  return { classes: set.classes, ids: keep.map(i => set.ids[i]), X: keep.map(i => set.X[i]),
-           Y: keep.map(i => set.Y[i]), counts, short: set.short ?? [] };
+  const out = { classes: set.classes, ids: keep.map(i => set.ids[i]), X: keep.map(i => set.X[i]),
+                Y: keep.map(i => set.Y[i]), counts, short: set.short ?? [] };
+  if (set.neg) out.neg = dropNeg?.size ? set.neg.filter(n => !dropNeg.has(n.id)) : set.neg;
+  return out;
 }
 
 /**
@@ -3136,11 +3308,24 @@ function dot(a, b) {
 /**
  * Centroid per class, from unit embeddings (the geometry audio.mjs and phase 0
  * use). `T` is the softmax temperature that turns cosines into probabilities.
+ *
+ * Negative examples (WP-L2) are subtracted, Rocchio-style: a playlist's
+ * direction is Σ members − β · Σ rejections, so a rejected track and the
+ * tracks that sound like it score lower there. β is `negWeight` (a quarter
+ * of a member's pull per rejection by default), capped at half the playlist's members
+ * over its rejections, so however many rejections pile up the members still
+ * define the playlist and its direction cannot flip.
  */
-function trainPrototypes(set, { T = 0.05 } = {}) {
+function trainPrototypes(set, { T = 0.05, negWeight = LEARN_DEFAULTS.negWeight } = {}) {
   const K = set.classes.length, D = set.X[0]?.length ?? 0;
   const sums = Array.from({ length: K }, () => new Float64Array(D));
   set.X.forEach((x, i) => { for (const c of set.Y[i]) for (let k = 0; k < D; k++) sums[c][k] += x[k]; });
+  if (set.neg?.length && negWeight > 0) {
+    const nNeg = new Array(K).fill(0);
+    for (const n of set.neg) nNeg[n.c]++;
+    const beta = set.counts.map((n, c) => (nNeg[c] ? Math.min(negWeight, (0.5 * n) / nNeg[c]) : 0));
+    for (const n of set.neg) for (let k = 0; k < D; k++) sums[n.c][k] -= beta[n.c] * n.x[k];
+  }
   return { kind: 'prototype', classes: set.classes, centroids: sums.map(unitInto), T };
 }
 
@@ -3218,7 +3403,8 @@ function balancedLoss(P, T, w) {
 function trainLogistic(set, opts = {}) {
   const { l2 = LEARN_DEFAULTS.l2[0], lr = LEARN_DEFAULTS.lr, maxEpochs = LEARN_DEFAULTS.maxEpochs,
           patience = LEARN_DEFAULTS.patience, val = null, epochs = null,
-          perDim = LEARN_DEFAULTS.perDim, prior = LEARN_DEFAULTS.prior, T0 = 0.05 } = opts;
+          perDim = LEARN_DEFAULTS.perDim, prior = LEARN_DEFAULTS.prior, T0 = 0.05,
+          negWeight = LEARN_DEFAULTS.negWeight } = opts;
   const K = set.classes.length, D = set.X[0].length, N = set.X.length;
   const std = standardiser(set.X, perDim);
   const Z = standardise(set.X, std);
@@ -3236,7 +3422,7 @@ function trainLogistic(set, opts = {}) {
   // where the held-out loss says moving pays.
   let W0 = null;
   if (prior) {
-    const proto = trainPrototypes(set);
+    const proto = trainPrototypes(set, { negWeight });
     W0 = new Float32Array(K * D);
     for (let c = 0; c < K; c++) {
       const cen = proto.centroids[c];
@@ -3262,6 +3448,12 @@ function trainLogistic(set, opts = {}) {
     return balancedLoss(P, Tv, wv.map((x, c) => (set.counts[c] ? x : 0)));
   };
 
+  // Negatives (WP-L2): a rejected (track, playlist) adds w_c·negWeight·(−log(1 − p_c))
+  // to the loss, on the same scale as a member's term. Its gradient on logit j
+  // is p_c·(δ_jc − p_j)/(1 − p_c): push c down, the others up in proportion.
+  const neg = negWeight > 0 ? (set.neg ?? []) : [];
+  const Zn = neg.length ? standardise(neg.map(n => n.x), std) : null;
+
   const limit = epochs ?? maxEpochs;
   let best = { loss: Infinity, epoch: 0, W: null, b: null }, since = 0, ran = 0;
   for (let e = 1; e <= limit; e++) {
@@ -3276,6 +3468,19 @@ function trainLogistic(set, opts = {}) {
         gb[c] += g;
         const r = c * D;
         for (let k = 0; k < D; k++) gW[r + k] += g * Z[o + k];
+      }
+    }
+    for (let j = 0; j < neg.length; j++) {
+      logitsInto(z, W, b, Zn, j, D, K);
+      softmaxInPlace(z);
+      const nc = neg[j].c, pc = z[nc], o = j * D;
+      const s = (negWeight * w[nc]) / S, q = pc / Math.max(1 - pc, 1e-6);
+      for (let c = 0; c < K; c++) {
+        const g = s * (c === nc ? pc : -q * z[c]);
+        if (!g) continue;
+        gb[c] += g;
+        const r = c * D;
+        for (let k = 0; k < D; k++) gW[r + k] += g * Zn[o + k];
       }
     }
     const c1 = 1 - b1 ** e, c2 = 1 - b2 ** e;
@@ -3333,8 +3538,8 @@ function heldOut(model, set) {
 }
 
 /** The prototype temperature with the lowest held-out balanced loss. */
-function fitPrototypeT(train, val, temperatures) {
-  const base = trainPrototypes(train);
+function fitPrototypeT(train, val, temperatures, negWeight = LEARN_DEFAULTS.negWeight) {
+  const base = trainPrototypes(train, { negWeight });
   let best = null;
   for (const T of temperatures) {
     const { loss } = heldOut({ ...base, T }, val);
@@ -3360,16 +3565,18 @@ function fitSet(set, opts = {}) {
   const o = { ...LEARN_DEFAULTS, ...opts };
   if (!set || set.classes.length < 2 || !set.X.length) return null;
   const { train, val } = holdoutSplit(set, { share: o.holdout, groupOf: o.groupOf });
-  const trainSet = subset(set, train), valSet = subset(set, val);
+  // Model choice is scored on the held-out fold, so no verdict on a fold track trains it.
+  const trainSet = subset(set, train, set.neg ? new Set(val.map(i => set.ids[i])) : null), valSet = subset(set, val);
   const fallbackT = o.temperatures[Math.floor(o.temperatures.length / 2)];
+  const nw = { negWeight: o.negWeight };
 
   if (!val.length || trainSet.counts.some(n => n === 0)) {
-    const m = trainPrototypes(set, { T: fallbackT });
+    const m = trainPrototypes(set, { T: fallbackT, ...nw });
     return { ...m, chosen: 'prototype', held: null };
   }
 
-  const proto = fitPrototypeT(trainSet, valSet, o.temperatures);
-  const held = { prototype: { loss: +proto.loss.toFixed(6), top1: heldOut({ ...trainPrototypes(trainSet), T: proto.T }, valSet).top1, T: proto.T } };
+  const proto = fitPrototypeT(trainSet, valSet, o.temperatures, o.negWeight);
+  const held = { prototype: { loss: +proto.loss.toFixed(6), top1: heldOut({ ...trainPrototypes(trainSet, nw), T: proto.T }, valSet).top1, T: proto.T } };
 
   let lr = null;
   const tryLogistic = o.model === 'logistic' || (o.model === 'auto' && Math.min(...set.counts) >= o.minForLogistic);
@@ -3385,7 +3592,7 @@ function fitSet(set, opts = {}) {
   const useLogistic = o.model === 'logistic' || (o.model === 'auto' && lr != null && lr.loss < proto.loss);
   const model = useLogistic
     ? trainLogistic(set, { ...o, l2: lr.l2, T0: proto.T, epochs: Math.max(1, lr.epochs) })
-    : trainPrototypes(set, { T: proto.T });
+    : trainPrototypes(set, { T: proto.T, ...nw });
   return { ...model, chosen: model.kind, held };
 }
 
@@ -3405,25 +3612,29 @@ function capPerClass(set, cap) {
  * `destinations` is the space (or its destinations), as for audio.mjs's
  * `buildAudioProfiles`, so the learner judges exactly the buckets the rest of
  * the engine does. `skip` leaves tracks out as if never filed (fold-level
- * leave-out for `placementAccuracy`).
+ * leave-out for `placementAccuracy`), and their verdicts with them.
+ * `feedback` (WP-L2) is the listener's verdicts, as `trainingSet` uses them.
  *
  * @param {object|Map|Array} destinations
  * @param {Map} index  audio.mjs `audioIndex`
- * @param {object} [opts]  LEARN_DEFAULTS overrides, plus `skip` and `groupOf`
- * @returns {null | { version, model, classes: string[], counts: number[], short: string[], examples: number, index: Map, chosen, held }}
+ * @param {object} [opts]  LEARN_DEFAULTS overrides, plus `skip`, `groupOf` and `feedback`
+ * @returns {null | { version, model, classes: string[], counts: number[], short: string[], examples: number, index: Map, chosen, held, feedback? }}
+ *          `feedback` ({ accepted, removed, rejected } counts) only when a verdict was used
  *          null when there is nothing to learn (no index, or fewer than two
  *          playlists with `minMembers` analysed members)
  */
 function learnAudio(destinations, index, opts = {}) {
   if (!index?.size) return null;
   const o = { ...LEARN_DEFAULTS, ...opts };
-  const set = capPerClass(trainingSet(destinations, index, { skip: o.skip, minMembers: o.minMembers }), o.maxPerClass);
+  const full = trainingSet(destinations, index, { skip: o.skip, minMembers: o.minMembers, feedback: o.feedback });
+  const set = capPerClass(full, o.maxPerClass);
   const fitted = fitSet(set, o);
   if (!fitted) return null;
   const { chosen, held, ...model } = fitted;
   return {
     version: AUDIO_LEARN_VERSION, model, classes: set.classes, counts: set.counts,
     short: set.short, examples: set.ids.length, index, chosen, held,
+    ...(full.feedback ? { feedback: full.feedback } : {}),
   };
 }
 
@@ -3462,12 +3673,19 @@ function learnedScores(track, learner, { index = null } = {}) {
  *
  *   buildSpace(lib, { audio: { records, learn: trainLearner } })
  *
+ * WP-L2: `feedback` (from `buildSpace`'s `audio.feedback`, or `opts.feedback`)
+ * is the listener's verdicts. `skip` is the fold being scored; verdicts on it
+ * are dropped, exactly as its membership already was.
+ *
  * @returns {null | { learner, learnedScores: (track) => Map<string, number|null> | null }}
  */
-function trainLearner({ index, profiles, minMembers } = {}, opts = {}) {
+function trainLearner({ index, profiles, minMembers, skip = null, feedback = null } = {}, opts = {}) {
   if (!index?.size || !profiles?.size) return null;
   const dests = [...profiles].map(([id, p]) => ({ id, trackIds: [...(p?.ids ?? [])] }));
-  const learner = learnAudio(dests, index, { ...opts, minMembers: minMembers ?? opts.minMembers ?? LEARN_DEFAULTS.minMembers });
+  const fb = feedback ?? opts.feedback ?? null;
+  const allSkip = skip?.size ? (opts.skip?.size ? new Set([...opts.skip, ...skip]) : skip) : opts.skip;
+  const learner = learnAudio(dests, index, { ...opts, ...(fb ? { feedback: fb } : {}), ...(allSkip ? { skip: allSkip } : {}),
+                                            minMembers: minMembers ?? opts.minMembers ?? LEARN_DEFAULTS.minMembers });
   if (!learner) return null;
   return { learner, learnedScores: track => learnedScores(track, learner) };
 }
@@ -3529,7 +3747,7 @@ function crossValidate(set, opts = {}) {
         }
         trainIdx.sort((a, b) => a - b);
       }
-      const train = subset(set, trainIdx), test = subset(set, testIdx);
+      const train = subset(set, trainIdx, set.neg ? new Set(testIdx.map(i => set.ids[i])) : null), test = subset(set, testIdx);
       if (train.counts.some(n => n === 0)) continue;
       const gOf = groupOf;
       const proto = fitSet(train, { ...fit, model: 'prototype', groupOf: gOf });
@@ -3780,8 +3998,13 @@ function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targe
  *
  *   { records, mel }   records, optionally dropping another mel front end's
  *   { index }          an `audioIndex` already built (reused across folds)
+ *   { feedback }       WP-L2: the listener's verdicts (audio-feedback.mjs
+ *                      reads a CorrectionLog or the page's feedback state),
+ *                      handed to the trainer with `skip`, the fold whose
+ *                      verdicts it must drop
  *   { learn }          a trainer, called once per space with
- *                      `{ index, profiles, minMembers }`: `profiles` is
+ *                      `{ index, profiles, minMembers }` (plus `skip` and
+ *                      `feedback` when feedback is given): `profiles` is
  *                      destination id → analysed members (`.ids`), already
  *                      without `skip`. It returns the learner: an object with
  *                      `learnedScores(track)` (WP-L1's name) or a function of
@@ -3797,14 +4020,16 @@ function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targe
 function audioLayer(audio, destinations, skip) {
   if (!audio) return {};
   const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
-    && ('records' in audio || 'index' in audio || 'learn' in audio) ? audio : { records: audio };
+    && ('records' in audio || 'index' in audio || 'learn' in audio || 'feedback' in audio) ? audio : { records: audio };
   const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
   if (!index.size) return {};
   const layer = buildAudioProfiles(destinations, index, { skip });
   const out = { audio: layer };
   const learn = opts.learn === undefined ? trainLearner : opts.learn;
   if (typeof learn === 'function' && layer.profiles.size) {
-    const learner = learn({ index, profiles: layer.profiles, minMembers: layer.minMembers });
+    // WP-L2: the listener's verdicts, and the fold they must not reach.
+    const fb = opts.feedback ? { skip: skip ?? null, feedback: opts.feedback } : {};
+    const learner = learn({ index, profiles: layer.profiles, minMembers: layer.minMembers, ...fb });
     const fn = typeof learner?.learnedScores === 'function' ? t => learner.learnedScores(t)
              : typeof learner === 'function' ? learner : null;
     if (fn) out.learned = fn;
@@ -5156,7 +5381,7 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
  *                                 quietly leaking.
  * @param {number}  [opts.limit]   cap tracks scored, for a quick pass
  * @param {Function} [opts.isMirror]
- * @param {*}       [opts.audio]   AudioRecords, or `{ records | index, mel, learn }`
+ * @param {*}       [opts.audio]   AudioRecords, or `{ records | index, mel, learn, feedback }`
  *                                 as `buildSpace` takes them. Every track is then
  *                                 also scored with sound let in (`withAudio`),
  *                                 against the same fold's space: the sound
@@ -5373,10 +5598,13 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 function audioOptions(audio) {
   if (!audio) return null;
   const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
-    && ('records' in audio || 'index' in audio || 'learn' in audio) ? audio : { records: audio };
+    && ('records' in audio || 'index' in audio || 'learn' in audio || 'feedback' in audio) ? audio : { records: audio };
   const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
   // Passed through as given: undefined lets buildSpace use its default learner.
-  return { index, ...('learn' in opts ? { learn: opts.learn } : {}) };
+  // `feedback` (WP-L2) too: buildSpace hands it to the learner with each fold's
+  // skip, so a verdict on a held-out track never trains the learner scoring it.
+  return { index, ...('learn' in opts ? { learn: opts.learn } : {}),
+           ...(opts.feedback ? { feedback: opts.feedback } : {}) };
 }
 return { VALIDATE_VERSION, DEFAULT_FOLDS, foldOf, truthOf, scoredTracks, placementAccuracy };
 })();
