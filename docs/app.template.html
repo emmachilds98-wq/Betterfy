@@ -373,9 +373,11 @@ const THEME_KEY = 'betterfy-theme';
  * one colour — it is the same colour twice, and which half you get follows the
  * theme rather than being something else to choose. */
 const ACCENTS = [
-  ['Ember',  '#FF7A52', '#D9502B'], ['Amber',  '#FFB43F', '#B37711'],
-  ['Lime',   '#C3DE55', '#6B9524'], ['Mint',   '#7AE0A6', '#17915F'],
-  ['Jade',   '#43D2A6', '#0E8A6D'], ['Teal',   '#4CD0D6', '#12878C'],
+  // The light halves of the first six sit a few points darker than they first
+  // did, just enough for white text on them (a primary button) to reach 4.5:1.
+  ['Ember',  '#FF7A52', '#CD4825'], ['Amber',  '#FFB43F', '#9F6A0F'],
+  ['Lime',   '#C3DE55', '#5C801F'], ['Mint',   '#7AE0A6', '#158557'],
+  ['Jade',   '#43D2A6', '#0D8469'], ['Teal',   '#4CD0D6', '#118186'],
   ['Sky',    '#63C8FF', '#1F72C0'], ['Blue',   '#8AA6FF', '#3F55C4'],
   ['Lilac',  '#C79BFF', '#6F4FCB'], ['Orchid', '#FF95E4', '#AE3B93'],
   ['Rose',   '#FF8A9E', '#C13A5A'], ['Sand',   '#E4C79B', '#8C6B3C'],
@@ -423,6 +425,8 @@ const hsl = (h,s,l) => `hsl(${((h%360)+360)%360} ${Math.max(0,Math.min(100,s))}%
  * cannot read. This walks the lightness until the colour is actually dark
  * enough (on a light background) or light enough (on a dark one).
  */
+/** Relative luminance of #17100B, the dark ink printed on a bright accent. */
+const INK_DARK_L = 0.0058;
 function lumOf(h, s, l) {
   h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
   const c = (1 - Math.abs(2*l - 1)) * s, x = c * (1 - Math.abs((h/60) % 2 - 1)), m = l - c/2;
@@ -467,10 +471,13 @@ function applyTheme() {
   // The top stop of the logo tile's gradient — a lift rather than a second hue,
   // so the mark stays one colour however far the sliders are pushed.
   root.setProperty('--accent-lift', hsl(hue, Math.min(depth+6,100), Math.min(brightness+9,92)));
-  // Which of the two inks to print on the accent, decided by how bright the
-  // colour actually is rather than by its lightness number: a 55% yellow and a
-  // 55% blue are nowhere near as bright as each other.
-  root.setProperty('--accent-ink', lumOf(hue, depth, brightness) > 0.42 ? '#17100B' : '#FFFFFF');
+  // Which of the two inks to print on the accent: whichever has the higher
+  // contrast with it, measured on how bright the colour actually is rather
+  // than its lightness number (a 55% yellow and a 55% blue are nowhere near as
+  // bright as each other). The old fixed cut-off at 0.42 put white on the
+  // dark theme's Ember, Blue and Rose at under 2.6:1.
+  const accL = lumOf(hue, depth, brightness);
+  root.setProperty('--accent-ink', 1.05 / (accL + .05) >= (accL + .05) / (INK_DARK_L + .05) ? '#FFFFFF' : '#17100B');
 
   // Eight hues spun off the chosen accent. Everything on screen that isn't a
   // control — stat tiles, screen headers, the tab bar, the landing cards —

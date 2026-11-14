@@ -138,3 +138,152 @@
   .order .a{font-size:13.5px; color:var(--ink-2)}
   .rowbtns{display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; align-items:center}
 
+
+  /* ---------- controls (UI-1) ----------
+     The native checkbox, select and text box were the OS's own: blue ticks
+     and grey chevrons on a warm page. These keep the real elements (so they
+     are still focusable, announced and form-submittable) and only restyle
+     them. A control that must stay native carries .native.
+     60-file.css sets the base input/select box later in the cascade, so the
+     rules here are written one step more specific than it. */
+  input[type=checkbox]:not(.native):not(.tgl){-webkit-appearance:none; appearance:none; flex:none;
+       width:18px; height:18px; margin:0 2px 0 0; padding:0; vertical-align:-3px; cursor:pointer;
+       border:1.5px solid var(--line-2); border-radius:6px; background:var(--surface) center/14px no-repeat;
+       transition:background-color .12s ease, border-color .12s ease, box-shadow .12s ease}
+  input[type=checkbox]:not(.native):not(.tgl):hover{border-color:var(--ink-3)}
+  input[type=checkbox]:not(.native):not(.tgl):checked{background-color:var(--btn-accent); border-color:var(--btn-accent);
+       background-image:var(--tick)}
+  input[type=checkbox]:not(.native):not(.tgl):indeterminate{background-color:var(--btn-accent); border-color:var(--btn-accent);
+       background-image:linear-gradient(var(--btn-ink),var(--btn-ink)); background-size:9px 2px}
+  input[type=checkbox]:not(.native):disabled{cursor:default; opacity:.45}
+  input[type=checkbox]:not(.native):focus-visible{outline:2px solid var(--hover-accent); outline-offset:2px}
+  /* Toggle switch: a checkbox with role="switch". The knob is a radial
+     gradient on the track, so there are no pseudo-elements to lose in
+     browsers that don't draw them on inputs. */
+  input[type=checkbox].tgl{-webkit-appearance:none; appearance:none; flex:none; cursor:pointer; margin:0; padding:0;
+       width:40px; height:24px; border-radius:999px; vertical-align:middle; border:0;
+       background:radial-gradient(circle at 12px 50%, var(--surface) 0 8px, transparent 8.6px), var(--line-2);
+       box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent);
+       transition:background-color .16s ease}
+  input[type=checkbox].tgl:checked{background:radial-gradient(circle at 28px 50%, var(--btn-ink) 0 8px, transparent 8.6px), var(--btn-accent)}
+  input[type=checkbox].tgl:disabled{opacity:.45; cursor:default}
+  input[type=checkbox].tgl:focus-visible{outline:2px solid var(--hover-accent); outline-offset:2px}
+  /* A label that wraps a switch reads as one row: text, then the switch. */
+  .tglrow{display:flex; align-items:center; justify-content:space-between; gap:14px; cursor:pointer; padding:6px 0}
+  .tglrow .lbl{min-width:0} .tglrow .lbl small{display:block; color:var(--ink-3); font-size:var(--fs-small)}
+  input[type=radio]:not(.native){accent-color:var(--btn-accent); width:16px; height:16px}
+  select:not(.native):not([multiple]){-webkit-appearance:none; appearance:none; cursor:pointer;
+       min-height:var(--ctl-h); padding:8px 36px 8px 13px; border:1px solid var(--line-2); border-radius:var(--r);
+       background-color:var(--surface); color:var(--ink);
+       background-image:linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+                        linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+       background-position:calc(100% - 18px) 52%, calc(100% - 13px) 52%;
+       background-size:5px 5px; background-repeat:no-repeat;
+       transition:border-color .12s ease}
+  select:not(.native):not([multiple]):hover{border-color:var(--ink-3)}
+  select:not(.native):disabled{opacity:.5; cursor:default}
+  select:not(.native) option{background:var(--surface); color:var(--ink)}
+  input:is([type=text],[type=search],[type=password],[type=url],[type=email],[type=number],:not([type])):not(.native),
+  textarea:not(.native){min-height:var(--ctl-h); border:1px solid var(--line-2); border-radius:var(--r);
+       background:var(--surface); color:var(--ink); transition:border-color .12s ease, box-shadow .12s ease}
+  input:is([type=text],[type=search],[type=password],[type=url],[type=email],[type=number],:not([type])):not(.native):hover,
+  textarea:not(.native):hover{border-color:var(--ink-3)}
+  input:is([type=text],[type=search],[type=password],[type=url],[type=email],[type=number],:not([type])):not(.native):focus,
+  textarea:not(.native):focus, select:not(.native):focus{outline:none; border-color:var(--hover-accent);
+       box-shadow:0 0 0 3px color-mix(in srgb, var(--hover-accent) 22%, transparent)}
+  input:not(.native):disabled, textarea:not(.native):disabled{opacity:.55; cursor:default}
+
+  /* Segmented control: one choice of a few, all visible. Buttons with
+     aria-pressed, so it is announced as a set of toggles. */
+  .seg{display:inline-flex; flex-wrap:wrap; gap:2px; padding:3px; border-radius:999px;
+       background:var(--surface-3); border:1px solid var(--line)}
+  .seg>button{appearance:none; border:0; background:transparent; color:var(--ink-2); cursor:pointer;
+       font:inherit; font-size:var(--fs-small); font-weight:600; padding:6px 14px; border-radius:999px;
+       min-height:var(--ctl-h-sm); display:inline-flex; align-items:center; gap:6px;
+       transition:background .12s ease, color .12s ease}
+  .seg>button:hover{color:var(--ink)}
+  .seg>button[aria-pressed="true"]{background:var(--surface); color:var(--ink); box-shadow:var(--shadow),
+       0 0 0 1px var(--line-2)}
+  .seg>button .n{font-family:var(--mono); font-size:var(--fs-micro); color:var(--ink-3); font-weight:500}
+  .seg>button:disabled{opacity:.45; cursor:default}
+
+  /* A primary action that can't be taken must not still look like the main
+     thing on the screen ("Fetch missing tags (0)"). Disabled primaries drop
+     to a flat, quiet tile instead of a faded accent. 60-file.css fades every
+     disabled button by half; these are one step more specific. */
+  button.b.p:disabled, button.b.go:disabled, button.b.v:disabled{opacity:1; filter:none; box-shadow:none;
+       background:var(--surface-3); border-color:var(--line); color:var(--ink-3)}
+  button.b.p:disabled:hover, button.b.go:disabled:hover, button.b.v:disabled:hover{filter:none; border-color:var(--line)}
+
+  /* ---------- confidence band (UI-1 styles, UI-2 renders) ----------
+     One chip, three words: Sure / Likely / Unsure (calibrate's HIGH /
+     LIKELY / AMBIGUOUS). The percentage, when given, rides along small. */
+  .band{display:inline-flex; align-items:center; gap:6px; flex:none; white-space:nowrap;
+        font-size:var(--fs-small); font-weight:700; line-height:1; letter-spacing:.01em;
+        padding:5px 10px 5px 8px; border-radius:999px; --bt:var(--band-unsure); --bs:var(--band-unsure-soft);
+        background:var(--bs); color:color-mix(in srgb, var(--bt) 78%, var(--ink))}
+  .band::before{content:""; width:7px; height:7px; border-radius:50%; background:var(--bt); flex:none}
+  .band.band-sure{--bt:var(--band-sure); --bs:var(--band-sure-soft)}
+  .band.band-likely{--bt:var(--band-likely); --bs:var(--band-likely-soft)}
+  .band.band-unsure{--bt:var(--band-unsure); --bs:var(--band-unsure-soft)}
+  .band.band-unsure::before{background:transparent; box-shadow:inset 0 0 0 1.5px var(--bt)}
+  .band .pct{font-family:var(--mono); font-weight:500; font-size:var(--fs-micro)}
+
+  /* ---------- evidence badges (UI-1 styles, UI-2 renders) ----------
+     What a suggestion is made of, the same four words on every screen.
+     --w (0–1) draws how much each one contributed as a short bar. */
+  .evs{display:inline-flex; flex-wrap:wrap; gap:4px; vertical-align:middle}
+  .ev{position:relative; display:inline-flex; align-items:center; gap:5px; font-family:var(--mono);
+      font-size:var(--fs-micro); line-height:1; letter-spacing:.02em; color:var(--ink-2);
+      padding:4px 7px 5px; border-radius:6px; background:var(--surface-2);
+      box-shadow:inset 0 0 0 1px var(--line); overflow:hidden; --ec:var(--ink-3)}
+  .ev::before{content:""; width:6px; height:6px; border-radius:2px; background:var(--ec); flex:none}
+  .ev[style*="--w"]::after{content:""; position:absolute; left:0; bottom:0; height:2px;
+      width:calc(var(--w) * 100%); background:var(--ec)}
+  .ev.ev-tags{--ec:var(--ev-tags)} .ev.ev-history{--ec:var(--ev-history)}
+  .ev.ev-sound{--ec:var(--ev-sound)} .ev.ev-learned{--ec:var(--ev-learned)}
+
+  /* ---------- empty states (UI-1) ----------
+     The mark's five bars, at rest, stand in for an illustration: the same
+     object as the logo, flattened, saying "nothing playing here yet". */
+  .empty-state{text-align:center; padding:40px 24px 36px; border-radius:var(--r-4);
+       background:var(--surface); border:1px dashed var(--line-2); color:var(--ink-2); font-size:var(--fs-body)}
+  .empty-state .es-mark{display:inline-flex; align-items:flex-end; gap:5px; height:42px; margin-bottom:16px}
+  .empty-state .es-mark i{display:block; width:9px; border-radius:3px; opacity:.85}
+  .empty-state .es-mark i:nth-child(1){height:40%; background:var(--m0)}
+  .empty-state .es-mark i:nth-child(2){height:70%; background:var(--m1)}
+  .empty-state .es-mark i:nth-child(3){height:100%; background:var(--m2)}
+  .empty-state .es-mark i:nth-child(4){height:60%; background:var(--m3)}
+  .empty-state .es-mark i:nth-child(5){height:30%; background:var(--m4)}
+  .empty-state b{display:block; font-family:var(--display); font-weight:800; font-size:20px; letter-spacing:-.02em;
+       color:var(--ink); margin-bottom:6px; text-wrap:balance}
+  .empty-state p{margin:0 auto; max-width:46ch; line-height:1.55; text-wrap:pretty}
+  .empty-state .es-acts{display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:18px}
+  /* Inline, inside a list or a card: smaller, no frame of its own. */
+  .empty-state.compact{padding:20px 16px; border:0; background:var(--surface-2); border-radius:var(--r-2);
+       display:flex; align-items:center; gap:14px; text-align:left}
+  .empty-state.compact .es-mark{height:24px; gap:3px; margin:0; flex:none}
+  .empty-state.compact .es-mark i{width:5px; border-radius:2px}
+  .empty-state.compact b{font-size:15px; margin-bottom:2px}
+  .empty-state.compact p{margin:0; max-width:none; font-size:var(--fs-small)}
+  .empty-state.compact .es-acts{margin:0 0 0 auto; justify-content:flex-end}
+
+  /* ---------- "How this works" (UI-1) ----------
+     A screen's lede is one sentence; the explanation it used to carry sits
+     behind this, shut by default. */
+  details.how{margin:-12px 0 22px; font-size:var(--fs-small); color:var(--ink-2); max-width:68ch}
+  details.how>summary{cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:6px;
+       color:var(--ink-3); font-weight:600; border-radius:6px}
+  details.how>summary::-webkit-details-marker{display:none}
+  details.how>summary::before{content:""; width:6px; height:6px; border-right:1.5px solid currentColor;
+       border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform .15s ease; margin-right:2px}
+  details.how[open]>summary::before{transform:rotate(45deg)}
+  details.how>summary:hover{color:var(--ink)}
+  details.how>div, details.how>p{margin:10px 0 0; padding:12px 14px; border-radius:var(--r);
+       background:var(--surface-2); border:1px solid var(--line); line-height:1.6}
+  details.how p{margin:0 0 8px} details.how p:last-child{margin-bottom:0}
+  @media (max-width:560px){
+    .empty-state.compact{flex-wrap:wrap}
+    .empty-state.compact>span:not(.es-mark){flex:1; min-width:0}
+    .empty-state.compact .es-acts{width:100%; margin:4px 0 0; justify-content:flex-start}
+  }
