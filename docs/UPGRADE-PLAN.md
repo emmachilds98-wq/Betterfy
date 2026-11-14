@@ -25,6 +25,13 @@ do it. I won't merge anything without you asking.
 
 ---
 
+> **Superseded in part (2026-11-13):** the next round of genre work, which
+> covers similar-artist bridges, calibrated confidence, a Gaps screen that
+> proposes new playlists, and the Spotify Developer Terms rule that drops
+> shared filing and any runtime LLM, is in `docs/SMARTER-GENRES-PLAN.md`.
+> Its §7 is the order of work for genres, and its §8 lists what's waiting on
+> the owner.
+
 > **Superseded in part (later on 2026-10-31):** the owner's first engine run
 > showed both engines filing into non-genre playlists and missing scene
 > genres. The diagnosis, the fixes, and the next steps for genre recognition
