@@ -26,7 +26,7 @@
 // emit one in), so importing `MIN_DEFINITION_TRACKS` from there would make the
 // wiring unbuildable. The value is restated as `MIN_AUDIO_MEMBERS` and a test
 // pins the two equal, so they cannot drift apart silently.
-import { validRecord, isCurrent, unpackEmbedding, EMB_DIM } from '../audio/record.mjs';
+import { validRecord, isCurrent, unpackEmbedding, earCurrent, EMB_DIM, EARS } from '../audio/record.mjs';
 
 export const AUDIO_COMPONENT_VERSION = '1.0.0';
 
@@ -78,21 +78,26 @@ function recordsOf(records) {
  * Two records for one id: the newer (`at`) wins.
  *
  * @param {Iterable<object>|Record<string, object>|null} records
- * @param {{ mel?: string }} [opts]  pass the page's MEL_VERSION to also drop
- *        records computed with another front end
+ * @param {{ mel?: string, ear?: 'maest'|'clap' }} [opts]  pass the page's MEL_VERSION to also drop
+ *        records computed with another front end. `ear` builds the index from
+ *        a second ear instead (WP-C1's with/without measurement): only
+ *        records carrying a current one are in it, at that ear's width.
  * @returns {Map<string, { emb: Float32Array, styles: Array<[number, number]>, rec: object }>}
  */
-export function audioIndex(records, { mel = undefined } = {}) {
+export function audioIndex(records, { mel = undefined, ear = null } = {}) {
   const index = new Map();
+  if (ear && !EARS[ear]) throw new Error(`unknown ear: ${ear}`);
+  const dim = ear ? EARS[ear].dim : EMB_DIM;
   for (const rec of recordsOf(records)) {
     if (!validRecord(rec) || rec.miss) continue;
     if (!isCurrent(rec, { mel })) continue;
     const prev = index.get(rec.id);
     if (prev && !((rec.at ?? 0) > (prev.rec.at ?? 0))) continue;
+    if (ear && !earCurrent(rec, ear)) continue;
     let emb;
-    try { emb = unit(unpackEmbedding(rec.emb)); } catch { emb = null; }
-    if (!emb || emb.length !== EMB_DIM) continue;
-    index.set(rec.id, { emb, styles: rec.styles, rec });
+    try { emb = unit(unpackEmbedding(ear ? rec[ear].emb : rec.emb)); } catch { emb = null; }
+    if (!emb || emb.length !== dim) continue;
+    index.set(rec.id, { emb, styles: ear ? (rec[ear].styles ?? rec.styles) : rec.styles, rec });
   }
   return index;
 }

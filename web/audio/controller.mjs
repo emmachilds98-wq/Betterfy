@@ -18,19 +18,29 @@
 // preview is fetched again and only the DSP runs, so the embedding stays and
 // nothing is invalidated. None of it is shown unless web/audio/dsp-view.mjs's
 // flag is on.
-import { runQueue, fillDsp } from '../../core/audio/worker.js';
-import { MISS } from '../../core/audio/record.mjs';
+//
+// MAEST (WP-C1, "Deep listen"): only while deps.maestAllowed() says so (its
+// own switch, Wi-Fi, memory: web/audio/deep-settings.mjs). The model loads on
+// the first run that is allowed; new records get the `maest` ear as they are
+// heard, and records heard before get it topped up after the queue, a few
+// per run, like dsp. A model that will not load leaves MAEST off for the
+// session and says why; listening itself carries on.
+import { runQueue, fillDsp, fillMaest } from '../../core/audio/worker.js';
+import { MISS, earCurrent } from '../../core/audio/record.mjs';
 import { measureWindows, needsDsp } from '../../core/audio/dsp/combine.mjs';
 
 /** Records topped up with dsp per start(), after the queue. */
 export const DSP_FILL_PER_RUN = 25;
+/** Records given the MAEST ear per start(), after the queue. */
+export const MAEST_FILL_PER_RUN = 25;
 
 /**
  * Proxy the ear and heads to a Worker speaking { id, op, ... } → { id, ok, result|error }.
  * Buffers are transferred, not copied, and so are unusable here afterwards.
  *
  * @param {{ postMessage: Function, addEventListener: Function }} worker
- * @param {{ modelUrl: string, headUrls?: object, ortBase?: string }} init
+ * @param {{ modelUrl: string, headUrls?: object, ortBase?: string, maestUrl?: string }} init
+ *        maestUrl: where MAEST lives; the Worker loads it on maest.load(), never before
  */
 export function createWorkerEar(worker, init) {
   let seq = 0;
@@ -53,11 +63,17 @@ export function createWorkerEar(worker, init) {
     worker.postMessage({ id, op, ...body }, transfer);
   });
   const ready = call('init', init);
+  let maestReady = null;
   return {
     ready,
     ear: { run: async (data, patches) => { await ready; return call('ear', { data, patches }, [data.buffer]); } },
     heads: { run: async (emb, patches) => { const r = await ready; if (!r?.heads?.length) throw new Error('no heads loaded');
       return call('heads', { emb: emb.slice(), patches }); } },
+    // load() is explicit so a missing model fails once, at load, not on every track.
+    maest: init.maestUrl ? {
+      load: async () => { await ready; maestReady ??= call('maest-init', { modelUrl: init.maestUrl }).catch(e => { maestReady = null; throw e; }); return maestReady; },
+      run: async windows => { if (!maestReady) throw new Error('MAEST not loaded'); await maestReady;
+        return call('maest', { windows: windows.map(w => w.slice()) }); } } : undefined,
   };
 }
 
@@ -74,6 +90,9 @@ export function createWorkerEar(worker, init) {
  * @param {((windows: Float32Array[]) => object|null) | null} [deps.dsp]
  *        per-window DSP; default measureWindows, null switches DSP off
  * @param {number} [deps.dspFillPerRun]  records topped up with dsp per start (default DSP_FILL_PER_RUN)
+ * @param {() => boolean} [deps.maestAllowed]  may MAEST run now? (deep-settings.mjs deepListenAllowed('maest') === 'ok')
+ * @param {() => Promise<{ run(windows: Float32Array[]): Promise<object|null> }>} [deps.loadMaest]  loads MAEST, once
+ * @param {number} [deps.maestFillPerRun]  records given the MAEST ear per start (default MAEST_FILL_PER_RUN)
  */
 export function createAudioController(deps) {
   const st = { state: 'off', done: 0, total: 0, reason: null, failed: 0, missed: {}, heard: 0, last: null };
@@ -81,11 +100,15 @@ export function createAudioController(deps) {
   const dsp = deps.dsp === undefined ? measureWindows : deps.dsp;
   const fillBudget = deps.dspFillPerRun ?? DSP_FILL_PER_RUN;
   const noFill = new Set(); // ids whose dsp can't be filled this session (different recording now, nothing measured)
+  const maestBudget = deps.maestFillPerRun ?? MAEST_FILL_PER_RUN;
+  const noMaest = new Set(); // ids MAEST can't hear this session
+  let maest = null, maestError = null; // the loaded MAEST ear, or why it would not load
 
   const emit = () => { try { deps.onChange?.(vm()); } catch { /* a render bug must not stop the queue */ } };
   const vm = () => ({ state: st.state, done: st.done, total: st.total, reason: st.reason ?? undefined,
                       missed: { ...st.missed, ...(st.failed ? { [MISS.FAILED]: st.failed } : {}) },
-                      heard: st.heard, last: st.last });
+                      heard: st.heard, last: st.last,
+                      ...(maest || maestError ? { maest: { loaded: !!maest, filled: st.maestFilled ?? 0, ...(maestError ? { error: maestError } : {}) } } : {}) });
 
   /** Re-count heard tracks and cacheable misses from what the store holds. */
   async function refresh() {
@@ -111,8 +134,10 @@ export function createAudioController(deps) {
     running = (async () => {
       try {
         if (!tracks.length) {
-          // Nothing new to hear: still top up dsp (it needs no model).
-          if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp }, signal);
+          // Nothing new to hear: still top up dsp (it needs no model) and the MAEST ear.
+          const base = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode };
+          if (dsp && fillBudget > 0) await topUpDsp({ ...base, dsp }, signal);
+          await topUpMaest(base, signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -122,8 +147,10 @@ export function createAudioController(deps) {
           st.reason = null; emit();
         }
         if (signal.aborted) { st.state = 'paused'; return { done: 0, stopped: true }; }
+        const m = await maestNow();
         const analyse = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
-                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp } : {}) };
+                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp } : {}),
+                          ...(m ? { maest: m } : {}) };
         const res = await runQueue(analyse, tracks, { signal, onResult: async (r, t) => {
           if (r.record) { await deps.store.put(r.record); st.heard++; }
           else if (r.miss) { await deps.store.put(r.miss); st.missed[r.miss.miss] = (st.missed[r.miss.miss] ?? 0) + 1; }
@@ -132,6 +159,7 @@ export function createAudioController(deps) {
           emit();
         } });
         if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
+        if (!res.stopped) await topUpMaest(analyse, signal);
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
@@ -153,6 +181,34 @@ export function createAudioController(deps) {
       if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; emit(); }
       else if (r.skip) noFill.add(rec.id);
       // a failed download is tried again on a later run
+    }
+  }
+
+  /** The MAEST ear if it may run now, loading it the first time; null otherwise. */
+  async function maestNow() {
+    if (!deps.loadMaest || maestError || !deps.maestAllowed?.()) return null;
+    if (maest) return maest;
+    st.reason = 'loading the deep listen model'; emit();
+    try { maest = await deps.loadMaest(); }
+    catch (e) { maest = null; maestError = String(e?.message ?? e); }
+    st.reason = null; emit();
+    return maest;
+  }
+
+  /** Give stored records the MAEST ear, a few per run, stoppable like the queue. */
+  async function topUpMaest(base, signal) {
+    if (!(maestBudget > 0) || signal.aborted) return;
+    const all = await deps.store.getAll();
+    const due = [...all.values()].filter(r => !r.miss && !earCurrent(r, 'maest') && !noMaest.has(r.id));
+    if (!due.length) return;
+    const m = await maestNow();
+    if (!m) return;
+    for (const rec of due.slice(0, maestBudget)) {
+      if (signal.aborted || !deps.maestAllowed?.()) return; // e.g. left Wi-Fi mid-run
+      let r;
+      try { r = await fillMaest({ ...base, maest: m }, rec); } catch { r = { skip: 'error' }; }
+      if (r.record) { await deps.store.put(r.record); st.maestFilled = (st.maestFilled ?? 0) + 1; emit(); }
+      else if (r.skip) noMaest.add(rec.id);
     }
   }
 

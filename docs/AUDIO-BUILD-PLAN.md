@@ -278,7 +278,7 @@ The coordinator's review is at high effort whatever the package used.
 | WP-C3 naming and text search | Merged, #85. **Dormant until WP-C2 ships**: `docs/models/` has no `clap-text-table.json` and no record has a `clap` ear yet, so naming and "sounds like" search draw nothing (byte-identical, as its tests pin) |
 | Record v2 contract (C1 + C2) | **Open, #82.** `main` merged in on 2026-11-14; the CLAP test fixture moved to the contract's 512 dimensions, because record v2 rejects any other size |
 | Deep listen settings (C1 + C2) | **Open, draft, #84.** `main` merged in on 2026-11-14 |
-| WP-C1 MAEST | Not started. Waits for #82 and #84 |
+| WP-C1 MAEST | **Open, draft.** Ear, worker hook, top-up and the same-tracks comparison on Score (`core/validate/ears.mjs`, bar +2 points top-1, no never-filed loss). Model-free in CI; the int8 model is built by `scripts/audio-maest/export.py` on a machine that can reach essentia.upf.edu, and its front end is confirmed by the optional real-model test |
 | WP-C2 CLAP text table and audio encoder | Not started. Waits for #82 and #84. Unblocks C3 |
 | WP-E2's gate on the owner's library | **Waiting on the owner:** Score both engines → Copy results |
 

@@ -4637,6 +4637,8 @@ async function corsJson(url, init) {
  * ======================================================================== */
 const ORT_BASE = '__ORT_BASE__', AUDIO_MODELS = '__AUDIO_MODELS__';
 const AUDIO_MODEL_FILE = 'discogs-effnet-bsdynamic-1.onnx';
+/* Deep listen's second ear (WP-C1), built by scripts/audio-maest/ and loaded only behind its switch. */
+const MAEST_MODEL_FILE = 'discogs-maest-10s-pw-2-int8.onnx';
 // The heads this build hosts. approachability/engagement are not shipped.
 const AUDIO_HEAD_FILES = { mtg_jamendo_moodtheme: 'mtg_jamendo_moodtheme-discogs-effnet-1.onnx',
   voice_instrumental: 'voice_instrumental-discogs-effnet-1.onnx', danceability: 'danceability-discogs-effnet-1.onnx' };
@@ -4691,10 +4693,14 @@ async function audioInit() {
     loadEar: async () => {
       AUDIO.worker = new Worker('audio-worker.js?v=__BUILD__', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
+        maestUrl: audioModelUrl(MAEST_MODEL_FILE),
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
+      AUDIO.maestEar = w.maest;
       return { ear: w.ear, heads: r?.heads?.length ? w.heads : undefined, summariseHeads: A.summariseHeads };
     },
+    maestAllowed: () => deepAllowed('maest') === 'ok',
+    loadMaest: async () => { if (!AUDIO.maestEar) throw new Error('listening model not loaded'); await AUDIO.maestEar.load(); return AUDIO.maestEar; },
     onChange: vm => { AUDIO.vm = vm; audioRedraw(); },
   });
   await audioRefresh();
@@ -4982,6 +4988,15 @@ function audioPanelHTML() {
   </div>`;
 }
 
+/** What MAEST has done this session: how many records it has heard, or why it would not load. */
+function maestLine(d) {
+  const m = AUDIO.vm?.maest;
+  if (!d.maest || !m) return '';
+  const t = m.error ? `The second ear couldn’t load (${m.error}), so it stays off this session.`
+    : `Second ear: ${m.filled ? `added to ${m.filled.toLocaleString()} tracks heard before` : 'listening with each new track'}.`;
+  return `<p class="sub" style="margin:4px 0">${esc(t)}</p>`;
+}
+
 /* The two Option C ears, each its own switch, both Wi-Fi only. MAEST (WP-C1)
  * and CLAP (WP-C2) each add their status line inside this block. */
 function deepPanelHTML() {
@@ -4996,7 +5011,7 @@ function deepPanelHTML() {
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP)</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has the memory (8 GB or more)</label>
     </div>
-    ${why('maest')}${why('clap')}
+    ${why('maest')}${maestLine(d)}${why('clap')}
   </div>`;
 }
 
@@ -5083,7 +5098,8 @@ const engineValidate = guard(async () => {
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
-      ENG.val = { mine, base, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      const ears = BetterfyEars.earsIfAny(LIB, common.audio, common);
+      ENG.val = { mine, base, ears, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     await engineCalibrate(ENG.val);
   } catch (e) {
@@ -5321,6 +5337,19 @@ function audioLines(v, pc) {
     `Sound coverage: ${w.heard} of ${v.mine.scored} scored tracks heard (${w.heardNeverFiled} never-filed), `
       + `${w.analysed} analysed in all; had a say on ${w.judged}, changed ${w.changed} top answers`,
     `Audio gate: ${g.pass === true ? 'PASS' : g.pass === false ? 'not yet' : 'undecided'} (${g.reason ?? '—'}) — ${g.text ?? ''}`,
+    ...earLines(v, pc),
+  ];
+}
+
+/** Deep listen's second ear against the first, on the same tracks (WP-C1). Nothing without MAEST records. */
+function earLines(v, pc) {
+  const e = v.ears;
+  if (!e) return [];
+  const d = e.verdict ?? {};
+  return [
+    `Second ear (MAEST) on ${e.paired} tracks heard by both: top-1 ${pc(e.second?.top1)} vs ${pc(e.base?.top1)}, `
+      + `never-filed ${pc(e.second?.neverFiled)} vs ${pc(e.base?.neverFiled)}`,
+    `Second ear: ${d.pass === true ? 'BEATS the first' : d.pass === false ? 'not yet' : 'undecided'} (${d.reason ?? '—'}) — ${d.text ?? ''}`,
   ];
 }
 

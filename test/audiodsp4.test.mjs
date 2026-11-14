@@ -184,7 +184,7 @@ test('needsDsp: absent or older dsp needs measuring; misses never do', () => {
 
 /* ------------------------------------------------------ the worker */
 
-test('WORKER_VERSION is bumped for per-window DSP', () => assert.equal(WORKER_VERSION, '1.1.0'));
+test('WORKER_VERSION is bumped for per-window DSP (1.1.0) and again for the MAEST ear (1.2.0)', () => assert.equal(WORKER_VERSION, '1.2.0'));
 
 test('worker: dsp gets the decoded windows separately and lands in a valid record', async () => {
   const d = deps({ dsp: parts => { d.seen.dspArgs = parts.map(p => p.length); return measureWindows(parts); } });
