@@ -7637,16 +7637,8 @@ async function audioInit() {
     lookup: (isrc, o) => A.lookup(isrc, { jsonp: deezerJsonp, ...o }),
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
-    loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2329', { type: 'module' });
-      const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
-        headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
-      const r = await w.ready;
-      return { ear: w.ear, heads: r?.heads?.length ? w.heads : undefined, summariseHeads: A.summariseHeads };
-    },
-    onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); },
     loadEar: audioEars,
-    onChange: vm => { AUDIO.vm = vm; audioRedraw(); },
+    onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); },
   });
   await audioRefresh();
   // The style names, for ProfileVM. Optional: a playlist row without them still says how much was heard.
