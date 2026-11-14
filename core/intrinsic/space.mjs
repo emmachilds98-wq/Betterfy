@@ -240,6 +240,20 @@ function audioLayer(audio, destinations, skip) {
   return out;
 }
 
+/**
+ * Put the audio layer back on a space that lost it, typically one revived from
+ * `persist.mjs`, which stores the graph and profiles but not sound (records
+ * live in their own store, and centroids are cheap to rebuild from them).
+ * Takes `audio` exactly as `buildSpace` does. Returns a new space; with
+ * nothing to hear, the space unchanged. Any existing layer is replaced.
+ */
+export function withAudioLayer(space, audio) {
+  if (!space?.destinations) return space;
+  const { audio: _a, learned: _l, ...rest } = space;
+  const layer = audioLayer(audio, space.destinations, null);
+  return Object.keys(layer).length ? { ...rest, ...layer } : (('audio' in space || 'learned' in space) ? rest : space);
+}
+
 /** Whatever a learner returned → Map of finite numbers, or null. */
 function asScoreMap(x) {
   if (!x) return null;

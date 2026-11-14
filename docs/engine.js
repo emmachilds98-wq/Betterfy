@@ -3184,6 +3184,20 @@ function audioLayer(audio, destinations, skip) {
   return out;
 }
 
+/**
+ * Put the audio layer back on a space that lost it, typically one revived from
+ * `persist.mjs`, which stores the graph and profiles but not sound (records
+ * live in their own store, and centroids are cheap to rebuild from them).
+ * Takes `audio` exactly as `buildSpace` does. Returns a new space; with
+ * nothing to hear, the space unchanged. Any existing layer is replaced.
+ */
+function withAudioLayer(space, audio) {
+  if (!space?.destinations) return space;
+  const { audio: _a, learned: _l, ...rest } = space;
+  const layer = audioLayer(audio, space.destinations, null);
+  return Object.keys(layer).length ? { ...rest, ...layer } : (('audio' in space || 'learned' in space) ? rest : space);
+}
+
 /** Whatever a learner returned → Map of finite numbers, or null. */
 function asScoreMap(x) {
   if (!x) return null;
@@ -3334,7 +3348,7 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
     version: SPACE_VERSION,
   };
 }
-return { SPACE_VERSION, WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, relativeSound, combine, placements };
+return { SPACE_VERSION, WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, withAudioLayer, relativeSound, combine, placements };
 })();
 /* ---- core/intrinsic/coldstart.mjs ---- */
 __mod["core/intrinsic/coldstart.mjs"] = (function () {

@@ -4955,7 +4955,8 @@ async function engineLoadCalibration() {
     const c = await idb.get(CAL_KEY);
     if (c && c.stamp === calStamp() && c.fingerprint === BetterfyPersist.fingerprint(LIB)
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
-      ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, at: c.at ?? null };
+      ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, audioGate: c.audioGate ?? null,
+                   at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
 }
 
@@ -4967,13 +4968,15 @@ async function engineCalibrate(v) {
   const base = BetterfyCalibrate.calibrationReport(mine.rows);
   const bridge = mine.withBridge?.rows ? BetterfyCalibrate.calibrationReport(mine.withBridge.rows) : null;
   const audio = mine.withAudio?.rows ? BetterfyCalibrate.calibrationReport(mine.withAudio.rows) : null;
+  // The audio gate's verdict, kept with the calibration so it survives a reload.
+  const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
   if (mine.withAudio) delete mine.withAudio.rows;
-  ENG.calib = { base, bridge, audio, at: Date.now() };
+  ENG.calib = { base, bridge, audio, audioGate, at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
-                             targets: engineTargets(), base, bridge, audio, at: ENG.calib.at });
+                             targets: engineTargets(), base, bridge, audio, audioGate, at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }

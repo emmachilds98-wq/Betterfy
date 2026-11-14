@@ -15,8 +15,8 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { fixture, FAMILIES, engineSnapshot, unversioned } from './fixtures/engine-library.mjs';
-import { buildSpace, placements, WEIGHTS, SPACE_VERSION, relativeSound } from '../core/intrinsic/space.mjs';
-import { serialiseSpace } from '../core/intrinsic/persist.mjs';
+import { buildSpace, placements, WEIGHTS, SPACE_VERSION, relativeSound, withAudioLayer } from '../core/intrinsic/space.mjs';
+import { serialiseSpace, reviveSpace } from '../core/intrinsic/persist.mjs';
 import { placementAccuracy } from '../core/validate/loo.mjs';
 import { audioGate, audioInUse, audioCalibration, GATE } from '../core/validate/gate.mjs';
 import { audioIndex } from '../core/intrinsic/audio.mjs';
@@ -317,4 +317,19 @@ test('gate on the fixture: undecided, because 4 never-filed tracks cannot show a
   assert.equal(acc.neverFiled.scored, 4);
   assert.equal(acc.withAudio.gate.reason, 'TOO_FEW_NEVER_FILED');
   assert.equal(audioInUse(acc.withAudio.gate), false);
+});
+
+/* ---------- a cached space ---------- */
+
+test('withAudioLayer puts sound back on a revived space, the same as building with it', () => {
+  const built = buildSpace(LIB, { audio: RECORDS });
+  const revived = reviveSpace(serialiseSpace(buildSpace(LIB), LIB));
+  assert.equal(revived.audio, undefined, 'persist does not keep sound');
+  const back = withAudioLayer(revived, RECORDS);
+  for (const t of LIB.all) {
+    assert.equal(JSON.stringify(placements(t, back, { limit: Infinity, useAudio: true })),
+                 JSON.stringify(placements(t, built, { limit: Infinity, useAudio: true })));
+  }
+  assert.equal(withAudioLayer(revived, null), revived, 'nothing to hear: unchanged');
+  assert.equal(withAudioLayer(back, []).audio, undefined, 'an old layer is dropped when the records are gone');
 });
