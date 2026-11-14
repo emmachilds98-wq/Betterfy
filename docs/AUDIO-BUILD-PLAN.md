@@ -270,9 +270,19 @@ The coordinator's review is at high effort whatever the package used.
 | WP-L1 learner | Merged, #76. Learner beats centroids by ~1 point top-1, ~3 top-2 on the phase 0 fixture |
 | WP-E2 engine + gate | Merged, #74. Sound changes no suggestion until the owner's Score run passes the gate |
 | WP-B2 page wiring | Merged, #75. Models in docs/models/; listening off by default |
-| Everything else | Not started |
+| WP-H2 hybrid and cluster proposals | Merged, #78 |
+| WP-D4 DSP into records and UI | Merged, #77, behind a flag. #86 then measured tempo and key on a public EDM set: BPM is shown, key stays hidden |
+| WP-L2 learning from feedback | Merged, #79 |
+| Mood, voice and energy | Merged, #83: shown once checked on real previews |
+| UI-1 to UI-6 | Merged: #72, #80, #69, #71, #70, #81 (see `docs/UI-BUILD-PLAN.md`) |
+| WP-C3 naming and text search | Merged, #85. **Dormant until WP-C2 ships**: `docs/models/` has no `clap-text-table.json` and no record has a `clap` ear yet, so naming and "sounds like" search draw nothing (byte-identical, as its tests pin) |
+| Record v2 contract (C1 + C2) | **Open, #82.** `main` merged in on 2026-11-14; the CLAP test fixture moved to the contract's 512 dimensions, because record v2 rejects any other size |
+| Deep listen settings (C1 + C2) | **Open, draft, #84.** `main` merged in on 2026-11-14 |
+| WP-C1 MAEST | Not started. Waits for #82 and #84 |
+| WP-C2 CLAP text table and audio encoder | Not started. Waits for #82 and #84. Unblocks C3 |
+| WP-E2's gate on the owner's library | **Waiting on the owner:** Score both engines → Copy results |
 
-All 13 plus UI-0 (#64) merged to main on 2026-11-14; main passes the full suite (1047 pass, 1 skip). L1 (#76), E2 (#74) and B2 (#75) merged the same day.
+All 13 plus UI-0 (#64) merged to main on 2026-11-14; main passes the full suite (1047 pass, 1 skip). L1 (#76), E2 (#74) and B2 (#75) merged the same day. By the end of that day, #77–#86 above had merged too, and main passed 1250 tests (1 skip).
 
 ## 5. Owner decisions recorded
 
