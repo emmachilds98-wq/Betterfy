@@ -35,7 +35,10 @@ over anything that needs a file most users won't have.
 - `V2-PLAN.md` — the longer-range architecture review; still mostly
   aspirational, but the "what v1 actually is" and defects sections are
   accurate and worth reading before a big change.
-- `docs/UPGRADE-PLAN.md` — the current order of work across the open PRs
+- `docs/HANDOFF.md` — **start here**: the current state (open PR #88, what
+  waits on the owner), a file map of the sound features, and the ranked next
+  work. Newer than `UPGRADE-PLAN.md`.
+- `docs/UPGRADE-PLAN.md` — the older (2026-10-31) order of work across the open PRs
   and plans, and what is waiting on the owner. Start here.
 - `docs/GENRE-RECOGNITION-PLAN.md` — why filing went into non-genre
   playlists, what was fixed, and the ranked signals for genres crowd tags

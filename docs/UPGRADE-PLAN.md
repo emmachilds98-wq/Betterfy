@@ -5,6 +5,9 @@ every plan in `docs/`. Facts marked *checked* were verified in this review,
 not copied from an earlier doc. **Updated the same day:** #43 and #44 are
 merged, and the engine now runs in the background (§4).
 
+> **Superseded (2026-11-14):** the current state and next work are in
+> `docs/HANDOFF.md`. Start there.
+
 ---
 
 ## What you need to do (the short version)
