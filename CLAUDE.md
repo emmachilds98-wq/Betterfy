@@ -51,6 +51,10 @@ over anything that needs a file most users won't have.
   parallel agents, the frozen contracts (`core/audio/mel.mjs`,
   `core/audio/record.mjs`), file ownership, and the gate. Any audio work
   starts from its package list.
+- `docs/UI-BUILD-PLAN.md` — the UI refresh for the audio features: the
+  review, the sound-layer view models (`web/ui/sound.mjs`), and who owns which
+  stylesheet partial in `web/styles/`. CSS goes in a partial, never back into
+  `docs/app.template.html`; `npm run shots` screenshots every screen offline.
 - `docs/SMARTER-GENRES-PLAN.md` — the current genre plan: free
   similar-artist bridges (Deezer, ListenBrainz via Wikidata, measured on the
   owner's library), calibrated confidence, the Gaps screen for proposing new

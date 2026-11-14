@@ -30,6 +30,8 @@ function sandbox({ env = '', poison = null, poisonCore = null } = {}) {
   // merely fail — it would quietly stop testing half of what ships.
   cpSync(join(ROOT, 'core'), join(dir, 'core'), { recursive: true });
   cpSync(join(ROOT, 'docs'), join(dir, 'docs'), { recursive: true });
+  // The stylesheet partials and the sound renderers (docs/UI-BUILD-PLAN.md UI-0).
+  cpSync(join(ROOT, 'web'), join(dir, 'web'), { recursive: true });
   writeFileSync(join(dir, '.env'), env);
   if (poisonCore) {
     // Into a module that ends up in docs/engine.js rather than in the page, which
