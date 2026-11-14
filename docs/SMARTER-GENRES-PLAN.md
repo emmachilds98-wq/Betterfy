@@ -308,6 +308,25 @@ carries all of it. Found and fixed on the way:
   Spotify sign-in included. Checked in Chromium: the frame gets a
   SecurityError reading storage, and lookups work.
 
+**Indicative number, from a simulation and not the gate.** This test library
+was built from 228 real artists in `docs/tags.json`, with real ISRCs,
+durations and release dates from Deezer, across eight scene genres (444
+tracks). Each artist was filed by its Last.fm genre, plus three crossover
+playlists. Scored with only the genre playlists as destinations, as the phone
+does:
+
+| | without | with similar artists |
+|---|---|---|
+| top-1, all 444 tracks | 39.4% | **59.5%** |
+| top-1, 26 tracks by never-filed artists | 23.1% | **57.7%** |
+
+Deezer answered for 202 of the 228 artists and ListenBrainz for 45. 138 had
+neighbours in the library, and the bridge had a say on 272 tracks. The lift
+barely moves between weights 0.25 and 2. The caveat is a big one: the
+playlists were filed *by Last.fm genre*, and crowd genre correlates with
+"fans also like", so this flatters the bridge compared with a real person's
+filing. Only the owner's run answers the gate.
+
 The bridge is not on the File screen and changes no suggestion. Phase 1 waits
 on the gate.
 
