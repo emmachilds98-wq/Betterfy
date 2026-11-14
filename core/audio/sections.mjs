@@ -1,6 +1,6 @@
 // Sections and hybrids: what changes inside one clip (WP-H1).
 //
-// A record keeps, per patch (~4 s of audio, hop ~2 s), its top SECTION_TOP
+// A record keeps, per patch (~2 s of audio, hop ~1 s), its top SECTION_TOP
 // styles in time order. Phase 0 saw patch-level top-1 agreement inside one
 // preview range from 17% to 100%: an intro that is one thing and a drop that
 // is another shows up clearly. That is what a hybrid proposal is built from
