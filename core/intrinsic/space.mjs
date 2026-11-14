@@ -18,8 +18,12 @@ import { mirrorPredicate } from '../playlists/mirror.mjs';
 import { explain } from './explain.mjs';
 import { bonusIndex, bonusProfileOf, bonusScores } from './bonus-rekordbox.mjs';
 import { bridgeIndex, artistHomes, bridgeScores } from './bridge.mjs';
+import { audioIndex, buildAudioProfiles, audioScores } from './audio.mjs';
 
-export const SPACE_VERSION = '4.0.0';
+// 4.1.0: the audio layer (WP-E2 of docs/AUDIO-BUILD-PLAN.md). With no audio
+// passed, every output except this string is byte-identical to 4.0.0
+// (test/audioengine.test.mjs holds it to a hash of main's output).
+export const SPACE_VERSION = '4.1.0';
 
 /**
  * Relative weights. `graph` leads because the artist neighbourhood is the only
@@ -50,6 +54,17 @@ export const WEIGHTS = {
   // the bonus layer it costs nothing to anybody without one. A prior: phase 0
   // exists to measure whether it earns any weight at all.
   bridge:      0.50,
+  // Sound (docs/AUDIO-BUILD-PLAN.md WP-E1/E2/L1). `audio` is how close the
+  // track sounds to each playlist's analysed members (nearest centroid, which
+  // phase 0 measured at 58% top-1 on its own); `learned` is the per-account
+  // classifier trained on the same members. Both are priors, and both are
+  // **gated**: `placements` only lets them into the score with `useAudio`,
+  // which a caller sets only once `core/validate/gate.mjs` has passed on the
+  // account's own library. Until then they are computed and shown on each row
+  // (`heard`) and change no suggestion. Null for an unheard track, so like the
+  // bonus layer they cost nothing to anybody without audio.
+  audio:       0.50,
+  learned:     0.50,
 };
 
 /**
@@ -90,7 +105,7 @@ export const THRESHOLDS = {
  * cannot start by reading a file that assumes whose account it is.
  */
 export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targets = null,
-                                  bridge = null } = {}) {
+                                  bridge = null, audio = null } = {}) {
   // `targets`, when given, is the set of playlists the listener files into —
   // their genre playlists. Only those become destinations. Every playlist still
   // feeds the artist graph below: a "Sunday" playlist is not somewhere to file
@@ -179,8 +194,94 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
   const bridgeIdx = bridge ? bridgeIndex(bridge) : null;
   const withBridge = bridgeIdx?.size ? { bridge: bridgeIdx, artistHomes: artistHomes(destinations) } : {};
 
+  // Same rule for sound: only with at least one usable record does the space
+  // carry an audio layer, so `audio: null`, `[]` or a pile of misses leaves the
+  // space exactly as it was. Profiles are built from `destinations`, which have
+  // already dropped mirrors, non-targets and `skip`, so a held-out fold is never
+  // part of the sound it is scored against, and a learner trained here never
+  // saw it either.
+  const withAudio = audioLayer(audio, destinations, skip);
+
   return { graph, registrants, destinations, baseline, bonus, version: SPACE_VERSION,
-           targets: allowed ? [...allowed].sort() : null, ...withBridge };
+           targets: allowed ? [...allowed].sort() : null, ...withBridge, ...withAudio };
+}
+
+/**
+ * `audio` may be the records themselves (array, Map, or id → record object,
+ * anything `audioIndex` reads), or options:
+ *
+ *   { records, mel }   records, optionally dropping another mel front end's
+ *   { index }          an `audioIndex` already built (reused across folds)
+ *   { learn }          a trainer, called once per space with
+ *                      `{ index, profiles, minMembers }`: `profiles` is
+ *                      destination id → analysed members (`.ids`), already
+ *                      without `skip`. It returns the learner: an object with
+ *                      `learnedScores(track)` (WP-L1's name) or a function of
+ *                      the track, giving destination id → probability as a
+ *                      Map, an object or [[id, p], …], or null when unheard.
+ *
+ * Returns the keys to spread into the space: `{}` when there is nothing to
+ * hear, so the space is key for key what it was without audio.
+ */
+function audioLayer(audio, destinations, skip) {
+  if (!audio) return {};
+  const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
+    && ('records' in audio || 'index' in audio || 'learn' in audio) ? audio : { records: audio };
+  const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
+  if (!index.size) return {};
+  const layer = buildAudioProfiles(destinations, index, { skip });
+  const out = { audio: layer };
+  if (typeof opts.learn === 'function' && layer.profiles.size) {
+    const learner = opts.learn({ index, profiles: layer.profiles, minMembers: layer.minMembers });
+    const fn = typeof learner?.learnedScores === 'function' ? t => learner.learnedScores(t)
+             : typeof learner === 'function' ? learner : null;
+    if (fn) out.learned = fn;
+  }
+  return out;
+}
+
+/** Whatever a learner returned → Map of finite numbers, or null. */
+function asScoreMap(x) {
+  if (!x) return null;
+  const entries = x instanceof Map ? [...x] : Array.isArray(x) ? x : Object.entries(x);
+  const out = new Map();
+  for (const [id, v] of entries) if (id != null && Number.isFinite(v)) out.set(id, v);
+  return out.size ? out : null;
+}
+
+/**
+ * One track's raw sound scores against every destination, rescaled into a
+ * component `combine()` can mix: 0 for the destination it sounds least like,
+ * 1 for the one it sounds most like, linearly between.
+ *
+ * Why relative rather than the raw cosine: embedding cosines bunch high (every
+ * track sounds somewhat like every electronic playlist), so a raw value would
+ * add a near-constant to every judged destination. That ranks nothing, and
+ * where some destinations are judged and others aren't (too few analysed
+ * members) it would quietly favour the judged ones. A destination that cannot
+ * be judged gets the mean of the judged ones instead of null, for the same
+ * reason: "can't tell" must neither help nor hurt it. Fewer than two judged
+ * destinations, or no spread at all, is nothing to rank by: null.
+ */
+export function relativeSound(raw, destIds) {
+  if (!raw) return null;
+  const judged = [];
+  for (const v of raw.values()) if (Number.isFinite(v)) judged.push(v);
+  if (judged.length < 2) return null;
+  const lo = Math.min(...judged), hi = Math.max(...judged);
+  if (!(hi - lo > 1e-9)) return null;
+  const scaled = new Map();
+  let sum = 0;
+  for (const [id, v] of raw) {
+    if (!Number.isFinite(v)) continue;
+    const s = (v - lo) / (hi - lo);
+    scaled.set(id, s);
+    sum += s;
+  }
+  const neutral = sum / scaled.size;
+  const out = new Map();
+  for (const id of destIds) out.set(id, scaled.get(id) ?? neutral);
+  return out;
 }
 
 /**
@@ -217,7 +318,7 @@ export function combine(parts, weights = WEIGHTS) {
  * none of them needs prose. A UI asks for it; a sweep does not.
  */
 export function placements(track, space, { limit = 5, exclude = null, why = false,
-                                           weights = WEIGHTS } = {}) {
+                                           weights = WEIGHTS, useAudio = false } = {}) {
   if (!track?.id) return { declined: 'NO_TRACK', results: [] };
   if (!space?.destinations?.size) return { declined: 'NO_DESTINATIONS', results: [] };
 
@@ -227,6 +328,18 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
   // spread across all of them. Null — and then absent from every row — when the
   // space has no bridge or it knows none of this track's artists.
   const bridged = space.bridge ? bridgeScores(track, space) : null;
+  // Sound, likewise once per track. Only a heard track in a space with an audio
+  // layer gets any of this; for everyone else both are null, no row gains a
+  // key, and the output is what it was before audio existed.
+  //
+  // The gate: without `useAudio` these are shown on each row (`heard`, the raw
+  // cosine and probability) and never enter `parts`, so they change no score
+  // and no ranking. `core/validate/gate.mjs` decides when a caller may pass it.
+  const rawSound = space.audio ? audioScores(track, space) : null;
+  const rawLearned = rawSound && space.learned ? asScoreMap(space.learned(track)) : null;
+  const destIds = rawSound ? [...space.destinations.keys()] : null;
+  const sound = useAudio ? relativeSound(rawSound, destIds) : null;
+  const learned = useAudio ? relativeSound(rawLearned, destIds) : null;
   const rows = [];
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
@@ -237,11 +350,18 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
                                     : { bpm: null, key: null };
     const parts = bridged ? { graph, ...shape, ...extra, bridge: bridged.get(d.id) ?? 0 }
                           : { graph, ...shape, ...extra };
+    if (sound) parts.audio = sound.get(d.id);
+    if (learned) parts.learned = learned.get(d.id);
     const { score, used, judged } = combine(parts, weights);
     if (!judged) continue;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
-    rows.push({ playlistId: d.id, name: d.name, score: +score.toFixed(4),
-                parts: used, judged, sharedArtists: shared, members: d.n });
+    const row = { playlistId: d.id, name: d.name, score: +score.toFixed(4),
+                  parts: used, judged, sharedArtists: shared, members: d.n };
+    if (rawSound) {
+      row.heard = { audio: rawSound.get(d.id) ?? null,
+                    learned: rawLearned?.has(d.id) ? +rawLearned.get(d.id).toFixed(4) : null };
+    }
+    rows.push(row);
   }
 
   if (!rows.length) return { declined: 'NOTHING_JUDGEABLE', results: [] };
