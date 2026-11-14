@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-2239">
+<meta name="bf-build" content="2026-11-14-2301">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1099,6 +1099,25 @@
   @keyframes slideR{from{opacity:0; transform:translateX(-22px)}}
   main.in-l{animation:slideL .26s cubic-bezier(.2,.7,.3,1)}
   main.in-r{animation:slideR .26s cubic-bezier(.2,.7,.3,1)}
+
+  /* ---------- Shuffle: DJ order (core/audio/order.mjs) ----------
+     Drawn only once listening has heard enough of the playlist and a DJ order
+     is chosen; the spaced shuffle is laid out exactly as before. */
+  #shufMode{max-width:100%}
+  .mx-sum{margin:-10px 0 20px; font-size:14px}
+  .mx-order .mx-bpm{margin-left:auto; flex:none; font-family:var(--mono); font-size:12px; color:var(--ink-2);
+                    padding:2px 7px; border-radius:999px; background:var(--surface, transparent); border:1px solid var(--line)}
+  .mx-order .mx-tag{flex:none; font-size:11.5px; letter-spacing:.04em; color:var(--warn)}
+  .mx-order .mx-bpm + .mx-tag{margin-left:0}
+  .mx-order > .mx-jump{box-shadow:inset 3px 0 0 var(--warn)}
+  .mx-order > .mx-unheard{opacity:.72}
+  .mx-arc{display:flex; align-items:flex-end; gap:3px; height:44px; margin:-8px 0 18px; padding:6px 8px;
+          border-radius:12px; background:var(--surface-2)}
+  .mx-arc span{flex:1; min-width:2px; border-radius:3px 3px 1px 1px; background:color-mix(in srgb, var(--ok) 70%, var(--surface-2))}
+  @media (max-width:560px){
+    .mx-order > div{flex-wrap:wrap; gap:4px 10px}
+    .mx-order .t{flex:1 1 60%; min-width:0; overflow-wrap:anywhere}
+  }
   /* Which screen you are on, out of how many — the swipe needs an anchor. */
   .dots{display:none; gap:5px; justify-content:center; padding:2px 0 10px; align-items:center}
   .dots i{width:5px; height:5px; border-radius:50%; background:var(--line-2); transition:background .2s ease, width .2s ease}
@@ -1363,7 +1382,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-2239</span>
+    <span class="mono">build 2026-11-14-2301</span>
   </p>
 
   <div class="feat">
@@ -1466,7 +1485,7 @@
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2239</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2301</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1507,7 +1526,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2239</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2301</span>
   </div>
 </div>
 
@@ -2968,7 +2987,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-2239';
+const BUILD = '2026-11-14-2301';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3289,7 +3308,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-2239', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-2301', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -5225,6 +5244,85 @@ async function syncAllSongsPlaylist() {
   render();
 }
 
+/* ---------- DJ order: Shuffle by tempo and sound (core/audio/order.mjs) ----------
+ * Once listening has heard enough of a playlist, Shuffle can order it like a DJ
+ * set instead: each next track a tempo you can beatmatch (half and double time
+ * count) and close in sound, the same artist never twice running, and if asked
+ * along an energy arc. Tracks not heard yet follow in the spaced shuffle. A
+ * lookup over this account's own heard tracks; nothing is shown, and the screen
+ * is exactly as before, until at least MIN_MIX of the playlist has been heard. */
+const MIX_MODES = { flat: 'DJ order', build: 'DJ order, building up', peak: 'DJ order, warm-up → peak → cool-down' };
+const MIX_PAGE = { recs: null, n: 0, index: null, err: null };
+/** Heard tracks in this list with a tempo sure enough to mix on (match.mjs MIX_MIN_CONF). */
+function mixHeardIn(tracks) {
+  if (!AUDIO.records?.size) return 0;
+  const min = globalThis.BetterfyMatch?.MIX_MIN_CONF ?? 0.3;
+  let n = 0;
+  for (const t of tracks) { const d = AUDIO.records.get(t.id); const p = d && !d.miss ? d.dsp : null;
+    if (p && p.bpm > 0 && (p.bpmConf ?? 0) >= min) n++; }
+  return n;
+}
+function mixIndexNow() {
+  if (MIX_PAGE.recs !== AUDIO.records || MIX_PAGE.n !== AUDIO.records.size)
+    Object.assign(MIX_PAGE, { recs: AUDIO.records, n: AUDIO.records.size, index: BetterfyOrder.mixIndex(AUDIO.records) });
+  return MIX_PAGE.index;
+}
+/** The DJ order for this source, cached beside the spaced one (re-rolled with it), or
+ *  { pending } while engine.js loads. */
+function shuffleMix(sel, tracks, mode) {
+  if (!globalThis.BetterfyOrder) {
+    if (!MIX_PAGE.err) fire(engineLoad().then(() => { if (view === 'shuffle') render(); },
+      e => { MIX_PAGE.err = e?.message ?? String(e); if (view === 'shuffle') render(); }));
+    return { pending: true };
+  }
+  const index = mixIndexNow();
+  const key = `${sel}|${tracks.length}|${mode}|${index.size}`;
+  if (S.shufMix?.key === key && S.shufMix.base === S.shufCache) return S.shufMix.v;
+  const m = BetterfyOrder.mixOrder(tracks, index, { arc: mode, seed: 1 + Math.floor(Math.random() * 2147483646), artistOf });
+  const rest = m.rest.length ? spacedShuffle(m.rest) : [];
+  const v = { order: [...m.order, ...rest], mixed: m.order.length, rest: rest.length, steps: m.steps,
+              stats: BetterfyOrder.mixStats(m.order, index), naive: BetterfyOrder.mixStats(rnd([...m.order]), index), index };
+  S.shufMix = { key, base: S.shufCache, v };
+  return v;
+}
+const mixPct = x => `${Math.round(x * 100)}%`;
+function mixBpmOf(index, id) {
+  const d = index.get(id)?.rec?.dsp;
+  return d?.bpm > 0 ? Math.round(d.bpm) : null;
+}
+/** The energy along the mix as a row of bars; only once energy labels have been checked. */
+function mixEnergyHTML(energy) {
+  const shown = typeof labelsShownNow === 'function' ? labelsShownNow() : null;
+  if (!shown?.energy || !(energy?.length >= 2)) return '';
+  return `<div class="mx-arc" role="img" aria-label="Energy along the mix, calm to intense">${energy.map(e =>
+    `<span style="height:${Math.max(8, Math.round(e * 100))}%"></span>`).join('')}</div>`;
+}
+function mixHTML(mix, tracks, p) {
+  if (mix.pending) return MIX_PAGE.err
+    ? `<div class="empty"><b>The mix couldn’t load</b>${esc(MIX_PAGE.err)}</div>`
+    : '<div class="empty"><b>Working out the mix…</b>Matching tempos and sounds across what listening has heard.</div>';
+  const st = mix.stats, nv = mix.naive, bpmOn = globalThis.BetterfyAudio?.bpmShown ? BetterfyAudio.bpmShown() : true;
+  const row = (t, i) => {
+    const heard = i < mix.mixed, step = i > 0 && i < mix.mixed ? mix.steps[i - 1] : null;
+    const bpm = heard && bpmOn ? mixBpmOf(mix.index, t.id) : null;
+    const jump = step && !step.rel;
+    return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}">
+      <span class="i">${String(i+1).padStart(3,'0')}</span>
+      <span class="t">${esc(t.name)}</span>
+      <span class="a">${esc(artistOf(t))}</span>${bpm ? `<span class="mx-bpm"${step?.rel && step.rel !== 'same' ? ` title="${step.rel === 'half' ? 'double' : 'half'} time"` : ''}>${bpm}</span>` : ''}${jump ? '<span class="mx-tag">tempo change</span>' : ''}</div>`;
+  };
+  return `<div class="vs">
+      <div class="bad"><div class="l">Shuffled</div><div class="n">${nv.share === null ? '—' : mixPct(nv.share)}</div>
+        <div class="d">of track changes can be beatmatched</div></div>
+      <div class="good"><div class="l">${esc(MIX_MODES[S.shufMode])}</div><div class="n">${st.share === null ? '—' : mixPct(st.share)}</div>
+        <div class="d">can be beatmatched${st.shift !== null ? `, ${(st.shift * 100).toFixed(1)}% pitch change on average` : ''}</div></div>
+    </div>
+    ${mixEnergyHTML(st.energy)}
+    <p class="lede mx-sum">${mix.mixed} heard tracks in the mix${bpmOn && st.bpm ? ` · ${Math.round(st.bpm[0])}–${Math.round(st.bpm[1])} BPM` : ''}${mix.rest ? ` · ${mix.rest} not heard yet follow in the spaced shuffle` : ''}${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
+    <h2>Order</h2>
+    <div class="order mx-order">${mix.order.slice(0,40).map(row).join('')}</div>`;
+}
+
 function vShuffle() {
   const pls = LIB.playlists.filter(p => p.tracks.length >= 8).sort((a,b) => b.tracks.length - a.tracks.length);
   // Once it exists, everything you own beats any single bucket as a shuffle
@@ -5247,7 +5345,14 @@ function vShuffle() {
   }
   const order = S.shufCache.order, naive = S.shufCache.naive;
   const good = order.length ? shuffleStats(order) : null;
-  S.shufOrder = order;
+  // DJ order: offered only once enough of this list has been heard; otherwise nothing changes.
+  const canMix = order.length && mixHeardIn(tracks) >= (globalThis.BetterfyOrder?.MIN_MIX ?? 8);
+  if (S.shufMode === undefined) { try { S.shufMode = LS.getItem('bf_shuf_mode') || ''; } catch { S.shufMode = ''; } }
+  const mix = canMix && MIX_MODES[S.shufMode] ? shuffleMix(sel, tracks, S.shufMode) : null;
+  const mixPick = canMix ? ` <select id="shufMode" aria-label="Order">${[['', 'Spaced shuffle'], ...Object.entries(MIX_MODES)].map(([v, l]) =>
+    `<option value="${v}" ${v === (mix ? S.shufMode : '') ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
+  S.shufOrder = mix && !mix.pending ? mix.order : mix ? [] : order;
+  S.shufOrderMode = mix && !mix.pending ? S.shufMode : null;
   return `<h1>Shuffle</h1>
     <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
     <p class="lede" style="margin-top:-8px">${allSongs
@@ -5256,11 +5361,11 @@ function vShuffle() {
       <button class="b sm" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Build it'}</button></p>
     <div class="rowbtns" style="margin-bottom:22px">
       <select id="shufPl">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
-      <button class="b p" id="shufApply" ${order.length?'':'disabled'}>Create shuffled playlist</button>
-      <button class="b" id="shufPlay" ${order.length?'':'disabled'}>Create and play</button>
-      <button class="b sm" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>
+      <button class="b p" id="shufApply" ${S.shufOrder.length?'':'disabled'}>Create shuffled playlist</button>
+      <button class="b" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
+      <button class="b sm" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
     </div>
-    ${good ? `<div class="vs">
+    ${mix ? mixHTML(mix, tracks, p) : good ? `<div class="vs">
       <div class="bad"><div class="l">Spotify's shuffle</div><div class="n">${naive.minGap}</div>
         <div class="d">${naive.minGap === 1 ? 'slot' : 'slots'} between the same artist, ${naive.within3} ${naive.within3 === 1 ? 'pair' : 'pairs'} within three</div></div>
       <div class="good"><div class="l">Betterfy</div><div class="n">${good.minGap}</div>
@@ -6681,7 +6786,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-2239';
+    s.src = 'engine.js?v=2026-11-14-2301';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -6703,7 +6808,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-2239');
+    const w = new Worker('engine-worker.js?v=2026-11-14-2301');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -7027,7 +7132,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-14-2239';
+    s.src = 'audio.js?v=2026-11-14-2301';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -7068,7 +7173,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2239', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2301', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -7814,7 +7919,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-2239`,
+    `Betterfy engine score — build 2026-11-14-2301`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -8134,24 +8239,27 @@ document.addEventListener('click', guard(async e => {
     const order = S.shufOrder ?? [];
     if (!order.length) return;
     btn.disabled = true; btn.textContent = 'Working…';
+    const dj = S.shufOrderMode ? MIX_MODES[S.shufOrderMode] : null;
     try {
-      const name = `🔀 ${src.name}`;
+      const name = dj ? `🎧 ${src.name}` : `🔀 ${src.name}`;
       // Remembered by id, like the All Songs mirror and for the same reason:
       // found by name alone, renaming the shuffled playlist (or its source)
       // made the next shuffle build a second one beside it instead of
       // replacing what was already there.
-      const key = 'bf_shuf_' + src.id;
+      const key = (dj ? 'bf_mix_' : 'bf_shuf_') + src.id;
       const pinned = LS.getItem(key);
       const mine = await paged('/me/playlists?limit=50');
       const ours = p => p?.owner?.id === LIB.user.id;
       let pl = mine.find(p => p.id === pinned && ours(p)) ?? mine.find(p => p.name === name && ours(p));
       if (!pl) pl = await sp('/me/playlists', { method:'POST',
-        body:JSON.stringify({ name, public:false, description:`Spaced shuffle of "${src.name}". Play with Spotify shuffle OFF.` }) });
+        body:JSON.stringify({ name, public:false, description: dj
+          ? `${dj} of "${src.name}": each next track beatmatches the last. Play with Spotify shuffle OFF.`
+          : `Spaced shuffle of "${src.name}". Play with Spotify shuffle OFF.` }) });
       LS.setItem(key, pl.id);
       // PUT replaces wholesale, so re-shuffling the same playlist doesn't pile up
       await plCall(pl.id, 'PUT', { uris: order.slice(0,100).map(t => 'spotify:track:'+t.id) });
       for (const part of chunk(order.slice(100), 100)) await plCall(pl.id, 'POST', { uris: part.map(t => 'spotify:track:'+t.id) });
-      await logAction({ op:'shuffle', playlistId:pl.id, playlistName:pl.name ?? name, trackIds:order.map(t=>t.id), reason:`from ${src.name}` });
+      await logAction({ op:'shuffle', playlistId:pl.id, playlistName:pl.name ?? name, trackIds:order.map(t=>t.id), reason:`${dj ? dj.toLowerCase() + ' ' : ''}from ${src.name}` });
       if (playIt) {
         const d = await sp('/me/player/devices');
         const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
@@ -8459,6 +8567,7 @@ document.addEventListener('click', guard(async e => {
 document.addEventListener('change', guard(async e => {
   if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; S.shufCache = null; return render(); }
+  if (e.target.id === 'shufMode') { S.shufMode = e.target.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
   if (e.target.id === 'bridgeToggle') {
     if (e.target.checked) LS.removeItem('bf_bridge_off'); else LS.setItem('bf_bridge_off', '1');
