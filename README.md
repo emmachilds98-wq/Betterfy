@@ -654,6 +654,37 @@ your own filing ("Adding how it sounds"), so it can be checked rather than
 assumed. Nothing about it needs a key, an export or an install: every account
 has previews, found by the ISRC Spotify already gives.
 
+### What a heard track is: genre, sub-genre, tempo, and what it matches
+
+A heard track's File card also says what it **is**: "Sounds like Drum & Bass ›
+Jungle · 174 BPM", with a confidence chip. Tap it for why, the filed tracks it
+sounds most like (and which playlists they're in), and the heard tracks it
+**mixes with** (a tempo you can beatmatch, straight or half/double time, most
+alike first). `core/audio/identify.mjs` and `core/audio/match.mjs` work it out
+from four things:
+
+- **the sound model's styles** (Discogs-EffNet): good at families, weak on
+  scene genres, so it never decides alone;
+- **your library**: the twelve filed tracks it sounds most like, and what their
+  genre playlists' names say. This is what knows that "hard house" at 150 with
+  your Donk playlist's sound is donk;
+- **the artist's tags**, at a discount;
+- **tempo** (`core/ontology/tempo.mjs`, a reviewed working range for every
+  genre): settles "87 or 174?" by the genre it sounds like, and marks down a
+  genre whose range excludes a confidently measured tempo (172 BPM is not
+  breakbeat).
+
+Votes add up the genre tree, so a split between jungle and liquid still agrees
+on Drum & Bass, and a sub-genre is named only when it holds at least half of
+its genre's support. Two genres in one clip are shown as a blend.
+
+Tempo also counts in sound-first filing now: the share of a playlist's heard
+tracks a track could be beatmatched with (Rekordbox data wins where present).
+The Score run measures naming on tracks you've already filed ("Naming genres
+by sound": genre and sub-genre right, model alone vs with your library, and how
+often the tempo fits the playlist's genre). All of it is nearest-neighbour
+lookups and counts on your own heard tracks: nothing is trained or shared.
+
 ## Design decisions worth knowing
 
 - **Remixes are not duplicates.** Extended mixes, VIPs, bootlegs and live cuts

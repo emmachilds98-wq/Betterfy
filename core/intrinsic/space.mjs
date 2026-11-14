@@ -20,6 +20,7 @@ import { bonusIndex, bonusProfileOf, bonusScores } from './bonus-rekordbox.mjs';
 import { bridgeIndex, artistHomes, bridgeScores } from './bridge.mjs';
 import { audioIndex, buildAudioProfiles, audioScores } from './audio.mjs';
 import { trainLearner } from './audio-learn.mjs';
+import { tempoOf, tempoRelation, MIX_MIN_CONF } from '../audio/match.mjs';
 
 // 4.1.0: the audio layer (WP-E2 of docs/AUDIO-BUILD-PLAN.md). With no audio
 // passed, every output except this string is byte-identical to 4.0.0
@@ -327,6 +328,49 @@ export function hearMore(space, records, { mel = undefined } = {}) {
   return n;
 }
 
+/** Fewer heard members with a tempo than this, and a playlist's tempo says nothing. */
+export const MIN_TEMPO_MEMBERS = 5;
+const TEMPO_CACHE = new WeakMap();
+
+/** A playlist's heard members' tempos (confident readings only), worked out once per profile. */
+function memberTempos(profile, index) {
+  if (!profile?.ids) return [];
+  let list = TEMPO_CACHE.get(profile);
+  if (!list) {
+    list = [];
+    for (const id of profile.ids) {
+      const t = tempoOf(index?.get(id)?.rec);
+      if (t && t.conf >= MIX_MIN_CONF) list.push(t);
+    }
+    TEMPO_CACHE.set(profile, list);
+  }
+  return list;
+}
+
+/**
+ * Sound-path tempo: the share of a playlist's heard members this track could be
+ * beatmatched with (straight within 6%, or half/double time at half credit).
+ * A share, not a distance from the mean, so a playlist that is half 130 and
+ * half 140 is a fair home for both. Null when the track's tempo is unsure or the
+ * playlist has too few heard tempos; the Rekordbox file, when present, wins.
+ */
+function tempoShare(t, profile, index) {
+  const members = memberTempos(profile, index);
+  if (members.length < MIN_TEMPO_MEMBERS) return null;
+  let s = 0;
+  for (const m of members) {
+    let best = 0;
+    for (const a of [t.bpm, t.alt]) {
+      for (const b of [m.bpm, m.alt]) {
+        const r = a && b ? tempoRelation(a, b) : null;
+        if (r) best = Math.max(best, r.rel === 'same' ? 1 : 0.5);
+      }
+    }
+    s += best;
+  }
+  return +(s / members.length).toFixed(4);
+}
+
 /** Whatever a learner returned → Map of finite numbers, or null. */
 function asScoreMap(x) {
   if (!x) return null;
@@ -433,6 +477,10 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
   const destIds = rawSound ? [...space.destinations.keys()] : null;
   const sound = useAudio ? relativeSound(rawSound, destIds) : null;
   const learned = useAudio ? relativeSound(rawLearned, destIds) : null;
+  // Tempo measured from the preview, on the sound path only (so a placement
+  // without sound is unchanged): only a confident reading counts.
+  const heardTempo = useAudio && rawSound ? tempoOf(space.audio.index?.get(track.id)?.rec) : null;
+  const tempo = heardTempo && heardTempo.conf >= MIX_MIN_CONF ? heardTempo : null;
   const rows = [];
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
@@ -445,6 +493,10 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
                           : { graph, ...shape, ...extra };
     if (sound) parts.audio = sound.get(d.id);
     if (learned) parts.learned = learned.get(d.id);
+    if (tempo && (parts.bpm === null || parts.bpm === undefined)) {
+      const f = tempoShare(tempo, space.audio.profiles?.get(d.id), space.audio.index);
+      if (f !== null) parts.bpm = f;
+    }
     const { score, used, judged } = combine(parts, weights);
     if (!judged) continue;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;

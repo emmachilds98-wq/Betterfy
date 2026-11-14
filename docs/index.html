@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-2227">
+<meta name="bf-build" content="2026-11-14-2239">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -965,6 +965,24 @@
   .card.sndsearch .why{margin:0}
   .sndres li{align-items:baseline}
   .sndres li .open{margin-left:auto; flex:none; font-size:12px; color:var(--accent)}
+  /* ---------- what a heard track is: genre › sub-genre · BPM (File card) ----------
+     Drawn only when listening has heard the track and the sound space is ready;
+     a card without it is laid out exactly as before. */
+  .sndid{margin-top:14px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--r-3, 10px);
+         background:var(--surface-2); font-size:13.5px; color:var(--ink-2)}
+  .sndid-h{display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px}
+  .sndid-h b{color:var(--ink); font-weight:700}
+  .sndid-path .sep{color:var(--ink-3); margin:0 3px}
+  .sndid .bpm{font-family:var(--mono); font-size:12px; color:var(--ink-2)}
+  .sndid details{margin-top:6px}
+  .sndid summary{cursor:pointer; font-size:12.5px; color:var(--ink-3)}
+  .sndid .why{display:block; margin-top:8px}
+  .sndcols{display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; margin-top:8px}
+  .sndcols h4{margin:0 0 4px; font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3)}
+  .sndcols ol{margin:0; padding-left:18px; font-size:12.5px}
+  .sndcols li{margin:2px 0; overflow-wrap:anywhere}
+  .sndcols .sub{color:var(--ink-3)}
+  @media (max-width:560px){ .sndcols{grid-template-columns:1fr} }
   /* Marks the update button when a newer build is waiting on the server. */
   .fab.hasUpdate{border-color:var(--accent); color:var(--accent)}
   .fab.hasUpdate::after{content:""; position:absolute; top:-3px; right:-3px; width:8px; height:8px;
@@ -1345,7 +1363,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-2227</span>
+    <span class="mono">build 2026-11-14-2239</span>
   </p>
 
   <div class="feat">
@@ -1448,7 +1466,7 @@
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2227</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2239</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1489,7 +1507,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2227</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2239</span>
   </div>
 </div>
 
@@ -2950,7 +2968,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-2227';
+const BUILD = '2026-11-14-2239';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3271,7 +3289,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-2227', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-2239', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -4422,6 +4440,28 @@ function filePicks(t) {
   }
   return out;
 }
+/* What the track sounds like: "Drum & Bass › Jungle · 172 BPM", with why, the
+ * filed tracks it sounds most like and the heard tracks it mixes with behind a
+ * tap. Nothing at all until it has been heard and the sound space is ready. */
+function soundIdHTML(t) {
+  const s = typeof soundIdOf === 'function' ? soundIdOf(t) : null;
+  const id = s?.id;
+  if (!id || (!id.genre && !id.bpm)) return '';
+  const band = id.genre ? (id.genre.conf >= 0.7 ? 'HIGH' : id.genre.conf >= 0.45 ? 'LIKELY' : 'AMBIGUOUS') : null;
+  const path = id.genre ? id.path.map(p => esc(p.name)).join('<span class="sep">›</span>') : 'No clear genre';
+  const bpm = id.bpm ? `<span class="bpm" title="${id.bpm.from === 'genre' ? 'Half or double time settled by the genre it sounds like' : 'Measured from the preview'}">${Math.round(id.bpm.value)} BPM</span>` : '';
+  const blend = id.blend ? `<span class="tag" title="Two genres in one clip">${esc(id.blend[0])} + ${esc(id.blend[1])}</span>` : '';
+  const who = n => { const x = soundTrackName(n.id); return `${esc(x.title)}<span class="sub"> — ${esc(x.artist)}</span>`; };
+  const where = n => (n.playlists ?? []).map(p => CFG[p]?.name ?? p).slice(0, 2).map(esc).join(', ');
+  const rel = { double: ' · double time', half: ' · half time', same: '' };
+  return `<div class="sndid"><div class="sndid-h"><span>Sounds like</span> <b class="sndid-path">${path}</b>${bpm}${blend}${band ? pickBand({ band }) : ''}</div>
+    ${s.neighbours.length || s.mix.length || id.why.length ? `<details><summary>Why, and what it sounds like and mixes with</summary>
+      ${id.why.length ? `<span class="why">${esc(id.why.join('; '))}.</span>` : ''}
+      <div class="sndcols">
+        ${s.neighbours.length ? `<div><h4>Sounds like</h4><ol>${s.neighbours.map(n => `<li>${who(n)}${where(n) ? ` <span class="sub">in ${where(n)}</span>` : ''}</li>`).join('')}</ol></div>` : ''}
+        ${s.mix.length ? `<div><h4>Mixes with</h4><ol>${s.mix.map(m => `<li>${who(m)} <span class="sub mono">${Math.round(m.bpm)} BPM${rel[m.rel] ?? ''}</span></li>`).join('')}</ol></div>` : ''}
+      </div></details>` : ''}</div>`;
+}
 /* One line under the picks saying where they came from when it isn't sound,
  * and how to make it sound. Nothing at all where listening can't be asked about. */
 function soundNote(t, picks) {
@@ -4554,7 +4594,7 @@ function vInbox() {
             <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0, 4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}
             ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
           </div>
-        </div>${trackStrip(t)}
+        </div>${trackStrip(t)}${soundIdHTML(t)}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
           <button class="pick ${n === 0 ? 'best' : ''}" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
@@ -6641,7 +6681,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-2227';
+    s.src = 'engine.js?v=2026-11-14-2239';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -6663,7 +6703,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-2227');
+    const w = new Worker('engine-worker.js?v=2026-11-14-2239');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -6987,7 +7027,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-14-2227';
+    s.src = 'audio.js?v=2026-11-14-2239';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -7028,7 +7068,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2227', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2239', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -7115,7 +7155,8 @@ const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?
  * background once noticeably more of the genre playlists has been heard.
  * Nothing here writes to Spotify: it only changes which playlists are offered.
  * ======================================================================== */
-const SOUND = { status: 'idle', space: null, n: 0, targets: '', err: null, memo: null, byId: null, lib: null };
+const SOUND = { status: 'idle', space: null, n: 0, targets: '', err: null, memo: null, byId: null, lib: null,
+                idMemo: null, memb: null, names: null, namesLib: null };
 /** Heard records worth a rebuild: a tenth more, and at least 20. */
 const SOUND_REBUILD = n => Math.max(20, Math.round(n * 0.1));
 const soundHeard = () => { let n = 0; for (const r of AUDIO.records?.values() ?? []) if (!r.miss) n++; return n; };
@@ -7141,11 +7182,58 @@ async function soundBuild(targets) {
     await yieldToPaint();
     const { space } = await engineSpace();
     Object.assign(SOUND, { space: space?.audio ? space : null, n: soundHeard(), targets,
-                           status: 'ready', err: null, memo: null });
+                           status: 'ready', err: null, memo: null, idMemo: null });
   } catch (e) {
     Object.assign(SOUND, { status: 'error', err: e?.message ?? String(e), n: soundHeard(), targets, memo: null });
   }
   if (view === 'inbox' || view === 'home') render();
+}
+
+/** Heard since the space was built: let it be scored and matched now. */
+function soundHear(id) {
+  const space = SOUND.space, rec = AUDIO.records?.get(id);
+  if (space?.audio && rec && !rec.miss && !space.audio.index.has(id)) BetterfyIntrinsic.hearMore(space, [rec]);
+}
+
+/* ---------- what a heard track is, and what it sounds like and mixes with ----------
+ * core/audio/identify.mjs and match.mjs: genre › sub-genre and tempo from the
+ * sound model's styles, the tracks in your genre playlists it sounds most like,
+ * the artist's tags and a tempo check; then the filed tracks it sounds like and
+ * the heard tracks it can be beatmatched with. Lookups on this account's own
+ * heard tracks only. Null until the sound space is ready and the track is heard. */
+function soundMembership() {
+  const key = engineTargets().join();
+  if (SOUND.memb?.key !== key || SOUND.memb.lib !== LIB)
+    SOUND.memb = { key, lib: LIB, v: BetterfyMatch.genreMembership(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist }) };
+  return SOUND.memb.v;
+}
+function soundTrackName(id) {
+  if (SOUND.namesLib !== LIB) {
+    SOUND.names = new Map();
+    for (const t of [...(LIB.liked ?? []), ...(LIB.playlists ?? []).flatMap(p => p.tracks ?? [])])
+      if (t?.id && !SOUND.names.has(t.id)) SOUND.names.set(t.id, { title: t.name ?? '', artist: (t.artists ?? []).map(a => a?.name).filter(Boolean).join(', ') });
+    SOUND.namesLib = LIB;
+  }
+  return SOUND.names.get(id) ?? { title: id, artist: '' };
+}
+function soundIdOf(t) {
+  const index = SOUND.space?.audio?.index;
+  if (!t?.id || !index || !globalThis.BetterfyIdentify) return null;
+  soundHear(t.id);
+  const row = index.get(t.id);
+  if (!row) return null;
+  const key = `${t.id}|${index.size}|${engineTargets().join()}`;
+  if (SOUND.idMemo?.key === key) return SOUND.idMemo.v;
+  const memb = soundMembership();
+  const neighbours = BetterfyMatch.filedNeighbours(t.id, index, memb, { k: 12 });
+  if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
+  const raw = SOUND.byId.get(t.id);
+  const tags = [...new Set((raw?.artists ?? []).map(a => BetterfyGaps.artistGenre(TAGS?.[a?.id]?.tags)).filter(Boolean))];
+  const id = BetterfyIdentify.identify(row.rec, { neighbours, tags, playlistName: pid => CFG[pid]?.name ?? pid });
+  const mix = BetterfyMatch.mixesWith(t.id, index, { k: 5, bpm: id?.bpm?.value ?? null });
+  const v = { id, neighbours: neighbours.slice(0, 5), mix };
+  SOUND.idMemo = { key, v };
+  return v;
 }
 
 /** Sound-led picks for one track on the File screen, or [] when it hasn't been
@@ -7160,9 +7248,7 @@ function soundPicks(t) {
   const raw = SOUND.byId.get(t.id);
   let picks = [];
   if (raw) {
-    // Heard since the space was built: let it be scored now.
-    const rec = AUDIO.records?.get(t.id);
-    if (rec && !rec.miss && !space.audio.index.has(t.id)) BetterfyIntrinsic.hearMore(space, [rec]);
+    soundHear(t.id);
     const out = BetterfyIntrinsic.placements(raw, space, { limit: 3, soundFirst: true,
                                                          exclude: rejected.length ? new Set(rejected) : null });
     const W = BetterfyIntrinsic.SOUND_FIRST_WEIGHTS;
@@ -7515,7 +7601,10 @@ const engineValidate = guard(async () => {
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
-      ENG.val = { mine, base, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      let identify = null;
+      try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
+      catch { identify = null; }
+      ENG.val = { mine, base, identify, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     await engineCalibrate(ENG.val);
   } catch (e) {
@@ -7631,17 +7720,17 @@ function bridgeCard(v, p) {
  * (UI-BUILD-PLAN §2.9). `line` draws the gate's bar on the with-sound track:
  * where with-sound has to reach for this metric to count as earning it.
  */
-function pairBars(label, without, withSound, p, line = null) {
+function pairBars(label, without, withSound, p, line = null, names = ['without', 'with sound']) {
   if (without == null || withSound == null) return '';
   const clamp = x => Math.max(0, Math.min(1, x));
   const d = Math.round((withSound - without) * 1000) / 10;
   const delta = d === 0 ? 'level' : `${d > 0 ? '+' : '−'}${Math.abs(d)} points`;
   const met = line ? withSound + 1e-9 >= line.at : null;
-  return `<div class="pair" role="img" aria-label="${esc(label)}: ${p(without)} without sound, ${p(withSound)} with${
+  return `<div class="pair" role="img" aria-label="${esc(label)}: ${p(without)} ${esc(names[0])}, ${p(withSound)} ${esc(names[1])}${
       line ? `; ${esc(line.label)} at ${p(line.at)}` : ''}">
     <div class="pair-h"><span>${esc(label)}</span><span class="pair-d mono ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${delta}</span></div>
-    <div class="pbar"><span class="pl">without</span><span class="trk"><i style="--v:${clamp(without).toFixed(4)}"></i></span><b class="mono">${p(without)}</b></div>
-    <div class="pbar with"><span class="pl">with sound</span><span class="trk"><i style="--v:${clamp(withSound).toFixed(4)}"></i>${
+    <div class="pbar"><span class="pl">${esc(names[0])}</span><span class="trk"><i style="--v:${clamp(without).toFixed(4)}"></i></span><b class="mono">${p(without)}</b></div>
+    <div class="pbar with"><span class="pl">${esc(names[1])}</span><span class="trk"><i style="--v:${clamp(withSound).toFixed(4)}"></i>${
       line ? `<s class="gate ${met ? 'met' : ''}" style="--g:${clamp(line.at).toFixed(4)}" title="${esc(line.label)}"></s>` : ''}</span><b class="mono">${p(withSound)}</b></div>
   </div>`;
 }
@@ -7674,9 +7763,29 @@ function audioCard(v, p) {
       <div><span>Top answers sound changed</span><b class="mono">${w.changed.toLocaleString()}</b></div>
     </div>
     <p class="why gateverdict" style="margin-top:12px"><span class="tag ${tone}">${g.pass === true ? 'passed' : g.pass === false ? 'not passed' : 'undecided'}</span>
-      <b>${g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.'}</b>
+      <b>${w.soundFirst
+        ? (g.pass === true ? 'Helps.' : g.pass === false ? 'Not ahead of tags yet on your filing; sound still leads, by your call.' : 'Undecided; sound still leads, by your call.')
+        : (g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.')}</b>
       ${esc(g.text ?? '')}</p>
+    ${identifyHTML(v.identify, p)}
   </div>`;
+}
+
+/** How well it names genres by sound, on tracks you've already filed (core/audio/identify.mjs). */
+function identifyHTML(a, p) {
+  if (!a?.scored) return '';
+  return `<h3 style="margin:18px 0 6px; font-size:16px">Naming genres by sound</h3>
+    <p class="why">Each heard track in a genre playlist whose name says a genre, named from its sound with itself
+      left out: the sound model's styles, the filed tracks it sounds most like, its artist's tags, and its tempo.</p>
+    <div class="pairs">
+      ${pairBars('Genre right (Drum & Bass, House…)', a.modelOnly.genre, a.genre, p, null, ['model alone', 'with your library'])}
+      ${pairBars('Sub-genre right too (Jungle, Donk…)', a.modelOnly.specific, a.specific, p, null, ['model alone', 'with your library'])}
+    </div>
+    <div class="facts" style="margin-top:10px">
+      <div><span>Tracks scored</span><b class="mono">${a.scored.toLocaleString()}</b></div>
+      ${a.tempo != null ? `<div><span>Tempo fits the playlist's genre</span><b class="mono">${p(a.tempo)} of ${a.tempoJudged.toLocaleString()}</b></div>` : ''}
+      ${a.byGenre.map(g => `<div><span>${esc(g.name)}</span><b class="mono">${g.right} of ${g.n}</b></div>`).join('')}
+    </div>`;
 }
 
 /** Whether long engine work will run off the main thread. */
@@ -7705,7 +7814,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-2227`,
+    `Betterfy engine score — build 2026-11-14-2239`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7755,6 +7864,12 @@ function audioLines(v, pc) {
     `Sound coverage: ${w.heard} of ${v.mine.scored} scored tracks heard (${w.heardNeverFiled} never-filed), `
       + `${w.analysed} analysed in all; had a say on ${w.judged}, changed ${w.changed} top answers`,
     `Audio gate: ${g.pass === true ? 'PASS' : g.pass === false ? 'not yet' : 'undecided'} (${g.reason ?? '—'}) — ${g.text ?? ''}`,
+    ...(v.identify?.scored ? [
+      `Naming genres by sound (${v.identify.scored} filed tracks): genre ${pc(v.identify.genre)}, sub-genre ${pc(v.identify.specific)}; `
+        + `model alone ${pc(v.identify.modelOnly.genre)} / ${pc(v.identify.modelOnly.specific)}; `
+        + `tempo fits ${pc(v.identify.tempo)} of ${v.identify.tempoJudged}`,
+      `By genre: ${v.identify.byGenre.map(g => `${g.name} ${g.right}/${g.n}`).join(', ')}`,
+    ] : []),
   ];
 }
 

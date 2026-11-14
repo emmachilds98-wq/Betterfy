@@ -5,6 +5,7 @@ import vm from 'node:vm';
 
 import { fixture, FAMILIES } from './fixtures/engine-library.mjs';
 import { makeRecord, N_STYLES, EMB_DIM } from '../core/audio/record.mjs';
+import { STYLE_LABELS } from '../core/sources/audio-vocab.mjs';
 
 /*
  * Sound-first filing on the File screen (the owner's call, 2026-11-14), run
@@ -31,13 +32,16 @@ function rng(seed) {
   return () => ((s = (s * 16807) % 2147483647) / 2147483647) - 0.5;
 }
 const familyDir = fam => { const r = rng(1 + FAMILIES.indexOf(fam) * 7919); return Float32Array.from({ length: EMB_DIM }, r); };
-function recordFor(id, fam) {
+// What the sound model hears in each family: its Discogs style.
+const STYLE = { tech: 'Electronic---Techno', deep: 'Electronic---Deep House', jungle: 'Electronic---Jungle', ambient: 'Electronic---Ambient' };
+function recordFor(id, fam, bpm = null, alt = null) {
   const dir = familyDir(fam), r = rng([...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7));
   const activations = new Float32Array(N_STYLES).fill(0.01);
-  activations[(id.length * 13) % N_STYLES] = 0.8;
+  activations[STYLE_LABELS.indexOf(STYLE[fam])] = 0.8;
+  const dsp = bpm ? { bpm, bpmConf: 0.8, octaveAmbiguous: !!alt, ...(alt ? { bpmAlt: alt } : {}) } : null;
   return makeRecord({ id, isrc: 'GBXXX0000001', activations, embeddings: Float32Array.from(dir, v => v + 0.6 * r()),
                       patches: 1, source: { kind: 'deezer-isrc', deezerId: 1, windows: [[0, 165000]], seconds: 10 },
-                      mel: '1.0.0', at: 1000 });
+                      mel: '1.0.0', dsp, at: 1000 });
 }
 
 // A liked, unfiled track by two tech artists that sounds like jungle: the case
@@ -49,15 +53,17 @@ const card = (id = NEW.id) => ({ id, title: 'Rinse', artist: 'tech artist 0', al
   art: null, added: '2025-01-01', tags: [],
   suggest: [{ id: 'p-tech', name: 'tech', axis: 'genre', score: 0.72 }, { id: 'p-deep', name: 'deep', axis: 'genre', score: 0.31 }] });
 
-function page({ on = true, heardNew = true, fb = {}, nudge = null } = {}) {
+function page({ on = true, heardNew = true, fb = {}, nudge = null, bpm = false } = {}) {
   const base = fixture();
+  // Tempo per family, so the card has a BPM and something to mix with.
+  const BPM = { tech: 128, deep: 122, jungle: 172, ambient: 90 };
   const lib = { ...base, liked: [...base.all, NEW] };
-  const records = new Map(base.all.map(t => [t.id, recordFor(t.id, t.id.split('-')[0])]));
-  if (heardNew) records.set(NEW.id, recordFor(NEW.id, 'jungle'));
+  const records = new Map(base.all.map(t => [t.id, recordFor(t.id, t.id.split('-')[0], bpm ? BPM[t.id.split('-')[0]] : null)]));
+  if (heardNew) records.set(NEW.id, recordFor(NEW.id, 'jungle', bpm ? 87 : null, bpm ? 174 : null));
   const ls = new Map(nudge ? [['bf_sound_nudge', nudge]] : []);
   const s = {
     console, atob, btoa,
-    LIB: lib, FB: fb, view: 'inbox', R: { backlog: [card(), card('tech-t0')] },
+    LIB: lib, FB: fb, TAGS: {}, isMirrorPlaylist: () => false, view: 'inbox', R: { backlog: [card(), card('tech-t0')] },
     S: { inboxAt: 0, fileSel: new Set(), fileSelFor: null },
     CFG: Object.fromEntries(lib.playlists.map(p => [p.id, { name: p.name, target: TARGETS.includes(p.id), axis: 'genre' }])),
     LS: { getItem: k => ls.get(k) ?? null, setItem: (k, v) => ls.set(k, v) },
@@ -161,4 +167,26 @@ test('a changed set of genre playlists rebuilds the space; renders alone do not'
   vm.runInContext('vInbox()', s);
   await settle(s);
   assert.equal(s.builds, 2);
+});
+
+test('a heard track says what it sounds like: genre, sub-genre and tempo, with why and what it mixes with', async () => {
+  const s = page({ bpm: true });
+  vm.runInContext('vInbox()', s);
+  await settle(s);
+  const html = vm.runInContext('vInbox()', s);
+  assert.match(html, /<div class="sndid">/);
+  assert.match(html, /Sounds like<\/span> <b class="sndid-path">Drum &amp; Bass<span class="sep">›<\/span>Jungle<\/b>/,
+    'drum & bass, and jungle: the model hears jungle and the tracks it sounds like are in your jungle playlist');
+  assert.match(html, /174 BPM/, 'read as 87 or 174, settled by the genre it sounds like');
+  assert.match(html, /tracks it sounds most like, mostly in jungle, are Drum &amp; Bass/);
+  assert.match(html, /<h4>Sounds like<\/h4><ol><li>jungle track/);
+  assert.match(html, /<h4>Mixes with<\/h4><ol><li>jungle track \d+<span class="sub"> — [^<]+<\/span> <span class="sub mono">172 BPM<\/span>/);
+  assert.doesNotMatch(html.split('<h4>Mixes with')[1], /(tech|deep|ambient) track/, 'nothing at 128, 122 or 90 mixes with 174');
+});
+
+test('no "sounds like" line for an unheard track, or before the sound space is ready', async () => {
+  const s = page({ heardNew: false, bpm: true });
+  assert.doesNotMatch(vm.runInContext('vInbox()', s), /class="sndid"/, 'not ready yet');
+  await settle(s);
+  assert.doesNotMatch(vm.runInContext('vInbox()', s), /class="sndid"/, 'ready, but this track has not been heard');
 });
