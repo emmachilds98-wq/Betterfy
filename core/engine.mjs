@@ -19,6 +19,7 @@ import { LASTFM, toEvidence as lastfmEvidence } from './sources/lastfm.mjs';
 import { DISCOGS, toEvidence as discogsEvidence } from './sources/discogs.mjs';
 import { SPOTIFY, toEvidence as spotifyEvidence } from './sources/spotify.mjs';
 import { MUSICBRAINZ } from './sources/musicbrainz.mjs';
+import { AUDIO, indexRecords as audioIndex, sameRecording } from './sources/audio.mjs';
 import { SHARED_TABLE, cacheToEvidence, SCALES } from './sources/legacy.mjs';
 import { musicProfile, musicDNA } from './analysis/music-dna.mjs';
 import { fingerprintLibrary } from './playlists/fingerprint.mjs';
@@ -40,12 +41,14 @@ export const ENGINE_VERSION = '3.0.0';
  * "is Discogs enabled" branch existing anywhere downstream (§38: a missing
  * provider reduces confidence, it does not break classification).
  */
-export function buildRegistry({ lastfm = false, discogs = false, shared = false, musicbrainz = false } = {}) {
+export function buildRegistry({ lastfm = false, discogs = false, shared = false, musicbrainz = false,
+                                audio = false } = {}) {
   const reg = new ProviderRegistry([SPOTIFY]);
   if (lastfm) reg.register(LASTFM);
   if (discogs) reg.register(DISCOGS);
   if (shared) reg.register(SHARED_TABLE);
   if (musicbrainz) reg.register(MUSICBRAINZ);
+  if (audio) reg.register(AUDIO);
   return reg;
 }
 
@@ -55,16 +58,31 @@ export function buildRegistry({ lastfm = false, discogs = false, shared = false,
  * that artist appears on, which is exactly the property v3 is careful about
  * downstream and exactly the property that makes caching them here free.
  *
- * @param {{lastfm?: object, discogs?: object, shared?: object, mbids?: object, now?: number}} caches
+ * `audio` is optional and different in kind: stored AudioRecords
+ * (core/audio/record.mjs) keyed by Spotify TRACK id, indexed per track rather
+ * than per artist, through core/sources/audio.mjs. `audioOptions` is passed to
+ * its toEvidence() ({ threshold, maxStyles, moodHints }). Absent, nothing
+ * about the result changes — not even the shape: `audio` is only added to the
+ * index when records were given.
+ *
+ * @param {{lastfm?: object, discogs?: object, shared?: object, mbids?: object, audio?: object, now?: number}} caches
  */
 export function indexCaches({ lastfm = null, discogs = null, shared = null, mbids = null,
-                              now = Date.now(), conceptMap = null } = {}) {
-  return {
+                              now = Date.now(), conceptMap = null,
+                              audio = null, audioOptions = {} } = {}) {
+  const idx = {
     lastfm: lastfm ? cacheToEvidence(lastfm, { source: LASTFM.id, scale: SCALES.lastfm, mbids, now, conceptMap }) : new Map(),
     discogs: discogs ? cacheToEvidence(discogs, { source: DISCOGS.id, matchedBy: 'name-exact', scale: SCALES.discogs, now, conceptMap }) : new Map(),
     shared: shared ? cacheToEvidence(shared, { source: SHARED_TABLE.id, scale: SCALES.shared, now, conceptMap }) : new Map(),
     present: { lastfm: !!lastfm, discogs: !!discogs, shared: !!shared, musicbrainz: !!mbids },
   };
+  if (audio) {
+    idx.audio = audioIndex(audio, audioOptions);
+    // Present only when at least one track was actually heard: a listener who
+    // switched listening on but has no usable record yet has no audio provider.
+    idx.present.audio = idx.audio.size > 0;
+  }
+  return idx;
 }
 
 /**
@@ -102,6 +120,12 @@ export function buildEvidence(track, idx, { trackTags = null, resolved = {}, now
       retrievedAt: entry.checkedAt ?? now,
     }));
   }
+
+  // Track-level audio evidence: what this recording sounds like, from the
+  // listener's own analysis. Like `trackTags`, it outranks artist clouds on
+  // specificity alone. Ignored if the track has been relinked to another ISRC.
+  const heard = idx?.audio?.get?.(track.id);
+  if (heard?.length && sameRecording(heard, track)) set.add(...heard);
 
   // Artist-level evidence, from every cache that has some. Contextual, not
   // canonical (§4.1) — which is enforced by SPECIFICITY['artist'], not here.
