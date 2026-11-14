@@ -1,0 +1,17 @@
+<!doctype html><meta charset=utf-8><script src="node_modules/onnxruntime-web/dist/ort.wasm.min.js"></script>
+<script>
+window.run = async (threads) => {
+  ort.env.wasm.wasmPaths = location.origin + '/node_modules/onnxruntime-web/dist/';
+  ort.env.wasm.numThreads = threads;
+  const t0 = performance.now();
+  const s = await ort.InferenceSession.create('discogs-effnet-bsdynamic-1.onnx', { executionProviders: ['wasm'] });
+  const load = performance.now() - t0;
+  const n = 28; // patches in one 30 s preview (128-frame patches, hop 62, 16 kHz, hop 256)
+  const x = new ort.Tensor('float32', Float32Array.from({ length: n * 128 * 96 }, () => Math.random()), [n, 128, 96]);
+  const times = [];
+  for (let i = 0; i < 4; i++) { const a = performance.now(); await s.run({ melspectrogram: x }); times.push(performance.now() - a); }
+  const y = new ort.Tensor('float32', new Float32Array(9 * 128 * 96), [9, 128, 96]); // two ~10 s windows ≈ 9 patches
+  const a = performance.now(); await s.run({ melspectrogram: y }); const partial = performance.now() - a;
+  return { threads, crossOriginIsolated, load: Math.round(load), runs: times.map(Math.round), partial: Math.round(partial) };
+};
+</script>
