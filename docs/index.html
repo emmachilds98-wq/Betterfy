@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-2005">
+<meta name="bf-build" content="2026-11-14-2010">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -646,6 +646,16 @@
   .fab.spin{animation:spin .6s linear infinite}
   .fab.busy{animation:pulse 1s ease-in-out infinite}
   @keyframes pulse{50%{opacity:.4}}
+  /* New playlists: proposals by sound (docs/AUDIO-BUILD-PLAN.md WP-H2,
+     UI-BUILD-PLAN §2.8). One row shape for all three, told apart by a strip
+     down the left edge: a hybrid blends two hues, "new genre?" is broken, a
+     toss-up is two plain halves. Painted as a background so the row keeps its
+     own border and corners. */
+  .tag.snd{background:var(--c5-soft); color:var(--c5)}
+  .row.prop{background-repeat:no-repeat; background-position:left top; background-size:5px 100%}
+  .row.prop-hybrid{background-image:linear-gradient(180deg, var(--c6), var(--c3))}
+  .row.prop-new{background-image:repeating-linear-gradient(180deg, var(--c1) 0 8px, transparent 8px 14px)}
+  .row.prop-pick{background-image:linear-gradient(180deg, var(--c5) 50%, var(--c0) 50%)}
   /* Marks the update button when a newer build is waiting on the server. */
   .fab.hasUpdate{border-color:var(--accent); color:var(--accent)}
   .fab.hasUpdate::after{content:""; position:absolute; top:-3px; right:-3px; width:8px; height:8px;
@@ -928,7 +938,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-2005</span>
+    <span class="mono">build 2026-11-14-2010</span>
   </p>
 
   <div class="feat">
@@ -1030,7 +1040,7 @@
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2005</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2010</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1071,7 +1081,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2005</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2010</span>
   </div>
 </div>
 
@@ -2272,7 +2282,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-2005';
+const BUILD = '2026-11-14-2010';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2593,7 +2603,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-2005', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-2010', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -3963,7 +3973,14 @@ function vTidy() {
  * Nothing moves. Creating makes a new private playlist holding a copy of the
  * tracks; a playlist being split is left exactly as it is.
  * ======================================================================== */
-const GAPS = { status:'idle', err:null, gaps:null, splits:null, untagged:0, homeless:0, made:new Set(), for:null };
+const GAPS = { status:'idle', err:null, gaps:null, splits:null, untagged:0, homeless:0, made:new Set(), for:null,
+  sound:null, filed:new Set() };
+
+/** Audio records, only if listening is on or was: proposals by sound need nothing else, and are skipped without. */
+async function gapsRecords() {
+  if (typeof engineAudio !== 'function') return null;
+  try { return await engineAudio(); } catch { return null; }
+}
 
 /** Work the proposals out. Listening only reorders them, so failing to get it costs nothing. */
 async function gapsCompute() {
@@ -3977,7 +3994,12 @@ async function gapsCompute() {
     const common = { lib: LIB, targets: engineTargets(), tagsOf: id => TAGS?.[id]?.tags ?? [], isMirror: isMirrorPlaylist };
     const u = BetterfyGaps.uncoveredGenres({ ...common, active });
     const split = BetterfyGaps.splitCandidates(common);
-    Object.assign(GAPS, { status:'ready', gaps:u.gaps, splits:split.splits, untagged:u.untagged, homeless:u.homeless });
+    // By sound (WP-H2): suggestions to create, so shown whatever the gate says.
+    const records = await gapsRecords();
+    const sound = records && globalThis.BetterfyAudioGaps
+      ? BetterfyAudioGaps.soundProposals({ ...common, records, active }) : null;
+    Object.assign(GAPS, { status:'ready', gaps:u.gaps, splits:split.splits, untagged:u.untagged, homeless:u.homeless,
+      sound: sound && (sound.pick.length || sound.hybrids.length || sound.orphans.length) ? sound : null });
   } catch (e) {
     GAPS.status = 'error'; GAPS.err = e?.message ?? String(e);
   }
@@ -3991,6 +4013,49 @@ async function gapsCreate(name, ids) {
   GAPS.made.add(name.toLowerCase());
   toast(`Created “${name}” with ${ids.length} tracks. It becomes a place to file into after your next sync.`);
   render();
+}
+
+/** Add these tracks to a playlist they already sound like. Nothing is taken out of anywhere. */
+async function gapsFile(playlistId, name, ids, key) {
+  await addTracks(playlistId, ids);
+  GAPS.filed.add(key);
+  toast(`Added ${ids.length} track${ids.length === 1 ? '' : 's'} to “${name}”.`);
+  render();
+}
+
+/** Proposals by sound: pick one of two, hybrid playlists, new genre? Nothing at all without audio. */
+function gapsSoundSection() {
+  const S = GAPS.sound;
+  if (!S) return '';
+  const n = x => x.toLocaleString();
+  const made = name => GAPS.made.has(String(name).toLowerCase());
+  const by = '<span class="tag snd">by sound</span>';
+  const played = x => x.played ? ` <span class="tag ok">${n(x.played)} you're playing</span>` : '';
+  const eg = x => x.artists.length ? `e.g. ${esc(x.artists.join(', '))}` : '';
+  const hybrids = S.hybrids.map((h, i) => `<div class="row prop prop-hybrid"><div class="main">
+      <div class="ttl">${esc(h.name)} ${by} <span class="tag">${n(h.size)} tracks</span>${played(h)}</div>
+      <div class="sub">Sounds between your ${esc(h.between[0].name)} and ${esc(h.between[1].name)} playlists, and like
+        neither on its own.${h.mixed ? ` ${n(h.mixed)} of them change style partway through.` : ''}<br>${eg(h)}</div>
+    </div><div class="acts">${made(h.name) ? '<span class="tag ok">created</span>'
+      : `<input id="sndh${i}" aria-label="Name for this playlist" value="${esc(h.name)}">
+      <button class="b sm p" data-sndh="${i}">Create with ${n(h.size)}</button>`}</div></div>`).join('');
+  const orphans = S.orphans.map((o, i) => `<div class="row prop prop-new"><div class="main">
+      <div class="ttl">New genre? ${by} <span class="tag">${n(o.size)} tracks</span>${played(o)}</div>
+      <div class="sub">These sit close together and sound like none of your genre playlists
+        (the nearest is ${esc(o.nearest.name)}). Name it if it is a genre to you.<br>${eg(o)}</div>
+    </div><div class="acts">${GAPS.filed.has('o' + i) ? '<span class="tag ok">created</span>'
+      : `<input id="sndo${i}" aria-label="Name for this playlist" placeholder="Name it">
+      <button class="b sm p" data-sndo="${i}">Create with ${n(o.size)}</button>`}</div></div>`).join('');
+  const picks = S.pick.map((p, i) => `<div class="row prop prop-pick"><div class="main">
+      <div class="ttl">${esc(p.between[0].name)} or ${esc(p.between[1].name)}? ${by} <span class="tag">${n(p.size)} tracks</span>${played(p)}</div>
+      <div class="sub">Unfiled tracks that sound as much like one as the other. Pick one for them, or leave them.<br>${eg(p)}</div>
+    </div><div class="acts">${p.between.some((x, k) => GAPS.filed.has(`p${i}:${k}`))
+      ? p.between.filter((x, k) => GAPS.filed.has(`p${i}:${k}`)).map(x => `<span class="tag ok">added to ${esc(x.name)}</span>`).join('')
+      : p.between.map((x, k) => `<button class="b sm" data-sndp="${i}:${k}">Add to ${esc(x.name)}</button>`).join(' ')}</div></div>`).join('');
+  return `<h2 style="margin:22px 0 6px; font-size:18px">By sound</h2>
+    <p class="why">From listening to your unfiled tracks and comparing them with your own genre playlists. Only
+      suggestions: nothing is made or added until you tap.</p>
+    <div class="rows" style="margin-top:10px">${hybrids}${orphans}${picks}</div>`;
 }
 
 function gapsSections() {
@@ -4029,7 +4094,7 @@ function gapsSections() {
     <h2 style="margin:22px 0 6px; font-size:18px">Playlists that are two genres</h2>
     <p class="why">A genre playlist whose tracks split into two genres, each a real share of it. Making one
       copies those tracks into a new playlist and leaves the original alone.</p>
-    <div class="rows" style="margin-top:10px">${splitRows || '<div class="empty">None of your genre playlists is two genres at once.</div>'}</div>`;
+    <div class="rows" style="margin-top:10px">${splitRows || '<div class="empty">None of your genre playlists is two genres at once.</div>'}</div>${gapsSoundSection()}`;
 }
 
 function vNew() {
@@ -5694,7 +5759,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-2005';
+    s.src = 'engine.js?v=2026-11-14-2010';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -5716,7 +5781,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-2005');
+    const w = new Worker('engine-worker.js?v=2026-11-14-2010');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -6030,7 +6095,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-14-2005';
+    s.src = 'audio.js?v=2026-11-14-2010';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -6058,7 +6123,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2005', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2010', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -6446,7 +6511,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-2005`,
+    `Betterfy engine score — build 2026-11-14-2010`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7003,6 +7068,27 @@ document.addEventListener('click', guard(async e => {
     if (!part) return;
     spl.disabled = true;
     try { await gapsCreate(part.label, part.ids); } catch (err) { spl.disabled = false; toast('Failed: ' + err.message); }
+    return;
+  }
+  const sh = e.target.closest('[data-sndh]'), so = e.target.closest('[data-sndo]');
+  if (sh || so) {
+    const i = +(sh ?? so).dataset[sh ? 'sndh' : 'sndo'];
+    const g = sh ? GAPS.sound?.hybrids?.[i] : GAPS.sound?.orphans?.[i];
+    const name = $((sh ? '#sndh' : '#sndo') + i)?.value.trim();
+    if (!g) return;
+    if (!name) return toast('Give it a name first.');
+    (sh ?? so).disabled = true;
+    try { await gapsCreate(name, g.ids); if (so) GAPS.filed.add('o' + i); render(); }
+    catch (err) { (sh ?? so).disabled = false; toast('Failed: ' + err.message); }
+    return;
+  }
+  const spk = e.target.closest('[data-sndp]');
+  if (spk) {
+    const [i, k] = spk.dataset.sndp.split(':').map(Number);
+    const p = GAPS.sound?.pick?.[i], to = p?.between?.[k];
+    if (!to || GAPS.filed.has(`p${i}:0`) || GAPS.filed.has(`p${i}:1`)) return;
+    spk.disabled = true;
+    try { await gapsFile(to.id, to.name, p.ids, `p${i}:${k}`); } catch (err) { spk.disabled = false; toast('Failed: ' + err.message); }
     return;
   }
   if (e.target.closest('[data-gapsretry]')) { GAPS.status = 'idle'; return render(); }
