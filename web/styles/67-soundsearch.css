@@ -1,0 +1,9 @@
+  /* Discover: "find tracks that sound like ___" (docs/AUDIO-BUILD-PLAN.md
+     WP-C3). Drawn only once CLAP has heard part of the library. The result
+     list reuses the proposal cards' numbered list (.prop-eg, 64-tidy.css). */
+  .card.sndsearch{margin:0 0 16px; display:grid; gap:10px}
+  .card.sndsearch .ttl{font-weight:600}
+  .card.sndsearch .rowbtns input{flex:1 1 220px; min-width:0}
+  .card.sndsearch .why{margin:0}
+  .sndres li{align-items:baseline}
+  .sndres li .open{margin-left:auto; flex:none; font-size:12px; color:var(--accent)}
