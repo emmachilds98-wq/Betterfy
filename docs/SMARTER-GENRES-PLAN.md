@@ -278,13 +278,38 @@ off.
 
 | Phase | What | Gate |
 |---|---|---|
-| **0** | Measurement only. Add the bridge (Deezer + ListenBrainz via Wikidata) as an optional component in `validate-placement` and the Engine screen's **Score**, reporting coverage and accuracy with and without it, overall and on **never-filed artists** | Top-1 placement on never-filed artists up by ≥5 points, overall not down. If it fails, stop and report |
+| **0** *(built 2026-11-14; waiting on the owner's run)* | Measurement only. Add the bridge (Deezer + ListenBrainz via Wikidata) as an optional component in `validate-placement` and the Engine screen's **Score**, reporting coverage and accuracy with and without it, overall and on **never-filed artists** | Top-1 placement on never-filed artists up by ≥5 points, overall not down. If it fails, stop and report |
 | **1** | Ship the bridge: `core/sources/deezer.mjs`, `listenbrainz.mjs`, `wikidata.mjs` (pure parse functions + thin fetch, fixture-tested like `discogs.mjs`); `core/intrinsic/bridge.mjs` as one more `combine()` component; per-artist cache; listening-ordered background fetch | Test proving that with no bridge cache the output is byte-identical to today |
 | **2** | Calibration + prediction sets (`core/intrinsic/calibrate.mjs`); show "right N% of the time" on the Engine screen | The stated rate holds on a second held-out fold within ±3 points |
 | **3** | **Gaps** screen: uncovered genre → create, split, twins, nameless cluster | Each proposal type has a fixture test. Nothing is written to Spotify without a tap (`verify-untouched.mjs` pattern) |
 | **4** | Teach queue, artist roll-forward, corrections + axis-override sync | Score after 20 teach answers beats the score before them |
 | **5** | Audio (`AUDIO-ANALYSIS-PLAN.md`, its own phase 0 first), now feeding the blend, the Gaps naming and per-playlist audio fingerprints | That plan's gates |
 | **6** | Vocabulary pass for the still-unplaced tags (emo, industrial, EBM…). Offline, human-reviewed PR | Ontology tests |
+
+**Phase 0 as built (2026-11-14).** `core/sources/{deezer,listenbrainz,wikidata}.mjs`
+(pure parsers), `core/intrinsic/bridge.mjs` (the component) and
+`bridge-fetch.mjs` (paced, cached, injected transports) are in. **Score both
+engines** now gathers similar artists for the tracks it is about to score,
+then scores each one with and without them on the same folds. It reports the
+never-filed subset and the verdict against the gate above, and Copy results
+carries all of it. Found and fixed on the way:
+
+- **A bundler bug.** `import { a as b }` was emitted as `const { b } = …`, so
+  any aliased import was silently `undefined` in the phone build. It showed up
+  as Wikidata never being asked in Chromium. It's fixed and tested, and an
+  aliased local export now fails the build instead.
+- **Wikidata needs a User-Agent.** It returns 403 to Node's default. The
+  browser sends its own, and the CLI sends the project's.
+- **ListenBrainz sometimes errors without a CORS header** under a burst. The
+  same request a moment later is fine, so it now gets one retry and a slower
+  pace.
+- **Deezer by JSONP runs in a sandboxed frame** (`allow-scripts` only). A
+  script tag would otherwise run Deezer's response with the page's authority,
+  Spotify sign-in included. Checked in Chromium: the frame gets a
+  SecurityError reading storage, and lookups work.
+
+The bridge is not on the File screen and changes no suggestion. Phase 1 waits
+on the gate.
 
 **Dropped or downgraded by this plan:** shared filing across users (R2), any
 runtime LLM over Spotify data (R1), Chrome's Prompt API (R1, and not
@@ -303,7 +328,7 @@ playlists) are independent of this and keep their place.
 | 2 | Say whether you agree with §3's reading of Spotify's terms | It decides that shared filing is dropped and no chatbot reads your library |
 | 3 | Decide on the shared tag table's keys: **re-key by MusicBrainz/Deezer id**, or leave it | It's the one existing piece §3 touches |
 | 4 | Audio model: **EffNet** (18 MB, non-commercial licence, best on donk/bassline) or **CLAP** (78 MB, Apache-2.0, open vocabulary) | Only needed by phase 5 |
-| 5 | OK for the page to call **Deezer, ListenBrainz and Wikidata** (keyless, with a switch to turn them off) | They're new third parties that see artist ids from your browser |
+| 5 | ~~OK for the page to call **Deezer, ListenBrainz and Wikidata**~~ | **Answered yes** (2026-11-14). The switch is on the score card |
 
 Phases 0–3 need only answers 1, 2 and 5. Everything else is mine.
 

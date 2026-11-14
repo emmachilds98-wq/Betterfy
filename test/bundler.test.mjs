@@ -44,6 +44,29 @@ test('moduleShape reads named imports, both re-export forms, and export async fu
 test('an aliased import binds under its local name', () => {
   const shape = moduleShape("import { a as b } from './x.mjs';");
   assert.deepEqual(shape.imports[0].names, ['b'], 'the local name is the one that must be declared');
+  assert.deepEqual(shape.imports[0].from, ['a'], 'and what the target calls it is kept');
+});
+
+test('an aliased import gets the value it names, not undefined', () => {
+  // The bug this pins: `import { a as b }` was emitted as `const { b } = …`,
+  // which reads the target's `b` — absent — so b was undefined at runtime with
+  // no error anywhere. Found when core/intrinsic/bridge-fetch.mjs's Wikidata
+  // batch size came out undefined in the browser and every lookup was skipped.
+  const read = fakeGraph({
+    'x.mjs': 'export const a = 41;\nexport const c = 1;',
+    'y.mjs': "import { a as b, c } from './x.mjs';\nexport const out = b + c;",
+    'z.mjs': "export { a as renamed } from './x.mjs';",
+  });
+  const { code } = bundleModules(['y.mjs', 'z.mjs'], { read, namespace: { Y: 'y.mjs', Z: 'z.mjs' } });
+  const g = {};
+  new Function('globalThis', code)(g);
+  assert.equal(g.Y.out, 42);
+  assert.equal(g.Z.renamed, 41, 'an aliased re-export carries the value too');
+});
+
+test('an aliased local export fails the build rather than shipping a wrong name', () => {
+  const read = fakeGraph({ 'x.mjs': 'const a = 1;\nexport { a as b };' });
+  assert.throws(() => bundleModules(['x.mjs'], { read }), /unsupported aliased export/);
 });
 
 test('stripModuleSyntax leaves a body valid inside a function', () => {

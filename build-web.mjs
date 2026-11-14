@@ -109,6 +109,10 @@ const ENGINE_ENTRIES = [
   'core/intrinsic/persist.mjs',
   'core/validate/loo.mjs',
   'core/validate/baseline.mjs',
+  // The neighbour bridge (docs/SMARTER-GENRES-PLAN.md phase 0). Pure, plus an
+  // orchestrator whose network calls are handed in by the page.
+  'core/intrinsic/bridge.mjs',
+  'core/intrinsic/bridge-fetch.mjs',
 ];
 
 const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
@@ -120,6 +124,9 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyPersist: 'core/intrinsic/persist.mjs',
     BetterfyValidate: 'core/validate/loo.mjs',
     BetterfyBaseline: 'core/validate/baseline.mjs',
+    BetterfyBridge: 'core/intrinsic/bridge.mjs',
+    BetterfyBridgeFetch: 'core/intrinsic/bridge-fetch.mjs',
+    BetterfyDeezer: 'core/sources/deezer.mjs',
   },
 });
 
@@ -155,7 +162,8 @@ self.onmessage = function (e) {
       catch (e) { result.pairs = null; }
     } else if (m.op === 'validate') {
       var common = Object.assign({}, m.opts, { isMirror: isMirror,
-                                                targets: m.targets ? new Set(m.targets) : null });
+                                                targets: m.targets ? new Set(m.targets) : null,
+                                                bridge: m.bridge || null });
       result = { mine: BetterfyValidate.placementAccuracy(m.lib, common),
                  base: m.tags ? BetterfyBaseline.baselineAccuracy(m.lib, m.tags, common) : null };
     } else {

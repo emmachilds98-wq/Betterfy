@@ -5,15 +5,21 @@
 // rather than build five more phases on a premise that did not hold — see
 // docs/THINKING-ENGINE-PLAN.md §8.
 //
-// Nothing here touches the network, writes to a cache, or needs a key. It reads
-// library.json and, if you have them, your existing tag caches.
+// Nothing here touches the network, writes to a cache, or needs a key — unless
+// you pass --bridge. It reads library.json and, if you have them, your existing
+// tag caches.
 //
 //   npm run validate:placement
 //   npm run validate:placement -- --folds=10 --limit=2000
 //   npm run validate:placement -- --reports   what it sees in your library
 //   npm run validate:placement -- --sweep     which weights the library constrains
-import { readFileSync } from 'node:fs';
-import { placementAccuracy } from './core/validate/loo.mjs';
+//   npm run validate:placement -- --bridge    with and without similar artists
+//                                             (asks Deezer, ListenBrainz and
+//                                             Wikidata; keeps answers in bridge.json)
+import { readFileSync, writeFileSync } from 'node:fs';
+import { placementAccuracy, scoredTracks } from './core/validate/loo.mjs';
+import { sourceArtists, bridgeFrom } from './core/intrinsic/bridge.mjs';
+import { gatherBridge } from './core/intrinsic/bridge-fetch.mjs';
 import { baselineAccuracy } from './core/validate/baseline.mjs';
 import { cooccurrence } from './core/intrinsic/cooccurrence.mjs';
 import { registrantIndex } from './core/intrinsic/features.mjs';
@@ -203,6 +209,65 @@ if (!base) {
 }
 console.log();
 
+
+/* ---------- similar artists: docs/SMARTER-GENRES-PLAN.md, phase 0 ---------- */
+
+if (process.argv.includes('--bridge')) {
+  console.log('\n=== SIMILAR ARTISTS (PHASE 0) ===\n');
+  console.log('  Deezer\'s "fans also like" and ListenBrainz\'s listening sessions, asked who');
+  console.log('  sits near each scored artist. They never name a genre: the vote goes to');
+  console.log('  wherever YOU filed those neighbours. Same folds, same tracks as above.\n');
+
+  // Wikidata refuses a request with no User-Agent (it answered 403 to Node's
+  // default). The project's own, as the Discogs adapter sends.
+  const UA = { 'user-agent': 'Betterfy/1.0 (+https://github.com/emmachilds98-wq/Betterfy)' };
+  const json = async (url, init = {}) => {
+    const r = await fetch(url, { ...init, headers: { ...(init.headers ?? {}), ...UA } });
+    if (!r.ok) throw new Error(`${new URL(url).host} answered ${r.status}`);
+    return r.json();
+  };
+  const deezer = async url => (await fetch(url, { headers: UA })).json();
+
+  let cache = null;
+  try { cache = JSON.parse(readFileSync('bridge.json', 'utf8')).raw ?? null; } catch { /* first run */ }
+  const artists = sourceArtists(scoredTracks(lib, { limit }));
+  let lastLine = 0;
+  const { raw, stats } = await gatherBridge(artists, {
+    deezer, json, cache,
+    onProgress: ({ stage, done, total }) => {
+      if (Date.now() - lastLine < 2000 && done < total) return;
+      lastLine = Date.now();
+      process.stderr.write(`  ${stage} ${done}/${total}\n`);
+    },
+  });
+  writeFileSync('bridge.json', JSON.stringify({ at: Date.now(), raw }));
+  const bridge = bridgeFrom(raw, lib);
+  const r = placementAccuracy(lib, { folds, limit, bridge });
+  const w = r.withBridge, c = w.coverage;
+
+  console.log(`\n  artists looked up          ${String(c.asked).padStart(6)}   (${stats.fromCache} remembered from bridge.json)`);
+  console.log(`  Deezer related lists       ${String(c.deezer).padStart(6)}`);
+  console.log(`  ListenBrainz lists         ${String(c.listenbrainz).padStart(6)}`);
+  console.log(`  with neighbours you filed  ${String(c.withNeighbours).padStart(6)}`);
+  console.log(`  tracks it had a say on     ${String(w.judged).padStart(6)}`);
+  if (stats.failed || stats.quota) {
+    console.log(`  lookups that failed        ${String(stats.failed).padStart(6)}${stats.quota ? '   Deezer rate-limited the run' : ''}`);
+  }
+  console.log('\n                              top-1   top-3   scored');
+  console.log('  ' + '-'.repeat(52));
+  console.log(`  without similar artists    ${pct(r.top1)}%  ${pct(r.top3)}%  ${String(r.scored).padStart(6)}`);
+  console.log(`  with similar artists       ${pct(w.top1)}%  ${pct(w.top3)}%  ${String(w.scored).padStart(6)}`);
+  console.log(`  never-filed, without       ${pct(r.neverFiled.top1)}%  ${pct(r.neverFiled.top3)}%  ${String(r.neverFiled.scored).padStart(6)}`);
+  console.log(`  never-filed, with          ${pct(w.neverFiled.top1)}%  ${pct(w.neverFiled.top3)}%  ${String(w.neverFiled.scored).padStart(6)}`);
+
+  // The plan's bar (§7), fixed before any real number was seen.
+  const lift = (w.neverFiled.top1 ?? 0) - (r.neverFiled.top1 ?? 0);
+  const overall = (w.top1 ?? 0) - (r.top1 ?? 0);
+  console.log('\n  gate: never-filed top-1 up by 5+ points, overall not down');
+  if (r.neverFiled.scored < 20) console.log(`  UNDECIDED. Only ${r.neverFiled.scored} never-filed tracks were scored.`);
+  else if (lift >= 0.05 && overall >= 0) console.log(`  PASS. +${(lift * 100).toFixed(1)} points on never-filed artists, ${(overall * 100).toFixed(1)} overall.`);
+  else console.log(`  NOT YET. ${(lift * 100).toFixed(1)} points on never-filed artists, ${(overall * 100).toFixed(1)} overall.`);
+}
 
 /* ---------- what the account's own structure says about itself ---------- */
 

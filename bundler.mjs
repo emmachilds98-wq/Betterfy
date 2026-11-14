@@ -53,9 +53,14 @@ const REEXPORT_RE = /^export\s*\{([\s\S]*?)\}\s*;?\s*$/gm;
 /** `export const|let|var|function|async function|class NAME`. */
 const EXPORT_DECL_RE = /^export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm;
 
-const names = s => s.split(',').map(x => x.trim()).filter(Boolean)
-  // `a as b` binds locally as b, which is the name that must be returned.
-  .map(x => (x.includes(' as ') ? x.split(/\s+as\s+/)[1].trim() : x));
+/** Each `a` or `a as b` in a brace list, as { imported, local }. */
+const specifiers = s => s.split(',').map(x => x.trim()).filter(Boolean)
+  .map(x => {
+    const [imported, local] = x.split(/\s+as\s+/).map(y => y.trim());
+    return { imported, local: local ?? imported };
+  });
+// `a as b` binds locally as b, which is the name that must be declared.
+const names = s => specifiers(s).map(x => x.local);
 
 /** The imports, re-exports and exported names of one module. */
 export function moduleShape(src) {
@@ -66,8 +71,12 @@ export function moduleShape(src) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(src))) {
-      const bound = names(m[1]);
-      imports.push({ spec: m[2], names: bound });
+      const specs = specifiers(m[1]);
+      const bound = specs.map(x => x.local);
+      // `from` is what the target module calls each one. Declaring the local
+      // name alone, as this once did, binds `b` to the target's `b` — which for
+      // `import { BATCH as WD_BATCH }` is undefined, silently, in the browser.
+      imports.push({ spec: m[2], names: bound, from: specs.map(x => x.imported) });
       if (isExport) for (const n of bound) exports.add(n);
     }
   }
@@ -80,6 +89,10 @@ export function moduleShape(src) {
   REEXPORT_RE.lastIndex = 0;
   while ((m = REEXPORT_RE.exec(src))) {
     if (/\bfrom\b/.test(m[0])) continue;
+    // `export { a as b };` would need the returned object to say `b: a`. Nothing
+    // in core/ does it, so it fails the build rather than shipping a wrong name.
+    const aliased = specifiers(m[1]).find(x => x.imported !== x.local);
+    if (aliased) throw new Error(`unsupported aliased export \`${aliased.imported} as ${aliased.local}\` — export it under one name`);
     for (const n of names(m[1])) exports.add(n);
   }
 
@@ -180,11 +193,12 @@ export function bundleModules(entries, { read = f => readFileSync(f, 'utf8'),
       if (!isRelative(i.spec) || !i.names.length) continue;
       const target = normalize(join(dirname(path), i.spec));
       if (!bySpec.has(target)) bySpec.set(target, []);
-      for (const n of i.names) {
-        if (bound.has(n)) continue;
+      i.names.forEach((n, k) => {
+        if (bound.has(n)) return;
         bound.add(n);
-        bySpec.get(target).push(n);
-      }
+        const from = i.from?.[k] ?? n;
+        bySpec.get(target).push(from === n ? n : `${from}: ${n}`);
+      });
     }
     const binds = [...bySpec.entries()]
       .filter(([, ns]) => ns.length)

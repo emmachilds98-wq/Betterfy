@@ -17,6 +17,7 @@ import { registrantIndex, profileOf, shapeScores, registrantOf, registrantWeight
 import { mirrorPredicate } from '../playlists/mirror.mjs';
 import { explain } from './explain.mjs';
 import { bonusIndex, bonusProfileOf, bonusScores } from './bonus-rekordbox.mjs';
+import { bridgeIndex, artistHomes, bridgeScores } from './bridge.mjs';
 
 export const SPACE_VERSION = '4.0.0';
 
@@ -43,6 +44,12 @@ export const WEIGHTS = {
   // cannot affect anybody who does not have the file.
   bpm:         0.40,
   key:         0.25,
+  // Neighbour bridge (docs/SMARTER-GENRES-PLAN.md §4.1b): where this artist's
+  // outside neighbours are filed. Only present when a bridge was gathered and
+  // passed in, and null for a track none of whose artists it knows, so like
+  // the bonus layer it costs nothing to anybody without one. A prior: phase 0
+  // exists to measure whether it earns any weight at all.
+  bridge:      0.50,
 };
 
 /**
@@ -82,7 +89,8 @@ export const THRESHOLDS = {
  * flags are generated from one person's library — an account-native engine
  * cannot start by reading a file that assumes whose account it is.
  */
-export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targets = null } = {}) {
+export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targets = null,
+                                  bridge = null } = {}) {
   // `targets`, when given, is the set of playlists the listener files into —
   // their genre playlists. Only those become destinations. Every playlist still
   // feeds the artist graph below: a "Sunday" playlist is not somewhere to file
@@ -166,8 +174,13 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
     }
   }
 
+  // Only with a bridge does the space carry one, so a space built without it
+  // is the same object, key for key, that it always was.
+  const bridgeIdx = bridge ? bridgeIndex(bridge) : null;
+  const withBridge = bridgeIdx?.size ? { bridge: bridgeIdx, artistHomes: artistHomes(destinations) } : {};
+
   return { graph, registrants, destinations, baseline, bonus, version: SPACE_VERSION,
-           targets: allowed ? [...allowed].sort() : null };
+           targets: allowed ? [...allowed].sort() : null, ...withBridge };
 }
 
 /**
@@ -210,6 +223,10 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
 
   const vec = trackVector(track, space.graph);
   const vecNorm = norm(vec);
+  // Worked out once per track rather than per destination: it is one vote
+  // spread across all of them. Null — and then absent from every row — when the
+  // space has no bridge or it knows none of this track's artists.
+  const bridged = space.bridge ? bridgeScores(track, space) : null;
   const rows = [];
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
@@ -218,7 +235,9 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
       ? cosine(vec, d.centroid, vecNorm, d.centroidNorm) : null;
     const extra = space.bonus?.size ? bonusScores(track, d.bonusProfile, space.bonus)
                                     : { bpm: null, key: null };
-    const { score, used, judged } = combine({ graph, ...shape, ...extra }, weights);
+    const parts = bridged ? { graph, ...shape, ...extra, bridge: bridged.get(d.id) ?? 0 }
+                          : { graph, ...shape, ...extra };
+    const { score, used, judged } = combine(parts, weights);
     if (!judged) continue;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
     rows.push({ playlistId: d.id, name: d.name, score: +score.toFixed(4),
