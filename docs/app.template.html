@@ -3407,11 +3407,114 @@ function mixLabel(mix) {
 const LISTS_SOUND = {
   profile: id => {
     if (!AUDIO.records || !globalThis.BetterfyAudio) return null;
-    const p = LIB.playlists.find(x => x.id === id), vm = BetterfyAudio.profileVM(p, AUDIO.records, AUDIO.labels);
+    const p = LIB.playlists.find(x => x.id === id);
+    let vm = BetterfyAudio.profileVM(p, AUDIO.records, AUDIO.labels);
+    // What its heard members are, by genre, and the tempo they settle on
+    // (core/audio/plprofile.mjs). Until that is worked out, the model's styles.
+    const pp = listsProfiles()?.get(id);
+    if (vm && pp) vm = { ...vm, ...(pp.mix.length ? { styles: pp.mix.slice(0, 3).map(m => [m.name, m.share]) } : {}),
+                         ...(pp.bpm ? { bpm: pp.bpm } : {}) };
     return BetterfyAudio.withProfileEnergy && typeof labelsShownNow === 'function'
       ? BetterfyAudio.withProfileEnergy(vm, p, AUDIO.records, labelsShownNow()) : vm;
   },
 };
+
+/* ---------- playlist sound profiles and "two genres?" ----------
+ * Each playlist's heard members, named by genre the way the File card names a
+ * track, but with the playlist's own tracks left out of their library votes,
+ * so a House playlist that is a third jungle can't vouch for itself. Worked
+ * out a few tracks at a time between frames, once per change in what has been
+ * heard; the screen redraws when it is done. Lookups on this account's own
+ * heard tracks only. No records, no engine: nothing here runs or shows. */
+const LPROF = { key: null, pr: null, out: null, busy: false, made: new Set(), loading: false };
+/** Milliseconds of work per slice, so the screen stays responsive. */
+const LPROF_SLICE_MS = 12;
+
+function listsProfiles() {
+  if (!AUDIO.records?.size || !LIB) return null;
+  if (!globalThis.BetterfyPlProfile) {
+    // The engine bundle is fetched on demand; fetch it and draw again.
+    if (!LPROF.loading && typeof engineLoad === 'function') {
+      LPROF.loading = true;
+      fire(Promise.resolve(engineLoad()).then(() => { if (view === 'lists') render(); }, () => {}));
+    }
+    return null;
+  }
+  const targets = typeof engineTargets === 'function' ? engineTargets() : null;
+  const key = `${AUDIO.records.size}|${LIB.captured_at}|${LIB.playlists.length}|${(targets ?? []).join()}`;
+  if (LPROF.key !== key) {
+    LPROF.key = key;
+    LPROF.out = null;
+    const genreOf = a => globalThis.BetterfyGaps?.artistGenre ? BetterfyGaps.artistGenre(TAGS?.[a?.id]?.tags) : null;
+    LPROF.pr = BetterfyPlProfile.createProfiler(LIB, AUDIO.records, {
+      targets, isMirror: isMirrorPlaylist,
+      tagsOf: t => (t?.artists ?? []).map(genreOf).filter(Boolean),
+      playlists: LIB.playlists.filter(p => !isMirrorPlaylist(p)).map(p => p.id),
+    });
+    listsProfileRun(key);
+  }
+  return LPROF.out;
+}
+
+function listsProfileRun(key) {
+  if (LPROF.busy) return;
+  LPROF.busy = true;
+  const slice = () => {
+    if (LPROF.key !== key) { LPROF.busy = false; if (LPROF.pr) listsProfileRun(LPROF.key); return; }
+    const t0 = Date.now();
+    let done = false;
+    try { while (!(done = LPROF.pr.step(4)) && Date.now() - t0 < LPROF_SLICE_MS); }
+    catch { done = true; }
+    if (!done) return void setTimeout(slice, 0);
+    LPROF.busy = false;
+    try { LPROF.out = LPROF.pr.result(); } catch { LPROF.out = null; }
+    if (view === 'lists') render();
+  };
+  setTimeout(slice, 0);
+}
+
+/** Genre playlists that sound like two genres, with the half that would move. */
+function listsSplits() {
+  const out = listsProfiles();
+  if (!out) return [];
+  return LIB.playlists.filter(p => CFG[p.id]?.axis === 'genre' && out.get(p.id)?.split)
+    .map(p => ({ p, split: out.get(p.id).split }));
+}
+
+function listsSplitHTML(splits) {
+  if (!splits.length) return '';
+  const byId = new Map(LIB.playlists.flatMap(p => p.tracks ?? []).map(t => [t.id, t]));
+  const card = ({ p, split }) => {
+    const { keep, move } = split, name = BetterfyPlProfile.splitName(p.name, split);
+    const made = LPROF.made.has(p.id);
+    const eg = move.ids.slice(0, 3).map(id => byId.get(id)).filter(Boolean)
+      .map(t => `<li>${esc(t.name ?? '')}<span class="sub"> · ${esc((t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '))}</span></li>`).join('');
+    return `<div class="row lsplit${made ? ' done' : ''}"><div class="main">
+      <div class="ttl">${esc(p.name)}</div>
+      <div class="lsplit-bar" aria-hidden="true"><i style="flex:${keep.n}"></i><i class="mv" style="flex:${move.n}"></i></div>
+      <div class="sub"><b>${keep.n}</b> sound like ${esc(keep.name)} · <b>${move.n}</b> sound like ${esc(move.name)}</div>
+      ${eg ? `<ul class="lsplit-eg">${eg}</ul>` : ''}
+    </div><div class="acts">${made ? '<span class="tag ok">Made</span>'
+      : `<button class="b sm" data-lsplit="${esc(p.id)}">Make “${esc(name)}”</button>`}</div></div>`;
+  };
+  return `<h2>Two genres by sound</h2>
+    <p class="lede">${splits.length === 1 ? 'This playlist’s' : 'These playlists’'} heard tracks fall into two groups that
+      sound apart and name different genres. Making the new playlist copies the second group into it; nothing is taken
+      out of the original until you do that yourself.</p>
+    <div class="rows">${splits.map(card).join('')}</div>`;
+}
+
+/** Make the playlist a split proposes, holding the half that sounds like the other genre. */
+async function listsSplitMake(id) {
+  const p = LIB.playlists.find(x => x.id === id), split = listsProfiles()?.get(id)?.split;
+  if (!p || !split || LPROF.made.has(id)) return;
+  const name = BetterfyPlProfile.splitName(p.name, split);
+  const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
+  await addTracks(pl.id, split.move.ids);
+  LPROF.made.add(id);
+  toast(`Created “${name}” with ${split.move.ids.length} tracks. Nothing was taken out of “${p.name}”.`);
+  render();
+}
 
 /** One row of the axes table, plus a hidden sound-profile row under it when
  *  there is a profile to show. No profile, no toggle and no hidden row. */
@@ -3450,6 +3553,7 @@ function vLists() {
   // playlists — the silent "treat it as genre" default used to be exactly what
   // turned "Sunday" or "Favourites" into a wrong suggestion.
   const undecided = rows.filter(p => p.why === NO_SIGNAL);
+  const splits = listsSplits();
   return `<h1>Playlists</h1>
     <p class="lede">How each playlist is treated, and which ones Betterfy files tracks into.</p>
     <details class="how"><summary>How this works</summary>
@@ -3479,7 +3583,7 @@ function vLists() {
           &nbsp;·&nbsp; the other ${d.olderCount}: <b>${d.olderTags.map(esc).join(', ') || '—'}</b>
           &nbsp;·&nbsp; ${Math.round(d.similarity*100)}% alike</div></div>
     </div>`).join('')}</div>` : ''}
-
+${listsSplitHTML(splits)}
     <h2>Axes</h2>
     ${axisTableHTML(rows, mixes)}`;
 }
@@ -6328,6 +6432,14 @@ document.addEventListener('change', guard(async e => {
     axexp.setAttribute('aria-expanded', String(open));
     const pr = document.getElementById(axexp.getAttribute('aria-controls'));
     if (pr) pr.hidden = !open;
+    return;
+  }
+
+  // "Two genres by sound": make the playlist for the half that sounds apart.
+  const lsp = e.target.closest('[data-lsplit]');
+  if (lsp) {
+    lsp.disabled = true;
+    try { await listsSplitMake(lsp.dataset.lsplit); } catch (err) { lsp.disabled = false; toast('Failed: ' + err.message); }
     return;
   }
 

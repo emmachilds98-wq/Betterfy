@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-2302">
+<meta name="bf-build" content="2026-11-14-2329">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -894,6 +894,24 @@
     .axtglbl{position:static; width:auto; height:auto; clip:auto; font-size:12.5px; color:var(--ink-2)}
     .axtbl tr.axprof{display:block} .axprof > td{display:block; padding:10px 14px}
   }
+
+  /* ---------- Playlists: "Two genres by sound" (SOUND-EVERYWHERE S2) ----------
+     Drawn only when listening has heard enough of a genre playlist to see two
+     groups that sound apart; without sound the screen is laid out as before. */
+  .row.lsplit{align-items:flex-start}
+  .lsplit-bar{display:flex; gap:2px; height:6px; max-width:280px; margin:8px 0 6px; border-radius:3px; overflow:hidden}
+  .lsplit-bar i{display:block; min-width:6px; background:var(--vc, var(--accent)); opacity:.75}
+  .lsplit-bar i.mv{background:var(--m3, var(--ink-3)); opacity:.9}
+  .lsplit .sub b{color:var(--ink); font-weight:600}
+  .lsplit-eg{margin:6px 0 0; padding-left:18px; font-size:12.5px; color:var(--ink-2)}
+  .lsplit-eg li{margin:2px 0; overflow-wrap:anywhere}
+  .lsplit-eg .sub{color:var(--ink-3)}
+  .lsplit .acts .b{white-space:normal; text-align:left; max-width:260px}
+  @media (max-width:560px){
+    .row.lsplit{flex-direction:column}
+    .lsplit .acts{width:100%}
+    .lsplit .acts .b{max-width:none}
+  }
   /* ---------- Tidy and New playlists (UI-6) ----------
      The switchers are UI-1's segmented control (.seg); the empty states are
      UI-1's .empty-state. This partial only places them on these two screens. */
@@ -1370,7 +1388,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-2302</span>
+    <span class="mono">build 2026-11-14-2329</span>
   </p>
 
   <div class="feat">
@@ -1473,7 +1491,7 @@
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2302</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2329</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1514,7 +1532,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2302</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2329</span>
   </div>
 </div>
 
@@ -2975,7 +2993,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-2302';
+const BUILD = '2026-11-14-2329';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3296,7 +3314,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-2302', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-2329', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -5723,11 +5741,114 @@ function mixLabel(mix) {
 const LISTS_SOUND = {
   profile: id => {
     if (!AUDIO.records || !globalThis.BetterfyAudio) return null;
-    const p = LIB.playlists.find(x => x.id === id), vm = BetterfyAudio.profileVM(p, AUDIO.records, AUDIO.labels);
+    const p = LIB.playlists.find(x => x.id === id);
+    let vm = BetterfyAudio.profileVM(p, AUDIO.records, AUDIO.labels);
+    // What its heard members are, by genre, and the tempo they settle on
+    // (core/audio/plprofile.mjs). Until that is worked out, the model's styles.
+    const pp = listsProfiles()?.get(id);
+    if (vm && pp) vm = { ...vm, ...(pp.mix.length ? { styles: pp.mix.slice(0, 3).map(m => [m.name, m.share]) } : {}),
+                         ...(pp.bpm ? { bpm: pp.bpm } : {}) };
     return BetterfyAudio.withProfileEnergy && typeof labelsShownNow === 'function'
       ? BetterfyAudio.withProfileEnergy(vm, p, AUDIO.records, labelsShownNow()) : vm;
   },
 };
+
+/* ---------- playlist sound profiles and "two genres?" ----------
+ * Each playlist's heard members, named by genre the way the File card names a
+ * track, but with the playlist's own tracks left out of their library votes,
+ * so a House playlist that is a third jungle can't vouch for itself. Worked
+ * out a few tracks at a time between frames, once per change in what has been
+ * heard; the screen redraws when it is done. Lookups on this account's own
+ * heard tracks only. No records, no engine: nothing here runs or shows. */
+const LPROF = { key: null, pr: null, out: null, busy: false, made: new Set(), loading: false };
+/** Milliseconds of work per slice, so the screen stays responsive. */
+const LPROF_SLICE_MS = 12;
+
+function listsProfiles() {
+  if (!AUDIO.records?.size || !LIB) return null;
+  if (!globalThis.BetterfyPlProfile) {
+    // The engine bundle is fetched on demand; fetch it and draw again.
+    if (!LPROF.loading && typeof engineLoad === 'function') {
+      LPROF.loading = true;
+      fire(Promise.resolve(engineLoad()).then(() => { if (view === 'lists') render(); }, () => {}));
+    }
+    return null;
+  }
+  const targets = typeof engineTargets === 'function' ? engineTargets() : null;
+  const key = `${AUDIO.records.size}|${LIB.captured_at}|${LIB.playlists.length}|${(targets ?? []).join()}`;
+  if (LPROF.key !== key) {
+    LPROF.key = key;
+    LPROF.out = null;
+    const genreOf = a => globalThis.BetterfyGaps?.artistGenre ? BetterfyGaps.artistGenre(TAGS?.[a?.id]?.tags) : null;
+    LPROF.pr = BetterfyPlProfile.createProfiler(LIB, AUDIO.records, {
+      targets, isMirror: isMirrorPlaylist,
+      tagsOf: t => (t?.artists ?? []).map(genreOf).filter(Boolean),
+      playlists: LIB.playlists.filter(p => !isMirrorPlaylist(p)).map(p => p.id),
+    });
+    listsProfileRun(key);
+  }
+  return LPROF.out;
+}
+
+function listsProfileRun(key) {
+  if (LPROF.busy) return;
+  LPROF.busy = true;
+  const slice = () => {
+    if (LPROF.key !== key) { LPROF.busy = false; if (LPROF.pr) listsProfileRun(LPROF.key); return; }
+    const t0 = Date.now();
+    let done = false;
+    try { while (!(done = LPROF.pr.step(4)) && Date.now() - t0 < LPROF_SLICE_MS); }
+    catch { done = true; }
+    if (!done) return void setTimeout(slice, 0);
+    LPROF.busy = false;
+    try { LPROF.out = LPROF.pr.result(); } catch { LPROF.out = null; }
+    if (view === 'lists') render();
+  };
+  setTimeout(slice, 0);
+}
+
+/** Genre playlists that sound like two genres, with the half that would move. */
+function listsSplits() {
+  const out = listsProfiles();
+  if (!out) return [];
+  return LIB.playlists.filter(p => CFG[p.id]?.axis === 'genre' && out.get(p.id)?.split)
+    .map(p => ({ p, split: out.get(p.id).split }));
+}
+
+function listsSplitHTML(splits) {
+  if (!splits.length) return '';
+  const byId = new Map(LIB.playlists.flatMap(p => p.tracks ?? []).map(t => [t.id, t]));
+  const card = ({ p, split }) => {
+    const { keep, move } = split, name = BetterfyPlProfile.splitName(p.name, split);
+    const made = LPROF.made.has(p.id);
+    const eg = move.ids.slice(0, 3).map(id => byId.get(id)).filter(Boolean)
+      .map(t => `<li>${esc(t.name ?? '')}<span class="sub"> · ${esc((t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '))}</span></li>`).join('');
+    return `<div class="row lsplit${made ? ' done' : ''}"><div class="main">
+      <div class="ttl">${esc(p.name)}</div>
+      <div class="lsplit-bar" aria-hidden="true"><i style="flex:${keep.n}"></i><i class="mv" style="flex:${move.n}"></i></div>
+      <div class="sub"><b>${keep.n}</b> sound like ${esc(keep.name)} · <b>${move.n}</b> sound like ${esc(move.name)}</div>
+      ${eg ? `<ul class="lsplit-eg">${eg}</ul>` : ''}
+    </div><div class="acts">${made ? '<span class="tag ok">Made</span>'
+      : `<button class="b sm" data-lsplit="${esc(p.id)}">Make “${esc(name)}”</button>`}</div></div>`;
+  };
+  return `<h2>Two genres by sound</h2>
+    <p class="lede">${splits.length === 1 ? 'This playlist’s' : 'These playlists’'} heard tracks fall into two groups that
+      sound apart and name different genres. Making the new playlist copies the second group into it; nothing is taken
+      out of the original until you do that yourself.</p>
+    <div class="rows">${splits.map(card).join('')}</div>`;
+}
+
+/** Make the playlist a split proposes, holding the half that sounds like the other genre. */
+async function listsSplitMake(id) {
+  const p = LIB.playlists.find(x => x.id === id), split = listsProfiles()?.get(id)?.split;
+  if (!p || !split || LPROF.made.has(id)) return;
+  const name = BetterfyPlProfile.splitName(p.name, split);
+  const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
+  await addTracks(pl.id, split.move.ids);
+  LPROF.made.add(id);
+  toast(`Created “${name}” with ${split.move.ids.length} tracks. Nothing was taken out of “${p.name}”.`);
+  render();
+}
 
 /** One row of the axes table, plus a hidden sound-profile row under it when
  *  there is a profile to show. No profile, no toggle and no hidden row. */
@@ -5766,6 +5887,7 @@ function vLists() {
   // playlists — the silent "treat it as genre" default used to be exactly what
   // turned "Sunday" or "Favourites" into a wrong suggestion.
   const undecided = rows.filter(p => p.why === NO_SIGNAL);
+  const splits = listsSplits();
   return `<h1>Playlists</h1>
     <p class="lede">How each playlist is treated, and which ones Betterfy files tracks into.</p>
     <details class="how"><summary>How this works</summary>
@@ -5795,7 +5917,7 @@ function vLists() {
           &nbsp;·&nbsp; the other ${d.olderCount}: <b>${d.olderTags.map(esc).join(', ') || '—'}</b>
           &nbsp;·&nbsp; ${Math.round(d.similarity*100)}% alike</div></div>
     </div>`).join('')}</div>` : ''}
-
+${listsSplitHTML(splits)}
     <h2>Axes</h2>
     ${axisTableHTML(rows, mixes)}`;
 }
@@ -6788,7 +6910,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-2302';
+    s.src = 'engine.js?v=2026-11-14-2329';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -6810,7 +6932,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-2302');
+    const w = new Worker('engine-worker.js?v=2026-11-14-2329');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -7135,7 +7257,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-14-2302';
+    s.src = 'audio.js?v=2026-11-14-2329';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -7176,7 +7298,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2302', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2329', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -7960,7 +8082,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-2302`,
+    `Betterfy engine score — build 2026-11-14-2329`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -8644,6 +8766,14 @@ document.addEventListener('change', guard(async e => {
     axexp.setAttribute('aria-expanded', String(open));
     const pr = document.getElementById(axexp.getAttribute('aria-controls'));
     if (pr) pr.hidden = !open;
+    return;
+  }
+
+  // "Two genres by sound": make the playlist for the half that sounds apart.
+  const lsp = e.target.closest('[data-lsplit]');
+  if (lsp) {
+    lsp.disabled = true;
+    try { await listsSplitMake(lsp.dataset.lsplit); } catch (err) { lsp.disabled = false; toast('Failed: ' + err.message); }
     return;
   }
 
