@@ -20,7 +20,9 @@
 import { melFrames, melPatches, MEL_VERSION, SAMPLE_RATE } from './mel.mjs';
 import { makeRecord, makeMiss, MISS, CACHEABLE_MISS } from './record.mjs';
 
-export const WORKER_VERSION = '1.0.0';
+// 1.1.0 (WP-D4): `deps.dsp` gets the decoded windows separately, never the
+// joined samples, and fillDsp() measures dsp for a record heard before it.
+export const WORKER_VERSION = '1.1.0';
 
 /**
  * Analyse one track end to end.
@@ -32,7 +34,8 @@ export const WORKER_VERSION = '1.0.0';
  * @param {{ run(data: Float32Array, n: number): Promise<{activations, embeddings}> }} deps.ear  infer.mjs createEar()
  * @param {{ run(emb: Float32Array, n: number): Promise<object> }} [deps.heads]                  heads.mjs createHeads(), optional
  * @param {(outputs: object, n: number) => object} [deps.summariseHeads]
- * @param {(samples: Float32Array) => object} [deps.dsp]                                         optional DSP (WP-D4)
+ * @param {(windows: Float32Array[]) => object|null} [deps.dsp]                               optional DSP (WP-D4): gets each decoded
+ *        window on its own (contiguous audio), never the joined samples; core/audio/dsp/combine.mjs measureWindows
  * @param {() => number} [deps.now]
  * @param {{ id: string, isrc?: string, durationMs?: number }} track
  * @returns {Promise<{ record: object } | { miss: object } | { failed: { id: string, stage: string, detail: string } }>}
@@ -57,29 +60,80 @@ export async function analyseOne(deps, track) {
   if (got?.miss) return failed('download', got.detail ?? got.miss);
 
   // Decode each window separately (a cut MP3 resyncs on its own) and join them.
-  let samples;
-  try {
-    const parts = [];
-    for (let i = 0; i < got.buffers.length; i++) { parts.push(await deps.decode(got.buffers[i])); got.buffers[i] = null; }
-    samples = concat(parts);
-  } catch (e) { return failed('decode', e?.message ?? e); }
+  let samples, parts;
+  try { parts = await decodeAll(deps, got.buffers); samples = concat(parts); }
+  catch (e) { return failed('decode', e?.message ?? e); }
   const { windows, sliced } = got;
   got = null; // drop the compressed audio
 
-  return analyseSamples(deps, { id, isrc, samples, source: { kind: 'deezer-isrc', deezerId: found.deezerId, windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+  return analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+}
+
+/**
+ * Measure dsp for a track that already has a record (heard before WP-D4, or
+ * under an older DSP version): download and decode again, run only the DSP,
+ * and return the same record with `dsp` filled. The model is not run and the
+ * embedding is untouched, so nothing the engine learned from is invalidated.
+ *
+ * Returns `{ record }` with the new dsp, `{ skip: reason }` when there is
+ * nothing to do or nothing safe to do (no dsp dep, the ISRC now resolves to
+ * a different Deezer track, DSP measured nothing), or `{ failed }` for a
+ * network/decode error. Never a miss: the record stays a good record.
+ *
+ * @param {object} deps  as analyseOne (lookup, fetchPreview, decode, dsp)
+ * @param {object} record  a stored, non-miss AudioRecord
+ * @param {{ durationMs?: number }} [track]
+ */
+export async function fillDsp(deps, record, track = {}) {
+  const id = record?.id;
+  const failed = (stage, detail) => ({ failed: { id, stage, detail: String(detail ?? '') } });
+  if (!deps.dsp) return { skip: 'no-dsp' };
+  if (!id || record.miss || !record.isrc) return { skip: 'not-a-record' };
+
+  let found;
+  try { found = await deps.lookup(record.isrc, { spotifyDurationMs: track.durationMs }); }
+  catch (e) { return failed('lookup', e?.message ?? e); }
+  if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? { skip: found.miss } : failed('lookup', found.detail ?? found.miss);
+  // ISRC or nothing: only measure the very recording the record was made from.
+  const was = record.source?.deezerId;
+  if (was != null && found.deezerId !== was) return { skip: 'different-recording' };
+
+  let got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
+  if (got?.miss) return failed('download', got.detail ?? got.miss);
+  let parts;
+  try { parts = await decodeAll(deps, got.buffers); }
+  catch (e) { return failed('decode', e?.message ?? e); }
+  got = null;
+
+  let dsp = null;
+  try { dsp = deps.dsp(parts); } catch { dsp = null; }
+  parts = null; // drop the audio
+  if (!dsp) return { skip: 'nothing-measured' };
+  return { record: { ...record, dsp } };
+}
+
+async function decodeAll(deps, buffers) {
+  // Decode each window separately (a cut MP3 resyncs on its own).
+  const parts = [];
+  for (let i = 0; i < buffers.length; i++) { parts.push(await deps.decode(buffers[i])); buffers[i] = null; }
+  return parts;
 }
 
 /**
  * The worker-side half: decoded 16 kHz samples → record. The page calls this
- * inside its Worker after decoding on the main thread.
+ * inside its Worker after decoding on the main thread. `parts` are the
+ * decoded windows before joining, for DSP; without them DSP sees `samples`.
  */
-export async function analyseSamples(deps, { id, isrc, samples, source }) {
+export async function analyseSamples(deps, { id, isrc, samples, parts = null, source }) {
   const now = deps.now ?? Date.now;
   const miss = reason => ({ miss: makeMiss({ id, isrc, reason, at: now() }) });
   const failed = (stage, detail) => ({ failed: { id, stage, detail: String(detail ?? '') } });
 
   let dsp = null;
-  try { dsp = deps.dsp ? deps.dsp(samples) : null; } catch { dsp = null; } // DSP is a bonus: never fails a track
+  // Per window, never across the join (WP-D4). A caller with only the joined
+  // samples gets one "window"; DSP is a bonus and never fails a track.
+  try { dsp = deps.dsp ? (deps.dsp(parts?.length ? parts : [samples]) ?? null) : null; } catch { dsp = null; }
+  parts = null;
   let p = melPatches(melFrames(samples));
   samples = null; // drop the audio
   if (!(p.patches > 0)) return miss(MISS.TOO_SHORT);

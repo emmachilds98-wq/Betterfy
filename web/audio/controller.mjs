@@ -11,8 +11,19 @@
 // Stop is cooperative: the track in flight finishes and is stored, no new one
 // starts. Resume is simply start() again with a fresh queue, because the
 // queue skips every id whose stored answer isCurrent().
-import { runQueue } from '../../core/audio/worker.js';
+//
+// DSP (WP-D4): every new record gets tempo, key and loudness measured per
+// preview window (core/audio/dsp/combine.mjs). Records heard before that, or
+// under an older DSP version, are topped up lazily after the queue: the
+// preview is fetched again and only the DSP runs, so the embedding stays and
+// nothing is invalidated. None of it is shown unless web/audio/dsp-view.mjs's
+// flag is on.
+import { runQueue, fillDsp } from '../../core/audio/worker.js';
 import { MISS } from '../../core/audio/record.mjs';
+import { measureWindows, needsDsp } from '../../core/audio/dsp/combine.mjs';
+
+/** Records topped up with dsp per start(), after the queue. */
+export const DSP_FILL_PER_RUN = 25;
 
 /**
  * Proxy the ear and heads to a Worker speaking { id, op, ... } → { id, ok, result|error }.
@@ -60,10 +71,16 @@ export function createWorkerEar(worker, init) {
  *        called on the first start(): loads the models, once
  * @param {(vm: object) => void} [deps.onChange]
  * @param {() => number} [deps.now]
+ * @param {((windows: Float32Array[]) => object|null) | null} [deps.dsp]
+ *        per-window DSP; default measureWindows, null switches DSP off
+ * @param {number} [deps.dspFillPerRun]  records topped up with dsp per start (default DSP_FILL_PER_RUN)
  */
 export function createAudioController(deps) {
   const st = { state: 'off', done: 0, total: 0, reason: null, failed: 0, missed: {}, heard: 0, last: null };
   let abort = null, ears = null, running = null;
+  const dsp = deps.dsp === undefined ? measureWindows : deps.dsp;
+  const fillBudget = deps.dspFillPerRun ?? DSP_FILL_PER_RUN;
+  const noFill = new Set(); // ids whose dsp can't be filled this session (different recording now, nothing measured)
 
   const emit = () => { try { deps.onChange?.(vm()); } catch { /* a render bug must not stop the queue */ } };
   const vm = () => ({ state: st.state, done: st.done, total: st.total, reason: st.reason ?? undefined,
@@ -93,7 +110,11 @@ export function createAudioController(deps) {
     emit();
     running = (async () => {
       try {
-        if (!tracks.length) { st.state = 'done'; return { done: 0, stopped: false }; }
+        if (!tracks.length) {
+          // Nothing new to hear: still top up dsp (it needs no model).
+          if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp }, signal);
+          st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
+        }
         if (!ears) {
           st.reason = 'loading the listening model'; emit();
           try { ears = await deps.loadEar(); }
@@ -102,7 +123,7 @@ export function createAudioController(deps) {
         }
         if (signal.aborted) { st.state = 'paused'; return { done: 0, stopped: true }; }
         const analyse = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
-                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads };
+                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp } : {}) };
         const res = await runQueue(analyse, tracks, { signal, onResult: async (r, t) => {
           if (r.record) { await deps.store.put(r.record); st.heard++; }
           else if (r.miss) { await deps.store.put(r.miss); st.missed[r.miss.miss] = (st.missed[r.miss.miss] ?? 0) + 1; }
@@ -110,7 +131,8 @@ export function createAudioController(deps) {
           st.done++; st.last = t?.id ?? null;
           emit();
         } });
-        st.state = res.stopped ? 'paused' : 'done';
+        if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
+        st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
         running = null; abort = null;
@@ -118,6 +140,20 @@ export function createAudioController(deps) {
       }
     })();
     return running;
+  }
+
+  /** Measure dsp for stored records that lack it, a few per run, stoppable like the queue. */
+  async function topUpDsp(analyse, signal) {
+    const all = await deps.store.getAll();
+    const due = [...all.values()].filter(r => needsDsp(r) && !noFill.has(r.id)).slice(0, fillBudget);
+    for (const rec of due) {
+      if (signal.aborted) return;
+      let r;
+      try { r = await fillDsp(analyse, rec); } catch { r = { skip: 'error' }; }
+      if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; emit(); }
+      else if (r.skip) noFill.add(rec.id);
+      // a failed download is tried again on a later run
+    }
   }
 
   /** Finish the track in flight, start no more. */
