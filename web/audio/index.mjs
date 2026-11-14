@@ -12,3 +12,4 @@ export { MEL_VERSION } from '../../core/audio/mel.mjs';
 export { HEADS, summariseHeads } from '../../core/audio/heads.mjs';
 export { dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY } from './dsp-view.mjs';
 export { measureWindows, needsDsp, DSP_VERSION } from '../../core/audio/dsp/combine.mjs';
+export { readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB } from './deep-settings.mjs';

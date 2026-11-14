@@ -4643,6 +4643,19 @@ function audioSettings() {
 
 const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;
 
+/** "Deep listen (laptop)" settings (web/audio/deep-settings.mjs), readable before audio.js has loaded. */
+function deepSettings() {
+  if (globalThis.BetterfyAudio?.readDeepSettings) return BetterfyAudio.readDeepSettings(LS);
+  let s = null; try { s = JSON.parse(LS.getItem('bf_audio_deep') || 'null'); } catch { s = null; }
+  return { maest: s?.maest === true, clap: s?.clap === true, memoryOverride: s?.memoryOverride === true };
+}
+/** May this deep ear run now? 'off' until audio.js has loaded. */
+function deepAllowed(ear) {
+  if (!globalThis.BetterfyAudio?.deepListenAllowed) return 'off';
+  return BetterfyAudio.deepListenAllowed(ear, { settings: deepSettings(), connection: navigator.connection,
+    deviceMemory: navigator.deviceMemory, confirmed: AUDIO.wifiOk });
+}
+
 /** Load the bundle, open the store, build the controller. Once. */
 async function audioInit() {
   if (AUDIO.ctrl) return AUDIO.ctrl;
@@ -4800,10 +4813,29 @@ function audioPanelHTML() {
     ${missedList(vm) || (nMissed ? `<details class="sub" style="margin:8px 0"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
     ${AUDIO.err ? `<p class="sub">${esc(AUDIO.err)}</p>` : ''}
+    ${set.on ? deepPanelHTML() : ''}
     <p class="sub credit">Listening model: Discogs-EffNet and its mood, voice and
       danceability heads by the Music Technology Group, Universitat Pompeu Fabra
       (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
       used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Previews from Deezer.</p>
+  </div>`;
+}
+
+/* The two Option C ears, each its own switch, both Wi-Fi only. MAEST (WP-C1)
+ * and CLAP (WP-C2) each add their status line inside this block. */
+function deepPanelHTML() {
+  const d = deepSettings();
+  const why = ear => { const a = deepAllowed(ear); return d[ear] && a !== 'ok' && a !== 'off'
+    ? `<p class="sub" style="margin:4px 0">${esc(globalThis.BetterfyAudio?.DEEP_TEXT?.[a] ?? a)}</p>` : ''; };
+  return `<div id="deepPanel" style="margin-top:12px">
+    <h3 id="src-deep-h">Deep listen (laptop)</h3>
+    <p class="srcline">Larger listening models, for a computer on Wi-Fi. Each is a one-off download and stays off until you tick it.</p>
+    <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMaest" ${d.maest ? 'checked' : ''}> Second ear (MAEST, about 90 MB)</label>
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP)</label>
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has the memory (8 GB or more)</label>
+    </div>
+    ${why('maest')}${why('clap')}
   </div>`;
 }
 
@@ -5681,6 +5713,14 @@ document.addEventListener('change', guard(async e => {
     return;
   }
   if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
+  if (e.target.id === 'deepMaest' || e.target.id === 'deepClap' || e.target.id === 'deepMemory') {
+    await audioLoad().catch(() => {});
+    const change = e.target.id === 'deepMaest' ? { maest: e.target.checked }
+      : e.target.id === 'deepClap' ? { clap: e.target.checked } : { memoryOverride: e.target.checked };
+    if (globalThis.BetterfyAudio?.writeDeepSettings) BetterfyAudio.writeDeepSettings(LS, change);
+    else LS.setItem('bf_audio_deep', JSON.stringify({ ...deepSettings(), ...change }));
+    return audioRedraw();
+  }
   if (e.target.id === 'audioOn' || e.target.id === 'audioWifi' || e.target.id === 'audioScope') {
     await audioLoad().catch(() => {});
     const change = e.target.id === 'audioOn' ? { on: e.target.checked }
