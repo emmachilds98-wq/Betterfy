@@ -48,7 +48,7 @@ nothing pooled across accounts; byte-identical when a feature has no data;
 | #95 | S4 Discover by sound + keyless candidates | Contained in #92 | Close as merged-by-#92 |
 | #90 | WP-C1 MAEST second ear | Conflicts. Its diff against `main` would delete #88's tests and CLAP table. The model file isn't in it | Rebase onto `main` after #92, or park until a machine can fetch the model |
 | #89 | UI-6 refresh (paused) | Targets a dead branch, conflicts with UI-1..6 already on `main` | **Close.** Its remaining ideas are folded into §4 below |
-| #41 | MusicBrainz/iTunes tag sources (September) | Stale | Close or re-scope under §6.4 |
+| #41 | MusicBrainz/iTunes tag sources (September) | Stale | Close or re-scope under §6.5 |
 
 Note: #92's `docs/SOUND-EVERYWHERE-PLAN.md` says "S1–S4 are merged". That is
 only true once #92 is merged; until then `main` has none of them.
