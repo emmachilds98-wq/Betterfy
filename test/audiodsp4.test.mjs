@@ -6,7 +6,7 @@ import { makeRecord, MISS, N_STYLES, EMB_DIM, validRecord } from '../core/audio/
 import { SAMPLE_RATE, MEL_VERSION } from '../core/audio/mel.mjs';
 import { combineTempo, combineKey, combineLoudness, measureWindows, needsDsp, DSP_VERSION,
          DISAGREE_PENALTY, OCTAVE_PENALTY } from '../core/audio/dsp/combine.mjs';
-import { dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY } from '../web/audio/dsp-view.mjs';
+import { dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, BPM_MIN_CONF, DSP_UI_KEY } from '../web/audio/dsp-view.mjs';
 import { createAudioController } from '../web/audio/controller.mjs';
 import { soundChip } from '../web/ui/sound.mjs';
 
@@ -50,15 +50,29 @@ test('without a dsp dep the record is byte-identical to one built without DSP', 
   assert.equal(JSON.stringify(again.record), JSON.stringify(plain.record), 'parts change nothing when there is no DSP');
 });
 
-test('the BPM/key display is off by default and renders nothing, with or without records', () => {
+test('key stays hidden by default; tempo shows alone above its measured confidence', () => {
+  assert.equal(DSP_UI_DEFAULT, false);
+  assert.equal(BPM_UI_DEFAULT, true);
+  assert.equal(bpmShown(memLS()), true);
+  assert.equal(bpmShown(memLS({ [DSP_UI_KEY]: '0' })), false, "'0' hides tempo too");
+  const rec = { id: 'x', dsp: { v: DSP_VERSION, bpm: 128.2, bpmConf: 0.9, key: 'A minor', camelot: '8A', keyConf: 0.8 } };
+  assert.deepEqual(dspSoundVM(rec, { show: false, bpm: true }), { bpm: 128, bpmConf: 0.9 }, 'no key by default');
+  assert.equal(dspSoundVM({ id: 'y', dsp: { bpm: 120, bpmConf: BPM_MIN_CONF - 0.01 } }, { show: false, bpm: true }), null, 'below the measured bar');
+  assert.deepEqual(dspSoundVM({ id: 'z', dsp: { bpm: 87, bpmConf: 0.5, octaveAmbiguous: true, bpmAlt: 174, key: 'C major', keyConf: 0.9 } }, { show: false, bpm: true }),
+    { bpm: 87, bpmConf: 0.5, bpmAlt: 174 });
+  for (const r of [null, undefined, { id: 'm', miss: MISS.NO_PREVIEW }, { id: 'n', dsp: null }])
+    assert.equal(soundChip(dspSoundVM(r, { show: false, bpm: true })), '', 'no data, no markup');
+});
+
+test('the full BPM/key display is off by default and renders nothing, with or without records', () => {
   assert.equal(DSP_UI_DEFAULT, false);
   assert.equal(dspShown(memLS()), false);
   assert.equal(dspShown(null), false);
   assert.equal(dspShown({ getItem() { throw new Error('private mode'); } }), false);
   const rec = { id: 'x', dsp: { v: DSP_VERSION, bpm: 128, bpmConf: 0.9, key: 'A minor', camelot: '8A', keyConf: 0.8 } };
-  assert.equal(dspSoundVM(rec, { show: dspShown(memLS()) }), null);
+  assert.equal(dspSoundVM(rec, { show: dspShown(memLS()), bpm: false }), null);
   for (const r of [null, undefined, { id: 'm', miss: MISS.NO_PREVIEW }, { id: 'n', dsp: null }, rec])
-    assert.equal(soundChip(dspSoundVM(r, { show: false })), '', 'no data, no markup');
+    assert.equal(soundChip(dspSoundVM(r, { show: false, bpm: false })), '', 'no data, no markup');
   assert.equal(dspShown(memLS({ [DSP_UI_KEY]: '1' })), true, 'a per-browser override turns it on for checking');
   assert.equal(dspShown(memLS({ [DSP_UI_KEY]: '0' })), false);
 });
@@ -322,7 +336,7 @@ test('soundChip: energy bars and voice when given; text is escaped', () => {
 test('record → view model → chip, end to end, only when shown', async () => {
   const d = deps({ dsp: measureWindows });
   const { record } = await analyseOne(d, track);
-  assert.equal(soundChip(dspSoundVM(record, { show: false })), '');
+  assert.equal(soundChip(dspSoundVM(record, { show: false, bpm: false })), '');
   const h = soundChip(dspSoundVM(record, { show: true }));
   assert.match(h, /12\d <span class="snd-unit">BPM/);
 });
