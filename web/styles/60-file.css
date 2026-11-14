@@ -82,10 +82,6 @@
   .why{font-size:12.5px; color:var(--ink-2); background:var(--surface-3); border-radius:5px; padding:4px 9px; display:inline-block; margin-top:6px}
   /* Every axis says what it was guessed from, so it can be checked rather
      than taken on trust — and a correction you made reads as yours. */
-  .axwhy{font-size:11.5px; color:var(--ink-3); margin-left:9px}
-  .axwhy::before{content:"· "}
-  .axwhy.mine{color:var(--ok)}
-  .axrow .acts{align-items:center}
   table.cmp{border-collapse:collapse; font-size:12.5px; margin-top:8px; width:100%}
   table.cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:0 10px 3px 0}
   table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
