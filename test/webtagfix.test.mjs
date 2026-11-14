@@ -26,18 +26,26 @@ function slice(from, to, what) {
 const own = x => JSON.parse(JSON.stringify(x));
 
 /** In-memory idb.tags_extra, just enough for the functions under test. */
-function load({ tags = {}, rawTags = {}, key = 'lfm-key', fetchTags = null } = {}) {
+function load({ tags = {}, rawTags = {}, key = 'lfm-key', fetchTags = null, seed = {} } = {}) {
   let store = {};
+  const kv = new Map(Object.entries(seed));
   const shared = [];
+  const synced = [];
   const sandbox = {
     TAGS: JSON.parse(JSON.stringify(tags)),
     RAW_TAGS: JSON.parse(JSON.stringify(rawTags)),
     LIB: {}, CFG: {},
     buildReports: (...args) => ({ builtWith: args[2] }), // records the TAGS it was called with
     idb: {
-      get: async k => (k === 'tags_extra' ? JSON.parse(JSON.stringify(store)) : undefined),
-      set: async (k, v) => { if (k === 'tags_extra') store = JSON.parse(JSON.stringify(v)); },
+      get: async k => (k === 'tags_extra' ? JSON.parse(JSON.stringify(store))
+                       : kv.has(k) ? JSON.parse(JSON.stringify(kv.get(k))) : undefined),
+      set: async (k, v) => { if (k === 'tags_extra') store = JSON.parse(JSON.stringify(v)); else kv.set(k, JSON.parse(JSON.stringify(v))); },
     },
+    // The sync plumbing lives in an earlier block; here only that it was asked.
+    REASK_TAG_FLOOR: 3,
+    canonJSON: JSON.stringify,
+    syncStamped: async (doc, local) => { synced.push([doc, JSON.parse(JSON.stringify(local))]); return false; },
+    render: () => {},
     LS: { getItem: k => (k === 'bf_lfm' ? key : null) },
     // Refetching offers the fresh tags to the shared table on its way past.
     contributeTags: (...a) => shared.push(a),
@@ -49,7 +57,7 @@ function load({ tags = {}, rawTags = {}, key = 'lfm-key', fetchTags = null } = {
   };
   vm.createContext(sandbox);
   vm.runInContext(slice("/* ---------- correcting one artist's tags", 'const VIEWS = ', 'tag-correction block'), sandbox);
-  return Object.assign(sandbox, { store: () => store, shared });
+  return Object.assign(sandbox, { store: () => store, shared, kv, synced });
 }
 
 test('saveArtistTags overrides the shipped tags and rebuilds reports', async () => {
@@ -198,4 +206,72 @@ test('secMisfile notes when a "misfiled" track is one you actually play a lot, w
   assert.match(body, /You play this a lot right now/);
   // The fetch is lazy and must not block the row rendering that's already there.
   assert.match(body, /getListening\(\)\.then\(\(\) => render\(\)\)/);
+});
+
+/* ---------- corrections are recorded for syncing (docs/SMARTER-GENRES-PLAN.md phase 4) ---------- */
+
+test('a hand correction is recorded with when it was made, and offered to linked devices', async () => {
+  const app = load({ tags: { a1: { tags: [['garage', 90]] } } });
+  const before = Date.now();
+  await app.saveArtistTags('a1', [['bassline', 80]]);
+  const c = own(app.kv.get('tag_corrections'));
+  assert.deepEqual(c.a1.tags, [['bassline', 80]]);
+  assert.ok(c.a1.at >= before, 'stamped, so the newer edit wins on the other device');
+  // Shared in the background, so an edit never waits on the network.
+  await new Promise(r => setTimeout(r, 10));
+  assert.ok(app.synced.some(([doc]) => doc === 'corrections'), 'and shared straight away');
+});
+
+test('putting the shipped tags back is recorded too, as a reset rather than an edit', async () => {
+  const app = load({ tags: { a1: { tags: [['edm', 90]] } }, rawTags: { a1: { tags: [['garage', 90]] } } });
+  await app.saveArtistTags('a1', [['edm', 90]]);
+  await app.resetArtistTags('a1');
+  assert.equal(own(app.kv.get('tag_corrections')).a1.tags, null);
+});
+
+test('corrections made before syncing existed are found; bulk-fetched tags are not', async () => {
+  // a1 is shipped with plenty of tags, so an edited entry for it can only be by hand.
+  // a2 is shipped thin, so its entry may be a bulk refetch: left out rather than guessed.
+  // a3 was never shipped: a bulk fill, not a correction.
+  const app = load({ rawTags: { a1: { tags: [['x', 1], ['y', 1], ['z', 1]] }, a2: { tags: [['x', 1]] } } });
+  await app.idb.set('tags_extra', { a1: { tags: [['jungle', 90]], checkedAt: 5 },
+                                    a2: { tags: [['house', 90]], checkedAt: 6 },
+                                    a3: { tags: [['techno', 90]], checkedAt: 7 } });
+  const c = own(await app.loadCorrections());
+  assert.deepEqual(Object.keys(c), ['a1']);
+  assert.deepEqual(c.a1, { tags: [['jungle', 90]], at: 5 });
+  assert.ok(app.kv.has('tag_corrections'), 'seeded once, then kept');
+});
+
+test('a correction from another device is applied as if made here; a reset there restores the shipped tags here', async () => {
+  const app = load({ tags: { a1: { tags: [['garage', 90]] }, a2: { tags: [['edm', 50]] } },
+                     rawTags: { a2: { tags: [['house', 90]] } },
+                     seed: { tag_corrections: { a2: { tags: [['edm', 50]], at: 1 } } } });
+  await app.idb.set('tags_extra', { a2: { tags: [['edm', 50]], checkedAt: 1 } });
+  // The other device: a1 corrected, a2 put back to shipped, both newer.
+  app.syncStamped = async (doc, local, apply) => {
+    const merged = { ...local, a1: { tags: [['bassline', 80]], at: 10 }, a2: { tags: null, at: 10 } };
+    await apply(merged, local);
+    return true;
+  };
+  assert.equal(await app.syncCorrections(), true);
+  assert.deepEqual(own(app.TAGS.a1.tags), [['bassline', 80]]);
+  assert.deepEqual(own(app.TAGS.a2.tags), [['house', 90]], 'reset to what was shipped');
+  assert.deepEqual(own(app.store().a1.tags), [['bassline', 80]], 'persisted for the next load');
+  assert.equal(app.store().a2, undefined, 'and the old override is gone');
+});
+
+test('a playlist type set on another device changes this device\'s config', async () => {
+  const app = load();
+  const ls = new Map([['bf_axes', JSON.stringify({ p1: { axis: 'genre', target: true, at: 1 } })]]);
+  app.LS = { getItem: k => ls.get(k) ?? null, setItem: (k, v) => ls.set(k, v) };
+  app.CFG = { p1: { axis: 'genre', target: true }, p2: { axis: 'genre', target: true } };
+  app.syncStamped = async (doc, local, apply) => {
+    await apply({ ...local, p2: { axis: 'mood', target: false, at: 5 } }, local);
+    return true;
+  };
+  assert.equal(await app.syncAxes(), true);
+  assert.deepEqual(own(app.CFG.p2), { axis: 'mood', target: false, why: 'set by you' });
+  assert.deepEqual(own(app.CFG.p1), { axis: 'genre', target: true }, 'untouched where nothing changed');
+  assert.ok(JSON.parse(ls.get('bf_axes')).p2, 'and remembered on this device');
 });

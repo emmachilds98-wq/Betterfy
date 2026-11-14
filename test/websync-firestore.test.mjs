@@ -300,3 +300,69 @@ test('a failed sync is invisible, never thrown at the caller', async () => {
   const changed = await vm.runInContext('syncFeedback()', app);
   assert.equal(changed, false);
 });
+
+/* ---------- tag corrections and playlist types: newest edit wins, per key ---------- */
+
+test('stamped merge: the newer edit wins per key, and nothing is dropped', () => {
+  const app = load();
+  const local = { a: { tags: [['jungle', 90]], at: 200 }, b: { tags: null, at: 50 } };
+  const remote = { a: { tags: [['dnb', 90]], at: 100 }, b: { tags: [['house', 80]], at: 300 }, c: { tags: [['x', 1]], at: 1 } };
+  const m = own(vm.runInContext(`mergeStamped(${JSON.stringify(local)}, ${JSON.stringify(remote)})`, app));
+  assert.deepEqual(m.a.tags, [['jungle', 90]], 'a fresher local edit is never reverted by an older remote one');
+  assert.deepEqual(m.b.tags, [['house', 80]], 'and a fresher remote edit replaces an older local one');
+  assert.ok(m.c, 'a key only one side has is kept');
+});
+
+test('stamped merge converges whichever device syncs first, ties included', () => {
+  const app = load();
+  const x = { p: { axis: 'genre', target: true, at: 7 }, q: { axis: 'mood', target: false, at: 9 } };
+  const y = { p: { axis: 'mood', target: false, at: 7 }, q: { axis: 'event', target: false, at: 3 } };
+  const ab = own(vm.runInContext(`mergeStamped(${JSON.stringify(x)}, ${JSON.stringify(y)})`, app));
+  const ba = own(vm.runInContext(`mergeStamped(${JSON.stringify(y)}, ${JSON.stringify(x)})`, app));
+  assert.deepEqual(ab, ba);
+});
+
+function linkedFirestore({ doc, remote }) {
+  return async (url, opts, ms, calls) => {
+    calls.push({ url: String(url), opts });
+    if (String(url).includes('identitytoolkit')) return { ok: true, json: async () => ({ localId: 'u9', idToken: 't', refreshToken: 'r', expiresIn: '3600' }) };
+    if (String(url).endsWith(`/state/${doc}`) && opts.method === 'GET')
+      return { ok: true, json: async () => (remote ? { fields: { data: { stringValue: JSON.stringify(remote) } } } : {}) };
+    if (String(url).includes('/members/') && opts.method === 'GET') return { ok: true, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+}
+
+test('stamped sync: a device that has never linked asks nobody', async () => {
+  const app = load();
+  vm.runInContext('globalThis.applied = null', app);
+  const changed = await vm.runInContext('syncStamped("axes", { p: { axis: "genre", target: true, at: 1 } }, async m => { applied = m; })', app);
+  assert.equal(changed, false);
+  assert.deepEqual(app.calls, []);
+});
+
+test('stamped sync: what the other device has is applied here, and what this one has is pushed', async () => {
+  const app = load({ lsStore: { bf_sync_group: 'g1' },
+    fetchImpl: linkedFirestore({ doc: 'axes', remote: { p2: { axis: 'mood', target: false, at: 5 } } }) });
+  vm.runInContext('globalThis.applied = null', app);
+  const changed = await vm.runInContext('syncStamped("axes", { p1: { axis: "genre", target: true, at: 9 } }, async m => { applied = m; })', app);
+  assert.equal(changed, true);
+  const applied = own(vm.runInContext('applied', app));
+  assert.deepEqual(Object.keys(applied).sort(), ['p1', 'p2']);
+  const push = app.calls.find(c => c.url.endsWith('/state/axes') && c.opts.method === 'PATCH');
+  assert.ok(push, 'p1 is new to the other side, so it goes up');
+  assert.ok(JSON.parse(JSON.parse(push.opts.body).fields.data.stringValue).p1);
+});
+
+test('stamped sync: the same state in a different key order is not a change, and is not written', async () => {
+  const app = load({ lsStore: { bf_sync_group: 'g1' },
+    fetchImpl: linkedFirestore({ doc: 'corrections', remote: { b: { at: 2, tags: null }, a: { at: 1, tags: [['x', 1]] } } }) });
+  const changed = await vm.runInContext('syncStamped("corrections", { a: { tags: [["x", 1]], at: 1 }, b: { tags: null, at: 2 } }, async () => { throw new Error("must not apply"); })', app);
+  assert.equal(changed, false);
+  assert.ok(!app.calls.some(c => c.opts.method === 'PATCH'), 'no pointless write');
+});
+
+test('stamped sync: a failure is invisible, never thrown at the caller', async () => {
+  const app = load({ lsStore: { bf_sync_group: 'g1' }, fetchImpl: async () => { throw new TypeError('offline'); } });
+  assert.equal(await vm.runInContext('syncStamped("axes", {}, async () => {})', app), false);
+});

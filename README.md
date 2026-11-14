@@ -192,9 +192,11 @@ a long time, on a small group's worth of contributions).
 A different feature again, using the same Firebase project: Settings →
 **Sync across devices** lets two of your own signed-in devices share
 skip/reject feedback (how many times a track's been skipped, and which
-playlists it's been rejected for), so a decision made on your phone doesn't
-have to be re-made on your laptop. Nothing else syncs yet — tag corrections
-and axis overrides still stay local to whichever device set them.
+playlists it's been rejected for), the tags you've corrected by hand, and
+which playlists are genre playlists. A decision made on your phone doesn't
+have to be made again on your laptop. For corrections and playlist types the
+newer edit wins, per artist and per playlist. Tags fetched in bulk are not
+synced; each device fetches its own.
 
 It signs each device in to Firebase **anonymously** (no email, no password,
 invisible — this has nothing to do with your Spotify account) so Firestore
@@ -1098,6 +1100,14 @@ The thresholds are fitted on half the tracks and checked on the other half, so
 the accuracy the screen shows comes from tracks they never saw. Once a score
 run has calibrated it, the comparison of waiting tracks shows "confident",
 "probably", "pick one" or "not sure" instead of a percentage.
+
+### Filing the rest of an artist at once
+
+File a track, and if the same artist has more tracks waiting, the File screen
+offers to put those in the same playlist too. Every track is listed and can
+be unticked. Anything you've already turned down for that playlist is left
+out. Each playlist gets its own History entry, and one undo takes the lot
+back.
 
 ### New playlists: genres you're not covering
 

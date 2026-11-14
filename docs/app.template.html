@@ -1110,9 +1110,10 @@
          reuses the project from. -->
     <section id="syncSection" hidden>
       <h3>Sync across devices</h3>
-      <p class="hint">Skip and reject decisions made on one signed-in device show up on
-        your others too. Nothing else is shared — not your library, not your tags — and
-        nothing leaves this device until you link a second one.</p>
+      <p class="hint">Skips and rejections, tags you've corrected by hand, and which
+        playlists are genre playlists show up on your other signed-in devices too. Nothing
+        else is shared — not your library, not the tags fetched for you — and nothing
+        leaves this device until you link a second one.</p>
       <div class="rowbtns" style="margin-bottom:8px">
         <button class="b" id="syncShowCode" type="button">Link another device</button>
         <button class="b" id="syncForget" type="button">Forget linked devices</button>
@@ -2286,7 +2287,8 @@ function classify(lib, tags = null, now = Date.now()) {
                   target: axis === 'genre' && !!genre && p.tracks.length >= MIN_FOR_TARGET && !isMirrorPlaylist(p) };
   }
   const saved = JSON.parse(LS.getItem('bf_axes') || '{}');
-  for (const [id, v] of Object.entries(saved)) if (cfg[id]) Object.assign(cfg[id], v, { why:'set by you' });
+  // `at` is when it was set, for syncing between devices; not part of the config.
+  for (const [id, { at, ...v }] of Object.entries(saved)) if (cfg[id]) Object.assign(cfg[id], v, { why:'set by you' });
   return cfg;
 }
 
@@ -2839,6 +2841,63 @@ function artHTML(t, hook = 'data-act="play"') {
   return `<div class="art ph" ${hook} title="Play" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h+48)%360} 58% 44%))">${esc((t.title||'?').trim()[0]??'?')}</div>`;
 }
 
+/* ---------- artist roll-forward: docs/SMARTER-GENRES-PLAN.md, phase 4 ----------
+ * File one track by an artist and the same artist's other unfiled tracks usually
+ * belong in the same place. So the File screen offers them, as a list you can see
+ * and untick, never a silent bulk move. Tracks already turned down for that
+ * playlist are left out: a rejection is an answer. */
+const ROLL_MAX = 40;
+
+/** Other backlog tracks by `track`'s first-billed artist that could follow it into `playlistIds`. */
+function rollForwardFor(track, backlog, playlistIds, fb = {}) {
+  const lead = track?.artists?.[0]?.id;
+  if (!lead || !playlistIds?.length) return [];
+  return (backlog ?? []).filter(b => b.id !== track.id && b.artists?.[0]?.id === lead
+      && !playlistIds.some(pid => fb?.[b.id]?.rejected?.includes(pid)))
+    .slice(0, ROLL_MAX);
+}
+
+function rollForwardHTML() {
+  const rf = S.roll;
+  if (!rf?.rows?.length) return '';
+  const on = rf.rows.filter(r => !rf.off.has(r.id)).length;
+  const where = rf.names.length > 1 ? `those ${rf.names.length} playlists` : esc(rf.names[0]);
+  return `<div class="card" id="rollCard" style="margin:0 0 16px">
+    <p style="margin:0 0 8px"><b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed. Put ${
+      rf.rows.length === 1 ? 'it' : 'them'} in ${where} too?</p>
+    <div class="rows" style="max-height:220px; overflow:auto">${rf.rows.map(r => `
+      <label class="check-row"><input type="checkbox" data-rollpick="${esc(r.id)}" ${rf.off.has(r.id) ? '' : 'checked'}>
+        ${esc(r.title)}</label>`).join('')}</div>
+    <div class="rowbtns" style="margin-top:10px">
+      <button class="b sm p" data-roll="go" ${on ? '' : 'disabled'}>File ${on} into ${where}</button>
+      <button class="b sm" data-roll="no">Not now</button>
+    </div>
+  </div>`;
+}
+
+/** File the ticked ones, one History entry per playlist, one undo for the lot. */
+async function rollForwardGo() {
+  const rf = S.roll;
+  if (!rf) return;
+  const ids = rf.rows.map(r => r.id).filter(id => !rf.off.has(id));
+  if (!ids.length) { S.roll = null; return render(); }
+  const ats = [];
+  for (const pid of rf.playlistIds) {
+    await addTracks(pid, ids);
+    await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
+                      reason:`filed with the rest of ${rf.artist}` });
+    ats.push((await getLog())[0]?.at);
+  }
+  // In place, and keeping whichever track is on screen on screen.
+  const keep = R.backlog[inboxIndex()]?.id, gone = new Set(ids);
+  for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
+  S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+  S.roll = null;
+  const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
+  toast(`Filed ${ids.length} more by ${rf.artist}.`, undoAll);
+  render();
+}
+
 function vInbox() {
   const rows = R.backlog;
   if (!rows.length) return `<h1>File</h1>
@@ -2871,7 +2930,7 @@ function vInbox() {
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
     : `Keys: <b>1–3</b> pick, <b>Enter</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.`;
 
-  return `<div class="counter" style="margin:0 0 16px">
+  return `${rollForwardHTML()}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
       <span>${how}</span>
     </div>
@@ -3364,7 +3423,7 @@ async function syncAllSongsPlaylist() {
   // comparing tracks against it would just mean "matches something you own".
   CFG[pl.id] = { name:entry.name, axis:'context', why:'set by you', target:false, tracks:merged.length };
   const savedAxes = JSON.parse(LS.getItem('bf_axes') || '{}');
-  savedAxes[pl.id] = { axis:'context', target:false };
+  savedAxes[pl.id] = { axis:'context', target:false, at:Date.now() };
   LS.setItem('bf_axes', JSON.stringify(savedAxes));
   R = buildReports(LIB, CFG, TAGS);
   S.shufPl = pl.id; S.shufCache = null;
@@ -4136,6 +4195,53 @@ async function syncFeedback() {
   } catch { return false; /* next sync tries again; nothing here is load-bearing */ }
 }
 
+/* ---------- tag corrections and playlist types, synced the same way ----------
+ * docs/SMARTER-GENRES-PLAN.md phase 4 / UPGRADE-PLAN §4. Unlike feedback these
+ * are plain values with no natural union ("this artist's tags are X", "this
+ * playlist is a genre playlist"), so each key carries the time it was set and
+ * the newer edit wins, per key. Two devices converge whichever syncs first, and
+ * a fresh edit on this device is never reverted by an older one from another. */
+
+/** Stable JSON, so equal state compares equal whatever order its keys arrived in. */
+const canonJSON = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x)
+  ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x);
+
+/** Per-key newest-wins over { key: { …, at } }. Ties go to whichever value sorts
+ *  first, so both devices pick the same one. Nothing is ever dropped. */
+function mergeStamped(local, remote) {
+  const out = {};
+  for (const k of new Set([...Object.keys(local ?? {}), ...Object.keys(remote ?? {})])) {
+    const l = local?.[k], r = remote?.[k];
+    if (!l || !r) { out[k] = l ?? r; continue; }
+    const la = +l.at || 0, ra = +r.at || 0;
+    out[k] = la > ra ? l : ra > la ? r : (canonJSON(l) <= canonJSON(r) ? l : r);
+  }
+  return out;
+}
+
+/**
+ * Pull one piece of stamped state, merge, hand the result to `apply` when this
+ * device gained anything, and push back when the other side did. Same opt-in as
+ * syncFeedback(): nothing at all happens on a device that has never been linked.
+ * Never throws — a failed sync is retried next time and costs nothing now.
+ */
+async function syncStamped(doc, local, apply) {
+  if (!syncAvailable() || !LS.getItem(SYNC_GROUP_KEY)) return false;
+  try {
+    const groupId = await ensureSyncMembership();
+    const got = await syncDoc('GET', `syncGroups/${groupId}/state/${doc}`).catch(() => null);
+    const remote = got?.fields?.data?.stringValue ? JSON.parse(got.fields.data.stringValue) : {};
+    const merged = mergeStamped(local, remote);
+    const m = canonJSON(merged);
+    const gained = m !== canonJSON(local ?? {});
+    if (gained) await apply(merged, local ?? {});
+    if (m !== canonJSON(remote)) {
+      await syncDoc('PATCH', `syncGroups/${groupId}/state/${doc}`, { fields: { data: { stringValue: m } } });
+    }
+    return gained;
+  } catch { return false; }
+}
+
 async function discogsTags(name, token) {
   const r = await fetch('https://api.discogs.com/database/search?' + new URLSearchParams({
     artist: name, type: 'release', per_page: '50', token })).then(x => x.json());
@@ -4249,6 +4355,73 @@ async function enrichMissing() {
  * a wrong suggestion was spotted, and it sticks — tags_extra already wins over
  * the shipped set, the same mechanism enrichMissing() relies on. */
 
+/* Corrections get their own small store, separate from tags_extra, because
+ * tags_extra is mostly bulk Last.fm and Discogs answers — thousands of artists,
+ * too big for one Firestore document and nothing another device can't fetch for
+ * itself. Only what a person did by hand goes here: an edit, a reset, a refetch. */
+const CORR_KEY = 'tag_corrections';
+
+/** This device's corrections, seeded once from what it already had. An edited
+ *  entry for an artist the shipped table tags properly can only be a hand
+ *  correction: the bulk fetch only ever touches artists with fewer than
+ *  REASK_TAG_FLOOR shipped tags. Thin ones are ambiguous, so they start
+ *  syncing the next time they are edited rather than being guessed at. */
+async function loadCorrections() {
+  const have = await idb.get(CORR_KEY);
+  if (have) return have;
+  const seeded = {};
+  const extra = (await idb.get('tags_extra')) ?? {};
+  for (const [id, e] of Object.entries(extra))
+    if ((RAW_TAGS?.[id]?.tags?.length ?? 0) >= REASK_TAG_FLOOR && e?.tags)
+      seeded[id] = { tags: e.tags, at: +e.checkedAt || 0 };
+  try { await idb.set(CORR_KEY, seeded); } catch { /* seeded again next time */ }
+  return seeded;
+}
+
+/** Record a hand correction (null tags = put the shipped tags back) and share it. */
+async function noteCorrection(id, tags) {
+  const c = await loadCorrections();
+  c[id] = { tags, at: Date.now() };
+  await idb.set(CORR_KEY, c);
+  syncCorrections().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+}
+
+/** Corrections from linked devices, applied exactly as if made here. */
+async function syncCorrections() {
+  return syncStamped('corrections', await loadCorrections(), async (merged, before) => {
+    const extra = (await idb.get('tags_extra')) ?? {};
+    for (const [id, e] of Object.entries(merged)) {
+      if (canonJSON(before[id] ?? null) === canonJSON(e)) continue;
+      if (e.tags) {
+        extra[id] = { tags: e.tags, checkedAt: e.at };
+        if (TAGS) TAGS[id] = { tags: e.tags };
+      } else {
+        delete extra[id];
+        if (TAGS) TAGS[id] = RAW_TAGS?.[id] ? { tags: [...RAW_TAGS[id].tags] } : { tags: [] };
+      }
+    }
+    await idb.set('tags_extra', extra);
+    await idb.set(CORR_KEY, merged);
+  });
+}
+
+/** Which playlists are genre, mood, event… and which take suggestions, from linked devices. */
+async function syncAxes() {
+  const local = JSON.parse(LS.getItem('bf_axes') || '{}');
+  return syncStamped('axes', local, async (merged, before) => {
+    LS.setItem('bf_axes', JSON.stringify(merged));
+    for (const [id, v] of Object.entries(merged))
+      if (CFG?.[id] && canonJSON(before[id] ?? null) !== canonJSON(v))
+        Object.assign(CFG[id], { axis: v.axis, target: v.target, why: 'set by you' });
+  });
+}
+
+/** Everything that syncs, at once. True when this device gained something. */
+async function syncEverything() {
+  const got = await Promise.all([syncFeedback(), syncCorrections(), syncAxes()]);
+  return got.some(Boolean);
+}
+
 async function saveArtistTags(id, tags) {
   const extra = (await idb.get('tags_extra')) ?? {};
   // Stamped fresh so a deliberate hand-correction — including trimming a
@@ -4258,6 +4431,7 @@ async function saveArtistTags(id, tags) {
   await idb.set('tags_extra', extra);
   TAGS[id] = { tags };
   R = buildReports(LIB, CFG, TAGS);
+  await noteCorrection(id, tags);
 }
 
 async function resetArtistTags(id) {
@@ -4266,6 +4440,7 @@ async function resetArtistTags(id) {
   await idb.set('tags_extra', extra);
   TAGS[id] = RAW_TAGS?.[id] ? { tags: [...RAW_TAGS[id].tags] } : { tags: [] };
   R = buildReports(LIB, CFG, TAGS);
+  await noteCorrection(id, null);
 }
 
 /** Ask Last.fm again for one artist, ignoring whatever it is shipped with —
@@ -5599,6 +5774,19 @@ document.addEventListener('click', guard(async e => {
   const reset = e.target.closest('[data-resettags]');
   if (reset) { await resetArtistTags(reset.dataset.resettags); render(); return; }
 
+  const rl = e.target.closest('[data-roll]');
+  if (rl) {
+    if (rl.dataset.roll === 'no') { S.roll = null; return render(); }
+    rl.disabled = true;
+    try { await rollForwardGo(); } catch (err) { rl.disabled = false; toast('Failed: ' + err.message); }
+    return;
+  }
+  const rp = e.target.closest('[data-rollpick]');
+  if (rp && S.roll) {
+    const id = rp.dataset.rollpick;
+    if (S.roll.off.has(id)) S.roll.off.delete(id); else S.roll.off.add(id);
+    return render();
+  }
   const gp = e.target.closest('[data-gap]');
   if (gp) {
     const g = GAPS.gaps?.[+gp.dataset.gap];
@@ -5660,11 +5848,13 @@ document.addEventListener('change', guard(async e => {
       CFG[id].target = tg.checked;
     }
     const saved = JSON.parse(LS.getItem('bf_axes') || '{}');
-    saved[id] = { axis: CFG[id].axis, target: CFG[id].target };
+    saved[id] = { axis: CFG[id].axis, target: CFG[id].target, at: Date.now() };
     LS.setItem('bf_axes', JSON.stringify(saved));
     R = buildReports(LIB, CFG, TAGS);
     toast('Updated — suggestions recomputed.');
     render();
+    // Shared with linked devices straight away, not only at the next load.
+    syncAxes().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
   }
 }));
 
@@ -5708,7 +5898,11 @@ async function fileCurrent(playlistIds) {
     const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
     toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
     S.fileSel = new Set();
-    R.backlog.splice(at, 1); S.inboxAt = inboxIndex(); render();
+    R.backlog.splice(at, 1); S.inboxAt = inboxIndex();
+    const more = rollForwardFor(t, R.backlog, ids, FB);
+    S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
+                             rows: more.map(b => ({ id: b.id, title: b.title })), off: new Set() } : null;
+    render();
   } catch (e) { toast('Failed: '+e.message); }
 }
 async function inboxAct(a) {
@@ -5863,8 +6057,8 @@ $('#syncRedeem').onclick = async () => {
   try {
     await redeemLinkCode(code);
     input.value = '';
-    toast('Linked — pulling in feedback from the other device…');
-    const changed = await syncFeedback();
+    toast('Linked — pulling in what the other device knows…');
+    const changed = await syncEverything();
     if (changed) { R = buildReports(LIB, CFG, TAGS); render(); }
   } catch (e) { toast('Could not link: ' + e.message); }
   finally { btn.disabled = false; }
@@ -6046,7 +6240,7 @@ async function start(force) {
     // Background, after the first paint — never delays it, and only redraws
     // again if another device actually had feedback this one did not, rather
     // than resetting the screen on every load for nothing.
-    syncFeedback().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+    syncEverything().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
   } catch (e) {
     if (retryable(e)) {
       const streak = e.status === 429 ? noteRateLimited() : 0;

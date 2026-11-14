@@ -17,17 +17,18 @@ const between = (from, to, what) => {
   return BUNDLE.slice(i, j);
 };
 
-function load({ backlog = [], inboxAt = 0, sel = new Set() } = {}) {
+function load({ backlog = [], inboxAt = 0, sel = new Set(), fb = {} } = {}) {
   const calls = { add: [], log: [], undo: [] };
   const sandbox = {
     R: { backlog }, S: { inboxAt, fileSel: sel, fileSelFor: sel.size ? backlog[inboxAt]?.id ?? null : null },
+    FB: fb,   // skip/reject feedback: roll-forward leaves out what was turned down
     CFG: { p1: { name: 'Jungle & Breaks' }, p2: { name: 'Late Night' } },
     matchMedia: () => ({ matches: false }),
     esc: s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),
     mmss: ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`,
     hueOf: () => 200,
     ICON_PLAY: '<svg id="playicon"></svg>',
-    toast: (msg) => { calls.toast = msg; },
+    toast: (msg, undo) => { calls.toast = msg; calls.toastUndo = undo; },
     render: () => { calls.rendered = (calls.rendered ?? 0) + 1; },
     addTracks: async (pl, ids) => { calls.add.push([pl, ...ids]); },
     logAction: async e => { calls.log.push(e); },
@@ -209,4 +210,56 @@ test('"Next up to file" opens the track that was tapped', () => {
   assert.doesNotMatch(body, /S\.inboxAt \+ \(\+gi\.dataset\.goinbox/);
   assert.match(BUNDLE, /const upNext = R\.backlog\.slice\(0, 4\);/,
     'which is only an absolute position because the cards come off the head of the queue');
+});
+
+/* ---------- artist roll-forward (docs/SMARTER-GENRES-PLAN.md, phase 4) ---------- */
+
+const byArtist = (id, artistId, artistName, title) => track(id, { title, artist: artistName,
+  artists: [{ id: artistId, name: artistName }], suggest: [] });
+
+test('filing a track offers the same artist\'s other unfiled tracks, for the same playlists', async () => {
+  const backlog = [byArtist('a', 'tr', 'Tim Reaper', 'One'), byArtist('b', 'xx', 'Someone', 'Two'),
+                   byArtist('c', 'tr', 'Tim Reaper', 'Three'), byArtist('d', 'tr', 'Tim Reaper', 'Four')];
+  const app = load({ backlog });
+  await app.fileCurrent(['p1']);
+  const roll = JSON.parse(JSON.stringify(app.S.roll));
+  assert.equal(roll.artist, 'Tim Reaper');
+  assert.deepEqual(roll.playlistIds, ['p1']);
+  assert.deepEqual(roll.rows.map(r => r.title), ['Three', 'Four'], 'only the same first-billed artist, not the filed one');
+  const html = app.rollForwardHTML();
+  assert.match(html, /2 more by Tim Reaper/);
+  assert.match(html, /data-rollpick="c" checked/);
+  assert.match(html, /File 2 into Jungle &amp; Breaks/);
+});
+
+test('a track already turned down for that playlist is not offered again', async () => {
+  const backlog = [byArtist('a', 'tr', 'Tim Reaper', 'One'), byArtist('c', 'tr', 'Tim Reaper', 'Three'),
+                   byArtist('d', 'tr', 'Tim Reaper', 'Four')];
+  const app = load({ backlog, fb: { c: { skips: 0, rejected: ['p1'] } } });
+  await app.fileCurrent(['p1']);
+  assert.deepEqual(JSON.parse(JSON.stringify(app.S.roll.rows.map(r => r.id))), ['d']);
+});
+
+test('nothing more by the artist, nothing offered', async () => {
+  const app = load({ backlog: [byArtist('a', 'tr', 'Tim Reaper', 'One'), byArtist('b', 'xx', 'Someone', 'Two')] });
+  await app.fileCurrent('p1');
+  assert.equal(app.S.roll, null);
+  assert.equal(app.rollForwardHTML(), '');
+});
+
+test('filing the rest adds only the ticked ones, logs one entry per playlist, and one undo takes it all back', async () => {
+  const backlog = [byArtist('a', 'tr', 'Tim Reaper', 'One'), byArtist('b', 'xx', 'Someone', 'Two'),
+                   byArtist('c', 'tr', 'Tim Reaper', 'Three'), byArtist('d', 'tr', 'Tim Reaper', 'Four')];
+  const app = load({ backlog });
+  await app.fileCurrent(['p1', 'p2']);
+  app.S.roll.off.add('d');                       // unticked
+  app.calls.add.length = 0; app.calls.log.length = 0;
+  await app.rollForwardGo();
+  assert.deepEqual(app.calls.add.map(x => [...x]), [['p1', 'c'], ['p2', 'c']]);
+  assert.equal(app.calls.log.length, 2, 'one History entry per playlist, so per-row undo stays exact');
+  assert.deepEqual(app.R.backlog.map(b => b.id), ['b', 'd'], 'the unticked one stays to be filed');
+  assert.equal(app.R.backlog[app.S.inboxAt].id, 'b', 'and the track on screen stays on screen');
+  assert.equal(app.S.roll, null);
+  await app.calls.toastUndo();
+  assert.equal(app.calls.undo.length, 2);
 });
