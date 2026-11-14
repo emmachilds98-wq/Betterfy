@@ -3,7 +3,7 @@
 // The scoring modules are bundled verbatim rather than re-implemented, so the
 // web build and the local app score identically and cannot drift apart.
 // Only the public client ID is embedded — the client secret is never read here.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { bundleModules } from './bundler.mjs';
 import { GENRES } from './core/ontology/genres.mjs';
 import { canonTag } from './profile.mjs';
@@ -80,7 +80,21 @@ const APPCHECK_APP_ID = arg('appcheck-app-id') ?? readEnv('APPCHECK_APP_ID')
  * These are inlined because the page cannot draw a single screen without them. */
 const V1_MODULES = ['norm.mjs', 'credits.mjs', 'profile.mjs'];
 
-const { code: core, files: bundled } = bundleModules(V1_MODULES, { expose: V1_MODULES });
+/* The sound layer's renderers (docs/UI-BUILD-PLAN.md §5). Inlined and exposed as
+ * globals like v1, because every screen calls them; with no audio data each one
+ * returns '' so they cost a listener who never turns listening on nothing but
+ * their few hundred bytes. */
+const UI_MODULES = ['web/ui/sound.mjs'];
+
+const { code: core, files: bundled } = bundleModules([...V1_MODULES, ...UI_MODULES],
+  { expose: [...V1_MODULES, ...UI_MODULES] });
+
+/* The stylesheet, kept as partials in web/styles/ so packages that restyle
+ * different screens own different files (docs/UI-BUILD-PLAN.md §3). Inlined in
+ * file-name order — the numeric prefixes are the cascade order — so the page is
+ * still one file with no second request. */
+const STYLES = readdirSync('web/styles').filter(f => f.endsWith('.css')).sort()
+  .map(f => readFileSync(`web/styles/${f}`, 'utf8')).join('');
 
 /* The account-native engine goes in a **separate file the page fetches only when
  * somebody opens the Engine screen**, rather than inline.
@@ -200,6 +214,8 @@ const GENRE_WORDS = [...new Set(Object.entries(GENRES)
   .filter(w => w && !NOT_ALONE.has(w)))].sort();
 
 const html = readFileSync('docs/app.template.html', 'utf8')
+  // A function, not a string: CSS is free to contain `$&` and friends.
+  .replace('__STYLES__', () => STYLES)
   .replace("'__GENRE_WORDS__'", JSON.stringify(GENRE_WORDS))
   .replace('__CORE__', core)
   .replace('__CLIENT_ID__', CLIENT_ID)

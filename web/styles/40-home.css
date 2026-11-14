@@ -1,0 +1,80 @@
+  /* ---------- home: hero and the four things to do ---------- */
+  .hero{position:relative; overflow:hidden; border-radius:var(--r-4); background:var(--surface);
+        border:1px solid var(--line); padding:38px 36px 34px; margin-bottom:26px}
+  /* A single soft bloom of the accent behind the greeting, clipped by the
+     card. Wider than the card and blurred, so it never reads as a shape. */
+  .hero::before{content:""; position:absolute; right:-80px; top:-100px; width:340px; height:340px; border-radius:50%;
+        background:radial-gradient(circle, color-mix(in srgb, var(--accent) 30%, transparent), transparent 68%);
+        filter:blur(30px); pointer-events:none}
+  .hero .in{position:relative; display:flex; gap:32px; align-items:center; flex-wrap:wrap}
+  .hero .txt{flex:1; min-width:280px}
+  .hero .when{font-family:var(--mono); font-size:11.5px; letter-spacing:.14em; text-transform:uppercase;
+        color:var(--accent); margin-bottom:12px}
+  .hero h1{font-size:clamp(30px,4.2vw,46px); line-height:1.05; margin:0 0 12px; max-width:20ch;
+        overflow-wrap:anywhere}
+  .hero h1::before{display:none}
+  .hero p{font-size:17px; line-height:1.55; color:var(--ink-2); margin:0; max-width:54ch}
+  .hero .tile{flex:none; width:168px; height:168px; border-radius:30px; background:var(--surface-2);
+        border:1px solid var(--line); display:grid; place-items:center; box-shadow:var(--shadow-2)}
+  .hero .tile svg{width:104px; height:104px}
+  @media (max-width:640px){ .hero .tile{display:none} }
+
+  .acts4{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; margin-bottom:26px}
+  .act{text-align:left; cursor:pointer; border-radius:var(--r-3); padding:24px 24px 22px; color:var(--ink);
+       font:inherit; display:flex; flex-direction:column; gap:6px;
+       background:color-mix(in srgb, var(--ac) 15%, var(--surface));
+       border:1px solid color-mix(in srgb, var(--ac) 32%, transparent);
+       transition:transform .12s ease, box-shadow .14s ease}
+  .act:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
+  .act:active{transform:scale(.99)}
+  .act .ic{width:40px; height:40px; border-radius:14px; background:var(--ac); color:var(--ac-ink);
+       display:grid; place-items:center; margin-bottom:10px}
+  .act .ic svg{width:21px; height:21px}
+  .act .n{font-family:var(--display); font-weight:800; font-size:38px; line-height:1; letter-spacing:-.03em; color:var(--ac)}
+  .act .l{font-size:15.5px; font-weight:600}
+  .act .d{font-size:14px; color:var(--ink-2); line-height:1.45}
+
+  /* Where the library sits: one bar, four segments, a legend under it. */
+  .split{display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:16px; margin-bottom:26px; align-items:start}
+  @media (max-width:760px){ .split{grid-template-columns:1fr} }
+  .panel{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); padding:26px 28px}
+  .panel .ph{display:flex; align-items:baseline; justify-content:space-between; gap:14px; margin-bottom:18px}
+  .panel .ph h2{margin:0; font-size:19px}
+  .panel .ph .mono{font-size:12px; color:var(--ink-3)}
+  .bar{display:flex; height:22px; border-radius:11px; overflow:hidden; background:var(--surface-3)}
+  .bar i{display:block; transition:width .4s cubic-bezier(.2,.7,.3,1)}
+  .key{display:flex; gap:22px; margin-top:14px; flex-wrap:wrap; font-size:13.5px; color:var(--ink-2)}
+  .key span{display:flex; align-items:center; gap:8px}
+  .key i{width:10px; height:10px; border-radius:3px; display:block}
+  .key b{color:var(--ink); font-family:var(--mono)}
+  .facts{display:flex; flex-direction:column; gap:13px}
+  .facts div{display:flex; align-items:baseline; justify-content:space-between; gap:12px}
+  .facts span{font-size:14px; color:var(--ink-2)}
+  .facts b{font-size:15px}
+  .facts hr{border:0; border-top:1px solid var(--line); margin:2px 0; width:100%}
+  .facts p{margin:0; font-size:13.5px; color:var(--ink-3); line-height:1.5}
+
+  /* "Next up to file" — the queue as objects rather than a list. */
+  .upnext{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px}
+  .upnext .u{border-radius:var(--r-3); overflow:hidden; background:var(--surface); border:1px solid var(--line);
+        text-align:left; font:inherit; color:var(--ink); cursor:pointer; padding:0;
+        transition:transform .12s ease, box-shadow .14s ease}
+  .upnext .u:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
+  .upnext .u .cov{aspect-ratio:1; width:100%; display:grid; place-items:center; object-fit:cover;
+        font-family:var(--display); font-weight:800; font-size:48px; color:rgba(255,255,255,.9)}
+  .upnext .u .bd{padding:14px 16px 16px}
+  .upnext .u .t{font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .upnext .u .a{font-size:13.5px; color:var(--ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .upnext .u .h{margin-top:10px; font-size:12px; font-family:var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .seehead{display:flex; align-items:baseline; justify-content:space-between; gap:14px; margin-bottom:14px}
+  .seehead h2{margin:0}
+  .seehead .more{appearance:none; border:0; background:none; color:var(--accent); font:inherit;
+        font-size:13.5px; font-weight:600; cursor:pointer}
+
+  /* The card animation, kept: the action cards on Home use it. */
+  @keyframes tileIn{from{opacity:0; transform:translateY(9px)}}
+  .acts4 .act{animation:tileIn .34s cubic-bezier(.2,.7,.3,1) backwards}
+  .acts4 .act:nth-child(2){animation-delay:.04s}
+  .acts4 .act:nth-child(3){animation-delay:.08s}
+  .acts4 .act:nth-child(4){animation-delay:.12s}
+
