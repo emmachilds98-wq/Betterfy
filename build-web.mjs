@@ -139,6 +139,8 @@ const ENGINE_ENTRIES = [
   // mixes with, from the account's own heard tracks.
   'core/audio/match.mjs',
   'core/audio/identify.mjs',
+  // Tidy by sound: filed tracks whose sound disagrees with their playlist.
+  'core/audio/misfit.mjs',
 ];
 
 const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
@@ -159,6 +161,7 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyWikidata: 'core/sources/wikidata.mjs',
     BetterfyMatch: 'core/audio/match.mjs',
     BetterfyIdentify: 'core/audio/identify.mjs',
+    BetterfyMisfit: 'core/audio/misfit.mjs',
   },
 });
 
@@ -209,6 +212,11 @@ self.onmessage = function (e) {
       try { result.identify = m.audio ? BetterfyIdentify.identifyAccuracyFor(m.lib, m.audio,
               { targets: m.targets || null, isMirror: isMirror }) : null; }
       catch (e) { result.identify = null; }
+    } else if (m.op === 'misfits') {
+      // Tidy by sound: an all-pairs nearest-neighbour pass over the heard
+      // tracks, too long for the page's thread on a big library.
+      result = BetterfyMisfit.soundMisfitsFor(m.lib, m.audio || null,
+        { targets: m.targets || null, isMirror: isMirror, measure: m.measure !== false });
     } else {
       throw new Error('unknown engine op: ' + m.op);
     }
@@ -228,7 +236,7 @@ const listMjs = dir => { try { return readdirSync(dir).filter(f => /\.(mjs|js)$/
 const AUDIO_INTRINSIC = readdirSync('core/intrinsic').filter(f => /^audio.*\.mjs$/.test(f)).sort().map(f => `core/intrinsic/${f}`);
 // Engine-side lookups over the sound space (sound ID, sound-alikes, mixes):
 // they ship in engine.js, and would only add the genre ontology (~100 KB) here.
-const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs']);
+const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs', 'core/audio/misfit.mjs']);
 const AUDIO_ENTRIES = ['web/audio/index.mjs', ...listMjs('core/audio').filter(f => !ENGINE_SIDE.has(f)),
                        ...listMjs('core/audio/dsp'), ...AUDIO_INTRINSIC];
 const camel = f => f.replace(/^.*\//, '').replace(/\.m?js$/, '').split(/[-_]/).map(w => w[0].toUpperCase() + w.slice(1)).join('');

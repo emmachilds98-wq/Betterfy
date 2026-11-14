@@ -1,6 +1,6 @@
 # Handoff — where the audio and genre work stands (2026-11-14)
 
-**Start here.** This is the current state of the work, written for the next
+**Start here.** (Update 2026-11-14 late: #88 is merged; the next round is `docs/SOUND-EVERYWHERE-PLAN.md`, which spreads sound to Tidy, Playlists, Shuffle and Discover. Tidy by sound and the plumbing in §6.8 are built in its S1 PR.) This is the current state of the work, written for the next
 agent. It supersedes the "order of work" in `docs/UPGRADE-PLAN.md`, which
 dates from 2026-10-31. The other plan docs are still accurate for their own
 areas; the map in "Read next" says which one covers what.
@@ -124,13 +124,13 @@ When writing page tests, the sandbox needs:
    - the `TEMPO` ranges.
 
    "By genre" shows which scenes are weak. Change one thing, re-score, compare.
-2. **Tidy by sound.** Flag filed tracks whose sound ID or sound-first placement strongly disagrees with their playlist ("sounds like jungle, sits in House"). `identify` and `placements(…, { soundFirst })` already give everything needed. Done when there is a sound tier on Tidy with the same move and undo flow, it is measured on held-out tracks, and nothing is shown without sound.
+2. **Tidy by sound.** *(Built: `core/audio/misfit.mjs`, Tidy › By sound; SOUND-EVERYWHERE-PLAN S1.)* Flag filed tracks whose sound ID or sound-first placement strongly disagrees with their playlist ("sounds like jungle, sits in House"). `identify` and `placements(…, { soundFirst })` already give everything needed. Done when there is a sound tier on Tidy with the same move and undo flow, it is measured on held-out tracks, and nothing is shown without sound.
 3. **Playlist sound profiles.** Show each playlist's genre mix and BPM range on the Playlists screen. `profileRow`/ProfileVM in `web/ui/sound.mjs` already draws heard, BPM, energy and styles. Feed it `identify` results for members, and flag playlists that are two genres by sound.
 4. **BPM-aware Shuffle and DJ-set ordering.** Use `tempoRelation`/`mixesWith` to order a playlist so each next track can be beatmatched and sounds close.
 5. **WP-C2 part 2: the CLAP audio encoder in the page.** Port `ClapFeatureExtractor` (48 kHz, 64 mel, 10 s) with a parity test. Run `Xenova/larger_clap_music_and_speech` `onnx/audio_model_quantized.onnx` (78 MB) behind #84's opt-in, and store the result with `withEar()`. This switches on WP-C3 naming and search. Details are in AUDIO-BUILD-PLAN §4.
 6. **WP-C1: MAEST** as the second ear.
 7. **Key detection.** It is 30% exact, so it stays hidden. Improve `core/audio/dsp/key.mjs`, re-measure with `scripts/audio-dsp/beatport-eval.mjs`, and then use key in "mixes with".
-8. **Plumbing:**
+8. **Plumbing:** *(Both built in SOUND-EVERYWHERE-PLAN S1: `soundShareable`/`soundAdopt`, `audioMidRun`.)*
    - The File screen and the Engine screen each build their own space. Share `SOUND.space` with `ENG.space`.
    - `AUDIO.records` refreshes only at the start and end of a listening run. Refreshing it every so often mid-run would let the File card show newly heard tracks sooner.
 
