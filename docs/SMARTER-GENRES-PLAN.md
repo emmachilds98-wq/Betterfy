@@ -20,6 +20,24 @@ owner's.
 
 ---
 
+## Where things stand (2026-11-14)
+
+| | State |
+|---|---|
+| Phase 0: similar-artist bridge, measured on the Score card | **Shipped** (#48). Waiting on the owner's run |
+| Phase 1: bridge in real placement | Gated on that run |
+| Phase 2: calibrated "confident / short list / not sure" | **Shipped** (#49) |
+| Phase 3: New playlists proposes uncovered genres and splits | **Shipped** (#50) |
+| Phase 4: corrections and playlist types sync; artist roll-forward | **Shipped** (#51). Teach queue gated on phase 1 |
+| §4.1(c) keyless genres from Wikidata for untagged artists | **Shipped** (this PR) |
+| Phase 5: audio | Waiting on the owner's licence choice (§8, item 4) |
+| Phase 6: vocabulary pass for unplaced tags | Not started |
+
+The live filing engine is still today's tag engine, restricted to genre
+playlists since #46. The account-native engine, the bridge and calibration
+are all measured on the Engine screen but placed nothing on their own. That
+is deliberate, until a real library says they're better.
+
 ## 0. The short version
 
 - **One new, free signal tested well: similar-artist graphs from Deezer and
