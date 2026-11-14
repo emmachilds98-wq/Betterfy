@@ -134,6 +134,7 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyDeezer: 'core/sources/deezer.mjs',
     BetterfyCalibrate: 'core/intrinsic/calibrate.mjs',
     BetterfyGaps: 'core/recommend/gaps.mjs',
+    BetterfyWikidata: 'core/sources/wikidata.mjs',
   },
 });
 

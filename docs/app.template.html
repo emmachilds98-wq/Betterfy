@@ -3868,6 +3868,13 @@ function vLists() {
       <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
     </div>
     <p class="sub" style="margin:8px 0">
+      No key? <b>Wikidata</b> knows genres for about a third of artists — mostly established ones, rarely
+      scene producers — and needs nothing from you. It only fills artists with no tags at all, and Last.fm
+      still wins if you add a key later. It runs once by itself after the library loads; this asks again.</p>
+    <div class="rowbtns" style="margin-bottom:8px">
+      <button class="b" id="fillWikidata">Fill missing genres free</button>
+    </div>
+    <p class="sub" style="margin:8px 0">
       Optional — a free <b>Discogs</b> token fills in artists Last.fm has nothing on at all, from the styles on
       their own releases (Jungle, Deep House, Electro — finer than Last.fm's one flat tag per artist). It never
       overrides a real Last.fm tag, only ever fills a total gap, and runs automatically as part of the button above.</p>
@@ -4282,7 +4289,9 @@ async function enrichMissing() {
   // "Missing" means thin, not just "no entry at all" — fewer tags than
   // REASK_TAG_FLOOR is treated the same as zero, so a gap Last.fm barely
   // answered still gets a real second look rather than staying thin forever.
-  const gap = id => (TAGS[id]?.tags?.length ?? 0) < REASK_TAG_FLOOR;
+  // Genres filled from Wikidata are a stand-in for crowd tags, not a
+  // replacement: with a key, Last.fm is still asked about those artists.
+  const gap = id => (TAGS[id]?.tags?.length ?? 0) < REASK_TAG_FLOOR || TAGS[id]?.source === 'wikidata';
   const names = new Map();
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
@@ -4301,7 +4310,7 @@ async function enrichMissing() {
     // again yet. A real, well-tagged answer is never re-asked — there's no
     // upside — and a thin or empty one only gets a second look after
     // REASK_AFTER_MS, so a re-run mostly costs no requests at all.
-    if (cached[id] && !worthReasking(cached[id])) { TAGS[id] = cached[id]; if (cached[id].tags?.length) done++; else blank++; continue; }
+    if (cached[id] && cached[id].source !== 'wikidata' && !worthReasking(cached[id])) { TAGS[id] = cached[id]; if (cached[id].tags?.length) done++; else blank++; continue; }
     let tags = [];
     // "Last.fm has nothing for this artist" and "that request failed" are the
     // same empty array, and only the first is an answer worth keeping. Caching
@@ -4333,7 +4342,9 @@ async function enrichMissing() {
       await new Promise(r => setTimeout(r, 1100));  // Discogs: 60 req/min with a token
     }
 
-    if (answered) { cached[id] = { tags, checkedAt: Date.now() }; TAGS[id] = { tags }; done++; }
+    // An empty Last.fm answer does not throw away genres Wikidata already gave.
+    const keepWikidata = answered && !tags.length && cached[id]?.source === 'wikidata' && cached[id].tags?.length;
+    if (answered && !keepWikidata) { cached[id] = { tags, checkedAt: Date.now() }; TAGS[id] = { tags }; done++; }
     if (done && done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
   }
   await idb.set('tags_extra', cached);
@@ -4344,6 +4355,59 @@ async function enrichMissing() {
     + (blank ? ` ${blank} have no tags anywhere.` : '')
     + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : ''));
   render();
+}
+
+/* ---------- genres with no key at all: docs/SMARTER-GENRES-PLAN.md §4.1(c) ----------
+ * An artist with no tags gives today's engine nothing to file by, and for an
+ * account outside the shipped table with no Last.fm key that is most of them.
+ * Wikidata links ~71,000 artists to their Spotify id, knows genres for about a
+ * third of the owner's artists (measured: 1,631 of 4,866), answers 300 at a time,
+ * needs no key and is CORS-open. It knows established artists far better than
+ * scene producers, so it fills gaps rather than replacing anything: only artists
+ * with no tags at all, never a corrected one, and Last.fm still wins when asked.
+ * Not offered to the shared table either — that takes Last.fm's answers only. */
+const untaggedArtists = () => {
+  const out = new Map();
+  const add = t => { for (const a of t?.artists ?? []) if (a?.id && !(TAGS?.[a.id]?.tags?.length)) out.set(a.id, a.name); };
+  for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) add(t);
+  for (const t of LIB?.liked ?? []) add(t);
+  return out;
+};
+
+/** Fill what Wikidata knows. `quiet` for the background run: no toast unless it found something. */
+async function fillFromWikidata({ quiet = false } = {}) {
+  const cached = (await idb.get('tags_extra')) ?? {};
+  // Asked before and Wikidata had nothing: not asked again until that answer is stale.
+  const todo = [...untaggedArtists().keys()].filter(id => !(cached[id]?.source === 'wikidata' && !worthReasking(cached[id])));
+  if (!todo.length) { if (!quiet) toast('Every artist Wikidata could know about has been asked already.'); return 0; }
+  await engineLoad();
+  const W = BetterfyWikidata;
+  const ids = todo.filter(W.isSpotifyId);
+  let found = 0, failed = 0;
+  for (let i = 0; i < ids.length; i += W.BATCH) {
+    const batch = ids.slice(i, i + W.BATCH);
+    if (!quiet) stage(`Asking Wikidata about ${ids.length.toLocaleString()} artists… ${i.toLocaleString()} done`, i / ids.length);
+    try {
+      const req = W.genreRequest(batch);
+      const out = W.genresFrom(await corsJson(req.url, req.init));
+      if (!out.answered) { failed += batch.length; continue; }
+      for (const id of batch) {
+        const tags = W.genreTags(out.genres.get(id) ?? []);
+        cached[id] = { tags, checkedAt: Date.now(), source: 'wikidata' };
+        if (tags.length) { TAGS[id] = { tags, source: 'wikidata' }; found++; }
+      }
+    } catch { failed += batch.length; }
+    if (i + W.BATCH < ids.length) await new Promise(r => setTimeout(r, 1000));
+  }
+  await idb.set('tags_extra', cached);
+  if (found) R = buildReports(LIB, CFG, TAGS);
+  if (!quiet || found) {
+    $('#land').hidden = true; $('#app').hidden = false;
+    toast(`Wikidata had genres for ${found.toLocaleString()} of ${ids.length.toLocaleString()} untagged artists.`
+      + (failed ? ` ${failed.toLocaleString()} could not be reached — try again later.` : ''));
+    render();
+  }
+  return found;
 }
 
 /* ---------- correcting one artist's tags ----------
@@ -5750,6 +5814,7 @@ document.addEventListener('click', guard(async e => {
     return;
   }
   if (e.target.id === 'enrich') return enrichMissing();
+  if (e.target.id === 'fillWikidata') return fillFromWikidata();
 
   const ea = e.target.closest('[data-editartist]');
   if (ea) { S.editingArtist = S.editingArtist === ea.dataset.editartist ? null : ea.dataset.editartist; render(); return; }
@@ -6241,6 +6306,9 @@ async function start(force) {
     // again if another device actually had feedback this one did not, rather
     // than resetting the screen on every load for nothing.
     syncEverything().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+    // Keyless genres for artists nothing has tagged. Cached per artist, so after
+    // the first load this asks only about artists that are new or stale.
+    if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});
   } catch (e) {
     if (retryable(e)) {
       const streak = e.status === 429 ? noteRateLimited() : 0;
