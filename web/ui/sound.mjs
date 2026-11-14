@@ -9,8 +9,8 @@
 // an empty view model renders '' — never a placeholder, never a dash — so a
 // listener who never turns listening on gets exactly the page they had before.
 //
-// UI-0 ships these as stubs so the page and the tests can depend on the names.
-// UI-2 fills them in; UI-3..6 call them from their screens.
+// UI-0 shipped these as stubs so the page and the tests could depend on the names.
+// UI-2 fills them in (WP-D4 writes soundChip); UI-3..6 call them from their screens.
 
 export const SOUND_UI_VERSION = 1;
 
@@ -40,23 +40,232 @@ export const SOUND_UI_VERSION = 1;
 /** @param {SoundVM|null|undefined} vm */
 export function soundChip(vm) { return ''; }
 
-/** @param {SoundVM|null|undefined} vm */
-export function sectionStrip(vm) { return ''; }
+// ---------------------------------------------------------------------------
+// Everything below is UI-2's. Helper names are prefixed so they never collide
+// with soundChip's own helpers above, and only the renderers (plus soundMark)
+// are exported, because build-web.mjs turns every export into a page global.
 
-/** @param {EvidenceVM|null|undefined} vm */
-export function evidenceBadges(vm) { return ''; }
+const sEsc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const sNum = v => typeof v === 'number' && Number.isFinite(v);
+const sClamp = v => Math.max(0, Math.min(1, v));
+const sPct = v => `${Math.round(sClamp(v) * 100)}%`;
+const sInt = v => Math.round(v).toLocaleString('en-GB');
+const sPlural = (n, one, many = one + 's') => `${sInt(n)} ${n === 1 ? one : many}`;
+const sLabel = v => typeof v === 'string' && v.trim() ? v.trim() : null;
 
-/** @param {BandVM|undefined} band */
-export function bandChip(band) { return ''; }
+/* ---------- style family → mark colour ----------
+ * The section strip colours each section by its top style, using the mark's
+ * five colours (--m0..--m4) so the strip reads as the logo's bars laid flat.
+ * Five colours cannot name 400 styles, so they name families: a listener sees
+ * "house-ish then bass-ish" at a glance, and the label is in the tooltip.
+ * The first family whose word appears in the label wins; anything unmatched
+ * gets a hash of its label, so the same label is always the same colour. */
+const SOUND_FAMILIES = [
+  // m1: bass, breaks and the fast end
+  [1, ['drum n bass', 'drum and bass', 'drum & bass', 'dnb', 'jungle', 'breakbeat', 'breaks', 'dubstep', 'grime', 'bass music',
+       'hardcore', 'gabber', 'donk', 'bounce', 'footwork', 'juke', 'trap', 'drill', 'halftime', 'neurofunk', 'liquid', 'dub']],
+  // m0: house, garage and the four-to-the-floor warm end
+  [0, ['house', 'garage', 'bassline', 'speed garage', '2-step', 'disco', 'funk', 'soul', 'boogie', 'italo', 'balearic', 'afro']],
+  // m2: techno, trance, electro, hard dance
+  [2, ['techno', 'trance', 'electro', 'minimal', 'hardstyle', 'hard dance', 'eurodance', 'edm', 'big room', 'industrial', 'ebm', 'acid', 'idm']],
+  // m3: voices first — hip hop, r&b, pop
+  [3, ['hip hop', 'hip-hop', 'rap', 'r&b', 'rnb', 'pop', 'reggae', 'dancehall', 'ska', 'latin', 'reggaeton', 'gospel', 'vocal']],
+  // m4: bands, acoustic, ambient and the rest
+  [4, ['rock', 'indie', 'punk', 'metal', 'folk', 'country', 'jazz', 'blues', 'classical', 'ambient', 'downtempo', 'chill',
+       'lo-fi', 'new age', 'soundtrack', 'score', 'experimental', 'shoegaze', 'post-', 'acoustic']],
+];
 
-/** @param {ProfileVM|null|undefined} vm */
-export function profileRow(vm) { return ''; }
+/**
+ * The mark colour (0–4, i.e. var(--m0)..var(--m4)) for one style label. Stable:
+ * the same label always gets the same colour, on every screen and every run.
+ * "Electronic---Bassline" and "Bassline" are the same style.
+ * @param {string} label
+ * @returns {0|1|2|3|4|null}
+ */
+export function soundMark(label) {
+  const l = sLabel(label);
+  if (!l) return null;
+  const s = l.toLowerCase();
+  const [parent, child = parent] = s.includes('---') ? s.split('---') : [s];
+  for (const part of [child, parent])
+    for (const [m, words] of SOUND_FAMILIES) if (words.some(w => part.includes(w))) return /** @type any */ (m);
+  let h = 2166136261;                                   // FNV-1a over the child label
+  for (let i = 0; i < child.length; i++) h = Math.imul(h ^ child.charCodeAt(i), 16777619);
+  return /** @type any */ ((h >>> 0) % 5);
+}
+const sShort = label => { const l = sLabel(label); if (!l) return null; const i = l.indexOf('---'); return i >= 0 ? l.slice(i + 3) : l; };
 
-/** @param {ListenVM|null|undefined} vm */
-export function listenPill(vm) { return ''; }
+/**
+ * A thin bar split into the clip's sections, each coloured by its top style
+ * (§2.2), so a hybrid track looks hybrid. Sections are equal width: they are
+ * the clip's analysis windows, not the track's timeline.
+ * @param {SoundVM|null|undefined} vm
+ */
+export function sectionStrip(vm) {
+  if (!vm || !Array.isArray(vm.sections)) return '';
+  const secs = vm.sections.map(s => (Array.isArray(s) ? s : [s]).map(sShort).filter(Boolean)).filter(s => s.length);
+  if (!secs.length) return '';
+  const tops = secs.map(s => s[0]);
+  const distinct = [...new Set(tops)];
+  const hybrid = vm.hybrid === true || distinct.length > 1;
+  const said = distinct.length === 1 ? distinct[0] : `${distinct.slice(0, -1).join(', ')} then ${distinct[distinct.length - 1]}`;
+  const aria = `${vm.hybrid === true ? 'Hybrid: ' : ''}${secs.length === 1 ? 'one section' : `${secs.length} sections`}, ${said}`;
+  const cells = secs.map((s, i) => `<i class="m${soundMark(s[0])}" title="${sEsc(`Section ${i + 1}: ${s.slice(0, 3).join(', ')}`)}"></i>`).join('');
+  return `<div class="sstrip${hybrid ? ' sstrip-hybrid' : ''}" role="img" aria-label="${sEsc(aria)}">${cells}</div>`;
+}
 
-/** @param {ListenVM|null|undefined} vm */
-export function listenCard(vm) { return ''; }
+const SOUND_EVIDENCE = [
+  ['tags', 'tags', 'what Last.fm, Wikidata and Discogs call the artist'],
+  ['history', 'history', 'where you have filed this artist before'],
+  ['sound', 'sound', 'what the track sounds like next to your playlists'],
+  ['learned', 'learned', 'what it learned from your accepts and rejects'],
+];
 
-/** @param {ListenVM|null|undefined} vm */
-export function missedList(vm) { return ''; }
+/**
+ * What a suggestion is made of: the same four badges on every screen (§2.3).
+ * Each value is that source's contribution, 0–1; zero or missing is left out.
+ * The bar under each badge (--w) is its share, and the title says it in words.
+ * @param {EvidenceVM|null|undefined} vm
+ */
+export function evidenceBadges(vm) {
+  if (!vm || typeof vm !== 'object') return '';
+  const items = SOUND_EVIDENCE.filter(([k]) => sNum(vm[k]) && vm[k] > 0);
+  if (!items.length) return '';
+  const total = items.reduce((s, [k]) => s + vm[k], 0);
+  const list = items.map(([k, word]) => `${word} ${sPct(vm[k] / total)}`).join(', ');
+  return `<span class="evs" role="group" aria-label="${sEsc(`Based on ${list}`)}">${items.map(([k, word, why]) =>
+    `<span class="ev ev-${k}" style="--w:${+(sClamp(vm[k] / total)).toFixed(2)}" title="${sEsc(`${word}: ${sPct(vm[k] / total)} of this suggestion — ${why}`)}">${word}</span>`).join('')}</span>`;
+}
+
+/* The engine's bands, plus Tidy's high/medium/low, mapped onto one chip. */
+const SOUND_BANDS = {
+  HIGH: ['sure', 'Sure'], LIKELY: ['likely', 'Likely'], AMBIGUOUS: ['unsure', 'Unsure'],
+  high: ['sure', 'Sure'], medium: ['likely', 'Likely'], low: ['unsure', 'Unsure'],
+};
+
+/**
+ * One confidence chip, three states (§2.4). The percentage, when given, stays
+ * on the chip but smaller, for whoever wants it.
+ * @param {BandVM|'high'|'medium'|'low'|undefined} band
+ * @param {number} [p]  0–1, optional
+ */
+export function bandChip(band, p) {
+  const b = typeof band === 'string' ? SOUND_BANDS[band] : null;
+  if (!b) return '';
+  const pct = sNum(p) ? `<span class="pct">${sPct(p)}</span>` : '';
+  return `<span class="band band-${b[0]}"${pct ? ` title="${sEsc(`${b[1]}, ${sPct(p)}`)}"` : ''}>${b[1]}${pct}</span>`;
+}
+
+const sRange = r => Array.isArray(r) && r.length === 2 && sNum(r[0]) && sNum(r[1]) ? [Math.min(r[0], r[1]), Math.max(r[0], r[1])] : null;
+
+/**
+ * A playlist's sound profile (§2.7): how many members have been heard, its
+ * BPM range, energy spread and top styles. Nothing until one member is heard.
+ * @param {ProfileVM|null|undefined} vm
+ */
+export function profileRow(vm) {
+  if (!vm || typeof vm !== 'object' || !sNum(vm.heard) || vm.heard <= 0) return '';
+  const parts = [];
+  const members = sNum(vm.members) && vm.members >= vm.heard ? vm.members : null;
+  parts.push(`<span class="sprof-heard">${members != null ? `${sInt(vm.heard)} of ${sPlural(members, 'track')} heard` : `${sPlural(vm.heard, 'track')} heard`}</span>`);
+  const bpm = sRange(vm.bpm);
+  if (bpm && bpm[1] > 0) {
+    const [lo, hi] = bpm.map(Math.round);
+    parts.push(`<span class="sprof-bpm">${lo === hi ? lo : `${lo}–${hi}`} <span class="sprof-unit">BPM</span></span>`);
+  }
+  const en = sRange(vm.energy);
+  if (en) {
+    const [lo, hi] = en.map(sClamp);
+    const cells = Array.from({ length: 5 }, (_, i) => { const c = (i + .5) / 5; return `<i${c >= lo - .1 && c <= hi + .1 ? ' class="on"' : ''}></i>`; }).join('');
+    parts.push(`<span class="sprof-energy" title="${sEsc(`energy from ${Math.round(lo * 5)} to ${Math.round(hi * 5)} of 5 (a rough measure)`)}">energy <span class="sprof-bars" aria-hidden="true">${cells}</span></span>`);
+  }
+  const styles = (Array.isArray(vm.styles) ? vm.styles : [])
+    .filter(s => Array.isArray(s) && sLabel(s[0])).slice(0, 3);
+  if (styles.length) parts.push(`<span class="sprof-styles">${styles.map(([l, p]) => {
+    const n = sShort(l);
+    return `<span class="sprof-style"><i class="m${soundMark(l)}" aria-hidden="true"></i>${sEsc(n)}${sNum(p) ? ` <span class="sprof-p">${sPct(p)}</span>` : ''}</span>`;
+  }).join('')}</span>`);
+  return `<div class="sprof" aria-label="How it sounds">${parts.join('<span class="sprof-dot" aria-hidden="true">·</span>')}</div>`;
+}
+
+/* Why a run is paused, in a few words (the controller's reasons). */
+const sPauseWhy = reason => {
+  if (!sLabel(reason) || reason === 'stopped') return null;
+  if (reason === 'ask') return 'waiting for you to say it’s Wi-Fi';
+  return reason;
+};
+const sBars = () => `<span class="lp-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>`;
+const sIsListen = vm => vm && typeof vm === 'object' && ['running', 'paused', 'done'].includes(vm.state);
+
+/**
+ * The listening indicator (§2.5): the mark's five bars as a level meter while
+ * a run is going, still bars and the reason when paused. Off renders nothing.
+ * The caller decides what tapping it does (UI-5 opens Sources).
+ * @param {(ListenVM & { heard?: number })|null|undefined} vm
+ */
+export function listenPill(vm) {
+  if (!sIsListen(vm)) return '';
+  const done = sNum(vm.done) ? vm.done : 0, total = sNum(vm.total) ? vm.total : 0;
+  let text;
+  if (vm.state === 'running') text = total ? `Listening · ${sInt(Math.min(done, total))} / ${sInt(total)}` : 'Listening…';
+  else if (vm.state === 'paused') { const why = sPauseWhy(vm.reason); text = `Paused${why ? ` · ${why}` : ''}`; }
+  else text = sNum(vm.heard) && vm.heard > 0 ? `Listened · ${sPlural(vm.heard, 'track')} heard` : 'Listened · up to date';
+  return `<span class="lpill lpill-${vm.state}" role="status">${sBars()}<span class="lp-txt">${sEsc(text)}</span></span>`;
+}
+
+/* The miss reasons, in plain English. B2's MISS_TEXT wins when the audio
+ * bundle is loaded; this copy is only so the renderer works on its own. */
+const SOUND_MISS_TEXT = {
+  NO_ISRC: 'Spotify gave no recording code (ISRC), so there is nothing safe to look up',
+  NOT_ON_DEEZER: 'not on Deezer',
+  NO_PREVIEW: 'on Deezer, but with no preview to listen to',
+  IDENTITY: 'Deezer’s version is a different length, so probably a different recording',
+  TOO_SHORT: 'the preview was too short to hear',
+  FAILED: 'a download or decode failed this session (it will be tried again)',
+};
+const sMissed = vm => Object.entries(vm?.missed && typeof vm.missed === 'object' ? vm.missed : {})
+  .filter(([, n]) => sNum(n) && n > 0).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+
+/**
+ * The body of the Listening card on Sources (§2.6). B2 draws the controls
+ * (switches, scope, Listen now); this is the status under them: where the run
+ * is, how many have been heard, and what couldn't be.
+ * @param {(ListenVM & { heard?: number })|null|undefined} vm
+ */
+export function listenCard(vm) {
+  if (!vm || typeof vm !== 'object') return '';
+  const heard = sNum(vm.heard) && vm.heard > 0 ? vm.heard : 0;
+  const missed = sMissed(vm).reduce((s, [, n]) => s + n, 0);
+  if (!sIsListen(vm) && !heard) return '';
+  const done = sNum(vm.done) ? vm.done : 0, total = sNum(vm.total) ? vm.total : 0;
+  let head;
+  if (vm.state === 'running') head = total ? `Listening to ${sInt(Math.min(done, total))} of ${sInt(total)} this run` : 'Starting…';
+  else if (vm.state === 'paused') { const why = sPauseWhy(vm.reason); head = why ? `Paused: ${why}` : 'Paused. It carries on where it left off.'; }
+  else if (vm.state === 'done') head = 'Up to date for this scope';
+  else head = 'Off';
+  const stats = [];
+  if (heard) stats.push(`<span class="lc-stat"><b>${sInt(heard)}</b> heard</span>`);
+  if (missed) stats.push(`<span class="lc-stat"><b>${sInt(missed)}</b> couldn’t be heard</span>`);
+  const allMiss = !heard && missed > 0 && vm.state !== 'running';
+  const meter = vm.state === 'running' && total
+    ? `<div class="lc-meter" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${Math.min(done, total)}" aria-label="This run"><i style="width:${sPct(done / total)}"></i></div>` : '';
+  return `<div class="lcard lcard-${sIsListen(vm) ? vm.state : 'off'}">
+    <div class="lc-head">${sIsListen(vm) ? `<span class="lpill lpill-${vm.state} lc-bars">${sBars()}</span>` : ''}<span class="lc-title">${sEsc(head)}</span></div>
+    ${meter}${stats.length ? `<div class="lc-stats">${stats.join('')}</div>` : ''}
+    ${allMiss ? `<p class="lc-note">None of these could be heard yet. The reasons are below; most are tracks Deezer has no preview for.</p>` : ''}
+    ${missedList(vm)}
+  </div>`;
+}
+
+/**
+ * The "couldn't be heard" list: one line per reason, most common first.
+ * @param {ListenVM|null|undefined} vm
+ */
+export function missedList(vm) {
+  const missed = sMissed(vm);
+  if (!missed.length) return '';
+  const text = { ...SOUND_MISS_TEXT, ...(globalThis.BetterfyAudio?.MISS_TEXT ?? {}) };
+  const n = missed.reduce((s, [, k]) => s + k, 0);
+  return `<details class="smiss"><summary>${sPlural(n, 'track')} couldn’t be heard</summary>
+    <ul>${missed.map(([k, c]) => `<li><b>${sInt(c)}</b> ${sEsc(text[k] ?? k)}</li>`).join('')}</ul></details>`;
+}
