@@ -6560,6 +6560,903 @@ function splitCandidates({ lib, targets, tagsOf, isMirror = null, ...opts } = {}
 }
 return { GAPS_VERSION, MIN_GAP, SPLIT, conceptLabel, artistGenre, genreLookup, trackGenre, playlistGenres, uncoveredGenres, splitCandidates };
 })();
+/* ---- core/sources/audio-vocab.mjs ---- */
+__mod["core/sources/audio-vocab.mjs"] = (function () {
+// The audio model's style vocabulary, mapped once to the ontology (WP-V1).
+//
+// Discogs-EffNet outputs 400 fixed "Genre---Style" labels, the same for every
+// listener, so they map through a reviewed static table rather than through
+// resolveConcept() at runtime (docs/AUDIO-ANALYSIS-PLAN.md §4.2). Two reasons:
+//   - resolveConcept() gets some of them wrong in ways only a person catches
+//     (Rock---Hardcore is hardcore punk, not rave hardcore; Reggae---Lovers
+//     Rock is reggae, not rock; Electronic---Hi NRG is disco, not hard NRG).
+//   - an unmapped label must never reach unknownConcepts(), or every
+//     listener's review queue fills with the same 200 model labels.
+//
+// The labels are HINTS AND NAMES, not verdicts. Phase 0 measured them at 29%
+// top-1 on scene genres (§0); placement learned from the account's own
+// playlists is what decides. This table is for naming proposals and for v3
+// evidence at a discount.
+//
+// How the table was made: seeded from resolveConcept() on the style name
+// (203/400 resolved), then every row reviewed by hand. `null` is explicit:
+// no ontology concept fits, so the label falls back to its parent genre
+// (PARENT_MAP) at FALLBACK_RELIABILITY, the same discount discogs.mjs gives
+// Discogs' coarse genre field. Parents that are not music (Non-Music,
+// Children's) or have no concept (Brass & Military) fall back to nothing.
+//
+// STYLE_LABELS is in the model's output order: class index i in an
+// AudioRecord's `styles` is STYLE_LABELS[i]. Source: the label list shipped
+// with discogs-effnet-bsdynamic-1 (MTG). Change the order and every stored
+// record is misread, so a test pins its length and a few known positions.
+
+const AUDIO_VOCAB_VERSION = '1.0.0';
+const FALLBACK_RELIABILITY = 0.5;
+
+/** Style label -> genre concept slug, or null (fall back to the parent). Every label has an entry. */
+const STYLE_MAP = Object.freeze({
+  // Blues
+  "Blues---Boogie Woogie": null,
+  "Blues---Chicago Blues": 'blues',
+  "Blues---Country Blues": 'blues',
+  "Blues---Delta Blues": 'blues',
+  "Blues---Electric Blues": 'blues',
+  "Blues---Harmonica Blues": 'blues',
+  "Blues---Jump Blues": 'blues',
+  "Blues---Louisiana Blues": 'blues',
+  "Blues---Modern Electric Blues": 'blues',
+  "Blues---Piano Blues": 'blues',
+  "Blues---Rhythm & Blues": 'rnb',
+  "Blues---Texas Blues": 'blues',
+  // Brass & Military
+  "Brass & Military---Brass Band": null,
+  "Brass & Military---Marches": null,
+  "Brass & Military---Military": null,
+  // Children's
+  "Children's---Educational": null,
+  "Children's---Nursery Rhymes": null,
+  "Children's---Story": null,
+  // Classical
+  "Classical---Baroque": 'classical',
+  "Classical---Choral": 'classical',
+  "Classical---Classical": 'classical',
+  "Classical---Contemporary": 'classical',
+  "Classical---Impressionist": 'classical',
+  "Classical---Medieval": 'classical',
+  "Classical---Modern": 'classical',
+  "Classical---Neo-Classical": 'classical',
+  "Classical---Neo-Romantic": 'classical',
+  "Classical---Opera": 'classical',
+  "Classical---Post-Modern": 'classical',
+  "Classical---Renaissance": 'classical',
+  "Classical---Romantic": 'classical',
+  // Electronic
+  "Electronic---Abstract": null,
+  "Electronic---Acid": 'acid-house',
+  "Electronic---Acid House": 'acid-house',
+  "Electronic---Acid Jazz": 'nu-jazz',
+  "Electronic---Ambient": 'ambient',
+  "Electronic---Bassline": 'bassline',
+  "Electronic---Beatdown": 'deep-house',
+  "Electronic---Berlin-School": 'ambient',
+  "Electronic---Big Beat": 'big-beat',
+  "Electronic---Bleep": 'techno',
+  "Electronic---Breakbeat": 'breakbeat',
+  "Electronic---Breakcore": 'breakcore',
+  "Electronic---Breaks": 'breakbeat',
+  "Electronic---Broken Beat": 'nu-jazz',
+  "Electronic---Chillwave": 'synth-pop',
+  "Electronic---Chiptune": null,
+  "Electronic---Dance-pop": 'dance-pop',
+  "Electronic---Dark Ambient": 'ambient',
+  "Electronic---Darkwave": 'synth-pop',
+  "Electronic---Deep House": 'deep-house',
+  "Electronic---Deep Techno": 'techno',
+  "Electronic---Disco": 'disco',
+  "Electronic---Disco Polo": 'eurodance',
+  "Electronic---Donk": 'donk',
+  "Electronic---Downtempo": 'downtempo',
+  "Electronic---Drone": 'ambient',
+  "Electronic---Drum n Bass": 'drum-and-bass',
+  "Electronic---Dub": 'dub',
+  "Electronic---Dub Techno": 'dub-techno',
+  "Electronic---Dubstep": 'dubstep',
+  "Electronic---Dungeon Synth": 'ambient',
+  "Electronic---EBM": null,
+  "Electronic---Electro": 'electro',
+  "Electronic---Electro House": 'electro-house',
+  "Electronic---Electroclash": 'electro',
+  "Electronic---Euro House": 'eurodance',
+  "Electronic---Euro-Disco": 'disco',
+  "Electronic---Eurobeat": 'eurodance',
+  "Electronic---Eurodance": 'eurodance',
+  "Electronic---Experimental": null,
+  "Electronic---Freestyle": 'electro',
+  "Electronic---Future Jazz": 'nu-jazz',
+  "Electronic---Gabber": 'gabber',
+  "Electronic---Garage House": 'garage-house',
+  "Electronic---Ghetto": 'house',
+  "Electronic---Ghetto House": 'house',
+  "Electronic---Glitch": 'idm',
+  "Electronic---Goa Trance": 'psytrance',
+  "Electronic---Grime": 'grime',
+  "Electronic---Halftime": 'halftime',
+  "Electronic---Hands Up": 'eurodance',
+  "Electronic---Happy Hardcore": 'hardcore',
+  "Electronic---Hard House": 'hard-house',
+  "Electronic---Hard Techno": 'hard-techno',
+  "Electronic---Hard Trance": 'hard-trance',
+  "Electronic---Hardcore": 'hardcore',
+  "Electronic---Hardstyle": 'hardstyle',
+  "Electronic---Hi NRG": 'disco',
+  "Electronic---Hip Hop": 'hip-hop',
+  "Electronic---Hip-House": 'house',
+  "Electronic---House": 'house',
+  "Electronic---IDM": 'idm',
+  "Electronic---Illbient": 'downtempo',
+  "Electronic---Industrial": null,
+  "Electronic---Italo House": 'house',
+  "Electronic---Italo-Disco": 'disco',
+  "Electronic---Italodance": 'eurodance',
+  "Electronic---Jazzdance": 'nu-jazz',
+  "Electronic---Juke": 'footwork',
+  "Electronic---Jumpstyle": 'jumpstyle',
+  "Electronic---Jungle": 'jungle',
+  "Electronic---Latin": 'latin',
+  "Electronic---Leftfield": null,
+  "Electronic---Makina": 'makina',
+  "Electronic---Minimal": 'minimal-techno',
+  "Electronic---Minimal Techno": 'minimal-techno',
+  "Electronic---Modern Classical": 'classical',
+  "Electronic---Musique Concrète": null,
+  "Electronic---Neofolk": 'folk',
+  "Electronic---New Age": 'ambient',
+  "Electronic---New Beat": null,
+  "Electronic---New Wave": 'synth-pop',
+  "Electronic---Noise": null,
+  "Electronic---Nu-Disco": 'disco-house',
+  "Electronic---Power Electronics": null,
+  "Electronic---Progressive Breaks": 'uk-breaks',
+  "Electronic---Progressive House": 'progressive-house',
+  "Electronic---Progressive Trance": 'progressive-trance',
+  "Electronic---Psy-Trance": 'psytrance',
+  "Electronic---Rhythmic Noise": null,
+  "Electronic---Schranz": 'hard-techno',
+  "Electronic---Sound Collage": null,
+  "Electronic---Speed Garage": 'uk-garage',
+  "Electronic---Speedcore": 'gabber',
+  "Electronic---Synth-pop": 'synth-pop',
+  "Electronic---Synthwave": 'synthwave',
+  "Electronic---Tech House": 'tech-house',
+  "Electronic---Tech Trance": 'trance',
+  "Electronic---Techno": 'techno',
+  "Electronic---Trance": 'trance',
+  "Electronic---Tribal": null,
+  "Electronic---Tribal House": 'house',
+  "Electronic---Trip Hop": 'downtempo',
+  "Electronic---Tropical House": 'house',
+  "Electronic---UK Garage": 'uk-garage',
+  "Electronic---Vaporwave": 'synthwave',
+  // Folk, World, & Country
+  "Folk, World, & Country---African": null,
+  "Folk, World, & Country---Bluegrass": 'country',
+  "Folk, World, & Country---Cajun": 'folk',
+  "Folk, World, & Country---Canzone Napoletana": 'folk',
+  "Folk, World, & Country---Catalan Music": 'folk',
+  "Folk, World, & Country---Celtic": 'folk',
+  "Folk, World, & Country---Country": 'country',
+  "Folk, World, & Country---Fado": 'folk',
+  "Folk, World, & Country---Flamenco": 'folk',
+  "Folk, World, & Country---Folk": 'folk',
+  "Folk, World, & Country---Gospel": null,
+  "Folk, World, & Country---Highlife": 'afrobeats',
+  "Folk, World, & Country---Hillbilly": 'country',
+  "Folk, World, & Country---Hindustani": 'folk',
+  "Folk, World, & Country---Honky Tonk": 'country',
+  "Folk, World, & Country---Indian Classical": 'classical',
+  "Folk, World, & Country---Laïkó": 'folk',
+  "Folk, World, & Country---Nordic": 'folk',
+  "Folk, World, & Country---Pacific": 'folk',
+  "Folk, World, & Country---Polka": 'folk',
+  "Folk, World, & Country---Raï": 'folk',
+  "Folk, World, & Country---Romani": 'folk',
+  "Folk, World, & Country---Soukous": null,
+  "Folk, World, & Country---Séga": 'folk',
+  "Folk, World, & Country---Volksmusik": 'folk',
+  "Folk, World, & Country---Zouk": null,
+  "Folk, World, & Country---Éntekhno": 'folk',
+  // Funk / Soul
+  "Funk / Soul---Afrobeat": 'afrobeats',
+  "Funk / Soul---Boogie": 'disco',
+  "Funk / Soul---Contemporary R&B": 'rnb',
+  "Funk / Soul---Disco": 'disco',
+  "Funk / Soul---Free Funk": 'funk',
+  "Funk / Soul---Funk": 'funk',
+  "Funk / Soul---Gospel": 'soul',
+  "Funk / Soul---Neo Soul": 'neo-soul',
+  "Funk / Soul---New Jack Swing": 'rnb',
+  "Funk / Soul---P.Funk": 'funk',
+  "Funk / Soul---Psychedelic": 'funk',
+  "Funk / Soul---Rhythm & Blues": 'rnb',
+  "Funk / Soul---Soul": 'soul',
+  "Funk / Soul---Swingbeat": 'rnb',
+  "Funk / Soul---UK Street Soul": 'soul',
+  // Hip Hop
+  "Hip Hop---Bass Music": 'uk-bass',
+  "Hip Hop---Boom Bap": 'boom-bap',
+  "Hip Hop---Bounce": 'hip-hop',
+  "Hip Hop---Britcore": 'uk-hip-hop',
+  "Hip Hop---Cloud Rap": 'hip-hop',
+  "Hip Hop---Conscious": 'conscious-hip-hop',
+  "Hip Hop---Crunk": 'hip-hop',
+  "Hip Hop---Cut-up/DJ": 'hip-hop',
+  "Hip Hop---DJ Battle Tool": 'hip-hop',
+  "Hip Hop---Electro": 'electro',
+  "Hip Hop---G-Funk": 'g-funk',
+  "Hip Hop---Gangsta": 'hip-hop',
+  "Hip Hop---Grime": 'grime',
+  "Hip Hop---Hardcore Hip-Hop": 'hip-hop',
+  "Hip Hop---Horrorcore": 'hip-hop',
+  "Hip Hop---Instrumental": 'hip-hop',
+  "Hip Hop---Jazzy Hip-Hop": 'hip-hop',
+  "Hip Hop---Miami Bass": 'electro',
+  "Hip Hop---Pop Rap": 'hip-hop',
+  "Hip Hop---Ragga HipHop": 'hip-hop',
+  "Hip Hop---RnB/Swing": 'rnb',
+  "Hip Hop---Screw": 'hip-hop',
+  "Hip Hop---Thug Rap": 'hip-hop',
+  "Hip Hop---Trap": 'trap',
+  "Hip Hop---Trip Hop": 'downtempo',
+  "Hip Hop---Turntablism": 'hip-hop',
+  // Jazz
+  "Jazz---Afro-Cuban Jazz": 'jazz',
+  "Jazz---Afrobeat": 'afrobeats',
+  "Jazz---Avant-garde Jazz": 'jazz',
+  "Jazz---Big Band": 'jazz',
+  "Jazz---Bop": 'jazz',
+  "Jazz---Bossa Nova": 'latin',
+  "Jazz---Contemporary Jazz": 'jazz',
+  "Jazz---Cool Jazz": 'jazz',
+  "Jazz---Dixieland": 'jazz',
+  "Jazz---Easy Listening": null,
+  "Jazz---Free Improvisation": 'jazz',
+  "Jazz---Free Jazz": 'jazz',
+  "Jazz---Fusion": 'jazz-funk',
+  "Jazz---Gypsy Jazz": 'jazz',
+  "Jazz---Hard Bop": 'jazz',
+  "Jazz---Jazz-Funk": 'jazz-funk',
+  "Jazz---Jazz-Rock": 'jazz',
+  "Jazz---Latin Jazz": 'jazz',
+  "Jazz---Modal": 'jazz',
+  "Jazz---Post Bop": 'jazz',
+  "Jazz---Ragtime": 'jazz',
+  "Jazz---Smooth Jazz": 'jazz',
+  "Jazz---Soul-Jazz": 'jazz',
+  "Jazz---Space-Age": null,
+  "Jazz---Swing": 'jazz',
+  // Latin
+  "Latin---Afro-Cuban": 'latin',
+  "Latin---Baião": 'latin',
+  "Latin---Batucada": 'latin',
+  "Latin---Beguine": 'latin',
+  "Latin---Bolero": 'latin',
+  "Latin---Boogaloo": 'latin',
+  "Latin---Bossanova": 'latin',
+  "Latin---Cha-Cha": 'latin',
+  "Latin---Charanga": 'latin',
+  "Latin---Compas": 'latin',
+  "Latin---Cubano": 'latin',
+  "Latin---Cumbia": 'latin',
+  "Latin---Descarga": 'latin',
+  "Latin---Forró": 'latin',
+  "Latin---Guaguancó": 'latin',
+  "Latin---Guajira": 'latin',
+  "Latin---Guaracha": 'latin',
+  "Latin---MPB": 'latin',
+  "Latin---Mambo": 'latin',
+  "Latin---Mariachi": 'latin',
+  "Latin---Merengue": 'latin',
+  "Latin---Norteño": 'latin',
+  "Latin---Nueva Cancion": 'latin',
+  "Latin---Pachanga": 'latin',
+  "Latin---Porro": 'latin',
+  "Latin---Ranchera": 'latin',
+  "Latin---Reggaeton": 'latin',
+  "Latin---Rumba": 'latin',
+  "Latin---Salsa": 'latin',
+  "Latin---Samba": 'latin',
+  "Latin---Son": 'latin',
+  "Latin---Son Montuno": 'latin',
+  "Latin---Tango": 'latin',
+  "Latin---Tejano": 'latin',
+  "Latin---Vallenato": 'latin',
+  // Non-Music
+  "Non-Music---Audiobook": null,
+  "Non-Music---Comedy": null,
+  "Non-Music---Dialogue": null,
+  "Non-Music---Education": null,
+  "Non-Music---Field Recording": null,
+  "Non-Music---Interview": null,
+  "Non-Music---Monolog": null,
+  "Non-Music---Poetry": null,
+  "Non-Music---Political": null,
+  "Non-Music---Promotional": null,
+  "Non-Music---Radioplay": null,
+  "Non-Music---Religious": null,
+  "Non-Music---Spoken Word": null,
+  // Pop
+  "Pop---Ballad": 'pop',
+  "Pop---Bollywood": 'pop',
+  "Pop---Bubblegum": 'pop',
+  "Pop---Chanson": 'pop',
+  "Pop---City Pop": 'pop',
+  "Pop---Europop": 'dance-pop',
+  "Pop---Indie Pop": 'indie-pop',
+  "Pop---J-pop": 'pop',
+  "Pop---K-pop": 'k-pop',
+  "Pop---Kayōkyoku": 'pop',
+  "Pop---Light Music": null,
+  "Pop---Music Hall": null,
+  "Pop---Novelty": null,
+  "Pop---Parody": null,
+  "Pop---Schlager": 'pop',
+  "Pop---Vocal": 'pop',
+  // Reggae
+  "Reggae---Calypso": null,
+  "Reggae---Dancehall": 'dancehall',
+  "Reggae---Dub": 'dub',
+  "Reggae---Lovers Rock": 'reggae',
+  "Reggae---Ragga": 'dancehall',
+  "Reggae---Reggae": 'reggae',
+  "Reggae---Reggae-Pop": 'reggae',
+  "Reggae---Rocksteady": 'reggae',
+  "Reggae---Roots Reggae": 'reggae',
+  "Reggae---Ska": 'reggae',
+  "Reggae---Soca": null,
+  // Rock
+  "Rock---AOR": 'rock',
+  "Rock---Acid Rock": 'rock',
+  "Rock---Acoustic": null,
+  "Rock---Alternative Rock": 'alternative-rock',
+  "Rock---Arena Rock": 'rock',
+  "Rock---Art Rock": 'rock',
+  "Rock---Atmospheric Black Metal": 'black-metal',
+  "Rock---Avantgarde": null,
+  "Rock---Beat": 'rock',
+  "Rock---Black Metal": 'black-metal',
+  "Rock---Blues Rock": 'rock',
+  "Rock---Brit Pop": 'britpop',
+  "Rock---Classic Rock": 'rock',
+  "Rock---Coldwave": null,
+  "Rock---Country Rock": 'rock',
+  "Rock---Crust": 'hardcore-punk',
+  "Rock---Death Metal": 'death-metal',
+  "Rock---Deathcore": 'metalcore',
+  "Rock---Deathrock": 'punk',
+  "Rock---Depressive Black Metal": 'black-metal',
+  "Rock---Doo Wop": 'soul',
+  "Rock---Doom Metal": 'metal',
+  "Rock---Dream Pop": 'shoegaze',
+  "Rock---Emo": 'punk',
+  "Rock---Ethereal": null,
+  "Rock---Experimental": null,
+  "Rock---Folk Metal": 'metal',
+  "Rock---Folk Rock": 'rock',
+  "Rock---Funeral Doom Metal": 'metal',
+  "Rock---Funk Metal": 'metal',
+  "Rock---Garage Rock": 'garage-rock',
+  "Rock---Glam": 'rock',
+  "Rock---Goregrind": 'death-metal',
+  "Rock---Goth Rock": 'rock',
+  "Rock---Gothic Metal": 'metal',
+  "Rock---Grindcore": 'death-metal',
+  "Rock---Grunge": 'grunge',
+  "Rock---Hard Rock": 'rock',
+  "Rock---Hardcore": 'hardcore-punk',
+  "Rock---Heavy Metal": 'metal',
+  "Rock---Indie Rock": 'indie-rock',
+  "Rock---Industrial": null,
+  "Rock---Krautrock": 'psychedelic-rock',
+  "Rock---Lo-Fi": 'indie-rock',
+  "Rock---Lounge": null,
+  "Rock---Math Rock": 'post-rock',
+  "Rock---Melodic Death Metal": 'death-metal',
+  "Rock---Melodic Hardcore": 'hardcore',
+  "Rock---Metalcore": 'metalcore',
+  "Rock---Mod": 'rock',
+  "Rock---Neofolk": 'folk',
+  "Rock---New Wave": 'synth-pop',
+  "Rock---No Wave": 'punk',
+  "Rock---Noise": null,
+  "Rock---Noisecore": 'hardcore-punk',
+  "Rock---Nu Metal": 'metal',
+  "Rock---Oi": 'punk',
+  "Rock---Parody": null,
+  "Rock---Pop Punk": 'pop-punk',
+  "Rock---Pop Rock": 'rock',
+  "Rock---Pornogrind": 'death-metal',
+  "Rock---Post Rock": 'post-rock',
+  "Rock---Post-Hardcore": 'hardcore-punk',
+  "Rock---Post-Metal": 'metal',
+  "Rock---Post-Punk": 'punk',
+  "Rock---Power Metal": 'metal',
+  "Rock---Power Pop": 'pop',
+  "Rock---Power Violence": 'hardcore-punk',
+  "Rock---Prog Rock": 'rock',
+  "Rock---Progressive Metal": 'metal',
+  "Rock---Psychedelic Rock": 'psychedelic-rock',
+  "Rock---Psychobilly": 'punk',
+  "Rock---Pub Rock": 'rock',
+  "Rock---Punk": 'punk',
+  "Rock---Rock & Roll": 'rock',
+  "Rock---Rockabilly": 'rock',
+  "Rock---Shoegaze": 'shoegaze',
+  "Rock---Ska": 'reggae',
+  "Rock---Sludge Metal": 'metal',
+  "Rock---Soft Rock": 'rock',
+  "Rock---Southern Rock": 'rock',
+  "Rock---Space Rock": 'rock',
+  "Rock---Speed Metal": 'metal',
+  "Rock---Stoner Rock": 'rock',
+  "Rock---Surf": 'rock',
+  "Rock---Symphonic Rock": 'rock',
+  "Rock---Technical Death Metal": 'death-metal',
+  "Rock---Thrash": 'metal',
+  "Rock---Twist": 'rock',
+  "Rock---Viking Metal": 'metal',
+  "Rock---Yé-Yé": 'pop',
+  // Stage & Screen
+  "Stage & Screen---Musical": 'soundtrack',
+  "Stage & Screen---Score": 'soundtrack',
+  "Stage & Screen---Soundtrack": 'soundtrack',
+  "Stage & Screen---Theme": 'soundtrack',
+});
+
+/** The Discogs top-level genre -> concept, for labels whose style has no concept. */
+const PARENT_MAP = Object.freeze({
+  'Blues': 'blues',
+  'Brass & Military': null,
+  "Children's": null,
+  'Classical': 'classical',
+  'Electronic': 'electronic',
+  'Folk, World, & Country': 'folk',
+  'Funk / Soul': 'soul',
+  'Hip Hop': 'hip-hop',
+  'Jazz': 'jazz',
+  'Latin': 'latin',
+  'Non-Music': null,
+  'Pop': 'pop',
+  'Reggae': 'reggae',
+  'Rock': 'rock',
+  'Stage & Screen': 'soundtrack',
+});
+
+/** The 400 labels in model output order. */
+const STYLE_LABELS = Object.freeze(Object.keys(STYLE_MAP));
+
+/** "Electronic---Deep House" -> "Deep House", for showing a label to a person. */
+const styleName = label => String(label).split('---')[1] ?? String(label);
+
+/**
+ * What a label means to the ontology.
+ * @param {string|number} labelOrIndex  a label, or a class index into STYLE_LABELS
+ * @returns {{ label: string, concept: string|null, reliability: number, via: 'style'|'parent'|'none' }}
+ */
+function styleConcept(labelOrIndex) {
+  const label = typeof labelOrIndex === 'number' ? STYLE_LABELS[labelOrIndex] : labelOrIndex;
+  if (label === undefined || !(label in STYLE_MAP)) return { label: label ?? null, concept: null, reliability: 0, via: 'none' };
+  const c = STYLE_MAP[label];
+  if (c) return { label, concept: c, reliability: 1, via: 'style' };
+  const p = PARENT_MAP[label.split('---')[0]] ?? null;
+  return p ? { label, concept: p, reliability: FALLBACK_RELIABILITY, via: 'parent' }
+           : { label, concept: null, reliability: 0, via: 'none' };
+}
+
+/**
+ * A record's top styles as named, mapped hints: [{ label, name, p, concept, reliability }].
+ * Unmapped labels are dropped here, never passed on as unknown concepts.
+ */
+function styleHints(styles = []) {
+  const out = [];
+  for (const [i, p] of styles) {
+    const m = styleConcept(i);
+    if (m.concept) out.push({ label: m.label, name: styleName(m.label), p, concept: m.concept, reliability: m.reliability });
+  }
+  return out;
+}
+return { AUDIO_VOCAB_VERSION, FALLBACK_RELIABILITY, STYLE_MAP, PARENT_MAP, STYLE_LABELS, styleName, styleConcept, styleHints };
+})();
+/* ---- core/audio/sections.mjs ---- */
+__mod["core/audio/sections.mjs"] = (function () {
+// Sections and hybrids: what changes inside one clip (WP-H1).
+//
+// A record keeps, per patch (~2 s of audio, hop ~1 s), its top SECTION_TOP
+// styles in time order. Phase 0 saw patch-level top-1 agreement inside one
+// preview range from 17% to 100%: an intro that is one thing and a drop that
+// is another shows up clearly. That is what a hybrid proposal is built from
+// (WP-H2), so this file turns the raw timeline into runs and a verdict.
+//
+// Labels are hints (29% top-1 on scene genres). "Hybrid" here means the model
+// heard two different styles lead different parts of the clip, or could not
+// separate two styles overall — not that the track IS two genres. The
+// proposals that use it ask the listener.
+
+const SECTIONS_VERSION = '1.0.0';
+/** Each of two styles must lead at least this share of sections. */
+const HYBRID_SHARE = 0.3;
+/** Or the overall top two must be this close (absolute probability). */
+const HYBRID_MARGIN = 0.05;
+/** And the second style must be a real signal, not two near-zero sigmoids. */
+const MIN_STYLE_P = 0.1;
+
+/**
+ * Runs of consistent top-1 style over time.
+ * @param {{ sections?: Array<Array<[number, number]>> }} record
+ * @returns {Array<{ style: number, from: number, to: number, length: number, meanP: number }>}  patch indices, `to` inclusive
+ */
+function sectionsOf(record) {
+  const secs = record?.sections ?? [];
+  const runs = [];
+  secs.forEach((sec, i) => {
+    const top = sec?.[0];
+    if (!top) return;
+    const [style, p] = top;
+    const last = runs[runs.length - 1];
+    if (last && last.style === style && last.to === i - 1) {
+      last.to = i; last.length++; last._sum += p;
+    } else runs.push({ style, from: i, to: i, length: 1, _sum: p });
+  });
+  return runs.map(({ _sum, ...r }) => ({ ...r, meanP: +(_sum / r.length).toFixed(4) }));
+}
+
+/** Share of sections each style leads, highest first: [[style, share], ...]. */
+function leadShares(record) {
+  const secs = (record?.sections ?? []).filter(s => s?.[0]);
+  if (!secs.length) return [];
+  const n = new Map();
+  for (const s of secs) n.set(s[0][0], (n.get(s[0][0]) ?? 0) + 1);
+  return [...n].map(([k, c]) => [k, c / secs.length]).sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+}
+
+/** Fraction of sections whose top style is the record's overall top style. 1 = one style throughout. */
+function agreement(record) {
+  const top = record?.styles?.[0]?.[0];
+  const secs = (record?.sections ?? []).filter(s => s?.[0]);
+  if (top == null || !secs.length) return null;
+  return secs.filter(s => s[0][0] === top).length / secs.length;
+}
+
+/**
+ * Is this clip a hybrid of two styles?
+ * True when two styles each lead ≥ HYBRID_SHARE of sections, or when the
+ * overall top two are within HYBRID_MARGIN of each other (and both above
+ * MIN_STYLE_P). A miss or a record with no styles is never a hybrid.
+ * @returns {{ hybrid: boolean, styles: [number, number]|null, why: 'sections'|'margin'|null }}
+ */
+function hybridOf(record) {
+  const none = { hybrid: false, styles: null, why: null };
+  if (!record || record.miss || !record.styles?.length) return none;
+  const shares = leadShares(record);
+  if (shares.length >= 2 && shares[0][1] >= HYBRID_SHARE && shares[1][1] >= HYBRID_SHARE && (record.sections?.length ?? 0) >= 2)
+    return { hybrid: true, styles: [shares[0][0], shares[1][0]], why: 'sections' };
+  const [a, b] = record.styles;
+  if (a && b && b[1] >= MIN_STYLE_P && a[1] - b[1] <= HYBRID_MARGIN)
+    return { hybrid: true, styles: [a[0], b[0]], why: 'margin' };
+  return none;
+}
+
+const isHybrid = record => hybridOf(record).hybrid;
+return { SECTIONS_VERSION, HYBRID_SHARE, HYBRID_MARGIN, MIN_STYLE_P, sectionsOf, leadShares, agreement, hybridOf, isHybrid };
+})();
+/* ---- core/recommend/audio-gaps.mjs ---- */
+__mod["core/recommend/audio-gaps.mjs"] = (function () {
+const { audioIndex, buildAudioProfiles, MIN_AUDIO_MEMBERS } = __mod["core/intrinsic/audio.mjs"];
+const { styleHints } = __mod["core/sources/audio-vocab.mjs"];
+const { hybridOf, MIN_STYLE_P } = __mod["core/audio/sections.mjs"];
+// New playlists by sound (docs/AUDIO-BUILD-PLAN.md WP-H2).
+//
+// The tag half of this screen (gaps.mjs) can only see genres somebody has
+// tagged. This half looks at how the account's own unfiled tracks *sound*
+// against its own genre playlists, and proposes three things:
+//
+//  - **Pick one of these two.** Tracks that sound like two of your playlists
+//    about equally. Grouped by the pair, so the question is asked once for a
+//    pile of records, not once per track.
+//  - **A hybrid playlist.** A tight group of tracks that sits *between* two
+//    playlists: close to both, inside neither, closer to the midpoint than to
+//    either. Named from the group's top two styles (core/sources/audio-vocab),
+//    with how many of them change style mid-clip (core/audio/sections) as
+//    supporting evidence.
+//  - **New genre?** A tight group near none of your playlists. Left unnamed:
+//    the model's style labels are weak on scene genres (29% top-1 in phase 0),
+//    so naming it is the listener's job until WP-C3.
+//
+// Proposals only. Nothing here creates, moves or removes anything; the screen
+// does that on a tap. Because they are suggestions to *create*, not filing
+// changes, they are shown whatever WP-E2's gate says, and always say "by
+// sound". Uses only this account's records and playlists — nothing pooled
+// across accounts (docs/SMARTER-GENRES-PLAN.md §3).
+//
+// With no records every list is empty, and the screen renders what it did
+// before this file existed.
+
+
+
+
+const AUDIO_GAPS_VERSION = '1.0.0';
+
+// Every closeness below is measured in the account's own units, never as a raw
+// cosine: how close two tracks of one genre sit depends on the model and on
+// the library (EffNet embeddings are all fairly alike in absolute terms, and
+// high-dimensional cosines bunch up).
+//
+//  - **fit** to a playlist: (cosine to its centre − `outside`) / (`inside` −
+//    `outside`), where `inside` is the median cosine of its own members to
+//    that centre and `outside` the median of the account's *other* genre
+//    playlists' members. 1 sounds like a typical member, 0 like music from
+//    another of your playlists.
+//  - **neighbour** and **tightness** default to the account's own playlists:
+//    two tracks are neighbours when they are as close as two members of a
+//    typical playlist usually are (its lower quartile pair), and a group is
+//    tight when its members sit as close to their centre as a typical
+//    playlist's lower quartile does.
+const SOUND = Object.freeze({
+  /** A track fitting both of its top two at least this well, and… */
+  pickFit: 0.35,
+  /** …with them closer than this, is a toss-up between them. */
+  pickMargin: 0.15,
+  /** Fewer tracks than this sharing one pair is not worth asking about on this screen. */
+  minPick: 3,
+  /** With learned probabilities: the top two within this, and together at least `pickMass`. */
+  probMargin: 0.15,
+  pickMass: 0.6,
+  /** Cosine at which two tracks are neighbours; null = from the account's playlists. */
+  neighbour: null,
+  /** A group needs this many tracks to be a playlist anybody would want proposed. */
+  minCluster: 8,
+  /** Mean member cosine to the group's centre; null = from the account's playlists. */
+  tightness: null,
+  /** Hybrid: both of the two nearest playlists fit at least this well (group mean)… */
+  nearFit: 0.35,
+  /** …within this of each other… */
+  hybridMargin: 0.3,
+  /** …and clear of the third by this much. */
+  hybridGap: 0.25,
+  /** New genre: no playlist fits the group better than this. */
+  orphanFit: 0.35,
+  /** Groups are looked for among at most this many tracks, most played first (O(n²)). */
+  maxTracks: 1200,
+});
+
+const idOf = t => (typeof t === 'string' ? t : t?.id) || null;
+
+function dot(a, b) {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += a[i] * b[i];
+  return d;
+}
+
+function unitSum(vs) {
+  const out = new Float64Array(vs[0].length);
+  for (const v of vs) for (let i = 0; i < out.length; i++) out[i] += v[i];
+  let ss = 0;
+  for (let i = 0; i < out.length; i++) ss += out[i] * out[i];
+  if (!(ss > 0)) return null;
+  const inv = 1 / Math.sqrt(ss);
+  for (let i = 0; i < out.length; i++) out[i] *= inv;
+  return out;
+}
+
+function quantile(xs, q) {
+  if (!xs.length) return null;
+  const s = xs.slice().sort((a, b) => a - b);
+  const at = (s.length - 1) * q, lo = Math.floor(at), hi = Math.ceil(at);
+  return s[lo] + (s[hi] - s[lo]) * (at - lo);
+}
+
+const playedBy = (track, active) => !!active?.size && (track?.artists ?? []).some(a => a?.name && active.has(a.name));
+const mean = xs => xs.reduce((s, x) => s + x, 0) / xs.length;
+const r4 = x => +x.toFixed(4);
+
+/** Learned output in any of the shapes the learner hands back → Map<playlistId, number>. */
+function asMap(x) {
+  if (!x) return null;
+  if (x instanceof Map) return x;
+  if (Array.isArray(x)) return new Map(x);
+  if (typeof x === 'object') return new Map(Object.entries(x));
+  return null;
+}
+
+/**
+ * The account's genre playlists as sound: centre, and how close its own
+ * members and everyone else's sit to it, for those with enough heard members.
+ * Mirrors and non-genre playlists are not destinations.
+ */
+function soundPlaylists({ lib, targets, index, isMirror = null, minMembers = MIN_AUDIO_MEMBERS } = {}) {
+  const allowed = new Set(targets ?? []);
+  const dests = (lib?.playlists ?? []).filter(p => p?.id && allowed.has(p.id) && !isMirror?.(p))
+    .map(p => ({ id: p.id, name: p.name ?? p.id, tracks: p.tracks ?? [] }));
+  const { profiles } = buildAudioProfiles(dests, index, { minMembers });
+  const lists = [];
+  for (const d of dests) {
+    const prof = profiles.get(d.id);
+    if (!prof?.centroid || prof.members < minMembers) continue;
+    // At most 40 members each: 780 pairs, and plenty for a median.
+    const some = [...prof.ids].sort().slice(0, 40);
+    const own = some.map(id => dot(index.get(id).emb, prof.centroid));
+    const pair = [];
+    for (let i = 0; i < some.length; i++) for (let j = i + 1; j < some.length; j++)
+      pair.push(dot(index.get(some[i]).emb, index.get(some[j]).emb));
+    lists.push({ id: d.id, name: d.name, centroid: prof.centroid, members: prof.members, some,
+                 inside: quantile(own, 0.5), coherence: quantile(own, 0.25), pair: quantile(pair, 0.25) });
+  }
+  for (const l of lists) {
+    const others = lists.filter(x => x !== l).flatMap(x => x.some.filter(id => !l.some.includes(id)));
+    l.outside = others.length ? quantile(others.map(id => dot(index.get(id).emb, l.centroid)), 0.5) : 0;
+    l.scale = Math.max(l.inside - l.outside, 1e-3);
+  }
+  return lists.map(({ some, ...l }) => l);
+}
+
+/** The group's top styles, summed over members, as named hints with distinct concepts. */
+function topStyles(ids, index, k = 2) {
+  const sum = new Map();
+  for (const id of ids) for (const [i, p] of index.get(id)?.styles ?? []) sum.set(i, (sum.get(i) ?? 0) + p);
+  const ranked = [...sum].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([i, p]) => [i, p / ids.length]);
+  const out = [], seen = new Set();
+  for (const h of styleHints(ranked)) {
+    // A style at a few percent is the model shrugging, not a name.
+    if (h.p < MIN_STYLE_P) break;
+    if (seen.has(h.concept)) continue;
+    seen.add(h.concept);
+    out.push({ name: h.name, concept: h.concept, p: r4(h.p) });
+    if (out.length === k) break;
+  }
+  return out;
+}
+
+/**
+ * Tight groups among these tracks. Deterministic: the track with the most
+ * close neighbours seeds a group of itself and its unclaimed neighbours, which
+ * is kept only if it is big and tight enough; then the next, and so on. Random
+ * noise has almost no close neighbours, so it forms no group.
+ */
+function tightGroups(ids, index, { neighbour, minCluster = SOUND.minCluster, tightness } = {}) {
+  if (!Number.isFinite(neighbour) || !Number.isFinite(tightness)) return [];
+  const embs = ids.map(id => index.get(id).emb);
+  const near = ids.map(() => []);
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+    if (dot(embs[i], embs[j]) >= neighbour) { near[i].push(j); near[j].push(i); }
+  }
+  const order = ids.map((_, i) => i).sort((a, b) => near[b].length - near[a].length || (ids[a] < ids[b] ? -1 : 1));
+  const taken = new Set();
+  const groups = [];
+  for (const seed of order) {
+    if (taken.has(seed) || near[seed].length + 1 < minCluster) continue;
+    const members = [seed, ...near[seed].filter(j => !taken.has(j))];
+    if (members.length < minCluster) continue;
+    const centre = unitSum(members.map(i => embs[i]));
+    if (!centre) continue;
+    const tight = mean(members.map(i => dot(embs[i], centre)));
+    if (tight < tightness) continue;
+    for (const i of members) taken.add(i);
+    groups.push({ ids: members.map(i => ids[i]).sort(), tightness: r4(tight) });
+  }
+  return groups;
+}
+
+/**
+ * Every proposal by sound for one account.
+ *
+ * @param {object} p
+ * @param {object} p.lib
+ * @param {Iterable<string>} p.targets     ids of the account's genre playlists
+ * @param {Iterable<object>|Map|object} [p.records]  audio records (or pass `index`)
+ * @param {Map} [p.index]                  from audioIndex, if already built
+ * @param {(trackId: string) => Map|Array|object|null} [p.learned]
+ *        per-playlist probabilities from the learner (WP-L1), when the caller has
+ *        them; the toss-up test then reads those instead of raw closeness
+ * @param {Set<string>} [p.active]         artist names Spotify says are being played
+ * @param {Function} [p.isMirror]
+ * @returns {{ pick: object[], hybrids: object[], orphans: object[], heard: number, version: string }}
+ */
+function soundProposals({ lib, targets, records = null, index = null, learned = null, active = null,
+                                 isMirror = null, mel = undefined, ...opts } = {}) {
+  const o = { ...SOUND, ...opts };
+  const empty = { pick: [], hybrids: [], orphans: [], heard: 0, version: AUDIO_GAPS_VERSION };
+  const idx = index ?? audioIndex(records, { mel });
+  if (!idx?.size) return empty;
+  const lists = soundPlaylists({ lib, targets, index: idx, isMirror });
+  if (lists.length < 2) return empty;
+  const byList = new Map(lists.map(l => [l.id, l]));
+  const fit = (emb, l) => (dot(emb, l.centroid) - l.outside) / l.scale;
+  const groupOpts = { minCluster: o.minCluster,
+    neighbour: o.neighbour ?? quantile(lists.map(l => l.pair), 0.5),
+    tightness: o.tightness ?? quantile(lists.map(l => l.coherence), 0.5) };
+
+  // The tracks with no genre playlist yet, exactly as gaps.mjs counts them.
+  const allowed = new Set(targets ?? []);
+  const homed = new Set();
+  for (const p of lib?.playlists ?? []) if (allowed.has(p.id)) for (const t of p.tracks ?? []) if (t?.id) homed.add(t.id);
+  const tracks = new Map();
+  for (const t of lib?.liked ?? []) if (t?.id && !tracks.has(t.id)) tracks.set(t.id, t);
+  for (const p of lib?.playlists ?? []) {
+    if (!p?.id || isMirror?.(p)) continue;
+    for (const t of p.tracks ?? []) if (t?.id && !tracks.has(t.id)) tracks.set(t.id, t);
+  }
+  const liked = new Set((lib?.liked ?? []).map(idOf));
+  const rank = id => (playedBy(tracks.get(id), active) ? 0 : 2) + (liked.has(id) ? 0 : 1);
+  const heard = [...tracks.keys()].filter(id => !homed.has(id) && idx.has(id))
+    .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1));
+  if (!heard.length) return empty;
+
+  const byFit = rows => rows.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const fitOf = new Map(heard.map(id => [id, byFit(lists.map(l => [l.id, fit(idx.get(id).emb, l)]))]));
+  const played = ids => ids.filter(id => playedBy(tracks.get(id), active)).length;
+  const artists = ids => [...new Set(ids.flatMap(id => (tracks.get(id)?.artists ?? []).slice(0, 1).map(a => a?.name).filter(Boolean)))].slice(0, 5);
+  const pl = id => ({ id, name: byList.get(id).name });
+
+  // Groups first: a pile of tracks that is its own thing should be proposed as
+  // that, not asked about one pair at a time.
+  const hybrids = [], orphans = [], grouped = new Set();
+  for (const g of tightGroups(heard.slice(0, o.maxTracks), idx, groupOpts)) {
+    const fits = byFit(lists.map(l => [l.id, mean(g.ids.map(id => fit(idx.get(id).emb, l)))]));
+    const [[a, fa], [b, fb]] = fits, fc = fits[2]?.[1] ?? -Infinity;
+    const ids = g.ids.slice().sort((x, y) => rank(x) - rank(y) || (x < y ? -1 : 1));
+    const base = { size: ids.length, played: played(ids), liked: ids.filter(id => liked.has(id)).length,
+                   tightness: g.tightness, ids, artists: artists(ids), styles: topStyles(ids, idx) };
+    if (fa < o.orphanFit) {
+      for (const id of ids) grouped.add(id);
+      orphans.push({ kind: 'orphan', ...base, nearest: { ...pl(a), fit: r4(fa) } });
+      continue;
+    }
+    // Between: both near, neither ahead, the third far behind, and the
+    // midpoint of the two nearer than either.
+    const mid = unitSum([byList.get(a).centroid, byList.get(b).centroid]);
+    const toMid = mid ? mean(ids.map(id => dot(idx.get(id).emb, mid))) : -Infinity;
+    const toA = mean(ids.map(id => dot(idx.get(id).emb, byList.get(a).centroid)));
+    const toB = mean(ids.map(id => dot(idx.get(id).emb, byList.get(b).centroid)));
+    if (fb >= o.nearFit && fa - fb <= o.hybridMargin && fb - fc >= o.hybridGap && toMid > Math.max(toA, toB)) {
+      for (const id of ids) grouped.add(id);
+      const mixed = ids.filter(id => hybridOf(idx.get(id).rec).hybrid).length;
+      const name = base.styles.length >= 2 ? `${base.styles[0].name} / ${base.styles[1].name}`
+        : `${byList.get(a).name} / ${byList.get(b).name}`;
+      hybrids.push({ kind: 'hybrid', ...base, name, between: [{ ...pl(a), fit: r4(fa) }, { ...pl(b), fit: r4(fb) }], mixed });
+    }
+    // Otherwise it sits inside one playlist: filing's job, not a new playlist.
+  }
+
+  // Toss-ups, grouped by the pair.
+  const pairs = new Map();
+  for (const id of heard) {
+    if (grouped.has(id)) continue;
+    let pair = null;
+    const probs = learned ? asMap(learned(id)) : null;
+    if (probs?.size >= 2) {
+      const top = [...probs].filter(([k, v]) => byList.has(k) && Number.isFinite(v))
+        .sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1));
+      if (top.length >= 2 && top[0][1] - top[1][1] <= o.probMargin && top[0][1] + top[1][1] >= o.pickMass)
+        pair = [top[0][0], top[1][0]];
+    } else {
+      const [[a, fa], [b, fb]] = fitOf.get(id);
+      if (fb >= o.pickFit && fa - fb <= o.pickMargin) pair = [a, b];
+    }
+    if (!pair) continue;
+    const key = pair.slice().sort().join('\u0000');
+    if (!pairs.has(key)) pairs.set(key, { lists: pair.slice().sort(), ids: [] });
+    pairs.get(key).ids.push(id);
+  }
+  const pick = [...pairs.values()].filter(p => p.ids.length >= o.minPick).map(p => ({
+    kind: 'pick', between: p.lists.map(pl), size: p.ids.length, played: played(p.ids),
+    liked: p.ids.filter(id => liked.has(id)).length, ids: p.ids, artists: artists(p.ids),
+  }));
+
+  const order = (x, y) => y.played - x.played || y.size - x.size || (x.ids[0] < y.ids[0] ? -1 : 1);
+  return { pick: pick.sort(order), hybrids: hybrids.sort(order), orphans: orphans.sort(order),
+           heard: heard.length, version: AUDIO_GAPS_VERSION };
+}
+return { AUDIO_GAPS_VERSION, SOUND, soundPlaylists, tightGroups, soundProposals };
+})();
 globalThis["BetterfyIntrinsic"] = __mod["core/intrinsic/space.mjs"];
 globalThis["BetterfyColdStart"] = __mod["core/intrinsic/coldstart.mjs"];
 globalThis["BetterfyExplain"] = __mod["core/intrinsic/explain.mjs"];
@@ -6572,4 +7469,5 @@ globalThis["BetterfyBridgeFetch"] = __mod["core/intrinsic/bridge-fetch.mjs"];
 globalThis["BetterfyDeezer"] = __mod["core/sources/deezer.mjs"];
 globalThis["BetterfyCalibrate"] = __mod["core/intrinsic/calibrate.mjs"];
 globalThis["BetterfyGaps"] = __mod["core/recommend/gaps.mjs"];
+globalThis["BetterfyAudioGaps"] = __mod["core/recommend/audio-gaps.mjs"];
 globalThis["BetterfyWikidata"] = __mod["core/sources/wikidata.mjs"];

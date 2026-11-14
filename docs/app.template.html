@@ -89,6 +89,7 @@ __STYLES__</style>
     <div><b>Misfiles, by axis</b><p>A genre playlist is only ever compared with other genre playlists.</p></div>
     <div><b>Backlog inbox</b><p>Unfiled tracks, one at a time, each with a suggested home.</p></div>
     <div><b>Cross-filing left alone</b><p>Surfaced for you, never removed automatically.</p></div>
+    <div class="wide" data-flag="listening"><b>Listens, if you ask it to</b><p>Optional: places tracks by how they sound, from 30-second previews analysed on this device.</p></div>
   </div>
 
   <!-- Setup panel: only for whoever administers the Spotify app. Hidden unless
@@ -124,7 +125,7 @@ __STYLES__</style>
   <p class="lede" style="font-size:13px">
     <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
     genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a>
-    (Spotify no longer provides genre — top yours up from the Playlists screen) ·
+    (Spotify no longer provides genre — top yours up from the Sources screen) ·
     release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
     <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.
   </p>
@@ -172,10 +173,15 @@ __STYLES__</style>
       <button class="nav" data-v="lists" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Playlists</span><span class="c" data-count="lists"></span></button>
       <button class="nav" data-v="engine" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.1"/><path d="M12 4.2V7"/><path d="M12 17v2.8"/><path d="M4.2 12H7"/><path d="M17 12h2.8"/><path d="M6.5 6.5 8.4 8.4"/><path d="M15.6 15.6l1.9 1.9"/><path d="M17.5 6.5 15.6 8.4"/><path d="M8.4 15.6 6.5 17.5"/></svg></span><span class="lbl">Engine</span></button>
       <button class="nav" data-v="history" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 12a8.4 8.4 0 1 0 2.6-6"/><path d="M3.4 3.6v4.2h4.2"/><path d="M12 7.8V12l3 1.8"/></svg></span><span class="lbl">History</span></button>
+      <button class="nav" data-v="sources" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="2.8"/><path d="M4.5 6v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6"/><path d="M4.5 12v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></svg></span><span class="lbl">Sources</span></button>
     </div>
     <!-- The screens that don't sit on the bar, on a phone and on a desktop. -->
     <button class="tabmore" id="tabMore" aria-expanded="false" aria-controls="moreSheet">
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
+    <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): end of the top bar
+         on a desktop, floating above the tab bar on a phone. Empty — and so
+         invisible — until something calls setListen() with a ListenVM. -->
+    <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
       <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build __BUILD__</span>
@@ -373,9 +379,11 @@ const THEME_KEY = 'betterfy-theme';
  * one colour — it is the same colour twice, and which half you get follows the
  * theme rather than being something else to choose. */
 const ACCENTS = [
-  ['Ember',  '#FF7A52', '#D9502B'], ['Amber',  '#FFB43F', '#B37711'],
-  ['Lime',   '#C3DE55', '#6B9524'], ['Mint',   '#7AE0A6', '#17915F'],
-  ['Jade',   '#43D2A6', '#0E8A6D'], ['Teal',   '#4CD0D6', '#12878C'],
+  // The light halves of the first six sit a few points darker than they first
+  // did, just enough for white text on them (a primary button) to reach 4.5:1.
+  ['Ember',  '#FF7A52', '#CD4825'], ['Amber',  '#FFB43F', '#9F6A0F'],
+  ['Lime',   '#C3DE55', '#5C801F'], ['Mint',   '#7AE0A6', '#158557'],
+  ['Jade',   '#43D2A6', '#0D8469'], ['Teal',   '#4CD0D6', '#118186'],
   ['Sky',    '#63C8FF', '#1F72C0'], ['Blue',   '#8AA6FF', '#3F55C4'],
   ['Lilac',  '#C79BFF', '#6F4FCB'], ['Orchid', '#FF95E4', '#AE3B93'],
   ['Rose',   '#FF8A9E', '#C13A5A'], ['Sand',   '#E4C79B', '#8C6B3C'],
@@ -423,6 +431,8 @@ const hsl = (h,s,l) => `hsl(${((h%360)+360)%360} ${Math.max(0,Math.min(100,s))}%
  * cannot read. This walks the lightness until the colour is actually dark
  * enough (on a light background) or light enough (on a dark one).
  */
+/** Relative luminance of #17100B, the dark ink printed on a bright accent. */
+const INK_DARK_L = 0.0058;
 function lumOf(h, s, l) {
   h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
   const c = (1 - Math.abs(2*l - 1)) * s, x = c * (1 - Math.abs((h/60) % 2 - 1)), m = l - c/2;
@@ -467,10 +477,13 @@ function applyTheme() {
   // The top stop of the logo tile's gradient — a lift rather than a second hue,
   // so the mark stays one colour however far the sliders are pushed.
   root.setProperty('--accent-lift', hsl(hue, Math.min(depth+6,100), Math.min(brightness+9,92)));
-  // Which of the two inks to print on the accent, decided by how bright the
-  // colour actually is rather than by its lightness number: a 55% yellow and a
-  // 55% blue are nowhere near as bright as each other.
-  root.setProperty('--accent-ink', lumOf(hue, depth, brightness) > 0.42 ? '#17100B' : '#FFFFFF');
+  // Which of the two inks to print on the accent: whichever has the higher
+  // contrast with it, measured on how bright the colour actually is rather
+  // than its lightness number (a 55% yellow and a 55% blue are nowhere near as
+  // bright as each other). The old fixed cut-off at 0.42 put white on the
+  // dark theme's Ember, Blue and Rose at under 2.6:1.
+  const accL = lumOf(hue, depth, brightness);
+  root.setProperty('--accent-ink', 1.05 / (accL + .05) >= (accL + .05) / (INK_DARK_L + .05) ? '#FFFFFF' : '#17100B');
 
   // Eight hues spun off the chosen accent. Everything on screen that isn't a
   // control — stat tiles, screen headers, the tab bar, the landing cards —
@@ -1663,15 +1676,16 @@ function moreButton(key, total) {
 
 // Bar order, which is also swipe order: swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
-const VORDER = ['home','inbox','tidy','discover','shuffle','new','lists','engine','history'];
+const VORDER = ['home','inbox','tidy','discover','shuffle','new','lists','engine','history','sources'];
 // The five colours of the mark, one per screen — see the [data-v=…] rules in
 // the stylesheet, which have to agree with this.
 const VHUE = { home:'accent', inbox:'m0', tidy:'m1', discover:'m3', shuffle:'m4',
-               new:'m2', lists:'m4', engine:'m2', history:'m3' };
+               new:'m2', lists:'m4', engine:'m2', history:'m3', sources:'m1' };
 const VTITLE = { home:'Home', inbox:'File', tidy:'Tidy', discover:'Discover', shuffle:'Shuffle',
-                 new:'New playlists', lists:'Playlists', engine:'Engine', history:'History' };
+                 new:'New playlists', lists:'Playlists', engine:'Engine', history:'History',
+                 sources:'Sources' };
 // The three that live behind "More" rather than on the bar.
-const SECONDARY = new Set(['new','lists','engine','history']);
+const SECONDARY = new Set(['new','lists','engine','history','sources']);
 let toastT;
 function toast(msg, undoFn) {
   const el = $('#toast');
@@ -1883,6 +1897,7 @@ const ACT_IC = {
   discover: '<circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/>',
   shuffle: '<path d="M17 4.5 20.5 7 17 9.5"/><path d="M17 14.5 20.5 17 17 19.5"/><path d="M3.5 7h3.2c1.2 0 2.3.6 3 1.6l4.6 6.8c.7 1 1.8 1.6 3 1.6h3.2"/><path d="M3.5 17h3.2c1.2 0 2.3-.6 3-1.6l.9-1.3"/><path d="M14.4 9.9l.9-1.3c.7-1 1.8-1.6 3-1.6h2.2"/>',
 };
+ACT_IC.heard = '<path d="M5 14.5v4"/><path d="M9.5 9.5v9"/><path d="M14 5v13.5"/><path d="M18.5 10.5v8"/>';
 const actIcon = v => `<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ACT_IC[v]}</svg></span>`;
 
@@ -1914,6 +1929,10 @@ function vHome() {
       found ? 'Built from what you actually played, minus everything you have.' : 'Run a search: weighted by what you played, minus what you own.'],
     ['shuffle', shufflable, 'playlists to re-order', 'Spacing that keeps the same artist from clumping.'],
   ];
+  // A fifth card once listening has ever run, and never before: a listener who
+  // never turns it on gets the same four cards, byte for byte.
+  if (listenEverRan()) acts.push(['heard', listenHeard(), listenHeard() === 1 ? 'track heard' : 'tracks heard',
+    'Previews listened to on this device, to place tracks by how they sound.']);
 
   // Where the library sits, as one bar over one population: your liked songs.
   // It used to mix three that came from different ones — liked-and-filed,
@@ -1955,8 +1974,8 @@ function vHome() {
       </div>
     </div>
 
-    <div class="acts4">${acts.map(([v, n, label, desc]) => `
-      <button class="act" data-go="${v}" style="--ac:var(--${VHUE[v]}); --ac-ink:var(--${VHUE[v]}-ink)">
+    <div class="acts4${acts.length > 4 ? ' five' : ''}">${acts.map(([v, n, label, desc]) => `
+      <button class="act" data-go="${v === 'heard' ? listenTarget() : v}"${v === 'heard' ? ' data-heard' : ''} style="--ac:var(--${VHUE[v] ?? HEARD_HUE}); --ac-ink:var(--${VHUE[v] ?? HEARD_HUE}-ink)">
         ${actIcon(v)}
         <span class="n">${n.toLocaleString()}</span>
         <span class="l">${esc(label)}</span>
@@ -1983,7 +2002,7 @@ function vHome() {
           <div><span>Version clashes</span><b class="mono">${clash.toLocaleString()}</b></div>
           <div><span>Genre coverage</span><b class="mono">${cov.pct}%</b></div>
           <hr>
-          <p>Genre comes from Last.fm — Spotify stopped providing it. Top yours up under Playlists.</p>
+          <p>Genre comes from Last.fm — Spotify stopped providing it. Top yours up under Sources.</p>
         </div>
       </div>
     </div>
@@ -1999,13 +2018,62 @@ function vHome() {
       const cover = t.art
         ? `<img class="cov" src="${esc(t.art)}" alt="" loading="lazy" decoding="async">`
         : `<span class="cov" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h + 48) % 360} 58% 44%))">${esc((t.title || '?').trim()[0] ?? '?')}</span>`;
-      return `<button class="u" data-goinbox="${i}">${cover}<span class="bd">
+      return `<button class="u" data-goinbox="${i}" title="${esc(t.title)} — ${esc(t.artist)}">${cover}<span class="bd">
         <span class="t">${esc(t.title)}</span>
         <span class="a">${esc(t.artist)}</span>
         <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
           ? `→ ${esc(best.name)} ${(best.score * 100).toFixed(0)}%` : '→ no confident pick'}</span>
       </span></button>`;
     }).join('')}</div>` : ''}`;
+}
+
+/* ---------- the listening indicator (docs/UI-BUILD-PLAN.md §2.5) ----------
+ * The chrome owns the slot; listenPill() (web/ui/sound.mjs) owns what is in it;
+ * the audio build owns the state and hands it over as a plain ListenVM through
+ * setListen(). Nothing here reads an AudioRecord or knows how listening works.
+ * With no ListenVM the slot stays empty and Home keeps its four cards. */
+let LISTEN = null;
+const HEARD_HUE = 'm2';
+/** Where a tap on the indicator or the Heard card goes: Sources → Listening once
+ *  that screen exists (UI-3), Playlists until then. */
+const listenTarget = () => (typeof VIEWS !== 'undefined' && VIEWS.sources) ? 'sources' : 'lists';
+/** Tracks heard so far, all runs together: B2's ListenVM counts them as `heard`
+ *  (`done` restarts with every run), and a bare ListenVM falls back to `done`. */
+const listenHeard = () => LISTEN ? (LISTEN.heard ?? LISTEN.done ?? 0) : 0;
+/** Ever run: something heard, or a run going or finished. Switched on but
+ *  paused before the first track (no Wi-Fi yet) is not "ran". */
+const listenEverRan = () => !!LISTEN && (listenHeard() > 0 || LISTEN.state === 'running' || LISTEN.state === 'done');
+
+/** The one entry point for the audio side: call with a ListenVM, or null to clear. */
+function setListen(vm) {
+  const had = listenEverRan();
+  LISTEN = vm ?? null;
+  paintListen();
+  if (typeof view === 'undefined' || view !== 'home' || !$('#main')) return;
+  // Only a card appearing or going re-draws Home; a count ticking up while
+  // listening runs updates in place, so the cards don't replay their entrance.
+  if (had !== listenEverRan()) return render();
+  const n = $('#main .act[data-heard] .n');
+  if (n) n.textContent = listenHeard().toLocaleString();
+}
+
+function paintListen() {
+  const slot = $('#listenSlot');
+  if (!slot) return;
+  const html = LISTEN ? listenPill(LISTEN) : '';
+  slot.innerHTML = html;
+  if (html) {
+    slot.setAttribute('role', 'button'); slot.tabIndex = 0;
+    slot.setAttribute('aria-label', 'Listening status — open Listening settings');
+  } else {
+    slot.removeAttribute('role'); slot.removeAttribute('tabindex'); slot.removeAttribute('aria-label');
+  }
+}
+{
+  const slot = document.getElementById('listenSlot');
+  const open = () => { if (slot.childElementCount || slot.textContent.trim()) go(listenTarget()); };
+  slot?.addEventListener('click', open);
+  slot?.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
 }
 
 /** A stable hue per track, for the tile shown when there's no artwork. */
@@ -2024,6 +2092,23 @@ function artHTML(t, hook = 'data-act="play"') {
   const h = hueOf(t.id);
   return `<div class="art ph" ${hook} title="Play" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h+48)%360} 58% 44%))">${esc((t.title||'?').trim()[0]??'?')}</div>`;
 }
+
+/* ---------- the sound layer's slots on the File and Discover cards ----------
+ * docs/UI-BUILD-PLAN.md, UI-4. A track may carry `sound` (a SoundVM) and a
+ * suggestion `band` (a BandVM) and `evidence` (an EvidenceVM); the renderers are
+ * web/ui/sound.mjs's. Each slot reads its field and draws nothing at all without
+ * it — not an empty wrapper, not a space — so a card with no such data is byte
+ * for byte the card it was before the slots existed (test/fixtures/ui4/). */
+const soundSlot = (cls, html) => html ? `<div class="${cls}">${html}</div>` : '';
+// Where a track's SoundVM comes from: one set on the track itself, else what
+// listening heard, through the audio side's adapter (WP-D4's dspSoundVM, which
+// stays null until its flag is on). No records or no adapter means no sound.
+const soundOf = t => t?.sound ?? (t?.id && typeof AUDIO !== 'undefined' && AUDIO.records
+  && globalThis.BetterfyAudio?.dspSoundVM ? BetterfyAudio.dspSoundVM(AUDIO.records.get(t.id)) ?? null : null);
+const trackChip = t => { const vm = soundOf(t); return vm ? soundSlot('sndchip', soundChip(vm)) : ''; };
+const trackStrip = t => { const vm = soundOf(t); return vm ? soundSlot('sndstrip', sectionStrip(vm)) : ''; };
+const pickBand = sg => sg?.band ? bandChip(sg.band) : '';
+const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
 
 /* ---------- artist roll-forward: docs/SMARTER-GENRES-PLAN.md, phase 4 ----------
  * File one track by an artist and the same artist's other unfiled tracks usually
@@ -2133,18 +2218,18 @@ function vInbox() {
           </div>
           <div class="txt">
             <p class="t">${esc(t.title)}</p><p class="a">${esc(t.artist)}</p>
-            <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0, 4))}</span><span>${mmss(t.dur)}</span></div>
+            <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0, 4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}
             ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
           </div>
-        </div>
+        </div>${trackStrip(t)}
         ${t.suggest.length ? `<div class="picks">${t.suggest.slice(0, 3).map((sg, n) => `
           <button class="pick ${n === 0 ? 'best' : ''}" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
               ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
-              : `${esc(sg.axis ?? '')} playlist`}</span></span>
-            <span class="rt"><span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
+              : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
+            <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
             <span class="nope" data-reject="${esc(sg.id)}" role="button" tabindex="0"
               title="Never suggest ${esc(sg.name)} for this track">✕</span>
@@ -2197,9 +2282,13 @@ function secDupes() {
       <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
     </div><div class="acts">${c.options.map(o =>
       `<button class="b sm" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z => z.id !== o.id).map(z => z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
-    </div></div>`).join('') || '<div class="empty"><b>None found</b>Nothing in your library matches this.</div>'}</div>
+    </div></div>`).join('') || emptyState('None found', 'Nothing in your library matches this.', { compact: true })}</div>
     ${moreButton(key, list.length)}`;
-  return `<p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>
+  const lede = `<p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>`;
+  // Both lists empty is one answer, not two grey boxes under two headings.
+  if (!exact.length && !clash.length) return `${lede}
+    ${emptyState('No repeats', 'None of your playlists has the same track in it twice, as the same recording or as a different cut.')}`;
+  return `${lede}
     ${sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.', 'dupes-exact')}
     ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash')}`;
 }
@@ -2215,8 +2304,28 @@ function secCross() {
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
         `<button class="chip" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
     </div></div>`).join('')
-      || `<div class="empty"><b>Nothing at ${S.crossMin}+ playlists</b>Lower the threshold to see tracks filed in fewer places.</div>`}</div>
+      || (R.across.length
+        ? emptyState(`Nothing at ${S.crossMin}+ playlists`, 'Lower the threshold to see tracks filed in fewer places.', { compact: true })
+        : emptyState('Nothing cross-filed', 'Every track you have filed sits in one playlist only.'))}</div>
     ${moreButton('cross-' + S.crossMin, a.length)}`;
+}
+
+/** UI-1's empty state: the mark's five bars at rest, a title, one line, and
+ *  optionally what to do about it. `compact` sits inside a list or a card. */
+function emptyState(title, body, { compact = false, acts = '' } = {}) {
+  return `<div class="empty-state${compact ? ' compact' : ''}"><span class="es-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><div class="es-body"><b>${esc(title)}</b><p>${body}</p></div>${
+    acts ? `<div class="es-acts">${acts}</div>` : ''}</div>`;
+}
+
+/* The misfile confidence tiers, in calibrate's words (UI-BUILD-PLAN R5): the
+ * stored value stays high/medium/low so a remembered filter still works; what
+ * the listener reads is the same Sure / Likely / Unsure as everywhere else. */
+const MF_BANDS = [['high', 'HIGH', 'sure', 'Sure'], ['medium', 'LIKELY', 'likely', 'Likely'], ['low', 'AMBIGUOUS', 'unsure', 'Unsure']];
+const mfBandWord = b => (MF_BANDS.find(x => x[0] === b) ?? MF_BANDS[0])[3];
+/** UI-2's bandChip when it draws one, else the same chip in UI-1's classes. */
+function mfBandChip(b) {
+  const [, vm, cls, word] = MF_BANDS.find(x => x[0] === b) ?? MF_BANDS[0];
+  return (typeof bandChip === 'function' && bandChip(vm)) || `<span class="band band-${cls}">${word}</span>`;
 }
 
 function secMisfile() {
@@ -2234,8 +2343,8 @@ function secMisfile() {
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
   return `<p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Each row is a move, not a score — and every one of them lands in History.</p>
-    <div class="rowbtns" style="margin-bottom:14px">${['high', 'medium', 'low'].map(b =>
-      `<button class="b sm ${S.mfBand === b ? 'p' : ''}" data-mfb="${b}">${b} (${counts[b]})</button>`).join('')}</div>
+    ${R.misfiled.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
+      `<button type="button" aria-pressed="${S.mfBand === b}" data-mfb="${b}">${mfBandChip(b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
     <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
@@ -2259,7 +2368,10 @@ function secMisfile() {
           ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
       </div>` : ''}</div>`;
     }).join('')
-      || `<div class="empty"><b>Nothing in this band</b>${S.mfBand === 'high' ? 'Everything is filed where it fits. Try the medium band for the speculative ones.' : 'Try another confidence band.'}</div>`}</div>
+      || (R.misfiled.length
+        ? emptyState(`Nothing ${mfBandWord(S.mfBand)}`, S.mfBand === 'high'
+            ? 'Nothing is clearly in the wrong place. Likely has the more speculative ones.' : 'Try another of the three.', { compact: true })
+        : emptyState('Everything fits where it is', 'No track sits in a playlist that fits far worse than another one on the same axis. New ones show up here after a sync.'))}</div>
     ${moreButton('misfile-' + S.mfBand, m.length)}`;
 }
 
@@ -2267,8 +2379,8 @@ function vTidy() {
   const n = { misfile: R.misfiled.length, dupes: R.within.length, cross: R.across.length };
   const body = { misfile: secMisfile, dupes: secDupes, cross: secCross }[S.tidySec ?? 'misfile'];
   return `<h1>Tidy</h1>
-    <div class="rowbtns" style="margin:0 0 20px">${TIDY_SECTIONS.map(([id, label]) =>
-      `<button class="b sm ${(S.tidySec ?? 'misfile') === id ? 'p' : ''}" data-tidy="${id}">${label} <span class="mono">${n[id].toLocaleString()}</span></button>`).join('')}</div>
+    <div class="seg tidysecs" role="group" aria-label="Section">${TIDY_SECTIONS.map(([id, label]) =>
+      `<button type="button" aria-pressed="${(S.tidySec ?? 'misfile') === id}" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
     ${body()}`;
 }
 
@@ -2283,7 +2395,14 @@ function vTidy() {
  * Nothing moves. Creating makes a new private playlist holding a copy of the
  * tracks; a playlist being split is left exactly as it is.
  * ======================================================================== */
-const GAPS = { status:'idle', err:null, gaps:null, splits:null, untagged:0, homeless:0, made:new Set(), for:null };
+const GAPS = { status:'idle', err:null, gaps:null, splits:null, untagged:0, homeless:0, made:new Set(), for:null,
+  sound:null, filed:new Set() };
+
+/** Audio records, only if listening is on or was: proposals by sound need nothing else, and are skipped without. */
+async function gapsRecords() {
+  if (typeof engineAudio !== 'function') return null;
+  try { return await engineAudio(); } catch { return null; }
+}
 
 /** Work the proposals out. Listening only reorders them, so failing to get it costs nothing. */
 async function gapsCompute() {
@@ -2297,7 +2416,12 @@ async function gapsCompute() {
     const common = { lib: LIB, targets: engineTargets(), tagsOf: id => TAGS?.[id]?.tags ?? [], isMirror: isMirrorPlaylist };
     const u = BetterfyGaps.uncoveredGenres({ ...common, active });
     const split = BetterfyGaps.splitCandidates(common);
-    Object.assign(GAPS, { status:'ready', gaps:u.gaps, splits:split.splits, untagged:u.untagged, homeless:u.homeless });
+    // By sound (WP-H2): suggestions to create, so shown whatever the gate says.
+    const records = await gapsRecords();
+    const sound = records && globalThis.BetterfyAudioGaps
+      ? BetterfyAudioGaps.soundProposals({ ...common, records, active }) : null;
+    Object.assign(GAPS, { status:'ready', gaps:u.gaps, splits:split.splits, untagged:u.untagged, homeless:u.homeless,
+      sound: sound && (sound.pick.length || sound.hybrids.length || sound.orphans.length) ? sound : null });
   } catch (e) {
     GAPS.status = 'error'; GAPS.err = e?.message ?? String(e);
   }
@@ -2313,14 +2437,44 @@ async function gapsCreate(name, ids) {
   render();
 }
 
+/** Add these tracks to a playlist they already sound like. Nothing is taken out of anywhere. */
+async function gapsFile(playlistId, name, ids, key) {
+  await addTracks(playlistId, ids);
+  GAPS.filed.add(key);
+  toast(`Added ${ids.length} track${ids.length === 1 ? '' : 's'} to “${name}”.`);
+  render();
+}
+
+/** Proposals by sound: pick one of two, hybrid playlists, new genre? Nothing at all without audio.
+ *  Each drawn by UI-6's proposalCard, so the three read as one kind of thing. */
+function gapsSoundSection() {
+  const S = GAPS.sound;
+  if (!S) return '';
+  const made = name => GAPS.made.has(String(name).toLowerCase());
+  const hybrids = S.hybrids.map((h, i) => proposalCard({ ...h, kind: 'hybrid', i, done: made(h.name) })).join('');
+  const orphans = S.orphans.map((o, i) => proposalCard({ ...o, kind: 'new', i, done: GAPS.filed.has('o' + i) })).join('');
+  const picks = S.pick.map((p, i) => proposalCard({ ...p, kind: 'pick', i,
+    filedTo: p.between.filter((x, k) => GAPS.filed.has(`p${i}:${k}`)).map(x => x.name) })).join('');
+  return `<h2 class="newsec">By sound</h2>
+    <p class="why">From listening to your unfiled tracks and comparing them with your own genre playlists. Only
+      suggestions: nothing is made or added until you tap.</p>
+    <div class="rows" style="margin-top:10px">${hybrids}${orphans}${picks}</div>`;
+}
+
+/**
+ * The gaps' part of the screen, as sections rather than one string, so vNew()
+ * can draw the ones with something in them and fold every empty one into a
+ * single empty state (UI-BUILD-PLAN R8: three grey boxes in a row was the
+ * screen most libraries saw). While working or after an error it is one card.
+ */
 function gapsSections() {
   if (GAPS.status === 'idle' || (GAPS.status === 'ready' && GAPS.for !== R)) {
     GAPS.status = 'working';
     fire(gapsCompute());
   }
-  if (GAPS.status !== 'ready') return `<div class="card"><p class="why">${GAPS.status === 'error'
+  if (GAPS.status !== 'ready') return { card: `<div class="card"><p class="why">${GAPS.status === 'error'
     ? `Couldn't work out the gaps: ${esc(GAPS.err)} <button class="b sm" data-gapsretry>Try again</button>`
-    : 'Looking for genres you have no playlist for…'}</p></div>`;
+    : 'Looking for genres you have no playlist for…'}</p></div>`, sections: [] };
   const n = x => x.toLocaleString();
   const made = name => GAPS.made.has(String(name).toLowerCase());
   const gapRows = GAPS.gaps.map((g, i) => `<div class="row"><div class="main">
@@ -2337,33 +2491,101 @@ function gapsSections() {
         ${esc(s.name)} stays as it is.</div>
     </div><div class="acts">${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
       : `<button class="b sm" data-split="${i}:${k}">Make “${esc(x.label)}” (${n(x.size)})</button>`).join(' ')}</div></div>`).join('');
-  return `<h2 style="margin:22px 0 6px; font-size:18px">Genres with no playlist</h2>
-    <p class="why">Music you've liked or filed somewhere else, in a genre none of your genre playlists is for.
-      Genres nothing covers come first, then ones a broader playlist could take; what you're playing at the
-      moment comes before both.</p>
-    <div class="rows" style="margin-top:10px">${gapRows || `<div class="empty">Every genre you have ${BetterfyGaps.MIN_GAP} or more
-      unfiled tracks of already has a playlist.</div>`}</div>
-    ${GAPS.untagged ? `<p class="why" style="margin-top:8px">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
+  const untagged = GAPS.untagged ? `<p class="why" style="margin-top:8px">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
       outside your genre playlists have no genre in their artists' tags, so they can't be placed in one here.
-      The groups at the bottom are where those turn up.</p>` : ''}
-    <h2 style="margin:22px 0 6px; font-size:18px">Playlists that are two genres</h2>
-    <p class="why">A genre playlist whose tracks split into two genres, each a real share of it. Making one
-      copies those tracks into a new playlist and leaves the original alone.</p>
-    <div class="rows" style="margin-top:10px">${splitRows || '<div class="empty">None of your genre playlists is two genres at once.</div>'}</div>`;
+      The groups at the bottom are where those turn up.</p>` : '';
+  return { card: '', untagged, sections: [
+    { title: 'Genres with no playlist', rows: gapRows,
+      why: `Music you've liked or filed somewhere else, in a genre none of your genre playlists is for.
+      Genres nothing covers come first, then ones a broader playlist could take; what you're playing at the
+      moment comes before both.`,
+      none: `every genre you have ${BetterfyGaps.MIN_GAP} or more unfiled tracks of already has a playlist` },
+    { title: 'Playlists that are two genres', rows: splitRows,
+      why: `A genre playlist whose tracks split into two genres, each a real share of it. Making one
+      copies those tracks into a new playlist and leaves the original alone.`,
+      none: 'none of your genre playlists is two genres at once' },
+  ] };
+}
+
+/**
+ * One card shape for every proposal by sound (UI-BUILD-PLAN §2.8), so "pick
+ * one of these two", "hybrid playlist" and "new genre?" read as the same kind
+ * of thing told apart by the strip down the left edge (65-proposals.css):
+ * a hybrid blends two hues, "new genre?" is broken, a toss-up is two halves.
+ *
+ * Takes the objects core/recommend/audio-gaps.mjs (WP-H2) makes, plus the
+ * index `i` its click handler keys on and what has already been done:
+ *   { kind: 'hybrid'|'new'|'pick', i, name, size, played?, artists?, mixed?,
+ *     between?: [{id, name}, {id, name}], nearest?: {name},
+ *     samples?: [{title, artist}], done?: boolean, filedTo?: string[] }
+ * The attributes (data-sndh / data-sndo / data-sndp, #sndhN / #sndoN) are the
+ * ones H2's handler reads. Null renders ''.
+ */
+function proposalCard(p) {
+  if (!p || !['hybrid', 'new', 'pick'].includes(p.kind)) return '';
+  const n = x => (x ?? 0).toLocaleString();
+  const by = '<span class="tag snd">by sound</span>';
+  const played = p.played ? ` <span class="tag ok">${n(p.played)} you're playing</span>` : '';
+  const eg = p.artists?.length ? `e.g. ${esc(p.artists.join(', '))}` : '';
+  const [a, b] = p.between ?? [];
+  const samples = p.samples?.length ? `<ol class="prop-eg">${p.samples.slice(0, 4).map(t =>
+    `<li><b>${esc(t.title)}</b> <span>${esc(t.artist ?? '')}</span></li>`).join('')}</ol>` : '';
+  let ttl, sub, acts;
+  if (p.kind === 'hybrid') {
+    ttl = esc(p.name);
+    sub = `Sounds between your ${esc(a?.name)} and ${esc(b?.name)} playlists, and like
+        neither on its own.${p.mixed ? ` ${n(p.mixed)} of them change style partway through.` : ''}`;
+    acts = p.done ? '<span class="tag ok">created</span>'
+      : `<input id="sndh${p.i}" aria-label="Name for this playlist" value="${esc(p.name)}">
+      <button class="b sm p" data-sndh="${p.i}">Create with ${n(p.size)}</button>`;
+  } else if (p.kind === 'new') {
+    ttl = 'New genre?';
+    sub = `These sit close together and sound like none of your genre playlists
+        (the nearest is ${esc(p.nearest?.name)}). Name it if it is a genre to you.`;
+    acts = p.done ? '<span class="tag ok">created</span>'
+      : `<input id="sndo${p.i}" aria-label="Name for this playlist" placeholder="Name it">
+      <button class="b sm p" data-sndo="${p.i}">Create with ${n(p.size)}</button>`;
+  } else {
+    ttl = `${esc(a?.name)} or ${esc(b?.name)}?`;
+    sub = 'Unfiled tracks that sound as much like one as the other. Pick one for them, or leave them.';
+    acts = p.filedTo?.length ? p.filedTo.map(x => `<span class="tag ok">added to ${esc(x)}</span>`).join('')
+      : (p.between ?? []).map((x, k) => `<button class="b sm" data-sndp="${p.i}:${k}">Add to ${esc(x.name)}</button>`).join(' ');
+  }
+  return `<div class="row prop prop-${p.kind}"><div class="main">
+      <div class="ttl">${ttl} ${by} <span class="tag">${n(p.size)} tracks</span>${played}</div>
+      <div class="sub">${sub}${eg ? `<br>${eg}` : ''}</div>${samples}
+    </div><div class="acts">${acts}</div></div>`;
 }
 
 function vNew() {
-  return `<h1>New playlists</h1>
-    <p class="lede">Genres you have music in but no playlist for, playlists that are really two genres,
-      and groups in your backlog that fit nothing you have.</p>
-    ${gapsSections()}
-    <h2 style="margin:22px 0 6px; font-size:18px">Groups in your backlog</h2>
-    <p class="why">Unfiled tracks that sit together and fit none of your existing playlists.</p>
-    <div class="rows">${R.clusters.map((x,i)=>`<div class="row"><div class="main">
+  const head = `<h1>New playlists</h1>
+    <p class="lede">Playlists you could make from music you already have.</p>
+    <details class="how"><summary>How this works</summary><p>Genres you have music in but no playlist for,
+      playlists that are really two genres, and groups in your backlog that fit nothing you have. Nothing moves:
+      creating makes a new private playlist holding a copy of the tracks.</p></details>`;
+  const g = gapsSections();
+  const clusterRows = R.clusters.map((x,i)=>`<div class="row"><div class="main">
       <div class="ttl">${x.size} tracks · ${esc(x.tags.slice(0,4).join(', '))}</div>
       <div class="sub">${esc(x.tracks.slice(0,4).join(' · '))}</div>
     </div><div class="acts"><input id="nm${i}" placeholder="Playlist name" value="${esc(x.tags[0]??'')}">
-      <button class="b sm p" data-cluster="${i}">Create with ${x.size} tracks</button></div></div>`).join('') || '<div class="empty">No clusters.</div>'}</div>`;
+      <button class="b sm p" data-cluster="${i}">Create with ${x.size} tracks</button></div></div>`).join('');
+  const sections = [...g.sections, { title: 'Groups in your backlog', rows: clusterRows,
+    why: 'Unfiled tracks that sit together and fit none of your existing playlists.',
+    none: 'no unfiled tracks sit together outside your playlists' }];
+  const sec = x => `<h2 class="newsec">${esc(x.title)}</h2>
+    <p class="why">${x.why}</p>
+    <div class="rows" style="margin-top:10px">${x.rows}</div>`;
+  const full = sections.filter(x => x.rows), empty = sections.filter(x => !x.rows);
+  const sound = typeof gapsSoundSection === 'function' ? gapsSoundSection() : '';
+  // Every section empty is one answer. Some empty is one line under the rest,
+  // naming each so nothing silently disappears from the screen.
+  const none = !empty.length || g.card ? '' : !full.length && !sound
+    ? emptyState('Nothing to propose yet', `${empty.map(x => `<strong>${esc(x.title)}:</strong> ${esc(x.none)}.`).join(' ')}
+      New ideas show up here as your library grows.`)
+    : emptyState('Nothing else to propose', empty.map(x => `<strong>${esc(x.title)}:</strong> ${esc(x.none)}.`).join(' '), { compact: true });
+  return `${head}
+    ${g.card}${full.map(x => sec(x) + (x === g.sections[0] ? g.untagged ?? '' : '')).join('')}
+    ${g.sections[0]?.rows ? '' : g.untagged ?? ''}${sound}${none}`;
 }
 
 /* ---------- shuffle: spacing, not randomness ---------- */
@@ -2901,9 +3123,9 @@ function vDiscover() {
           <div class="artwrap">${art}</div>
           <div class="txt">
             <p class="t">${esc(t.track)}</p><p class="a">${esc(t.artist)}</p>
-            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>
+            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}
           </div>
-        </div>
+        </div>${trackStrip(t)}
 
         <div class="player">
           <button class="tbtn" id="pToggle" aria-label="Play">${ICON_PLAY}</button>
@@ -2916,13 +3138,13 @@ function vDiscover() {
         ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
         ${best ? `<button class="fitcall" data-dfile="${esc(best.id)}">
             <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
-              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ranked by the same model the file queue uses</span></span>
-            <span class="sc">${(best.score*100).toFixed(0)}% fit</span>
+              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ranked by the same model the file queue uses</span>${pickEvidence(best)}</span>
+            ${pickBand(best)}<span class="sc">${(best.score*100).toFixed(0)}% fit</span>
           </button>` : ''}
         ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
           `<button class="pick" data-dfile="${esc(sg.id)}"><span class="k">${n+2}</span>
-           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span></span>
-           <span class="rt"><span class="sc">${(sg.score*100).toFixed(0)}%</span>
+           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span>${pickEvidence(sg)}</span>
+           <span class="rt">${pickBand(sg)}<span class="sc">${(sg.score*100).toFixed(0)}%</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
         ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — Last.fm has no tags for this artist, or it fits nothing you have. Pick a playlist below.</p>`}
 
@@ -3000,77 +3222,74 @@ function mixLabel(mix) {
   return parts.join(' · ');
 }
 
+/* ---------- sound slot on Playlists ----------
+ * profile(playlistId) → ProfileVM | null: one playlist's sound profile, from
+ * WP-B2's adapter once listening has heard something. With no records it is
+ * null, and every row renders exactly as it would with no sound layer at all
+ * (docs/UI-BUILD-PLAN.md §3 rule 3). The Listening settings themselves live
+ * on Sources, in the card audioPanelHTML() draws. */
+const LISTS_SOUND = {
+  profile: id => AUDIO.records && globalThis.BetterfyAudio
+    ? BetterfyAudio.profileVM(LIB.playlists.find(x => x.id === id), AUDIO.records, AUDIO.labels) : null,
+};
+
+/** One row of the axes table, plus a hidden sound-profile row under it when
+ *  there is a profile to show. No profile, no toggle and no hidden row. */
 function axisRowHTML(p, mix) {
   const m = mixLabel(mix);
-  return `<div class="row axrow" style="align-items:center">
-    <div class="main"><div class="ttl">${esc(p.name)}</div>
-      <div class="sub"><span class="mono">${p.tracks} tracks</span>
-        <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span>
-        ${m ? `<span class="axmix" title="which kind of tag its tracks carry">${esc(m)}</span>` : ''}</div>
-      ${AUDIO.records && globalThis.BetterfyAudio
-        ? profileRow(BetterfyAudio.profileVM(LIB.playlists.find(x => x.id === p.id), AUDIO.records, AUDIO.labels)) : ''}</div>
-    <div class="acts">
-      <select data-ax="${esc(p.id)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2)">
-        <input type="checkbox" data-tg="${esc(p.id)}" ${p.target?'checked':''} ${p.tracks < MIN_FOR_TARGET ? 'disabled title="too few tracks to model"' : ''}>
-        receives suggestions</label>
-    </div>
-  </div>`;
+  const prof = profileRow(LISTS_SOUND.profile(p.id));
+  const few = p.tracks < MIN_FOR_TARGET;
+  return `<tr class="axrow" data-axrow="${esc(p.id)}">
+      <th scope="row" class="axname">${prof ? `<button class="axexp" data-axexp="${esc(p.id)}" aria-expanded="false"
+          aria-controls="axprof-${esc(p.id)}" aria-label="Sound profile of ${esc(p.name)}"></button>` : ''}<span class="ttl">${esc(p.name)}</span>
+        <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span></th>
+      <td class="axn mono">${p.tracks}</td>
+      <td class="axmix">${m ? `<span title="which kind of tag its tracks carry">${esc(m)}</span>` : ''}</td>
+      <td class="axsel"><select data-ax="${esc(p.id)}" aria-label="Axis of ${esc(p.name)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select></td>
+      <td class="axtg"><label><input type="checkbox" data-tg="${esc(p.id)}" ${p.target?'checked':''} ${few ? 'disabled title="too few tracks to model"' : ''}>
+        <span class="axtglbl">receives suggestions</span></label></td>
+    </tr>${prof ? `
+    <tr class="axprof" id="axprof-${esc(p.id)}" hidden><td colspan="5">${prof}</td></tr>` : ''}`;
+}
+
+/** The axes table. Columns are labelled once at the top rather than on
+ *  every row; on a phone each row folds into a two-line card (62-lists.css). */
+function axisTableHTML(list, mixes) {
+  return `<div class="axtable"><table class="axtbl">
+    <thead><tr><th scope="col">Playlist</th><th scope="col" class="axn">Tracks</th><th scope="col">Tagged as</th>
+      <th scope="col">Axis</th><th scope="col">Receives suggestions</th></tr></thead>
+    <tbody>${list.map(p => axisRowHTML(p, mixes.get(p.id))).join('')}</tbody></table></div>`;
 }
 
 function vLists() {
   const rows = Object.entries(CFG).map(([id,v]) => ({ id, ...v })).sort((a,b) => b.tracks - a.tracks);
   const cov = tagCoverage();
-  const { mix: mixes, base } = playlistMixes();
-  const row = p => axisRowHTML(p, mixes.get(p.id));
-  const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
+  const { mix: mixes } = playlistMixes();
   // Everything classify() could not read from the name or the dates. Nothing
   // is filed into these until the listener says which ones are genre
   // playlists — the silent "treat it as genre" default used to be exactly what
   // turned "Sunday" or "Favourites" into a wrong suggestion.
   const undecided = rows.filter(p => p.why === NO_SIGNAL);
   return `<h1>Playlists</h1>
-    <p class="lede">How each of your playlists is treated. Tracks are only filed into playlists marked <b>receives suggestions</b> — by default, the ones whose name says what genre they are (“Donk”, “D&amp;B Rollers”, “Tech House”). Tick any other playlist to file into it too. A track is only ever compared against playlists on its own axis — so a metal track in a mood playlist is not flagged as misfiled. Each guess says what it was made from — the name, the dates the tracks were filed, or what kind of tags they carry — and correcting one is remembered on this device.</p>
-    <p class="lede" style="margin-top:-8px">The percentages on each row are what its tracks are tagged with. Only the <b>genre</b> share tells a genre playlist apart from another one; the mood, decade and occasion tags are what a <b>mood</b> or <b>context</b> playlist is really held together by, and each axis now weighs them accordingly instead of pouring the lot into one pile.</p>
+    <p class="lede">How each playlist is treated, and which ones Betterfy files tracks into.</p>
+    <details class="how"><summary>How this works</summary>
+      <p>Tracks are only filed into playlists marked <b>receives suggestions</b> — by default, the ones whose name says what
+        genre they are (“Donk”, “D&amp;B Rollers”, “Tech House”). Tick any other playlist to file into it too. A track
+        is only ever compared against playlists on its own axis, so a metal track in a mood playlist is not flagged as
+        misfiled. Each guess says what it was made from — the name, the dates the tracks were filed, or what kind of
+        tags they carry — and correcting one is remembered on this device.</p>
+      <p><b>Tagged as</b> is what a playlist's tracks are tagged with. Only the <b>genre</b> share tells a genre
+        playlist apart from another one; the mood, decade and occasion tags are what a <b>mood</b> or <b>context</b>
+        playlist is really held together by, and each axis weighs them accordingly.</p>
+    </details>
+    <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
+      <button class="b sm" data-go="sources">Genre sources</button></p>
 
     ${undecided.length ? `<h2>Needs your input</h2>
     <p class="lede">${undecided.length} playlist${undecided.length===1?' has':'s have'} no genre in ${undecided.length===1?'its':'their'} name,
       nothing in the dates, and no strong lean in the tags either — so nothing is filed into ${undecided.length===1?'it':'them'} until you say so.
       If one of these <i>is</i> a genre playlist, tick <b>receives suggestions</b> (or set it to genre); otherwise set what it really is.</p>
-    <div class="rows">${undecided.map(row).join('')}</div>` : ''}
-
-    <h2>Genre data</h2>
-    <p class="lede">${cov.have.toLocaleString()} of ${cov.total.toLocaleString()} artists have genre tags (${cov.pct}%).
-      ${cov.pct < 85 ? 'Suggestions will be thin until this improves.' : ''}
-      ${genreShare === null ? '' : `Of all the tag weight across your library, <b>${genreShare}%</b> describes a sound —
-      the rest is moods, decades, occasions and things like nationality, which are no longer counted as evidence of genre.`}
-      Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set; add your own free
-      Last.fm key to fill the gaps for artists it doesn\'t cover — and to fix one that already has tags but has them
-      wrong, from a Tidy or File row, tap <b>Wrong tags?</b> under it.</p>
-    <div class="rowbtns" style="margin-bottom:8px">
-      <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(LS.getItem('bf_lfm') || '')}">
-      <button class="b" id="saveLfm">Save key</button>
-      <button class="b p" id="enrich" ${LS.getItem('bf_lfm') ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button>
-      <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
-    </div>
-    <p class="sub" style="margin:8px 0">
-      No key? <b>Wikidata</b> knows genres for about a third of artists — mostly established ones, rarely
-      scene producers — and needs nothing from you. It only fills artists with no tags at all, and Last.fm
-      still wins if you add a key later. It runs once by itself after the library loads; this asks again.</p>
-    <div class="rowbtns" style="margin-bottom:8px">
-      <button class="b" id="fillWikidata">Fill missing genres free</button>
-    </div>
-    <p class="sub" style="margin:8px 0">
-      Optional — a free <b>Discogs</b> token fills in artists Last.fm has nothing on at all, from the styles on
-      their own releases (Jungle, Deep House, Electro — finer than Last.fm's one flat tag per artist). It never
-      overrides a real Last.fm tag, only ever fills a total gap, and runs automatically as part of the button above.</p>
-    <div class="rowbtns" style="margin-bottom:8px">
-      <input id="discogsKey" placeholder="Discogs personal access token" size="34" value="${esc(LS.getItem('bf_discogs') || '')}">
-      <button class="b" id="saveDiscogs">Save token</button>
-      <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
-    </div>
-
-    ${audioPanelHTML()}
+    ${axisTableHTML(undecided, mixes)}` : ''}
 
     ${(R.drift ?? []).length ? `<h2>Recently drifting</h2>
     <p class="lede">${R.drift.length} playlist${R.drift.length===1?'':'s'} whose newest additions read differently from everything added before them — not necessarily wrong, just worth a look. This is a trend across many tracks, not a single misfile.</p>
@@ -3082,7 +3301,65 @@ function vLists() {
     </div>`).join('')}</div>` : ''}
 
     <h2>Axes</h2>
-    <div class="rows">${rows.map(row).join('')}</div>`;
+    ${axisTableHTML(rows, mixes)}`;
+}
+
+/** One source card: name, a status pill, one line of what it is for, then its
+ *  controls. `state` is ok (working), idle (optional, not set up) or warn. */
+function sourceCard(id, name, state, status, line, body) {
+  return `<section class="srccard" id="src-${id}" aria-labelledby="src-${id}-h">
+    <div class="srchead"><h2 id="src-${id}-h">${name}</h2><span class="tag ${state}">${status}</span></div>
+    <p class="srcline">${line}</p>
+    ${body}
+  </section>`;
+}
+
+/** Where genre data and (later) listening come from — moved out of Playlists,
+ *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
+ *  same ids, same handlers as before; only the location changed. */
+function vSources() {
+  const cov = tagCoverage();
+  const { base } = playlistMixes();
+  const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
+  const lfm = LS.getItem('bf_lfm') || '', discogs = LS.getItem('bf_discogs') || '';
+  return `<h1>Sources</h1>
+    <p class="lede">Where your genre data comes from, and how to fill the gaps.</p>
+    <details class="how"><summary>How this works</summary>
+      <p>Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set covering many
+        artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
+        Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
+        <b>Wrong tags?</b> under it on a Tidy or File row.</p>
+      ${genreShare === null ? '' : `<p>Of all the tag weight across your library, <b>${genreShare}%</b> describes a
+        sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
+        evidence of genre.</p>`}
+    </details>
+    <p class="srccov"><b class="mono">${cov.have.toLocaleString()}</b> of <span class="mono">${cov.total.toLocaleString()}</span>
+      artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
+
+    <div class="srcgrid">
+    ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfm ? 'Key saved' : 'No key',
+      'Crowd genre tags for the artists the shipped set doesn\'t cover. Needs a free API key.',
+      `<div class="rowbtns">
+        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(lfm)}" aria-label="Last.fm API key">
+        <button class="b" id="saveLfm">Save key</button>
+        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
+      </div>
+      <div class="rowbtns"><button class="b p" id="enrich" ${lfm ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button></div>`)}
+
+    ${sourceCard('wikidata', 'Wikidata', 'ok', 'Free · no key',
+      'Genres for about a third of artists, mostly established ones. Runs once by itself after the library loads.',
+      `<div class="rowbtns"><button class="b" id="fillWikidata">Fill missing genres free</button></div>`)}
+
+    ${sourceCard('discogs', 'Discogs', discogs ? 'ok' : 'idle', discogs ? 'Token saved' : 'Optional',
+      'Styles from an artist\'s own releases, finer than one flat tag. Only fills total gaps, as part of Fetch missing tags.',
+      `<div class="rowbtns">
+        <input id="discogsKey" placeholder="Discogs personal access token" size="34" value="${esc(discogs)}" aria-label="Discogs personal access token">
+        <button class="b" id="saveDiscogs">Save token</button>
+        <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
+      </div>`)}
+
+    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>
+    </div>`;
 }
 
 function tagCoverage() {
@@ -3699,7 +3976,7 @@ async function resetArtistTags(id) {
  *  for the case where autocorrect or the crowd tags have since improved. */
 async function refetchArtist(id, name) {
   const key = LS.getItem('bf_lfm');
-  if (!key) return toast('Add a Last.fm key on the Playlists screen first.');
+  if (!key) return toast('Add a Last.fm key on the Sources screen first.');
   try {
     const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
       method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
@@ -3721,7 +3998,7 @@ function tagEditorHTML(id, name) {
       <input id="newTagVal" placeholder="Add a tag" size="16">
       <button class="b sm" data-addtag="${esc(id)}">Add</button>
       <button class="b sm" data-refetchtags="${esc(id)}" data-artistname="${esc(name)}"
-        ${LS.getItem('bf_lfm') ? '' : 'disabled title="Add a Last.fm key on this screen first"'}>Refetch from Last.fm</button>
+        ${LS.getItem('bf_lfm') ? '' : 'disabled title="Add a Last.fm key on the Sources screen first"'}>Refetch from Last.fm</button>
       <button class="b sm" data-resettags="${esc(id)}">Reset to shipped</button>
       <button class="b sm" data-closetagedit="1">Done</button>
     </div>
@@ -3730,7 +4007,7 @@ function tagEditorHTML(id, name) {
 
 const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
                 new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
-                engine:vEngine, history:vHistory };
+                engine:vEngine, history:vHistory, sources:vSources };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -4418,7 +4695,8 @@ const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?
 /** Redraw only the panel, and only while it is on screen: progress ticks every few seconds. */
 let AUDIO_DRAW = 0;
 function audioRedraw() {
-  if (view !== 'lists') return;
+  setListen(AUDIO.vm);
+  if (view !== 'sources') return;
   if (AUDIO_DRAW) return;
   AUDIO_DRAW = requestAnimationFrame(() => {
     AUDIO_DRAW = 0;
@@ -4496,13 +4774,15 @@ function audioPanelHTML() {
     : vm.state === 'paused' ? `Stopped${vm.reason && vm.reason !== 'stopped' ? ': ' + esc(vm.reason) : ''}. It carries on where it left off.`
     : 'Ready.';
   return `<div id="audioPanel">
-    <h2>Listen to my music</h2>
-    <p class="lede">Betterfy can listen to a 20-second sample of each track (two short windows of Deezer’s
-      30-second preview, found by the track’s ISRC) and remember what it sounds like, so tracks can be
-      placed by sound against your own playlists, not only by tags. The audio is never stored, only a
+    <div class="srchead"><h2 id="src-listening-h">Listen to my music</h2><span class="tag ${!set.on ? 'idle' : running || vm.state === 'done' ? 'ok' : 'idle'}">${
+      !set.on ? 'Off' : running ? 'Listening' : vm.state === 'done' ? 'Up to date' : 'Paused'}</span></div>
+    <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. Off until you switch it on.</p>
+    <details class="how"><summary>How this works</summary>
+      <p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
+      30-second preview, found by the track’s ISRC) and remembers what it sounds like. The audio is never stored, only a
       ~2.5 KB summary on this device. Switching it on downloads the listening model once (about 37 MB),
       then about 330 KB per track. “What I’m playing + unfiled” also hears up to 20 tracks from each genre
-      playlist, so there is something to compare the rest against.</p>
+      playlist, so there is something to compare the rest against.</p></details>
     <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioOn" ${set.on ? 'checked' : ''}> Listen to my music</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioWifi" ${set.wifiOnly ? 'checked' : ''}> Wi-Fi only</label>
@@ -4520,7 +4800,7 @@ function audioPanelHTML() {
     ${missedList(vm) || (nMissed ? `<details class="sub" style="margin:8px 0"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
     ${AUDIO.err ? `<p class="sub">${esc(AUDIO.err)}</p>` : ''}
-    <p class="sub" style="margin:8px 0;font-size:12px">Listening model: Discogs-EffNet and its mood, voice and
+    <p class="sub credit">Listening model: Discogs-EffNet and its mood, voice and
       danceability heads by the Music Technology Group, Universitat Pompeu Fabra
       (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
       used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Previews from Deezer.</p>
@@ -4721,27 +5001,55 @@ function bridgeCard(v, p) {
  * records. The verdict is the engine's own (core/validate/gate.mjs), carried
  * on the run: until it passes, sound is shown here and changes no suggestion.
  */
+/**
+ * One metric as a pair of bars, without sound and with it, on the same scale
+ * (UI-BUILD-PLAN §2.9). `line` draws the gate's bar on the with-sound track:
+ * where with-sound has to reach for this metric to count as earning it.
+ */
+function pairBars(label, without, withSound, p, line = null) {
+  if (without == null || withSound == null) return '';
+  const clamp = x => Math.max(0, Math.min(1, x));
+  const d = Math.round((withSound - without) * 1000) / 10;
+  const delta = d === 0 ? 'level' : `${d > 0 ? '+' : '−'}${Math.abs(d)} points`;
+  const met = line ? withSound + 1e-9 >= line.at : null;
+  return `<div class="pair" role="img" aria-label="${esc(label)}: ${p(without)} without sound, ${p(withSound)} with${
+      line ? `; ${esc(line.label)} at ${p(line.at)}` : ''}">
+    <div class="pair-h"><span>${esc(label)}</span><span class="pair-d mono ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${delta}</span></div>
+    <div class="pbar"><span class="pl">without</span><span class="trk"><i style="--v:${clamp(without).toFixed(4)}"></i></span><b class="mono">${p(without)}</b></div>
+    <div class="pbar with"><span class="pl">with sound</span><span class="trk"><i style="--v:${clamp(withSound).toFixed(4)}"></i>${
+      line ? `<s class="gate ${met ? 'met' : ''}" style="--g:${clamp(line.at).toFixed(4)}" title="${esc(line.label)}"></s>` : ''}</span><b class="mono">${p(withSound)}</b></div>
+  </div>`;
+}
+
 function audioCard(v, p) {
   const w = v && !v.error ? v.mine?.withAudio : null;
   if (!w) return '';
   const nf = v.mine.neverFiled, g = w.gate ?? {};
-  return `<h3 style="margin:18px 0 6px; font-size:16px">Adding how it sounds</h3>
+  const lift = g.bar?.minLift ?? 0.05;
+  const liftPts = Math.round(lift * 100);
+  const tone = g.pass === true ? 'ok' : g.pass === false ? 'warn' : 'idle';
+  return `<div class="sndscore">
+    <h3 style="margin:18px 0 6px; font-size:16px">Adding how it sounds</h3>
     <p class="why">Each playlist's sound is learned from the tracks you filed there that have been listened to.
       A track never hears itself: same tracks, same folds as above.</p>
+    <div class="pairs">
+      ${pairBars('Right first time, every scored track', v.mine.top1, w.top1, p,
+        v.mine.top1 != null ? { at: v.mine.top1, label: 'no loss overall' } : null)}
+      ${pairBars('Right first time, artists not in any genre playlist yet',
+        nf.top1, w.neverFiled?.top1, p, nf.top1 != null ? { at: nf.top1 + lift, label: `+${liftPts} points` } : null)}
+    </div>
+    <p class="gateline"><s class="gate" aria-hidden="true"></s><span>The bar it has to clear: <b>+${liftPts} points</b> right first
+      time on never-filed artists, and no loss overall. Below it, sound is shown but changes no suggestion.</span></p>
     <div class="facts" style="margin-top:10px">
-      <div><span><b>With sound</b> — right first time</span><b class="mono">${p(w.top1)}</b></div>
-      <div><span>…without</span><b class="mono">${p(v.mine.top1)}</b></div>
-      <hr>
       <div><span>Tracks by artists not in any genre playlist yet</span><b class="mono">${nf.scored.toLocaleString()}</b></div>
-      <div><span>…right first time, with sound</span><b class="mono">${p(w.neverFiled.top1)}</b></div>
-      <div><span>…without</span><b class="mono">${p(nf.top1)}</b></div>
-      <hr>
       <div><span>Scored tracks listened to</span><b class="mono">${w.heard.toLocaleString()} of ${v.mine.scored.toLocaleString()}</b></div>
       <div><span>…of them by never-filed artists</span><b class="mono">${w.heardNeverFiled.toLocaleString()}</b></div>
       <div><span>Top answers sound changed</span><b class="mono">${w.changed.toLocaleString()}</b></div>
     </div>
-    <p class="why" style="margin-top:12px"><b>${g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.'}</b>
-      ${esc(g.text ?? '')}</p>`;
+    <p class="why gateverdict" style="margin-top:12px"><span class="tag ${tone}">${g.pass === true ? 'passed' : g.pass === false ? 'not passed' : 'undecided'}</span>
+      <b>${g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.'}</b>
+      ${esc(g.text ?? '')}</p>
+  </div>`;
 }
 
 /** Whether long engine work will run off the main thread. */
@@ -5329,6 +5637,27 @@ document.addEventListener('click', guard(async e => {
     try { await gapsCreate(part.label, part.ids); } catch (err) { spl.disabled = false; toast('Failed: ' + err.message); }
     return;
   }
+  const sh = e.target.closest('[data-sndh]'), so = e.target.closest('[data-sndo]');
+  if (sh || so) {
+    const i = +(sh ?? so).dataset[sh ? 'sndh' : 'sndo'];
+    const g = sh ? GAPS.sound?.hybrids?.[i] : GAPS.sound?.orphans?.[i];
+    const name = $((sh ? '#sndh' : '#sndo') + i)?.value.trim();
+    if (!g) return;
+    if (!name) return toast('Give it a name first.');
+    (sh ?? so).disabled = true;
+    try { await gapsCreate(name, g.ids); if (so) GAPS.filed.add('o' + i); render(); }
+    catch (err) { (sh ?? so).disabled = false; toast('Failed: ' + err.message); }
+    return;
+  }
+  const spk = e.target.closest('[data-sndp]');
+  if (spk) {
+    const [i, k] = spk.dataset.sndp.split(':').map(Number);
+    const p = GAPS.sound?.pick?.[i], to = p?.between?.[k];
+    if (!to || GAPS.filed.has(`p${i}:0`) || GAPS.filed.has(`p${i}:1`)) return;
+    spk.disabled = true;
+    try { await gapsFile(to.id, to.name, p.ids, `p${i}:${k}`); } catch (err) { spk.disabled = false; toast('Failed: ' + err.message); }
+    return;
+  }
   if (e.target.closest('[data-gapsretry]')) { GAPS.status = 'idle'; return render(); }
 
   const cl = e.target.closest('[data-cluster]');
@@ -5361,7 +5690,18 @@ document.addEventListener('change', guard(async e => {
     const set = audioSettings();
     // Turning it off, narrowing the scope or tightening Wi-Fi stops the run; the next start re-reads all three.
     if (AUDIO.ctrl?.running) await AUDIO.ctrl.stop(set.on ? 'settings changed' : 'stopped');
-    if (set.on) audioStart(); else { AUDIO.vm = null; render(); }
+    if (set.on) audioStart(); else { AUDIO.vm = null; setListen(null); render(); }
+    return;
+  }
+
+  // A playlist's sound profile: shown under its row on demand. Only rendered
+  // at all when listening has produced one (see LISTS_SOUND).
+  const axexp = e.target.closest('[data-axexp]');
+  if (axexp) {
+    const open = axexp.getAttribute('aria-expanded') !== 'true';
+    axexp.setAttribute('aria-expanded', String(open));
+    const pr = document.getElementById(axexp.getAttribute('aria-controls'));
+    if (pr) pr.hidden = !open;
     return;
   }
 

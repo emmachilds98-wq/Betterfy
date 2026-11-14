@@ -1,0 +1,81 @@
+/* soundChip (WP-D4): one compact row per track, "174 BPM · 8A A minor". */
+.snd{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:.15em .45em;font-family:var(--mono);font-size:.78rem;line-height:1.35;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.snd>span{white-space:nowrap}
+.snd-unit,.snd-sub{color:var(--ink-3)}
+.snd-dot{color:var(--ink-3)}
+.snd-unsure{opacity:.7}
+.snd-q{color:var(--ink-3);margin-left:.05em}
+.snd-bars{display:inline-flex;gap:2px;vertical-align:baseline}
+.snd-bars i{display:inline-block;width:4px;height:.7em;border-radius:1px;background:var(--line-2)}
+.snd-bars i.on{background:var(--ink-2)}
+
+/* ---------- the sound layer (UI-2) ----------
+   Rules for web/ui/sound.mjs's renderers, except soundChip (.snd-*, WP-D4's,
+   which sit above this block). Every one of them renders '' without audio
+   data, so none of these selectors matches anything for a listener who never
+   turns listening on. Band chips and evidence badges are styled by UI-1 in
+   50-components.css; only their rendering lives here. */
+
+/* mark colours, by style family (soundMark) */
+.sstrip i.m0,.sprof-style i.m0{background:var(--m0)}
+.sstrip i.m1,.sprof-style i.m1{background:var(--m1)}
+.sstrip i.m2,.sprof-style i.m2{background:var(--m2)}
+.sstrip i.m3,.sprof-style i.m3{background:var(--m3)}
+.sstrip i.m4,.sprof-style i.m4{background:var(--m4)}
+
+/* section strip: a thin bar under the artwork, one cell per section */
+.sstrip{display:flex; gap:2px; height:5px; margin-top:6px; border-radius:3px; overflow:hidden; min-width:48px}
+.sstrip i{display:block; flex:1 1 0; min-width:4px; opacity:.9}
+.sstrip-hybrid{box-shadow:0 0 0 1px color-mix(in srgb, var(--ink-3) 35%, transparent)}
+
+/* playlist sound profile, under a playlist row */
+.sprof{display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:6px;
+       font-family:var(--mono); font-size:var(--fs-micro, 11.5px); line-height:1.4; color:var(--ink-2);
+       font-variant-numeric:tabular-nums}
+.sprof-unit,.sprof-p,.sprof-dot{color:var(--ink-3)}
+.sprof-bars{display:inline-flex; gap:2px; margin-left:3px; vertical-align:baseline}
+.sprof-bars i{display:inline-block; width:4px; height:.75em; border-radius:1px; background:var(--line-2)}
+.sprof-bars i.on{background:var(--ink-2)}
+.sprof-styles{display:inline-flex; flex-wrap:wrap; gap:4px 10px}
+.sprof-style{display:inline-flex; align-items:center; gap:5px; white-space:nowrap}
+.sprof-style i{display:inline-block; width:8px; height:8px; border-radius:2px; flex:none}
+
+/* listening pill: the mark's five bars as a level meter */
+.lpill{display:inline-flex; align-items:center; gap:8px; padding:5px 11px 5px 9px; border-radius:999px;
+       background:var(--surface-2); box-shadow:inset 0 0 0 1px var(--line); color:var(--ink-2);
+       font-family:var(--mono); font-size:var(--fs-micro, 11.5px); line-height:1; white-space:nowrap;
+       font-variant-numeric:tabular-nums}
+.lp-bars{display:inline-flex; align-items:flex-end; gap:2px; height:12px}
+.lp-bars i{display:block; width:3px; border-radius:1px; height:45%; transform-origin:bottom}
+.lp-bars i:nth-child(1){background:var(--m0); height:40%}
+.lp-bars i:nth-child(2){background:var(--m1); height:70%}
+.lp-bars i:nth-child(3){background:var(--m2); height:100%}
+.lp-bars i:nth-child(4){background:var(--m3); height:60%}
+.lp-bars i:nth-child(5){background:var(--m4); height:80%}
+.lpill-running .lp-bars i{animation:lpLevel 1.1s ease-in-out infinite alternate}
+.lpill-running .lp-bars i:nth-child(2){animation-delay:-.35s}
+.lpill-running .lp-bars i:nth-child(3){animation-delay:-.7s}
+.lpill-running .lp-bars i:nth-child(4){animation-delay:-.2s}
+.lpill-running .lp-bars i:nth-child(5){animation-delay:-.55s}
+.lpill-paused .lp-bars i{opacity:.45}
+.lpill-done .lp-bars i{height:30%}
+@keyframes lpLevel{0%{transform:scaleY(.35)} 100%{transform:scaleY(1)}}
+@media (prefers-reduced-motion:reduce){ .lpill-running .lp-bars i{animation:none} }
+
+/* listening card body (the controls above it are B2's) */
+.lcard{display:flex; flex-direction:column; gap:10px; margin:8px 0}
+.lc-head{display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px}
+.lc-bars{padding:5px 8px}
+.lc-title{color:var(--ink); font-weight:600}
+.lc-meter{height:6px; border-radius:3px; background:var(--surface-3); overflow:hidden}
+.lc-meter i{display:block; height:100%; border-radius:3px; background:linear-gradient(90deg, var(--m0), var(--m2), var(--m4))}
+.lc-stats{display:flex; flex-wrap:wrap; gap:6px 18px; color:var(--ink-2); font-size:13px}
+.lc-stats b{font-family:var(--mono); color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums}
+.lc-note{margin:0; color:var(--ink-2); font-size:13px}
+
+/* couldn't be heard */
+.smiss{color:var(--ink-2); font-size:13px; margin:8px 0}
+.smiss summary{cursor:pointer; color:var(--ink-2)}
+.smiss ul{margin:8px 0 0; padding-left:18px}
+.smiss li{margin:3px 0}
+.smiss b{font-family:var(--mono); color:var(--ink); font-variant-numeric:tabular-nums}

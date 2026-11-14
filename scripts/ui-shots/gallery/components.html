@@ -1,0 +1,83 @@
+<!-- UI-1's component gallery: every control and pattern in
+     web/styles/00-tokens.css, 10-base.css and 50-components.css. -->
+<h1 style="font-family:var(--display);margin:0 0 4px">Components</h1>
+<p class="lede" style="font-size:var(--fs-lede)">Every control, in the current theme. One sentence of lede, then the rest behind a disclosure.</p>
+<details class="how" open><summary>How this works</summary><div><p>The long explanation that used to sit above every screen lives here, shut by default.</p><p>A second paragraph keeps its spacing.</p></div></details>
+<details class="how"><summary>How this works (closed)</summary><div><p>Hidden.</p></div></details>
+
+<h2>Buttons</h2>
+<div class="rowx">
+  <button class="b p">Primary</button>
+  <button class="b p" disabled>Fetch missing tags (0)</button>
+  <button class="b go">File into House</button>
+  <button class="b go" disabled>File into House</button>
+  <button class="b">Secondary</button>
+  <button class="b" disabled>Secondary disabled</button>
+  <button class="b sm">Small</button>
+  <button class="b sm p">Small primary</button>
+</div>
+
+<h2>Checkbox, radio and switch</h2>
+<div class="rowx">
+  <label class="check-row"><input type="checkbox" checked> Checked</label>
+  <label class="check-row"><input type="checkbox"> Unchecked</label>
+  <label class="check-row"><input type="checkbox" checked disabled> Disabled</label>
+  <label class="check-row"><input type="checkbox" class="ind"> Mixed</label>
+  <label class="check-row"><input type="radio" name="r" checked> One</label>
+  <label class="check-row"><input type="radio" name="r"> Other</label>
+</div>
+<div style="max-width:420px;margin-top:10px">
+  <label class="tglrow"><span class="lbl">Listen to my music<small>Runs on this device, previews only</small></span><input type="checkbox" class="tgl" role="switch" checked></label>
+  <label class="tglrow"><span class="lbl">Wi-Fi only</span><input type="checkbox" class="tgl" role="switch"></label>
+  <label class="tglrow"><span class="lbl">Disabled switch</span><input type="checkbox" class="tgl" role="switch" disabled></label>
+</div>
+
+<h2>Select and text</h2>
+<div class="rowx">
+  <select><option>Genre</option><option>Mood</option><option>Era</option></select>
+  <select disabled><option>Disabled</option></select>
+  <input type="text" placeholder="Last.fm API key">
+  <input type="text" value="Typed value">
+  <input type="search" placeholder="Search">
+</div>
+
+<h2>Segmented control</h2>
+<div class="rowx">
+  <div class="seg" role="group" aria-label="Confidence">
+    <button aria-pressed="true">Sure <span class="n">12</span></button>
+    <button aria-pressed="false">Likely <span class="n">31</span></button>
+    <button aria-pressed="false">Unsure <span class="n">8</span></button>
+  </div>
+  <div class="seg" role="group"><button aria-pressed="false">Day</button><button aria-pressed="true">Week</button><button aria-pressed="false">All time</button></div>
+</div>
+
+<h2>Confidence band</h2>
+<div class="rowx">
+  <span class="band band-sure">Sure</span>
+  <span class="band band-likely">Likely</span>
+  <span class="band band-unsure">Unsure</span>
+  <span class="band band-sure">Sure <span class="pct">92%</span></span>
+  <span class="band band-likely">Likely <span class="pct">68%</span></span>
+  <span class="band band-unsure">Unsure <span class="pct">41%</span></span>
+</div>
+
+<h2>Evidence badges</h2>
+<div class="rowx">
+  <span class="evs"><span class="ev ev-tags" style="--w:.55">tags</span><span class="ev ev-history" style="--w:.25">history</span><span class="ev ev-sound" style="--w:.15">sound</span><span class="ev ev-learned" style="--w:.05">learned</span></span>
+  <span class="evs"><span class="ev ev-tags">tags</span><span class="ev ev-history">history</span></span>
+</div>
+<div class="pick" style="margin-top:12px;max-width:520px"><span class="k">1</span><span class="mid"><span class="nm">House</span><span class="ax"><span class="evs"><span class="ev ev-tags" style="--w:.7">tags</span><span class="ev ev-sound" style="--w:.3">sound</span></span></span></span><span class="rt"><span class="band band-sure">Sure <span class="pct">88%</span></span></span></div>
+
+<h2>Tags</h2>
+<div class="tagrow"><span class="tag">house</span><span class="tag ok">genre</span><span class="tag warn">mood</span><span class="tag idle">2010s</span><span class="tag f-off">seen live</span></div>
+
+<h2>Empty states</h2>
+<div class="empty-state"><span class="es-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><b>Nothing to tidy</b><p>Every track sits in a playlist it fits. New suggestions show up here after your next sync.</p><div class="es-acts"><button class="b sm">Sync now</button></div></div>
+<div class="empty-state compact" style="margin-top:12px"><span class="es-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span><b>No new playlists to propose</b><p>Your genres already have homes.</p></span><span class="es-acts"><button class="b sm">Lower the bar</button></span></div>
+
+<h2>Type scale</h2>
+<p style="font-size:var(--fs-lede);margin:0">Lede, 15px: one sentence above a screen.</p>
+<p style="font-size:var(--fs-body);margin:4px 0 0">Body, 14px: running text and rows.</p>
+<p style="font-size:var(--fs-small);margin:4px 0 0;color:var(--ink-2)">Small, 12.5px: secondary lines.</p>
+<p style="font-size:var(--fs-micro);margin:4px 0 0;color:var(--ink-3);font-family:var(--mono)">MICRO, 11PX: COUNTS AND METADATA</p>
+<script>document.querySelectorAll('.ind').forEach(x => x.indeterminate = true)</script>

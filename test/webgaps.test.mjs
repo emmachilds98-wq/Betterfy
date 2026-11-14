@@ -19,6 +19,8 @@ function slice(from, to) {
 }
 const CODE = slice('/* ======================= gaps: docs/SMARTER-GENRES-PLAN.md, phase 3',
                    '/* ---------- shuffle: spacing, not randomness');
+// The screen draws its empty sections with Tidy's empty-state helper (UI-6).
+const EMPTY = slice('function emptyState(', '/* The misfile confidence tiers');
 
 let n = 0;
 const tracks = (artist, k) => Array.from({ length: k }, () => ({ id: `t${n++}`, name: `Track ${n}`,
@@ -63,6 +65,7 @@ function screen({ lib = library(), listening = null, listeningFails = false } = 
   s.addTracks = async (id, ids) => { calls.push(['add', id, ids.length]); };
   vm.createContext(s);
   vm.runInContext(ENGINE, s);
+  vm.runInContext(EMPTY, s);
   vm.runInContext(CODE, s);
   return s;
 }
