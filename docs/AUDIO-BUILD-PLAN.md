@@ -282,6 +282,7 @@ The coordinator's review is at high effort whatever the package used.
 | WP-C2 CLAP text table | **Done (this PR).** `scripts/audio-clap/` builds `docs/models/clap-text-table.json`: 154 prompts (all 108 ontology genres plus 46 reviewed descriptions), 512-d, from `laion/larger_clap_music_and_speech` at a pinned revision. Its test guards against a collapsed text space |
 | WP-C2 CLAP audio encoder in the page | **Not started.** Port CLAP's feature extractor (48 kHz, 64 mel bins, 10 s) to plain JS with a parity test against `transformers`' `ClapFeatureExtractor`. Run `Xenova/larger_clap_music_and_speech` `onnx/audio_model_quantized.onnx` (78 MB) on the #84 opt-in, and store the ear with `withEar()`. That turns on C3 |
 | WP-E2's gate on the owner's library | **Waiting on the owner:** Score both engines → Copy results |
+| Sound-first filing | **This PR.** The owner's call: sound leads filing for heard tracks (§5). File screen picks come from `placements(…, { soundFirst: true })`, with the tag engine's best kept as the third pick; the artist graph learns from genre playlists only (`buildSpace`'s `genreGraph`); `hearMore` scores tracks heard after the space was built without retraining. Score run's "with sound" row is now this engine. Unheard tracks are unchanged |
 
 All 13 plus UI-0 (#64) merged to main on 2026-11-14; main passes the full suite (1047 pass, 1 skip). L1 (#76), E2 (#74) and B2 (#75) merged the same day. By the end of that day, #77–#86 above had merged too, and main passed 1250 tests (1 skip).
 
@@ -289,6 +290,7 @@ All 13 plus UI-0 (#64) merged to main on 2026-11-14; main passes the full suite 
 
 - 2026-11-14: **Option B, then C.** Free and non-commercial: the CC BY-NC-SA model licence is accepted on that basis. No paid services.
 - Default scope (proposed, confirm in WP-B2's PR): Wi-Fi only, "what I'm playing + unfiled", about 330 KB per track.
+- 2026-11-14: **Sound leads filing.** The owner asked for the audio analysis to be the main way the app decides where a track goes, because matching by artist goes wrong on tracks filed by mood or by an event. So the File screen no longer waits for WP-E2's gate: a heard track's picks are sound-first (`SOUND_FIRST_WEIGHTS`: learner 2.0, centroid 1.5, artist graph 0.5), and only genre playlists teach the artist graph (`genreGraph`), so a mood or event playlist can't vote on genre. The gate still runs and is still shown, now on that sound-first engine, so the call can be checked against the owner's own filing. On the simulated library the genre-only graph alone moved held-out top-1 from 39.4% to 67.1% (top-3 77.5% → 93.2%).
 
 ## 6. Done means
 

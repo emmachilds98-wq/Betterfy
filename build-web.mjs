@@ -179,7 +179,10 @@ self.onmessage = function (e) {
     if (m.op === 'build') {
       // Posted back serialised: the page revives it far faster than it could
       // build it, and the same object is what gets cached in IndexedDB.
-      var space = BetterfyIntrinsic.buildSpace(m.lib, { isMirror: isMirror, targets: m.targets || null, audio: m.audio || null });
+      // genreGraph: the artist graph learns from genre playlists only, so
+      // mood and event playlists stop teaching genre (sound-first filing).
+      var space = BetterfyIntrinsic.buildSpace(m.lib, { isMirror: isMirror, targets: m.targets || null,
+                                                        audio: m.audio || null, genreGraph: m.genreGraph === true });
       result = BetterfyPersist.serialiseSpace(space, m.lib);
       // The "can't tell apart" report costs more than the build on a big
       // library (2.9s for 250 playlists) and needs nothing but the space, so it
@@ -189,7 +192,11 @@ self.onmessage = function (e) {
     } else if (m.op === 'validate') {
       var common = Object.assign({}, m.opts, { isMirror: isMirror,
                                                 targets: m.targets ? new Set(m.targets) : null,
-                                                bridge: m.bridge || null, audio: m.audio || null });
+                                                bridge: m.bridge || null, audio: m.audio || null,
+                                                // The sound variant is scored the way the File screen
+                                                // files a heard track: sound leading.
+                                                soundWeights: m.opts && m.opts.soundFirst
+                                                  ? BetterfyIntrinsic.SOUND_FIRST_WEIGHTS : null });
       result = { mine: BetterfyValidate.placementAccuracy(m.lib, common),
                  base: m.tags ? BetterfyBaseline.baselineAccuracy(m.lib, m.tags, common) : null };
     } else {

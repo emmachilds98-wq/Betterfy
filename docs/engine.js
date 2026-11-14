@@ -200,7 +200,7 @@ function artistsOf(playlist, { skip = null } = {}) {
  *            playlists: number, artists: number, pairsConsidered: number,
  *            wideSkipped: number, version: string}}
  */
-function cooccurrence(lib, { skip = null, isMirror = null } = {}) {
+function cooccurrence(lib, { skip = null, isMirror = null, only = null } = {}) {
   const structural = mirrorPredicate(lib, { also: isMirror ?? undefined });
 
   // A playlist holding the whole library co-occurs everything with everything
@@ -209,6 +209,11 @@ function cooccurrence(lib, { skip = null, isMirror = null } = {}) {
   const sets = [];
   for (const p of lib?.playlists ?? []) {
     if (structural(p)) continue;
+    // `only`: learn who goes with whom from these playlists alone. Sound-first
+    // filing passes the genre playlists, so a mood or event playlist ("Sunday",
+    // "Fabric 14 Sept") cannot teach that a jungle and a house artist belong
+    // together just because one night or one feeling put them side by side.
+    if (only && !only.has(p.id)) continue;
     const a = artistsOf(p, { skip });
     if (a.size >= 2) sets.push(a);
   }
@@ -3932,6 +3937,32 @@ const WEIGHTS = {
 };
 
 /**
+ * Sound-first filing: the owner's call (2026-11-14) that what a track *sounds
+ * like* should decide where it goes, with who-you-file-together only breaking
+ * ties. Used for a track the app has heard; an unheard track is scored with
+ * WEIGHTS exactly as before. The learner (trained on each genre playlist's own
+ * tracks) leads, the nearest-sound centroid backs it up, and the artist graph,
+ * built from genre playlists only so a mood or event playlist cannot vote,
+ * stays in at a lower weight because an artist's other filing still says
+ * something. Priors, measured by the Score run's sound variant
+ * (placementAccuracy's `soundWeights`) on the account's own library.
+ */
+const SOUND_FIRST_WEIGHTS = Object.freeze({
+  learned:     2.00,
+  audio:       1.50,
+  graph:       0.50,
+  bridge:      0.40,
+  bpm:         0.40,
+  registrant:  0.25,
+  era:         0.15,
+  minutes:     0.10,
+  albumType:   0.10,
+  key:         0.10,
+  albumTracks: 0.05,
+  popularity:  0.05,
+});
+
+/**
  * A bucket needs enough members to have a definition at all. Below this its
  * centroid is one or two records wearing a playlist's name, and treating that
  * as a learned meaning is how an engine acquires confident nonsense.
@@ -3969,7 +4000,7 @@ const THRESHOLDS = {
  * cannot start by reading a file that assumes whose account it is.
  */
 function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targets = null,
-                                  bridge = null, audio = null } = {}) {
+                                  bridge = null, audio = null, genreGraph = false } = {}) {
   // `targets`, when given, is the set of playlists the listener files into —
   // their genre playlists. Only those become destinations. Every playlist still
   // feeds the artist graph below: a "Sunday" playlist is not somewhere to file
@@ -3979,7 +4010,10 @@ function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targe
   // empty lookup, which makes every bonus score null, which makes the whole
   // layer free.
   const bonus = bonusIndex(rekordbox);
-  const graph = cooccurrence(lib, { skip, isMirror });
+  // `genreGraph`: the artist graph learns only from the genre playlists
+  // (`targets`), so mood and event playlists stop teaching genre. Off by
+  // default, so every existing caller's space is unchanged.
+  const graph = cooccurrence(lib, { skip, isMirror, only: genreGraph && allowed ? allowed : null });
   const registrants = registrantIndex(lib, { skip, isMirror });
 
   // A playlist holding essentially the whole library is a record rather than a
@@ -4129,6 +4163,38 @@ function withAudioLayer(space, audio) {
   return Object.keys(layer).length ? { ...rest, ...layer } : (('audio' in space || 'learned' in space) ? rest : space);
 }
 
+/**
+ * Let a space built earlier hear tracks heard since, without rebuilding it.
+ *
+ * Listening keeps going after the File screen's space is built, and the track
+ * on screen is usually one of the unfiled ones it has just heard. Rebuilding
+ * for each would cost the learner's training every time; this only makes the
+ * new tracks *scorable*. Each playlist's sound and the learner are left exactly
+ * as they were trained, which is right for an unfiled track: it is in no
+ * playlist, so it was never part of either.
+ *
+ * Adds to the space's index in place, because the learner reads the same index
+ * (audio-learn.mjs keeps the Map it was given). A track already in the index is
+ * not replaced: its row may be a member the profiles were built from. Records
+ * are checked as `audioIndex` checks them, so a miss or another model's record
+ * adds nothing.
+ *
+ * @param {object} space  from `buildSpace` or `withAudioLayer`
+ * @param {Iterable<object>|Map|null} records
+ * @returns {number} how many tracks became scorable
+ */
+function hearMore(space, records, { mel = undefined } = {}) {
+  const index = space?.audio?.index;
+  if (!(index instanceof Map) || !records) return 0;
+  let n = 0;
+  for (const [id, row] of audioIndex(records, { mel })) {
+    if (index.has(id)) continue;
+    index.set(id, row);
+    n++;
+  }
+  return n;
+}
+
 /** Whatever a learner returned → Map of finite numbers, or null. */
 function asScoreMap(x) {
   if (!x) return null;
@@ -4207,9 +4273,15 @@ function combine(parts, weights = WEIGHTS) {
  * none of them needs prose. A UI asks for it; a sweep does not.
  */
 function placements(track, space, { limit = 5, exclude = null, why = false,
-                                           weights = WEIGHTS, useAudio = false } = {}) {
+                                           weights = WEIGHTS, useAudio = false, soundFirst = false } = {}) {
   if (!track?.id) return { declined: 'NO_TRACK', results: [] };
   if (!space?.destinations?.size) return { declined: 'NO_DESTINATIONS', results: [] };
+  // Sound-first: a heard track is scored with sound let in and leading. An
+  // unheard one (or a space with no audio layer) falls through untouched.
+  if (soundFirst && space.audio && audioScores(track, space)) {
+    useAudio = true;
+    weights = SOUND_FIRST_WEIGHTS;
+  }
 
   const vec = trackVector(track, space.graph);
   const vecNorm = norm(vec);
@@ -4279,7 +4351,7 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
     version: SPACE_VERSION,
   };
 }
-return { SPACE_VERSION, WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, withAudioLayer, relativeSound, combine, placements };
+return { SPACE_VERSION, WEIGHTS, SOUND_FIRST_WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, withAudioLayer, hearMore, relativeSound, combine, placements };
 })();
 /* ---- core/intrinsic/coldstart.mjs ---- */
 __mod["core/intrinsic/coldstart.mjs"] = (function () {
@@ -5470,7 +5542,8 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
 function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
                                          weights = null, targets = null, bridge = null,
-                                         audio = null, collect = false } = {}) {
+                                         audio = null, collect = false,
+                                         genreGraph = false, soundWeights = null } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -5522,7 +5595,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
   for (const [, members] of groups) {
     const skip = leaky ? null : new Set(members);
-    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge, audio: audioOpts });
+    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge, audio: audioOpts, genreGraph });
     const filed = filedArtists(space);
 
     for (const id of members) {
@@ -5572,7 +5645,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
       if (sound) {
         const more = space.audio
-          ? placements(track, space, { limit: limit3, weights: base, useAudio: true }) : out;
+          ? placements(track, space, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
         const r = more.results ?? [];
         if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort() });
         const s1 = r[0] && want.has(r[0].playlistId);
@@ -5642,7 +5715,11 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     heard: sound.heard, heardNeverFiled: sound.heardNeverFiled,
     judged: sound.judged, changed: sound.changed,
     analysed: audioOpts.index.size,
-    weights: { audio: base.audio ?? WEIGHTS.audio, learned: base.learned ?? WEIGHTS.learned },
+    // The weights the sound variant actually ran with: soundWeights when given
+    // (sound-first), else the headline's.
+    weights: { audio: (soundWeights ?? base).audio ?? WEIGHTS.audio,
+               learned: (soundWeights ?? base).learned ?? WEIGHTS.learned },
+    ...(soundWeights ? { soundFirst: true } : {}),
     learner: audioOpts.learn !== false && audioOpts.learn !== null,
     ...(sound.rows ? { rows: sound.rows } : {}),
   } : null;

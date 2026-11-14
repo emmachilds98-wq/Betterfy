@@ -636,6 +636,24 @@ a mood playlist and neither placement is wrong.
 Edit `playlists.config.json` by hand — the rules that generate it are a first
 guess, and everything downstream reads the file, not the rules.
 
+### Sound first, once a track has been heard
+
+With **Listen to my music** on (Sources, or the File screen's prompt), the File
+screen files a heard track by **how it sounds**, not by who made it. Its picks
+come from the account-native engine with sound leading: a small model trained
+on each genre playlist's own heard tracks, the playlist it sounds nearest, and
+only then the artist graph. That graph now learns from **genre playlists
+only**, so a mood playlist or a one-night event playlist can't teach that a
+jungle artist and a house artist "go together". The tag engine's best pick
+stays on the card as the third choice. A track not heard yet (or with no
+preview) gets the tag picks, exactly as before, and the card says why.
+
+This is the owner's call, made ahead of the audio gate in
+`docs/AUDIO-BUILD-PLAN.md`: the Engine screen's Score run still measures it on
+your own filing ("Adding how it sounds"), so it can be checked rather than
+assumed. Nothing about it needs a key, an export or an install: every account
+has previews, found by the ISRC Spotify already gives.
+
 ## Design decisions worth knowing
 
 - **Remixes are not duplicates.** Extended mixes, VIPs, bootlegs and live cuts

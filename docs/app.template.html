@@ -2012,7 +2012,7 @@ function vHome() {
       <button class="more" data-go="inbox">Open the queue →</button>
     </div>
     <div class="upnext">${upNext.map((t, i) => {
-      const best = t.suggest?.[0];
+      const best = (typeof filePicks === 'function' ? filePicks(t) : t.suggest ?? [])[0];
       const strong = best && best.score >= 0.7;
       const h = hueOf(t.id ?? t.title ?? '');
       const cover = t.art
@@ -2115,6 +2115,41 @@ const trackStrip = t => { const vm = soundOf(t); return vm ? soundSlot('sndstrip
 const pickBand = sg => sg?.band ? bandChip(sg.band) : '';
 const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
 
+/* Sound-first filing: the File screen's picks for one track. Heard, the
+ * engine's sound-led picks lead (soundPicks, in the engine section) and the tag
+ * engine's best stays one key away as a second opinion; not heard, the tag
+ * engine's, exactly as before. Guarded, so the card still draws where the
+ * engine section isn't present. */
+function filePicks(t) {
+  const tags = t?.suggest ?? [];
+  const sound = typeof soundPicks === 'function' ? soundPicks(t) : [];
+  if (!sound.length) return tags;
+  const out = sound.slice(0, 2);
+  for (const sg of [...tags, ...sound.slice(2)]) {
+    if (out.length >= 3) break;
+    if (!out.some(o => o.id === sg.id)) out.push(sg);
+  }
+  return out;
+}
+/* One line under the picks saying where they came from when it isn't sound,
+ * and how to make it sound. Nothing at all where listening can't be asked about. */
+function soundNote(t, picks) {
+  if (typeof audioSettings !== 'function' || typeof SOUND === 'undefined') return '';
+  if (picks[0]?.via === 'sound') return '';
+  const set = audioSettings();
+  if (!set.on) return LS.getItem('bf_sound_nudge') === 'no' ? ''
+    : `<div class="sndnote" style="margin-top:12px"><p class="why" style="margin:0 0 8px">These picks come from artist tags.
+       Switch on listening to file by how each track sounds instead.</p>
+       <div class="rowbtns"><button class="b sm" data-soundon>Listen to my music</button><button class="b sm" data-soundno>Not now</button></div></div>`;
+  if (SOUND.status === 'working') return `<p class="why sndnote" style="margin-top:12px">Learning how your playlists sound…</p>`;
+  if (SOUND.status === 'error') return `<p class="why sndnote" style="margin-top:12px">Couldn’t learn how your playlists sound: ${esc(SOUND.err)}. Picks are from tags.</p>`;
+  const rec = AUDIO.records?.get(t.id);
+  if (!rec) return `<p class="why sndnote" style="margin-top:12px">Not heard yet. Picks are from tags until it is.</p>`;
+  if (rec.miss) return `<p class="why sndnote" style="margin-top:12px">Couldn’t be heard (no preview), so picks are from tags.</p>`;
+  if (SOUND.status === 'ready' && !SOUND.space) return `<p class="why sndnote" style="margin-top:12px">Not enough of your genre playlists heard yet to compare against. Picks are from tags.</p>`;
+  return '';
+}
+
 /* ---------- artist roll-forward: docs/SMARTER-GENRES-PLAN.md, phase 4 ----------
  * File one track by an artist and the same artist's other unfiled tracks usually
  * belong in the same place. So the File screen offers them, as a list you can see
@@ -2190,10 +2225,12 @@ function vInbox() {
   // itself, which is what a misclick used to cost. The selection belongs to
   // whichever track is on screen, so it clears the moment that changes.
   if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; }
+  if (typeof soundWarm === 'function') soundWarm();
+  const picks = filePicks(t);
   const opts = Object.entries(CFG).filter(([, v]) => v.target).map(([id, v]) => ({ id, ...v }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const nameOf = id => opts.find(o => o.id === id)?.name ?? t.suggest.find(s => s.id === id)?.name ?? id;
-  const best = t.suggest[0];
+  const nameOf = id => opts.find(o => o.id === id)?.name ?? picks.find(s => s.id === id)?.name ?? id;
+  const best = picks[0];
   const canFile = S.fileSel.size > 0 || !!best;
   const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
     : S.fileSel.size === 1 ? `File in ${esc(nameOf([...S.fileSel][0]))}`
@@ -2227,12 +2264,13 @@ function vInbox() {
             ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
           </div>
         </div>${trackStrip(t)}
-        ${t.suggest.length ? `<div class="picks">${t.suggest.slice(0, 3).map((sg, n) => `
+        ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
           <button class="pick ${n === 0 ? 'best' : ''}" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
               ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
+              : sg.via === 'sound' ? `sounds like this playlist${sg.tagsAgree ? ' · tags agree' : ''}`
               : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
             <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
@@ -2240,8 +2278,8 @@ function vInbox() {
               title="Never suggest ${esc(sg.name)} for this track">✕</span>
           </button>`).join('')}</div>`
         : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
-        ${[...S.fileSel].filter(id => !t.suggest.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
-          ${[...S.fileSel].filter(id => !t.suggest.some(sg => sg.id === id)).map(id =>
+        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
+          ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).map(id =>
             `<button class="chip" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
         </div>` : ''}
         <div class="rowbtns" style="margin-top:22px">
@@ -4381,7 +4419,9 @@ const VALIDATE_N = 600;
  *  entirely different, and one shadowing the other would be a trap. */
 const yieldToPaint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
-const SPACE_KEY = 'engine-space';
+// -g: built with the genre-only artist graph (sound-first filing), so a space
+// cached before that, whose graph counted mood and event playlists, is not reused.
+const SPACE_KEY = 'engine-space-g';
 
 /**
  * Revive the learned space, or build it.
@@ -4411,14 +4451,15 @@ async function engineSpace() {
     // Built in the worker and posted back serialised — the same object the
     // cache keeps — so the page only pays for reviving it, not building it.
     let json = null;
-    try { json = (await inEngineWorker('build', { lib: LIB, audio }))?.result ?? null; }
+    try { json = (await inEngineWorker('build', { lib: LIB, audio, genreGraph: true }))?.result ?? null; }
     catch { json = null; }
     space = json ? BetterfyPersist.reviveSpace(json, LIB) : null;
     if (space) { ENG.where = 'worker'; pairs = json.pairs; }
     else {
       ENG.where = 'page'; onPage = true;
       await yieldToPaint();
-      space = BetterfyIntrinsic.buildSpace(LIB, { isMirror: isMirrorPlaylist, targets, audio: engineAudioIn(audio) });
+      space = BetterfyIntrinsic.buildSpace(LIB, { isMirror: isMirrorPlaylist, targets, audio: engineAudioIn(audio),
+                                                  genreGraph: true });
       json = null;
     }
     try { await idb.set(SPACE_KEY, { ...(json ?? BetterfyPersist.serialiseSpace(space, LIB)), audioN: audio?.length ?? 0 }); }
@@ -4443,7 +4484,8 @@ async function engineSpace() {
  * meaning instead of a raw percentage. A changed library or a changed set of
  * genre playlists is a different question, so the old answer is not reused. */
 const CAL_KEY = 'engine-calibration';
-const calStamp = () => `${BetterfyCalibrate.CALIBRATE_VERSION}/${BetterfyPersist.ENGINE_STAMP}`;
+// /sf: fitted on the sound-first engine; one fitted before it described a different engine.
+const calStamp = () => `${BetterfyCalibrate.CALIBRATE_VERSION}/${BetterfyPersist.ENGINE_STAMP}/sf`;
 
 async function engineLoadCalibration() {
   if (ENG.calib) return;
@@ -4480,6 +4522,9 @@ async function engineCalibrate(v) {
 /** Put a checked answer on each track in the comparison, once there is a calibration. */
 function engineDecorate() {
   const sh = ENG.shadow, space = ENG.space, cal = ENG.calib?.base?.cal;
+  // A heard track is placed sound-first, so it is judged by the calibration fitted
+  // on the sound-first engine's held-out rows (the Score run's "with sound").
+  const soundCal = ENG.calib?.audio?.cal ?? cal;
   if (!sh || !space) return;
   const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
   const count = { confident: 0, choose: 0, unsure: 0 };
@@ -4487,8 +4532,10 @@ function engineDecorate() {
     row.decision = null;
     const raw = cal && likedById.get(row.id);
     if (!raw) continue;
-    const full = BetterfyIntrinsic.placements(raw, space, { limit: Infinity, useAudio: engineAudioGate()?.pass === true });
-    const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []), cal);
+    const full = BetterfyIntrinsic.placements(raw, space, { limit: Infinity, soundFirst: true });
+    const p = full.results?.[0]?.parts ?? {};
+    const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []),
+                                       'audio' in p || 'learned' in p ? soundCal : cal);
     row.decision = { kind: d.kind,
                      playlists: d.playlists.map(id => ({ id, name: space.destinations.get(id)?.name ?? id })) };
     count[d.kind]++;
@@ -4511,7 +4558,8 @@ const engineAnalyse = guard(async () => {
     for (const b of R.backlog.slice(0, SHADOW_N)) {
       const raw = likedById.get(b.id);
       if (!raw) continue;
-      const out = BetterfyIntrinsic.placements(raw, space, { why: true, limit: 3, useAudio: engineAudioGate()?.pass === true });
+      // Sound-first, as the File screen files: a heard track by its sound.
+      const out = BetterfyIntrinsic.placements(raw, space, { why: true, limit: 3, soundFirst: true });
       const mine = out.results?.[0] ?? null;
       const theirs = b.suggest?.[0] ?? null;
       rows.push({ id: b.id, title: b.title, artist: b.artist,
@@ -4754,6 +4802,94 @@ async function engineAudio() {
 const engineAudioIn = audio => (audio && Object.keys(FB).length ? { records: audio, feedback: FB } : audio);
 /** Audio changes a suggestion only once WP-E2's gate has passed on this library. */
 const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?.gate ?? null);
+
+/* ===========================================================================
+ * Sound-first filing (the owner's call, 2026-11-14)
+ *
+ * What a track sounds like decides where the File screen suggests it goes.
+ * For a track listening has heard, the picks come from the engine with sound
+ * leading (placements' `soundFirst`): a learner trained on each genre
+ * playlist's own heard tracks, the nearest playlist by sound, and an artist
+ * graph built from genre playlists only, so a mood or event playlist ("Sunday",
+ * "Fabric 14 Sept") cannot vote on genre. An unheard track keeps the tag
+ * engine's picks, unchanged.
+ *
+ * This overrides docs/AUDIO-BUILD-PLAN.md's gate for the File screen's picks:
+ * the owner asked for sound to lead. The Score run still measures it (its
+ * "with sound" row is now the sound-first engine), so the call can be checked.
+ *
+ * The space is built once listening has heard something, in the engine worker
+ * (and cached), when the File screen is opened; tracks heard after that are
+ * added without a rebuild (hearMore), and the space is rebuilt in the
+ * background once noticeably more of the genre playlists has been heard.
+ * Nothing here writes to Spotify: it only changes which playlists are offered.
+ * ======================================================================== */
+const SOUND = { status: 'idle', space: null, n: 0, targets: '', err: null, memo: null, byId: null, lib: null };
+/** Heard records worth a rebuild: a tenth more, and at least 20. */
+const SOUND_REBUILD = n => Math.max(20, Math.round(n * 0.1));
+const soundHeard = () => { let n = 0; for (const r of AUDIO.records?.values() ?? []) if (!r.miss) n++; return n; };
+
+/** Start or refresh the sound-first space if it would help and isn't already
+ *  under way. Cheap to call on every render: it returns at once unless work is due. */
+function soundWarm() {
+  if (SOUND.status === 'working' || !LIB) return;
+  const on = audioSettings().on;
+  if (!on && !AUDIO.records?.size) return;
+  const targets = engineTargets().join(), n = soundHeard();
+  if (SOUND.status === 'ready' && SOUND.targets === targets
+      && (!AUDIO.records || n - SOUND.n < SOUND_REBUILD(SOUND.n))) return;
+  // Failed on this same input: don't retry in a loop on every render.
+  if (SOUND.status === 'error' && SOUND.n === n && SOUND.targets === targets) return;
+  SOUND.status = 'working';
+  fire(soundBuild(targets));
+}
+
+async function soundBuild(targets) {
+  try {
+    await engineLoad();
+    await yieldToPaint();
+    const { space } = await engineSpace();
+    Object.assign(SOUND, { space: space?.audio ? space : null, n: soundHeard(), targets,
+                           status: 'ready', err: null, memo: null });
+  } catch (e) {
+    Object.assign(SOUND, { status: 'error', err: e?.message ?? String(e), n: soundHeard(), targets, memo: null });
+  }
+  if (view === 'inbox' || view === 'home') render();
+}
+
+/** Sound-led picks for one track on the File screen, or [] when it hasn't been
+ *  heard, the space isn't ready, or sound can't tell (too few heard members). */
+function soundPicks(t) {
+  const space = SOUND.space;
+  if (!t?.id || !space?.audio || !globalThis.BetterfyIntrinsic) return [];
+  const rejected = FB[t.id]?.rejected ?? [];
+  const key = `${t.id}|${rejected.join()}|${space.audio.index.size}`;
+  if (SOUND.memo?.key === key) return SOUND.memo.picks;
+  if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
+  const raw = SOUND.byId.get(t.id);
+  let picks = [];
+  if (raw) {
+    // Heard since the space was built: let it be scored now.
+    const rec = AUDIO.records?.get(t.id);
+    if (rec && !rec.miss && !space.audio.index.has(t.id)) BetterfyIntrinsic.hearMore(space, [rec]);
+    const out = BetterfyIntrinsic.placements(raw, space, { limit: 3, soundFirst: true,
+                                                         exclude: rejected.length ? new Set(rejected) : null });
+    const W = BetterfyIntrinsic.SOUND_FIRST_WEIGHTS;
+    const tagIds = new Set((t.suggest ?? []).map(sg => sg.id));
+    if (!out.declined) picks = (out.results ?? [])
+      .filter(r => r.parts && ('audio' in r.parts || 'learned' in r.parts))
+      .map((r, n) => {
+        const p = r.parts, w = k => (Number.isFinite(p[k]) ? p[k] * W[k] : 0);
+        return { id: r.playlistId, name: r.name, score: r.score, via: 'sound', axis: CFG[r.playlistId]?.axis ?? null,
+                 // The band is the engine's verdict on its top pick only.
+                 band: n === 0 ? out.band ?? null : null,
+                 evidence: { sound: w('audio') + w('learned'), history: w('graph') + w('bridge') + w('registrant') },
+                 tagsAgree: tagIds.has(r.playlistId) };
+      });
+  }
+  SOUND.memo = { key, picks };
+  return picks;
+}
 
 /* ---------- CLAP: names for "new genre?" groups, and "sounds like" search ----------
  * docs/AUDIO-BUILD-PLAN.md WP-C3, over core/audio/clap-search.mjs. Both read
@@ -5069,7 +5205,11 @@ const engineValidate = guard(async () => {
     // Heard tracks, so the score runs with and without sound on the same folds (WP-E2).
     const audio = await engineAudio();
     let done = null;
-    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioIn(audio), opts: { folds: 5, limit: VALIDATE_N, collect: true } }); }
+    // Scored the way the app files: the genre-only artist graph, and heard tracks
+    // with sound leading (soundFirst), so the number is the engine you use.
+    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioIn(audio),
+                                                    opts: { folds: 5, limit: VALIDATE_N, collect: true,
+                                                            genreGraph: true, soundFirst: true } }); }
     catch { done = null; }
     const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
     if (done?.result?.mine) {
@@ -5079,7 +5219,8 @@ const engineValidate = guard(async () => {
       await engineLoad();
       await yieldToPaint();
       const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
-                       audio: engineAudioIn(audio), collect: true };
+                       audio: engineAudioIn(audio), collect: true,
+                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
@@ -5232,7 +5373,9 @@ function audioCard(v, p) {
         nf.top1, w.neverFiled?.top1, p, nf.top1 != null ? { at: nf.top1 + lift, label: `+${liftPts} points` } : null)}
     </div>
     <p class="gateline"><s class="gate" aria-hidden="true"></s><span>The bar it has to clear: <b>+${liftPts} points</b> right first
-      time on never-filed artists, and no loss overall. Below it, sound is shown but changes no suggestion.</span></p>
+      time on never-filed artists, and no loss overall. ${w.soundFirst
+        ? 'The File screen leads with sound for heard tracks either way (your call); this is how that measures up on your own filing.'
+        : 'Below it, sound is shown but changes no suggestion.'}</span></p>
     <div class="facts" style="margin-top:10px">
       <div><span>Tracks by artists not in any genre playlist yet</span><b class="mono">${nf.scored.toLocaleString()}</b></div>
       <div><span>Scored tracks listened to</span><b class="mono">${w.heard.toLocaleString()} of ${v.mine.scored.toLocaleString()}</b></div>
@@ -5316,7 +5459,7 @@ function audioLines(v, pc) {
   if (!w) return [];
   const g = w.gate ?? {};
   return [
-    `With sound: top-1 ${pc(w.top1)}, top-3 ${pc(w.top3)} (weights audio ${w.weights?.audio}, learned ${w.learner ? w.weights?.learned : 'none'})`,
+    `With sound${w.soundFirst ? ' (sound-first, genre-only artist graph)' : ''}: top-1 ${pc(w.top1)}, top-3 ${pc(w.top3)} (weights audio ${w.weights?.audio}, learned ${w.learner ? w.weights?.learned : 'none'})`,
     `Never-filed artists with sound: top-1 ${pc(w.neverFiled.top1)} (without ${pc(v.mine.neverFiled?.top1)})`,
     `Sound coverage: ${w.heard} of ${v.mine.scored} scored tracks heard (${w.heardNeverFiled} never-filed), `
       + `${w.analysed} analysed in all; had a say on ${w.judged}, changed ${w.changed} top answers`,
@@ -5690,9 +5833,19 @@ document.addEventListener('click', guard(async e => {
     return render();
   }
 
+  // The File screen's "listen to my music" nudge: the same switch as Sources'.
+  if (e.target.closest('[data-soundon]')) {
+    await audioLoad().catch(() => {});
+    if (globalThis.BetterfyAudio) BetterfyAudio.writeAudioSettings(LS, { on: true });
+    else LS.setItem('bf_audio', JSON.stringify({ ...audioSettings(), on: true }));
+    toast('Listening is on. Picks switch to sound as tracks are heard — see Sources for progress.');
+    audioStart();
+    return render();
+  }
+  if (e.target.closest('[data-soundno]')) { LS.setItem('bf_sound_nudge', 'no'); return render(); }
   const selfile = e.target.closest('[data-selfile]'); if (selfile) return toggleFileSel(selfile.dataset.selfile);
   const filesel = e.target.closest('[data-filesel]');
-  if (filesel) return fileCurrent(S.fileSel.size ? [...S.fileSel] : inboxTrack()?.suggest[0]?.id);
+  if (filesel) return fileCurrent(S.fileSel.size ? [...S.fileSel] : filePicks(inboxTrack())[0]?.id);
   const act = e.target.closest('[data-act]'); if (act) return inboxAct(act.dataset.act);
 
   const keep = e.target.closest('[data-keep]');
@@ -6057,8 +6210,8 @@ document.addEventListener('keydown', guard(async e => {
 document.addEventListener('keydown', e => {
   if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
   const t = inboxTrack(); if (!t) return;
-  if (['1','2','3'].includes(e.key)) { const s = t.suggest[+e.key-1]; if (s) toggleFileSel(s.id); }
-  if (e.key === 'Enter' && (S.fileSel.size || t.suggest[0])) fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : t.suggest[0].id));
+  if (['1','2','3'].includes(e.key)) { const s = filePicks(t)[+e.key-1]; if (s) toggleFileSel(s.id); }
+  if (e.key === 'Enter' && (S.fileSel.size || filePicks(t)[0])) fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : filePicks(t)[0].id));
   if (e.key.toLowerCase()==='p') inboxAct('play');
   if (e.key.toLowerCase()==='s') inboxAct('skip');
   if (e.key.toLowerCase()==='u') inboxAct('unlike');
