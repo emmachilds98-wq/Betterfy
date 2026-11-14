@@ -322,7 +322,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     judged: sound.judged, changed: sound.changed,
     analysed: audioOpts.index.size,
     weights: { audio: base.audio ?? WEIGHTS.audio, learned: base.learned ?? WEIGHTS.learned },
-    learner: typeof audioOpts.learn === 'function',
+    learner: audioOpts.learn !== false && audioOpts.learn !== null,
     ...(sound.rows ? { rows: sound.rows } : {}),
   } : null;
 
@@ -357,5 +357,6 @@ function audioOptions(audio) {
   const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
     && ('records' in audio || 'index' in audio || 'learn' in audio) ? audio : { records: audio };
   const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
-  return { index, ...(typeof opts.learn === 'function' ? { learn: opts.learn } : {}) };
+  // Passed through as given: undefined lets buildSpace use its default learner.
+  return { index, ...('learn' in opts ? { learn: opts.learn } : {}) };
 }

@@ -101,7 +101,7 @@ test('with audio but without useAudio, sound is shown on each row and changes no
       const { heard: h, ...rest } = r;
       assert.deepEqual(rest, want.results[j], 'score, order, parts and why are untouched');
       assert.ok(!('audio' in r.parts) && !('learned' in r.parts));
-      if (h) { shown++; assert.ok(h.audio === null || Number.isFinite(h.audio)); assert.equal(h.learned, null); }
+      if (h) { shown++; assert.ok(h.audio === null || Number.isFinite(h.audio)); assert.ok(h.learned === null || Number.isFinite(h.learned)); }
     });
   });
   assert.ok(shown > 0, 'the fixture must actually show some sound');
@@ -332,4 +332,22 @@ test('withAudioLayer puts sound back on a revived space, the same as building wi
   }
   assert.equal(withAudioLayer(revived, null), revived, 'nothing to hear: unchanged');
   assert.equal(withAudioLayer(back, []).audio, undefined, 'an old layer is dropped when the records are gone');
+});
+
+/* ---------- WP-L1's learner is the default ---------- */
+
+test('the WP-L1 learner is trained by default, learn: false turns it off, and both are gated', () => {
+  const space = buildSpace(LIB, { audio: RECORDS, targets: TARGETS });
+  assert.equal(typeof space.learned, 'function', 'trainLearner ran');
+  const t = LIB.all.find(x => x.id === 'deep-t2');
+  const off = placements(t, space, { limit: Infinity });
+  assert.ok(off.results.some(r => Number.isFinite(r.heard?.learned)), 'learned probabilities are shown');
+  assert.ok(off.results.every(r => !('learned' in r.parts)), 'and not used');
+  const on = placements(t, space, { limit: Infinity, useAudio: true });
+  assert.ok(on.results.every(r => 'learned' in r.parts));
+  assert.equal(buildSpace(LIB, { audio: { records: RECORDS, learn: false } }).learned, undefined);
+
+  const acc = placementAccuracy(LIB, { audio: RECORDS, targets: new Set(TARGETS) });
+  assert.equal(acc.withAudio.learner, true);
+  assert.equal(placementAccuracy(LIB, { audio: { records: RECORDS, learn: false } }).withAudio.learner, false);
 });

@@ -19,6 +19,7 @@ import { explain } from './explain.mjs';
 import { bonusIndex, bonusProfileOf, bonusScores } from './bonus-rekordbox.mjs';
 import { bridgeIndex, artistHomes, bridgeScores } from './bridge.mjs';
 import { audioIndex, buildAudioProfiles, audioScores } from './audio.mjs';
+import { trainLearner } from './audio-learn.mjs';
 
 // 4.1.0: the audio layer (WP-E2 of docs/AUDIO-BUILD-PLAN.md). With no audio
 // passed, every output except this string is byte-identical to 4.0.0
@@ -220,6 +221,9 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
  *                      the track, giving destination id → probability as a
  *                      Map, an object or [[id, p], …], or null when unheard.
  *
+ * `learn` defaults to WP-L1's `trainLearner` (core/intrinsic/audio-learn.mjs);
+ * pass `learn: false` for the centroid alone.
+ *
  * Returns the keys to spread into the space: `{}` when there is nothing to
  * hear, so the space is key for key what it was without audio.
  */
@@ -231,8 +235,9 @@ function audioLayer(audio, destinations, skip) {
   if (!index.size) return {};
   const layer = buildAudioProfiles(destinations, index, { skip });
   const out = { audio: layer };
-  if (typeof opts.learn === 'function' && layer.profiles.size) {
-    const learner = opts.learn({ index, profiles: layer.profiles, minMembers: layer.minMembers });
+  const learn = opts.learn === undefined ? trainLearner : opts.learn;
+  if (typeof learn === 'function' && layer.profiles.size) {
+    const learner = learn({ index, profiles: layer.profiles, minMembers: layer.minMembers });
     const fn = typeof learner?.learnedScores === 'function' ? t => learner.learnedScores(t)
              : typeof learner === 'function' ? learner : null;
     if (fn) out.learned = fn;
