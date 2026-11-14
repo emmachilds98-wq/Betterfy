@@ -43,6 +43,33 @@ including genres the model has never heard of. Real playlists have dozens of
 members, so this should improve; that's the next thing to measure, on the
 owner's real library.
 
+**Learning curve (WP-L1, 2026-11-14).** A larger set drawn the same way, 747
+tracks (15 genres × ~50, one track per artist per genre), exported as
+embeddings only by `scripts/audio-phase0/export-embeddings.py` into
+`test/fixtures/audio-learn-phase0.json`. 5-fold cross-validation with folds
+grouped by artist; each playlist's training examples subsampled to the size
+shown, two draws per fold; the test fold is never subsampled. "Learner" is
+`core/intrinsic/audio-learn.mjs` in its default `auto` mode: it fits the
+centroid baseline and a class-balanced L2 logistic regression that starts from
+(and is regularised toward) the centroid model, early-stopped on a held-out
+fold, and keeps whichever explains that fold better. Below 10 examples a
+playlist it does not try logistic regression at all.
+
+| Examples per playlist | Centroids top-1 / top-2 | Logistic alone | **Learner (auto)** |
+|---|---|---|---|
+| 5 | 58.8% / 79.9% | 57.8% / 78.5% | **58.8% / 79.9%** (centroids) |
+| 10 | 63.9% / 81.8% | 63.7% / 82.5% | **63.7% / 82.5%** |
+| 20 | 65.5% / 84.0% | 66.8% / 85.3% | **66.8% / 85.3%** |
+| 40 | 68.5% / 84.5% | 70.1% / 87.8% | **70.1% / 87.8%** |
+
+Chance is 6.7%. More examples help both, with the steepest gain from 5 to 10.
+The learner's advantage is small on top-1 (about +1.5 points at 20–40) and
+clearer on top-2 (+3.3 at 40), which is what "pick one of these two" uses. At
+no size is it more than 0.2 points behind the baseline on top-1 (at 10, one
+track in 750), and from 10 up it is ahead on top-2. These are playlist-title
+labels from strangers' Deezer playlists; the owner's own playlists are the
+measurement that counts, through WP-E2's gate.
+
 ### The options
 
 | | A. Labels | **B. Learn from your playlists (recommended)** | C. B plus a laptop-only "deep listen" |
