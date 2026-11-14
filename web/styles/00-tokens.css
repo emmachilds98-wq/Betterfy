@@ -1,0 +1,73 @@
+  :root{
+    /* Daylight. A warm paper ground rather than the cool blue-grey the app
+       used to sit on: the artwork tiles, the accent and the five mark colours
+       all read warmer against it, and it is easier on the eye at night when
+       someone leaves the phone in light mode. */
+    --ground:#FBF7F1; --surface:#FFF; --surface-2:#F4EDE3; --surface-3:#EFE7DA;
+    --rail:#F7F1E7;
+    --ink:#1B1815; --ink-2:#5C544B; --ink-3:#8B8177;
+    --line:#E9E1D6; --line-2:#DCD1C0;
+    --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4; --accent-lift:#EC663E;
+    --ok:#17915F; --ok-ink:#FFF; --ok-soft:#E3F2EA; --warn:#9A6B0E; --warn-soft:#F8EFD9;
+    --idle:#A79C8E;
+    --shadow:0 1px 2px rgba(90,66,40,.06); --shadow-2:0 12px 28px rgba(160,120,80,.16);
+    /* Display face. Bricolage carries the headings; Archivo stays behind it as
+       the fallback so a blocked font request still lands on something with the
+       same weight rather than dropping to a system serif. */
+    --display:"Bricolage Grotesque","Archivo",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+    /* Corner radii, named once. The redesign is markedly rounder than the app
+       was: cards and panels are pill-adjacent, controls stay tighter so they
+       still read as controls. */
+    --r:11px;          /* small: inputs, tags, thumbnails */
+    --r-2:16px;        /* medium: buttons, list rows, tiles */
+    --r-3:22px;        /* large: cards, panels */
+    --r-4:28px;        /* extra: hero, the file card, sheets */
+    /* Per-element accent hooks — Settings can point any of these at a
+       neutral fallback instead of the chosen accent, region by region. */
+    --nav-accent:var(--accent); --btn-accent:var(--accent); --btn-ink:var(--accent-ink);
+    --progress-accent:var(--accent); --hover-accent:var(--accent);
+    --tag-bg:var(--surface-3); --tag-ink:var(--ink-2);
+    /* Eight hues spun off the chosen accent, written by applyTheme(). Each
+       screen and each stat tile owns one, so the app reads as a palette
+       rather than one colour — and it still turns with the accent slider.
+       The literals here are only what the first paint uses. */
+    --c0:#D9502B; --c1:#B4741A; --c2:#6E8F1E; --c3:#1F8A5B;
+    --c4:#1B8A86; --c5:#2A6FB8; --c6:#6C57C4; --c7:#B03C93;
+    --c0-soft:#FBEAE4; --c1-soft:#F8F0DC; --c2-soft:#EFF4E0; --c3-soft:#E2F3EA;
+    --c4-soft:#E0F3F2; --c5-soft:#E4EEF9; --c6-soft:#ECE8FA; --c7-soft:#F9E6F3;
+    /* The five colours of the mark. Unlike everything above these never turn
+       with the accent and never change between themes — the logo is the one
+       thing on screen that has to be the same object every time you see it. */
+    --m0:#F2A93B; --m1:#F2643C; --m2:#C44BA6; --m3:#7E63D8; --m4:#3C82D9;
+    --m0-ink:#231603; --m1-ink:#2A0F05; --m2-ink:#2A0A22; --m3-ink:#150C2E; --m4-ink:#04162E;
+    /* The hue of whatever screen is open — set by render(). */
+    --view:var(--accent); --view-soft:var(--accent-soft);
+    /* iPhone safe areas, named once so every fixed element pads the same way. */
+    --sat:env(safe-area-inset-top); --sab:env(safe-area-inset-bottom);
+    --sal:env(safe-area-inset-left); --sar:env(safe-area-inset-right);
+    --tabh:60px;                       /* bottom tab bar, excluding the inset */
+    --topbar:52px;                     /* mobile header, excluding the inset */
+  }
+  /* Nightshift. Warm near-black rather than the blue-black it was, so the
+     amber end of the mark and the accent don't fight the ground. */
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+    --ground:#12100D; --surface:#1C1815; --surface-2:#231E1A; --surface-3:#262019;
+    --rail:#0D0B09;
+    --ink:#F7F1E8; --ink-2:#ABA093; --ink-3:#7F7468;
+    --line:#2E2822; --line-2:#3B342C;
+    --accent:#FF7A52; --accent-ink:#17100B; --accent-soft:#2E1C15; --accent-lift:#FF9068;
+    --ok:#7AE0A6; --ok-ink:#0C2418; --ok-soft:#12261D; --warn:#F2A93B; --warn-soft:#2A2113;
+    --idle:#5C5346;
+    --shadow:0 1px 2px rgba(0,0,0,.34); --shadow-2:0 14px 34px rgba(0,0,0,.45);
+  }}
+  :root[data-theme="dark"]{
+    --ground:#12100D; --surface:#1C1815; --surface-2:#231E1A; --surface-3:#262019;
+    --rail:#0D0B09;
+    --ink:#F7F1E8; --ink-2:#ABA093; --ink-3:#7F7468;
+    --line:#2E2822; --line-2:#3B342C;
+    --accent:#FF7A52; --accent-ink:#17100B; --accent-soft:#2E1C15; --accent-lift:#FF9068;
+    --ok:#7AE0A6; --ok-ink:#0C2418; --ok-soft:#12261D; --warn:#F2A93B; --warn-soft:#2A2113;
+    --idle:#5C5346;
+    --shadow:0 1px 2px rgba(0,0,0,.34); --shadow-2:0 14px 34px rgba(0,0,0,.45);
+  }

@@ -1,0 +1,71 @@
+  /* ---------- landing ---------- */
+  /* A wash of the accent behind the hero, so the first screen carries the
+     brand colour the viewer picked rather than being flat grey. Two more
+     blobs in neighbouring hues drift behind it — the whole page is one
+     colour otherwise, and on a phone the hero is most of what you see. */
+  .land{max-width:780px; margin:0 auto; position:relative;
+    padding:calc(70px + var(--sat)) calc(22px + var(--sar)) calc(60px + var(--sab)) calc(22px + var(--sal))}
+  /* Spread with a radius wider than the box rather than by hanging the box
+     off both edges: the old -35% insets pushed the document 137px wider than
+     the screen on a phone, which let the page scroll sideways and dragged the
+     fixed corner buttons out of reach. */
+  .land::before{content:""; position:absolute; inset:-120px 0 auto 0; height:560px; z-index:-1;
+    background:radial-gradient(78% 46% at 50% 34%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 72%)}
+  /* Faded out at the foot rather than clipped: on the warm ground the wash is
+     light enough that a hard edge at 70vh was the most visible thing on the
+     screen. Masked, it just stops. */
+  .aurora{position:fixed; inset:0 0 auto; height:78vh; z-index:-2; overflow:hidden; pointer-events:none;
+    opacity:0; transition:opacity .5s ease;
+    -webkit-mask-image:linear-gradient(#000 42%, transparent); mask-image:linear-gradient(#000 42%, transparent)}
+  body:has(#land:not([hidden])) .aurora{opacity:1}
+  .aurora i{position:absolute; display:block; border-radius:50%; filter:blur(80px); opacity:.26}
+  .aurora i:nth-child(1){width:52vw; height:52vw; left:-12vw; top:-16vw; background:var(--c5); animation:drift1 19s ease-in-out infinite alternate}
+  .aurora i:nth-child(2){width:44vw; height:44vw; right:-10vw; top:-8vw; background:var(--c7); animation:drift2 23s ease-in-out infinite alternate}
+  .aurora i:nth-child(3){width:38vw; height:38vw; left:32vw; top:16vw; background:var(--c3); animation:drift1 27s ease-in-out infinite alternate-reverse}
+  @keyframes drift1{to{transform:translate3d(9vw,6vh,0) scale(1.16)}}
+  @keyframes drift2{to{transform:translate3d(-11vw,8vh,0) scale(1.1)}}
+  :root[data-theme="dark"] .aurora i{opacity:.2}
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .aurora i{opacity:.2} }
+  /* No flex gap: "Better" is a bare text node and "fy" a <span>, so a gap put
+     space inside the word. The mark carries its own margin instead. */
+  .logo{display:flex; align-items:center; font-family:var(--display); font-weight:800; font-size:46px; letter-spacing:-.035em; margin:0}
+  /* The wordmark is an h1 too, and does not want the screen-hue rule below. */
+  .logo::before{display:none}
+  .logo span{color:var(--accent)}
+  .mark{flex:none}
+  .logo .mark{margin-right:15px; width:48px; height:48px; filter:drop-shadow(0 3px 10px rgba(0,0,0,.16))}
+  .brand .mark{width:24px; height:24px; margin-right:11px}
+  .tagline{font-size:18px; color:var(--ink-2); margin:12px 0 26px; max-width:52ch; text-wrap:balance}
+  .land h2{font-family:var(--display); font-weight:700; font-size:15px; letter-spacing:.02em; margin:34px 0 10px}
+  .cta{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .fineprint{color:var(--ink-3); font-size:12.5px; margin:14px 0 0; display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .fineprint .dot{color:var(--line-2)}
+  @media (max-width:820px){ .fineprint{gap:2px 10px} .fineprint .dot{display:none} }
+  .linkish{appearance:none; border:0; background:none; padding:0; font:inherit; font-size:12.5px;
+    color:var(--accent); cursor:pointer; text-decoration:underline; text-underline-offset:2px}
+  .linkish:disabled{color:var(--ink-3); cursor:default; text-decoration:none}
+  /* Two by two. Four cards across a 780px column left one card stranded on a
+     second row, and the pairs read better as pairs. */
+  .feat{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin:30px 0}
+  @media (max-width:560px){ .feat{grid-template-columns:1fr} }
+  .feat div{position:relative; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3);
+    padding:18px 20px 18px 24px; overflow:hidden; box-shadow:var(--shadow);
+    transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease}
+  /* One card per hue: the landing page is the first thing anyone sees, and a
+     four-up grid of identical grey boxes was selling it short. */
+  /* A rounded rule inset from the corner, not a stripe down the edge: at a
+     22px radius a square bar hangs off the curve. */
+  .feat div::before{content:""; position:absolute; left:10px; top:16px; bottom:16px; width:4px;
+    border-radius:2px; background:var(--fc)}
+  .feat div:nth-child(1){--fc:var(--c0)} .feat div:nth-child(2){--fc:var(--c3)}
+  .feat div:nth-child(3){--fc:var(--c5)} .feat div:nth-child(4){--fc:var(--c7)}
+  .feat div:hover{transform:translateY(-2px); border-color:var(--fc); box-shadow:var(--shadow-2)}
+  .feat b{display:flex; align-items:center; gap:7px; margin-bottom:4px}
+  .feat b::before{content:""; width:7px; height:7px; border-radius:2px; background:var(--fc); flex:none}
+  .feat p{margin:0; color:var(--ink-2); font-size:13px}
+  .note{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-2); padding:15px 18px;
+    color:var(--ink-2); font-size:13.5px; margin:16px 0}
+  .note b{color:var(--ink)}
+  details{margin-top:12px} summary{cursor:pointer; font-weight:600; font-size:13.5px}
+  .field{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap}
+

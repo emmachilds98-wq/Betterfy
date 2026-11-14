@@ -3001,6 +3001,12 @@ const LEARN_DEFAULTS = {
    *  cost of one fit to about K · maxPerClass · 1280 · epochs multiply-adds
    *  whatever the library size; the learning curve flattens long before. */
   maxPerClass: 200,
+  /** In 'auto', logistic regression is only tried when every playlist has at
+   *  least this many analysed members. Below it the held-out fold is one or
+   *  two tracks a playlist, too few to choose between models on: measured on
+   *  the phase 0 fixture, 'auto' at 5 per playlist picked logistic 8 times in
+   *  10 and lost a point of top-1 to the baseline (57.6% vs 58.8%). */
+  minForLogistic: 10,
 };
 
 const idOf = t => (typeof t === 'string' ? t : t?.id) || null;
@@ -3366,7 +3372,8 @@ function fitSet(set, opts = {}) {
   const held = { prototype: { loss: +proto.loss.toFixed(6), top1: heldOut({ ...trainPrototypes(trainSet), T: proto.T }, valSet).top1, T: proto.T } };
 
   let lr = null;
-  if (o.model !== 'prototype') {
+  const tryLogistic = o.model === 'logistic' || (o.model === 'auto' && Math.min(...set.counts) >= o.minForLogistic);
+  if (tryLogistic) {
     for (const l2 of [].concat(o.l2)) {
       const m = trainLogistic(trainSet, { ...o, l2, val: valSet, T0: proto.T });
       const h = heldOut(m, valSet);
@@ -3375,7 +3382,7 @@ function fitSet(set, opts = {}) {
     held.logistic = { loss: +lr.loss.toFixed(6), top1: lr.top1, l2: lr.l2, epochs: lr.epochs };
   }
 
-  const useLogistic = o.model === 'logistic' || (o.model === 'auto' && lr && lr.loss < proto.loss);
+  const useLogistic = o.model === 'logistic' || (o.model === 'auto' && lr != null && lr.loss < proto.loss);
   const model = useLogistic
     ? trainLogistic(set, { ...o, l2: lr.l2, T0: proto.T, epochs: Math.max(1, lr.epochs) })
     : trainPrototypes(set, { T: proto.T });

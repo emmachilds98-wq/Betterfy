@@ -109,6 +109,15 @@ test('class balance: a big playlist does not win by being big', () => {
   assert.ok(recall(1) >= recall(0) - 0.15, `small-class recall ${recall(1)} vs big ${recall(0)}`);
 });
 
+test('auto stays with prototypes while any playlist is too small to choose on', () => {
+  const set = hidden();
+  const few = capPerClass(set, LEARN_DEFAULTS.minForLogistic - 1);
+  const m = fitSet(few);
+  assert.equal(m.chosen, 'prototype');
+  assert.equal(m.held.logistic, undefined, 'logistic is not even tried');
+  assert.equal(fitSet(few, { model: 'logistic' }).chosen, 'logistic', 'but can be forced');
+});
+
 /* ---------- the model pieces ---------- */
 
 test('prototype model matches plain cosine to centroids', () => {

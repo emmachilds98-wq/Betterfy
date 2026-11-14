@@ -25,3 +25,4 @@ review.build.html
 node_modules/
 *.tmp
 benchmark-cases.json
+scripts/ui-shots/out/
