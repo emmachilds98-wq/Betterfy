@@ -34,7 +34,8 @@
     "benchmark:fit": "node core/benchmark/fit.mjs",
     "benchmark:import": "node core/benchmark/import.mjs",
     "benchmark:compare": "node core/benchmark/compare.mjs",
-    "validate:placement": "node validate-placement.mjs"
+    "validate:placement": "node validate-placement.mjs",
+    "shots": "node build-web.mjs --allow-missing-id && node scripts/ui-shots/shots.cjs"
   },
   "license": "MIT"
 }

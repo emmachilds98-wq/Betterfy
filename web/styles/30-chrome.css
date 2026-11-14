@@ -1,0 +1,91 @@
+  /* ---------- app chrome ---------- */
+  /* One column, not two. The 212px rail is gone: on a wide screen the same
+     buttons run across a sticky top bar as pills, which is what the redesign
+     asks for and what leaves the content its full width. The markup is
+     unchanged — <aside> is still the one list of destinations, so the tab bar
+     on a phone and the pills on a desktop can never drift apart. */
+  .app{display:block; min-height:100vh; min-height:100dvh}
+  aside{position:sticky; top:0; z-index:22; background:var(--rail);
+        border-bottom:1px solid var(--line); display:flex; align-items:center; gap:6px;
+        padding:11px calc(var(--sar) + 150px) 11px calc(var(--sal) + 22px)}
+  /* No gap, for the same reason as .logo: it split the wordmark in two. */
+  .brand{display:flex; align-items:center; font-family:var(--display); font-weight:800;
+         font-size:21px; letter-spacing:-.03em; flex:none; margin-right:12px}
+  .brand span{color:var(--accent)}
+  /* Only ever shown in the More sheet — the top bar has no room for it. */
+  .who{display:none}
+  /* Pills. Horizontally scrollable rather than wrapping, so a narrow laptop
+     window shortens the row instead of pushing the content down. */
+  .navwrap{display:flex; gap:6px; flex:1; min-width:0; overflow-x:auto; scrollbar-width:none}
+  .navwrap::-webkit-scrollbar{display:none}
+  .nav{appearance:none; border:1px solid var(--line); background:transparent; font:inherit; cursor:pointer;
+       padding:9px 16px; color:var(--ink-2); display:flex; align-items:center; gap:8px;
+       border-radius:999px; font-size:13.5px; font-weight:600; white-space:nowrap; flex:none;
+       position:relative; transition:background .14s ease, color .14s ease, border-color .14s ease}
+  .nav .lbl{min-width:0}
+  /* Each screen owns a hue (--vc, set per button below) so the pills, the tab
+     bar and the screen you land on all agree on a colour. */
+  .nav .ic{flex:none; width:19px; height:19px; display:grid; place-items:center; color:var(--ink-3)}
+  .nav .ic svg{width:17px; height:17px}
+  .nav:hover{background:var(--surface-2); color:var(--ink); border-color:var(--line-2)}
+  .nav:hover .ic{color:var(--vc)}
+  .nav[aria-current="true"]{background:var(--vc); border-color:transparent; color:var(--vc-ink); font-weight:700}
+  .nav[aria-current="true"] .ic{color:var(--vc-ink)}
+  /* On the top bar the icon is redundant next to a written label; the tab bar
+     turns it back on, where the label is 10px and the icon does the work. */
+  aside .nav .ic{display:none}
+  .nav .c{font-family:var(--mono); font-size:11px; font-weight:700; border-radius:8px; padding:1px 7px;
+          background:var(--surface-3); color:var(--ink-2)}
+  .nav[aria-current="true"] .c{background:rgba(0,0,0,.18); color:var(--vc-ink)}
+  .nav .c:empty{display:none}
+  /* Home is the accent — it is the screen the accent belongs to. The other
+     four take one of the mark's colours each, so the tab, the Home card that
+     opens it and the screen itself are the same colour, and that colour is
+     the same one every time rather than whatever the accent spun off. */
+  [data-v="home"]{--vc:var(--accent); --vc-ink:var(--accent-ink)}
+  [data-v="inbox"]{--vc:var(--m0); --vc-ink:var(--m0-ink)}
+  [data-v="tidy"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
+  [data-v="discover"]{--vc:var(--m3); --vc-ink:var(--m3-ink)}
+  [data-v="shuffle"]{--vc:var(--m4); --vc-ink:var(--m4-ink)}
+  [data-v="new"]{--vc:var(--m2); --vc-ink:var(--m2-ink)}
+  [data-v="lists"]{--vc:var(--m4); --vc-ink:var(--m4-ink)}
+  [data-v="engine"]{--vc:var(--m2); --vc-ink:var(--m2-ink)}
+  [data-v="history"]{--vc:var(--m3); --vc-ink:var(--m3-ink)}
+  /* Behind More on a desktop as well as on a phone: five destinations is the
+     whole point of the fold, and the sheet lists them on both. */
+  aside .nav[data-sec]{display:none}
+  /* Lives in the More sheet on both form factors now. */
+  .railfoot{display:none}
+  /* "More": same pill, on the top bar as well as the tab bar. */
+  .tabmore{appearance:none; border:1px solid var(--line); background:transparent; font:inherit; cursor:pointer;
+        padding:9px 16px; color:var(--ink-2); display:flex; align-items:center; gap:8px; flex:none;
+        border-radius:999px; font-size:13.5px; font-weight:600; white-space:nowrap}
+  .tabmore .ic{display:none}
+  .tabmore:hover{background:var(--surface-2); color:var(--ink); border-color:var(--line-2)}
+  .tabmore[aria-expanded="true"],.tabmore[aria-current="true"]{background:var(--surface-2); color:var(--ink)}
+  main{padding:30px 30px 90px; max-width:1080px; min-width:0; margin:0 auto}
+  /* One card at a time is a column, not a page: at 1080px the suggestion rows
+     stretch so far that the name and the score stop reading as one row. */
+  main[data-view="inbox"], main[data-view="discover"]{max-width:800px}
+
+  /* The mobile header and bottom tab bar. Both are display:none until the
+     narrow breakpoint takes over at the foot of this stylesheet. */
+  /* Fixed, not sticky: a sticky grid item can only stick inside its own grid
+     row, which is no use once the page scrolls. */
+  .mtop{display:none; position:fixed; top:0; left:0; right:0; z-index:22; align-items:center; gap:10px;
+        padding:calc(var(--sat) + 11px) calc(var(--sar) + 150px) 11px calc(var(--sal) + 14px);
+        background:color-mix(in srgb, var(--ground) 82%, transparent);
+        -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+        border-bottom:1px solid transparent; transition:border-color .2s ease}
+  .mtop.stuck{border-bottom-color:var(--line)}
+  .mtop .mark{width:26px; height:26px; flex:none}
+  .mtop .title{font-family:var(--display); font-weight:800; font-size:19px; letter-spacing:-.03em;
+               white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .mtop .title em{font-style:normal; color:var(--view)}
+
+  h1{font-family:var(--display); font-weight:800; font-size:clamp(28px,3.6vw,36px); letter-spacing:-.03em; margin:0 0 8px; text-wrap:balance}
+  /* A short bar in the screen's own hue above every title. */
+  h1::before{content:""; display:block; width:34px; height:4px; border-radius:3px; background:var(--view); margin:0 0 12px}
+  h2{font-family:var(--display); font-weight:700; font-size:18px; letter-spacing:-.015em; margin:34px 0 12px}
+  .lede{color:var(--ink-2); font-size:16px; margin:0 0 24px; max-width:62ch}
+
