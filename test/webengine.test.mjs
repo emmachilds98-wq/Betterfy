@@ -585,3 +585,72 @@ test('the Deezer frame is sandboxed without same-origin, and both sides pin the 
   assert.match(src, /if \(e\.source !== f\.contentWindow\) return;/, 'the page only listens to its own frame');
   assert.match(src, /BetterfyDeezer\.isDeezerApiUrl\(url\)/, 'the page checks the address before sending it');
 });
+
+/* ---------- how sure it may sound (docs/SMARTER-GENRES-PLAN.md, phase 2) ---------- */
+
+test('scoring calibrates, keeps the calibration, and drops the raw rows', async () => {
+  const s = screen();
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  const v = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', s));
+  assert.ok(!v.error, v.error);
+  assert.equal(v.mine.rows, undefined, 'the per-track rows are for fitting, not for keeping in the result');
+  const c = JSON.parse(vm.runInContext('JSON.stringify(ENG.calib)', s));
+  assert.equal(c.base.checked.n, v.mine.scored, 'checked on every scored track, each from the other half');
+  assert.ok(vm.runInContext('idb.get(CAL_KEY)', s), 'remembered on the device');
+
+  const html = vm.runInContext('vEngine()', s);
+  assert.match(html, /How sure it is, checked/);
+  assert.match(html, /Short list/);
+  assert.match(html, /Not sure/);
+  const text = vm.runInContext('engineSummary()', s);
+  assert.match(text, /How sure: (confident|confident: none earned yet)/);
+  assert.ok(!/undefined|NaN|\[object Object\]/.test(text), text);
+});
+
+test('once calibrated, every compared track gets a checked answer, not a raw percentage', async () => {
+  const s = screen();
+  await vm.runInContext('engineAnalyse()', s);
+  assert.equal(vm.runInContext('ENG.shadow.decided', s), null, 'no calibration yet, no claims');
+  await vm.runInContext('engineValidate()', s);
+  const sh = JSON.parse(vm.runInContext('JSON.stringify(ENG.shadow)', s));
+  assert.ok(sh.decided, 'scoring should have decorated the comparison');
+  assert.equal(sh.decided.confident + sh.decided.choose + sh.decided.unsure,
+               sh.rows.filter(r => r.decision).length);
+  const html = vm.runInContext('vEngine()', s);
+  assert.match(html, /Confident · short list · not sure/);
+  assert.match(html, /tag ok">confident|tag">probably|tag warn">pick one|<i>not sure<\/i>/);
+});
+
+test('a calibration is reused for the same library, and not for a different question', async () => {
+  const s = screen();
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  // Same library, same genre playlists: a fresh analysis picks it up again.
+  vm.runInContext('ENG.calib = null', s);
+  await vm.runInContext('engineAnalyse()', s);
+  assert.ok(vm.runInContext('ENG.calib', s), 'reloaded from the device');
+  // Fewer genre playlists is a different question: the old answer is not reused.
+  vm.runInContext('ENG.calib = null; CFG["p-late"].target = false', s);
+  await vm.runInContext('engineAnalyse()', s);
+  assert.equal(vm.runInContext('ENG.calib', s), null);
+});
+
+test('decisions read as words a person would say', () => {
+  const s = screen();
+  const d = (kind, ...names) => vm.runInContext(`decisionHtml(${JSON.stringify({ kind, playlists: names.map(n => ({ id: n, name: n })) })})`, s);
+  assert.match(d('confident', 'Jungle'), /<b>Jungle<\/b> <span class="tag ok">confident/);
+  assert.match(d('choose', 'Jungle'), /<b>Jungle<\/b> <span class="tag">probably/);
+  assert.match(d('choose', 'Jungle', 'DnB'), /<b>Jungle<\/b> or <b>DnB<\/b> <span class="tag warn">pick one/);
+  assert.equal(d('unsure'), '<i>not sure</i>');
+  assert.match(d('choose', '<script>'), /&lt;script&gt;/, 'names are escaped');
+});
+
+test('forgetting also forgets the calibration', async () => {
+  const s = screen();
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  await vm.runInContext('engineReset()', s);
+  assert.equal(vm.runInContext('ENG.calib', s), null);
+  assert.equal(vm.runInContext('idb.get(CAL_KEY)', s), null);
+});

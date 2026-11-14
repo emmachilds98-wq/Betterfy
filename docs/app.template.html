@@ -4512,7 +4512,7 @@ function engineLoad() {
 }
 
 const ENG = { status:'idle', err:null, space:null, rung:null, shadow:null,
-              pairs:null, val:null, valRunning:false, valStage:null, bridgeProgress:null, ms:0, from:null };
+              pairs:null, val:null, valRunning:false, valStage:null, bridgeProgress:null, calib:null, ms:0, from:null };
 
 /* The engine runs in a worker when it can, so learning and scoring a big library
  * leave the page usable instead of freezing it for seconds at a time (measured:
@@ -4617,6 +4617,61 @@ async function engineSpace() {
   return { space, from, pairs, ms: Math.round(performance.now() - t0) };
 }
 
+/* ---------- how sure it may sound: docs/SMARTER-GENRES-PLAN.md, phase 2 ----------
+ * Fitted on the score run's held-out placements (core/intrinsic/calibrate.mjs)
+ * and kept for this library and these genre playlists, so the comparison below
+ * can say "confident", "probably", "pick one" or "not sure" with a checked
+ * meaning instead of a raw percentage. A changed library or a changed set of
+ * genre playlists is a different question, so the old answer is not reused. */
+const CAL_KEY = 'engine-calibration';
+const calStamp = () => `${BetterfyCalibrate.CALIBRATE_VERSION}/${BetterfyPersist.ENGINE_STAMP}`;
+
+async function engineLoadCalibration() {
+  if (ENG.calib) return;
+  try {
+    const c = await idb.get(CAL_KEY);
+    if (c && c.stamp === calStamp() && c.fingerprint === BetterfyPersist.fingerprint(LIB)
+        && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
+      ENG.calib = { base: c.base, bridge: c.bridge ?? null, at: c.at ?? null };
+  } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
+}
+
+/** Fit from a score run's rows, keep it, and drop the rows: they are only for this. */
+async function engineCalibrate(v) {
+  const mine = v?.mine;
+  if (!mine?.rows) return;
+  await engineLoad();
+  const base = BetterfyCalibrate.calibrationReport(mine.rows);
+  const bridge = mine.withBridge?.rows ? BetterfyCalibrate.calibrationReport(mine.withBridge.rows) : null;
+  delete mine.rows;
+  if (mine.withBridge) delete mine.withBridge.rows;
+  ENG.calib = { base, bridge, at: Date.now() };
+  try {
+    await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
+                             targets: engineTargets(), base, bridge, at: ENG.calib.at });
+  } catch { /* not remembered: it still applies until the page is closed */ }
+  engineDecorate();
+}
+
+/** Put a checked answer on each track in the comparison, once there is a calibration. */
+function engineDecorate() {
+  const sh = ENG.shadow, space = ENG.space, cal = ENG.calib?.base?.cal;
+  if (!sh || !space) return;
+  const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
+  const count = { confident: 0, choose: 0, unsure: 0 };
+  for (const row of sh.rows) {
+    row.decision = null;
+    const raw = cal && likedById.get(row.id);
+    if (!raw) continue;
+    const full = BetterfyIntrinsic.placements(raw, space, { limit: Infinity });
+    const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []), cal);
+    row.decision = { kind: d.kind,
+                     playlists: d.playlists.map(id => ({ id, name: space.destinations.get(id)?.name ?? id })) };
+    count[d.kind]++;
+  }
+  sh.decided = cal ? count : null;
+}
+
 /** Learn the account, then show what this engine would do with the same tracks
  *  the File screen is currently offering the tag engine's answer for. */
 const engineAnalyse = guard(async () => {
@@ -4653,6 +4708,8 @@ const engineAnalyse = guard(async () => {
       onlyMine: rows.filter(r => r.mine && !r.theirs).length,
       onlyTheirs: rows.filter(r => r.theirs && !r.mine).length,
       shapeOnly: rows.filter(r => r.shapeOnly).length };
+    await engineLoadCalibration();
+    engineDecorate();
 
     if (pairs !== undefined) ENG.pairs = pairs;
     else {
@@ -4806,7 +4863,7 @@ const engineValidate = guard(async () => {
     const t1 = performance.now();
 
     let done = null;
-    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, opts: { folds: 5, limit: VALIDATE_N } }); }
+    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, opts: { folds: 5, limit: VALIDATE_N, collect: true } }); }
     catch { done = null; }
     const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
     if (done?.result?.mine) {
@@ -4815,12 +4872,14 @@ const engineValidate = guard(async () => {
       // No worker, or it failed: the original main-thread path, same answer.
       await engineLoad();
       await yieldToPaint();
-      const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge };
+      const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
+                       collect: true };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
       ENG.val = { mine, base, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
+    await engineCalibrate(ENG.val);
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }
@@ -4844,9 +4903,55 @@ function bridgeVerdict(v) {
   if (overall < 0) return { pass: false, lift, overall,
     text: `It helps never-filed artists by ${pts(lift)} but costs ${pts(overall)} overall, so it stays off.` };
   if (lift >= 0.05) return { pass: true, lift, overall,
-    text: `Passes: ${pts(lift)} on tracks by artists you hadn't filed in a genre playlist yet, ${pts(overall)} overall.` };
+    text: `${pts(lift)} on tracks by artists you hadn't filed in a genre playlist yet, and ${pts(overall)} overall.` };
   return { pass: false, lift, overall,
     text: `Not enough lift on never-filed artists (${pts(lift)}; the bar is +5 points), so it stays off.` };
+}
+
+/** One track's checked answer, for the comparison's "this engine" column. */
+function decisionHtml(d) {
+  const names = d.playlists.map(x => `<b>${esc(x.name)}</b>`);
+  if (d.kind === 'confident') return `${names[0]} <span class="tag ok">confident</span>`;
+  if (d.kind === 'choose' && names.length === 1) return `${names[0]} <span class="tag">probably</span>`;
+  if (d.kind === 'choose') return `${names.join(' or ')} <span class="tag warn">pick one</span>`;
+  return '<i>not sure</i>';
+}
+
+/** One line per calibration, for the pasteable summary. */
+function calibLine(label, rep, pc) {
+  const c = rep?.checked;
+  if (!c?.n) return null;
+  const conf = rep.cal?.tau != null && c.confidentN
+    ? `confident ${pc(c.confidentShare)} of tracks, right ${pc(c.confidentRight)}` : 'confident: none earned yet';
+  return `${label}: ${conf}; short list ${pc(c.chooseShare)} (avg ${c.chooseSize ?? '—'}), held it ${pc(c.chooseContains)}; `
+    + `not sure ${pc(c.unsureShare)}${rep.holds === true ? '; holds' : rep.holds === false ? "; doesn't hold yet" : ''}`;
+}
+
+/** "How sure it is", checked on tracks the thresholds were not fitted on. */
+function calibCard(p) {
+  const c = ENG.calib;
+  if (!c?.base?.checked?.n) return '';
+  const k = c.base.checked, earned = c.base.cal?.tau != null && k.confidentN > 0;
+  const verdict = c.base.holds === true
+    ? `<b>Holds.</b> When it said "confident" it was right ${p(k.confidentRight)} of the time, on tracks those thresholds were never fitted on. The target is ${p(c.base.target)}.`
+    : c.base.holds === false
+    ? `<b>Doesn't hold yet.</b> "Confident" was right ${p(k.confidentRight)} on tracks it hadn't been fitted on, short of the ${p(c.base.target)} it has to mean, so read those as "probably".`
+    : `<b>Nothing is sure enough to call confident yet.</b> No score level was right ${p(c.base.target)} of the time on enough of your tracks. More filed tracks per playlist, or a stronger signal, would change that. The short lists are where it helps for now.`;
+  const b = c.bridge?.checked;
+  return `<h3 style="margin:18px 0 6px; font-size:16px">How sure it is, checked</h3>
+    <p class="why">Fitted on half of the tracks above and checked on the other half, then swapped, so these
+      numbers come from tracks it wasn't tuned on. Each track gets one of three answers; the share of
+      tracks given each is on the right.</p>
+    <div class="facts" style="margin-top:10px">
+      ${earned ? `<div><span><b>Confident</b>: names one playlist</span><b class="mono">${p(k.confidentShare)}</b></div>
+      <div><span>…and was right</span><b class="mono">${p(k.confidentRight)}</b></div>` : ''}
+      <div><span><b>Short list</b>, ${k.chooseSize == null ? '—' : k.chooseSize.toFixed(1)} playlists on average</span><b class="mono">${p(k.chooseShare)}</b></div>
+      <div><span>…and the right one was in it</span><b class="mono">${p(k.chooseContains)}</b></div>
+      <div><span><b>Not sure</b>, and says so instead of guessing</span><b class="mono">${p(k.unsureShare)}</b></div>
+      ${b?.n ? `<hr><div><span>With similar artists: short list / not sure</span><b class="mono">${p(b.chooseShare)} / ${p(b.unsureShare)}</b></div>
+      ${c.bridge.cal?.tau != null && b.confidentN ? `<div><span>…confident, and right</span><b class="mono">${p(b.confidentShare)}, ${p(b.confidentRight)}</b></div>` : ''}` : ''}
+    </div>
+    <p class="why" style="margin-top:12px">${verdict}</p>`;
 }
 
 /** The with/without comparison on the score card. Empty when there is none. */
@@ -4916,6 +5021,8 @@ function engineSummary() {
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
     v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
     ...bridgeLines(v, pc),
+    calibLine('How sure', ENG.calib?.base, pc),
+    calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   return lines.filter(Boolean).join('\n');
@@ -4951,8 +5058,9 @@ const engineCopy = guard(async () => {
 /** Forget the learned space, so the next analysis rebuilds from the library. */
 const engineReset = guard(async () => {
   try { await idb.del(SPACE_KEY); } catch {}
+  try { await idb.del(CAL_KEY); } catch {}
   Object.assign(ENG, { status:'idle', space:null, rung:null, shadow:null,
-                       pairs:null, val:null, ms:0, from:null });
+                       pairs:null, val:null, calib:null, ms:0, from:null });
   toast('Cleared. The next analysis rebuilds from your library.');
   render();
 });
@@ -5039,22 +5147,29 @@ function vEngine() {
       : `<div><span>Nothing to compare against</span><b class="mono">today's engine suggested nothing for any of these</b></div>
       <div><span>This engine had an answer for</span><b class="mono">${sh.onlyMine} of ${sh.rows.length}</b></div>`}
       ${sh.shapeOnly ? `<div><span>Placed on shape alone, with nothing about the artist</span><b class="mono">${sh.shapeOnly}</b></div>` : ''}
+      ${sh.decided ? `<hr><div><span>Confident · short list · not sure</span><b class="mono">${
+        sh.decided.confident} · ${sh.decided.choose} · ${sh.decided.unsure}</b></div>` : ''}
     </div>` : ''}
     ${sh.rows.length ? `<div class="rows" style="margin-top:18px">
       ${sh.rows.map(row => {
-        const same = row.theirs && row.mine && row.theirs.id === row.mine.id;
+        // Once calibrated, the checked answer is the answer: "not sure" is no
+        // answer, and a short list that includes today's suggestion agrees with it.
+        const answer = row.decision ? (row.decision.kind === 'unsure' ? null : row.decision.playlists)
+                                    : row.mine ? [row.mine] : null;
+        const same = !!(row.theirs && answer?.some(x => x.id === row.theirs.id));
         return `<div class="row"><details class="engrow">
           <summary>
             <div class="main">
               <div class="ttl">${esc(row.title)}
-                <span class="tag ${same ? 'ok' : row.mine ? 'warn' : 'idle'}" style="margin-left:6px">${
-                  same ? 'agree' : row.mine && row.theirs ? 'differ' : row.mine ? 'new answer' : 'no answer'}</span>${
+                <span class="tag ${same ? 'ok' : answer ? 'warn' : 'idle'}" style="margin-left:6px">${
+                  same ? 'agree' : answer && row.theirs ? 'differ' : answer ? 'new answer' : 'no answer'}</span>${
                   row.shapeOnly ? '<span class="tag idle" style="margin-left:4px">shape only</span>' : ''}</div>
               <div class="sub">${esc(row.artist)}</div>
             </div>
             <div class="cmp">
               <div><em>today</em>${row.theirs ? `<b>${esc(row.theirs.name)}</b>` : '<i>no suggestion</i>'}</div>
-              <div><em>this engine</em>${row.mine ? `<b>${esc(row.mine.name)}</b>` : '<i>won&rsquo;t guess</i>'}</div>
+              <div><em>this engine</em>${row.decision ? decisionHtml(row.decision)
+                : row.mine ? `<b>${esc(row.mine.name)}</b>` : '<i>won&rsquo;t guess</i>'}</div>
             </div>
           </summary>
           <div style="padding:2px 0 2px">
@@ -5113,6 +5228,7 @@ function vEngine() {
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
       : 'There is nothing to choose between them on your library.'}</p>` : ''}
     ${bridgeCard(v, p)}
+    ${v && !v.error ? calibCard(p) : ''}
     ${weakBuckets(v).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
       <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
         Low here means the engine has no real idea what that playlist is for.</p>

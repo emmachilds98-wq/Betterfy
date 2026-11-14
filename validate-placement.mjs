@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { placementAccuracy, scoredTracks } from './core/validate/loo.mjs';
 import { sourceArtists, bridgeFrom } from './core/intrinsic/bridge.mjs';
 import { gatherBridge } from './core/intrinsic/bridge-fetch.mjs';
+import { calibrationReport } from './core/intrinsic/calibrate.mjs';
 import { baselineAccuracy } from './core/validate/baseline.mjs';
 import { cooccurrence } from './core/intrinsic/cooccurrence.mjs';
 import { registrantIndex } from './core/intrinsic/features.mjs';
@@ -128,7 +129,7 @@ console.log(`  ${folds}-fold. Each track is scored against a library that never 
 console.log('  Truth is the set of buckets it really lives in, so being right about');
 console.log('  either of two legitimate homes counts as right.\n');
 
-const mine = placementAccuracy(lib, { folds, limit });
+const mine = placementAccuracy(lib, { folds, limit, collect: true });
 // `limit` goes to both sides or the comparison is not one: without it here, a
 // `--limit=2000` run scored the intrinsic engine on 2,000 tracks and v1 on the
 // whole library, and printed the two numbers side by side as though they were
@@ -158,6 +159,21 @@ if (mine.declined) {
   console.log(`\n  declined ${mine.declined}, of which ${mine.declinedWouldHaveBeenRight} would have been right —`);
   console.log('  a refusal that would have been correct is a cost, not a virtue.');
 }
+
+/* ---------- how sure it may sound (docs/SMARTER-GENRES-PLAN.md, phase 2) ---------- */
+
+const howSure = (label, rep) => {
+  const c = rep.checked;
+  console.log(`  ${label}`);
+  if (rep.cal.tau != null && c.confidentN) {
+    console.log(`    confident   ${pct(c.confidentShare)}% of tracks, right ${pct(c.confidentRight)}%`);
+  } else console.log('    confident    none earned — no score level was right 90% of the time on enough tracks');
+  console.log(`    short list  ${pct(c.chooseShare)}% of tracks, ${c.chooseSize ?? '—'} on average, held it ${pct(c.chooseContains)}%`);
+  console.log(`    not sure    ${pct(c.unsureShare)}% of tracks`);
+  console.log(`    ${rep.holds === true ? 'HOLDS' : rep.holds === false ? 'DOES NOT HOLD' : 'UNDECIDED'} — checked on the half of the tracks each threshold was not fitted on`);
+};
+console.log('\n=== HOW SURE IT IS, CHECKED ===\n');
+howSure('account-native engine', calibrationReport(mine.rows));
 
 /* ---------- the canary ---------- */
 
@@ -242,7 +258,7 @@ if (process.argv.includes('--bridge')) {
   });
   writeFileSync('bridge.json', JSON.stringify({ at: Date.now(), raw }));
   const bridge = bridgeFrom(raw, lib);
-  const r = placementAccuracy(lib, { folds, limit, bridge });
+  const r = placementAccuracy(lib, { folds, limit, bridge, collect: true });
   const w = r.withBridge, c = w.coverage;
 
   console.log(`\n  artists looked up          ${String(c.asked).padStart(6)}   (${stats.fromCache} remembered from bridge.json)`);
@@ -267,6 +283,8 @@ if (process.argv.includes('--bridge')) {
   if (r.neverFiled.scored < 20) console.log(`  UNDECIDED. Only ${r.neverFiled.scored} never-filed tracks were scored.`);
   else if (lift >= 0.05 && overall >= 0) console.log(`  PASS. +${(lift * 100).toFixed(1)} points on never-filed artists, ${(overall * 100).toFixed(1)} overall.`);
   else console.log(`  NOT YET. ${(lift * 100).toFixed(1)} points on never-filed artists, ${(overall * 100).toFixed(1)} overall.`);
+  console.log();
+  howSure('with similar artists', calibrationReport(w.rows));
 }
 
 /* ---------- what the account's own structure says about itself ---------- */

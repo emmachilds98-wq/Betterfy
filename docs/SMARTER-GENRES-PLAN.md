@@ -280,7 +280,7 @@ off.
 |---|---|---|
 | **0** *(built 2026-11-14; waiting on the owner's run)* | Measurement only. Add the bridge (Deezer + ListenBrainz via Wikidata) as an optional component in `validate-placement` and the Engine screen's **Score**, reporting coverage and accuracy with and without it, overall and on **never-filed artists** | Top-1 placement on never-filed artists up by ≥5 points, overall not down. If it fails, stop and report |
 | **1** | Ship the bridge: `core/sources/deezer.mjs`, `listenbrainz.mjs`, `wikidata.mjs` (pure parse functions + thin fetch, fixture-tested like `discogs.mjs`); `core/intrinsic/bridge.mjs` as one more `combine()` component; per-artist cache; listening-ordered background fetch | Test proving that with no bridge cache the output is byte-identical to today |
-| **2** | Calibration + prediction sets (`core/intrinsic/calibrate.mjs`); show "right N% of the time" on the Engine screen | The stated rate holds on a second held-out fold within ±3 points |
+| **2** *(built 2026-11-14)* | Calibration + prediction sets (`core/intrinsic/calibrate.mjs`); show "right N% of the time" on the Engine screen | The stated rate holds on a second held-out fold within ±3 points |
 | **3** | **Gaps** screen: uncovered genre → create, split, twins, nameless cluster | Each proposal type has a fixture test. Nothing is written to Spotify without a tap (`verify-untouched.mjs` pattern) |
 | **4** | Teach queue, artist roll-forward, corrections + axis-override sync | Score after 20 teach answers beats the score before them |
 | **5** | Audio (`AUDIO-ANALYSIS-PLAN.md`, its own phase 0 first), now feeding the blend, the Gaps naming and per-playlist audio fingerprints | That plan's gates |
@@ -329,6 +329,35 @@ filing. Only the owner's run answers the gate.
 
 The bridge is not on the File screen and changes no suggestion. Phase 1 waits
 on the gate.
+
+**Phase 2 as built (2026-11-14).** `core/intrinsic/calibrate.mjs`, fed by
+`placementAccuracy(…, { collect: true })`. Three changes from §4.2's sketch,
+each found by running it:
+
+- **Temperature scaling first.** Normalising scores as score/sum left the
+  leader at about 0.2 for most tracks on the simulated library, so every short
+  list was too long to be a choice. A single temperature, fitted on held-out
+  tracks, sharpens the scores without changing their order. With similar
+  artists, average list length fell from about 2.5 to 1.5.
+- **Isotonic regression for "confident"**, not "the lowest threshold that
+  still averages 90%". The averaging version let easy tracks carry a band of
+  coin-flips just over the line, which were then called confident at 50%.
+  Probabilities are binned to 0.05 first, because without it noise in the
+  third decimal split a coin-flip pile into a "right" tail that qualified.
+- **Cross-fitted check.** Thresholds are fitted on half the tracks and checked
+  on the other half, then the halves swap, and the two checks are pooled. The
+  screen only shows a "confident" accuracy when the thresholds actually in use
+  (fitted on everything) allow confident calls at all.
+
+On the simulated library it earns **no "confident" calls**, which is correct
+for an engine that is right about 60% of the time. It gives a short list for
+62% of tracks (about 1.5 playlists, holding the right one 87% of the time
+with similar artists) and says "not sure" for the rest. The Engine screen's
+comparison now shows "confident", "probably", "pick one" or "not sure" per
+track once a score run has calibrated it. The calibration is kept per
+library fingerprint and set of genre playlists. Phase 2's gate (±3 points)
+needs confident calls to exist, so on the simulation it is honestly
+undecided. The owner's run will say.
 
 **Dropped or downgraded by this plan:** shared filing across users (R2), any
 runtime LLM over Spotify data (R1), Chrome's Prompt API (R1, and not

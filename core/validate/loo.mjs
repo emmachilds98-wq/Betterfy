@@ -32,6 +32,7 @@
 // ---------------------------------------------------------------------------
 import { buildSpace, placements, BANDS, WEIGHTS } from '../intrinsic/space.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
+import { scoresOf } from '../intrinsic/calibrate.mjs';
 
 export const VALIDATE_VERSION = '4.0.0';
 
@@ -137,7 +138,8 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
  */
 export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
-                                         weights = null, targets = null, bridge = null } = {}) {
+                                         weights = null, targets = null, bridge = null,
+                                         collect = false } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -158,6 +160,11 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
   const plus = bridge ? { ...base, bridge: bridgeWeight } : null;
   const neverFiled = tally(), neverFiledPlus = tally(), withPlus = tally();
   let bridgeJudged = 0;
+  // `collect`: keep each held-out track's ranking as a distribution, for
+  // core/intrinsic/calibrate.mjs to fit "how sure may it be" against. Every
+  // destination has to be ranked for that, not just the top three.
+  const rows = collect ? [] : null, rowsPlus = collect && bridge ? [] : null;
+  const limit3 = collect ? Infinity : 3;
 
   const stats = {
     scored: 0, top1: 0, top3: 0, declined: 0, declinedWouldHaveBeenRight: 0,
@@ -183,7 +190,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       const want = allowed && all ? new Set([...all].filter(pid => allowed.has(pid))) : all;
       if (!want?.size) continue;
 
-      const out = placements(track, space, { limit: 3, weights: base });
+      const out = placements(track, space, { limit: limit3, weights: base });
       stats.scored++;
       // "Never filed": none of the track's artists is in any destination of a
       // space that has not seen this track. The engine's weakest case, and the
@@ -196,6 +203,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       bucket.n++;
 
       const ranked = out.results ?? [];
+      if (rows) rows.push({ id, scores: scoresOf(ranked), truth: [...want].sort() });
       const hit1 = ranked[0] && want.has(ranked[0].playlistId);
       const hit3 = ranked.slice(0, 3).some(r => want.has(r.playlistId));
 
@@ -211,8 +219,9 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       if (fresh) { neverFiled.scored++; if (hit1) neverFiled.top1++; if (hit3) neverFiled.top3++; }
 
       if (plus) {
-        const more = placements(track, space, { limit: 3, weights: plus });
+        const more = placements(track, space, { limit: limit3, weights: plus });
         const r = more.results ?? [];
+        if (rowsPlus) rowsPlus.push({ id, scores: scoresOf(r), truth: [...want].sort() });
         const p1 = r[0] && want.has(r[0].playlistId);
         const p3 = r.slice(0, 3).some(x => want.has(x.playlistId));
         if (r[0]?.parts && 'bridge' in r[0].parts) bridgeJudged++;
@@ -280,9 +289,11 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     playlists,
     worstPlaylists: playlists.slice(0, 10),
     neverFiled: tallyOut(neverFiled),
+    ...(rows ? { rows } : {}),
     ...(plus ? { withBridge: { ...tallyOut(withPlus), neverFiled: tallyOut(neverFiledPlus),
                                judged: bridgeJudged, weight: bridgeWeight,
-                               coverage: bridge.coverage ?? null } } : {}),
+                               coverage: bridge.coverage ?? null,
+                               ...(rowsPlus ? { rows: rowsPlus } : {}) } } : {}),
     version: VALIDATE_VERSION,
   };
 }
