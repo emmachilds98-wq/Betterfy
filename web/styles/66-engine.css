@@ -1,0 +1,27 @@
+  /* Engine (UI-6): the with/without score card listening fills (WP-E2). Two bars
+     per metric, scored the same way, and the gate drawn as a line on the one
+     that decides it. */
+  .score-pair{display:flex; flex-direction:column; gap:14px}
+  .score-pair .why{margin:0}
+  .sc-row{display:flex; flex-direction:column; gap:6px}
+  .sc-label{display:flex; align-items:baseline; gap:8px; font-size:14px; color:var(--ink-2)}
+  .sc-label .tag{margin-left:auto; font-family:var(--mono); font-size:11.5px; padding:3px 9px}
+  .sc-bar{display:grid; grid-template-columns:78px 1fr 44px; align-items:center; gap:10px; position:relative}
+  .sc-bar em{font-style:normal; font-family:var(--mono); font-size:11px; color:var(--ink-3)}
+  .sc-bar b{font-size:13px; text-align:right}
+  .sc-bar span{height:10px; border-radius:5px; background:var(--surface-3); position:relative; overflow:visible}
+  .sc-bar span::before{content:""; position:absolute; left:0; top:0; bottom:0; width:var(--w); border-radius:5px}
+  .sc-bar.off span::before{background:var(--idle)}
+  .sc-bar.on span::before{background:var(--view)}
+  /* The gate: a vertical rule across both bars of the never-filed row, at
+     "without" plus the points it has to gain. */
+  .sc-gate .sc-bar span::after{content:""; position:absolute; top:-4px; bottom:-4px; left:var(--gate); width:2px;
+        margin-left:-1px; background:var(--ink); border-radius:1px}
+  .sc-gate-note{font-family:var(--mono); font-size:11px; color:var(--ink-3); padding-left:88px}
+  .sc-verdict{margin:2px 0 0; font-size:14px; line-height:1.5; padding:10px 14px; border-radius:var(--r)}
+  .sc-verdict.pass{background:var(--ok-soft); color:var(--ok)}
+  .sc-verdict.hold{background:var(--surface-2); color:var(--ink-2)}
+  @media (max-width:760px){
+    .sc-bar{grid-template-columns:64px 1fr 40px; gap:8px}
+    .sc-gate-note{padding-left:72px}
+  }

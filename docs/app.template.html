@@ -2187,6 +2187,13 @@ function cmpTable(o) {
  */
 const TIDY_SECTIONS = [['misfile', 'Wrong place'], ['dupes', 'Repeats'], ['cross', 'Cross-filed']];
 
+/* The confidence words every screen uses (docs/UI-BUILD-PLAN.md R5): Sure,
+ * Likely, Unsure, the same three bands calibrate.mjs produces. misfile.mjs
+ * still says high/medium/low, and so does a saved filter, so those stay the
+ * values and only the words on screen change. */
+const TIDY_BANDS = [['high', 'HIGH', 'Sure'], ['medium', 'LIKELY', 'Likely'], ['low', 'AMBIGUOUS', 'Unsure']];
+
+
 function secDupes() {
   const exact = R.within.filter(x => x.verdict === 'same-recording');
   const clash = R.within.filter(x => x.verdict !== 'same-recording');
@@ -2197,11 +2204,24 @@ function secDupes() {
       <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
     </div><div class="acts">${c.options.map(o =>
       `<button class="b sm" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z => z.id !== o.id).map(z => z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
-    </div></div>`).join('') || '<div class="empty"><b>None found</b>Nothing in your library matches this.</div>'}</div>
+    </div></div>`).join('') || emptyState('None found', 'Nothing in your library matches this.', '', true)}</div>
     ${moreButton(key, list.length)}`;
+  if (!R.within.length) return emptyState('No repeats',
+    'No playlist holds the same track twice. A track in several playlists is Cross-filed, not a repeat.',
+    `<button class="b sm" data-tidy="cross">See cross-filed</button>`);
   return `<p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>
     ${sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.', 'dupes-exact')}
     ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash')}`;
+}
+
+/* ---------- empty states ----------
+ * The pattern from the components (UI-1): the mark, a title, one line, and what
+ * to do next. Tidy, New playlists and Engine all use it. Title and line are
+ * trusted copy written here; anything from the library is escaped by the caller. */
+function emptyState(title, line, acts = '', compact = false) {
+  return `<div class="empty-state${compact ? ' compact' : ''}">
+  <span class="es-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+  <b>${title}</b>${line ? `<p>${line}</p>` : ''}${acts ? `<div class="es-acts">${acts}</div>` : ''}</div>`;
 }
 
 function secCross() {
@@ -2215,7 +2235,9 @@ function secCross() {
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
         `<button class="chip" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
     </div></div>`).join('')
-      || `<div class="empty"><b>Nothing at ${S.crossMin}+ playlists</b>Lower the threshold to see tracks filed in fewer places.</div>`}</div>
+      || (R.across.length
+        ? emptyState(`Nothing at ${S.crossMin}+ playlists`, 'Lower the threshold to see tracks filed in fewer places.', '', true)
+        : emptyState('Nothing cross-filed', 'Every track sits in one playlist.', '', true))}</div>
     ${moreButton('cross-' + S.crossMin, a.length)}`;
 }
 
@@ -2234,14 +2256,14 @@ function secMisfile() {
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
   return `<p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Each row is a move, not a score — and every one of them lands in History.</p>
-    <div class="rowbtns" style="margin-bottom:14px">${['high', 'medium', 'low'].map(b =>
-      `<button class="b sm ${S.mfBand === b ? 'p' : ''}" data-mfb="${b}">${b} (${counts[b]})</button>`).join('')}</div>
+    <div class="seg" role="group" aria-label="How sure" style="margin-bottom:14px">${TIDY_BANDS.map(([b, , word]) =>
+      `<button aria-pressed="${S.mfBand === b}" data-mfb="${b}">${word} <span class="n">${counts[b]}</span></button>`).join('')}</div>
     <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
       const playedALot = recentlyActive?.has(x.artist);
       return `<div class="row ${done ? 'done' : ''}">${thumbHTML(x)}<div class="main">
-        <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
+        <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span>${bandChip(TIDY_BANDS.find(z => z[0] === x.confidence)?.[1] ?? null)}</div>
         ${to ? `<div class="swap"><span class="from">${esc(x.current)}</span><span class="arw">→</span><span class="to">${esc(to.name)}</span>
           <span class="mono" style="color:var(--ink-3)">${(x.currentScore * 100).toFixed(0)}% → ${(to.score * 100).toFixed(0)}%</span></div>`
         : `<div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore * 100).toFixed(0)}% fit</span></div>`}
@@ -2259,7 +2281,12 @@ function secMisfile() {
           ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
       </div>` : ''}</div>`;
     }).join('')
-      || `<div class="empty"><b>Nothing in this band</b>${S.mfBand === 'high' ? 'Everything is filed where it fits. Try the medium band for the speculative ones.' : 'Try another confidence band.'}</div>`}</div>
+      || (!R.misfiled.length
+        ? emptyState('Everything is where it fits', 'Nothing is filed somewhere another playlist on the same axis fits far better.')
+        : emptyState(`Nothing ${S.mfBand === 'high' ? 'sure' : S.mfBand === 'medium' ? 'likely' : 'unsure'}`,
+            S.mfBand === 'high' ? 'Nothing is clearly in the wrong place. Likely has the more speculative ones.' : 'Try another band.',
+            TIDY_BANDS.filter(([b]) => b !== S.mfBand && counts[b]).map(([b, , word]) =>
+              `<button class="b sm" data-mfb="${b}">${word} (${counts[b]})</button>`).join(''), true))}</div>
     ${moreButton('misfile-' + S.mfBand, m.length)}`;
 }
 
@@ -2341,29 +2368,109 @@ function gapsSections() {
     <p class="why">Music you've liked or filed somewhere else, in a genre none of your genre playlists is for.
       Genres nothing covers come first, then ones a broader playlist could take; what you're playing at the
       moment comes before both.</p>
-    <div class="rows" style="margin-top:10px">${gapRows || `<div class="empty">Every genre you have ${BetterfyGaps.MIN_GAP} or more
-      unfiled tracks of already has a playlist.</div>`}</div>
+    <div class="rows" style="margin-top:10px">${gapRows || emptyState('Every genre is covered', `Every genre you have ${BetterfyGaps.MIN_GAP} or more
+      unfiled tracks of already has a playlist.`, '', true)}</div>
     ${GAPS.untagged ? `<p class="why" style="margin-top:8px">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
       outside your genre playlists have no genre in their artists' tags, so they can't be placed in one here.
       The groups at the bottom are where those turn up.</p>` : ''}
     <h2 style="margin:22px 0 6px; font-size:18px">Playlists that are two genres</h2>
     <p class="why">A genre playlist whose tracks split into two genres, each a real share of it. Making one
       copies those tracks into a new playlist and leaves the original alone.</p>
-    <div class="rows" style="margin-top:10px">${splitRows || '<div class="empty">None of your genre playlists is two genres at once.</div>'}</div>`;
+    <div class="rows" style="margin-top:10px">${splitRows || emptyState('No mixed playlists', 'None of your genre playlists is two genres at once.', '', true)}</div>`;
 }
 
-function vNew() {
-  return `<h1>New playlists</h1>
-    <p class="lede">Genres you have music in but no playlist for, playlists that are really two genres,
-      and groups in your backlog that fit nothing you have.</p>
-    ${gapsSections()}
-    <h2 style="margin:22px 0 6px; font-size:18px">Groups in your backlog</h2>
-    <p class="why">Unfiled tracks that sit together and fit none of your existing playlists.</p>
-    <div class="rows">${R.clusters.map((x,i)=>`<div class="row"><div class="main">
+/* ---------- proposal cards: docs/UI-BUILD-PLAN.md §2.8, for audio WP-H2 ----------
+ * One card shape for the three things listening can propose here. H2 builds the
+ * proposals and writes them to PROPOSALS.list; until it does the list is null
+ * and this screen is exactly what it was.
+ *
+ * ProposalVM = {
+ *   kind: 'pick' | 'hybrid' | 'new',
+ *   name?: string,                    // hybrid: from its top two styles; new: unset until C3 names it
+ *   styles?: [string, string],        // hybrid: the two styles it blends
+ *   options?: [{ id, name }, { id, name }],   // pick: the two playlists it can't choose between
+ *   size: number,                     // tracks it covers
+ *   samples?: [{ title, artist }],    // a few of them, shown as they are
+ * }
+ * The buttons carry data-prop / data-propto; H2 wires them. */
+const PROPOSALS = { list: null };
+const PROPOSAL_KIND = {
+  pick:   ['Pick one of these two', 'They sound like both. Choose where they belong and the rest follow.'],
+  hybrid: ['Hybrid playlist', 'Sits between two of your playlists, and there is enough of it to be its own.'],
+  new:    ['New genre?', 'Sounds like nothing you have a playlist for. Name it and make one.'],
+};
+/** A style's mark colour, the same every time it is drawn. */
+const propHue = label => { let h = 0; for (const c of String(label)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return `var(--m${h % 5})`; };
+
+/** @param {object|null|undefined} p one ProposalVM, @param {number} i its index in the list */
+function proposalCard(p, i = 0) {
+  if (!p || !PROPOSAL_KIND[p.kind] || !(p.size > 0)) return '';
+  const [title, line] = PROPOSAL_KIND[p.kind];
+  const n = Number(p.size).toLocaleString();
+  const samples = (p.samples ?? []).slice(0, 4);
+  const [a, b] = p.kind === 'hybrid' ? (p.styles ?? []) : [];
+  const swatch = p.kind === 'hybrid' && a && b
+    ? `<span class="prop-swatch" aria-hidden="true" style="--pa:${propHue(a)}; --pb:${propHue(b)}"></span>`
+    : p.kind === 'new' ? '<span class="prop-swatch new" aria-hidden="true"></span>' : '';
+  const name = p.kind === 'hybrid' ? (p.name ?? (a && b ? `${a} × ${b}` : ''))
+             : p.kind === 'new' ? (p.name ?? '') : '';
+  const acts = p.kind === 'pick'
+    ? (p.options ?? []).slice(0, 2).map(o =>
+        `<button class="b sm" data-prop="${i}" data-propto="${esc(o.id)}">Into ${esc(o.name)}</button>`).join('')
+    : `<input id="propnm${i}" aria-label="Name for this playlist" placeholder="${p.kind === 'new' ? 'Name it' : 'Playlist name'}" value="${esc(name)}">
+       <button class="b sm p" data-prop="${i}">Create with ${n}</button>`;
+  return `<article class="prop prop-${p.kind}">
+    <header>${swatch}<div><div class="prop-kind">${title}</div>
+      <div class="ttl">${p.kind === 'pick' ? (p.options ?? []).slice(0, 2).map(o => esc(o.name)).join(' <span class="or">or</span> ')
+        : p.kind === 'hybrid' && a && b ? `${esc(a)} <span class="or">×</span> ${esc(b)}`
+        : name ? esc(name) : '<i>Unnamed</i>'} <span class="tag">${n} tracks</span></div></div></header>
+    <p class="why">${line}</p>
+    ${samples.length ? `<ul class="prop-samples">${samples.map(t =>
+      `<li>${esc(t.title)} <span class="sub">— ${esc(t.artist ?? '')}</span></li>`).join('')}</ul>` : ''}
+    <div class="acts">${acts}</div>
+  </article>`;
+}
+
+/** Every proposal, or '' when listening has proposed nothing. */
+function proposalCards(list) {
+  const cards = (list ?? []).map(proposalCard).filter(Boolean);
+  if (!cards.length) return '';
+  return `<h2 style="margin:22px 0 6px; font-size:18px">From how your music sounds</h2>
+    <div class="props">${cards.join('')}</div>`;
+}
+
+function backlogGroups() {
+  return R.clusters.map((x,i)=>`<div class="row"><div class="main">
       <div class="ttl">${x.size} tracks · ${esc(x.tags.slice(0,4).join(', '))}</div>
       <div class="sub">${esc(x.tracks.slice(0,4).join(' · '))}</div>
     </div><div class="acts"><input id="nm${i}" placeholder="Playlist name" value="${esc(x.tags[0]??'')}">
-      <button class="b sm p" data-cluster="${i}">Create with ${x.size} tracks</button></div></div>`).join('') || '<div class="empty">No clusters.</div>'}</div>`;
+      <button class="b sm p" data-cluster="${i}">Create with ${x.size} tracks</button></div></div>`).join('');
+}
+
+function vNew() {
+  const head = `<h1>New playlists</h1>
+    <p class="lede">Playlists worth making, from music you have that none of yours is for.</p>
+    <details class="how"><summary>How this works</summary>
+      <p>Genres you have music in but no playlist for, playlists that are really two genres,
+      and groups in your backlog that fit nothing you have. Creating one makes a new private playlist
+      holding a copy of the tracks; nothing already in a playlist moves.</p></details>`;
+  const props = proposalCards(PROPOSALS.list);
+  const groups = backlogGroups();
+  // Three empty boxes in a row was this screen for most libraries. Once the gaps
+  // are worked out and nothing at all is proposed, it says so once.
+  const gaps = gapsSections();
+  if (GAPS.status === 'ready' && !GAPS.gaps.length && !GAPS.splits.length && !groups && !props)
+    return `${head}${emptyState('Nothing to make right now',
+      'Every genre you have enough of already has a playlist, none of your genre playlists is two genres at once, and nothing in your backlog sits together apart from them.',
+      `<button class="b sm" data-go="inbox">File what's waiting</button>`)}
+      ${GAPS.untagged ? `<p class="why" style="margin-top:8px">${GAPS.untagged.toLocaleString()} unfiled tracks have no genre in
+        their artists' tags, so they can't be grouped yet.</p>` : ''}`;
+  return `${head}
+    ${props}
+    ${gaps}
+    <h2 style="margin:22px 0 6px; font-size:18px">Groups in your backlog</h2>
+    <p class="why">Unfiled tracks that sit together and fit none of your existing playlists.</p>
+    <div class="rows">${groups || emptyState('No groups', 'Nothing in your backlog sits together apart from your playlists.', '', true)}</div>`;
 }
 
 /* ---------- shuffle: spacing, not randomness ---------- */
@@ -4575,11 +4682,55 @@ const engineReset = guard(async () => {
 /** 0 nothing filed, 1 sparse, 2 working, 3 established. */
 const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 
+/* ---------- with/without score card: docs/UI-BUILD-PLAN.md §2.9, for audio WP-E2 ----------
+ * Paired bars per metric, scored without and with listening on the same folds,
+ * and the gate drawn as a line: audio changes no suggestion until it gains at
+ * least `need` top-1 on artists you have never filed, and loses nothing overall
+ * (docs/AUDIO-BUILD-PLAN.md, WP-E2). E2 decides whether the gate passed; this
+ * only draws what it is handed. With no audio score it renders ''.
+ *
+ * ScoreVM = {
+ *   without: { top1, top3, fresh },   // 0–1; fresh = right first time on never-filed artists
+ *   with:    { top1, top3, fresh },
+ *   scored?: number, freshN?: number, // tracks scored, and how many of them are never-filed artists
+ *   gate: { need: number, passed: boolean },   // need in 0–1, 0.05 is five points
+ * }
+ */
+const SCORE_ROWS = [['top1', 'Right first time'], ['top3', 'In its top three'], ['fresh', 'Artists you have never filed']];
+function scoreCompare(sc) {
+  if (!sc?.without || !sc?.with) return '';
+  const pc = x => Number.isFinite(x) ? Math.round(x * 100) : null;
+  const rows = SCORE_ROWS.filter(([k]) => pc(sc.without[k]) != null && pc(sc.with[k]) != null);
+  if (!rows.length) return '';
+  const need = Number.isFinite(sc.gate?.need) ? sc.gate.need : 0.05;
+  const passed = sc.gate?.passed === true;
+  const bar = (cls, x, word) => `<div class="sc-bar ${cls}"><em>${word}</em><span style="--w:${pc(x)}%"></span><b class="mono">${pc(x)}%</b></div>`;
+  const body = rows.map(([k, label]) => {
+    const a = sc.without[k], b = sc.with[k], d = pc(b) - pc(a);
+    const line = k === 'fresh' ? Math.min(100, pc(a + need)) : null;
+    return `<div class="sc-row${k === 'fresh' ? ' sc-gate' : ''}"${line != null ? ` style="--gate:${line}%"` : ''}>
+      <div class="sc-label">${label}${k === 'fresh' && sc.freshN ? ` <span class="sub">· ${Number(sc.freshN).toLocaleString()} tracks</span>` : ''}
+        <span class="tag ${d > 0 ? 'ok' : d < 0 ? 'warn' : 'idle'}">${d > 0 ? '+' : ''}${d} pts</span></div>
+      ${bar('off', a, 'without')}${bar('on', b, 'with sound')}
+      ${line != null ? `<div class="sc-gate-note">The line is the gate: ${pc(a)}% + ${pc(need)} points</div>` : ''}
+    </div>`;
+  }).join('');
+  return `<div class="score-pair">
+    <h3 style="margin:18px 0 4px; font-size:16px">With and without listening</h3>
+    <p class="why">Both scored on the same ${sc.scored ? `${Number(sc.scored).toLocaleString()} ` : ''}tracks, over the same folds.</p>
+    ${body}
+    <p class="sc-verdict ${passed ? 'pass' : 'hold'}"><b>${passed ? 'Passes the gate.' : 'Shown, not used.'}</b> ${passed
+      ? 'Listening now helps choose suggestions.'
+      : `Listening changes no suggestion until it gains at least ${pc(need)} points on artists you have never filed, and loses nothing overall.`}</p>
+  </div>`;
+}
+
 function vEngine() {
   const head = `<h1>Engine</h1>
-    <p class="lede">A second opinion that reads nothing but your own playlists. No key, no other website,
-      no genre list written by somebody else — just who you file together, on which label, in what shape
-      of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do.</p>`;
+    <p class="lede">A second opinion that reads nothing but your own playlists. <b>It files nothing.</b></p>
+    <details class="how"><summary>How this works</summary>
+      <p>No key, no other website, no genre list written by somebody else — just who you file together,
+      on which label, in what shape of record, from when. Everything here is what it <i>would</i> do.</p></details>`;
 
   // Nothing to file into is a setting, not a result: say where it is fixed.
   if (!engineTargets().length) return `${head}
@@ -4735,6 +4886,7 @@ function vEngine() {
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
       : 'There is nothing to choose between them on your library.'}</p>` : ''}
     ${bridgeCard(v, p)}
+    ${v && !v.error ? scoreCompare(v.audio) : ''}
     ${v && !v.error ? calibCard(p) : ''}
     ${weakBuckets(v).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
       <p class="why">How often each one was even offered in the top three, for tracks that really are in it.

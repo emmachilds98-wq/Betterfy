@@ -1,0 +1,28 @@
+  /* Tidy and New playlists (UI-6). The band filter, empty states and "How this
+     works" come from the components (UI-1); this is only what these two screens
+     draw that nothing else does: the proposal card listening fills (WP-H2). */
+  .props{display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; margin-top:10px}
+  .prop{position:relative; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3);
+        padding:18px 20px 18px; display:flex; flex-direction:column; gap:10px; box-shadow:var(--shadow)}
+  .prop header{display:flex; gap:14px; align-items:center}
+  .prop-kind{font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--view)}
+  .prop .ttl{font-family:var(--display); font-weight:700; font-size:18px; letter-spacing:-.015em; line-height:1.25}
+  .prop .ttl .tag{font-family:inherit; font-weight:400; letter-spacing:0; vertical-align:middle; margin-left:4px}
+  .prop .ttl i{color:var(--ink-3); font-weight:600}
+  .prop .or{color:var(--ink-3); font-weight:500}
+  .prop .why{margin:0}
+  /* The two styles a hybrid blends, in their mark colours: a hybrid should look
+     like one at a glance. "New genre?" has no colour of its own yet. */
+  .prop-swatch{flex:none; width:44px; height:44px; border-radius:50%;
+        background:linear-gradient(135deg, var(--pa) 0 30%, color-mix(in srgb, var(--pa) 50%, var(--pb)) 50%, var(--pb) 70% 100%)}
+  .prop-swatch.new{background:var(--surface-3); box-shadow:inset 0 0 0 2px var(--line-2); position:relative}
+  .prop-swatch.new::after{content:"?"; position:absolute; inset:0; display:grid; place-items:center;
+        font-family:var(--display); font-weight:800; font-size:22px; color:var(--ink-3)}
+  .prop-samples{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; font-size:14px}
+  .prop-samples li{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .prop .acts{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:auto}
+  .prop .acts input{flex:1 1 140px; min-width:0}
+  @media (max-width:760px){
+    .props{grid-template-columns:1fr}
+    .prop{padding:16px}
+  }
