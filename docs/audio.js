@@ -547,10 +547,514 @@ function melPatches({ frames, data }) {
 }
 return { MEL_VERSION, SAMPLE_RATE, FRAME_SIZE, HOP_SIZE, N_BANDS, PATCH_FRAMES, PATCH_HOP, frameCount, melFrames, melPatches };
 })();
+/* ---- core/audio/decode.mjs ---- */
+__mod["core/audio/decode.mjs"] = (function () {
+const { SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
+// Compressed preview bytes -> 16 kHz mono samples, the input core/audio/mel.mjs
+// expects. Browser main thread only: OfflineAudioContext does not exist in
+// workers, so the page decodes and posts the samples to the audio worker.
+//
+// How, and why this way (measured in test/audiodecode.test.mjs, numbers in
+// docs/AUDIO-ANALYSIS-PLAN.md §0):
+//
+// - decodeAudioData runs on an OfflineAudioContext created AT 16 kHz, so the
+//   browser's own resampler (a windowed-sinc in Chromium) does 44.1 -> 16 kHz
+//   inside the decode. The obvious alternative — decode at the native rate,
+//   then render an AudioBufferSourceNode through a 16 kHz OfflineAudioContext
+//   — is three times further from the reference in Chromium, because a
+//   buffer source converts rate by linear interpolation with no anti-alias
+//   filter: noise above 8 kHz folds back into the top mel bands.
+// - Channels are averaged ((L+R)/2), as Essentia's MonoLoader mixes. Not the
+//   context's own downmix and not ffmpeg's `-ac 1`, which is (L+R)/√2.
+// - A Range window cut from the middle of an MP3 starts mid-frame. It is
+//   trimmed to the first run of chained Layer III frame headers before
+//   decoding, so no browser has to rely on its demuxer's sync search. The
+//   decoder still outputs ~80 ms of silence first (the bit reservoir the first
+//   frames point into was cut off) — the same as ffmpeg/Essentia give for the
+//   same bytes, so phase 0's partial-download numbers already include it.
+//
+// Pure helpers (downmix, frame scan, length maths) are exported so Node tests
+// can hold them without a browser.
+
+
+
+const DECODE_VERSION = '1.0.0';
+
+// --- MPEG audio Layer III frame headers ---------------------------------
+
+const BITRATES = {               // kbps by bitrate index; 0 (free) and 15 are invalid
+  1: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],   // MPEG-1 L3
+  2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],       // MPEG-2/2.5 L3
+};
+const RATES = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+
+/**
+ * Parse a Layer III frame header at byte `i`, or null if there isn't one.
+ * @param {Uint8Array} u8
+ * @returns {null | { version: number, sampleRate: number, frameLength: number, samplesPerFrame: number }}
+ */
+function mp3FrameAt(u8, i) {
+  if (i < 0 || i + 4 > u8.length) return null;
+  const b1 = u8[i + 1], b2 = u8[i + 2];
+  if (u8[i] !== 0xff || (b1 & 0xe0) !== 0xe0) return null;   // 11-bit sync
+  const version = (b1 >> 3) & 3;                               // 3 = MPEG-1, 2 = MPEG-2, 0 = 2.5, 1 reserved
+  if (version === 1 || ((b1 >> 1) & 3) !== 1) return null;      // Layer III only
+  const bitrate = BITRATES[version === 3 ? 1 : 2][b2 >> 4];
+  const rateIdx = (b2 >> 2) & 3;
+  if (!bitrate || (b2 >> 4) === 15 || rateIdx === 3) return null;
+  const sampleRate = RATES[version][rateIdx];
+  const pad = (b2 >> 1) & 1;
+  const mpeg1 = version === 3;
+  const frameLength = Math.floor((mpeg1 ? 144000 : 72000) * bitrate / sampleRate) + pad;
+  return { version, sampleRate, frameLength, samplesPerFrame: mpeg1 ? 1152 : 576 };
+}
+
+/** Frames that must chain (header -> next header) before an offset counts as in sync. */
+const SYNC_RUN = 3;
+
+/**
+ * Find where real MP3 frames start in a byte window, and count the complete
+ * frames from there. A window starting with an ID3 tag, or already on a frame
+ * boundary, gives offset 0. A false sync inside frame data has to survive
+ * SYNC_RUN chained headers with the same version and sample rate, which
+ * random bytes essentially never do.
+ * @param {Uint8Array} u8
+ * @returns {{ offset: number, frames: number, sampleRate: number, samplesPerFrame: number } | null}
+ *   null when the bytes are not Layer III (or too short to tell); decode them untouched.
+ */
+function scanFrames(u8) {
+  if (u8.length >= 3 && u8[0] === 0x49 && u8[1] === 0x44 && u8[2] === 0x33) {   // "ID3"
+    // Tagged start: the browser's demuxer handles it; count frames after the tag.
+    const size = u8.length >= 10 ? ((u8[6] & 0x7f) << 21 | (u8[7] & 0x7f) << 14 | (u8[8] & 0x7f) << 7 | (u8[9] & 0x7f)) + 10 : 0;
+    const after = scanFrom(u8, size);
+    return after && { ...after, offset: 0 };
+  }
+  return scanFrom(u8, 0);
+}
+
+function scanFrom(u8, from) {
+  for (let i = from; i + 4 <= u8.length; i++) {
+    const h = mp3FrameAt(u8, i);
+    if (!h) continue;
+    let j = i, run = 0;
+    for (let f = h; f && f.version === h.version && f.sampleRate === h.sampleRate; f = mp3FrameAt(u8, j)) {
+      j += f.frameLength; run++;
+      if (j > u8.length) { run--; break; }       // last frame cut short: not complete
+    }
+    if (run >= SYNC_RUN) return { offset: i, frames: run, sampleRate: h.sampleRate, samplesPerFrame: h.samplesPerFrame };
+  }
+  return null;
+}
+
+// --- length maths and the downmix ------------------------------------------
+
+/** Samples after converting `n` samples from `fromRate` (rounded down, as Chromium's decode resample does). */
+function resampledLength(n, fromRate, toRate = SAMPLE_RATE) {
+  return Math.floor(n * toRate / fromRate);
+}
+
+/**
+ * Average any number of equal-length channels into one new Float32Array.
+ * @param {ArrayLike<number>[]} channels
+ */
+function downmix(channels) {
+  if (!channels.length) return new Float32Array(0);
+  const n = channels[0].length, out = new Float32Array(n);
+  if (channels.length === 1) { out.set(channels[0]); return out; }
+  for (const ch of channels) {
+    if (ch.length !== n) throw new Error('downmix: channels differ in length');
+    for (let i = 0; i < n; i++) out[i] += ch[i];
+  }
+  const k = 1 / channels.length;
+  for (let i = 0; i < n; i++) out[i] *= k;
+  return out;
+}
+
+/** decodeAudioData in its promise form, falling back to the callback form older Safari has. */
+function decodeOn(ctx, buf) {
+  return new Promise((resolve, reject) => {
+    const p = ctx.decodeAudioData(buf, resolve, reject);
+    if (p && typeof p.then === 'function') p.then(resolve, reject);
+  });
+}
+
+/**
+ * Decode compressed audio (a whole file or a Range window of one) to 16 kHz
+ * mono. The ArrayBuffer is handed to decodeAudioData, which detaches it:
+ * don't use it afterwards.
+ *
+ * @param {ArrayBuffer} arrayBuffer
+ * @param {{ audioContextCtor?: Function, offlineContextCtor?: Function }} [ctors]
+ *   Injected for tests; default to the page's globals. The 16 kHz decode runs
+ *   on an OfflineAudioContext; an AudioContext (constructed at 16 kHz and
+ *   closed afterwards) is used only when no OfflineAudioContext is available.
+ * @returns {Promise<Float32Array>}
+ */
+async function decodeTo16k(arrayBuffer, { audioContextCtor, offlineContextCtor } = {}) {
+  const Offline = offlineContextCtor ?? globalThis.OfflineAudioContext ?? globalThis.webkitOfflineAudioContext;
+  const Live = audioContextCtor ?? globalThis.AudioContext ?? globalThis.webkitAudioContext;
+  if (!Offline && !Live) throw new Error('decodeTo16k: no Web Audio context available');
+
+  const scan = scanFrames(new Uint8Array(arrayBuffer));
+  const bytes = scan && scan.offset > 0 ? arrayBuffer.slice(scan.offset) : arrayBuffer;
+
+  let ctx, live = false;
+  if (Offline) ctx = new Offline(1, 1, SAMPLE_RATE);
+  else { ctx = new Live({ sampleRate: SAMPLE_RATE }); live = true; }
+  try {
+    const audio = await decodeOn(ctx, bytes);
+    if (audio.sampleRate !== SAMPLE_RATE) throw new Error(`decodeTo16k: decoded at ${audio.sampleRate} Hz, not ${SAMPLE_RATE}`);
+    const channels = [];
+    for (let c = 0; c < audio.numberOfChannels; c++) channels.push(audio.getChannelData(c));
+    return downmix(channels);
+  } finally {
+    if (live && typeof ctx.close === 'function') Promise.resolve(ctx.close()).catch(() => {});
+  }
+}
+return { DECODE_VERSION, mp3FrameAt, SYNC_RUN, scanFrames, resampledLength, downmix, decodeTo16k };
+})();
+/* ---- core/audio/clap.mjs ---- */
+__mod["core/audio/clap.mjs"] = (function () {
+const { CLAP_DIM, CLAP_MODEL, MISS, CACHEABLE_MISS, makeEar, withEar, earCurrent, unpackEmbedding } = __mod["core/audio/record.mjs"];
+const { scanFrames, downmix } = __mod["core/audio/decode.mjs"];
+// CLAP, the "describe it in words" ear (WP-C2, docs/AUDIO-BUILD-PLAN.md).
+//
+// LAION CLAP's music checkpoint (the weights behind laion/larger_clap_music;
+// CC0-1.0, converted by scripts/audio-clap/clap_model.py, which says why the
+// Hugging Face upload itself is not used) maps audio and text into one 512-d
+// space, so "how close is this track to *dark rolling bassline*" is a dot
+// product. Its text encoder is RoBERTa-base (125 M parameters, >100 MB even
+// quantised), so text is embedded at BUILD time only
+// (scripts/audio-clap/build-text-table.py → docs/models/clap-text-table.json,
+// a reviewed prompt list). The page ships the quantised AUDIO encoder
+// (77 MB, docs/models/larger_clap_music-audio-q8-1.onnx), downloaded only
+// when the listener switches "Describe the sound in words" on.
+//
+// What is here, all isomorphic (no DOM, no Node APIs):
+//  - the model's front end in plain JS: 48 kHz mono, Hann 1024 / hop 480,
+//    |rfft|², 64 Slaney mel bands 50 Hz–14 kHz (Slaney-normalised), 10·log10,
+//    10 s per clip with "repeatpad" — Hugging Face's ClapFeatureExtractor with
+//    the checkpoint's own preprocessor_config (truncation rand_trunc, which is
+//    the non-fusion path). Held to the reference by test/audioclap.test.mjs
+//    (fixture: scripts/audio-clap/make-fixture.py). One change: a clip longer
+//    than 10 s is cut from its middle, not at random, so a track always gets
+//    the same embedding.
+//  - createClapEar(): the ONNX session, `ort` injected like infer.mjs.
+//  - clapEmbed(): windows → one L2-normalised embedding (mean over windows).
+//  - the text table: loadTextTable() checks and unpacks it; rankPrompts()
+//    ranks prompts against an audio embedding.
+//  - decodeTo48k(): the page's 48 kHz decode (the listening ear decodes at
+//    16 kHz, which would cut everything above 8 kHz out of CLAP's input).
+//  - addClap() / fillClap(): put the `clap` field on a record, in the same
+//    pass as listening (worker.js analyseOne with deps.clap) or later, for a
+//    record heard before (like fillDsp).
+//
+// Nothing here changes a suggestion: CLAP names clusters and powers search
+// (WP-C3); filing never reads it.
+
+
+
+
+const CLAP_VERSION = '1.0.0';
+const CLAP_SR = 48000;
+const CLAP_FFT = 1024;
+const CLAP_HOP = 480;
+const CLAP_MELS = 64;
+const CLAP_FMIN = 50;
+const CLAP_FMAX = 14000;
+const CLAP_SAMPLES = 480000;              // 10 s
+const CLAP_FRAMES = CLAP_SAMPLES / CLAP_HOP + 1;   // 1001, centred frames
+const CLAP_MODEL_FILE = `${CLAP_MODEL}.onnx`;
+const CLAP_TABLE_FILE = 'clap-text-table.json';
+const CLAP_INPUT = 'input_features';
+const TEXT_TABLE_VERSION = 1;
+/** Shortest window worth hearing: under 1 s, repeatpad would be mostly a loop. */
+const CLAP_MIN_SAMPLES = CLAP_SR;
+
+const N_BINS = CLAP_FFT / 2 + 1;
+
+// --- Slaney mel scale, as transformers.audio_utils (and librosa) ---------
+const MIN_LOG_HZ = 1000, MIN_LOG_MEL = 15, LOG_STEP = 27 / Math.log(6.4);
+const hzToMel = f => (f >= MIN_LOG_HZ ? MIN_LOG_MEL + Math.log(f / MIN_LOG_HZ) * LOG_STEP : 3 * f / 200);
+const melToHz = m => (m >= MIN_LOG_MEL ? MIN_LOG_HZ * Math.exp((m - MIN_LOG_MEL) / LOG_STEP) : 200 * m / 3);
+
+let FILTERS = null;
+/** [CLAP_MELS][N_BINS] triangles, Slaney area-normalised. Built once. */
+function melFilters() {
+  if (FILTERS) return FILTERS;
+  const fft = Float64Array.from({ length: N_BINS }, (_, i) => i * (CLAP_SR / 2) / (N_BINS - 1));
+  const m0 = hzToMel(CLAP_FMIN), m1 = hzToMel(CLAP_FMAX);
+  const f = Float64Array.from({ length: CLAP_MELS + 2 }, (_, i) => melToHz(m0 + (m1 - m0) * i / (CLAP_MELS + 1)));
+  FILTERS = [];
+  for (let m = 0; m < CLAP_MELS; m++) {
+    const row = new Float64Array(N_BINS), lo = f[m], mid = f[m + 1], hi = f[m + 2];
+    const norm = 2 / (hi - lo);
+    for (let k = 0; k < N_BINS; k++) {
+      const down = (fft[k] - lo) / (mid - lo), up = (hi - fft[k]) / (hi - mid);
+      row[k] = Math.max(0, Math.min(down, up)) * norm;
+    }
+    FILTERS.push(row);
+  }
+  return FILTERS;
+}
+
+// --- radix-2 FFT, size CLAP_FFT ---------------------------------------
+let TW = null, REV = null;
+function fftTables() {
+  if (TW) return;
+  const n = CLAP_FFT, bits = Math.log2(n);
+  REV = new Uint16Array(n);
+  for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); REV[i] = r; }
+  TW = { cos: new Float64Array(n / 2), sin: new Float64Array(n / 2) };
+  for (let i = 0; i < n / 2; i++) { TW.cos[i] = Math.cos(2 * Math.PI * i / n); TW.sin[i] = -Math.sin(2 * Math.PI * i / n); }
+}
+function fftInPlace(re, im) {
+  const n = re.length;
+  for (let i = 0; i < n; i++) { const j = REV[i]; if (j > i) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1, step = n / size;
+    for (let s = 0; s < n; s += size) for (let k = 0; k < half; k++) {
+      const c = TW.cos[k * step], d = TW.sin[k * step], a = s + k, b = a + half;
+      const tr = re[b] * c - im[b] * d, ti = re[b] * d + im[b] * c;
+      re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+    }
+  }
+}
+
+/**
+ * 48 kHz samples → exactly CLAP_SAMPLES of them, as the reference prepares a
+ * clip: longer is cut (from the middle, here), shorter is repeated whole
+ * `floor(10 s / length)` times and zero-padded ("repeatpad").
+ * @param {Float32Array} x
+ * @returns {Float32Array}
+ */
+function fitClip(x) {
+  if (x.length === CLAP_SAMPLES) return x;
+  if (x.length > CLAP_SAMPLES) {
+    const at = Math.floor((x.length - CLAP_SAMPLES) / 2);
+    return x.subarray(at, at + CLAP_SAMPLES);
+  }
+  const out = new Float32Array(CLAP_SAMPLES);
+  if (!x.length) return out;
+  const reps = Math.floor(CLAP_SAMPLES / x.length);
+  for (let r = 0; r < reps; r++) out.set(x, r * x.length);
+  return out;
+}
+
+/**
+ * One clip's log-mel input, [CLAP_FRAMES × CLAP_MELS] row-major (time-major),
+ * the [1, 1001, 64] slice of the model's [n, 1, 1001, 64] input.
+ * @param {Float32Array} samples48k  any length; fitted with fitClip()
+ * @returns {Float32Array}
+ */
+function clapFeatures(samples48k) {
+  fftTables();
+  const x = fitClip(samples48k), fb = melFilters();
+  const pad = CLAP_FFT / 2, n = x.length;
+  // Centre with reflect padding (numpy 'reflect': the edge sample is not repeated).
+  const at = i => (i < 0 ? x[-i] : i >= n ? x[2 * n - 2 - i] : x[i]);
+  const win = Float64Array.from({ length: CLAP_FFT }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / CLAP_FFT)); // periodic Hann
+  const out = new Float32Array(CLAP_FRAMES * CLAP_MELS);
+  const re = new Float64Array(CLAP_FFT), im = new Float64Array(CLAP_FFT), pow = new Float64Array(N_BINS);
+  for (let t = 0; t < CLAP_FRAMES; t++) {
+    const start = t * CLAP_HOP - pad;
+    for (let i = 0; i < CLAP_FFT; i++) { re[i] = at(start + i) * win[i]; im[i] = 0; }
+    fftInPlace(re, im);
+    for (let k = 0; k < N_BINS; k++) pow[k] = re[k] * re[k] + im[k] * im[k];
+    for (let m = 0; m < CLAP_MELS; m++) {
+      const row = fb[m];
+      let s = 0;
+      for (let k = 0; k < N_BINS; k++) if (row[k]) s += row[k] * pow[k];
+      out[t * CLAP_MELS + m] = 10 * Math.log10(Math.max(1e-10, s));
+    }
+  }
+  return out;
+}
+
+/**
+ * The audio encoder. `ort` is onnxruntime-web in the page (or -node in a
+ * script); the model takes [n, 1, 1001, 64] and returns [n, 512], already
+ * L2-normalised per row.
+ * @returns {Promise<{ run(feats: Float32Array, n: number): Promise<Float32Array>, release(): Promise<void> }>}
+ */
+async function createClapEar({ ort, modelUrl, sessionOptions }) {
+  const session = await ort.InferenceSession.create(modelUrl, sessionOptions ?? { executionProviders: ['wasm'] });
+  const out = session.outputNames?.[0] ?? 'audio_embeds';
+  return {
+    async run(feats, n) {
+      if (feats.length !== n * CLAP_FRAMES * CLAP_MELS) throw new Error('CLAP input shape does not match clip count');
+      const res = await session.run({ [CLAP_INPUT]: new ort.Tensor('float32', feats, [n, 1, CLAP_FRAMES, CLAP_MELS]) });
+      const data = res[out].data;
+      if (data.length !== n * CLAP_DIM) throw new Error(`CLAP output is ${data.length / n}-d, expected ${CLAP_DIM}`);
+      return Float32Array.from(data);
+    },
+    release: () => session.release?.() ?? Promise.resolve(),
+  };
+}
+
+/** L2-normalise in place; a zero vector stays zero. */
+function normalise(v) {
+  let n = 0;
+  for (const x of v) n += x * x;
+  n = Math.sqrt(n);
+  if (n > 0) for (let i = 0; i < v.length; i++) v[i] /= n;
+  return v;
+}
+
+/**
+ * Windows of 48 kHz audio → the record's `clap` field (record.mjs makeEar):
+ * each window is one clip, the clip embeddings are averaged and normalised.
+ * Clips run one at a time: the int8 encoder picks its activation scale per
+ * input, so clips batched together would nudge each other's embedding and a
+ * track's answer would depend on its neighbours. Windows shorter than
+ * CLAP_MIN_SAMPLES are left out; none left means nothing to say (null).
+ * @param {{ run: Function }} ear  createClapEar()
+ * @param {Float32Array[]} windows
+ * @returns {Promise<null | { model: string, emb: { s: number, q: string } }>}
+ */
+async function clapEmbed(ear, windows) {
+  const clips = (windows ?? []).filter(w => w?.length >= CLAP_MIN_SAMPLES);
+  if (!clips.length) return null;
+  const mean = new Float32Array(CLAP_DIM);
+  for (const w of clips) {
+    const emb = await ear.run(clapFeatures(w), 1);
+    for (let k = 0; k < CLAP_DIM; k++) mean[k] += emb[k] / clips.length;
+  }
+  if (!mean.every(Number.isFinite) || mean.every(v => v === 0)) return null;
+  return makeEar('clap', { embedding: normalise(mean) });
+}
+
+/**
+ * Check and unpack docs/models/clap-text-table.json. Throws on a table this
+ * code can't use (wrong version or dimension), because a silent mismatch
+ * would rank nonsense.
+ * @returns {{ model: string, dim: number, prompts: { text: string, kind: string, concept?: string, vec: Float32Array }[] }}
+ */
+function loadTextTable(json) {
+  if (!json || json.v !== TEXT_TABLE_VERSION) throw new Error('CLAP text table: unknown version');
+  if (json.dim !== CLAP_DIM) throw new Error(`CLAP text table is ${json.dim}-d, audio is ${CLAP_DIM}-d`);
+  const prompts = (json.prompts ?? []).map(p => {
+    const vec = unpackEmbedding(p.emb);
+    if (vec.length !== CLAP_DIM) throw new Error(`CLAP text table: "${p.text}" is ${vec.length}-d`);
+    return { text: p.text, kind: p.kind, ...(p.concept ? { concept: p.concept } : {}), vec: normalise(vec) };
+  });
+  return { model: json.model, dim: json.dim, template: json.template, prompts };
+}
+
+/**
+ * Prompts ranked by cosine to one audio embedding (a record's `clap`, packed,
+ * or a Float32Array).
+ * @param {object|Float32Array} audio
+ * @param {ReturnType<typeof loadTextTable>} table
+ * @param {{ kind?: 'genre'|'description', top?: number }} [o]
+ * @returns {{ text: string, kind: string, concept?: string, score: number }[]}
+ */
+function rankPrompts(audio, table, { kind = null, top = 10 } = {}) {
+  const a = audio instanceof Float32Array ? normalise(Float32Array.from(audio))
+    : normalise(unpackEmbedding(audio?.emb ?? audio));
+  if (a.length !== table.dim) throw new Error('audio and text embeddings differ in dimension');
+  const out = [];
+  for (const p of table.prompts) {
+    if (kind && p.kind !== kind) continue;
+    let s = 0;
+    for (let k = 0; k < a.length; k++) s += a[k] * p.vec[k];
+    out.push({ text: p.text, kind: p.kind, ...(p.concept ? { concept: p.concept } : {}), score: +s.toFixed(4) });
+  }
+  return out.sort((x, y) => y.score - x.score).slice(0, top);
+}
+
+/**
+ * Compressed preview bytes → 48 kHz mono, for CLAP. Same approach and
+ * reasons as decode.mjs decodeTo16k (decode on an OfflineAudioContext at the
+ * target rate, MP3 trimmed to its first chained frame, (L+R)/2), at CLAP's
+ * rate. Browser main thread only.
+ */
+async function decodeTo48k(arrayBuffer, { offlineContextCtor, audioContextCtor } = {}) {
+  const Offline = offlineContextCtor ?? globalThis.OfflineAudioContext ?? globalThis.webkitOfflineAudioContext;
+  const Live = audioContextCtor ?? globalThis.AudioContext ?? globalThis.webkitAudioContext;
+  if (!Offline && !Live) throw new Error('decodeTo48k: no Web Audio context available');
+  const u8 = new Uint8Array(arrayBuffer);
+  const first = scanFrames(u8);
+  const bytes = first > 0 ? arrayBuffer.slice(first) : arrayBuffer;
+  let ctx, live = false;
+  if (Offline) ctx = new Offline(1, 1, CLAP_SR);
+  else { ctx = new Live({ sampleRate: CLAP_SR }); live = true; }
+  try {
+    const audio = await ctx.decodeAudioData(bytes);
+    if (audio.sampleRate !== CLAP_SR) throw new Error(`decodeTo48k: decoded at ${audio.sampleRate} Hz, not ${CLAP_SR}`);
+    return downmix(Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c)));
+  } finally {
+    if (live) ctx.close?.();
+  }
+}
+
+// --- filling records ----------------------------------------------------
+
+/** Records given a CLAP embedding per controller run, after the queue (like DSP_FILL_PER_RUN). */
+const CLAP_FILL_PER_RUN = 25;
+
+/** Does this stored answer want a (current) CLAP embedding? */
+function needsClap(rec) {
+  return !!rec && !rec.miss && typeof rec.id === 'string' && !earCurrent(rec, 'clap');
+}
+
+/**
+ * Add the CLAP field to a fresh record from windows decoded at 48 kHz. CLAP
+ * is a bonus: any failure returns the record unchanged, never a failed track.
+ * @param {{ embed(windows: Float32Array[]): Promise<object|null> }} clap
+ */
+async function addClap(clap, record, windows48k) {
+  if (!clap || !record || record.miss || !windows48k?.length) return record;
+  try {
+    const field = await clap.embed(windows48k);
+    return field ? withEar(record, 'clap', field) : record;
+  } catch { return record; }
+}
+
+/**
+ * Give a record heard before (or under an older CLAP model) its CLAP
+ * embedding: look the ISRC up again, download, decode at 48 kHz, embed. The
+ * base ear, heads and dsp are untouched, so nothing the engine learned from
+ * is invalidated. Shaped like worker.js fillDsp().
+ *
+ * @param {object} deps  { lookup, fetchPreview, clap: { decode(buf) → Float32Array (48 kHz), embed(windows) → field|null } }
+ * @returns {Promise<{ record } | { skip: string } | { failed: object }>}
+ */
+async function fillClap(deps, record, track = {}) {
+  const id = record?.id;
+  const failed = (stage, detail) => ({ failed: { id, stage, detail: String(detail ?? '') } });
+  if (!deps?.clap) return { skip: 'no-clap' };
+  if (!id || record.miss || !record.isrc) return { skip: 'not-a-record' };
+
+  let found;
+  try { found = await deps.lookup(record.isrc, { spotifyDurationMs: track.durationMs }); }
+  catch (e) { return failed('lookup', e?.message ?? e); }
+  if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? { skip: found.miss } : failed('lookup', found.detail ?? found.miss);
+  // ISRC or nothing: only hear the very recording the record was made from.
+  const was = record.source?.deezerId;
+  if (was != null && found.deezerId !== was) return { skip: 'different-recording' };
+
+  let got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
+  if (got?.miss) return failed('download', got.detail ?? got.miss);
+  let windows = [];
+  try { for (let i = 0; i < got.buffers.length; i++) { windows.push(await deps.clap.decode(got.buffers[i])); got.buffers[i] = null; } }
+  catch (e) { return failed('decode', e?.message ?? e); }
+  got = null;
+
+  let field = null;
+  try { field = await deps.clap.embed(windows); }
+  catch (e) { return failed('clap', e?.message ?? e); }
+  windows = null; // drop the audio
+  if (!field) return { skip: 'nothing-heard' };
+  return { record: withEar(record, 'clap', field) };
+}
+return { CLAP_VERSION, CLAP_SR, CLAP_FFT, CLAP_HOP, CLAP_MELS, CLAP_FMIN, CLAP_FMAX, CLAP_SAMPLES, CLAP_FRAMES, CLAP_MODEL_FILE, CLAP_TABLE_FILE, CLAP_INPUT, TEXT_TABLE_VERSION, CLAP_MIN_SAMPLES, melFilters, fitClip, clapFeatures, createClapEar, normalise, clapEmbed, loadTextTable, rankPrompts, decodeTo48k, CLAP_FILL_PER_RUN, needsClap, addClap, fillClap };
+})();
 /* ---- core/audio/worker.js ---- */
 __mod["core/audio/worker.js"] = (function () {
 const { melFrames, melPatches, MEL_VERSION, SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
 const { makeRecord, makeMiss, MISS, CACHEABLE_MISS } = __mod["core/audio/record.mjs"];
+const { addClap } = __mod["core/audio/clap.mjs"];
 // The audio worker's logic: one Spotify track in, one AudioRecord (or miss) out (WP-B1).
 //
 // Glue only: queue id → lookup → fetchPreview → decodeTo16k → melFrames →
@@ -573,8 +1077,12 @@ const { makeRecord, makeMiss, MISS, CACHEABLE_MISS } = __mod["core/audio/record.
 
 
 
+
 // 1.1.0 (WP-D4): `deps.dsp` gets the decoded windows separately, never the
 // joined samples, and fillDsp() measures dsp for a record heard before it.
+// WP-C2 adds an optional `deps.clap` ({ decode, embed }) that puts the CLAP
+// field on the record in the same pass; without it nothing changes, so the
+// version stays.
 const WORKER_VERSION = '1.1.0';
 
 /**
@@ -589,6 +1097,8 @@ const WORKER_VERSION = '1.1.0';
  * @param {(outputs: object, n: number) => object} [deps.summariseHeads]
  * @param {(windows: Float32Array[]) => object|null} [deps.dsp]                               optional DSP (WP-D4): gets each decoded
  *        window on its own (contiguous audio), never the joined samples; core/audio/dsp/combine.mjs measureWindows
+ * @param {{ decode(buf: ArrayBuffer): Promise<Float32Array>, embed(windows: Float32Array[]): Promise<object|null> }} [deps.clap]
+ *        optional CLAP (WP-C2): 48 kHz decode and core/audio/clap.mjs clapEmbed, bound to its ear
  * @param {() => number} [deps.now]
  * @param {{ id: string, isrc?: string, durationMs?: number }} track
  * @returns {Promise<{ record: object } | { miss: object } | { failed: { id: string, stage: string, detail: string } }>}
@@ -612,6 +1122,15 @@ async function analyseOne(deps, track) {
   let got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
   if (got?.miss) return failed('download', got.detail ?? got.miss);
 
+  // CLAP (WP-C2), only when the page passes deps.clap: the same windows at
+  // 48 kHz, decoded first because decoding detaches the buffer it is given.
+  // A bonus: a failure here leaves CLAP out, it never fails the track.
+  let clap48 = null;
+  if (deps.clap) {
+    try { clap48 = []; for (const b of got.buffers) clap48.push(await deps.clap.decode(b.slice(0))); }
+    catch { clap48 = null; }
+  }
+
   // Decode each window separately (a cut MP3 resyncs on its own) and join them.
   let samples, parts;
   try { parts = await decodeAll(deps, got.buffers); samples = concat(parts); }
@@ -619,7 +1138,9 @@ async function analyseOne(deps, track) {
   const { windows, sliced } = got;
   got = null; // drop the compressed audio
 
-  return analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+  const res = await analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+  if (res.record && clap48) res.record = await addClap(deps.clap, res.record, clap48);
+  return res;
 }
 
 /**
@@ -1829,6 +2350,7 @@ __mod["web/audio/controller.mjs"] = (function () {
 const { runQueue, fillDsp } = __mod["core/audio/worker.js"];
 const { MISS } = __mod["core/audio/record.mjs"];
 const { measureWindows, needsDsp } = __mod["core/audio/dsp/combine.mjs"];
+const { fillClap, needsClap, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 // Runs "Listen to my music" in the page (WP-B2): queue → analyseOne → store.
 //
 // The page owns three things core/audio leaves to it: storage (store.mjs),
@@ -1849,6 +2371,13 @@ const { measureWindows, needsDsp } = __mod["core/audio/dsp/combine.mjs"];
 // preview is fetched again and only the DSP runs, so the embedding stays and
 // nothing is invalidated. None of it is shown unless web/audio/dsp-view.mjs's
 // flag is on.
+//
+// CLAP (WP-C2), only with deps.loadClap AND deps.clapOn() saying yes (the
+// "Deep listen" switch, off by default, Wi-Fi only): its encoder is loaded on
+// the first such run, new records get their `clap` field in the same pass,
+// and records heard before are topped up after DSP, the same lazy way.
+// Without loadClap, or with clapOn() false, nothing here differs from before.
+
 
 
 
@@ -1905,13 +2434,29 @@ function createWorkerEar(worker, init) {
  * @param {((windows: Float32Array[]) => object|null) | null} [deps.dsp]
  *        per-window DSP; default measureWindows, null switches DSP off
  * @param {number} [deps.dspFillPerRun]  records topped up with dsp per start (default DSP_FILL_PER_RUN)
+ * @param {() => Promise<{ decode: Function, embed: Function }>} [deps.loadClap]
+ *        CLAP (WP-C2): loads its encoder, once; { decode: 48 kHz decode, embed: windows → clap field }
+ * @param {() => boolean} [deps.clapOn]  asked at each start(): may CLAP download and run now?
+ * @param {number} [deps.clapFillPerRun] records given CLAP per start (default CLAP_FILL_PER_RUN)
  */
 function createAudioController(deps) {
   const st = { state: 'off', done: 0, total: 0, reason: null, failed: 0, missed: {}, heard: 0, last: null };
-  let abort = null, ears = null, running = null;
+  let abort = null, ears = null, running = null, clapEar = null;
   const dsp = deps.dsp === undefined ? measureWindows : deps.dsp;
   const fillBudget = deps.dspFillPerRun ?? DSP_FILL_PER_RUN;
   const noFill = new Set(); // ids whose dsp can't be filled this session (different recording now, nothing measured)
+  const clapBudget = deps.clapFillPerRun ?? CLAP_FILL_PER_RUN;
+  const noClap = new Set();  // the same, for CLAP
+
+  /** The CLAP ear when it is switched on and loads; null otherwise (never fails a run). */
+  async function clapNow() {
+    if (!deps.loadClap || !deps.clapOn?.()) return null;
+    if (clapEar) return clapEar;
+    st.reason = 'loading the describe-in-words model'; emit();
+    try { clapEar = await deps.loadClap(); } catch (e) { clapEar = null; st.clapError = String(e?.message ?? e); }
+    st.reason = null; emit();
+    return clapEar;
+  }
 
   const emit = () => { try { deps.onChange?.(vm()); } catch { /* a render bug must not stop the queue */ } };
   const vm = () => ({ state: st.state, done: st.done, total: st.total, reason: st.reason ?? undefined,
@@ -1942,8 +2487,10 @@ function createAudioController(deps) {
     running = (async () => {
       try {
         if (!tracks.length) {
-          // Nothing new to hear: still top up dsp (it needs no model).
+          // Nothing new to hear: still top up dsp (it needs no model), and CLAP when it is on.
           if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp }, signal);
+          const clap = signal.aborted ? null : await clapNow();
+          if (clap && clapBudget > 0) await topUpClap({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }, signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -1953,8 +2500,10 @@ function createAudioController(deps) {
           st.reason = null; emit();
         }
         if (signal.aborted) { st.state = 'paused'; return { done: 0, stopped: true }; }
+        const clap = await clapNow();
         const analyse = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
-                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp } : {}) };
+                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp } : {}),
+                          ...(clap ? { clap } : {}) };
         const res = await runQueue(analyse, tracks, { signal, onResult: async (r, t) => {
           if (r.record) { await deps.store.put(r.record); st.heard++; }
           else if (r.miss) { await deps.store.put(r.miss); st.missed[r.miss.miss] = (st.missed[r.miss.miss] ?? 0) + 1; }
@@ -1963,6 +2512,7 @@ function createAudioController(deps) {
           emit();
         } });
         if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
+        if (!res.stopped && clap && clapBudget > 0) await topUpClap(analyse, signal);
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
@@ -1983,6 +2533,20 @@ function createAudioController(deps) {
       try { r = await fillDsp(analyse, rec); } catch { r = { skip: 'error' }; }
       if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; emit(); }
       else if (r.skip) noFill.add(rec.id);
+      // a failed download is tried again on a later run
+    }
+  }
+
+  /** Give stored records their CLAP embedding, a few per run, stoppable like the queue. */
+  async function topUpClap(analyse, signal) {
+    const all = await deps.store.getAll();
+    const due = [...all.values()].filter(r => needsClap(r) && !noClap.has(r.id)).slice(0, clapBudget);
+    for (const rec of due) {
+      if (signal.aborted) return;
+      let r;
+      try { r = await fillClap(analyse, rec); } catch { r = { skip: 'error' }; }
+      if (r.record) { await deps.store.put(r.record); st.clapFilled = (st.clapFilled ?? 0) + 1; emit(); }
+      else if (r.skip) noClap.add(rec.id);
       // a failed download is tried again on a later run
     }
   }
@@ -3293,172 +3857,6 @@ async function fetchPreview(url, { fetch }) {
 }
 return { FETCH_VERSION, WINDOW_BYTES, IDENTITY_TOLERANCE_MS, lookup, identityOk, windows, fetchWindows, totalFromContentRange, fetchPreview };
 })();
-/* ---- core/audio/decode.mjs ---- */
-__mod["core/audio/decode.mjs"] = (function () {
-const { SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
-// Compressed preview bytes -> 16 kHz mono samples, the input core/audio/mel.mjs
-// expects. Browser main thread only: OfflineAudioContext does not exist in
-// workers, so the page decodes and posts the samples to the audio worker.
-//
-// How, and why this way (measured in test/audiodecode.test.mjs, numbers in
-// docs/AUDIO-ANALYSIS-PLAN.md §0):
-//
-// - decodeAudioData runs on an OfflineAudioContext created AT 16 kHz, so the
-//   browser's own resampler (a windowed-sinc in Chromium) does 44.1 -> 16 kHz
-//   inside the decode. The obvious alternative — decode at the native rate,
-//   then render an AudioBufferSourceNode through a 16 kHz OfflineAudioContext
-//   — is three times further from the reference in Chromium, because a
-//   buffer source converts rate by linear interpolation with no anti-alias
-//   filter: noise above 8 kHz folds back into the top mel bands.
-// - Channels are averaged ((L+R)/2), as Essentia's MonoLoader mixes. Not the
-//   context's own downmix and not ffmpeg's `-ac 1`, which is (L+R)/√2.
-// - A Range window cut from the middle of an MP3 starts mid-frame. It is
-//   trimmed to the first run of chained Layer III frame headers before
-//   decoding, so no browser has to rely on its demuxer's sync search. The
-//   decoder still outputs ~80 ms of silence first (the bit reservoir the first
-//   frames point into was cut off) — the same as ffmpeg/Essentia give for the
-//   same bytes, so phase 0's partial-download numbers already include it.
-//
-// Pure helpers (downmix, frame scan, length maths) are exported so Node tests
-// can hold them without a browser.
-
-
-
-const DECODE_VERSION = '1.0.0';
-
-// --- MPEG audio Layer III frame headers ---------------------------------
-
-const BITRATES = {               // kbps by bitrate index; 0 (free) and 15 are invalid
-  1: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],   // MPEG-1 L3
-  2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],       // MPEG-2/2.5 L3
-};
-const RATES = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
-
-/**
- * Parse a Layer III frame header at byte `i`, or null if there isn't one.
- * @param {Uint8Array} u8
- * @returns {null | { version: number, sampleRate: number, frameLength: number, samplesPerFrame: number }}
- */
-function mp3FrameAt(u8, i) {
-  if (i < 0 || i + 4 > u8.length) return null;
-  const b1 = u8[i + 1], b2 = u8[i + 2];
-  if (u8[i] !== 0xff || (b1 & 0xe0) !== 0xe0) return null;   // 11-bit sync
-  const version = (b1 >> 3) & 3;                               // 3 = MPEG-1, 2 = MPEG-2, 0 = 2.5, 1 reserved
-  if (version === 1 || ((b1 >> 1) & 3) !== 1) return null;      // Layer III only
-  const bitrate = BITRATES[version === 3 ? 1 : 2][b2 >> 4];
-  const rateIdx = (b2 >> 2) & 3;
-  if (!bitrate || (b2 >> 4) === 15 || rateIdx === 3) return null;
-  const sampleRate = RATES[version][rateIdx];
-  const pad = (b2 >> 1) & 1;
-  const mpeg1 = version === 3;
-  const frameLength = Math.floor((mpeg1 ? 144000 : 72000) * bitrate / sampleRate) + pad;
-  return { version, sampleRate, frameLength, samplesPerFrame: mpeg1 ? 1152 : 576 };
-}
-
-/** Frames that must chain (header -> next header) before an offset counts as in sync. */
-const SYNC_RUN = 3;
-
-/**
- * Find where real MP3 frames start in a byte window, and count the complete
- * frames from there. A window starting with an ID3 tag, or already on a frame
- * boundary, gives offset 0. A false sync inside frame data has to survive
- * SYNC_RUN chained headers with the same version and sample rate, which
- * random bytes essentially never do.
- * @param {Uint8Array} u8
- * @returns {{ offset: number, frames: number, sampleRate: number, samplesPerFrame: number } | null}
- *   null when the bytes are not Layer III (or too short to tell); decode them untouched.
- */
-function scanFrames(u8) {
-  if (u8.length >= 3 && u8[0] === 0x49 && u8[1] === 0x44 && u8[2] === 0x33) {   // "ID3"
-    // Tagged start: the browser's demuxer handles it; count frames after the tag.
-    const size = u8.length >= 10 ? ((u8[6] & 0x7f) << 21 | (u8[7] & 0x7f) << 14 | (u8[8] & 0x7f) << 7 | (u8[9] & 0x7f)) + 10 : 0;
-    const after = scanFrom(u8, size);
-    return after && { ...after, offset: 0 };
-  }
-  return scanFrom(u8, 0);
-}
-
-function scanFrom(u8, from) {
-  for (let i = from; i + 4 <= u8.length; i++) {
-    const h = mp3FrameAt(u8, i);
-    if (!h) continue;
-    let j = i, run = 0;
-    for (let f = h; f && f.version === h.version && f.sampleRate === h.sampleRate; f = mp3FrameAt(u8, j)) {
-      j += f.frameLength; run++;
-      if (j > u8.length) { run--; break; }       // last frame cut short: not complete
-    }
-    if (run >= SYNC_RUN) return { offset: i, frames: run, sampleRate: h.sampleRate, samplesPerFrame: h.samplesPerFrame };
-  }
-  return null;
-}
-
-// --- length maths and the downmix ------------------------------------------
-
-/** Samples after converting `n` samples from `fromRate` (rounded down, as Chromium's decode resample does). */
-function resampledLength(n, fromRate, toRate = SAMPLE_RATE) {
-  return Math.floor(n * toRate / fromRate);
-}
-
-/**
- * Average any number of equal-length channels into one new Float32Array.
- * @param {ArrayLike<number>[]} channels
- */
-function downmix(channels) {
-  if (!channels.length) return new Float32Array(0);
-  const n = channels[0].length, out = new Float32Array(n);
-  if (channels.length === 1) { out.set(channels[0]); return out; }
-  for (const ch of channels) {
-    if (ch.length !== n) throw new Error('downmix: channels differ in length');
-    for (let i = 0; i < n; i++) out[i] += ch[i];
-  }
-  const k = 1 / channels.length;
-  for (let i = 0; i < n; i++) out[i] *= k;
-  return out;
-}
-
-/** decodeAudioData in its promise form, falling back to the callback form older Safari has. */
-function decodeOn(ctx, buf) {
-  return new Promise((resolve, reject) => {
-    const p = ctx.decodeAudioData(buf, resolve, reject);
-    if (p && typeof p.then === 'function') p.then(resolve, reject);
-  });
-}
-
-/**
- * Decode compressed audio (a whole file or a Range window of one) to 16 kHz
- * mono. The ArrayBuffer is handed to decodeAudioData, which detaches it:
- * don't use it afterwards.
- *
- * @param {ArrayBuffer} arrayBuffer
- * @param {{ audioContextCtor?: Function, offlineContextCtor?: Function }} [ctors]
- *   Injected for tests; default to the page's globals. The 16 kHz decode runs
- *   on an OfflineAudioContext; an AudioContext (constructed at 16 kHz and
- *   closed afterwards) is used only when no OfflineAudioContext is available.
- * @returns {Promise<Float32Array>}
- */
-async function decodeTo16k(arrayBuffer, { audioContextCtor, offlineContextCtor } = {}) {
-  const Offline = offlineContextCtor ?? globalThis.OfflineAudioContext ?? globalThis.webkitOfflineAudioContext;
-  const Live = audioContextCtor ?? globalThis.AudioContext ?? globalThis.webkitAudioContext;
-  if (!Offline && !Live) throw new Error('decodeTo16k: no Web Audio context available');
-
-  const scan = scanFrames(new Uint8Array(arrayBuffer));
-  const bytes = scan && scan.offset > 0 ? arrayBuffer.slice(scan.offset) : arrayBuffer;
-
-  let ctx, live = false;
-  if (Offline) ctx = new Offline(1, 1, SAMPLE_RATE);
-  else { ctx = new Live({ sampleRate: SAMPLE_RATE }); live = true; }
-  try {
-    const audio = await decodeOn(ctx, bytes);
-    if (audio.sampleRate !== SAMPLE_RATE) throw new Error(`decodeTo16k: decoded at ${audio.sampleRate} Hz, not ${SAMPLE_RATE}`);
-    const channels = [];
-    for (let c = 0; c < audio.numberOfChannels; c++) channels.push(audio.getChannelData(c));
-    return downmix(channels);
-  } finally {
-    if (live && typeof ctx.close === 'function') Promise.resolve(ctx.close()).catch(() => {});
-  }
-}
-return { DECODE_VERSION, mp3FrameAt, SYNC_RUN, scanFrames, resampledLength, downmix, decodeTo16k };
-})();
 /* ---- core/audio/heads.mjs ---- */
 __mod["core/audio/heads.mjs"] = (function () {
 const { EMB_DIM } = __mod["core/audio/record.mjs"];
@@ -3787,6 +4185,598 @@ function dspSoundVM(record, { show = dspShown() } = {}) {
 }
 return { DSP_UI_DEFAULT, DSP_UI_KEY, MIN_SHOW_CONF, dspShown, dspSoundVM };
 })();
+/* ---- web/audio/labels-view.mjs ---- */
+__mod["web/audio/labels-view.mjs"] = (function () {
+const { moodHints } = __mod["core/audio/heads.mjs"];
+// Mood, voice and energy: shown only once they have been checked on real previews.
+//
+// The heads (WP-F1, core/audio/heads.mjs) already put mood/theme, voice and
+// danceability scores into every record, and WP-D4 puts a rough energy into
+// `dsp.energy`. None of it has been checked on real Deezer previews, so none
+// of it is shown. This file is the check and the switch:
+//
+//   - reviewSample() picks 30 heard tracks spread across the account's
+//     playlists, and reviewVM()/reviewHTML() draw the "Check sound labels"
+//     card on Sources, where the listener marks each reading right or wrong.
+//   - The verdicts are kept per account (one Spotify user id each), never
+//     pooled across accounts (SMARTER-GENRES-PLAN §3).
+//   - agreement() turns them into a number per label type, and a label type
+//     is shown only when at least AGREE_MIN of at least REVIEW_MIN reviewed
+//     tracks were right. Below that it stays hidden, exactly as before.
+//
+// Everything is off by default: no records, or no verdicts, and every output
+// here is null or '' so the page is byte-identical to the one without it.
+// `localStorage.bf_audio_labels = '1'` shows all three in one browser (for
+// checking the display before the review is done), '0' hides them.
+
+
+const LABEL_TYPES = Object.freeze(['mood', 'voice', 'energy']);
+/** A label type is shown only when this share of its reviewed tracks was right… */
+const AGREE_MIN = 0.7;
+/** …over at least this many reviewed tracks. */
+const REVIEW_MIN = 20;
+/** Tracks offered per review. */
+const REVIEW_SIZE = 30;
+/** Moods shown per track. */
+const MOOD_TOP = 3;
+/** Voice is called vocal at or above this p, instrumental below. */
+const VOICE_CUT = 0.5;
+const LABELS_UI_KEY = 'bf_audio_labels';
+/** The page's kv key for the verdicts: { [spotifyUserId]: { [trackId]: Check } }. */
+const CHECKS_KEY = 'labelchecks';
+
+const fin = v => typeof v === 'number' && Number.isFinite(v);
+
+/* ------------------------------------------------------------ readings */
+
+/** The top MOOD_TOP ontology moods (through heads.mjs's MOOD_MAP), or null. */
+function moodsOf(rec) {
+  const h = rec && !rec.miss ? rec.heads : null;
+  const names = moodHints(h).filter(x => x.facet === 'mood').slice(0, MOOD_TOP).map(x => x.concept);
+  return names.length ? names : null;
+}
+
+/** 'vocal' | 'instrumental' | null. */
+function voiceOf(rec) {
+  const p = rec && !rec.miss ? rec.heads?.voice : null;
+  return fin(p) ? (p >= VOICE_CUT ? 'vocal' : 'instrumental') : null;
+}
+
+/** D4's energy, 0–1, or null. */
+function energyOf(rec) {
+  const e = rec && !rec.miss ? rec.dsp?.energy : null;
+  return fin(e) ? Math.max(0, Math.min(1, e)) : null;
+}
+
+/** All three readings for one record, whatever the flag says. */
+function readingsOf(rec) {
+  return { mood: moodsOf(rec), voice: voiceOf(rec), energy: energyOf(rec) };
+}
+const hasAny = r => r.mood != null || r.voice != null || r.energy != null;
+
+/* ------------------------------------------------------------ verdicts */
+
+/**
+ * The checks for one account. `all` is what is stored under CHECKS_KEY.
+ * @returns {{ [trackId: string]: { at: number, seen: object, mood?: boolean, voice?: boolean, energy?: boolean } }}
+ */
+function checksFor(all, userId) {
+  const c = userId && all && typeof all === 'object' ? all[userId] : null;
+  return c && typeof c === 'object' ? c : {};
+}
+
+/**
+ * One verdict. Returns a new `all`; the input is not changed. `seen` is the
+ * reading the listener was shown, kept so a later mapping change can tell
+ * which verdicts were about what. `ok` null clears the verdict.
+ */
+function withVerdict(all, userId, trackId, type, ok, seen, at = Date.now()) {
+  if (!userId || !trackId || !LABEL_TYPES.includes(type)) return all ?? {};
+  const mine = { ...checksFor(all, userId) };
+  const cur = { ...(mine[trackId] ?? {}), at, seen: { ...(mine[trackId]?.seen ?? {}), [type]: seen ?? null } };
+  if (ok === true || ok === false) cur[type] = ok; else delete cur[type];
+  mine[trackId] = cur;
+  return { ...(all ?? {}), [userId]: mine };
+}
+
+/**
+ * Agreement per label type over one account's checks.
+ * @returns {{ [type: string]: { reviewed: number, right: number, rate: number|null, on: boolean } }}
+ */
+function agreement(checks) {
+  const out = {};
+  for (const type of LABEL_TYPES) {
+    let reviewed = 0, right = 0;
+    for (const c of Object.values(checks ?? {})) {
+      if (c?.[type] === true) { reviewed++; right++; } else if (c?.[type] === false) reviewed++;
+    }
+    const rate = reviewed ? right / reviewed : null;
+    out[type] = { reviewed, right, rate, on: reviewed >= REVIEW_MIN && rate >= AGREE_MIN };
+  }
+  return out;
+}
+
+/** Which label types are shown: the per-browser override, else what agreement() says. */
+function labelsShown(checks, ls = globalThis.localStorage) {
+  let v = null;
+  try { v = ls?.getItem?.(LABELS_UI_KEY) ?? null; } catch { v = null; }
+  if (v === '1') return { mood: true, voice: true, energy: true };
+  if (v === '0') return { mood: false, voice: false, energy: false };
+  const a = agreement(checks);
+  return { mood: a.mood.on, voice: a.voice.on, energy: a.energy.on };
+}
+
+/* ------------------------------------------------------------ view models */
+
+/** The mood/voice/energy part of a SoundVM, for the types shown, or null. */
+function labelSoundVM(rec, shown) {
+  if (!shown || !rec || rec.miss) return null;
+  const r = readingsOf(rec), vm = {};
+  if (shown.mood && r.mood) vm.moods = r.mood;
+  if (shown.voice && r.voice) vm.voice = r.voice;
+  if (shown.energy && r.energy != null) vm.energy = r.energy;
+  return Object.keys(vm).length ? vm : null;
+}
+
+/** dspSoundVM's result plus the labels. Either may be null; both null is null. */
+function mergeSoundVM(dspVM, labelVM) {
+  if (!labelVM) return dspVM ?? null;
+  if (!dspVM) return labelVM;
+  return { ...dspVM, ...labelVM };
+}
+
+/** A ProfileVM with the playlist's energy spread (10th–90th percentile), when energy is shown and 3+ members have one. */
+function withProfileEnergy(vm, playlist, records, shown) {
+  if (!vm || !shown?.energy) return vm;
+  const es = [];
+  for (const t of playlist?.tracks ?? []) {
+    const e = energyOf(records?.get?.(t?.id));
+    if (e != null) es.push(e);
+  }
+  if (es.length < 3) return vm;
+  es.sort((a, b) => a - b);
+  const q = f => es[Math.min(es.length - 1, Math.max(0, Math.round(f * (es.length - 1))))];
+  return { ...vm, energy: [+q(0.1).toFixed(2), +q(0.9).toFixed(2)] };
+}
+
+/* ------------------------------------------------------------ the review */
+
+/** A small deterministic PRNG, so one seed always gives the same sample. */
+function rng(seed) {
+  let s = (seed >>> 0) || 1;
+  return () => { s = Math.imul(s ^ (s >>> 15), 2246822507); s = Math.imul(s ^ (s >>> 13), 3266489909); s ^= s >>> 16; return (s >>> 0) / 4294967296; };
+}
+
+/**
+ * Up to `n` heard tracks with at least one reading, spread across playlists:
+ * one from each playlist in turn (each playlist's tracks shuffled by `seed`),
+ * so a big playlist cannot fill the review alone. Tracks already checked are
+ * left out, so a second review adds new ones. Liked songs come last.
+ *
+ * @param {{ playlists?: object[], liked?: object[] }} lib
+ * @param {Map<string, object>} records
+ * @returns {{ track: object, playlist: { id: string, name: string }|null }[]}
+ */
+function reviewSample(lib, records, { n = REVIEW_SIZE, seed = 1, checks = {}, skip = () => false } = {}) {
+  if (!records?.size) return [];
+  const rand = rng(seed);
+  const usable = t => t?.id && !checks[t.id] && hasAny(readingsOf(records.get(t.id)));
+  const pools = [];
+  for (const p of lib?.playlists ?? []) {
+    if (skip(p)) continue;
+    const ts = (p.tracks ?? []).filter(usable);
+    if (!ts.length) continue;
+    for (let i = ts.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [ts[i], ts[j]] = [ts[j], ts[i]]; }
+    pools.push({ p: { id: p.id, name: p.name }, ts });
+  }
+  const liked = (lib?.liked ?? []).filter(usable);
+  if (liked.length) pools.push({ p: null, ts: liked });
+  const out = [], seen = new Set(), at = pools.map(() => 0);
+  while (out.length < n) {
+    let any = false;
+    pools.forEach(({ p, ts }, k) => {
+      if (out.length >= n) return;
+      while (at[k] < ts.length && seen.has(ts[at[k]].id)) at[k]++;
+      const t = ts[at[k]++];
+      if (!t) return;
+      seen.add(t.id); out.push({ track: t, playlist: p }); any = true;
+    });
+    if (!any) break;
+  }
+  return out;
+}
+
+/**
+ * The card's view model. `sample` is reviewSample()'s, `checks` the account's.
+ * Null when there is nothing to check and nothing checked: then the card is not drawn.
+ */
+function reviewVM(sample, records, checks) {
+  const items = (sample ?? []).map(({ track, playlist }) => {
+    const r = readingsOf(records?.get?.(track.id));
+    return {
+      id: track.id, name: track.name ?? '', artists: (track.artists ?? []).map(a => a?.name).filter(Boolean).join(', '),
+      playlist: playlist?.name ?? null, readings: r, verdict: checks?.[track.id] ?? null,
+    };
+  }).filter(x => hasAny(x.readings));
+  const agree = agreement(checks);
+  const reviewed = LABEL_TYPES.some(t => agree[t].reviewed > 0);
+  if (!items.length && !reviewed) return null;
+  return { items, agree };
+}
+
+const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const TYPE_NAME = { mood: 'Mood', voice: 'Voice', energy: 'Energy' };
+const showReading = (type, v) => type === 'mood' ? v.join(', ')
+  : type === 'energy' ? `${Math.round(v * 5)} of 5` : v;
+const seenOf = (type, v) => type === 'mood' ? v.join(',') : type === 'energy' ? +v.toFixed(2) : v;
+
+function agreeLine(type, a) {
+  const st = a.on ? 'shown' : a.reviewed < REVIEW_MIN ? `${REVIEW_MIN - a.reviewed} more to go` : 'hidden';
+  return `<li class="lck-agree lck-${a.on ? 'on' : 'off'}"><b>${TYPE_NAME[type]}</b> ${a.reviewed
+    ? `${a.right} of ${a.reviewed} right (${Math.round(a.rate * 100)}%)` : 'not checked yet'} · <span class="lck-st">${st}</span></li>`;
+}
+
+/** The "Check sound labels" card on Sources. '' for a null view model. */
+function reviewHTML(vm) {
+  if (!vm) return '';
+  const rows = vm.items.map(it => {
+    const cells = LABEL_TYPES.filter(t => it.readings[t] != null).map(t => {
+      const v = it.verdict?.[t];
+      const btn = (ok, word) => `<button class="b sm lck-b${v === ok ? ' lck-sel' : ''}" data-lchk="${esc(it.id)}" data-lt="${t}" data-lok="${ok ? 1 : 0}" aria-pressed="${v === ok}">${word}</button>`;
+      return `<div class="lck-cell"><span class="lck-t">${TYPE_NAME[t]}</span> <span class="lck-v">${esc(showReading(t, it.readings[t]))}</span>
+        <span class="lck-btns">${btn(true, 'Right')}${btn(false, 'Wrong')}</span></div>`;
+    }).join('');
+    return `<li class="lck-row"><div class="lck-name"><a href="https://open.spotify.com/track/${encodeURIComponent(it.id)}" target="_blank" rel="noopener"><b>${esc(it.name)}</b></a>${it.artists ? ` <span class="sub">${esc(it.artists)}</span>` : ''}${
+      it.playlist ? ` <span class="lck-pl">${esc(it.playlist)}</span>` : ''}</div>${cells}</li>`;
+  }).join('');
+  return `<div id="labelCheck">
+    <div class="srchead"><h2 id="src-labels-h">Check sound labels</h2></div>
+    <p class="srcline">Listening also guesses each track’s mood, whether it has vocals, and its energy. None of it is shown until you’ve checked it:
+      open a few of these in Spotify and say whether each guess is right. A label type appears in the app once ${Math.round(AGREE_MIN * 100)}% of at least ${REVIEW_MIN} tracks are right.</p>
+    <ul class="lck-sum">${LABEL_TYPES.map(t => agreeLine(t, vm.agree[t])).join('')}</ul>
+    ${rows ? `<ol class="lck-list">${rows}</ol>` : '<p class="sub">Nothing new to check. Listen to more tracks and come back.</p>'}
+    <div class="rowbtns"><button class="b sm" id="labelCheckMore">Show other tracks</button></div>
+  </div>`;
+}
+return { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, MOOD_TOP, VOICE_CUT, LABELS_UI_KEY, CHECKS_KEY, moodsOf, voiceOf, energyOf, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, seenOf, reviewHTML };
+})();
+/* ---- core/audio/clap-search.mjs ---- */
+__mod["core/audio/clap-search.mjs"] = (function () {
+const { unpackEmbedding } = __mod["core/audio/record.mjs"];
+// Naming "new genre?" groups and "find tracks that sound like ___"
+// (docs/AUDIO-BUILD-PLAN.md WP-C3).
+//
+// Both read two things WP-C2 makes and nothing else:
+//
+//  - **The text table** (`docs/models/clap-text-table.json`): a reviewed list
+//    of prompts — every ontology genre by name, plus descriptions such as
+//    "dark rolling bassline" — embedded once, at build time, by
+//    laion/larger_clap_music's text encoder. Shape:
+//      { v, model, revision?, dim, template?, prompts: [{ text, kind: 'genre'|'description',
+//        concept?, emb: {s, q} }] }
+//    with each `emb` L2-normalised before `packEmbedding`.
+//  - **The record's `clap` field**: `{ model, emb: {s, q} }`, the same model's
+//    *audio* embedding of the Deezer preview, in the same space as the text.
+//    Absent or null means CLAP has not heard that track. A bare `{s, q}` is
+//    read too.
+//
+// Text is never embedded in the page. CLAP's text encoder is a RoBERTa-base
+// (~125M parameters, well over the 30 MB the brief allows quantised), so the
+// search box takes the table's prompts only, with autocomplete. Nothing typed
+// leaves the device: it is matched against the table and that is all.
+//
+// Names are suggestions and search only ranks: neither moves, files or
+// creates anything, so neither waits on WP-E2's gate. Only this account's
+// records are read (docs/SMARTER-GENRES-PLAN.md §3 R2), and no Spotify
+// content goes into a model (R1): CLAP hears Deezer's audio, and the prompts
+// are ours.
+//
+// With no CLAP records every function answers empty (null, [] or an empty
+// Map), so the screens that call them render what they did before.
+
+
+const CLAP_SEARCH_VERSION = '1.0.0';
+
+const CLAP_SEARCH = Object.freeze({
+  /** A group needs at least this many tracks heard by CLAP, and… */
+  minHeard: 4,
+  /** …at least this share of its tracks, before it gets a suggested name. */
+  minShare: 0.5,
+  /** Name suggestions offered: the first, plus this many alternatives. */
+  alts: 2,
+  /** Search results shown. */
+  limit: 20,
+  /** Autocomplete entries offered for a partial query. */
+  suggest: 8,
+  /** A stored name belongs to a fresh group when this share of the smaller of the two overlaps. */
+  sameGroup: 0.6,
+  /** Track ids kept with a confirmed name: enough to recognise the group again. */
+  keepIds: 200,
+});
+
+const r4 = x => +x.toFixed(4);
+
+function unit(v) {
+  let ss = 0;
+  for (let i = 0; i < v.length; i++) ss += v[i] * v[i];
+  if (!(ss > 0) || !Number.isFinite(ss)) return null;
+  const inv = 1 / Math.sqrt(ss), out = new Float32Array(v.length);
+  for (let i = 0; i < v.length; i++) out[i] = v[i] * inv;
+  return out;
+}
+
+function dot(a, b) {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += a[i] * b[i];
+  return d;
+}
+
+/** "Dark, rolling  Bassline!" → "dark rolling bassline". */
+function normPrompt(s) {
+  return String(s ?? '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/** The template's fixed words around `{name}` ("{name} music" → ['', ' music']), lowercased. */
+function templateParts(template) {
+  if (typeof template !== 'string' || !template.includes('{name}')) return null;
+  const [pre, post] = template.split('{name}');
+  return [normPrompt(pre), normPrompt(post)];
+}
+
+/** A genre prompt's name as a person would say it: the template's words taken off, if the text carries them. */
+function labelOf(text, kind, parts) {
+  let s = String(text ?? '').trim();
+  if (kind === 'genre' && parts) {
+    const n = normPrompt(s);
+    const [pre, post] = parts;
+    if ((pre && n.startsWith(pre + ' ')) || (post && n.endsWith(' ' + post))) {
+      let words = n.split(' ');
+      if (pre) words = words.slice(pre.split(' ').length);
+      if (post) words = words.slice(0, words.length - post.split(' ').length);
+      if (words.length) s = words.join(' ');
+    }
+  }
+  return s;
+}
+
+/**
+ * The table as this module uses it, or null when it is missing or malformed.
+ * Never throws: a bad table means no names and no search, not a broken screen.
+ *
+ * @returns {null | { model: string, dim: number, prompts: { text: string, label: string, kind: string,
+ *   concept: string|null, emb: Float32Array }[], byText: Map<string, number> }}
+ */
+function readTable(json) {
+  try {
+    if (!json || !Array.isArray(json.prompts) || !(json.dim > 0)) return null;
+    const parts = templateParts(json.template);
+    const prompts = [], byText = new Map();
+    for (const p of json.prompts) {
+      if (!p || typeof p.text !== 'string' || !p.text.trim()) continue;
+      const kind = p.kind === 'genre' ? 'genre' : 'description';
+      let emb;
+      try { emb = unit(unpackEmbedding(p.emb)); } catch { emb = null; }
+      if (!emb || emb.length !== json.dim) continue;
+      const label = labelOf(p.text, kind, parts);
+      const i = prompts.length;
+      prompts.push({ text: p.text, label, kind, concept: typeof p.concept === 'string' ? p.concept : null, emb });
+      // Typed as the label, as the full prompt, or as the concept's slug: all the same prompt.
+      for (const k of [label, p.text, p.concept?.replace(/-/g, ' ')]) {
+        const n = normPrompt(k);
+        if (n && !byText.has(n)) byText.set(n, i);
+      }
+    }
+    if (!prompts.length) return null;
+    return { model: String(json.model ?? ''), dim: json.dim, prompts, byText };
+  } catch { return null; }
+}
+
+/** A record's CLAP audio embedding, unit length, or null. */
+function clapOf(rec, dim = null) {
+  const c = rec?.clap;
+  if (!c || rec.miss) return null;
+  const packed = c.emb ?? (c.q ? c : null);
+  if (!packed) return null;
+  try {
+    const v = unit(unpackEmbedding(packed));
+    return v && (!dim || v.length === dim) ? v : null;
+  } catch { return null; }
+}
+
+const recordsOf = records => (!records ? [] : records instanceof Map ? records.values()
+  : Array.isArray(records) ? records : typeof records[Symbol.iterator] === 'function' ? records : Object.values(records));
+
+/** Map<trackId, unit CLAP embedding> over the records CLAP has heard, newest record per id. */
+function clapIndex(records, { dim = null } = {}) {
+  const index = new Map(), at = new Map();
+  for (const rec of recordsOf(records)) {
+    if (!rec || typeof rec.id !== 'string') continue;
+    const v = clapOf(rec, dim);
+    if (!v) continue;
+    if (index.has(rec.id) && !((rec.at ?? 0) > (at.get(rec.id) ?? 0))) continue;
+    index.set(rec.id, v);
+    at.set(rec.id, rec.at ?? 0);
+  }
+  return index;
+}
+
+/** How many records CLAP has heard, without unpacking anything. Cheap enough to call on every redraw. */
+function clapHeard(records) {
+  let n = 0;
+  for (const rec of recordsOf(records)) if (rec && !rec.miss && rec.clap && (rec.clap.emb ?? rec.clap.q)) n++;
+  return n;
+}
+
+/** The prompt this text names, exactly (after normalising), or null. */
+function findPrompt(query, table) {
+  if (!table) return null;
+  const i = table.byText.get(normPrompt(query));
+  return i == null ? null : { i, ...pub(table.prompts[i]) };
+}
+
+const pub = p => ({ text: p.text, label: p.label, kind: p.kind, concept: p.concept });
+
+/**
+ * Autocomplete: prompts whose words start with what has been typed, best
+ * first (the whole label starts with it, then every typed word starts one
+ * of its words), genres before descriptions on a tie, then alphabetical.
+ * Only word starts: "ph" offering "euphoric" is noise, not help.
+ */
+function suggestPrompts(query, table, { limit = CLAP_SEARCH.suggest } = {}) {
+  if (!table) return [];
+  const q = normPrompt(query);
+  if (!q) return [];
+  const words = q.split(' ');
+  const rows = [];
+  table.prompts.forEach((p, i) => {
+    const n = normPrompt(p.label), have = n.split(' ');
+    let rank;
+    if (n === q) rank = 0;
+    else if (n.startsWith(q)) rank = 1;
+    else if (words.every(w => have.some(h => h.startsWith(w)))) rank = 2;
+    else return;
+    rows.push([rank, p.kind === 'genre' ? 0 : 1, n, i]);
+  });
+  rows.sort((a, b) => a[0] - b[0] || a[1] - b[1] || (a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : a[3] - b[3]));
+  return rows.slice(0, limit).map(r => ({ i: r[3], ...pub(table.prompts[r[3]]) }));
+}
+
+/**
+ * The library's tracks ranked by how well they sound like a prompt, keeping
+ * only those above the library's own average for it.
+ *
+ * @param {string|number} prompt  the prompt's text (as typed) or its index in the table
+ * @param {Map} index             from clapIndex
+ * @param {object} table          from readTable
+ * @returns {{ prompt: object|null, results: { id: string, score: number }[], heard: number }}
+ *          `prompt` null when the text is not one of the table's prompts.
+ */
+function soundsLike(prompt, index, table, { limit = CLAP_SEARCH.limit, exclude = null } = {}) {
+  const heard = index?.size ?? 0;
+  const found = typeof prompt === 'number' ? (table?.prompts[prompt] ? { i: prompt, ...pub(table.prompts[prompt]) } : null)
+    : findPrompt(prompt, table);
+  if (!found || !heard) return { prompt: found, results: [], heard };
+  const t = table.prompts[found.i].emb;
+  const rows = [];
+  for (const [id, v] of index) {
+    if (exclude?.has?.(id) || v.length !== t.length) continue;
+    rows.push({ id, score: r4(dot(v, t)) });
+  }
+  rows.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1));
+  // Only tracks closer to the prompt than the library is on average: "sounds
+  // like phonk" should not pad itself out with everything else you own.
+  const avg = rows.reduce((t, x) => t + x.score, 0) / (rows.length || 1);
+  return { prompt: found, results: rows.filter(x => x.score > avg).slice(0, limit), heard };
+}
+
+/**
+ * A suggested name for a group of tracks: the genre prompt its sound is most
+ * *distinctively* like, compared with the rest of the account's heard library.
+ *
+ * Raw CLAP similarity is not enough on its own: broad prompts ("electronic")
+ * sit close to almost everything, and would name every group the same. So
+ * each genre prompt is scored by how much closer the group's centre is to it
+ * than the library's tracks are on average, and the biggest lift wins.
+ *
+ * Returns null, and the group stays unnamed, when too few of its tracks have
+ * been heard by CLAP or no prompt is closer to it than to the library.
+ *
+ * @param {string[]} ids
+ * @param {Map} index    from clapIndex, over the whole account (the baseline)
+ * @param {object} table from readTable
+ * @returns {null | { name: string, concept: string|null, lift: number, heard: number,
+ *                    alts: { name: string, concept: string|null, lift: number }[], sounds: string|null }}
+ */
+function nameGroup(ids, index, table, { minHeard = CLAP_SEARCH.minHeard, minShare = CLAP_SEARCH.minShare,
+                                                 alts = CLAP_SEARCH.alts, baseline = null } = {}) {
+  if (!table || !index?.size || !ids?.length) return null;
+  const vs = ids.map(id => index.get(id)).filter(v => v && v.length === table.dim);
+  if (vs.length < minHeard || vs.length < minShare * ids.length) return null;
+  const sum = new Float64Array(table.dim);
+  for (const v of vs) for (let i = 0; i < sum.length; i++) sum[i] += v[i];
+  const centre = unit(sum);
+  if (!centre) return null;
+  const base = baseline ?? libraryMean(index, table.dim);
+  const lift = p => dot(centre, p.emb) - (base ? dot(base, p.emb) : 0);
+  const rank = kind => table.prompts.map((p, i) => [i, lift(p)]).filter(([i]) => table.prompts[i].kind === kind)
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+  const genres = rank('genre').filter(([, l]) => l > 0);
+  if (!genres.length) return null;
+  const seen = new Set(), named = [];
+  for (const [i, l] of genres) {
+    const p = table.prompts[i], key = p.concept ?? normPrompt(p.label);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    named.push({ name: p.label, concept: p.concept, lift: r4(l) });
+    if (named.length > alts) break;
+  }
+  const desc = rank('description').find(([, l]) => l > 0);
+  return { ...named[0], heard: vs.length, alts: named.slice(1), sounds: desc ? table.prompts[desc[0]].label : null };
+}
+
+/** The account's average heard sound (un-normalised mean of unit vectors), or null. */
+function libraryMean(index, dim) {
+  if (!index?.size) return null;
+  const m = new Float64Array(dim);
+  let n = 0;
+  for (const v of index.values()) {
+    if (v.length !== dim) continue;
+    for (let i = 0; i < dim; i++) m[i] += v[i];
+    n++;
+  }
+  if (!n) return null;
+  for (let i = 0; i < dim; i++) m[i] /= n;
+  return m;
+}
+
+/* ---------- confirmed names, per account ----------
+ * { [key]: { name, ids: [...], at } }: a name the listener confirmed or typed
+ * for a group, with enough of its tracks to recognise the group next time,
+ * when it has gained or lost a few. Plain stamped values, so the page's
+ * newest-wins sync between the listener's own linked devices carries them
+ * unchanged. Nothing here is shared between accounts. */
+
+function overlap(a, b) {
+  if (!a.length || !b.length) return 0;
+  const s = new Set(a);
+  let n = 0;
+  for (const x of b) if (s.has(x)) n++;
+  return n / Math.min(a.length, s.size, new Set(b).size);
+}
+
+/** The confirmed name for this group, if one was given to (most of) it before. */
+function confirmedName(ids, names, { sameGroup = CLAP_SEARCH.sameGroup } = {}) {
+  let best = null, bestO = 0;
+  for (const [key, e] of Object.entries(names ?? {})) {
+    if (!e?.name || !Array.isArray(e.ids)) continue;
+    const o = overlap(e.ids, ids ?? []);
+    if (o >= sameGroup && (o > bestO || (o === bestO && (e.at ?? 0) > (best?.at ?? 0)))) { best = { key, ...e }; bestO = o; }
+  }
+  return best ? { key: best.key, name: best.name, at: best.at ?? 0 } : null;
+}
+
+/** A short stable key for a group, from its sorted ids. */
+function groupKey(ids) {
+  let h = 2166136261;
+  for (const id of [...ids].sort()) for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return 'g' + h.toString(36);
+}
+
+/**
+ * Names after confirming `name` for this group. The entry for the same group,
+ * if there is one, is replaced (renaming keeps its key, so the sync sees one
+ * value changing, not a second group). Returns a new object.
+ */
+function confirmName(names, ids, name, { at = Date.now(), keepIds = CLAP_SEARCH.keepIds } = {}) {
+  const clean = String(name ?? '').trim();
+  if (!clean || !ids?.length) return { ...(names ?? {}) };
+  const prev = confirmedName(ids, names);
+  const key = prev?.key ?? groupKey(ids);
+  return { ...(names ?? {}), [key]: { name: clean, ids: [...ids].sort().slice(0, keepIds), at } };
+}
+return { CLAP_SEARCH_VERSION, CLAP_SEARCH, normPrompt, readTable, clapOf, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmedName, groupKey, confirmName };
+})();
 /* ---- web/audio/index.mjs ---- */
 __mod["web/audio/index.mjs"] = (function () {
 const { openAudioStore, AUDIO_DB, AUDIO_STORE } = __mod["web/audio/store.mjs"];
@@ -3801,9 +4791,11 @@ const { MEL_VERSION } = __mod["core/audio/mel.mjs"];
 const { HEADS, summariseHeads } = __mod["core/audio/heads.mjs"];
 const { dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY } = __mod["web/audio/dsp-view.mjs"];
 const { measureWindows, needsDsp, DSP_VERSION } = __mod["core/audio/dsp/combine.mjs"];
+const { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf } = __mod["web/audio/labels-view.mjs"];
+const { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } = __mod["core/audio/clap-search.mjs"];
 // What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
 // One namespace so the template reaches core/audio through a single name.
-return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION };
+return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION };
 })();
 /* ---- core/audio/infer.mjs ---- */
 __mod["core/audio/infer.mjs"] = (function () {

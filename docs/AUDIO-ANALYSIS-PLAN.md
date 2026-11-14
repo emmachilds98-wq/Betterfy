@@ -71,6 +71,20 @@ track in 750), and from 10 up it is ahead on top-2. These are playlist-title
 labels from strangers' Deezer playlists; the owner's own playlists are the
 measurement that counts, through WP-E2's gate.
 
+**Mood, voice and energy on real previews: not checked yet.** The heads (F1)
+and D4's energy are stored in every record and hidden. Sources → "Check sound
+labels" shows 30 heard tracks, spread across playlists, each with its top-3
+mood, vocal/instrumental and energy, to mark right or wrong. A label type is
+shown only once at least 70% of at least 20 reviewed tracks are right
+(`web/audio/labels-view.mjs`). The owner's numbers go here once the review is
+done:
+
+| Label | Reviewed | Right | Agreement | Shown? |
+|---|---|---|---|---|
+| Mood (top 3) | – | – | – | no |
+| Vocal / instrumental | – | – | – | no |
+| Energy (1–5) | – | – | – | no |
+
 ### The options
 
 | | A. Labels | **B. Learn from your playlists (recommended)** | C. B plus a laptop-only "deep listen" |

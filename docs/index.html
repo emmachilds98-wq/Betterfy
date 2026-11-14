@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-2040">
+<meta name="bf-build" content="2026-11-14-2058">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -956,6 +956,15 @@
   .gateline>s.gate{flex:none; width:0; height:18px; margin-top:2px; border-left:2px dashed var(--ink)}
   .gateverdict .tag{margin-right:6px}
   @media (max-width: 760px){ .pbar{grid-template-columns:64px 1fr 40px; gap:8px} }
+  /* Discover: "find tracks that sound like ___" (docs/AUDIO-BUILD-PLAN.md
+     WP-C3). Drawn only once CLAP has heard part of the library. The result
+     list reuses the proposal cards' numbered list (.prop-eg, 64-tidy.css). */
+  .card.sndsearch{margin:0 0 16px; display:grid; gap:10px}
+  .card.sndsearch .ttl{font-weight:600}
+  .card.sndsearch .rowbtns input{flex:1 1 220px; min-width:0}
+  .card.sndsearch .why{margin:0}
+  .sndres li{align-items:baseline}
+  .sndres li .open{margin-left:auto; flex:none; font-size:12px; color:var(--accent)}
   /* Marks the update button when a newer build is waiting on the server. */
   .fab.hasUpdate{border-color:var(--accent); color:var(--accent)}
   .fab.hasUpdate::after{content:""; position:absolute; top:-3px; right:-3px; width:8px; height:8px;
@@ -1279,6 +1288,23 @@
 .smiss ul{margin:8px 0 0; padding-left:18px}
 .smiss li{margin:3px 0}
 .smiss b{font-family:var(--mono); color:var(--ink); font-variant-numeric:tabular-nums}
+/* "Check sound labels" on Sources (web/audio/labels-view.mjs) and the mood item in the sound chip. */
+.snd-mood{color:var(--ink-2)}
+.srclabels{grid-column:1 / -1}
+.lck-sum{list-style:none;margin:8px 0 12px;padding:0;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--ink-2)}
+.lck-agree b{color:var(--ink)}
+.lck-on .lck-st{color:var(--ok, var(--ink))}
+.lck-off .lck-st{color:var(--ink-3)}
+.lck-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.lck-row{border-top:1px solid var(--line);padding-top:10px;min-width:0}
+.lck-name{margin-bottom:4px;overflow-wrap:anywhere}
+.lck-pl{font-size:12px;color:var(--ink-3);margin-left:4px}
+.lck-cell{display:flex;flex-wrap:nowrap;align-items:center;gap:4px 8px;font-size:13px;margin:4px 0}
+.lck-t{color:var(--ink-3);min-width:4.5em}
+.lck-v{flex:1 1 0;min-width:6em}
+.lck-btns{display:inline-flex;gap:6px;margin-left:auto}
+.lck-b.lck-sel{background:var(--btn-accent);color:var(--btn-ink);border-color:transparent}
+.lck-name a{color:inherit;text-decoration:none}.lck-name a:hover b{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -1319,7 +1345,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-2040</span>
+    <span class="mono">build 2026-11-14-2058</span>
   </p>
 
   <div class="feat">
@@ -1422,7 +1448,7 @@
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2040</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2058</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1463,7 +1489,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2040</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2058</span>
   </div>
 </div>
 
@@ -2344,6 +2370,9 @@ function soundChip(vm) {
     parts.push(item('energy', `energy <span class="snd-bars" aria-hidden="true">${bars}</span>`, `energy ${n} of 5 (a rough measure)`));
   }
   if (vm.voice === 'vocal' || vm.voice === 'instrumental') parts.push(item('voice', vm.voice));
+  // Moods (F1, mapped to ontology names): only reach a SoundVM once checked (web/audio/labels-view.mjs).
+  const moods = Array.isArray(vm.moods) ? vm.moods.filter(m => typeof m === 'string' && m.trim()).slice(0, 3) : [];
+  if (moods.length) parts.push(item('mood', esc(moods.join(', ')), 'mood, as heard in the preview'));
   if (!parts.length) return '';
   return `<span class="snd">${parts.join('<span class="snd-dot" aria-hidden="true">·</span>')}</span>`;
 }
@@ -2921,7 +2950,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-2040';
+const BUILD = '2026-11-14-2058';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3242,7 +3271,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-2040', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-2058', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -4363,10 +4392,15 @@ function artHTML(t, hook = 'data-act="play"') {
  * for byte the card it was before the slots existed (test/fixtures/ui4/). */
 const soundSlot = (cls, html) => html ? `<div class="${cls}">${html}</div>` : '';
 // Where a track's SoundVM comes from: one set on the track itself, else what
-// listening heard, through the audio side's adapter (WP-D4's dspSoundVM, which
-// stays null until its flag is on). No records or no adapter means no sound.
+// listening heard, through the audio side's adapters (WP-D4's dspSoundVM, and
+// the mood/voice/energy labels once checked). Both stay null until their flags
+// are on. No records or no adapter means no sound.
 const soundOf = t => t?.sound ?? (t?.id && typeof AUDIO !== 'undefined' && AUDIO.records
-  && globalThis.BetterfyAudio?.dspSoundVM ? BetterfyAudio.dspSoundVM(AUDIO.records.get(t.id)) ?? null : null);
+  && globalThis.BetterfyAudio?.dspSoundVM ? audioSoundVM(AUDIO.records.get(t.id)) : null);
+const audioSoundVM = r => {
+  const A = BetterfyAudio, d = A.dspSoundVM(r) ?? null;
+  return A.mergeSoundVM && typeof labelsShownNow === 'function' ? A.mergeSoundVM(d, A.labelSoundVM(r, labelsShownNow())) : d;
+};
 const trackChip = t => { const vm = soundOf(t); return vm ? soundSlot('sndchip', soundChip(vm)) : ''; };
 const trackStrip = t => { const vm = soundOf(t); return vm ? soundSlot('sndstrip', sectionStrip(vm)) : ''; };
 const pickBand = sg => sg?.band ? bandChip(sg.band) : '';
@@ -4682,6 +4716,8 @@ async function gapsCompute() {
     const records = await gapsRecords();
     const sound = records && globalThis.BetterfyAudioGaps
       ? BetterfyAudioGaps.soundProposals({ ...common, records, active }) : null;
+    // WP-C3: a suggested name for each "new genre?", from CLAP, when it has heard them.
+    if (sound?.orphans?.length && typeof clapNameOrphans === 'function') await clapNameOrphans(sound.orphans, records);
     Object.assign(GAPS, { status:'ready', gaps:u.gaps, splits:split.splits, untagged:u.untagged, homeless:u.homeless,
       sound: sound && (sound.pick.length || sound.hybrids.length || sound.orphans.length) ? sound : null });
   } catch (e) {
@@ -4801,11 +4837,18 @@ function proposalCard(p) {
       : `<input id="sndh${p.i}" aria-label="Name for this playlist" value="${esc(p.name)}">
       <button class="b sm p" data-sndh="${p.i}">Create with ${n(p.size)}</button>`;
   } else if (p.kind === 'new') {
-    ttl = 'New genre?';
+    // WP-C3: a name you confirmed, or CLAP's guess with a question mark until you do.
+    const named = p.confirmed || null, guess = !named && p.suggest?.name ? p.suggest : null;
+    ttl = named ? esc(named) : guess ? `${esc(guess.name)}?` : 'New genre?';
     sub = `These sit close together and sound like none of your genre playlists
-        (the nearest is ${esc(p.nearest?.name)}). Name it if it is a genre to you.`;
+        (the nearest is ${esc(p.nearest?.name)}). ${guess ? `They sound most like ${esc(guess.name)}${
+          guess.alts?.length ? `, or ${guess.alts.map(x => esc(x.name)).join(' or ')}` : ''}${
+          guess.sounds ? ` (“${esc(guess.sounds)}”)` : ''}: a guess by sound until you say so.`
+        : named ? 'You named this group.' : 'Name it if it is a genre to you.'}`;
+    const keep = named ?? guess?.name;
     acts = p.done ? '<span class="tag ok">created</span>'
-      : `<input id="sndo${p.i}" aria-label="Name for this playlist" placeholder="Name it">
+      : `<input id="sndo${p.i}" aria-label="Name for this playlist" ${keep ? `value="${esc(keep)}"` : 'placeholder="Name it"'}>${
+        guess ? `\n      <button class="b sm" data-sndn="${p.i}">That’s it</button>` : ''}
       <button class="b sm p" data-sndo="${p.i}">Create with ${n(p.size)}</button>`;
   } else {
     ttl = `${esc(a?.name)} or ${esc(b?.name)}?`;
@@ -5364,7 +5407,9 @@ function vDiscover() {
       <button class="b p" id="discRun" ${hasKey?'':'disabled'}>Find new music</button>
     </div>`;
 
-  if (!d.length) return head + (hasKey
+  // WP-C3: "find tracks that sound like ___". '' without CLAP records.
+  const sounds = typeof soundSearchHTML === 'function' ? soundSearchHTML() : '';
+  if (!d.length) return head + sounds + (hasKey
     ? '<div class="empty"><b>Nothing found yet</b>Pick what to seed from above, then hit Find new music. A run takes a minute or two.</div>'
     : '<div class="empty"><b>Add a key above to get started</b>It only takes a few seconds, and finding new music begins the moment you save it.</div>');
 
@@ -5374,7 +5419,7 @@ function vDiscover() {
                       `data-dplay="${esc(t.id)}" data-ddur="${t.dur ?? 0}"`);
 
   const best = (t.suggest ?? [])[0];
-  return head + `<div class="counter" style="margin:0 0 14px">
+  return head + sounds + `<div class="counter" style="margin:0 0 14px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
       <span>from ${esc(S.discoverFrom)}</span>
     </div>
@@ -5491,8 +5536,12 @@ function mixLabel(mix) {
  * (docs/UI-BUILD-PLAN.md §3 rule 3). The Listening settings themselves live
  * on Sources, in the card audioPanelHTML() draws. */
 const LISTS_SOUND = {
-  profile: id => AUDIO.records && globalThis.BetterfyAudio
-    ? BetterfyAudio.profileVM(LIB.playlists.find(x => x.id === id), AUDIO.records, AUDIO.labels) : null,
+  profile: id => {
+    if (!AUDIO.records || !globalThis.BetterfyAudio) return null;
+    const p = LIB.playlists.find(x => x.id === id), vm = BetterfyAudio.profileVM(p, AUDIO.records, AUDIO.labels);
+    return BetterfyAudio.withProfileEnergy && typeof labelsShownNow === 'function'
+      ? BetterfyAudio.withProfileEnergy(vm, p, AUDIO.records, labelsShownNow()) : vm;
+  },
 };
 
 /** One row of the axes table, plus a hidden sound-profile row under it when
@@ -5620,7 +5669,7 @@ function vSources() {
         <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
       </div>`)}
 
-    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>
+    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>${labelCheckHTML()}
     </div>`;
 }
 
@@ -6209,7 +6258,8 @@ async function syncAxes() {
 
 /** Everything that syncs, at once. True when this device gained something. */
 async function syncEverything() {
-  const got = await Promise.all([syncFeedback(), syncCorrections(), syncAxes()]);
+  const got = await Promise.all([syncFeedback(), syncCorrections(), syncAxes(),
+    typeof syncClusterNames === 'function' ? syncClusterNames() : false]);
   return got.some(Boolean);
 }
 
@@ -6553,7 +6603,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-2040';
+    s.src = 'engine.js?v=2026-11-14-2058';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -6575,7 +6625,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-2040');
+    const w = new Worker('engine-worker.js?v=2026-11-14-2058');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -6889,7 +6939,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-14-2040';
+    s.src = 'audio.js?v=2026-11-14-2058';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -6917,7 +6967,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2040', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2058', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -6935,6 +6985,35 @@ async function audioInit() {
 async function audioRefresh() {
   if (!AUDIO.ctrl) return;
   AUDIO.records = await AUDIO.ctrl.refresh();
+  LABELCHECKS ??= (await idb.get(BetterfyAudio.CHECKS_KEY)) ?? {};
+}
+
+/* ---------- mood, voice and energy: shown once checked ----------
+ * web/audio/labels-view.mjs. The heads and D4's energy are in every record but
+ * hidden; the "Check sound labels" card on Sources asks the listener to mark
+ * 30 of them right or wrong, and a label type shows only once 70% of at least
+ * 20 are right. Verdicts are this account's only (keyed by Spotify user id).
+ * With no records nothing here draws anything. */
+let LABELCHECKS = null;
+const LABELS = { seed: 1, sample: null };
+const labelUser = () => LIB?.user?.id ?? null;
+const labelChecks = () => globalThis.BetterfyAudio && LABELCHECKS ? BetterfyAudio.checksFor(LABELCHECKS, labelUser()) : {};
+const labelsShownNow = () => globalThis.BetterfyAudio?.labelsShown ? BetterfyAudio.labelsShown(labelChecks(), LS) : null;
+function labelCheckHTML() {
+  if (!AUDIO.records?.size || !globalThis.BetterfyAudio?.reviewHTML || !labelUser()) return '';
+  const A = BetterfyAudio, checks = labelChecks();
+  LABELS.sample ??= A.reviewSample(LIB, AUDIO.records, { seed: LABELS.seed, checks, skip: p => isMirrorPlaylist(p) });
+  const html = A.reviewHTML(A.reviewVM(LABELS.sample, AUDIO.records, checks));
+  return html ? `<section class="srccard srclabels" id="src-labels" aria-labelledby="src-labels-h">${html}</section>` : '';
+}
+const labelCheckRedraw = () => { const el = document.getElementById('src-labels'); if (el) el.outerHTML = labelCheckHTML(); };
+async function labelVerdict(btn) {
+  const A = BetterfyAudio, id = btn.dataset.lchk, type = btn.dataset.lt, ok = btn.dataset.lok === '1', me = labelUser();
+  const reading = A.readingsOf(AUDIO.records?.get(id))[type];
+  const again = A.checksFor(LABELCHECKS, me)[id]?.[type] === ok;   // tapping the chosen answer again clears it
+  LABELCHECKS = A.withVerdict(LABELCHECKS, me, id, type, again ? null : ok, reading == null ? null : A.seenOf(type, reading));
+  await idb.set(A.CHECKS_KEY, LABELCHECKS);
+  labelCheckRedraw();
 }
 
 /** The heard tracks for the engine (WP-E2 reads them as `audio`), as an array of
@@ -6953,6 +7032,117 @@ async function engineAudio() {
 const engineAudioIn = audio => (audio && Object.keys(FB).length ? { records: audio, feedback: FB } : audio);
 /** Audio changes a suggestion only once WP-E2's gate has passed on this library. */
 const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?.gate ?? null);
+
+/* ---------- CLAP: names for "new genre?" groups, and "sounds like" search ----------
+ * docs/AUDIO-BUILD-PLAN.md WP-C3, over core/audio/clap-search.mjs. Both read
+ * the records' optional `clap` field (WP-C2's audio encoder, opt-in) and the
+ * build-time text table beside the models. Without a single CLAP record the
+ * table is never fetched and neither screen draws anything new.
+ *
+ * Confirmed names live in IndexedDB like every other per-account thing here
+ * (cleared on sign-out), and travel between the listener's own linked devices
+ * through the same newest-wins sync as tag corrections. Nothing is shared
+ * between accounts. */
+const CLAPS = { table: null, tableP: null, err: null, names: null, q: '', res: null };
+const CLAP_NAMES_KEY = 'cluster_names';
+
+/** The text table, fetched once and only when a CLAP record exists. Null when it can't be had. */
+function clapTable() {
+  if (CLAPS.table) return Promise.resolve(CLAPS.table);
+  return CLAPS.tableP ??= fetch(audioModelUrl('clap-text-table.json'))
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error(`phrase list: HTTP ${r.status}`))))
+    .then(j => {
+      const t = BetterfyAudio.readTable(j);
+      if (!t) throw new Error('the phrase list is unreadable');
+      CLAPS.err = null;
+      return (CLAPS.table = t);
+    })
+    .catch(e => { CLAPS.err = e?.message ?? String(e); CLAPS.tableP = null; return null; });
+}
+
+async function clapNames() { return (CLAPS.names ??= (await idb.get(CLAP_NAMES_KEY)) ?? {}); }
+
+/** Keep a name for a group of tracks: typed, confirmed, or the one a playlist was made with. */
+async function clapConfirm(ids, name) {
+  CLAPS.names = BetterfyAudio.confirmName(await clapNames(), ids, name);
+  await idb.set(CLAP_NAMES_KEY, CLAPS.names);
+  syncClusterNames().then(changed => { if (changed) render(); });
+}
+
+/** Names given on the listener's other linked devices. */
+async function syncClusterNames() {
+  if (!globalThis.BetterfyAudio) return false;
+  return syncStamped('clusterNames', await clapNames(), async merged => {
+    CLAPS.names = merged;
+    await idb.set(CLAP_NAMES_KEY, merged);
+  });
+}
+
+/** Give each "new genre?" group its confirmed name, or CLAP's suggestion. Changes nothing without CLAP records. */
+async function clapNameOrphans(orphans, records) {
+  if (!orphans?.length || !globalThis.BetterfyAudio || !BetterfyAudio.clapHeard(records)) return;
+  try {
+    const table = await clapTable();
+    const names = await clapNames();
+    const idx = table ? BetterfyAudio.clapIndex(records, { dim: table.dim }) : null;
+    const baseline = idx ? BetterfyAudio.libraryMean(idx, table.dim) : null;
+    for (const o of orphans) {
+      const kept = BetterfyAudio.confirmedName(o.ids, names);
+      o.confirmed = kept?.name ?? null;
+      o.suggest = !kept && idx ? BetterfyAudio.nameGroup(o.ids, idx, table, { baseline }) : null;
+    }
+  } catch { /* names are a nicety: the cards stay as they were */ }
+}
+
+/** Run a search for what is in the box. Prompts only: free text has no encoder in the page. */
+async function clapSearch(q) {
+  CLAPS.q = String(q ?? '').trim();
+  if (!CLAPS.q) { CLAPS.res = null; return render(); }
+  const table = await clapTable();
+  if (!table) { CLAPS.res = null; return render(); }
+  const idx = BetterfyAudio.clapIndex(AUDIO.records, { dim: table.dim });
+  const r = BetterfyAudio.soundsLike(CLAPS.q, idx, table);
+  const ids = new Set(r.results.map(x => x.id));
+  const info = new Map();
+  for (const t of LIB?.liked ?? []) if (ids.has(t.id) && !info.has(t.id)) info.set(t.id, t);
+  for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (ids.has(t.id) && !info.has(t.id)) info.set(t.id, t);
+  CLAPS.res = { q: CLAPS.q, prompt: r.prompt, heard: r.heard,
+    results: r.results.map(x => ({ ...x, t: info.get(x.id) ?? null })).filter(x => x.t),
+    near: r.prompt ? [] : BetterfyAudio.suggestPrompts(CLAPS.q, table, { limit: 6 }) };
+  render();
+}
+
+/** Discover's "sounds like" card. '' unless CLAP has heard something in this library. */
+function soundSearchHTML() {
+  if (!AUDIO.records || !globalThis.BetterfyAudio) return '';
+  const heard = BetterfyAudio.clapHeard(AUDIO.records);
+  if (!heard) return '';
+  const t = CLAPS.table;
+  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => render()));
+  const n = x => x.toLocaleString();
+  const list = t ? `<datalist id="sndqList">${t.prompts.map(p => `<option value="${esc(p.label)}"></option>`).join('')}</datalist>` : '';
+  const res = CLAPS.res;
+  let body = '';
+  if (CLAPS.err && !t) body = emptyState('The phrase list didn’t load', `${esc(CLAPS.err)}.`,
+    { compact: true, acts: '<button class="b sm" data-sndqretry>Try again</button>' });
+  else if (res && !res.prompt) body = emptyState(`Nothing in the list is “${res.q}”`, res.near.length
+    ? 'Search works from a fixed list of genres and descriptions. Try one of these:'
+    : 'Search works from a fixed list of genres and descriptions. Start typing and pick one from it.',
+    { compact: true, acts: res.near.map(p => `<button class="b sm" data-sndqpick="${esc(p.label)}">${esc(p.label)}</button>`).join(' ') });
+  else if (res && !res.results.length) body = emptyState('Nothing to show', 'None of the tracks listening has heard are in your library now.', { compact: true });
+  else if (res) body = `<ol class="prop-eg sndres">${res.results.map(x => `<li><b>${esc(x.t.name ?? x.id)}</b>
+      <span>${esc((x.t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '))}</span>
+      <a class="open" href="https://open.spotify.com/track/${esc(x.id)}" target="_blank" rel="noopener">Open</a></li>`).join('')}</ol>
+    <div class="rowbtns" style="margin-top:12px"><button class="b sm" data-sndqmake>Make a playlist of these ${n(res.results.length)}</button></div>`;
+  return `<div class="card sndsearch" id="sndSearch">
+    <div class="ttl">Find tracks that sound like… <span class="tag snd">by sound</span></div>
+    <div class="rowbtns"><input id="sndq" list="sndqList" autocomplete="off" aria-label="Sounds like"
+      placeholder="e.g. ${esc(t?.prompts.find(p => p.kind === 'description')?.label ?? 'dark rolling bassline')}" value="${esc(CLAPS.q)}">
+      <button class="b p" data-sndq>Search</button></div>${list}
+    <p class="why">Ranks the ${n(heard)} track${heard === 1 ? '' : 's'} listening has heard by how they sound.
+      Pick a genre or description from the list; what you type stays on this device.</p>${body}
+  </div>`;
+}
 
 /** Redraw only the panel, and only while it is on screen: progress ticks every few seconds. */
 let AUDIO_DRAW = 0;
@@ -7340,7 +7530,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-2040`,
+    `Betterfy engine score — build 2026-11-14-2058`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7841,6 +8031,9 @@ document.addEventListener('click', guard(async e => {
   if (e.target.id === 'enrich') return enrichMissing();
   if (e.target.id === 'fillWikidata') return fillFromWikidata();
   if (e.target.id === 'audioGo') return audioStart();
+  const lchk = e.target.closest('[data-lchk]');
+  if (lchk && globalThis.BetterfyAudio) return labelVerdict(lchk);
+  if (e.target.id === 'labelCheckMore') { LABELS.seed++; LABELS.sample = null; return labelCheckRedraw(); }
   if (e.target.id === 'audioStop') { AUDIO.ctrl?.stop(); return; }
   if (e.target.id === 'audioWifiYes') { AUDIO.wifiOk = true; return audioStart(); }
 
@@ -7907,8 +8100,37 @@ document.addEventListener('click', guard(async e => {
     if (!g) return;
     if (!name) return toast('Give it a name first.');
     (sh ?? so).disabled = true;
-    try { await gapsCreate(name, g.ids); if (so) GAPS.filed.add('o' + i); render(); }
+    try {
+      await gapsCreate(name, g.ids);
+      if (so) { GAPS.filed.add('o' + i); if (typeof clapConfirm === 'function') clapConfirm(g.ids, name).catch(() => {}); }
+      render();
+    }
     catch (err) { (sh ?? so).disabled = false; toast('Failed: ' + err.message); }
+    return;
+  }
+  const sn = e.target.closest('[data-sndn]');
+  if (sn) {
+    const i = +sn.dataset.sndn, g = GAPS.sound?.orphans?.[i], name = $('#sndo' + i)?.value.trim();
+    if (!g) return;
+    if (!name) return toast('Give it a name first.');
+    try { await clapConfirm(g.ids, name); g.confirmed = name; g.suggest = null; toast(`Kept the name “${name}”.`); render(); }
+    catch (err) { toast('Failed: ' + err.message); }
+    return;
+  }
+  const sq = e.target.closest('[data-sndq], [data-sndqpick]');
+  if (sq) return clapSearch(sq.dataset.sndqpick ?? $('#sndq')?.value);
+  if (e.target.closest('[data-sndqretry]')) { CLAPS.err = null; return render(); }
+  const sqm = e.target.closest('[data-sndqmake]');
+  if (sqm) {
+    const r = CLAPS.res, label = r?.prompt?.label;
+    if (!r?.results?.length || !label) return;
+    sqm.disabled = true;
+    try {
+      const name = `Sounds like ${label}`;
+      const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
+      await addTracks(pl.id, r.results.map(x => x.id));
+      toast(`Created “${name}” with ${r.results.length} tracks.`);
+    } catch (err) { sqm.disabled = false; toast('Failed: ' + err.message); }
     return;
   }
   const spk = e.target.closest('[data-sndp]');
@@ -8073,6 +8295,8 @@ async function inboxAct(a) {
 // using a touchscreen.
 document.addEventListener('keydown', guard(async e => {
   if ($('#app').hidden || e.metaKey || e.ctrlKey || e.altKey) return;
+  // Enter in Discover's "sounds like" box searches (WP-C3).
+  if (e.key === 'Enter' && e.target.id === 'sndq') { e.preventDefault(); return clapSearch(e.target.value); }
   if (e.target.matches('input,select,textarea')) return;
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   const next = VORDER[VORDER.indexOf(view) + (e.key === 'ArrowRight' ? 1 : -1)];
