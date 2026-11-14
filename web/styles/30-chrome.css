@@ -63,6 +63,14 @@
   .tabmore .ic{display:none}
   .tabmore:hover{background:var(--surface-2); color:var(--ink); border-color:var(--line-2)}
   .tabmore[aria-expanded="true"],.tabmore[aria-current="true"]{background:var(--surface-2); color:var(--ink)}
+  /* The listening indicator: the end of the top bar on a desktop (the
+     phone rule in 80-responsive floats it above the tab bar). It holds
+     listenPill()'s markup and nothing else, so with no ListenVM it is empty
+     and takes no room at all. */
+  .listenslot{flex:none; display:flex; align-items:center; min-width:0; margin-left:4px;
+        border-radius:999px; cursor:pointer}
+  .listenslot:empty{display:none}
+  .listenslot:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
   main{padding:30px 30px 90px; max-width:1080px; min-width:0; margin:0 auto}
   /* One card at a time is a column, not a page: at 1080px the suggestion rows
      stretch so far that the name and the score stop reading as one row. */
