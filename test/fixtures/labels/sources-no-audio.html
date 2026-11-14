@@ -1,0 +1,44 @@
+<h1>Sources</h1>
+    <p class="lede">Where your genre data comes from, and how to fill the gaps.</p>
+    <details class="how"><summary>How this works</summary>
+      <p>Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set covering many
+        artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
+        Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
+        <b>Wrong tags?</b> under it on a Tidy or File row.</p>
+      <p>Of all the tag weight across your library, <b>90%</b> describes a
+        sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
+        evidence of genre.</p>
+    </details>
+    <p class="srccov"><b class="mono">9</b> of <span class="mono">10</span>
+      artists have genre tags (90%).</p>
+
+    <div class="srcgrid">
+    <section class="srccard" id="src-lastfm" aria-labelledby="src-lastfm-h">
+    <div class="srchead"><h2 id="src-lastfm-h">Last.fm</h2><span class="tag idle">No key</span></div>
+    <p class="srcline">Crowd genre tags for the artists the shipped set doesn't cover. Needs a free API key.</p>
+    <div class="rowbtns">
+        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="" aria-label="Last.fm API key">
+        <button class="b" id="saveLfm">Save key</button>
+        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
+      </div>
+      <div class="rowbtns"><button class="b p" id="enrich" disabled>Fetch missing tags (1)</button></div>
+  </section>
+
+    <section class="srccard" id="src-wikidata" aria-labelledby="src-wikidata-h">
+    <div class="srchead"><h2 id="src-wikidata-h">Wikidata</h2><span class="tag ok">Free · no key</span></div>
+    <p class="srcline">Genres for about a third of artists, mostly established ones. Runs once by itself after the library loads.</p>
+    <div class="rowbtns"><button class="b" id="fillWikidata">Fill missing genres free</button></div>
+  </section>
+
+    <section class="srccard" id="src-discogs" aria-labelledby="src-discogs-h">
+    <div class="srchead"><h2 id="src-discogs-h">Discogs</h2><span class="tag idle">Optional</span></div>
+    <p class="srcline">Styles from an artist's own releases, finer than one flat tag. Only fills total gaps, as part of Fetch missing tags.</p>
+    <div class="rowbtns">
+        <input id="discogsKey" placeholder="Discogs personal access token" size="34" value="" aria-label="Discogs personal access token">
+        <button class="b" id="saveDiscogs">Save token</button>
+        <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
+      </div>
+  </section>
+
+    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h"><div id="audioPanel">panel</div></section>
+    </div>

@@ -12,3 +12,5 @@ export { MEL_VERSION } from '../../core/audio/mel.mjs';
 export { HEADS, summariseHeads } from '../../core/audio/heads.mjs';
 export { dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY } from './dsp-view.mjs';
 export { measureWindows, needsDsp, DSP_VERSION } from '../../core/audio/dsp/combine.mjs';
+export { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement,
+  labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf } from './labels-view.mjs';
