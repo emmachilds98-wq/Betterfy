@@ -5,11 +5,14 @@
        someone leaves the phone in light mode. */
     --ground:#FBF7F1; --surface:#FFF; --surface-2:#F4EDE3; --surface-3:#EFE7DA;
     --rail:#F7F1E7;
-    --ink:#1B1815; --ink-2:#5C544B; --ink-3:#8B8177;
+    --ink:#1B1815; --ink-2:#554D45; --ink-3:#6E655B;
     --line:#E9E1D6; --line-2:#DCD1C0;
     --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4; --accent-lift:#EC663E;
-    --ok:#17915F; --ok-ink:#FFF; --ok-soft:#E3F2EA; --warn:#9A6B0E; --warn-soft:#F8EFD9;
+    --ok:#0F7A4E; --ok-ink:#FFF; --ok-soft:#E3F2EA; --warn:#835B0A; --warn-soft:#F8EFD9;
     --idle:#A79C8E;
+    /* The tick inside a checked box: drawn in the ink a filled control
+       carries, so it reads on the accent in either theme. */
+    --tick:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.4l3 3 6-6.8' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     --shadow:0 1px 2px rgba(90,66,40,.06); --shadow-2:0 12px 28px rgba(160,120,80,.16);
     /* Display face. Bricolage carries the headings; Archivo stays behind it as
        the fallback so a blocked font request still lands on something with the
@@ -46,6 +49,21 @@
     /* iPhone safe areas, named once so every fixed element pads the same way. */
     --sat:env(safe-area-inset-top); --sab:env(safe-area-inset-bottom);
     --sal:env(safe-area-inset-left); --sar:env(safe-area-inset-right);
+    /* Type scale. Four sizes for running text, named so a screen's lede, its
+       body and its small print agree with every other screen's. */
+    --fs-lede:15px; --fs-body:14px; --fs-small:12.5px; --fs-micro:11px;
+    /* Controls: one height, so a select, a text box and a button on the same
+       row line up without anyone nudging padding. */
+    --ctl-h:40px; --ctl-h-sm:32px;
+    /* Confidence bands (calibrate.mjs: HIGH / LIKELY / AMBIGUOUS), worded
+       Sure / Likely / Unsure everywhere. Go-ahead, Betterfy, and resting —
+       the three tones the palette already uses for a verdict. */
+    --band-sure:var(--ok); --band-sure-soft:var(--ok-soft);
+    --band-likely:var(--accent); --band-likely-soft:var(--accent-soft);
+    --band-unsure:var(--ink-2); --band-unsure-soft:var(--surface-3);
+    /* Where a suggestion came from. The mark's colours, because these name
+       sources rather than states and must not turn with the accent. */
+    --ev-tags:var(--m4); --ev-history:var(--m0); --ev-sound:var(--m2); --ev-learned:var(--m3);
     --tabh:60px;                       /* bottom tab bar, excluding the inset */
     --topbar:52px;                     /* mobile header, excluding the inset */
   }
@@ -54,20 +72,22 @@
   @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
     --ground:#12100D; --surface:#1C1815; --surface-2:#231E1A; --surface-3:#262019;
     --rail:#0D0B09;
-    --ink:#F7F1E8; --ink-2:#ABA093; --ink-3:#7F7468;
+    --ink:#F7F1E8; --ink-2:#B8AD9F; --ink-3:#958A7D;
     --line:#2E2822; --line-2:#3B342C;
     --accent:#FF7A52; --accent-ink:#17100B; --accent-soft:#2E1C15; --accent-lift:#FF9068;
     --ok:#7AE0A6; --ok-ink:#0C2418; --ok-soft:#12261D; --warn:#F2A93B; --warn-soft:#2A2113;
     --idle:#5C5346;
+    --tick:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.4l3 3 6-6.8' fill='none' stroke='%2317100B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     --shadow:0 1px 2px rgba(0,0,0,.34); --shadow-2:0 14px 34px rgba(0,0,0,.45);
   }}
   :root[data-theme="dark"]{
     --ground:#12100D; --surface:#1C1815; --surface-2:#231E1A; --surface-3:#262019;
     --rail:#0D0B09;
-    --ink:#F7F1E8; --ink-2:#ABA093; --ink-3:#7F7468;
+    --ink:#F7F1E8; --ink-2:#B8AD9F; --ink-3:#958A7D;
     --line:#2E2822; --line-2:#3B342C;
     --accent:#FF7A52; --accent-ink:#17100B; --accent-soft:#2E1C15; --accent-lift:#FF9068;
     --ok:#7AE0A6; --ok-ink:#0C2418; --ok-soft:#12261D; --warn:#F2A93B; --warn-soft:#2A2113;
     --idle:#5C5346;
+    --tick:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.4l3 3 6-6.8' fill='none' stroke='%2317100B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     --shadow:0 1px 2px rgba(0,0,0,.34); --shadow-2:0 14px 34px rgba(0,0,0,.45);
   }
