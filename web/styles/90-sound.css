@@ -1,0 +1,10 @@
+/* soundChip (WP-D4): one compact row per track, "174 BPM · 8A A minor". */
+.snd{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:.15em .45em;font-family:var(--mono);font-size:.78rem;line-height:1.35;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.snd>span{white-space:nowrap}
+.snd-unit,.snd-sub{color:var(--ink-3)}
+.snd-dot{color:var(--ink-3)}
+.snd-unsure{opacity:.7}
+.snd-q{color:var(--ink-3);margin-left:.05em}
+.snd-bars{display:inline-flex;gap:2px;vertical-align:baseline}
+.snd-bars i{display:inline-block;width:4px;height:.7em;border-radius:1px;background:var(--line-2)}
+.snd-bars i.on{background:var(--ink-2)}

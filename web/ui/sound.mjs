@@ -37,8 +37,49 @@ export const SOUND_UI_VERSION = 1;
  *             reason?: string, missed?: Record<string, number> }} ListenVM
  */
 
-/** @param {SoundVM|null|undefined} vm */
-export function soundChip(vm) { return ''; }
+const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const num = v => typeof v === 'number' && Number.isFinite(v);
+const pct = v => `${Math.round(Math.max(0, Math.min(1, v)) * 100)}%`;
+/** A reading under this confidence is drawn as unsure (dimmer, with a "?"). */
+export const SURE_CONF = 0.5;
+
+/**
+ * One compact row per track (§2.1): `174 BPM · 8A A minor · energy ▮▮▮▯▯ · vocal`.
+ * `87/174 BPM` when half/double time is unsure. Unsure readings (conf below
+ * SURE_CONF) are dimmed and end in "?"; every confidence is in the title.
+ * Written by WP-D4 (the UI-2 owner handed this one renderer over).
+ * @param {SoundVM|null|undefined} vm
+ */
+export function soundChip(vm) {
+  if (!vm || typeof vm !== 'object') return '';
+  const parts = [];
+  const unsure = c => num(c) && c < SURE_CONF;
+  const item = (cls, html, title, conf) =>
+    `<span class="snd-${cls}${unsure(conf) ? ' snd-unsure' : ''}"${title ? ` title="${esc(title)}"` : ''}>${html}${unsure(conf) ? '<span class="snd-q">?</span>' : ''}</span>`;
+
+  if (num(vm.bpm) && vm.bpm > 0) {
+    const bpm = Math.round(vm.bpm), alt = num(vm.bpmAlt) && vm.bpmAlt > 0 ? Math.round(vm.bpmAlt) : null;
+    const [lo, hi] = alt == null ? [bpm, null] : [Math.min(bpm, alt), Math.max(bpm, alt)];
+    const title = [alt != null ? `${bpm} BPM, but half/double time is unsure (${lo} or ${hi})` : `${bpm} BPM`,
+                   num(vm.bpmConf) ? `confidence ${pct(vm.bpmConf)}` : null].filter(Boolean).join(' · ');
+    parts.push(item('bpm', `${alt != null ? `${lo}/${hi}` : bpm} <span class="snd-unit">BPM</span>`, title, vm.bpmConf));
+  }
+  if ((typeof vm.camelot === 'string' && vm.camelot) || (typeof vm.key === 'string' && vm.key)) {
+    const cam = typeof vm.camelot === 'string' && vm.camelot ? vm.camelot : null;
+    const name = typeof vm.key === 'string' && vm.key ? vm.key : null;
+    const html = cam && name ? `${esc(cam)} <span class="snd-sub">${esc(name)}</span>` : esc(cam ?? name);
+    const title = [name, cam ? `Camelot ${cam}` : null, num(vm.keyConf) ? `confidence ${pct(vm.keyConf)}` : null].filter(Boolean).join(' · ');
+    parts.push(item('key', html, title, vm.keyConf));
+  }
+  if (num(vm.energy)) {
+    const n = Math.round(Math.max(0, Math.min(1, vm.energy)) * 5);
+    const bars = Array.from({ length: 5 }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('');
+    parts.push(item('energy', `energy <span class="snd-bars" aria-hidden="true">${bars}</span>`, `energy ${n} of 5 (a rough measure)`));
+  }
+  if (vm.voice === 'vocal' || vm.voice === 'instrumental') parts.push(item('voice', vm.voice));
+  if (!parts.length) return '';
+  return `<span class="snd">${parts.join('<span class="snd-dot" aria-hidden="true">·</span>')}</span>`;
+}
 
 /** @param {SoundVM|null|undefined} vm */
 export function sectionStrip(vm) { return ''; }

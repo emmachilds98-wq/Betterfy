@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-1844">
+<meta name="bf-build" content="2026-11-14-1918">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -860,6 +860,16 @@
     .acts4{grid-template-columns:1fr}
     aside .nav .lbl, .tabmore .lbl{font-size:9.5px}
   }
+/* soundChip (WP-D4): one compact row per track, "174 BPM · 8A A minor". */
+.snd{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:.15em .45em;font-family:var(--mono);font-size:.78rem;line-height:1.35;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.snd>span{white-space:nowrap}
+.snd-unit,.snd-sub{color:var(--ink-3)}
+.snd-dot{color:var(--ink-3)}
+.snd-unsure{opacity:.7}
+.snd-q{color:var(--ink-3);margin-left:.05em}
+.snd-bars{display:inline-flex;gap:2px;vertical-align:baseline}
+.snd-bars i{display:inline-block;width:4px;height:.7em;border-radius:1px;background:var(--line-2)}
+.snd-bars i.on{background:var(--ink-2)}
 </style>
 </head>
 <body>
@@ -900,7 +910,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-1844</span>
+    <span class="mono">build 2026-11-14-1918</span>
   </p>
 
   <div class="feat">
@@ -997,7 +1007,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1844</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1918</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1038,7 +1048,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1844</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1918</span>
   </div>
 </div>
 
@@ -1879,8 +1889,49 @@ const SOUND_UI_VERSION = 1;
  *             reason?: string, missed?: Record<string, number> }} ListenVM
  */
 
-/** @param {SoundVM|null|undefined} vm */
-function soundChip(vm) { return ''; }
+const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const num = v => typeof v === 'number' && Number.isFinite(v);
+const pct = v => `${Math.round(Math.max(0, Math.min(1, v)) * 100)}%`;
+/** A reading under this confidence is drawn as unsure (dimmer, with a "?"). */
+const SURE_CONF = 0.5;
+
+/**
+ * One compact row per track (§2.1): `174 BPM · 8A A minor · energy ▮▮▮▯▯ · vocal`.
+ * `87/174 BPM` when half/double time is unsure. Unsure readings (conf below
+ * SURE_CONF) are dimmed and end in "?"; every confidence is in the title.
+ * Written by WP-D4 (the UI-2 owner handed this one renderer over).
+ * @param {SoundVM|null|undefined} vm
+ */
+function soundChip(vm) {
+  if (!vm || typeof vm !== 'object') return '';
+  const parts = [];
+  const unsure = c => num(c) && c < SURE_CONF;
+  const item = (cls, html, title, conf) =>
+    `<span class="snd-${cls}${unsure(conf) ? ' snd-unsure' : ''}"${title ? ` title="${esc(title)}"` : ''}>${html}${unsure(conf) ? '<span class="snd-q">?</span>' : ''}</span>`;
+
+  if (num(vm.bpm) && vm.bpm > 0) {
+    const bpm = Math.round(vm.bpm), alt = num(vm.bpmAlt) && vm.bpmAlt > 0 ? Math.round(vm.bpmAlt) : null;
+    const [lo, hi] = alt == null ? [bpm, null] : [Math.min(bpm, alt), Math.max(bpm, alt)];
+    const title = [alt != null ? `${bpm} BPM, but half/double time is unsure (${lo} or ${hi})` : `${bpm} BPM`,
+                   num(vm.bpmConf) ? `confidence ${pct(vm.bpmConf)}` : null].filter(Boolean).join(' · ');
+    parts.push(item('bpm', `${alt != null ? `${lo}/${hi}` : bpm} <span class="snd-unit">BPM</span>`, title, vm.bpmConf));
+  }
+  if ((typeof vm.camelot === 'string' && vm.camelot) || (typeof vm.key === 'string' && vm.key)) {
+    const cam = typeof vm.camelot === 'string' && vm.camelot ? vm.camelot : null;
+    const name = typeof vm.key === 'string' && vm.key ? vm.key : null;
+    const html = cam && name ? `${esc(cam)} <span class="snd-sub">${esc(name)}</span>` : esc(cam ?? name);
+    const title = [name, cam ? `Camelot ${cam}` : null, num(vm.keyConf) ? `confidence ${pct(vm.keyConf)}` : null].filter(Boolean).join(' · ');
+    parts.push(item('key', html, title, vm.keyConf));
+  }
+  if (num(vm.energy)) {
+    const n = Math.round(Math.max(0, Math.min(1, vm.energy)) * 5);
+    const bars = Array.from({ length: 5 }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('');
+    parts.push(item('energy', `energy <span class="snd-bars" aria-hidden="true">${bars}</span>`, `energy ${n} of 5 (a rough measure)`));
+  }
+  if (vm.voice === 'vocal' || vm.voice === 'instrumental') parts.push(item('voice', vm.voice));
+  if (!parts.length) return '';
+  return `<span class="snd">${parts.join('<span class="snd-dot" aria-hidden="true">·</span>')}</span>`;
+}
 
 /** @param {SoundVM|null|undefined} vm */
 function sectionStrip(vm) { return ''; }
@@ -1902,7 +1953,7 @@ function listenCard(vm) { return ''; }
 
 /** @param {ListenVM|null|undefined} vm */
 function missedList(vm) { return ''; }
-return { SOUND_UI_VERSION, soundChip, sectionStrip, evidenceBadges, bandChip, profileRow, listenPill, listenCard, missedList };
+return { SOUND_UI_VERSION, SURE_CONF, soundChip, sectionStrip, evidenceBadges, bandChip, profileRow, listenPill, listenCard, missedList };
 })();
 Object.assign(globalThis, __mod["norm.mjs"]);
 Object.assign(globalThis, __mod["credits.mjs"]);
@@ -2239,7 +2290,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-1844';
+const BUILD = '2026-11-14-1918';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2560,7 +2611,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-1844', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-1918', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -5607,7 +5658,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-1844';
+    s.src = 'engine.js?v=2026-11-14-1918';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -5629,7 +5680,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-1844');
+    const w = new Worker('engine-worker.js?v=2026-11-14-1918');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -5943,7 +5994,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-14-1844';
+    s.src = 'audio.js?v=2026-11-14-1918';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -5971,7 +6022,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-1844', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-1918', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -6358,7 +6409,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-1844`,
+    `Betterfy engine score — build 2026-11-14-1918`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,

@@ -499,7 +499,9 @@ const { makeRecord, makeMiss, MISS, CACHEABLE_MISS } = __mod["core/audio/record.
 
 
 
-const WORKER_VERSION = '1.0.0';
+// 1.1.0 (WP-D4): `deps.dsp` gets the decoded windows separately, never the
+// joined samples, and fillDsp() measures dsp for a record heard before it.
+const WORKER_VERSION = '1.1.0';
 
 /**
  * Analyse one track end to end.
@@ -511,7 +513,8 @@ const WORKER_VERSION = '1.0.0';
  * @param {{ run(data: Float32Array, n: number): Promise<{activations, embeddings}> }} deps.ear  infer.mjs createEar()
  * @param {{ run(emb: Float32Array, n: number): Promise<object> }} [deps.heads]                  heads.mjs createHeads(), optional
  * @param {(outputs: object, n: number) => object} [deps.summariseHeads]
- * @param {(samples: Float32Array) => object} [deps.dsp]                                         optional DSP (WP-D4)
+ * @param {(windows: Float32Array[]) => object|null} [deps.dsp]                               optional DSP (WP-D4): gets each decoded
+ *        window on its own (contiguous audio), never the joined samples; core/audio/dsp/combine.mjs measureWindows
  * @param {() => number} [deps.now]
  * @param {{ id: string, isrc?: string, durationMs?: number }} track
  * @returns {Promise<{ record: object } | { miss: object } | { failed: { id: string, stage: string, detail: string } }>}
@@ -536,29 +539,80 @@ async function analyseOne(deps, track) {
   if (got?.miss) return failed('download', got.detail ?? got.miss);
 
   // Decode each window separately (a cut MP3 resyncs on its own) and join them.
-  let samples;
-  try {
-    const parts = [];
-    for (let i = 0; i < got.buffers.length; i++) { parts.push(await deps.decode(got.buffers[i])); got.buffers[i] = null; }
-    samples = concat(parts);
-  } catch (e) { return failed('decode', e?.message ?? e); }
+  let samples, parts;
+  try { parts = await decodeAll(deps, got.buffers); samples = concat(parts); }
+  catch (e) { return failed('decode', e?.message ?? e); }
   const { windows, sliced } = got;
   got = null; // drop the compressed audio
 
-  return analyseSamples(deps, { id, isrc, samples, source: { kind: 'deezer-isrc', deezerId: found.deezerId, windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+  return analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+}
+
+/**
+ * Measure dsp for a track that already has a record (heard before WP-D4, or
+ * under an older DSP version): download and decode again, run only the DSP,
+ * and return the same record with `dsp` filled. The model is not run and the
+ * embedding is untouched, so nothing the engine learned from is invalidated.
+ *
+ * Returns `{ record }` with the new dsp, `{ skip: reason }` when there is
+ * nothing to do or nothing safe to do (no dsp dep, the ISRC now resolves to
+ * a different Deezer track, DSP measured nothing), or `{ failed }` for a
+ * network/decode error. Never a miss: the record stays a good record.
+ *
+ * @param {object} deps  as analyseOne (lookup, fetchPreview, decode, dsp)
+ * @param {object} record  a stored, non-miss AudioRecord
+ * @param {{ durationMs?: number }} [track]
+ */
+async function fillDsp(deps, record, track = {}) {
+  const id = record?.id;
+  const failed = (stage, detail) => ({ failed: { id, stage, detail: String(detail ?? '') } });
+  if (!deps.dsp) return { skip: 'no-dsp' };
+  if (!id || record.miss || !record.isrc) return { skip: 'not-a-record' };
+
+  let found;
+  try { found = await deps.lookup(record.isrc, { spotifyDurationMs: track.durationMs }); }
+  catch (e) { return failed('lookup', e?.message ?? e); }
+  if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? { skip: found.miss } : failed('lookup', found.detail ?? found.miss);
+  // ISRC or nothing: only measure the very recording the record was made from.
+  const was = record.source?.deezerId;
+  if (was != null && found.deezerId !== was) return { skip: 'different-recording' };
+
+  let got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
+  if (got?.miss) return failed('download', got.detail ?? got.miss);
+  let parts;
+  try { parts = await decodeAll(deps, got.buffers); }
+  catch (e) { return failed('decode', e?.message ?? e); }
+  got = null;
+
+  let dsp = null;
+  try { dsp = deps.dsp(parts); } catch { dsp = null; }
+  parts = null; // drop the audio
+  if (!dsp) return { skip: 'nothing-measured' };
+  return { record: { ...record, dsp } };
+}
+
+async function decodeAll(deps, buffers) {
+  // Decode each window separately (a cut MP3 resyncs on its own).
+  const parts = [];
+  for (let i = 0; i < buffers.length; i++) { parts.push(await deps.decode(buffers[i])); buffers[i] = null; }
+  return parts;
 }
 
 /**
  * The worker-side half: decoded 16 kHz samples → record. The page calls this
- * inside its Worker after decoding on the main thread.
+ * inside its Worker after decoding on the main thread. `parts` are the
+ * decoded windows before joining, for DSP; without them DSP sees `samples`.
  */
-async function analyseSamples(deps, { id, isrc, samples, source }) {
+async function analyseSamples(deps, { id, isrc, samples, parts = null, source }) {
   const now = deps.now ?? Date.now;
   const miss = reason => ({ miss: makeMiss({ id, isrc, reason, at: now() }) });
   const failed = (stage, detail) => ({ failed: { id, stage, detail: String(detail ?? '') } });
 
   let dsp = null;
-  try { dsp = deps.dsp ? deps.dsp(samples) : null; } catch { dsp = null; } // DSP is a bonus: never fails a track
+  // Per window, never across the join (WP-D4). A caller with only the joined
+  // samples gets one "window"; DSP is a bonus and never fails a track.
+  try { dsp = deps.dsp ? (deps.dsp(parts?.length ? parts : [samples]) ?? null) : null; } catch { dsp = null; }
+  parts = null;
   let p = melPatches(melFrames(samples));
   samples = null; // drop the audio
   if (!(p.patches > 0)) return miss(MISS.TOO_SHORT);
@@ -604,12 +658,1103 @@ function concat(parts) {
   let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
   return out;
 }
-return { WORKER_VERSION, analyseOne, analyseSamples, runQueue };
+return { WORKER_VERSION, analyseOne, fillDsp, analyseSamples, runQueue };
+})();
+/* ---- core/audio/dsp/tempo.mjs ---- */
+__mod["core/audio/dsp/tempo.mjs"] = (function () {
+const { melFrames, SAMPLE_RATE, HOP_SIZE, N_BANDS } = __mod["core/audio/mel.mjs"];
+// Tempo (BPM) from 16 kHz mono audio, in plain JS.
+//
+// WP-D1 of docs/AUDIO-BUILD-PLAN.md. Isomorphic (no DOM, no Node APIs), no
+// dependencies. It reads the same log-mel frames the model does
+// (core/audio/mel.mjs), so the worker can get a tempo for the cost of an
+// autocorrelation by calling tempoFromMel() on frames it already has.
+//
+// Pipeline:
+//   1. onset strength: spectral flux of the log-mel frames (62.5 frames/s) in
+//      four band groups (kick, body, snare, hats), each minus a 1 s moving
+//      average, half-wave rectified, lightly smoothed;
+//   2. autocorrelation of each group, normalised and averaged: A(lag), to 6 s;
+//   3. a comb over the tempo range: comb(T) = mean of A at 1..4 beat periods;
+//      local maxima are candidates, each refined to 0.01 BPM with every
+//      harmonic that fits in the autocorrelation (that is what buys ±1 BPM at
+//      62.5 frames/s);
+//   4. score(T) = comb gated by A at the beat period itself (kills 3:2 and
+//      2:1 ghosts that only share multiples with the real pulse) × a
+//      log-normal tempo prior (120 BPM, σ one octave) × an accent term that
+//      marks down a level evenly divided by a faster in-range level (clicks
+//      at 174 are not "87 with 8ths").
+//
+// Octave ambiguity is reported, not averaged away (music-dna.mjs measured()
+// treats half/double time as the failure that matters): if the candidate at
+// twice or half the winner scores at least OCTAVE_AMBIGUOUS of the winner,
+// `octaveAmbiguous` is true and that partner is always in `alternates`. The
+// periodicity of a pulse train is genuinely the same at T and T/2; only the
+// prior and the accent pattern separate them, and on real music (DnB at
+// 87/174, footwork at 80/160) that is often not enough to be sure.
+//
+// Not measured on real music yet. This ships only with a measured number:
+// scripts/audio-dsp/tempo-vs-rekordbox.mjs compares it with Rekordbox on the
+// owner's files, and that accuracy goes into AUDIO-ANALYSIS-PLAN.md §0 before
+// anything shows or uses these values (WP-D4).
+
+
+
+const TEMPO_VERSION = '1.0.0';
+
+/** Envelope frame rate: one log-mel frame per hop. */
+const FPS = SAMPLE_RATE / HOP_SIZE; // 62.5
+
+/** Partner (×2 or ×½) score at or above this fraction of the winner's: ambiguous. */
+const OCTAVE_AMBIGUOUS = 0.7;
+
+const PRIOR_CENTER = 120;   // BPM; log-normal tempo prior on log2(T)
+const PRIOR_SIGMA = 1;      // octaves
+const ACCENT_PENALTY = 0.35;
+const MAX_LAG_S = 6;        // autocorrelation horizon
+const MIN_SECONDS = 4;      // shorter than this: no answer
+const SILENCE_RMS = 1e-4;   // about -80 dBFS
+const GRID_STEP = 0.25;     // BPM, coarse comb grid
+const MAX_ALTERNATES = 4;
+const MIN_PERIODICITY = 0.1; // below this the envelope has no beat: no answer
+
+const none = () => ({ bpm: null, confidence: 0, alternates: [], octaveAmbiguous: false, version: TEMPO_VERSION });
+const round = (x, d) => Math.round(x * 10 ** d) / 10 ** d;
+
+/**
+ * Estimate tempo from 16 kHz mono samples.
+ * Other sample rates are linearly resampled to 16 kHz first (good enough for
+ * onset timing; not for the model).
+ *
+ * @param {Float32Array|number[]} samples contiguous audio (not spliced windows)
+ * @param {{ sampleRate?: number, min?: number, max?: number }} [opts]
+ * @returns {{ bpm: number|null, confidence: number, alternates: {bpm:number, score:number}[],
+ *             octaveAmbiguous: boolean, version: string }}
+ *   `confidence` 0–1; `alternates` other tempi, best first, score relative to
+ *   the winner's (1 = as good). Silence or too little audio: bpm null, confidence 0.
+ */
+function tempo(samples, { sampleRate = SAMPLE_RATE, min = 60, max = 200 } = {}) {
+  checkRange(min, max);
+  if (!(sampleRate > 0)) throw new RangeError(`sampleRate must be positive, got ${sampleRate}`);
+  const x = sampleRate === SAMPLE_RATE ? samples : resample(samples, sampleRate, SAMPLE_RATE);
+  if (x.length < MIN_SECONDS * SAMPLE_RATE) return none();
+  let ss = 0;
+  for (let i = 0; i < x.length; i++) ss += x[i] * x[i];
+  if (Math.sqrt(ss / x.length) < SILENCE_RMS) return none();
+  return tempoFromMel(melFrames(x), { min, max });
+}
+
+/**
+ * Same as tempo(), from melFrames() output the caller already has.
+ * @param {{ frames: number, data: Float32Array }} mel
+ * @param {{ min?: number, max?: number }} [opts]
+ */
+function tempoFromMel(mel, { min = 60, max = 200 } = {}) {
+  checkRange(min, max);
+  if (!mel || mel.frames < MIN_SECONDS * FPS) return none();
+  const acf = autocorrelation(onsetEnvelopes(mel), Math.min(Math.round(MAX_LAG_S * FPS), Math.floor(mel.frames / 2)));
+  if (!acf) return none();
+
+  const at = lag => interp(acf, lag);
+  const lagOf = bpm => 60 * FPS / bpm;
+  const maxLag = acf.length - 3;
+  // comb over the first `K` beat periods that fit; A below zero counts as zero
+  const comb = (bpm, K = 4) => {
+    const P = lagOf(bpm);
+    const k = Math.min(K, Math.floor(maxLag / P));
+    if (k < 1) return -1;
+    let s = 0;
+    for (let i = 1; i <= k; i++) s += Math.max(0, at(i * P));
+    return s / k;
+  };
+  // fine position: every harmonic that fits, K fixed from the starting point
+  const refine = (bpm0, halfWidth) => {
+    const K = Math.max(1, Math.floor(maxLag / lagOf(Math.max(min, bpm0 - halfWidth))));
+    const lo = Math.max(min, bpm0 - halfWidth), steps = Math.floor((Math.min(max, bpm0 + halfWidth) - lo) / 0.01 + 1e-6);
+    let best = bpm0, bestV = -Infinity;
+    for (let i = 0; i <= steps; i++) {
+      const b = lo + i * 0.01, v = comb(b, K);
+      if (v > bestV) { bestV = v; best = b; }
+    }
+    return best;
+  };
+  const prior = bpm => Math.exp(-0.5 * (Math.log2(bpm / PRIOR_CENTER) / PRIOR_SIGMA) ** 2);
+  // periodicity: the comb, gated by the first period itself. A tempo fills
+  // the comb at some lags just by sharing multiples with the real one; if its
+  // own beat period shows little self-similarity (120 on clicks at 60, 85 on
+  // a 128 kick with off-beat hats) it is not a tempo. Full credit once A(P)
+  // reaches half the comb mean, so the gate removes, it does not rank.
+  const periodicity = bpm => {
+    const c = comb(bpm);
+    return c > 0 ? c * Math.min(1, Math.max(0, at(lagOf(bpm)) / (0.5 * c))) : 0;
+  };
+  // How evenly a faster level d·T (d = 2 or 3) divides this one: A at P/d
+  // over A at P. Near 1, this level carries no accent of its own: clicks at
+  // 174 are not "87 with 8ths", clicks at 200 are not "66.7 in triplets".
+  // Only asked when d·T is itself a tempo this call could answer, since it
+  // exists to choose between the two.
+  const evenness = bpm => {
+    const P = lagOf(bpm), a = at(P);
+    let e = 0;
+    for (const d of [2, 3]) {
+      if (d * bpm > max + 0.01) continue;
+      e = Math.max(e, a > 0 ? Math.min(1, Math.max(0, at(P / d)) / a) : 1);
+    }
+    return e;
+  };
+  const score = bpm => {
+    const c = periodicity(bpm);
+    return c > 0 ? c * prior(bpm) * (1 - ACCENT_PENALTY * evenness(bpm)) : 0;
+  };
+
+  // coarse grid, local maxima
+  const grid = [];
+  for (let i = 0; min + i * GRID_STEP <= max + 1e-9; i++) grid.push([min + i * GRID_STEP, comb(min + i * GRID_STEP)]);
+  const top = Math.max(...grid.map(g => g[1]));
+  if (!(top > 0)) return none();
+  const peaks = [];
+  for (let i = 0; i < grid.length; i++) {
+    const v = grid[i][1];
+    if (v < 0.25 * top) continue;
+    if (i > 0 && grid[i - 1][1] > v) continue;
+    if (i < grid.length - 1 && grid[i + 1][1] >= v) continue;
+    peaks.push(grid[i][0]);
+  }
+
+  const cands = [];
+  const add = bpm => {
+    if (bpm < min - 1e-9 || bpm > max + 1e-9) return null;
+    const near = cands.find(c => Math.abs(c.bpm - bpm) / bpm < 0.015);
+    if (near) return near;
+    const c = { bpm, score: score(bpm) };
+    cands.push(c);
+    return c;
+  };
+  for (const p of peaks) add(refine(p, 1));
+  cands.sort((a, b) => b.score - a.score);
+  const best = cands[0];
+  if (!best || !(periodicity(best.bpm) > MIN_PERIODICITY)) return none();
+
+  // octave partners, evaluated even when they are not peaks of their own
+  const partners = [best.bpm * 2, best.bpm / 2]
+    .filter(b => b >= min - 0.01 && b <= max + 0.01)
+    .map(b => Math.min(max, Math.max(min, b)))
+    .map(b => add(refine(b, b * 0.01)))
+    .filter(Boolean);
+  const partner = partners.sort((a, b) => b.score - a.score)[0] ?? null;
+  const ratio = partner ? partner.score / best.score : 0;
+  const octaveAmbiguous = ratio >= OCTAVE_AMBIGUOUS;
+
+  cands.sort((a, b) => b.score - a.score);
+  const others = cands.filter(c => c !== best && c.score > 0);
+  const alternates = others.slice(0, MAX_ALTERNATES);
+  if (octaveAmbiguous && !alternates.includes(partner)) alternates.splice(MAX_ALTERNATES - 1, 1, partner);
+
+  // confidence: how periodic the envelope is at the winner (gated comb, ~0.9
+  // for a clean click track, under 0.1 for noise), mapped to 0–1, then
+  // discounted by how close the octave partner came (×0.5 when level).
+  // Uncalibrated: the Rekordbox comparison is what gives it a meaning.
+  const conf = Math.min(1, Math.max(0, (periodicity(best.bpm) - MIN_PERIODICITY) / 0.6)) * (1 - ratio / 2);
+
+  return {
+    bpm: round(best.bpm, 1),
+    confidence: round(conf, 3),
+    alternates: alternates.map(c => ({ bpm: round(c.bpm, 1), score: round(c.score / best.score, 3) })),
+    octaveAmbiguous,
+    version: TEMPO_VERSION,
+  };
+}
+
+function checkRange(min, max) {
+  if (!(min > 0 && max > min)) throw new RangeError(`need 0 < min < max, got ${min}..${max}`);
+}
+
+/** Mel band groups (~0–230 Hz, 230–800 Hz, 0.8–2 kHz, 2–8 kHz): kick, body, snare, hats. */
+const BAND_GROUPS = [[0, 7], [7, 24], [24, 52], [52, N_BANDS]];
+
+/**
+ * Onset strength per band group and mel frame: positive log-mel flux summed
+ * over the group's bands, minus its 1 s moving average, half-wave rectified,
+ * smoothed by a 5-tap binomial kernel.
+ *
+ * Why per group: a kick on the beat and a hat on the off-beat are, summed
+ * across the spectrum, just an even pulse at twice the tempo, and that pulse
+ * also fits 2/3 of the tempo (85 for a 128 track). Autocorrelating each group
+ * separately keeps each instrument's own period and drops the cross terms.
+ * @returns {Float64Array[]}
+ */
+function onsetEnvelopes({ frames, data }) {
+  const half = Math.round(FPS / 2);
+  const K = [1, 4, 6, 4, 1];
+  return BAND_GROUPS.map(([b0, b1]) => {
+    const flux = new Float64Array(frames);
+    for (let f = 1; f < frames; f++) {
+      let s = 0;
+      const a = (f - 1) * N_BANDS, b = f * N_BANDS;
+      for (let k = b0; k < b1; k++) { const d = data[b + k] - data[a + k]; if (d > 0) s += d; }
+      flux[f] = s;
+    }
+    const cum = new Float64Array(frames + 1);
+    for (let f = 0; f < frames; f++) cum[f + 1] = cum[f] + flux[f];
+    const rect = new Float64Array(frames);
+    for (let f = 0; f < frames; f++) {
+      const lo = Math.max(0, f - half), hi = Math.min(frames, f + half + 1);
+      rect[f] = Math.max(0, flux[f] - (cum[hi] - cum[lo]) / (hi - lo));
+    }
+    const out = new Float64Array(frames);
+    for (let f = 0; f < frames; f++) {
+      let s = 0, w = 0;
+      for (let j = -2; j <= 2; j++) {
+        const g = f + j;
+        if (g >= 0 && g < frames) { s += K[j + 2] * rect[g]; w += K[j + 2]; }
+      }
+      out[f] = s / w;
+    }
+    return out;
+  });
+}
+
+/**
+ * Unbiased autocorrelation of each mean-removed envelope, normalised per
+ * group to 1 at lag 0, then averaged with equal weight. Equal, not by
+ * variance: on log-mel flux the hats have the most variance, and weighting
+ * by it hands the answer to the hat pulse, which fits every multiple of the
+ * half-beat (174 heard as 116). A group with almost no onset activity (under
+ * 1e-3 of the busiest) is left out rather than amplified. Null when all are flat.
+ */
+function autocorrelation(envs, maxLag) {
+  const n = envs[0].length;
+  if (maxLag < 4) return null;
+  const x = new Float64Array(n);
+  const per = envs.map(env => {
+    let mean = 0;
+    for (let i = 0; i < n; i++) mean += env[i];
+    mean /= n;
+    for (let i = 0; i < n; i++) x[i] = env[i] - mean;
+    const r = new Float64Array(maxLag + 1);
+    for (let lag = 0; lag <= maxLag; lag++) {
+      let s = 0;
+      for (let i = 0; i + lag < n; i++) s += x[i] * x[i + lag];
+      r[lag] = s / (n - lag);
+    }
+    return r;
+  });
+  const top = Math.max(...per.map(r => r[0]));
+  if (!(top > 1e-12)) return null;
+  const used = per.filter(r => r[0] > 1e-3 * top);
+  const acf = new Float64Array(maxLag + 1);
+  for (const r of used) for (let lag = 0; lag <= maxLag; lag++) acf[lag] += r[lag] / r[0] / used.length;
+  return acf;
+}
+
+/** Catmull-Rom interpolation of `a` at fractional index `x`. */
+function interp(a, x) {
+  const i = Math.floor(x), t = x - i;
+  const p0 = a[Math.max(0, i - 1)], p1 = a[i], p2 = a[Math.min(a.length - 1, i + 1)], p3 = a[Math.min(a.length - 1, i + 2)];
+  return p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+}
+
+function resample(x, from, to) {
+  const n = Math.floor(x.length * to / from), out = new Float32Array(n), r = from / to;
+  for (let i = 0; i < n; i++) {
+    const p = i * r, j = Math.floor(p), t = p - j;
+    out[i] = j + 1 < x.length ? x[j] * (1 - t) + x[j + 1] * t : x[Math.min(j, x.length - 1)];
+  }
+  return out;
+}
+return { TEMPO_VERSION, FPS, OCTAVE_AMBIGUOUS, tempo, tempoFromMel };
+})();
+/* ---- core/audio/dsp/key.mjs ---- */
+__mod["core/audio/dsp/key.mjs"] = (function () {
+const { SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
+// Musical key from audio, in plain JS (WP-D2, docs/AUDIO-BUILD-PLAN.md).
+//
+// 16 kHz mono samples -> a key, a Camelot code and a confidence. Isomorphic:
+// no DOM, no Node APIs, no dependencies, so the browser worker and Node
+// scripts share it. Written from scratch; the clean key library is AGPL
+// (essentia.js), which the page can't ship (AUDIO-ANALYSIS-PLAN.md §2, §9).
+//
+// Status: the synthetic tests (test/audiokey.test.mjs) pass. Accuracy on
+// real music is NOT measured yet. scripts/audio-dsp/key-vs-rekordbox.mjs
+// measures it against the owner's Rekordbox keys, and per the build plan's
+// §0 rule 7 this ships into records or the UI (WP-D4) only with that number.
+//
+// Pipeline:
+//   1. STFT with a long frame (8192 at 16 kHz ≈ 0.5 s, 1.95 Hz per bin), so
+//      neighbouring semitones are resolvable down to ~60 Hz. mel.mjs's 512
+//      frame is far too short for pitch (31 Hz per bin).
+//   2. Spectral peaks only: a local maximum that stands TONAL_SNR above the
+//      local mean magnitude and within 60 dB of the frame's loudest bin (so
+//      window sidelobes don't count). This is the whitening step: broadband drums and
+//      noise rarely make a peak, and the bass doesn't drown the treble
+//      because each peak is weighted by how far it stands above its own
+//      neighbourhood (log ratio), not by raw energy.
+//   3. Tuning: the weighted circular mean of every peak's offset from the
+//      A440 grid. Records tuned off 440 (or pitched by a DJ) still map
+//      cleanly. After correcting, a peak more than TUNING_TOLERANCE semitones
+//      from a note is dropped (inharmonic partials, glides, noise).
+//   4. Chroma: each surviving peak adds to its pitch class, cos²-tapered by
+//      its distance from the note centre. Summed over all frames.
+//   5. Profiles: Pearson correlation of the chroma with the Krumhansl–Kessler
+//      and Temperley major/minor profiles rotated to all 12 tonics; the two
+//      correlations are averaged per key.
+//   6. Confidence: a heuristic, not a probability. It is the product of how
+//      tonal the excerpt is ("gridness": how tightly the peaks sit on one
+//      semitone grid, the length of step 3's circular mean, ~0.75 for
+//      harmonic tones and ~0.03 for noise, whose peaks land anywhere), how
+//      well the best key fits, and how far it leads the runner-up. Silence -> 0 and
+//      key null; noise -> a guess with near-zero confidence. Its calibration
+//      against real keys is what the comparison script reports by band.
+
+
+
+const KEY_VERSION = '1.0.0';
+
+// ---------- names, Camelot, Open Key ----------
+
+/** Pitch-class spellings. Majors and minors follow the usual Camelot-wheel spelling. */
+const MAJOR_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const MINOR_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
+const PC_OF = { C: 0, 'B#': 0, 'C#': 1, DB: 1, D: 2, 'D#': 3, EB: 3, E: 4, FB: 4, F: 5, 'E#': 5, 'F#': 6, GB: 6,
+                G: 7, 'G#': 8, AB: 8, A: 9, 'A#': 10, BB: 10, B: 11, CB: 11 };
+
+/** Pitch class (0 = C) of a tonic spelled 'C', 'F#', 'Eb', 'E♭', 'bb'…; null if unreadable. */
+function pitchClass(tonic) {
+  if (typeof tonic === 'number') return Number.isInteger(tonic) ? ((tonic % 12) + 12) % 12 : null;
+  if (typeof tonic !== 'string') return null;
+  const s = tonic.trim().replace(/♯/g, '#').replace(/♭/g, 'b');
+  if (!s) return null;
+  return PC_OF[s[0].toUpperCase() + s.slice(1).toUpperCase()] ?? null;
+}
+
+const camelotNumber = (pc, mode) => {
+  const majorPc = mode === 'minor' ? (pc + 3) % 12 : pc;   // a minor key sits on its relative major's number
+  return ((majorPc * 7) % 12 + 7) % 12 + 1;                // C major = 8, each fifth up = +1
+};
+
+/**
+ * Camelot code ('8A' = A minor, '8B' = C major) for a tonic and mode.
+ * Accepts sharps or flats; mode is 'major' | 'minor' (also 'maj'/'min'/'m').
+ * Returns null for anything unreadable rather than guessing.
+ */
+function toCamelot(tonic, mode) {
+  const pc = pitchClass(tonic);
+  const m = normMode(mode);
+  if (pc == null || !m) return null;
+  return camelotNumber(pc, m) + (m === 'minor' ? 'A' : 'B');
+}
+
+/** Open Key code ('1m' = A minor, '1d' = C major) for a tonic and mode. */
+function toOpenKey(tonic, mode) {
+  const c = toCamelot(tonic, mode);
+  if (!c) return null;
+  const n = parseInt(c, 10);
+  return (((n - 8) % 12 + 12) % 12 + 1) + (c.endsWith('A') ? 'm' : 'd');
+}
+
+function normMode(mode) {
+  const m = String(mode ?? '').trim().toLowerCase();
+  if (m === 'major' || m === 'maj' || m === 'ionian') return 'major';
+  if (m === 'minor' || m === 'min' || m === 'm' || m === 'aeolian') return 'minor';
+  return null;
+}
+
+/**
+ * All 24 keys, by Camelot code:
+ *   CAMELOT['8A'] = { camelot: '8A', openKey: '1m', tonic: 'A', mode: 'minor', pc: 9, key: 'A minor' }
+ * Frozen.
+ */
+const CAMELOT = Object.freeze(Object.fromEntries(
+  ['major', 'minor'].flatMap(mode => Array.from({ length: 12 }, (_, pc) => {
+    const tonic = (mode === 'major' ? MAJOR_NAMES : MINOR_NAMES)[pc];
+    const camelot = toCamelot(pc, mode);
+    return [camelot, Object.freeze({ camelot, openKey: toOpenKey(pc, mode), tonic, mode, pc, key: `${tonic} ${mode}` })];
+  })),
+));
+
+/**
+ * How key b relates to key a on the Camelot wheel, or null if not a
+ * neighbour: 'same', 'relative' (same number, other letter), 'fifth-up'
+ * (+1, same letter), 'fifth-down' (−1, same letter), 'parallel' (same tonic,
+ * other mode). Codes are Camelot strings.
+ */
+function relation(a, b) {
+  const A = CAMELOT[a], B = CAMELOT[b];
+  if (!A || !B) return null;
+  if (a === b) return 'same';
+  const na = parseInt(a, 10), nb = parseInt(b, 10), la = a.slice(-1), lb = b.slice(-1);
+  if (na === nb) return 'relative';
+  if (la === lb && nb === na % 12 + 1) return 'fifth-up';
+  if (la === lb && na === nb % 12 + 1) return 'fifth-down';
+  if (A.pc === B.pc) return 'parallel';
+  return null;
+}
+
+// ---------- key profiles ----------
+
+// Krumhansl & Kessler (1982) probe-tone ratings.
+const KK_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const KK_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+// Temperley (1999), "What's key for key?": the revised probe-tone profiles.
+const TP_MAJOR = [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0];
+const TP_MINOR = [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0];
+
+const PROFILES = Object.freeze({
+  krumhansl: { major: KK_MAJOR, minor: KK_MINOR },
+  temperley: { major: TP_MAJOR, minor: TP_MINOR },
+});
+
+// ---------- analysis settings ----------
+
+const FRAME_SECONDS = 0.512;     // 8192 samples at 16 kHz
+const HOP_FRACTION = 0.25;       // hop 2048: ~7.8 frames per second
+const F_MIN = 60;                // below this a semitone is under two bins wide
+const F_MAX = 5000;              // above this, partials are mostly overtones and cymbals
+const DYNAMIC_RANGE = 10 ** (-60 / 20); // ignore anything 60 dB under the frame's loudest bin (window sidelobes)
+const TONAL_SNR = 3;             // a peak must stand this many times above its local mean
+const FLOOR_HALF_WIDTH_HZ = 40;  // half-width of the local-mean window
+const TUNING_TOLERANCE = 0.4;    // semitones from the nearest note, after tuning
+const SILENCE = 1e-4;            // RMS below this (−80 dBFS) is silence
+const A4 = 440;
+
+// Confidence shaping (see the header; uncalibrated until measured).
+const GRID_NONE = 0.08;          // gridness at or below which the excerpt counts as atonal (noise measures ~0.03)
+const GRID_FULL = 0.33;          // gridness at which it counts as fully tonal (synthetic chords ~0.75)
+const FIT_LOW = 0.2, FIT_HIGH = 0.75;
+const MARGIN_FULL = 0.12;
+
+// ---------- FFT ----------
+
+const fftCache = new Map();
+function fftTables(n) {
+  let t = fftCache.get(n);
+  if (t) return t;
+  const bits = Math.log2(n);
+  const rev = new Uint32Array(n);
+  for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); rev[i] = r; }
+  const cos = new Float64Array(n / 2), sin = new Float64Array(n / 2);
+  for (let i = 0; i < n / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / n); sin[i] = -Math.sin(2 * Math.PI * i / n); }
+  const hann = Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / n));
+  t = { rev, cos, sin, hann };
+  fftCache.set(n, t);
+  return t;
+}
+
+/** In-place radix-2 complex FFT; magnitudes of bins 0..n/2 into `mag`. */
+function magnitudeSpectrum(re, im, n, { rev, cos, sin }, mag) {
+  for (let i = 0; i < n; i++) {
+    const j = rev[i];
+    if (j > i) { const t = re[i]; re[i] = re[j]; re[j] = t; }
+    im[i] = 0;
+  }
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1, step = n / size;
+    for (let s = 0; s < n; s += size) {
+      for (let k = 0; k < half; k++) {
+        const c = cos[k * step], sn = sin[k * step];
+        const a = s + k, b = a + half;
+        const tr = re[b] * c - im[b] * sn, ti = re[b] * sn + im[b] * c;
+        re[b] = re[a] - tr; im[b] = im[a] - ti;
+        re[a] += tr; im[a] += ti;
+      }
+    }
+  }
+  for (let k = 0; k <= n / 2; k++) mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+}
+
+// ---------- chroma ----------
+
+/**
+ * Tuning-corrected 12-bin chroma (index 0 = C) plus what confidence needs.
+ * Exported for tests and the comparison script; key() is the public entry.
+ * @returns {{ chroma: Float64Array, tuningCents: number, seconds: number, tonalWeight: number, gridness: number, frames: number }}
+ */
+function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
+  const n = samples?.length ?? 0;
+  const N = 2 ** Math.round(Math.log2(sampleRate * FRAME_SECONDS));
+  const hop = Math.max(1, Math.round(N * HOP_FRACTION));
+  const seconds = n / sampleRate;
+  const chroma = new Float64Array(12);
+  const empty = { chroma, tuningCents: 0, seconds, tonalWeight: 0, gridness: 0, frames: 0 };
+  if (!n) return empty;
+
+  const tables = fftTables(N);
+  const binHz = sampleRate / N;
+  const kMin = Math.max(2, Math.ceil(F_MIN / binHz));
+  const kMax = Math.min(N / 2 - 2, Math.floor(Math.min(F_MAX, sampleRate / 2 * 0.95) / binHz));
+  const halfW = Math.max(4, Math.round(FLOOR_HALF_WIDTH_HZ / binHz));
+  const re = new Float64Array(N), im = new Float64Array(N), mag = new Float64Array(N / 2 + 1);
+  const prefix = new Float64Array(N / 2 + 2);
+
+  // Pass 1: peaks (semitones above A4, weight) from every non-silent frame.
+  const semis = [], weights = [];
+  const frames = n <= N ? 1 : Math.ceil((n - N) / hop) + 1;
+  for (let f = 0; f < frames; f++) {
+    const s = f * hop;
+    let energy = 0;
+    for (let i = 0; i < N; i++) {
+      const x = s + i < n ? samples[s + i] : 0;
+      energy += x * x;
+      re[i] = x * tables.hann[i];
+    }
+    if (Math.sqrt(energy / Math.min(N, n - s)) < SILENCE) continue;
+    magnitudeSpectrum(re, im, N, tables, mag);
+    prefix[0] = 0;
+    let top = 0;
+    for (let k = 0; k <= N / 2; k++) { prefix[k + 1] = prefix[k] + mag[k]; if (k >= kMin && k <= kMax && mag[k] > top) top = mag[k]; }
+    const absFloor = top * DYNAMIC_RANGE;
+    for (let k = kMin; k <= kMax; k++) {
+      const m = mag[k];
+      if (!(m > absFloor && m > mag[k - 1] && m >= mag[k + 1] && m > mag[k - 2] && m >= mag[k + 2])) continue;
+      const lo = Math.max(0, k - halfW), hi = Math.min(N / 2, k + halfW);
+      const floor = (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1);
+      if (!(floor > 0) || m < TONAL_SNR * floor) continue;
+      // Quadratic interpolation on log magnitude for the true peak frequency.
+      const a = Math.log(mag[k - 1] + 1e-12), b = Math.log(m + 1e-12), c = Math.log(mag[k + 1] + 1e-12);
+      const den = a - 2 * b + c;
+      const p = den < 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den)) : 0;
+      const hz = (k + p) * binHz;
+      semis.push(12 * Math.log2(hz / A4));
+      weights.push(Math.log(m / floor));   // ≥ log(TONAL_SNR) > 0
+    }
+  }
+  if (!semis.length) return { ...empty, frames };
+
+  // Tuning: weighted circular mean of each peak's offset from the A440 grid.
+  let cs = 0, sn = 0;
+  for (let i = 0; i < semis.length; i++) {
+    const ang = 2 * Math.PI * semis[i];
+    cs += weights[i] * Math.cos(ang); sn += weights[i] * Math.sin(ang);
+  }
+  const tuning = Math.atan2(sn, cs) / (2 * Math.PI);  // semitones, −0.5..0.5
+  let total = 0;
+  for (let i = 0; i < weights.length; i++) total += weights[i];
+  // How tightly the peaks sit on one semitone grid: ~1 for tuned instruments,
+  // ~1/√peaks for noise, whose peaks land anywhere.
+  const gridness = Math.hypot(cs, sn) / total;
+
+  // Pass 2: fold into pitch classes, cos²-tapered, dropping off-grid peaks.
+  let tonalWeight = 0;
+  for (let i = 0; i < semis.length; i++) {
+    const x = semis[i] - tuning;
+    const note = Math.round(x), d = x - note;
+    if (Math.abs(d) > TUNING_TOLERANCE) continue;
+    const w = weights[i] * Math.cos(Math.PI * d) ** 2;
+    chroma[(((note + 9) % 12) + 12) % 12] += w;   // A = 9
+    tonalWeight += w;
+  }
+  return { chroma, tuningCents: Math.round(tuning * 1000) / 10, seconds, tonalWeight, gridness, frames };
+}
+
+// ---------- profile matching ----------
+
+function pearson(x, y, rot) {
+  let mx = 0, my = 0;
+  for (let i = 0; i < 12; i++) { mx += x[i]; my += y[i]; }
+  mx /= 12; my /= 12;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < 12; i++) {
+    const a = x[(i + rot) % 12] - mx, b = y[i] - my;
+    sxy += a * b; sxx += a * a; syy += b * b;
+  }
+  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
+}
+
+/**
+ * Score all 24 keys against a chroma vector. Sorted best first.
+ * @param {ArrayLike<number>} chroma 12 bins, index 0 = C
+ * @param {{ profiles?: string[] }} [opts] which of PROFILES to average (default both)
+ * @returns {{ camelot: string, score: number }[]}
+ */
+function scoreKeys(chroma, { profiles = ['krumhansl', 'temperley'] } = {}) {
+  const out = [];
+  for (const mode of ['major', 'minor']) {
+    for (let pc = 0; pc < 12; pc++) {
+      let s = 0;
+      for (const name of profiles) s += pearson(chroma, PROFILES[name][mode], pc);
+      out.push({ camelot: toCamelot(pc, mode), score: s / profiles.length });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const round3 = x => Math.round(x * 1000) / 1000;
+
+/**
+ * Estimate the musical key of mono audio.
+ *
+ * @param {Float32Array|number[]} samples mono, at `sampleRate` (16 kHz is the tested rate)
+ * @param {{ sampleRate?: number, profiles?: string[] }} [opts]
+ * @returns {{
+ *   key: string|null, tonic: string|null, mode: 'major'|'minor'|null,
+ *   camelot: string|null, openKey: string|null, confidence: number,
+ *   alternates: { key: string, camelot: string, score: number, relation: string|null, compatible: boolean }[],
+ *   tuningCents: number, version: string,
+ * }}
+ * `key` is null (confidence 0) when there is nothing tonal to judge, e.g.
+ * silence. `alternates` are the next three keys by score; `relation` says how
+ * each sits to the answer on the Camelot wheel ('relative', 'fifth-up',
+ * 'fifth-down', 'parallel' or null) and `compatible` is true for the three
+ * a DJ mixes into freely (relative and either fifth).
+ */
+function key(samples, { sampleRate = SAMPLE_RATE, profiles } = {}) {
+  const { chroma, tuningCents, seconds, tonalWeight, gridness } = chromagram(samples, { sampleRate });
+  const none = { key: null, tonic: null, mode: null, camelot: null, openKey: null, confidence: 0,
+                 alternates: [], tuningCents: 0, version: KEY_VERSION };
+  if (!(tonalWeight > 0) || !(seconds > 0)) return none;
+
+  const ranked = scoreKeys(chroma, profiles ? { profiles } : undefined);
+  const best = ranked[0], second = ranked[1];
+  const k = CAMELOT[best.camelot];
+
+  const tonality = clamp01((gridness - GRID_NONE) / (GRID_FULL - GRID_NONE));
+  const fit = clamp01((best.score - FIT_LOW) / (FIT_HIGH - FIT_LOW));
+  const lead = clamp01((best.score - second.score) / MARGIN_FULL);
+  // The lead counts for half: a close relative or fifth is the usual runner-up
+  // even when the answer is right, so a small lead mustn't zero the confidence.
+  const confidence = round3(tonality * fit * (0.5 + 0.5 * lead));
+
+  return {
+    key: k.key, tonic: k.tonic, mode: k.mode, camelot: k.camelot, openKey: k.openKey,
+    confidence,
+    alternates: ranked.slice(1, 4).map(a => {
+      const rel = relation(best.camelot, a.camelot);
+      return { key: CAMELOT[a.camelot].key, camelot: a.camelot, score: round3(a.score), relation: rel,
+               compatible: rel === 'relative' || rel === 'fifth-up' || rel === 'fifth-down' };
+    }),
+    tuningCents,
+    version: KEY_VERSION,
+  };
+}
+return { KEY_VERSION, pitchClass, toCamelot, toOpenKey, CAMELOT, relation, PROFILES, chromagram, scoreKeys, key };
+})();
+/* ---- core/audio/dsp/loudness.mjs ---- */
+__mod["core/audio/dsp/loudness.mjs"] = (function () {
+const { SAMPLE_RATE, FRAME_SIZE, HOP_SIZE } = __mod["core/audio/mel.mjs"];
+// Loudness and "energy" for a 30-second preview, in plain JS.
+//
+// This is a HEURISTIC, not a measurement standard. It borrows the shape of
+// EBU R128 / ITU-R BS.1770 loudness (K-weighting, 400 ms blocks with 75 %
+// overlap, 3 s short-term windows, absolute -70 and relative -10 LU gates),
+// but it is not a compliant meter and its numbers are "LUFS-like", not LUFS:
+//   - it runs on 16 kHz mono, so everything above 8 kHz is gone, and the
+//     K-weighting filters are re-derived for 16 kHz from analogue-style
+//     parameters (BS.1770 specifies coefficients at 48 kHz only);
+//   - the input is a decoded, resampled lossy preview, not the master;
+//   - no channel weighting, no true-peak, no conformance test signals.
+// Spectral centroid and onset density are ordinary textbook descriptors.
+// `energy` is a hand-picked blend of the three (formula at ENERGY below),
+// meant only to rank tracks against each other within one library. It has
+// not been fitted to listener judgements and is not Spotify's "energy".
+//
+// Isomorphic — no DOM, no Node APIs, no dependencies — so the browser worker
+// and Node scripts share it. The STFT uses the mel front end's frame and hop
+// (512 / 256), so onsets live on the same frame grid as the rest of the
+// audio pipeline.
+
+
+
+const LOUDNESS_VERSION = '1.0.0';
+
+// Floors keep every output finite (JSON-safe: no -Infinity, no NaN).
+const RMS_FLOOR_DB = -120;
+const LUFS_FLOOR = -70; // BS.1770's absolute gate; quieter counts as silence
+const LUFS_OFFSET = -0.691; // BS.1770's constant, kept so numbers look familiar
+
+const BLOCK_S = 0.4, BLOCK_STEP_S = 0.1, SHORT_TERM_S = 3;
+
+// ---------------------------------------------------------------------------
+// K-weighting: two RBJ biquads with the parameters pyloudnorm uses to
+// approximate BS.1770's stage 1 (high shelf, +4 dB above ~1.5 kHz) and
+// stage 2 (RLB high-pass, ~38 Hz) at an arbitrary sample rate.
+
+function highShelf(fs, fc = 1500, gainDb = 4, Q = Math.SQRT1_2) {
+  const A = 10 ** (gainDb / 40), w0 = 2 * Math.PI * fc / fs, cs = Math.cos(w0);
+  const alpha = Math.sin(w0) / (2 * Q), sA = 2 * Math.sqrt(A) * alpha;
+  const a0 = (A + 1) - (A - 1) * cs + sA;
+  return [
+    A * ((A + 1) + (A - 1) * cs + sA) / a0,
+    -2 * A * ((A - 1) + (A + 1) * cs) / a0,
+    A * ((A + 1) + (A - 1) * cs - sA) / a0,
+    2 * ((A - 1) - (A + 1) * cs) / a0,
+    ((A + 1) - (A - 1) * cs - sA) / a0,
+  ];
+}
+
+function highPass(fs, fc = 38, Q = 0.5) {
+  const w0 = 2 * Math.PI * fc / fs, cs = Math.cos(w0), alpha = Math.sin(w0) / (2 * Q);
+  const a0 = 1 + alpha;
+  return [(1 + cs) / 2 / a0, -(1 + cs) / a0, (1 + cs) / 2 / a0, -2 * cs / a0, (1 - alpha) / a0];
+}
+
+/** Prefix sums of the K-weighted signal's squares: cum[i] = Σ_{j<i} k[j]². */
+function kWeightedEnergyPrefix(x, fs) {
+  const [b0, b1, b2, a1, a2] = highShelf(fs);
+  const [c0, c1, c2, d1, d2] = highPass(fs);
+  const cum = new Float64Array(x.length + 1);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0, z1 = 0, z2 = 0, acc = 0;
+  for (let i = 0; i < x.length; i++) {
+    const xi = x[i];
+    const y = b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1; x1 = xi;
+    const z = c0 * y + c1 * y1 + c2 * y2 - d1 * z1 - d2 * z2;
+    y2 = y1; y1 = y; z2 = z1; z1 = z;
+    acc += z * z;
+    cum[i + 1] = acc;
+  }
+  return cum;
+}
+
+const toLufs = ms => (ms > 0 ? LUFS_OFFSET + 10 * Math.log10(ms) : -Infinity);
+
+/** Mean squares of windows of `len` samples every `step` samples (one window if the clip is shorter). */
+function windowMeans(cum, len, step) {
+  const n = cum.length - 1;
+  if (n === 0) return [];
+  if (n <= len) return [cum[n] / n];
+  const out = [];
+  for (let s = 0; s + len <= n; s += step) out.push((cum[s + len] - cum[s]) / len);
+  return out;
+}
+
+/** BS.1770-style gated integration over 400 ms block mean squares. */
+function gatedIntegrated(blocks) {
+  const abs = blocks.filter(ms => toLufs(ms) > LUFS_FLOOR);
+  if (!abs.length) return LUFS_FLOOR;
+  const relGate = toLufs(abs.reduce((a, b) => a + b, 0) / abs.length) - 10;
+  const rel = abs.filter(ms => toLufs(ms) > relGate);
+  return Math.max(LUFS_FLOOR, toLufs(rel.reduce((a, b) => a + b, 0) / rel.length));
+}
+
+// ---------------------------------------------------------------------------
+// STFT (frame 512, hop 256, periodic Hann), magnitude spectra only. Own FFT:
+// mel.mjs keeps its FFT private and is a frozen contract.
+
+const N_BINS = FRAME_SIZE / 2 + 1;
+const M = FRAME_SIZE / 2; // real FFT of N via one complex FFT of N/2
+const LOG2M = Math.log2(M);
+const HANN = Float64Array.from({ length: FRAME_SIZE }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / FRAME_SIZE));
+const BITREV = Uint16Array.from({ length: M }, (_, i) => {
+  let r = 0; for (let b = 0; b < LOG2M; b++) r |= ((i >> b) & 1) << (LOG2M - 1 - b); return r;
+});
+// Twiddles e^{-2πik/N}, k < N/2: the M-point FFT uses every other one.
+const COS = Float64Array.from({ length: M }, (_, i) => Math.cos(2 * Math.PI * i / FRAME_SIZE));
+const SIN = Float64Array.from({ length: M }, (_, i) => -Math.sin(2 * Math.PI * i / FRAME_SIZE));
+
+/** |X[k]|, k = 0..N/2, of one real windowed frame `x` (length N). */
+function magnitudeSpectrum(x, re, im, out) {
+  for (let i = 0; i < M; i++) { const j = BITREV[i]; re[j] = x[2 * i]; im[j] = x[2 * i + 1]; }
+  for (let size = 2; size <= M; size <<= 1) {
+    const half = size >> 1, step = (FRAME_SIZE / size);
+    for (let s = 0; s < M; s += size) {
+      for (let k = 0; k < half; k++) {
+        const c = COS[k * step], sn = SIN[k * step];
+        const a = s + k, b = a + half;
+        const tr = re[b] * c - im[b] * sn, ti = re[b] * sn + im[b] * c;
+        re[b] = re[a] - tr; im[b] = im[a] - ti;
+        re[a] += tr; im[a] += ti;
+      }
+    }
+  }
+  // Split Z (the packed even/odd FFT) into X: X[k] = E[k] + W^k O[k].
+  for (let k = 0; k <= M; k++) {
+    const p = k % M, q = (M - k) % M;
+    const a = re[p], b = im[p], c = re[q], d = im[q];
+    const er = (a + c) / 2, ei = (b - d) / 2, or = (b + d) / 2, oi = (c - a) / 2;
+    const wr = k < M ? COS[k] : -1, wi = k < M ? SIN[k] : 0;
+    const xr = er + wr * or - wi * oi, xi = ei + wr * oi + wi * or;
+    out[k] = Math.sqrt(xr * xr + xi * xi);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Onsets: log-compressed spectral flux, then peaks above an adaptive
+// threshold (local median + a multiple of the track's own flux spread).
+
+const FLUX_GAMMA = 100;     // log(1 + γ|X|) compression
+const MEDIAN_HALF_S = 0.15; // local median window, each side
+const PEAK_HALF_S = 0.05;   // a peak must be the max within ±50 ms
+const MIN_GAP_S = 0.05;     // and at least 50 ms after the previous onset
+const SPREAD_K = 6;         // threshold = local median + K · the track's flux MAD
+const REL_FLOOR = 0.1;      // and at least 10 % of the track's strongest flux
+// and an absolute floor: on average every bin must rise by ≥0.05 (log units).
+// Steady tones wobble far below this (a 30 s sine peaks under 4); a
+// broadband hit clears it many times over.
+const ABS_FLOOR = 0.05 * N_BINS;
+
+function median(arr) {
+  const s = Float64Array.from(arr).sort();
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function countOnsets(flux, fps) {
+  const n = flux.length;
+  if (n < 3) return 0;
+  let max = 0;
+  for (let i = 0; i < n; i++) if (flux[i] > max) max = flux[i];
+  if (max < ABS_FLOOR) return 0;
+  const med = median(flux);
+  const spread = median(Array.from(flux, v => Math.abs(v - med))) || 1e-9;
+  const mh = Math.max(1, Math.round(MEDIAN_HALF_S * fps));
+  const ph = Math.max(1, Math.round(PEAK_HALF_S * fps));
+  const gap = Math.max(1, Math.round(MIN_GAP_S * fps));
+  const floor = Math.max(ABS_FLOOR, REL_FLOOR * max);
+  let count = 0, last = -Infinity;
+  const win = [];
+  for (let t = 0; t < n; t++) {
+    const v = flux[t];
+    if (v < floor) continue;
+    let isPeak = true;
+    for (let j = Math.max(0, t - ph); j <= Math.min(n - 1, t + ph); j++) {
+      if (flux[j] > v || (flux[j] === v && j < t)) { isPeak = false; break; }
+    }
+    if (!isPeak || t - last < gap) continue;
+    win.length = 0;
+    for (let j = Math.max(0, t - mh); j <= Math.min(n - 1, t + mh); j++) win.push(flux[j]);
+    if (v > median(win) + SPREAD_K * spread) { count++; last = t; }
+  }
+  return count;
+}
+
+// ---------------------------------------------------------------------------
+// ENERGY = 0.5·L + 0.25·C + 0.25·O, each term clamped to 0–1:
+//   L = (loudness + 45) / 40      -45 LUFS-like → 0, -5 → 1
+//   C = log2(centroid / 250) / 4  250 Hz → 0, 4 kHz → 1
+//   O = onsetDensity / 8          8 onsets per second or more → 1
+// Loudness dominates because it is the most robust of the three on a lossy
+// preview; brightness and onset rate separate "loud but smooth" from "loud
+// and busy". A silent clip (loudness at the -70 floor) is 0.
+
+const clamp01 = v => (v > 1 ? 1 : v > 0 ? v : 0);
+const ENERGY_WEIGHTS = Object.freeze({ loudness: 0.5, centroid: 0.25, onsets: 0.25 });
+
+function energyFrom({ loudness, centroidHz, onsetDensity }) {
+  if (loudness <= LUFS_FLOOR) return 0;
+  const L = clamp01((loudness + 45) / 40);
+  const C = centroidHz > 0 ? clamp01(Math.log2(centroidHz / 250) / 4) : 0;
+  const O = clamp01(onsetDensity / 8);
+  return ENERGY_WEIGHTS.loudness * L + ENERGY_WEIGHTS.centroid * C + ENERGY_WEIGHTS.onsets * O;
+}
+
+const round = (v, d) => { const p = 10 ** d; return Math.round(v * p) / p; };
+
+/**
+ * Loudness, brightness, onset rate and a blended energy for mono audio.
+ * @param {Float32Array|number[]} samples  mono, normally 16 kHz
+ * @param {{ sampleRate?: number }} [opts]
+ * @returns {{ rmsDb: number, loudness: number, shortTermMax: number,
+ *   centroidHz: number, onsetDensity: number, energy: number, version: string }}
+ *   loudness is the gated integrated LUFS-like value; shortTermMax the
+ *   loudest 3 s window; all values finite, rounded for stable storage.
+ */
+function loudness(samples, { sampleRate = SAMPLE_RATE } = {}) {
+  const n = samples.length;
+  const seconds = n / sampleRate;
+
+  // RMS of the raw signal.
+  let sq = 0;
+  for (let i = 0; i < n; i++) sq += samples[i] * samples[i];
+  const rmsDb = n && sq > 0 ? Math.max(RMS_FLOOR_DB, 10 * Math.log10(sq / n)) : RMS_FLOOR_DB;
+
+  // K-weighted, gated loudness.
+  const cum = kWeightedEnergyPrefix(samples, sampleRate);
+  const step = Math.round(BLOCK_STEP_S * sampleRate);
+  const blocks = windowMeans(cum, Math.round(BLOCK_S * sampleRate), step);
+  const integrated = gatedIntegrated(blocks);
+  const shortTerm = windowMeans(cum, Math.round(SHORT_TERM_S * sampleRate), step);
+  const shortTermMax = shortTerm.length ? Math.max(LUFS_FLOOR, toLufs(Math.max(...shortTerm))) : LUFS_FLOOR;
+
+  // STFT pass: centroid of the long-term magnitude spectrum, and flux.
+  const frames = n >= FRAME_SIZE ? Math.floor((n - FRAME_SIZE) / HOP_SIZE) + 1 : (n > 0 ? 1 : 0);
+  const frame = new Float64Array(FRAME_SIZE), re = new Float64Array(M), im = new Float64Array(M);
+  let mag = new Float64Array(N_BINS), prev = new Float64Array(N_BINS);
+  const flux = new Float64Array(frames);
+  const binHz = sampleRate / FRAME_SIZE;
+  let num = 0, den = 0;
+  for (let f = 0; f < frames; f++) {
+    const s = f * HOP_SIZE;
+    for (let i = 0; i < FRAME_SIZE; i++) frame[i] = (s + i < n ? samples[s + i] : 0) * HANN[i];
+    magnitudeSpectrum(frame, re, im, mag);
+    let fl = 0;
+    for (let k = 0; k < N_BINS; k++) {
+      const m = mag[k];
+      num += k * binHz * m; den += m;
+      const c = Math.log1p(FLUX_GAMMA * m);
+      prev[k] = c - prev[k]; // reuse prev as scratch: diff, then swap below
+      if (f > 0 && prev[k] > 0) fl += prev[k];
+      prev[k] = c;
+    }
+    flux[f] = fl;
+  }
+  const centroidHz = den > 1e-12 ? num / den : 0;
+  const onsetDensity = seconds > 0 ? countOnsets(flux, sampleRate / HOP_SIZE) / seconds : 0;
+
+  const out = {
+    rmsDb: round(rmsDb, 2),
+    loudness: round(integrated, 2),
+    shortTermMax: round(shortTermMax, 2),
+    centroidHz: round(centroidHz, 1),
+    onsetDensity: round(onsetDensity, 3),
+  };
+  out.energy = round(energyFrom({ loudness: integrated, centroidHz, onsetDensity }), 4);
+  out.version = LOUDNESS_VERSION;
+  return out;
+}
+return { LOUDNESS_VERSION, ENERGY_WEIGHTS, energyFrom, loudness };
+})();
+/* ---- core/audio/dsp/combine.mjs ---- */
+__mod["core/audio/dsp/combine.mjs"] = (function () {
+const { tempo: tempoOf, TEMPO_VERSION } = __mod["core/audio/dsp/tempo.mjs"];
+const { key: keyOf, KEY_VERSION } = __mod["core/audio/dsp/key.mjs"];
+const { loudness: loudnessOf, LOUDNESS_VERSION } = __mod["core/audio/dsp/loudness.mjs"];
+// Tempo, key and loudness for one track, measured per preview window and
+// combined (WP-D4, docs/AUDIO-BUILD-PLAN.md).
+//
+// Why per window: fetch.mjs takes two windows from a 30 s preview and the
+// worker joins them for the model. The join is a hard cut in the middle of
+// the audio, so a beat tracker or chroma run over the joined samples sees a
+// skipped beat and possibly a different section of the song. Each window is
+// contiguous audio, so each is measured on its own and the two answers are
+// reconciled here:
+//   - tempo: within ±BPM_AGREE the two agree and the answer is their
+//     confidence-weighted mean; a 2:1 ratio is the half/double-time failure
+//     that matters (music-dna.mjs measured()), so it keeps the more confident
+//     window, lowers the confidence and marks the result octave-ambiguous with
+//     the other reading as `bpmAlt`; any other disagreement keeps the more
+//     confident window and lowers the confidence. D1's own `octaveAmbiguous`
+//     on the kept window is never dropped.
+//   - key: the same key agrees; otherwise the more confident window wins and
+//     its confidence is lowered.
+//   - loudness: averaged in the power domain, energy averaged. Energy is
+//     stored but not shown (unchecked on real previews).
+//
+// Every estimator runs under its own try: one that throws leaves only its own
+// fields out, never the others, and never fails the track (DSP is a bonus).
+//
+// Not measured on real music yet. The page shows none of this until the
+// Rekordbox comparison is in AUDIO-ANALYSIS-PLAN.md §0 and passes (see
+// web/audio/dsp-view.mjs, DSP_UI_DEFAULT).
+
+
+
+
+
+const COMBINE_VERSION = '1.0.0';
+/** Stored as `dsp.v`; a record whose dsp.v differs is re-measured lazily, never invalidated. */
+const DSP_VERSION = `${COMBINE_VERSION}+t${TEMPO_VERSION}+k${KEY_VERSION}+l${LOUDNESS_VERSION}`;
+
+/** Two windows within this many BPM agree. */
+const BPM_AGREE = 1;
+/** How far a ratio may sit from exactly 2 (in BPM at the slower tempo) and still count as half/double time. */
+const OCTAVE_SLACK = 1.5;
+/** Confidence multiplier when the windows disagree. */
+const DISAGREE_PENALTY = 0.5;
+/** Confidence multiplier when they disagree by an octave: the tempo family is right, the level unsure. */
+const OCTAVE_PENALTY = 0.75;
+
+const r1 = x => Math.round(x * 10) / 10;
+const r2 = x => Math.round(x * 100) / 100;
+const r3 = x => Math.round(x * 1000) / 1000;
+const ok = x => typeof x === 'number' && Number.isFinite(x);
+
+/** Is b half or double a (within slack)? */
+function octaveApart(a, b) {
+  const [lo, hi] = a < b ? [a, b] : [b, a];
+  return Math.abs(hi - 2 * lo) <= OCTAVE_SLACK;
+}
+
+/**
+ * Reconcile per-window tempo results (tempo.mjs shape).
+ * @param {Array<{ bpm: number|null, confidence: number, alternates?: {bpm:number,score:number}[], octaveAmbiguous?: boolean }>} ws
+ * @returns {{ bpm: number, bpmConf: number, octaveAmbiguous: boolean, bpmAlt?: number, agree: boolean|null } | null}
+ */
+function combineTempo(ws) {
+  const good = (ws ?? []).filter(w => w && ok(w.bpm) && w.bpm > 0 && ok(w.confidence));
+  if (!good.length) return null;
+  const partnerOf = w => {
+    const p = (w.alternates ?? []).find(a => ok(a?.bpm) && octaveApart(w.bpm, a.bpm));
+    return p ? p.bpm : null;
+  };
+  const finish = (w, bpm, conf, octave, alt, agree) => {
+    const out = { bpm: r1(bpm), bpmConf: r3(Math.max(0, Math.min(1, conf))), octaveAmbiguous: !!octave, agree };
+    if (octave) { const a = alt ?? partnerOf(w); if (ok(a)) out.bpmAlt = r1(a); }
+    return out;
+  };
+  if (good.length === 1) { const w = good[0]; return finish(w, w.bpm, w.confidence, w.octaveAmbiguous, null, null); }
+
+  const [a, b] = [...good].sort((x, y) => y.confidence - x.confidence); // a: more confident
+  if (Math.abs(a.bpm - b.bpm) <= BPM_AGREE) {
+    const wa = Math.max(a.confidence, 1e-6), wb = Math.max(b.confidence, 1e-6);
+    const bpm = (a.bpm * wa + b.bpm * wb) / (wa + wb);
+    return finish(a, bpm, a.confidence, a.octaveAmbiguous || b.octaveAmbiguous, partnerOf(a) ?? partnerOf(b), true);
+  }
+  if (octaveApart(a.bpm, b.bpm))
+    return finish(a, a.bpm, a.confidence * OCTAVE_PENALTY, true, b.bpm, false);
+  return finish(a, a.bpm, a.confidence * DISAGREE_PENALTY, a.octaveAmbiguous, null, false);
+}
+
+/**
+ * Reconcile per-window key results (key.mjs shape).
+ * @returns {{ key: string, camelot: string, keyConf: number, keyAlt?: string, agree: boolean|null } | null}
+ */
+function combineKey(ws) {
+  const good = (ws ?? []).filter(w => w && w.key && w.camelot && ok(w.confidence));
+  if (!good.length) return null;
+  const out = (w, conf, agree, alt) => ({ key: w.key, camelot: w.camelot, keyConf: r3(Math.max(0, Math.min(1, conf))), agree,
+                                          ...(alt ? { keyAlt: alt } : {}) });
+  if (good.length === 1) return out(good[0], good[0].confidence, null);
+  const [a, b] = [...good].sort((x, y) => y.confidence - x.confidence);
+  if (a.camelot === b.camelot) return out(a, a.confidence, true);
+  return out(a, a.confidence * DISAGREE_PENALTY, false, b.camelot);
+}
+
+/** Power-mean loudness and mean energy (loudness.mjs shape). */
+function combineLoudness(ws) {
+  const good = (ws ?? []).filter(w => w && ok(w.loudness) && ok(w.energy));
+  if (!good.length) return null;
+  const p = good.reduce((s, w) => s + 10 ** (w.loudness / 10), 0) / good.length;
+  return { loudness: r2(10 * Math.log10(p)), energy: r3(good.reduce((s, w) => s + w.energy, 0) / good.length) };
+}
+
+/**
+ * Measure each window and combine: the `dsp` the worker stores in a record.
+ * Estimators are injectable for tests.
+ *
+ * @param {Float32Array[]} windows  contiguous 16 kHz mono parts, in time order
+ * @param {{ tempo?: Function, key?: Function, loudness?: Function }} [est]
+ * @returns {object|null} null when nothing could be measured
+ */
+function measureWindows(windows, est = {}) {
+  const tempo = est.tempo ?? tempoOf, key = est.key ?? keyOf, loudness = est.loudness ?? loudnessOf;
+  const parts = (windows ?? []).filter(w => w && w.length > 0);
+  if (!parts.length) return null;
+  const each = f => parts.map(w => { try { return f(w); } catch { return null; } });
+  const t = combineTempo(each(tempo));
+  const k = combineKey(each(key));
+  const l = combineLoudness(each(loudness));
+  if (!t && !k && !l) return null;
+  const out = { v: DSP_VERSION, windows: parts.length };
+  if (t) Object.assign(out, { bpm: t.bpm, bpmConf: t.bpmConf, octaveAmbiguous: t.octaveAmbiguous,
+                              ...(t.bpmAlt != null ? { bpmAlt: t.bpmAlt } : {}), ...(t.agree != null ? { bpmAgree: t.agree } : {}) });
+  if (k) Object.assign(out, { key: k.key, camelot: k.camelot, keyConf: k.keyConf,
+                              ...(k.keyAlt ? { keyAlt: k.keyAlt } : {}), ...(k.agree != null ? { keyAgree: k.agree } : {}) });
+  if (l) Object.assign(out, l);
+  return out;
+}
+
+/** Does this record still need its dsp measured (absent, or from an older DSP_VERSION)? */
+function needsDsp(rec) {
+  return !!rec && !rec.miss && (!rec.dsp || rec.dsp.v !== DSP_VERSION);
+}
+return { COMBINE_VERSION, DSP_VERSION, BPM_AGREE, DISAGREE_PENALTY, OCTAVE_PENALTY, combineTempo, combineKey, combineLoudness, measureWindows, needsDsp };
 })();
 /* ---- web/audio/controller.mjs ---- */
 __mod["web/audio/controller.mjs"] = (function () {
-const { runQueue } = __mod["core/audio/worker.js"];
+const { runQueue, fillDsp } = __mod["core/audio/worker.js"];
 const { MISS } = __mod["core/audio/record.mjs"];
+const { measureWindows, needsDsp } = __mod["core/audio/dsp/combine.mjs"];
 // Runs "Listen to my music" in the page (WP-B2): queue → analyseOne → store.
 //
 // The page owns three things core/audio leaves to it: storage (store.mjs),
@@ -623,8 +1768,19 @@ const { MISS } = __mod["core/audio/record.mjs"];
 // Stop is cooperative: the track in flight finishes and is stored, no new one
 // starts. Resume is simply start() again with a fresh queue, because the
 // queue skips every id whose stored answer isCurrent().
+//
+// DSP (WP-D4): every new record gets tempo, key and loudness measured per
+// preview window (core/audio/dsp/combine.mjs). Records heard before that, or
+// under an older DSP version, are topped up lazily after the queue: the
+// preview is fetched again and only the DSP runs, so the embedding stays and
+// nothing is invalidated. None of it is shown unless web/audio/dsp-view.mjs's
+// flag is on.
 
 
+
+
+/** Records topped up with dsp per start(), after the queue. */
+const DSP_FILL_PER_RUN = 25;
 
 /**
  * Proxy the ear and heads to a Worker speaking { id, op, ... } → { id, ok, result|error }.
@@ -672,10 +1828,16 @@ function createWorkerEar(worker, init) {
  *        called on the first start(): loads the models, once
  * @param {(vm: object) => void} [deps.onChange]
  * @param {() => number} [deps.now]
+ * @param {((windows: Float32Array[]) => object|null) | null} [deps.dsp]
+ *        per-window DSP; default measureWindows, null switches DSP off
+ * @param {number} [deps.dspFillPerRun]  records topped up with dsp per start (default DSP_FILL_PER_RUN)
  */
 function createAudioController(deps) {
   const st = { state: 'off', done: 0, total: 0, reason: null, failed: 0, missed: {}, heard: 0, last: null };
   let abort = null, ears = null, running = null;
+  const dsp = deps.dsp === undefined ? measureWindows : deps.dsp;
+  const fillBudget = deps.dspFillPerRun ?? DSP_FILL_PER_RUN;
+  const noFill = new Set(); // ids whose dsp can't be filled this session (different recording now, nothing measured)
 
   const emit = () => { try { deps.onChange?.(vm()); } catch { /* a render bug must not stop the queue */ } };
   const vm = () => ({ state: st.state, done: st.done, total: st.total, reason: st.reason ?? undefined,
@@ -705,7 +1867,11 @@ function createAudioController(deps) {
     emit();
     running = (async () => {
       try {
-        if (!tracks.length) { st.state = 'done'; return { done: 0, stopped: false }; }
+        if (!tracks.length) {
+          // Nothing new to hear: still top up dsp (it needs no model).
+          if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp }, signal);
+          st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
+        }
         if (!ears) {
           st.reason = 'loading the listening model'; emit();
           try { ears = await deps.loadEar(); }
@@ -714,7 +1880,7 @@ function createAudioController(deps) {
         }
         if (signal.aborted) { st.state = 'paused'; return { done: 0, stopped: true }; }
         const analyse = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
-                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads };
+                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp } : {}) };
         const res = await runQueue(analyse, tracks, { signal, onResult: async (r, t) => {
           if (r.record) { await deps.store.put(r.record); st.heard++; }
           else if (r.miss) { await deps.store.put(r.miss); st.missed[r.miss.miss] = (st.missed[r.miss.miss] ?? 0) + 1; }
@@ -722,7 +1888,8 @@ function createAudioController(deps) {
           st.done++; st.last = t?.id ?? null;
           emit();
         } });
-        st.state = res.stopped ? 'paused' : 'done';
+        if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
+        st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
         running = null; abort = null;
@@ -730,6 +1897,20 @@ function createAudioController(deps) {
       }
     })();
     return running;
+  }
+
+  /** Measure dsp for stored records that lack it, a few per run, stoppable like the queue. */
+  async function topUpDsp(analyse, signal) {
+    const all = await deps.store.getAll();
+    const due = [...all.values()].filter(r => needsDsp(r) && !noFill.has(r.id)).slice(0, fillBudget);
+    for (const rec of due) {
+      if (signal.aborted) return;
+      let r;
+      try { r = await fillDsp(analyse, rec); } catch { r = { skip: 'error' }; }
+      if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; emit(); }
+      else if (r.skip) noFill.add(rec.id);
+      // a failed download is tried again on a later run
+    }
   }
 
   /** Finish the track in flight, start no more. */
@@ -787,7 +1968,7 @@ const MISS_TEXT = Object.freeze({
   TOO_SHORT: 'the preview was too short to hear',
   FAILED: 'a download or decode failed this session (it will be tried again)',
 });
-return { createWorkerEar, createAudioController, listenVM, profileVM, styleName, MISS_TEXT };
+return { DSP_FILL_PER_RUN, createWorkerEar, createAudioController, listenVM, profileVM, styleName, MISS_TEXT };
 })();
 /* ---- profile.mjs ---- */
 __mod["profile.mjs"] = (function () {
@@ -2477,11 +3658,66 @@ function moodHints(heads, { min = 0 } = {}) {
 const round = x => +x.toFixed(4);
 return { HEADS_VERSION, MAX_BATCH, TOP_MOODS, MOOD_LABELS, HEADS, MOOD_MAP, createHeads, summariseHeads, moodHints };
 })();
+/* ---- web/audio/dsp-view.mjs ---- */
+__mod["web/audio/dsp-view.mjs"] = (function () {
+// AudioRecord.dsp → the BPM/key part of web/ui/sound.mjs's SoundVM (WP-D4).
+//
+// Hidden by default. Tempo and key are only checked on synthetic audio so
+// far; per the build plan (§0 rule 7) they show only once the Rekordbox
+// comparison is in AUDIO-ANALYSIS-PLAN.md §0 and passes. Until then
+// DSP_UI_DEFAULT stays false and dspSoundVM() returns null, so every
+// renderer that takes its output draws nothing. Turning it on is a one-line
+// change here once the numbers pass; `localStorage.bf_audio_dsp = '1'` turns
+// it on for one browser, for checking the display before then.
+//
+// Energy is never put in the view model yet: D3's weights are hand-picked and
+// unchecked on real previews.
+
+const DSP_UI_DEFAULT = false;
+const DSP_UI_KEY = 'bf_audio_dsp';
+
+/** Below this confidence a reading is not shown at all. */
+const MIN_SHOW_CONF = 0.15;
+
+/** Is the BPM/key display on? A per-browser override beats the default. */
+function dspShown(ls = globalThis.localStorage) {
+  try {
+    const v = ls?.getItem?.(DSP_UI_KEY);
+    if (v === '1') return true;
+    if (v === '0') return false;
+  } catch { /* private mode: use the default */ }
+  return DSP_UI_DEFAULT;
+}
+
+/**
+ * @param {object|null|undefined} record  a stored AudioRecord (or miss)
+ * @param {{ show?: boolean }} [o]          default dspShown()
+ * @returns {{ bpm?: number, bpmAlt?: number, bpmConf?: number, key?: string, camelot?: string, keyConf?: number } | null}
+ */
+function dspSoundVM(record, { show = dspShown() } = {}) {
+  if (!show) return null;
+  const d = record && !record.miss ? record.dsp : null;
+  if (!d || typeof d !== 'object') return null;
+  const vm = {};
+  if (Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= MIN_SHOW_CONF) {
+    vm.bpm = Math.round(d.bpm);
+    vm.bpmConf = d.bpmConf;
+    if (d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0) vm.bpmAlt = Math.round(d.bpmAlt);
+  }
+  if (typeof d.key === 'string' && d.key && (d.keyConf ?? 0) >= MIN_SHOW_CONF) {
+    vm.key = d.key;
+    if (typeof d.camelot === 'string') vm.camelot = d.camelot;
+    vm.keyConf = d.keyConf;
+  }
+  return Object.keys(vm).length ? vm : null;
+}
+return { DSP_UI_DEFAULT, DSP_UI_KEY, MIN_SHOW_CONF, dspShown, dspSoundVM };
+})();
 /* ---- web/audio/index.mjs ---- */
 __mod["web/audio/index.mjs"] = (function () {
 const { openAudioStore, AUDIO_DB, AUDIO_STORE } = __mod["web/audio/store.mjs"];
 const { readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY } = __mod["web/audio/settings.mjs"];
-const { createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT } = __mod["web/audio/controller.mjs"];
+const { createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN } = __mod["web/audio/controller.mjs"];
 const { audioQueue } = __mod["core/audio/queue.mjs"];
 const { lookup, fetchPreview } = __mod["core/audio/fetch.mjs"];
 const { decodeTo16k } = __mod["core/audio/decode.mjs"];
@@ -2489,9 +3725,11 @@ const { analyseOne } = __mod["core/audio/worker.js"];
 const { MISS, validRecord, isCurrent, RECORD_VERSION, MODEL } = __mod["core/audio/record.mjs"];
 const { MEL_VERSION } = __mod["core/audio/mel.mjs"];
 const { HEADS, summariseHeads } = __mod["core/audio/heads.mjs"];
+const { dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY } = __mod["web/audio/dsp-view.mjs"];
+const { measureWindows, needsDsp, DSP_VERSION } = __mod["core/audio/dsp/combine.mjs"];
 // What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
 // One namespace so the template reaches core/audio through a single name.
-return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads };
+return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION };
 })();
 /* ---- core/audio/infer.mjs ---- */
 __mod["core/audio/infer.mjs"] = (function () {
@@ -2641,950 +3879,6 @@ function hybridOf(record) {
 
 const isHybrid = record => hybridOf(record).hybrid;
 return { SECTIONS_VERSION, HYBRID_SHARE, HYBRID_MARGIN, MIN_STYLE_P, sectionsOf, leadShares, agreement, hybridOf, isHybrid };
-})();
-/* ---- core/audio/dsp/key.mjs ---- */
-__mod["core/audio/dsp/key.mjs"] = (function () {
-const { SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
-// Musical key from audio, in plain JS (WP-D2, docs/AUDIO-BUILD-PLAN.md).
-//
-// 16 kHz mono samples -> a key, a Camelot code and a confidence. Isomorphic:
-// no DOM, no Node APIs, no dependencies, so the browser worker and Node
-// scripts share it. Written from scratch; the clean key library is AGPL
-// (essentia.js), which the page can't ship (AUDIO-ANALYSIS-PLAN.md §2, §9).
-//
-// Status: the synthetic tests (test/audiokey.test.mjs) pass. Accuracy on
-// real music is NOT measured yet. scripts/audio-dsp/key-vs-rekordbox.mjs
-// measures it against the owner's Rekordbox keys, and per the build plan's
-// §0 rule 7 this ships into records or the UI (WP-D4) only with that number.
-//
-// Pipeline:
-//   1. STFT with a long frame (8192 at 16 kHz ≈ 0.5 s, 1.95 Hz per bin), so
-//      neighbouring semitones are resolvable down to ~60 Hz. mel.mjs's 512
-//      frame is far too short for pitch (31 Hz per bin).
-//   2. Spectral peaks only: a local maximum that stands TONAL_SNR above the
-//      local mean magnitude and within 60 dB of the frame's loudest bin (so
-//      window sidelobes don't count). This is the whitening step: broadband drums and
-//      noise rarely make a peak, and the bass doesn't drown the treble
-//      because each peak is weighted by how far it stands above its own
-//      neighbourhood (log ratio), not by raw energy.
-//   3. Tuning: the weighted circular mean of every peak's offset from the
-//      A440 grid. Records tuned off 440 (or pitched by a DJ) still map
-//      cleanly. After correcting, a peak more than TUNING_TOLERANCE semitones
-//      from a note is dropped (inharmonic partials, glides, noise).
-//   4. Chroma: each surviving peak adds to its pitch class, cos²-tapered by
-//      its distance from the note centre. Summed over all frames.
-//   5. Profiles: Pearson correlation of the chroma with the Krumhansl–Kessler
-//      and Temperley major/minor profiles rotated to all 12 tonics; the two
-//      correlations are averaged per key.
-//   6. Confidence: a heuristic, not a probability. It is the product of how
-//      tonal the excerpt is ("gridness": how tightly the peaks sit on one
-//      semitone grid, the length of step 3's circular mean, ~0.75 for
-//      harmonic tones and ~0.03 for noise, whose peaks land anywhere), how
-//      well the best key fits, and how far it leads the runner-up. Silence -> 0 and
-//      key null; noise -> a guess with near-zero confidence. Its calibration
-//      against real keys is what the comparison script reports by band.
-
-
-
-const KEY_VERSION = '1.0.0';
-
-// ---------- names, Camelot, Open Key ----------
-
-/** Pitch-class spellings. Majors and minors follow the usual Camelot-wheel spelling. */
-const MAJOR_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
-const MINOR_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
-const PC_OF = { C: 0, 'B#': 0, 'C#': 1, DB: 1, D: 2, 'D#': 3, EB: 3, E: 4, FB: 4, F: 5, 'E#': 5, 'F#': 6, GB: 6,
-                G: 7, 'G#': 8, AB: 8, A: 9, 'A#': 10, BB: 10, B: 11, CB: 11 };
-
-/** Pitch class (0 = C) of a tonic spelled 'C', 'F#', 'Eb', 'E♭', 'bb'…; null if unreadable. */
-function pitchClass(tonic) {
-  if (typeof tonic === 'number') return Number.isInteger(tonic) ? ((tonic % 12) + 12) % 12 : null;
-  if (typeof tonic !== 'string') return null;
-  const s = tonic.trim().replace(/♯/g, '#').replace(/♭/g, 'b');
-  if (!s) return null;
-  return PC_OF[s[0].toUpperCase() + s.slice(1).toUpperCase()] ?? null;
-}
-
-const camelotNumber = (pc, mode) => {
-  const majorPc = mode === 'minor' ? (pc + 3) % 12 : pc;   // a minor key sits on its relative major's number
-  return ((majorPc * 7) % 12 + 7) % 12 + 1;                // C major = 8, each fifth up = +1
-};
-
-/**
- * Camelot code ('8A' = A minor, '8B' = C major) for a tonic and mode.
- * Accepts sharps or flats; mode is 'major' | 'minor' (also 'maj'/'min'/'m').
- * Returns null for anything unreadable rather than guessing.
- */
-function toCamelot(tonic, mode) {
-  const pc = pitchClass(tonic);
-  const m = normMode(mode);
-  if (pc == null || !m) return null;
-  return camelotNumber(pc, m) + (m === 'minor' ? 'A' : 'B');
-}
-
-/** Open Key code ('1m' = A minor, '1d' = C major) for a tonic and mode. */
-function toOpenKey(tonic, mode) {
-  const c = toCamelot(tonic, mode);
-  if (!c) return null;
-  const n = parseInt(c, 10);
-  return (((n - 8) % 12 + 12) % 12 + 1) + (c.endsWith('A') ? 'm' : 'd');
-}
-
-function normMode(mode) {
-  const m = String(mode ?? '').trim().toLowerCase();
-  if (m === 'major' || m === 'maj' || m === 'ionian') return 'major';
-  if (m === 'minor' || m === 'min' || m === 'm' || m === 'aeolian') return 'minor';
-  return null;
-}
-
-/**
- * All 24 keys, by Camelot code:
- *   CAMELOT['8A'] = { camelot: '8A', openKey: '1m', tonic: 'A', mode: 'minor', pc: 9, key: 'A minor' }
- * Frozen.
- */
-const CAMELOT = Object.freeze(Object.fromEntries(
-  ['major', 'minor'].flatMap(mode => Array.from({ length: 12 }, (_, pc) => {
-    const tonic = (mode === 'major' ? MAJOR_NAMES : MINOR_NAMES)[pc];
-    const camelot = toCamelot(pc, mode);
-    return [camelot, Object.freeze({ camelot, openKey: toOpenKey(pc, mode), tonic, mode, pc, key: `${tonic} ${mode}` })];
-  })),
-));
-
-/**
- * How key b relates to key a on the Camelot wheel, or null if not a
- * neighbour: 'same', 'relative' (same number, other letter), 'fifth-up'
- * (+1, same letter), 'fifth-down' (−1, same letter), 'parallel' (same tonic,
- * other mode). Codes are Camelot strings.
- */
-function relation(a, b) {
-  const A = CAMELOT[a], B = CAMELOT[b];
-  if (!A || !B) return null;
-  if (a === b) return 'same';
-  const na = parseInt(a, 10), nb = parseInt(b, 10), la = a.slice(-1), lb = b.slice(-1);
-  if (na === nb) return 'relative';
-  if (la === lb && nb === na % 12 + 1) return 'fifth-up';
-  if (la === lb && na === nb % 12 + 1) return 'fifth-down';
-  if (A.pc === B.pc) return 'parallel';
-  return null;
-}
-
-// ---------- key profiles ----------
-
-// Krumhansl & Kessler (1982) probe-tone ratings.
-const KK_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
-const KK_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
-// Temperley (1999), "What's key for key?": the revised probe-tone profiles.
-const TP_MAJOR = [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0];
-const TP_MINOR = [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0];
-
-const PROFILES = Object.freeze({
-  krumhansl: { major: KK_MAJOR, minor: KK_MINOR },
-  temperley: { major: TP_MAJOR, minor: TP_MINOR },
-});
-
-// ---------- analysis settings ----------
-
-const FRAME_SECONDS = 0.512;     // 8192 samples at 16 kHz
-const HOP_FRACTION = 0.25;       // hop 2048: ~7.8 frames per second
-const F_MIN = 60;                // below this a semitone is under two bins wide
-const F_MAX = 5000;              // above this, partials are mostly overtones and cymbals
-const DYNAMIC_RANGE = 10 ** (-60 / 20); // ignore anything 60 dB under the frame's loudest bin (window sidelobes)
-const TONAL_SNR = 3;             // a peak must stand this many times above its local mean
-const FLOOR_HALF_WIDTH_HZ = 40;  // half-width of the local-mean window
-const TUNING_TOLERANCE = 0.4;    // semitones from the nearest note, after tuning
-const SILENCE = 1e-4;            // RMS below this (−80 dBFS) is silence
-const A4 = 440;
-
-// Confidence shaping (see the header; uncalibrated until measured).
-const GRID_NONE = 0.08;          // gridness at or below which the excerpt counts as atonal (noise measures ~0.03)
-const GRID_FULL = 0.33;          // gridness at which it counts as fully tonal (synthetic chords ~0.75)
-const FIT_LOW = 0.2, FIT_HIGH = 0.75;
-const MARGIN_FULL = 0.12;
-
-// ---------- FFT ----------
-
-const fftCache = new Map();
-function fftTables(n) {
-  let t = fftCache.get(n);
-  if (t) return t;
-  const bits = Math.log2(n);
-  const rev = new Uint32Array(n);
-  for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); rev[i] = r; }
-  const cos = new Float64Array(n / 2), sin = new Float64Array(n / 2);
-  for (let i = 0; i < n / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / n); sin[i] = -Math.sin(2 * Math.PI * i / n); }
-  const hann = Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / n));
-  t = { rev, cos, sin, hann };
-  fftCache.set(n, t);
-  return t;
-}
-
-/** In-place radix-2 complex FFT; magnitudes of bins 0..n/2 into `mag`. */
-function magnitudeSpectrum(re, im, n, { rev, cos, sin }, mag) {
-  for (let i = 0; i < n; i++) {
-    const j = rev[i];
-    if (j > i) { const t = re[i]; re[i] = re[j]; re[j] = t; }
-    im[i] = 0;
-  }
-  for (let size = 2; size <= n; size <<= 1) {
-    const half = size >> 1, step = n / size;
-    for (let s = 0; s < n; s += size) {
-      for (let k = 0; k < half; k++) {
-        const c = cos[k * step], sn = sin[k * step];
-        const a = s + k, b = a + half;
-        const tr = re[b] * c - im[b] * sn, ti = re[b] * sn + im[b] * c;
-        re[b] = re[a] - tr; im[b] = im[a] - ti;
-        re[a] += tr; im[a] += ti;
-      }
-    }
-  }
-  for (let k = 0; k <= n / 2; k++) mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
-}
-
-// ---------- chroma ----------
-
-/**
- * Tuning-corrected 12-bin chroma (index 0 = C) plus what confidence needs.
- * Exported for tests and the comparison script; key() is the public entry.
- * @returns {{ chroma: Float64Array, tuningCents: number, seconds: number, tonalWeight: number, gridness: number, frames: number }}
- */
-function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
-  const n = samples?.length ?? 0;
-  const N = 2 ** Math.round(Math.log2(sampleRate * FRAME_SECONDS));
-  const hop = Math.max(1, Math.round(N * HOP_FRACTION));
-  const seconds = n / sampleRate;
-  const chroma = new Float64Array(12);
-  const empty = { chroma, tuningCents: 0, seconds, tonalWeight: 0, gridness: 0, frames: 0 };
-  if (!n) return empty;
-
-  const tables = fftTables(N);
-  const binHz = sampleRate / N;
-  const kMin = Math.max(2, Math.ceil(F_MIN / binHz));
-  const kMax = Math.min(N / 2 - 2, Math.floor(Math.min(F_MAX, sampleRate / 2 * 0.95) / binHz));
-  const halfW = Math.max(4, Math.round(FLOOR_HALF_WIDTH_HZ / binHz));
-  const re = new Float64Array(N), im = new Float64Array(N), mag = new Float64Array(N / 2 + 1);
-  const prefix = new Float64Array(N / 2 + 2);
-
-  // Pass 1: peaks (semitones above A4, weight) from every non-silent frame.
-  const semis = [], weights = [];
-  const frames = n <= N ? 1 : Math.ceil((n - N) / hop) + 1;
-  for (let f = 0; f < frames; f++) {
-    const s = f * hop;
-    let energy = 0;
-    for (let i = 0; i < N; i++) {
-      const x = s + i < n ? samples[s + i] : 0;
-      energy += x * x;
-      re[i] = x * tables.hann[i];
-    }
-    if (Math.sqrt(energy / Math.min(N, n - s)) < SILENCE) continue;
-    magnitudeSpectrum(re, im, N, tables, mag);
-    prefix[0] = 0;
-    let top = 0;
-    for (let k = 0; k <= N / 2; k++) { prefix[k + 1] = prefix[k] + mag[k]; if (k >= kMin && k <= kMax && mag[k] > top) top = mag[k]; }
-    const absFloor = top * DYNAMIC_RANGE;
-    for (let k = kMin; k <= kMax; k++) {
-      const m = mag[k];
-      if (!(m > absFloor && m > mag[k - 1] && m >= mag[k + 1] && m > mag[k - 2] && m >= mag[k + 2])) continue;
-      const lo = Math.max(0, k - halfW), hi = Math.min(N / 2, k + halfW);
-      const floor = (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1);
-      if (!(floor > 0) || m < TONAL_SNR * floor) continue;
-      // Quadratic interpolation on log magnitude for the true peak frequency.
-      const a = Math.log(mag[k - 1] + 1e-12), b = Math.log(m + 1e-12), c = Math.log(mag[k + 1] + 1e-12);
-      const den = a - 2 * b + c;
-      const p = den < 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den)) : 0;
-      const hz = (k + p) * binHz;
-      semis.push(12 * Math.log2(hz / A4));
-      weights.push(Math.log(m / floor));   // ≥ log(TONAL_SNR) > 0
-    }
-  }
-  if (!semis.length) return { ...empty, frames };
-
-  // Tuning: weighted circular mean of each peak's offset from the A440 grid.
-  let cs = 0, sn = 0;
-  for (let i = 0; i < semis.length; i++) {
-    const ang = 2 * Math.PI * semis[i];
-    cs += weights[i] * Math.cos(ang); sn += weights[i] * Math.sin(ang);
-  }
-  const tuning = Math.atan2(sn, cs) / (2 * Math.PI);  // semitones, −0.5..0.5
-  let total = 0;
-  for (let i = 0; i < weights.length; i++) total += weights[i];
-  // How tightly the peaks sit on one semitone grid: ~1 for tuned instruments,
-  // ~1/√peaks for noise, whose peaks land anywhere.
-  const gridness = Math.hypot(cs, sn) / total;
-
-  // Pass 2: fold into pitch classes, cos²-tapered, dropping off-grid peaks.
-  let tonalWeight = 0;
-  for (let i = 0; i < semis.length; i++) {
-    const x = semis[i] - tuning;
-    const note = Math.round(x), d = x - note;
-    if (Math.abs(d) > TUNING_TOLERANCE) continue;
-    const w = weights[i] * Math.cos(Math.PI * d) ** 2;
-    chroma[(((note + 9) % 12) + 12) % 12] += w;   // A = 9
-    tonalWeight += w;
-  }
-  return { chroma, tuningCents: Math.round(tuning * 1000) / 10, seconds, tonalWeight, gridness, frames };
-}
-
-// ---------- profile matching ----------
-
-function pearson(x, y, rot) {
-  let mx = 0, my = 0;
-  for (let i = 0; i < 12; i++) { mx += x[i]; my += y[i]; }
-  mx /= 12; my /= 12;
-  let sxy = 0, sxx = 0, syy = 0;
-  for (let i = 0; i < 12; i++) {
-    const a = x[(i + rot) % 12] - mx, b = y[i] - my;
-    sxy += a * b; sxx += a * a; syy += b * b;
-  }
-  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
-}
-
-/**
- * Score all 24 keys against a chroma vector. Sorted best first.
- * @param {ArrayLike<number>} chroma 12 bins, index 0 = C
- * @param {{ profiles?: string[] }} [opts] which of PROFILES to average (default both)
- * @returns {{ camelot: string, score: number }[]}
- */
-function scoreKeys(chroma, { profiles = ['krumhansl', 'temperley'] } = {}) {
-  const out = [];
-  for (const mode of ['major', 'minor']) {
-    for (let pc = 0; pc < 12; pc++) {
-      let s = 0;
-      for (const name of profiles) s += pearson(chroma, PROFILES[name][mode], pc);
-      out.push({ camelot: toCamelot(pc, mode), score: s / profiles.length });
-    }
-  }
-  return out.sort((a, b) => b.score - a.score);
-}
-
-const clamp01 = x => Math.max(0, Math.min(1, x));
-const round3 = x => Math.round(x * 1000) / 1000;
-
-/**
- * Estimate the musical key of mono audio.
- *
- * @param {Float32Array|number[]} samples mono, at `sampleRate` (16 kHz is the tested rate)
- * @param {{ sampleRate?: number, profiles?: string[] }} [opts]
- * @returns {{
- *   key: string|null, tonic: string|null, mode: 'major'|'minor'|null,
- *   camelot: string|null, openKey: string|null, confidence: number,
- *   alternates: { key: string, camelot: string, score: number, relation: string|null, compatible: boolean }[],
- *   tuningCents: number, version: string,
- * }}
- * `key` is null (confidence 0) when there is nothing tonal to judge, e.g.
- * silence. `alternates` are the next three keys by score; `relation` says how
- * each sits to the answer on the Camelot wheel ('relative', 'fifth-up',
- * 'fifth-down', 'parallel' or null) and `compatible` is true for the three
- * a DJ mixes into freely (relative and either fifth).
- */
-function key(samples, { sampleRate = SAMPLE_RATE, profiles } = {}) {
-  const { chroma, tuningCents, seconds, tonalWeight, gridness } = chromagram(samples, { sampleRate });
-  const none = { key: null, tonic: null, mode: null, camelot: null, openKey: null, confidence: 0,
-                 alternates: [], tuningCents: 0, version: KEY_VERSION };
-  if (!(tonalWeight > 0) || !(seconds > 0)) return none;
-
-  const ranked = scoreKeys(chroma, profiles ? { profiles } : undefined);
-  const best = ranked[0], second = ranked[1];
-  const k = CAMELOT[best.camelot];
-
-  const tonality = clamp01((gridness - GRID_NONE) / (GRID_FULL - GRID_NONE));
-  const fit = clamp01((best.score - FIT_LOW) / (FIT_HIGH - FIT_LOW));
-  const lead = clamp01((best.score - second.score) / MARGIN_FULL);
-  // The lead counts for half: a close relative or fifth is the usual runner-up
-  // even when the answer is right, so a small lead mustn't zero the confidence.
-  const confidence = round3(tonality * fit * (0.5 + 0.5 * lead));
-
-  return {
-    key: k.key, tonic: k.tonic, mode: k.mode, camelot: k.camelot, openKey: k.openKey,
-    confidence,
-    alternates: ranked.slice(1, 4).map(a => {
-      const rel = relation(best.camelot, a.camelot);
-      return { key: CAMELOT[a.camelot].key, camelot: a.camelot, score: round3(a.score), relation: rel,
-               compatible: rel === 'relative' || rel === 'fifth-up' || rel === 'fifth-down' };
-    }),
-    tuningCents,
-    version: KEY_VERSION,
-  };
-}
-return { KEY_VERSION, pitchClass, toCamelot, toOpenKey, CAMELOT, relation, PROFILES, chromagram, scoreKeys, key };
-})();
-/* ---- core/audio/dsp/loudness.mjs ---- */
-__mod["core/audio/dsp/loudness.mjs"] = (function () {
-const { SAMPLE_RATE, FRAME_SIZE, HOP_SIZE } = __mod["core/audio/mel.mjs"];
-// Loudness and "energy" for a 30-second preview, in plain JS.
-//
-// This is a HEURISTIC, not a measurement standard. It borrows the shape of
-// EBU R128 / ITU-R BS.1770 loudness (K-weighting, 400 ms blocks with 75 %
-// overlap, 3 s short-term windows, absolute -70 and relative -10 LU gates),
-// but it is not a compliant meter and its numbers are "LUFS-like", not LUFS:
-//   - it runs on 16 kHz mono, so everything above 8 kHz is gone, and the
-//     K-weighting filters are re-derived for 16 kHz from analogue-style
-//     parameters (BS.1770 specifies coefficients at 48 kHz only);
-//   - the input is a decoded, resampled lossy preview, not the master;
-//   - no channel weighting, no true-peak, no conformance test signals.
-// Spectral centroid and onset density are ordinary textbook descriptors.
-// `energy` is a hand-picked blend of the three (formula at ENERGY below),
-// meant only to rank tracks against each other within one library. It has
-// not been fitted to listener judgements and is not Spotify's "energy".
-//
-// Isomorphic — no DOM, no Node APIs, no dependencies — so the browser worker
-// and Node scripts share it. The STFT uses the mel front end's frame and hop
-// (512 / 256), so onsets live on the same frame grid as the rest of the
-// audio pipeline.
-
-
-
-const LOUDNESS_VERSION = '1.0.0';
-
-// Floors keep every output finite (JSON-safe: no -Infinity, no NaN).
-const RMS_FLOOR_DB = -120;
-const LUFS_FLOOR = -70; // BS.1770's absolute gate; quieter counts as silence
-const LUFS_OFFSET = -0.691; // BS.1770's constant, kept so numbers look familiar
-
-const BLOCK_S = 0.4, BLOCK_STEP_S = 0.1, SHORT_TERM_S = 3;
-
-// ---------------------------------------------------------------------------
-// K-weighting: two RBJ biquads with the parameters pyloudnorm uses to
-// approximate BS.1770's stage 1 (high shelf, +4 dB above ~1.5 kHz) and
-// stage 2 (RLB high-pass, ~38 Hz) at an arbitrary sample rate.
-
-function highShelf(fs, fc = 1500, gainDb = 4, Q = Math.SQRT1_2) {
-  const A = 10 ** (gainDb / 40), w0 = 2 * Math.PI * fc / fs, cs = Math.cos(w0);
-  const alpha = Math.sin(w0) / (2 * Q), sA = 2 * Math.sqrt(A) * alpha;
-  const a0 = (A + 1) - (A - 1) * cs + sA;
-  return [
-    A * ((A + 1) + (A - 1) * cs + sA) / a0,
-    -2 * A * ((A - 1) + (A + 1) * cs) / a0,
-    A * ((A + 1) + (A - 1) * cs - sA) / a0,
-    2 * ((A - 1) - (A + 1) * cs) / a0,
-    ((A + 1) - (A - 1) * cs - sA) / a0,
-  ];
-}
-
-function highPass(fs, fc = 38, Q = 0.5) {
-  const w0 = 2 * Math.PI * fc / fs, cs = Math.cos(w0), alpha = Math.sin(w0) / (2 * Q);
-  const a0 = 1 + alpha;
-  return [(1 + cs) / 2 / a0, -(1 + cs) / a0, (1 + cs) / 2 / a0, -2 * cs / a0, (1 - alpha) / a0];
-}
-
-/** Prefix sums of the K-weighted signal's squares: cum[i] = Σ_{j<i} k[j]². */
-function kWeightedEnergyPrefix(x, fs) {
-  const [b0, b1, b2, a1, a2] = highShelf(fs);
-  const [c0, c1, c2, d1, d2] = highPass(fs);
-  const cum = new Float64Array(x.length + 1);
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0, z1 = 0, z2 = 0, acc = 0;
-  for (let i = 0; i < x.length; i++) {
-    const xi = x[i];
-    const y = b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-    x2 = x1; x1 = xi;
-    const z = c0 * y + c1 * y1 + c2 * y2 - d1 * z1 - d2 * z2;
-    y2 = y1; y1 = y; z2 = z1; z1 = z;
-    acc += z * z;
-    cum[i + 1] = acc;
-  }
-  return cum;
-}
-
-const toLufs = ms => (ms > 0 ? LUFS_OFFSET + 10 * Math.log10(ms) : -Infinity);
-
-/** Mean squares of windows of `len` samples every `step` samples (one window if the clip is shorter). */
-function windowMeans(cum, len, step) {
-  const n = cum.length - 1;
-  if (n === 0) return [];
-  if (n <= len) return [cum[n] / n];
-  const out = [];
-  for (let s = 0; s + len <= n; s += step) out.push((cum[s + len] - cum[s]) / len);
-  return out;
-}
-
-/** BS.1770-style gated integration over 400 ms block mean squares. */
-function gatedIntegrated(blocks) {
-  const abs = blocks.filter(ms => toLufs(ms) > LUFS_FLOOR);
-  if (!abs.length) return LUFS_FLOOR;
-  const relGate = toLufs(abs.reduce((a, b) => a + b, 0) / abs.length) - 10;
-  const rel = abs.filter(ms => toLufs(ms) > relGate);
-  return Math.max(LUFS_FLOOR, toLufs(rel.reduce((a, b) => a + b, 0) / rel.length));
-}
-
-// ---------------------------------------------------------------------------
-// STFT (frame 512, hop 256, periodic Hann), magnitude spectra only. Own FFT:
-// mel.mjs keeps its FFT private and is a frozen contract.
-
-const N_BINS = FRAME_SIZE / 2 + 1;
-const M = FRAME_SIZE / 2; // real FFT of N via one complex FFT of N/2
-const LOG2M = Math.log2(M);
-const HANN = Float64Array.from({ length: FRAME_SIZE }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / FRAME_SIZE));
-const BITREV = Uint16Array.from({ length: M }, (_, i) => {
-  let r = 0; for (let b = 0; b < LOG2M; b++) r |= ((i >> b) & 1) << (LOG2M - 1 - b); return r;
-});
-// Twiddles e^{-2πik/N}, k < N/2: the M-point FFT uses every other one.
-const COS = Float64Array.from({ length: M }, (_, i) => Math.cos(2 * Math.PI * i / FRAME_SIZE));
-const SIN = Float64Array.from({ length: M }, (_, i) => -Math.sin(2 * Math.PI * i / FRAME_SIZE));
-
-/** |X[k]|, k = 0..N/2, of one real windowed frame `x` (length N). */
-function magnitudeSpectrum(x, re, im, out) {
-  for (let i = 0; i < M; i++) { const j = BITREV[i]; re[j] = x[2 * i]; im[j] = x[2 * i + 1]; }
-  for (let size = 2; size <= M; size <<= 1) {
-    const half = size >> 1, step = (FRAME_SIZE / size);
-    for (let s = 0; s < M; s += size) {
-      for (let k = 0; k < half; k++) {
-        const c = COS[k * step], sn = SIN[k * step];
-        const a = s + k, b = a + half;
-        const tr = re[b] * c - im[b] * sn, ti = re[b] * sn + im[b] * c;
-        re[b] = re[a] - tr; im[b] = im[a] - ti;
-        re[a] += tr; im[a] += ti;
-      }
-    }
-  }
-  // Split Z (the packed even/odd FFT) into X: X[k] = E[k] + W^k O[k].
-  for (let k = 0; k <= M; k++) {
-    const p = k % M, q = (M - k) % M;
-    const a = re[p], b = im[p], c = re[q], d = im[q];
-    const er = (a + c) / 2, ei = (b - d) / 2, or = (b + d) / 2, oi = (c - a) / 2;
-    const wr = k < M ? COS[k] : -1, wi = k < M ? SIN[k] : 0;
-    const xr = er + wr * or - wi * oi, xi = ei + wr * oi + wi * or;
-    out[k] = Math.sqrt(xr * xr + xi * xi);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Onsets: log-compressed spectral flux, then peaks above an adaptive
-// threshold (local median + a multiple of the track's own flux spread).
-
-const FLUX_GAMMA = 100;     // log(1 + γ|X|) compression
-const MEDIAN_HALF_S = 0.15; // local median window, each side
-const PEAK_HALF_S = 0.05;   // a peak must be the max within ±50 ms
-const MIN_GAP_S = 0.05;     // and at least 50 ms after the previous onset
-const SPREAD_K = 6;         // threshold = local median + K · the track's flux MAD
-const REL_FLOOR = 0.1;      // and at least 10 % of the track's strongest flux
-// and an absolute floor: on average every bin must rise by ≥0.05 (log units).
-// Steady tones wobble far below this (a 30 s sine peaks under 4); a
-// broadband hit clears it many times over.
-const ABS_FLOOR = 0.05 * N_BINS;
-
-function median(arr) {
-  const s = Float64Array.from(arr).sort();
-  const m = s.length >> 1;
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
-
-function countOnsets(flux, fps) {
-  const n = flux.length;
-  if (n < 3) return 0;
-  let max = 0;
-  for (let i = 0; i < n; i++) if (flux[i] > max) max = flux[i];
-  if (max < ABS_FLOOR) return 0;
-  const med = median(flux);
-  const spread = median(Array.from(flux, v => Math.abs(v - med))) || 1e-9;
-  const mh = Math.max(1, Math.round(MEDIAN_HALF_S * fps));
-  const ph = Math.max(1, Math.round(PEAK_HALF_S * fps));
-  const gap = Math.max(1, Math.round(MIN_GAP_S * fps));
-  const floor = Math.max(ABS_FLOOR, REL_FLOOR * max);
-  let count = 0, last = -Infinity;
-  const win = [];
-  for (let t = 0; t < n; t++) {
-    const v = flux[t];
-    if (v < floor) continue;
-    let isPeak = true;
-    for (let j = Math.max(0, t - ph); j <= Math.min(n - 1, t + ph); j++) {
-      if (flux[j] > v || (flux[j] === v && j < t)) { isPeak = false; break; }
-    }
-    if (!isPeak || t - last < gap) continue;
-    win.length = 0;
-    for (let j = Math.max(0, t - mh); j <= Math.min(n - 1, t + mh); j++) win.push(flux[j]);
-    if (v > median(win) + SPREAD_K * spread) { count++; last = t; }
-  }
-  return count;
-}
-
-// ---------------------------------------------------------------------------
-// ENERGY = 0.5·L + 0.25·C + 0.25·O, each term clamped to 0–1:
-//   L = (loudness + 45) / 40      -45 LUFS-like → 0, -5 → 1
-//   C = log2(centroid / 250) / 4  250 Hz → 0, 4 kHz → 1
-//   O = onsetDensity / 8          8 onsets per second or more → 1
-// Loudness dominates because it is the most robust of the three on a lossy
-// preview; brightness and onset rate separate "loud but smooth" from "loud
-// and busy". A silent clip (loudness at the -70 floor) is 0.
-
-const clamp01 = v => (v > 1 ? 1 : v > 0 ? v : 0);
-const ENERGY_WEIGHTS = Object.freeze({ loudness: 0.5, centroid: 0.25, onsets: 0.25 });
-
-function energyFrom({ loudness, centroidHz, onsetDensity }) {
-  if (loudness <= LUFS_FLOOR) return 0;
-  const L = clamp01((loudness + 45) / 40);
-  const C = centroidHz > 0 ? clamp01(Math.log2(centroidHz / 250) / 4) : 0;
-  const O = clamp01(onsetDensity / 8);
-  return ENERGY_WEIGHTS.loudness * L + ENERGY_WEIGHTS.centroid * C + ENERGY_WEIGHTS.onsets * O;
-}
-
-const round = (v, d) => { const p = 10 ** d; return Math.round(v * p) / p; };
-
-/**
- * Loudness, brightness, onset rate and a blended energy for mono audio.
- * @param {Float32Array|number[]} samples  mono, normally 16 kHz
- * @param {{ sampleRate?: number }} [opts]
- * @returns {{ rmsDb: number, loudness: number, shortTermMax: number,
- *   centroidHz: number, onsetDensity: number, energy: number, version: string }}
- *   loudness is the gated integrated LUFS-like value; shortTermMax the
- *   loudest 3 s window; all values finite, rounded for stable storage.
- */
-function loudness(samples, { sampleRate = SAMPLE_RATE } = {}) {
-  const n = samples.length;
-  const seconds = n / sampleRate;
-
-  // RMS of the raw signal.
-  let sq = 0;
-  for (let i = 0; i < n; i++) sq += samples[i] * samples[i];
-  const rmsDb = n && sq > 0 ? Math.max(RMS_FLOOR_DB, 10 * Math.log10(sq / n)) : RMS_FLOOR_DB;
-
-  // K-weighted, gated loudness.
-  const cum = kWeightedEnergyPrefix(samples, sampleRate);
-  const step = Math.round(BLOCK_STEP_S * sampleRate);
-  const blocks = windowMeans(cum, Math.round(BLOCK_S * sampleRate), step);
-  const integrated = gatedIntegrated(blocks);
-  const shortTerm = windowMeans(cum, Math.round(SHORT_TERM_S * sampleRate), step);
-  const shortTermMax = shortTerm.length ? Math.max(LUFS_FLOOR, toLufs(Math.max(...shortTerm))) : LUFS_FLOOR;
-
-  // STFT pass: centroid of the long-term magnitude spectrum, and flux.
-  const frames = n >= FRAME_SIZE ? Math.floor((n - FRAME_SIZE) / HOP_SIZE) + 1 : (n > 0 ? 1 : 0);
-  const frame = new Float64Array(FRAME_SIZE), re = new Float64Array(M), im = new Float64Array(M);
-  let mag = new Float64Array(N_BINS), prev = new Float64Array(N_BINS);
-  const flux = new Float64Array(frames);
-  const binHz = sampleRate / FRAME_SIZE;
-  let num = 0, den = 0;
-  for (let f = 0; f < frames; f++) {
-    const s = f * HOP_SIZE;
-    for (let i = 0; i < FRAME_SIZE; i++) frame[i] = (s + i < n ? samples[s + i] : 0) * HANN[i];
-    magnitudeSpectrum(frame, re, im, mag);
-    let fl = 0;
-    for (let k = 0; k < N_BINS; k++) {
-      const m = mag[k];
-      num += k * binHz * m; den += m;
-      const c = Math.log1p(FLUX_GAMMA * m);
-      prev[k] = c - prev[k]; // reuse prev as scratch: diff, then swap below
-      if (f > 0 && prev[k] > 0) fl += prev[k];
-      prev[k] = c;
-    }
-    flux[f] = fl;
-  }
-  const centroidHz = den > 1e-12 ? num / den : 0;
-  const onsetDensity = seconds > 0 ? countOnsets(flux, sampleRate / HOP_SIZE) / seconds : 0;
-
-  const out = {
-    rmsDb: round(rmsDb, 2),
-    loudness: round(integrated, 2),
-    shortTermMax: round(shortTermMax, 2),
-    centroidHz: round(centroidHz, 1),
-    onsetDensity: round(onsetDensity, 3),
-  };
-  out.energy = round(energyFrom({ loudness: integrated, centroidHz, onsetDensity }), 4);
-  out.version = LOUDNESS_VERSION;
-  return out;
-}
-return { LOUDNESS_VERSION, ENERGY_WEIGHTS, energyFrom, loudness };
-})();
-/* ---- core/audio/dsp/tempo.mjs ---- */
-__mod["core/audio/dsp/tempo.mjs"] = (function () {
-const { melFrames, SAMPLE_RATE, HOP_SIZE, N_BANDS } = __mod["core/audio/mel.mjs"];
-// Tempo (BPM) from 16 kHz mono audio, in plain JS.
-//
-// WP-D1 of docs/AUDIO-BUILD-PLAN.md. Isomorphic (no DOM, no Node APIs), no
-// dependencies. It reads the same log-mel frames the model does
-// (core/audio/mel.mjs), so the worker can get a tempo for the cost of an
-// autocorrelation by calling tempoFromMel() on frames it already has.
-//
-// Pipeline:
-//   1. onset strength: spectral flux of the log-mel frames (62.5 frames/s) in
-//      four band groups (kick, body, snare, hats), each minus a 1 s moving
-//      average, half-wave rectified, lightly smoothed;
-//   2. autocorrelation of each group, normalised and averaged: A(lag), to 6 s;
-//   3. a comb over the tempo range: comb(T) = mean of A at 1..4 beat periods;
-//      local maxima are candidates, each refined to 0.01 BPM with every
-//      harmonic that fits in the autocorrelation (that is what buys ±1 BPM at
-//      62.5 frames/s);
-//   4. score(T) = comb gated by A at the beat period itself (kills 3:2 and
-//      2:1 ghosts that only share multiples with the real pulse) × a
-//      log-normal tempo prior (120 BPM, σ one octave) × an accent term that
-//      marks down a level evenly divided by a faster in-range level (clicks
-//      at 174 are not "87 with 8ths").
-//
-// Octave ambiguity is reported, not averaged away (music-dna.mjs measured()
-// treats half/double time as the failure that matters): if the candidate at
-// twice or half the winner scores at least OCTAVE_AMBIGUOUS of the winner,
-// `octaveAmbiguous` is true and that partner is always in `alternates`. The
-// periodicity of a pulse train is genuinely the same at T and T/2; only the
-// prior and the accent pattern separate them, and on real music (DnB at
-// 87/174, footwork at 80/160) that is often not enough to be sure.
-//
-// Not measured on real music yet. This ships only with a measured number:
-// scripts/audio-dsp/tempo-vs-rekordbox.mjs compares it with Rekordbox on the
-// owner's files, and that accuracy goes into AUDIO-ANALYSIS-PLAN.md §0 before
-// anything shows or uses these values (WP-D4).
-
-
-
-const TEMPO_VERSION = '1.0.0';
-
-/** Envelope frame rate: one log-mel frame per hop. */
-const FPS = SAMPLE_RATE / HOP_SIZE; // 62.5
-
-/** Partner (×2 or ×½) score at or above this fraction of the winner's: ambiguous. */
-const OCTAVE_AMBIGUOUS = 0.7;
-
-const PRIOR_CENTER = 120;   // BPM; log-normal tempo prior on log2(T)
-const PRIOR_SIGMA = 1;      // octaves
-const ACCENT_PENALTY = 0.35;
-const MAX_LAG_S = 6;        // autocorrelation horizon
-const MIN_SECONDS = 4;      // shorter than this: no answer
-const SILENCE_RMS = 1e-4;   // about -80 dBFS
-const GRID_STEP = 0.25;     // BPM, coarse comb grid
-const MAX_ALTERNATES = 4;
-const MIN_PERIODICITY = 0.1; // below this the envelope has no beat: no answer
-
-const none = () => ({ bpm: null, confidence: 0, alternates: [], octaveAmbiguous: false, version: TEMPO_VERSION });
-const round = (x, d) => Math.round(x * 10 ** d) / 10 ** d;
-
-/**
- * Estimate tempo from 16 kHz mono samples.
- * Other sample rates are linearly resampled to 16 kHz first (good enough for
- * onset timing; not for the model).
- *
- * @param {Float32Array|number[]} samples contiguous audio (not spliced windows)
- * @param {{ sampleRate?: number, min?: number, max?: number }} [opts]
- * @returns {{ bpm: number|null, confidence: number, alternates: {bpm:number, score:number}[],
- *             octaveAmbiguous: boolean, version: string }}
- *   `confidence` 0–1; `alternates` other tempi, best first, score relative to
- *   the winner's (1 = as good). Silence or too little audio: bpm null, confidence 0.
- */
-function tempo(samples, { sampleRate = SAMPLE_RATE, min = 60, max = 200 } = {}) {
-  checkRange(min, max);
-  if (!(sampleRate > 0)) throw new RangeError(`sampleRate must be positive, got ${sampleRate}`);
-  const x = sampleRate === SAMPLE_RATE ? samples : resample(samples, sampleRate, SAMPLE_RATE);
-  if (x.length < MIN_SECONDS * SAMPLE_RATE) return none();
-  let ss = 0;
-  for (let i = 0; i < x.length; i++) ss += x[i] * x[i];
-  if (Math.sqrt(ss / x.length) < SILENCE_RMS) return none();
-  return tempoFromMel(melFrames(x), { min, max });
-}
-
-/**
- * Same as tempo(), from melFrames() output the caller already has.
- * @param {{ frames: number, data: Float32Array }} mel
- * @param {{ min?: number, max?: number }} [opts]
- */
-function tempoFromMel(mel, { min = 60, max = 200 } = {}) {
-  checkRange(min, max);
-  if (!mel || mel.frames < MIN_SECONDS * FPS) return none();
-  const acf = autocorrelation(onsetEnvelopes(mel), Math.min(Math.round(MAX_LAG_S * FPS), Math.floor(mel.frames / 2)));
-  if (!acf) return none();
-
-  const at = lag => interp(acf, lag);
-  const lagOf = bpm => 60 * FPS / bpm;
-  const maxLag = acf.length - 3;
-  // comb over the first `K` beat periods that fit; A below zero counts as zero
-  const comb = (bpm, K = 4) => {
-    const P = lagOf(bpm);
-    const k = Math.min(K, Math.floor(maxLag / P));
-    if (k < 1) return -1;
-    let s = 0;
-    for (let i = 1; i <= k; i++) s += Math.max(0, at(i * P));
-    return s / k;
-  };
-  // fine position: every harmonic that fits, K fixed from the starting point
-  const refine = (bpm0, halfWidth) => {
-    const K = Math.max(1, Math.floor(maxLag / lagOf(Math.max(min, bpm0 - halfWidth))));
-    const lo = Math.max(min, bpm0 - halfWidth), steps = Math.floor((Math.min(max, bpm0 + halfWidth) - lo) / 0.01 + 1e-6);
-    let best = bpm0, bestV = -Infinity;
-    for (let i = 0; i <= steps; i++) {
-      const b = lo + i * 0.01, v = comb(b, K);
-      if (v > bestV) { bestV = v; best = b; }
-    }
-    return best;
-  };
-  const prior = bpm => Math.exp(-0.5 * (Math.log2(bpm / PRIOR_CENTER) / PRIOR_SIGMA) ** 2);
-  // periodicity: the comb, gated by the first period itself. A tempo fills
-  // the comb at some lags just by sharing multiples with the real one; if its
-  // own beat period shows little self-similarity (120 on clicks at 60, 85 on
-  // a 128 kick with off-beat hats) it is not a tempo. Full credit once A(P)
-  // reaches half the comb mean, so the gate removes, it does not rank.
-  const periodicity = bpm => {
-    const c = comb(bpm);
-    return c > 0 ? c * Math.min(1, Math.max(0, at(lagOf(bpm)) / (0.5 * c))) : 0;
-  };
-  // How evenly a faster level d·T (d = 2 or 3) divides this one: A at P/d
-  // over A at P. Near 1, this level carries no accent of its own: clicks at
-  // 174 are not "87 with 8ths", clicks at 200 are not "66.7 in triplets".
-  // Only asked when d·T is itself a tempo this call could answer, since it
-  // exists to choose between the two.
-  const evenness = bpm => {
-    const P = lagOf(bpm), a = at(P);
-    let e = 0;
-    for (const d of [2, 3]) {
-      if (d * bpm > max + 0.01) continue;
-      e = Math.max(e, a > 0 ? Math.min(1, Math.max(0, at(P / d)) / a) : 1);
-    }
-    return e;
-  };
-  const score = bpm => {
-    const c = periodicity(bpm);
-    return c > 0 ? c * prior(bpm) * (1 - ACCENT_PENALTY * evenness(bpm)) : 0;
-  };
-
-  // coarse grid, local maxima
-  const grid = [];
-  for (let i = 0; min + i * GRID_STEP <= max + 1e-9; i++) grid.push([min + i * GRID_STEP, comb(min + i * GRID_STEP)]);
-  const top = Math.max(...grid.map(g => g[1]));
-  if (!(top > 0)) return none();
-  const peaks = [];
-  for (let i = 0; i < grid.length; i++) {
-    const v = grid[i][1];
-    if (v < 0.25 * top) continue;
-    if (i > 0 && grid[i - 1][1] > v) continue;
-    if (i < grid.length - 1 && grid[i + 1][1] >= v) continue;
-    peaks.push(grid[i][0]);
-  }
-
-  const cands = [];
-  const add = bpm => {
-    if (bpm < min - 1e-9 || bpm > max + 1e-9) return null;
-    const near = cands.find(c => Math.abs(c.bpm - bpm) / bpm < 0.015);
-    if (near) return near;
-    const c = { bpm, score: score(bpm) };
-    cands.push(c);
-    return c;
-  };
-  for (const p of peaks) add(refine(p, 1));
-  cands.sort((a, b) => b.score - a.score);
-  const best = cands[0];
-  if (!best || !(periodicity(best.bpm) > MIN_PERIODICITY)) return none();
-
-  // octave partners, evaluated even when they are not peaks of their own
-  const partners = [best.bpm * 2, best.bpm / 2]
-    .filter(b => b >= min - 0.01 && b <= max + 0.01)
-    .map(b => Math.min(max, Math.max(min, b)))
-    .map(b => add(refine(b, b * 0.01)))
-    .filter(Boolean);
-  const partner = partners.sort((a, b) => b.score - a.score)[0] ?? null;
-  const ratio = partner ? partner.score / best.score : 0;
-  const octaveAmbiguous = ratio >= OCTAVE_AMBIGUOUS;
-
-  cands.sort((a, b) => b.score - a.score);
-  const others = cands.filter(c => c !== best && c.score > 0);
-  const alternates = others.slice(0, MAX_ALTERNATES);
-  if (octaveAmbiguous && !alternates.includes(partner)) alternates.splice(MAX_ALTERNATES - 1, 1, partner);
-
-  // confidence: how periodic the envelope is at the winner (gated comb, ~0.9
-  // for a clean click track, under 0.1 for noise), mapped to 0–1, then
-  // discounted by how close the octave partner came (×0.5 when level).
-  // Uncalibrated: the Rekordbox comparison is what gives it a meaning.
-  const conf = Math.min(1, Math.max(0, (periodicity(best.bpm) - MIN_PERIODICITY) / 0.6)) * (1 - ratio / 2);
-
-  return {
-    bpm: round(best.bpm, 1),
-    confidence: round(conf, 3),
-    alternates: alternates.map(c => ({ bpm: round(c.bpm, 1), score: round(c.score / best.score, 3) })),
-    octaveAmbiguous,
-    version: TEMPO_VERSION,
-  };
-}
-
-function checkRange(min, max) {
-  if (!(min > 0 && max > min)) throw new RangeError(`need 0 < min < max, got ${min}..${max}`);
-}
-
-/** Mel band groups (~0–230 Hz, 230–800 Hz, 0.8–2 kHz, 2–8 kHz): kick, body, snare, hats. */
-const BAND_GROUPS = [[0, 7], [7, 24], [24, 52], [52, N_BANDS]];
-
-/**
- * Onset strength per band group and mel frame: positive log-mel flux summed
- * over the group's bands, minus its 1 s moving average, half-wave rectified,
- * smoothed by a 5-tap binomial kernel.
- *
- * Why per group: a kick on the beat and a hat on the off-beat are, summed
- * across the spectrum, just an even pulse at twice the tempo, and that pulse
- * also fits 2/3 of the tempo (85 for a 128 track). Autocorrelating each group
- * separately keeps each instrument's own period and drops the cross terms.
- * @returns {Float64Array[]}
- */
-function onsetEnvelopes({ frames, data }) {
-  const half = Math.round(FPS / 2);
-  const K = [1, 4, 6, 4, 1];
-  return BAND_GROUPS.map(([b0, b1]) => {
-    const flux = new Float64Array(frames);
-    for (let f = 1; f < frames; f++) {
-      let s = 0;
-      const a = (f - 1) * N_BANDS, b = f * N_BANDS;
-      for (let k = b0; k < b1; k++) { const d = data[b + k] - data[a + k]; if (d > 0) s += d; }
-      flux[f] = s;
-    }
-    const cum = new Float64Array(frames + 1);
-    for (let f = 0; f < frames; f++) cum[f + 1] = cum[f] + flux[f];
-    const rect = new Float64Array(frames);
-    for (let f = 0; f < frames; f++) {
-      const lo = Math.max(0, f - half), hi = Math.min(frames, f + half + 1);
-      rect[f] = Math.max(0, flux[f] - (cum[hi] - cum[lo]) / (hi - lo));
-    }
-    const out = new Float64Array(frames);
-    for (let f = 0; f < frames; f++) {
-      let s = 0, w = 0;
-      for (let j = -2; j <= 2; j++) {
-        const g = f + j;
-        if (g >= 0 && g < frames) { s += K[j + 2] * rect[g]; w += K[j + 2]; }
-      }
-      out[f] = s / w;
-    }
-    return out;
-  });
-}
-
-/**
- * Unbiased autocorrelation of each mean-removed envelope, normalised per
- * group to 1 at lag 0, then averaged with equal weight. Equal, not by
- * variance: on log-mel flux the hats have the most variance, and weighting
- * by it hands the answer to the hat pulse, which fits every multiple of the
- * half-beat (174 heard as 116). A group with almost no onset activity (under
- * 1e-3 of the busiest) is left out rather than amplified. Null when all are flat.
- */
-function autocorrelation(envs, maxLag) {
-  const n = envs[0].length;
-  if (maxLag < 4) return null;
-  const x = new Float64Array(n);
-  const per = envs.map(env => {
-    let mean = 0;
-    for (let i = 0; i < n; i++) mean += env[i];
-    mean /= n;
-    for (let i = 0; i < n; i++) x[i] = env[i] - mean;
-    const r = new Float64Array(maxLag + 1);
-    for (let lag = 0; lag <= maxLag; lag++) {
-      let s = 0;
-      for (let i = 0; i + lag < n; i++) s += x[i] * x[i + lag];
-      r[lag] = s / (n - lag);
-    }
-    return r;
-  });
-  const top = Math.max(...per.map(r => r[0]));
-  if (!(top > 1e-12)) return null;
-  const used = per.filter(r => r[0] > 1e-3 * top);
-  const acf = new Float64Array(maxLag + 1);
-  for (const r of used) for (let lag = 0; lag <= maxLag; lag++) acf[lag] += r[lag] / r[0] / used.length;
-  return acf;
-}
-
-/** Catmull-Rom interpolation of `a` at fractional index `x`. */
-function interp(a, x) {
-  const i = Math.floor(x), t = x - i;
-  const p0 = a[Math.max(0, i - 1)], p1 = a[i], p2 = a[Math.min(a.length - 1, i + 1)], p3 = a[Math.min(a.length - 1, i + 2)];
-  return p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
-}
-
-function resample(x, from, to) {
-  const n = Math.floor(x.length * to / from), out = new Float32Array(n), r = from / to;
-  for (let i = 0; i < n; i++) {
-    const p = i * r, j = Math.floor(p), t = p - j;
-    out[i] = j + 1 < x.length ? x[j] * (1 - t) + x[j + 1] * t : x[Math.min(j, x.length - 1)];
-  }
-  return out;
-}
-return { TEMPO_VERSION, FPS, OCTAVE_AMBIGUOUS, tempo, tempoFromMel };
 })();
 /* ---- core/intrinsic/audio.mjs ---- */
 __mod["core/intrinsic/audio.mjs"] = (function () {
