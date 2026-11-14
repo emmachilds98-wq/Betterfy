@@ -4096,7 +4096,7 @@ const SPACE_KEY = 'engine-space';
  */
 async function engineSpace() {
   const t0 = performance.now();
-  let space = null, from = 'built', pairs;
+  let space = null, from = 'built', pairs, onPage = false;
   const targets = engineTargets();
   const audio = await engineAudio();
   try {
@@ -4118,13 +4118,20 @@ async function engineSpace() {
     space = json ? BetterfyPersist.reviveSpace(json, LIB) : null;
     if (space) { ENG.where = 'worker'; pairs = json.pairs; }
     else {
-      ENG.where = 'page';
+      ENG.where = 'page'; onPage = true;
       await yieldToPaint();
       space = BetterfyIntrinsic.buildSpace(LIB, { isMirror: isMirrorPlaylist, targets, audio });
       json = null;
     }
     try { await idb.set(SPACE_KEY, { ...(json ?? BetterfyPersist.serialiseSpace(space, LIB)), audioN: audio?.length ?? 0 }); }
     catch { /* nowhere to remember it is not a reason to refuse to use it */ }
+  }
+  // A revived space (from the cache, or posted back by the worker) comes back
+  // without its sound layer, because persist does not keep it. WP-E2's
+  // withAudioLayer() puts it back from the same records (1-3 s with the learner).
+  // Guarded, because it exists only once that package has landed.
+  if (space && audio && !onPage && typeof BetterfyIntrinsic.withAudioLayer === 'function') {
+    try { space = BetterfyIntrinsic.withAudioLayer(space, audio); } catch { /* tags-only space: same as before audio */ }
   }
   // `pairs` is undefined when nothing worked it out yet, which tells the caller
   // to; null is a real answer ("it failed"), and is not asked again.
