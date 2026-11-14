@@ -13,7 +13,14 @@ __mod["core/audio/record.mjs"] = (function () {
 // never stored (plan §7). Everything is plain JSON so IndexedDB, Firestore-free
 // sync and Node scripts all hold it the same way.
 
-const RECORD_VERSION = 1;
+const RECORD_VERSION = 2;
+/**
+ * Oldest version still read as current. v2 only added the optional second
+ * ears (`maest`, `clap`), so a v1 record is a complete v2 record without them
+ * and nobody has to re-listen. Raise this only for a change that breaks v1.
+ */
+const MIN_RECORD_VERSION = 1;
+const readable = v => Number.isInteger(v) && v >= MIN_RECORD_VERSION && v <= RECORD_VERSION;
 
 /** Identifies the ear. Bump MODEL when the backbone or its input changes. */
 const MODEL = 'discogs-effnet-bsdynamic-1';
@@ -21,6 +28,26 @@ const N_STYLES = 400;
 const EMB_DIM = 1280;
 const TOP_STYLES = 10;      // styles kept per track
 const SECTION_TOP = 3;      // styles kept per section (patch)
+
+/**
+ * Second ears (record v2, Option C). Each is optional, carries its own model
+ * id, and is checked on its own by earCurrent(): a stale or missing second ear
+ * re-queues only that ear, never the base record above.
+ *
+ * MAEST (WP-C1): a transformer on the same Discogs400 label order as effnet,
+ * run per 10 s window. `styles` like rec.styles, `emb` its 768-d embedding.
+ * CLAP (WP-C2): the audio half of a text–audio model; `emb` only, compared
+ * against the build-time text table.
+ */
+const MAEST_MODEL = 'discogs-maest-10s-pw-2-int8';
+const MAEST_DIM = 768;
+const MAEST_N_STYLES = 400;
+const CLAP_MODEL = 'larger_clap_music-audio-q8-1';
+const CLAP_DIM = 512;
+const EARS = Object.freeze({
+  maest: Object.freeze({ model: MAEST_MODEL, dim: MAEST_DIM, nStyles: MAEST_N_STYLES }),
+  clap: Object.freeze({ model: CLAP_MODEL, dim: CLAP_DIM, nStyles: 0 }),
+});
 
 /** Why a track has no audio answer. A miss is cached too, with a TTL. */
 const MISS = Object.freeze({
@@ -72,9 +99,11 @@ function unpackEmbedding({ s, q }) {
  * @param {string} a.mel           MEL_VERSION used
  * @param {object} [a.heads]       optional head outputs, see HEADS in docs/AUDIO-BUILD-PLAN.md
  * @param {object} [a.dsp]         optional { bpm, bpmConf, key, keyConf, loudness, energy }
+ * @param {object} [a.maest]       optional second ear, see makeEar()
+ * @param {object} [a.clap]        optional second ear, see makeEar()
  * @param {number} [a.at]
  */
-function makeRecord({ id, isrc, activations, embeddings, patches, source, mel, heads = null, dsp = null, at = Date.now() }) {
+function makeRecord({ id, isrc, activations, embeddings, patches, source, mel, heads = null, dsp = null, maest = null, clap = null, at = Date.now() }) {
   if (!id || !(patches > 0)) throw new Error('makeRecord needs an id and at least one patch');
   if (activations.length !== patches * N_STYLES || embeddings.length !== patches * EMB_DIM)
     throw new Error('activation/embedding shape does not match patch count');
@@ -93,8 +122,51 @@ function makeRecord({ id, isrc, activations, embeddings, patches, source, mel, h
     styles: topK(meanAct, TOP_STYLES),   // [[classIndex, prob], ...] — labels are a hint, not a verdict
     sections,                            // per patch, in time order: what changes inside the clip
     emb: packEmbedding(meanEmb),         // the ear: what placement and learning use
-    heads, dsp,
+    heads, dsp, maest, clap,
   };
+}
+
+/**
+ * A second ear's field. `embedding` is the ear's mean embedding; `activations`
+ * (MAEST only) its mean style probabilities, of which the top TOP_STYLES are kept.
+ * @param {'maest'|'clap'} ear
+ * @param {{ embedding: Float32Array|number[], activations?: Float32Array|number[] }} out
+ */
+function makeEar(ear, { embedding, activations = null }) {
+  const spec = EARS[ear];
+  if (!spec) throw new Error(`unknown ear: ${ear}`);
+  if (embedding?.length !== spec.dim) throw new Error(`${ear} embedding must be ${spec.dim}-d`);
+  const field = { model: spec.model, emb: packEmbedding(embedding) };
+  if (spec.nStyles) {
+    if (activations?.length !== spec.nStyles) throw new Error(`${ear} needs ${spec.nStyles} activations`);
+    field.styles = topK(Float32Array.from(activations), TOP_STYLES);
+  }
+  return field;
+}
+
+/** A copy of `rec` with one second ear filled (or cleared with null). The base ear is untouched. */
+function withEar(rec, ear, value) {
+  if (!EARS[ear]) throw new Error(`unknown ear: ${ear}`);
+  if (!rec || rec.miss) throw new Error('a second ear needs a heard record');
+  if (value != null && !validEar(ear, value)) throw new Error(`malformed ${ear} field`);
+  return { ...rec, v: RECORD_VERSION, [ear]: value ?? null };
+}
+
+/** Does this record carry a current, well-formed `ear`? False when absent or from an older model. */
+function earCurrent(rec, ear) {
+  const v = rec?.[ear];
+  return !!v && !rec.miss && v.model === EARS[ear]?.model && validEar(ear, v);
+}
+
+function validEar(ear, v) {
+  const spec = EARS[ear];
+  try {
+    if (!spec || !v || typeof v.model !== 'string') return false;
+    if (!Number.isFinite(v.emb?.s) || unpackEmbedding(v.emb).length !== spec.dim) return false;
+    if (!spec.nStyles) return true;
+    return Array.isArray(v.styles) && v.styles.length > 0 &&
+      v.styles.every(([i, p]) => Number.isInteger(i) && i >= 0 && i < spec.nStyles && p >= 0 && p <= 1);
+  } catch { return false; }
 }
 
 /** A cacheable "could not hear it" answer. FAILED is refused: a dropped request is not an answer. */
@@ -108,7 +180,7 @@ function makeMiss({ id, isrc = null, reason, at = Date.now() }) {
  * versions and expired misses both mean "analyse again".
  */
 function isCurrent(rec, { mel, now = Date.now() } = {}) {
-  if (!rec || rec.v !== RECORD_VERSION || rec.model !== MODEL) return false;
+  if (!rec || !readable(rec.v) || rec.model !== MODEL) return false;
   if (rec.miss) return now - rec.at < MISS_TTL_MS;
   return !mel || rec.mel === mel;
 }
@@ -116,10 +188,12 @@ function isCurrent(rec, { mel, now = Date.now() } = {}) {
 /** Shape check for anything read back from storage. Never throws. */
 function validRecord(rec) {
   try {
-    if (!rec || rec.v !== RECORD_VERSION || typeof rec.id !== 'string') return false;
+    if (!rec || !readable(rec.v) || typeof rec.id !== 'string') return false;
     if (rec.miss) return CACHEABLE_MISS.has(rec.miss);
     if (!Array.isArray(rec.styles) || !rec.styles.length) return false;
     if (!rec.styles.every(([i, p]) => Number.isInteger(i) && i >= 0 && i < N_STYLES && p >= 0 && p <= 1)) return false;
+    // A second ear may be absent or null; present, it must be well-formed (any model id: earCurrent judges that).
+    for (const ear of Object.keys(EARS)) if (rec[ear] != null && !validEar(ear, rec[ear])) return false;
     return unpackEmbedding(rec.emb).length === EMB_DIM && Number.isFinite(rec.emb.s);
   } catch { return false; }
 }
@@ -140,7 +214,7 @@ function fromBase64(str) {
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
   return out;
 }
-return { RECORD_VERSION, MODEL, N_STYLES, EMB_DIM, TOP_STYLES, SECTION_TOP, MISS, CACHEABLE_MISS, MISS_TTL_MS, packEmbedding, unpackEmbedding, makeRecord, makeMiss, isCurrent, validRecord };
+return { RECORD_VERSION, MIN_RECORD_VERSION, MODEL, N_STYLES, EMB_DIM, TOP_STYLES, SECTION_TOP, MAEST_MODEL, MAEST_DIM, MAEST_N_STYLES, CLAP_MODEL, CLAP_DIM, EARS, MISS, CACHEABLE_MISS, MISS_TTL_MS, packEmbedding, unpackEmbedding, makeRecord, makeEar, withEar, earCurrent, makeMiss, isCurrent, validRecord };
 })();
 /* ---- web/audio/store.mjs ---- */
 __mod["web/audio/store.mjs"] = (function () {
