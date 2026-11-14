@@ -281,7 +281,7 @@ off.
 | **0** *(built 2026-11-14; waiting on the owner's run)* | Measurement only. Add the bridge (Deezer + ListenBrainz via Wikidata) as an optional component in `validate-placement` and the Engine screen's **Score**, reporting coverage and accuracy with and without it, overall and on **never-filed artists** | Top-1 placement on never-filed artists up by ≥5 points, overall not down. If it fails, stop and report |
 | **1** | Ship the bridge: `core/sources/deezer.mjs`, `listenbrainz.mjs`, `wikidata.mjs` (pure parse functions + thin fetch, fixture-tested like `discogs.mjs`); `core/intrinsic/bridge.mjs` as one more `combine()` component; per-artist cache; listening-ordered background fetch | Test proving that with no bridge cache the output is byte-identical to today |
 | **2** *(built 2026-11-14)* | Calibration + prediction sets (`core/intrinsic/calibrate.mjs`); show "right N% of the time" on the Engine screen | The stated rate holds on a second held-out fold within ±3 points |
-| **3** | **Gaps** screen: uncovered genre → create, split, twins, nameless cluster | Each proposal type has a fixture test. Nothing is written to Spotify without a tap (`verify-untouched.mjs` pattern) |
+| **3** *(first half built 2026-11-14)* | **Gaps** screen: uncovered genre → create, split, twins, nameless cluster | Each proposal type has a fixture test. Nothing is written to Spotify without a tap (`verify-untouched.mjs` pattern) |
 | **4** | Teach queue, artist roll-forward, corrections + axis-override sync | Score after 20 teach answers beats the score before them |
 | **5** | Audio (`AUDIO-ANALYSIS-PLAN.md`, its own phase 0 first), now feeding the blend, the Gaps naming and per-playlist audio fingerprints | That plan's gates |
 | **6** | Vocabulary pass for the still-unplaced tags (emo, industrial, EBM…). Offline, human-reviewed PR | Ontology tests |
@@ -358,6 +358,28 @@ track once a score run has calibrated it. The calibration is kept per
 library fingerprint and set of genre playlists. Phase 2's gate (±3 points)
 needs confident calls to exist, so on the simulation it is honestly
 undecided. The owner's run will say.
+
+**Phase 3, first half, as built (2026-11-14).** This is
+`core/recommend/gaps.mjs` on the existing **New playlists** screen, which had
+only backlog clusters before. There's no separate Gaps screen.
+
+- **Uncovered genres.** These are counted over tracks that are in none of the
+  genre playlists, so a track that already has a home is never proposed twice.
+  Genres are rolled up most specific first. They're ranked by what Spotify says
+  you're playing, then genres nothing covers, then size.
+- **One change from §5.** A genre that only sits *under* a broader playlist's
+  genre (hard techno under a "Techno" playlist, donk under "House") is still
+  proposed when there's enough of it, marked as such. The first version counted
+  it as covered, which is exactly the lumping this work started from.
+- **Splits** include the nested case: bassline out of UK garage gives
+  "Bassline" and "the rest of UK Garage". A rule that only compared sibling
+  genres could never see that one, and it's the owner's most likely case.
+- **Creating copies.** Creating makes a private playlist with a copy of the
+  tracks. A playlist being split is never edited.
+- **Not built yet.** "Twins" still live on the Engine screen. Naming an
+  untagged cluster from the engine's "not sure" pile is waiting on phase 1:
+  until similar artists are in placement, that pile is mostly what tags already
+  can't name.
 
 **Dropped or downgraded by this plan:** shared filing across users (R2), any
 runtime LLM over Spotify data (R1), Chrome's Prompt API (R1, and not

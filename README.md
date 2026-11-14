@@ -1099,6 +1099,29 @@ the accuracy the screen shows comes from tracks they never saw. Once a score
 run has calibrated it, the comparison of waiting tracks shows "confident",
 "probably", "pick one" or "not sure" instead of a percentage.
 
+### New playlists: genres you're not covering
+
+**More → New playlists** (`core/recommend/gaps.mjs`, phase 3 of
+`docs/SMARTER-GENRES-PLAN.md`) proposes three things, and creates nothing
+without a tap:
+
+- **Genres with no playlist.** The genres your liked and loosely filed music is
+  in that none of your genre playlists is for, rolled up to the level you'd name
+  a playlist at. Forty bassline tracks are offered as "Bassline", not lost
+  inside "UK Garage". A genre a broader playlist could take is still offered
+  when there's enough of it: a "House" playlist doesn't swallow donk. What
+  you're playing now, from Spotify's top artists and recently-played, comes
+  first.
+- **Playlists that are two genres.** Genre playlists whose tracks split into two
+  genres, including one inside the other: "Bass" becomes Bassline plus the rest
+  of UK Garage. Making a half copies those tracks into a new private playlist,
+  and the original is never edited.
+- **Groups in your backlog**, as before.
+
+Genres come from your artists' tags (the shared table, plus Last.fm or Discogs
+if you've set them up), read through the same vocabulary as everything else.
+Artists with no genre in their tags are counted and said, not guessed at.
+
 ## Data sources, and what they're worth
 
 | Source | Verdict |
