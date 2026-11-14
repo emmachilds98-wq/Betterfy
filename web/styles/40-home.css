@@ -20,6 +20,11 @@
   @media (max-width:640px){ .hero .tile{display:none} }
 
   .acts4{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; margin-bottom:26px}
+  /* A fifth card ("Heard") once listening has run: five across on a wide
+     screen; below that the auto-fit columns take over again. */
+  .acts4.five{grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px}
+  @media (max-width:1080px){ .acts4.five{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))} }
+  .acts4.five .act{padding:22px 20px 20px}
   .act{text-align:left; cursor:pointer; border-radius:var(--r-3); padding:24px 24px 22px; color:var(--ink);
        font:inherit; display:flex; flex-direction:column; gap:6px;
        background:color-mix(in srgb, var(--ac) 15%, var(--surface));
@@ -58,11 +63,15 @@
   .upnext{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px}
   .upnext .u{border-radius:var(--r-3); overflow:hidden; background:var(--surface); border:1px solid var(--line);
         text-align:left; font:inherit; color:var(--ink); cursor:pointer; padding:0;
-        transition:transform .12s ease, box-shadow .14s ease}
+        transition:transform .12s ease, box-shadow .14s ease;
+        display:flex; flex-direction:column; min-width:0}
   .upnext .u:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
   .upnext .u .cov{aspect-ratio:1; width:100%; display:grid; place-items:center; object-fit:cover;
         font-family:var(--display); font-weight:800; font-size:48px; color:rgba(255,255,255,.9)}
-  .upnext .u .bd{padding:14px 16px 16px}
+  /* R2: the card is a button, so its spans were inline and the title, artist
+     and suggestion ran together on one clipped line. Each is its own block. */
+  .upnext .u .bd{display:block; padding:14px 16px 16px; min-width:0}
+  .upnext .u .t,.upnext .u .a,.upnext .u .h{display:block}
   .upnext .u .t{font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .upnext .u .a{font-size:13.5px; color:var(--ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .upnext .u .h{margin-top:10px; font-size:12px; font-family:var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -77,4 +86,4 @@
   .acts4 .act:nth-child(2){animation-delay:.04s}
   .acts4 .act:nth-child(3){animation-delay:.08s}
   .acts4 .act:nth-child(4){animation-delay:.12s}
-
+  .acts4 .act:nth-child(5){animation-delay:.16s}
