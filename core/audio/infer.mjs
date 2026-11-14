@@ -4,8 +4,9 @@
 // scripts — so this file has no runtime of its own and CI never needs the
 // model. Tests pass a fake session.
 //
-// Patches are run at most MAX_BATCH at a time. A 30 s preview is ~15 patches,
-// two windows ~9, so this rarely splits; it is the cap that keeps a phone's
+// Patches are run at most MAX_BATCH at a time. A patch is 128 frames (~2 s)
+// with a ~1 s hop, so a 30 s preview is ~29 patches and two 10 s windows are
+// 19 (measured in WP-B1); a single run usually splits into two batches; it is the cap that keeps a phone's
 // memory flat if a caller hands it something long.
 //
 // Outputs are told apart by width (400 styles, 1280 embedding), not by name:
