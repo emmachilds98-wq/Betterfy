@@ -89,8 +89,7 @@ __STYLES__</style>
     <div><b>Misfiles, by axis</b><p>A genre playlist is only ever compared with other genre playlists.</p></div>
     <div><b>Backlog inbox</b><p>Unfiled tracks, one at a time, each with a suggested home.</p></div>
     <div><b>Cross-filing left alone</b><p>Surfaced for you, never removed automatically.</p></div>
-    <!-- Behind a flag until listening ships (audio WP-B2 removes "hidden"). -->
-    <div class="wide" data-flag="listening" hidden><b>Listens, if you ask it to</b><p>Optional: places tracks by how they sound, from 30-second previews analysed on this device.</p></div>
+    <div class="wide" data-flag="listening"><b>Listens, if you ask it to</b><p>Optional: places tracks by how they sound, from 30-second previews analysed on this device.</p></div>
   </div>
 
   <!-- Setup panel: only for whoever administers the Spotify app. Hidden unless
@@ -126,7 +125,7 @@ __STYLES__</style>
   <p class="lede" style="font-size:13px">
     <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
     genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a>
-    (Spotify no longer provides genre — top yours up from the Playlists screen) ·
+    (Spotify no longer provides genre — top yours up from the Sources screen) ·
     release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
     <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.
   </p>
@@ -1923,7 +1922,7 @@ function vHome() {
   ];
   // A fifth card once listening has ever run, and never before: a listener who
   // never turns it on gets the same four cards, byte for byte.
-  if (listenEverRan()) acts.push(['heard', LISTEN.done, LISTEN.done === 1 ? 'track heard' : 'tracks heard',
+  if (listenEverRan()) acts.push(['heard', listenHeard(), listenHeard() === 1 ? 'track heard' : 'tracks heard',
     'Previews listened to on this device, to place tracks by how they sound.']);
 
   // Where the library sits, as one bar over one population: your liked songs.
@@ -1994,7 +1993,7 @@ function vHome() {
           <div><span>Version clashes</span><b class="mono">${clash.toLocaleString()}</b></div>
           <div><span>Genre coverage</span><b class="mono">${cov.pct}%</b></div>
           <hr>
-          <p>Genre comes from Last.fm — Spotify stopped providing it. Top yours up under Playlists.</p>
+          <p>Genre comes from Last.fm — Spotify stopped providing it. Top yours up under Sources.</p>
         </div>
       </div>
     </div>
@@ -2029,7 +2028,12 @@ const HEARD_HUE = 'm2';
 /** Where a tap on the indicator or the Heard card goes: Sources → Listening once
  *  that screen exists (UI-3), Playlists until then. */
 const listenTarget = () => (typeof VIEWS !== 'undefined' && VIEWS.sources) ? 'sources' : 'lists';
-const listenEverRan = () => !!LISTEN && (LISTEN.state !== 'off' || LISTEN.done > 0);
+/** Tracks heard so far, all runs together: B2's ListenVM counts them as `heard`
+ *  (`done` restarts with every run), and a bare ListenVM falls back to `done`. */
+const listenHeard = () => LISTEN ? (LISTEN.heard ?? LISTEN.done ?? 0) : 0;
+/** Ever run: something heard, or a run going or finished. Switched on but
+ *  paused before the first track (no Wi-Fi yet) is not "ran". */
+const listenEverRan = () => !!LISTEN && (listenHeard() > 0 || LISTEN.state === 'running' || LISTEN.state === 'done');
 
 /** The one entry point for the audio side: call with a ListenVM, or null to clear. */
 function setListen(vm) {
@@ -2041,7 +2045,7 @@ function setListen(vm) {
   // listening runs updates in place, so the cards don't replay their entrance.
   if (had !== listenEverRan()) return render();
   const n = $('#main .act[data-heard] .n');
-  if (n) n.textContent = LISTEN.done.toLocaleString();
+  if (n) n.textContent = listenHeard().toLocaleString();
 }
 
 function paintListen() {
@@ -4468,6 +4472,7 @@ const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?
 /** Redraw only the panel, and only while it is on screen: progress ticks every few seconds. */
 let AUDIO_DRAW = 0;
 function audioRedraw() {
+  setListen(AUDIO.vm);
   if (view !== 'lists') return;
   if (AUDIO_DRAW) return;
   AUDIO_DRAW = requestAnimationFrame(() => {
@@ -5411,7 +5416,7 @@ document.addEventListener('change', guard(async e => {
     const set = audioSettings();
     // Turning it off, narrowing the scope or tightening Wi-Fi stops the run; the next start re-reads all three.
     if (AUDIO.ctrl?.running) await AUDIO.ctrl.stop(set.on ? 'settings changed' : 'stopped');
-    if (set.on) audioStart(); else { AUDIO.vm = null; render(); }
+    if (set.on) audioStart(); else { AUDIO.vm = null; setListen(null); render(); }
     return;
   }
 

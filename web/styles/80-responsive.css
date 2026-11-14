@@ -25,6 +25,10 @@
           background:color-mix(in srgb, var(--surface) 90%, transparent);
           -webkit-backdrop-filter:saturate(180%) blur(18px); backdrop-filter:saturate(180%) blur(18px)}
     .brand,.who,.railfoot{display:none}
+    /* Floats just above the tab bar, centred; absolute, so the five tabs and
+       More keep their widths whether or not anything is listening. */
+    .listenslot{position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%);
+          margin:0; max-width:calc(100vw - 24px); box-shadow:var(--shadow-2)}
     .navwrap{display:contents}
     aside .nav, .tabmore{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
           gap:3px; padding:6px 2px 4px; border-radius:12px; min-height:48px;
@@ -48,6 +52,8 @@
           background:var(--vc); color:var(--vc-ink); border:2px solid var(--surface)}
 
     main{padding:8px calc(14px + var(--sar)) calc(var(--tabh) + var(--sab) + 26px) calc(14px + var(--sal)); max-width:none}
+    /* Room for the floating indicator, so it never sits over the last row. */
+    .app:has(.listenslot:not(:empty)) main{padding-bottom:calc(var(--tabh) + var(--sab) + 70px)}
     h1{font-size:26px; margin-bottom:2px} h1::before{width:28px; height:3px; margin-bottom:8px}
     h2{font-size:16px; margin-top:24px}
     .lede{font-size:14px}
@@ -61,6 +67,9 @@
     /* Two up rather than four stacked: the counts are the point, and stacked
        they push everything else off the screen. */
     .acts4{grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px}
+    .acts4.five{grid-template-columns:1fr 1fr; gap:10px}
+    .acts4.five .act{padding:15px 15px 16px}
+    .acts4.five .act:last-child{grid-column:1/-1}
     .act{padding:15px 15px 16px; border-radius:var(--r-2); gap:3px}
     .act .ic{width:32px; height:32px; border-radius:11px; margin-bottom:7px}
     .act .ic svg{width:17px; height:17px}
