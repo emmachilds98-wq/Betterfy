@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { audioQueue } from '../core/audio/queue.mjs';
-import { RECORD_VERSION, MODEL, MISS, MISS_TTL_MS, makeMiss } from '../core/audio/record.mjs';
+import { RECORD_VERSION, MIN_RECORD_VERSION, MODEL, MISS, MISS_TTL_MS, makeMiss } from '../core/audio/record.mjs';
 import { listeningWeights } from '../profile.mjs';
 
 const MEL = 'mel-test-1';
@@ -96,7 +96,7 @@ test('stale records are queued again: old model, old mel, old record version, ex
     ['hot', { ...current('hot'), model: 'some-older-model' }],
     ['loose', makeMiss({ id: 'loose', reason: MISS.NO_PREVIEW, at: NOW - MISS_TTL_MS - 1 })],
     ['quiet', { ...current('quiet'), mel: 'mel-old' }],
-    ['g0', { ...current('g0'), v: RECORD_VERSION - 1 }],
+    ['g0', { ...current('g0'), v: MIN_RECORD_VERSION - 1 }],
   ]);
   const q = audioQueue(lib, { listening, untaggedArtistIds, targets, store, exemplarsPerPlaylist: 3, mel: MEL, now: NOW });
   // Stale ones keep their natural tier, not pushed to the back.

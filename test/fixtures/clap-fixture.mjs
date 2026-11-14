@@ -3,13 +3,23 @@
 // a table of { text, kind, concept?, emb } prompts and a record field
 // `clap: { model, emb }`, both packed with record.mjs's packEmbedding.
 //
-// Sound is a few fixed random directions in a 32-d space: each prompt is one
-// direction, and a track "sounds like" a prompt by leaning toward it. A broad
-// prompt ("electronic") is the mean of every direction, so it sits close to
-// everything, which is what naming has to see past.
-import { packEmbedding } from '../../core/audio/record.mjs';
+// Sound is a few fixed random directions in CLAP's own 512-d space: each prompt
+// is one direction, and a track "sounds like" a prompt by leaning toward it. A
+// broad prompt ("electronic") is the mean of every direction, so it sits close
+// to everything, which is what naming has to see past.
+//
+// 512, not something smaller, because record.mjs v2 (#82) checks a stored
+// `clap` field against the contract's CLAP_DIM and treats anything else as a
+// malformed record. A shrunken fixture would be thrown out before the code
+// under test ever saw it.
+import { packEmbedding, CLAP_DIM } from '../../core/audio/record.mjs';
 
-export const DIM = 32;
+export const DIM = CLAP_DIM;
+
+/** The fixture was first tuned at 32 dimensions. Per-dimension noise grows with
+ *  the square root of the dimension, so it is scaled back to keep the same
+ *  signal-to-noise the tests' similarity margins were written against. */
+const NOISE_SCALE = Math.sqrt(32 / DIM);
 
 function rng(seed) {
   let s = (seed * 2654435761) >>> 0 || 1;
@@ -44,7 +54,8 @@ let SEED = 100;
 /** A CLAP field leaning toward these directions, plus noise. */
 export function clapField(mix, noise = 0.35) {
   const r = rng(SEED++);
-  const v = Array.from({ length: DIM }, (_, i) => noise * r() + Object.entries(mix).reduce((s, [k, w]) => s + w * DIRS[k][i], 0));
+  const v = Array.from({ length: DIM }, (_, i) => noise * NOISE_SCALE * r()
+    + Object.entries(mix).reduce((s, [k, w]) => s + w * DIRS[k][i], 0));
   return { model: 'larger_clap_music-audio-q8-1', emb: packEmbedding(unit(v)) };
 }
 export const resetSeed = () => { SEED = 100; };

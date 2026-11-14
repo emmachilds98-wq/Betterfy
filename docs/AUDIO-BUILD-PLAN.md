@@ -291,3 +291,4 @@ C is done when C1–C3 have each been measured the same way.
 
 - `mel.mjs` 1.0.0: initial.
 - `record.mjs` v1: initial.
+- `record.mjs` v2 (2026-11-14, for WP-C1 and WP-C2 together): optional second ears `maest: { model, styles, emb }` (768-d, Discogs400 order) and `clap: { model, emb }` (512-d), each with its own model id. `makeEar()`, `withEar()` (adds one ear to a stored record without re-hearing) and `earCurrent(rec, ear)` (a stale or missing second ear re-queues only that ear). `MIN_RECORD_VERSION = 1`: v1 records stay valid and current, so nobody re-listens. `validRecord` rejects a present-but-malformed ear and accepts null or absent.
