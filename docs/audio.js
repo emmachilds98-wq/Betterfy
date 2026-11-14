@@ -2503,8 +2503,9 @@ const { N_STYLES, EMB_DIM } = __mod["core/audio/record.mjs"];
 // scripts — so this file has no runtime of its own and CI never needs the
 // model. Tests pass a fake session.
 //
-// Patches are run at most MAX_BATCH at a time. A 30 s preview is ~15 patches,
-// two windows ~9, so this rarely splits; it is the cap that keeps a phone's
+// Patches are run at most MAX_BATCH at a time. A patch is 128 frames (~2 s)
+// with a ~1 s hop, so a 30 s preview is ~29 patches and two 10 s windows are
+// 19 (measured in WP-B1); a single run usually splits into two batches; it is the cap that keeps a phone's
 // memory flat if a caller hands it something long.
 //
 // Outputs are told apart by width (400 styles, 1280 embedding), not by name:
@@ -2559,5 +2560,1893 @@ function pickOutputs(out, n) {
 }
 return { INFER_VERSION, MAX_BATCH, INPUT_NAME, createEar, pickOutputs };
 })();
+/* ---- core/audio/sections.mjs ---- */
+__mod["core/audio/sections.mjs"] = (function () {
+// Sections and hybrids: what changes inside one clip (WP-H1).
+//
+// A record keeps, per patch (~2 s of audio, hop ~1 s), its top SECTION_TOP
+// styles in time order. Phase 0 saw patch-level top-1 agreement inside one
+// preview range from 17% to 100%: an intro that is one thing and a drop that
+// is another shows up clearly. That is what a hybrid proposal is built from
+// (WP-H2), so this file turns the raw timeline into runs and a verdict.
+//
+// Labels are hints (29% top-1 on scene genres). "Hybrid" here means the model
+// heard two different styles lead different parts of the clip, or could not
+// separate two styles overall — not that the track IS two genres. The
+// proposals that use it ask the listener.
+
+const SECTIONS_VERSION = '1.0.0';
+/** Each of two styles must lead at least this share of sections. */
+const HYBRID_SHARE = 0.3;
+/** Or the overall top two must be this close (absolute probability). */
+const HYBRID_MARGIN = 0.05;
+/** And the second style must be a real signal, not two near-zero sigmoids. */
+const MIN_STYLE_P = 0.1;
+
+/**
+ * Runs of consistent top-1 style over time.
+ * @param {{ sections?: Array<Array<[number, number]>> }} record
+ * @returns {Array<{ style: number, from: number, to: number, length: number, meanP: number }>}  patch indices, `to` inclusive
+ */
+function sectionsOf(record) {
+  const secs = record?.sections ?? [];
+  const runs = [];
+  secs.forEach((sec, i) => {
+    const top = sec?.[0];
+    if (!top) return;
+    const [style, p] = top;
+    const last = runs[runs.length - 1];
+    if (last && last.style === style && last.to === i - 1) {
+      last.to = i; last.length++; last._sum += p;
+    } else runs.push({ style, from: i, to: i, length: 1, _sum: p });
+  });
+  return runs.map(({ _sum, ...r }) => ({ ...r, meanP: +(_sum / r.length).toFixed(4) }));
+}
+
+/** Share of sections each style leads, highest first: [[style, share], ...]. */
+function leadShares(record) {
+  const secs = (record?.sections ?? []).filter(s => s?.[0]);
+  if (!secs.length) return [];
+  const n = new Map();
+  for (const s of secs) n.set(s[0][0], (n.get(s[0][0]) ?? 0) + 1);
+  return [...n].map(([k, c]) => [k, c / secs.length]).sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+}
+
+/** Fraction of sections whose top style is the record's overall top style. 1 = one style throughout. */
+function agreement(record) {
+  const top = record?.styles?.[0]?.[0];
+  const secs = (record?.sections ?? []).filter(s => s?.[0]);
+  if (top == null || !secs.length) return null;
+  return secs.filter(s => s[0][0] === top).length / secs.length;
+}
+
+/**
+ * Is this clip a hybrid of two styles?
+ * True when two styles each lead ≥ HYBRID_SHARE of sections, or when the
+ * overall top two are within HYBRID_MARGIN of each other (and both above
+ * MIN_STYLE_P). A miss or a record with no styles is never a hybrid.
+ * @returns {{ hybrid: boolean, styles: [number, number]|null, why: 'sections'|'margin'|null }}
+ */
+function hybridOf(record) {
+  const none = { hybrid: false, styles: null, why: null };
+  if (!record || record.miss || !record.styles?.length) return none;
+  const shares = leadShares(record);
+  if (shares.length >= 2 && shares[0][1] >= HYBRID_SHARE && shares[1][1] >= HYBRID_SHARE && (record.sections?.length ?? 0) >= 2)
+    return { hybrid: true, styles: [shares[0][0], shares[1][0]], why: 'sections' };
+  const [a, b] = record.styles;
+  if (a && b && b[1] >= MIN_STYLE_P && a[1] - b[1] <= HYBRID_MARGIN)
+    return { hybrid: true, styles: [a[0], b[0]], why: 'margin' };
+  return none;
+}
+
+const isHybrid = record => hybridOf(record).hybrid;
+return { SECTIONS_VERSION, HYBRID_SHARE, HYBRID_MARGIN, MIN_STYLE_P, sectionsOf, leadShares, agreement, hybridOf, isHybrid };
+})();
+/* ---- core/audio/dsp/key.mjs ---- */
+__mod["core/audio/dsp/key.mjs"] = (function () {
+const { SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
+// Musical key from audio, in plain JS (WP-D2, docs/AUDIO-BUILD-PLAN.md).
+//
+// 16 kHz mono samples -> a key, a Camelot code and a confidence. Isomorphic:
+// no DOM, no Node APIs, no dependencies, so the browser worker and Node
+// scripts share it. Written from scratch; the clean key library is AGPL
+// (essentia.js), which the page can't ship (AUDIO-ANALYSIS-PLAN.md §2, §9).
+//
+// Status: the synthetic tests (test/audiokey.test.mjs) pass. Accuracy on
+// real music is NOT measured yet. scripts/audio-dsp/key-vs-rekordbox.mjs
+// measures it against the owner's Rekordbox keys, and per the build plan's
+// §0 rule 7 this ships into records or the UI (WP-D4) only with that number.
+//
+// Pipeline:
+//   1. STFT with a long frame (8192 at 16 kHz ≈ 0.5 s, 1.95 Hz per bin), so
+//      neighbouring semitones are resolvable down to ~60 Hz. mel.mjs's 512
+//      frame is far too short for pitch (31 Hz per bin).
+//   2. Spectral peaks only: a local maximum that stands TONAL_SNR above the
+//      local mean magnitude and within 60 dB of the frame's loudest bin (so
+//      window sidelobes don't count). This is the whitening step: broadband drums and
+//      noise rarely make a peak, and the bass doesn't drown the treble
+//      because each peak is weighted by how far it stands above its own
+//      neighbourhood (log ratio), not by raw energy.
+//   3. Tuning: the weighted circular mean of every peak's offset from the
+//      A440 grid. Records tuned off 440 (or pitched by a DJ) still map
+//      cleanly. After correcting, a peak more than TUNING_TOLERANCE semitones
+//      from a note is dropped (inharmonic partials, glides, noise).
+//   4. Chroma: each surviving peak adds to its pitch class, cos²-tapered by
+//      its distance from the note centre. Summed over all frames.
+//   5. Profiles: Pearson correlation of the chroma with the Krumhansl–Kessler
+//      and Temperley major/minor profiles rotated to all 12 tonics; the two
+//      correlations are averaged per key.
+//   6. Confidence: a heuristic, not a probability. It is the product of how
+//      tonal the excerpt is ("gridness": how tightly the peaks sit on one
+//      semitone grid, the length of step 3's circular mean, ~0.75 for
+//      harmonic tones and ~0.03 for noise, whose peaks land anywhere), how
+//      well the best key fits, and how far it leads the runner-up. Silence -> 0 and
+//      key null; noise -> a guess with near-zero confidence. Its calibration
+//      against real keys is what the comparison script reports by band.
+
+
+
+const KEY_VERSION = '1.0.0';
+
+// ---------- names, Camelot, Open Key ----------
+
+/** Pitch-class spellings. Majors and minors follow the usual Camelot-wheel spelling. */
+const MAJOR_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const MINOR_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
+const PC_OF = { C: 0, 'B#': 0, 'C#': 1, DB: 1, D: 2, 'D#': 3, EB: 3, E: 4, FB: 4, F: 5, 'E#': 5, 'F#': 6, GB: 6,
+                G: 7, 'G#': 8, AB: 8, A: 9, 'A#': 10, BB: 10, B: 11, CB: 11 };
+
+/** Pitch class (0 = C) of a tonic spelled 'C', 'F#', 'Eb', 'E♭', 'bb'…; null if unreadable. */
+function pitchClass(tonic) {
+  if (typeof tonic === 'number') return Number.isInteger(tonic) ? ((tonic % 12) + 12) % 12 : null;
+  if (typeof tonic !== 'string') return null;
+  const s = tonic.trim().replace(/♯/g, '#').replace(/♭/g, 'b');
+  if (!s) return null;
+  return PC_OF[s[0].toUpperCase() + s.slice(1).toUpperCase()] ?? null;
+}
+
+const camelotNumber = (pc, mode) => {
+  const majorPc = mode === 'minor' ? (pc + 3) % 12 : pc;   // a minor key sits on its relative major's number
+  return ((majorPc * 7) % 12 + 7) % 12 + 1;                // C major = 8, each fifth up = +1
+};
+
+/**
+ * Camelot code ('8A' = A minor, '8B' = C major) for a tonic and mode.
+ * Accepts sharps or flats; mode is 'major' | 'minor' (also 'maj'/'min'/'m').
+ * Returns null for anything unreadable rather than guessing.
+ */
+function toCamelot(tonic, mode) {
+  const pc = pitchClass(tonic);
+  const m = normMode(mode);
+  if (pc == null || !m) return null;
+  return camelotNumber(pc, m) + (m === 'minor' ? 'A' : 'B');
+}
+
+/** Open Key code ('1m' = A minor, '1d' = C major) for a tonic and mode. */
+function toOpenKey(tonic, mode) {
+  const c = toCamelot(tonic, mode);
+  if (!c) return null;
+  const n = parseInt(c, 10);
+  return (((n - 8) % 12 + 12) % 12 + 1) + (c.endsWith('A') ? 'm' : 'd');
+}
+
+function normMode(mode) {
+  const m = String(mode ?? '').trim().toLowerCase();
+  if (m === 'major' || m === 'maj' || m === 'ionian') return 'major';
+  if (m === 'minor' || m === 'min' || m === 'm' || m === 'aeolian') return 'minor';
+  return null;
+}
+
+/**
+ * All 24 keys, by Camelot code:
+ *   CAMELOT['8A'] = { camelot: '8A', openKey: '1m', tonic: 'A', mode: 'minor', pc: 9, key: 'A minor' }
+ * Frozen.
+ */
+const CAMELOT = Object.freeze(Object.fromEntries(
+  ['major', 'minor'].flatMap(mode => Array.from({ length: 12 }, (_, pc) => {
+    const tonic = (mode === 'major' ? MAJOR_NAMES : MINOR_NAMES)[pc];
+    const camelot = toCamelot(pc, mode);
+    return [camelot, Object.freeze({ camelot, openKey: toOpenKey(pc, mode), tonic, mode, pc, key: `${tonic} ${mode}` })];
+  })),
+));
+
+/**
+ * How key b relates to key a on the Camelot wheel, or null if not a
+ * neighbour: 'same', 'relative' (same number, other letter), 'fifth-up'
+ * (+1, same letter), 'fifth-down' (−1, same letter), 'parallel' (same tonic,
+ * other mode). Codes are Camelot strings.
+ */
+function relation(a, b) {
+  const A = CAMELOT[a], B = CAMELOT[b];
+  if (!A || !B) return null;
+  if (a === b) return 'same';
+  const na = parseInt(a, 10), nb = parseInt(b, 10), la = a.slice(-1), lb = b.slice(-1);
+  if (na === nb) return 'relative';
+  if (la === lb && nb === na % 12 + 1) return 'fifth-up';
+  if (la === lb && na === nb % 12 + 1) return 'fifth-down';
+  if (A.pc === B.pc) return 'parallel';
+  return null;
+}
+
+// ---------- key profiles ----------
+
+// Krumhansl & Kessler (1982) probe-tone ratings.
+const KK_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const KK_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+// Temperley (1999), "What's key for key?": the revised probe-tone profiles.
+const TP_MAJOR = [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0];
+const TP_MINOR = [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0];
+
+const PROFILES = Object.freeze({
+  krumhansl: { major: KK_MAJOR, minor: KK_MINOR },
+  temperley: { major: TP_MAJOR, minor: TP_MINOR },
+});
+
+// ---------- analysis settings ----------
+
+const FRAME_SECONDS = 0.512;     // 8192 samples at 16 kHz
+const HOP_FRACTION = 0.25;       // hop 2048: ~7.8 frames per second
+const F_MIN = 60;                // below this a semitone is under two bins wide
+const F_MAX = 5000;              // above this, partials are mostly overtones and cymbals
+const DYNAMIC_RANGE = 10 ** (-60 / 20); // ignore anything 60 dB under the frame's loudest bin (window sidelobes)
+const TONAL_SNR = 3;             // a peak must stand this many times above its local mean
+const FLOOR_HALF_WIDTH_HZ = 40;  // half-width of the local-mean window
+const TUNING_TOLERANCE = 0.4;    // semitones from the nearest note, after tuning
+const SILENCE = 1e-4;            // RMS below this (−80 dBFS) is silence
+const A4 = 440;
+
+// Confidence shaping (see the header; uncalibrated until measured).
+const GRID_NONE = 0.08;          // gridness at or below which the excerpt counts as atonal (noise measures ~0.03)
+const GRID_FULL = 0.33;          // gridness at which it counts as fully tonal (synthetic chords ~0.75)
+const FIT_LOW = 0.2, FIT_HIGH = 0.75;
+const MARGIN_FULL = 0.12;
+
+// ---------- FFT ----------
+
+const fftCache = new Map();
+function fftTables(n) {
+  let t = fftCache.get(n);
+  if (t) return t;
+  const bits = Math.log2(n);
+  const rev = new Uint32Array(n);
+  for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); rev[i] = r; }
+  const cos = new Float64Array(n / 2), sin = new Float64Array(n / 2);
+  for (let i = 0; i < n / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / n); sin[i] = -Math.sin(2 * Math.PI * i / n); }
+  const hann = Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / n));
+  t = { rev, cos, sin, hann };
+  fftCache.set(n, t);
+  return t;
+}
+
+/** In-place radix-2 complex FFT; magnitudes of bins 0..n/2 into `mag`. */
+function magnitudeSpectrum(re, im, n, { rev, cos, sin }, mag) {
+  for (let i = 0; i < n; i++) {
+    const j = rev[i];
+    if (j > i) { const t = re[i]; re[i] = re[j]; re[j] = t; }
+    im[i] = 0;
+  }
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1, step = n / size;
+    for (let s = 0; s < n; s += size) {
+      for (let k = 0; k < half; k++) {
+        const c = cos[k * step], sn = sin[k * step];
+        const a = s + k, b = a + half;
+        const tr = re[b] * c - im[b] * sn, ti = re[b] * sn + im[b] * c;
+        re[b] = re[a] - tr; im[b] = im[a] - ti;
+        re[a] += tr; im[a] += ti;
+      }
+    }
+  }
+  for (let k = 0; k <= n / 2; k++) mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+}
+
+// ---------- chroma ----------
+
+/**
+ * Tuning-corrected 12-bin chroma (index 0 = C) plus what confidence needs.
+ * Exported for tests and the comparison script; key() is the public entry.
+ * @returns {{ chroma: Float64Array, tuningCents: number, seconds: number, tonalWeight: number, gridness: number, frames: number }}
+ */
+function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
+  const n = samples?.length ?? 0;
+  const N = 2 ** Math.round(Math.log2(sampleRate * FRAME_SECONDS));
+  const hop = Math.max(1, Math.round(N * HOP_FRACTION));
+  const seconds = n / sampleRate;
+  const chroma = new Float64Array(12);
+  const empty = { chroma, tuningCents: 0, seconds, tonalWeight: 0, gridness: 0, frames: 0 };
+  if (!n) return empty;
+
+  const tables = fftTables(N);
+  const binHz = sampleRate / N;
+  const kMin = Math.max(2, Math.ceil(F_MIN / binHz));
+  const kMax = Math.min(N / 2 - 2, Math.floor(Math.min(F_MAX, sampleRate / 2 * 0.95) / binHz));
+  const halfW = Math.max(4, Math.round(FLOOR_HALF_WIDTH_HZ / binHz));
+  const re = new Float64Array(N), im = new Float64Array(N), mag = new Float64Array(N / 2 + 1);
+  const prefix = new Float64Array(N / 2 + 2);
+
+  // Pass 1: peaks (semitones above A4, weight) from every non-silent frame.
+  const semis = [], weights = [];
+  const frames = n <= N ? 1 : Math.ceil((n - N) / hop) + 1;
+  for (let f = 0; f < frames; f++) {
+    const s = f * hop;
+    let energy = 0;
+    for (let i = 0; i < N; i++) {
+      const x = s + i < n ? samples[s + i] : 0;
+      energy += x * x;
+      re[i] = x * tables.hann[i];
+    }
+    if (Math.sqrt(energy / Math.min(N, n - s)) < SILENCE) continue;
+    magnitudeSpectrum(re, im, N, tables, mag);
+    prefix[0] = 0;
+    let top = 0;
+    for (let k = 0; k <= N / 2; k++) { prefix[k + 1] = prefix[k] + mag[k]; if (k >= kMin && k <= kMax && mag[k] > top) top = mag[k]; }
+    const absFloor = top * DYNAMIC_RANGE;
+    for (let k = kMin; k <= kMax; k++) {
+      const m = mag[k];
+      if (!(m > absFloor && m > mag[k - 1] && m >= mag[k + 1] && m > mag[k - 2] && m >= mag[k + 2])) continue;
+      const lo = Math.max(0, k - halfW), hi = Math.min(N / 2, k + halfW);
+      const floor = (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1);
+      if (!(floor > 0) || m < TONAL_SNR * floor) continue;
+      // Quadratic interpolation on log magnitude for the true peak frequency.
+      const a = Math.log(mag[k - 1] + 1e-12), b = Math.log(m + 1e-12), c = Math.log(mag[k + 1] + 1e-12);
+      const den = a - 2 * b + c;
+      const p = den < 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den)) : 0;
+      const hz = (k + p) * binHz;
+      semis.push(12 * Math.log2(hz / A4));
+      weights.push(Math.log(m / floor));   // ≥ log(TONAL_SNR) > 0
+    }
+  }
+  if (!semis.length) return { ...empty, frames };
+
+  // Tuning: weighted circular mean of each peak's offset from the A440 grid.
+  let cs = 0, sn = 0;
+  for (let i = 0; i < semis.length; i++) {
+    const ang = 2 * Math.PI * semis[i];
+    cs += weights[i] * Math.cos(ang); sn += weights[i] * Math.sin(ang);
+  }
+  const tuning = Math.atan2(sn, cs) / (2 * Math.PI);  // semitones, −0.5..0.5
+  let total = 0;
+  for (let i = 0; i < weights.length; i++) total += weights[i];
+  // How tightly the peaks sit on one semitone grid: ~1 for tuned instruments,
+  // ~1/√peaks for noise, whose peaks land anywhere.
+  const gridness = Math.hypot(cs, sn) / total;
+
+  // Pass 2: fold into pitch classes, cos²-tapered, dropping off-grid peaks.
+  let tonalWeight = 0;
+  for (let i = 0; i < semis.length; i++) {
+    const x = semis[i] - tuning;
+    const note = Math.round(x), d = x - note;
+    if (Math.abs(d) > TUNING_TOLERANCE) continue;
+    const w = weights[i] * Math.cos(Math.PI * d) ** 2;
+    chroma[(((note + 9) % 12) + 12) % 12] += w;   // A = 9
+    tonalWeight += w;
+  }
+  return { chroma, tuningCents: Math.round(tuning * 1000) / 10, seconds, tonalWeight, gridness, frames };
+}
+
+// ---------- profile matching ----------
+
+function pearson(x, y, rot) {
+  let mx = 0, my = 0;
+  for (let i = 0; i < 12; i++) { mx += x[i]; my += y[i]; }
+  mx /= 12; my /= 12;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < 12; i++) {
+    const a = x[(i + rot) % 12] - mx, b = y[i] - my;
+    sxy += a * b; sxx += a * a; syy += b * b;
+  }
+  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
+}
+
+/**
+ * Score all 24 keys against a chroma vector. Sorted best first.
+ * @param {ArrayLike<number>} chroma 12 bins, index 0 = C
+ * @param {{ profiles?: string[] }} [opts] which of PROFILES to average (default both)
+ * @returns {{ camelot: string, score: number }[]}
+ */
+function scoreKeys(chroma, { profiles = ['krumhansl', 'temperley'] } = {}) {
+  const out = [];
+  for (const mode of ['major', 'minor']) {
+    for (let pc = 0; pc < 12; pc++) {
+      let s = 0;
+      for (const name of profiles) s += pearson(chroma, PROFILES[name][mode], pc);
+      out.push({ camelot: toCamelot(pc, mode), score: s / profiles.length });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const round3 = x => Math.round(x * 1000) / 1000;
+
+/**
+ * Estimate the musical key of mono audio.
+ *
+ * @param {Float32Array|number[]} samples mono, at `sampleRate` (16 kHz is the tested rate)
+ * @param {{ sampleRate?: number, profiles?: string[] }} [opts]
+ * @returns {{
+ *   key: string|null, tonic: string|null, mode: 'major'|'minor'|null,
+ *   camelot: string|null, openKey: string|null, confidence: number,
+ *   alternates: { key: string, camelot: string, score: number, relation: string|null, compatible: boolean }[],
+ *   tuningCents: number, version: string,
+ * }}
+ * `key` is null (confidence 0) when there is nothing tonal to judge, e.g.
+ * silence. `alternates` are the next three keys by score; `relation` says how
+ * each sits to the answer on the Camelot wheel ('relative', 'fifth-up',
+ * 'fifth-down', 'parallel' or null) and `compatible` is true for the three
+ * a DJ mixes into freely (relative and either fifth).
+ */
+function key(samples, { sampleRate = SAMPLE_RATE, profiles } = {}) {
+  const { chroma, tuningCents, seconds, tonalWeight, gridness } = chromagram(samples, { sampleRate });
+  const none = { key: null, tonic: null, mode: null, camelot: null, openKey: null, confidence: 0,
+                 alternates: [], tuningCents: 0, version: KEY_VERSION };
+  if (!(tonalWeight > 0) || !(seconds > 0)) return none;
+
+  const ranked = scoreKeys(chroma, profiles ? { profiles } : undefined);
+  const best = ranked[0], second = ranked[1];
+  const k = CAMELOT[best.camelot];
+
+  const tonality = clamp01((gridness - GRID_NONE) / (GRID_FULL - GRID_NONE));
+  const fit = clamp01((best.score - FIT_LOW) / (FIT_HIGH - FIT_LOW));
+  const lead = clamp01((best.score - second.score) / MARGIN_FULL);
+  // The lead counts for half: a close relative or fifth is the usual runner-up
+  // even when the answer is right, so a small lead mustn't zero the confidence.
+  const confidence = round3(tonality * fit * (0.5 + 0.5 * lead));
+
+  return {
+    key: k.key, tonic: k.tonic, mode: k.mode, camelot: k.camelot, openKey: k.openKey,
+    confidence,
+    alternates: ranked.slice(1, 4).map(a => {
+      const rel = relation(best.camelot, a.camelot);
+      return { key: CAMELOT[a.camelot].key, camelot: a.camelot, score: round3(a.score), relation: rel,
+               compatible: rel === 'relative' || rel === 'fifth-up' || rel === 'fifth-down' };
+    }),
+    tuningCents,
+    version: KEY_VERSION,
+  };
+}
+return { KEY_VERSION, pitchClass, toCamelot, toOpenKey, CAMELOT, relation, PROFILES, chromagram, scoreKeys, key };
+})();
+/* ---- core/audio/dsp/loudness.mjs ---- */
+__mod["core/audio/dsp/loudness.mjs"] = (function () {
+const { SAMPLE_RATE, FRAME_SIZE, HOP_SIZE } = __mod["core/audio/mel.mjs"];
+// Loudness and "energy" for a 30-second preview, in plain JS.
+//
+// This is a HEURISTIC, not a measurement standard. It borrows the shape of
+// EBU R128 / ITU-R BS.1770 loudness (K-weighting, 400 ms blocks with 75 %
+// overlap, 3 s short-term windows, absolute -70 and relative -10 LU gates),
+// but it is not a compliant meter and its numbers are "LUFS-like", not LUFS:
+//   - it runs on 16 kHz mono, so everything above 8 kHz is gone, and the
+//     K-weighting filters are re-derived for 16 kHz from analogue-style
+//     parameters (BS.1770 specifies coefficients at 48 kHz only);
+//   - the input is a decoded, resampled lossy preview, not the master;
+//   - no channel weighting, no true-peak, no conformance test signals.
+// Spectral centroid and onset density are ordinary textbook descriptors.
+// `energy` is a hand-picked blend of the three (formula at ENERGY below),
+// meant only to rank tracks against each other within one library. It has
+// not been fitted to listener judgements and is not Spotify's "energy".
+//
+// Isomorphic — no DOM, no Node APIs, no dependencies — so the browser worker
+// and Node scripts share it. The STFT uses the mel front end's frame and hop
+// (512 / 256), so onsets live on the same frame grid as the rest of the
+// audio pipeline.
+
+
+
+const LOUDNESS_VERSION = '1.0.0';
+
+// Floors keep every output finite (JSON-safe: no -Infinity, no NaN).
+const RMS_FLOOR_DB = -120;
+const LUFS_FLOOR = -70; // BS.1770's absolute gate; quieter counts as silence
+const LUFS_OFFSET = -0.691; // BS.1770's constant, kept so numbers look familiar
+
+const BLOCK_S = 0.4, BLOCK_STEP_S = 0.1, SHORT_TERM_S = 3;
+
+// ---------------------------------------------------------------------------
+// K-weighting: two RBJ biquads with the parameters pyloudnorm uses to
+// approximate BS.1770's stage 1 (high shelf, +4 dB above ~1.5 kHz) and
+// stage 2 (RLB high-pass, ~38 Hz) at an arbitrary sample rate.
+
+function highShelf(fs, fc = 1500, gainDb = 4, Q = Math.SQRT1_2) {
+  const A = 10 ** (gainDb / 40), w0 = 2 * Math.PI * fc / fs, cs = Math.cos(w0);
+  const alpha = Math.sin(w0) / (2 * Q), sA = 2 * Math.sqrt(A) * alpha;
+  const a0 = (A + 1) - (A - 1) * cs + sA;
+  return [
+    A * ((A + 1) + (A - 1) * cs + sA) / a0,
+    -2 * A * ((A - 1) + (A + 1) * cs) / a0,
+    A * ((A + 1) + (A - 1) * cs - sA) / a0,
+    2 * ((A - 1) - (A + 1) * cs) / a0,
+    ((A + 1) - (A - 1) * cs - sA) / a0,
+  ];
+}
+
+function highPass(fs, fc = 38, Q = 0.5) {
+  const w0 = 2 * Math.PI * fc / fs, cs = Math.cos(w0), alpha = Math.sin(w0) / (2 * Q);
+  const a0 = 1 + alpha;
+  return [(1 + cs) / 2 / a0, -(1 + cs) / a0, (1 + cs) / 2 / a0, -2 * cs / a0, (1 - alpha) / a0];
+}
+
+/** Prefix sums of the K-weighted signal's squares: cum[i] = Σ_{j<i} k[j]². */
+function kWeightedEnergyPrefix(x, fs) {
+  const [b0, b1, b2, a1, a2] = highShelf(fs);
+  const [c0, c1, c2, d1, d2] = highPass(fs);
+  const cum = new Float64Array(x.length + 1);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0, z1 = 0, z2 = 0, acc = 0;
+  for (let i = 0; i < x.length; i++) {
+    const xi = x[i];
+    const y = b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1; x1 = xi;
+    const z = c0 * y + c1 * y1 + c2 * y2 - d1 * z1 - d2 * z2;
+    y2 = y1; y1 = y; z2 = z1; z1 = z;
+    acc += z * z;
+    cum[i + 1] = acc;
+  }
+  return cum;
+}
+
+const toLufs = ms => (ms > 0 ? LUFS_OFFSET + 10 * Math.log10(ms) : -Infinity);
+
+/** Mean squares of windows of `len` samples every `step` samples (one window if the clip is shorter). */
+function windowMeans(cum, len, step) {
+  const n = cum.length - 1;
+  if (n === 0) return [];
+  if (n <= len) return [cum[n] / n];
+  const out = [];
+  for (let s = 0; s + len <= n; s += step) out.push((cum[s + len] - cum[s]) / len);
+  return out;
+}
+
+/** BS.1770-style gated integration over 400 ms block mean squares. */
+function gatedIntegrated(blocks) {
+  const abs = blocks.filter(ms => toLufs(ms) > LUFS_FLOOR);
+  if (!abs.length) return LUFS_FLOOR;
+  const relGate = toLufs(abs.reduce((a, b) => a + b, 0) / abs.length) - 10;
+  const rel = abs.filter(ms => toLufs(ms) > relGate);
+  return Math.max(LUFS_FLOOR, toLufs(rel.reduce((a, b) => a + b, 0) / rel.length));
+}
+
+// ---------------------------------------------------------------------------
+// STFT (frame 512, hop 256, periodic Hann), magnitude spectra only. Own FFT:
+// mel.mjs keeps its FFT private and is a frozen contract.
+
+const N_BINS = FRAME_SIZE / 2 + 1;
+const M = FRAME_SIZE / 2; // real FFT of N via one complex FFT of N/2
+const LOG2M = Math.log2(M);
+const HANN = Float64Array.from({ length: FRAME_SIZE }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / FRAME_SIZE));
+const BITREV = Uint16Array.from({ length: M }, (_, i) => {
+  let r = 0; for (let b = 0; b < LOG2M; b++) r |= ((i >> b) & 1) << (LOG2M - 1 - b); return r;
+});
+// Twiddles e^{-2πik/N}, k < N/2: the M-point FFT uses every other one.
+const COS = Float64Array.from({ length: M }, (_, i) => Math.cos(2 * Math.PI * i / FRAME_SIZE));
+const SIN = Float64Array.from({ length: M }, (_, i) => -Math.sin(2 * Math.PI * i / FRAME_SIZE));
+
+/** |X[k]|, k = 0..N/2, of one real windowed frame `x` (length N). */
+function magnitudeSpectrum(x, re, im, out) {
+  for (let i = 0; i < M; i++) { const j = BITREV[i]; re[j] = x[2 * i]; im[j] = x[2 * i + 1]; }
+  for (let size = 2; size <= M; size <<= 1) {
+    const half = size >> 1, step = (FRAME_SIZE / size);
+    for (let s = 0; s < M; s += size) {
+      for (let k = 0; k < half; k++) {
+        const c = COS[k * step], sn = SIN[k * step];
+        const a = s + k, b = a + half;
+        const tr = re[b] * c - im[b] * sn, ti = re[b] * sn + im[b] * c;
+        re[b] = re[a] - tr; im[b] = im[a] - ti;
+        re[a] += tr; im[a] += ti;
+      }
+    }
+  }
+  // Split Z (the packed even/odd FFT) into X: X[k] = E[k] + W^k O[k].
+  for (let k = 0; k <= M; k++) {
+    const p = k % M, q = (M - k) % M;
+    const a = re[p], b = im[p], c = re[q], d = im[q];
+    const er = (a + c) / 2, ei = (b - d) / 2, or = (b + d) / 2, oi = (c - a) / 2;
+    const wr = k < M ? COS[k] : -1, wi = k < M ? SIN[k] : 0;
+    const xr = er + wr * or - wi * oi, xi = ei + wr * oi + wi * or;
+    out[k] = Math.sqrt(xr * xr + xi * xi);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Onsets: log-compressed spectral flux, then peaks above an adaptive
+// threshold (local median + a multiple of the track's own flux spread).
+
+const FLUX_GAMMA = 100;     // log(1 + γ|X|) compression
+const MEDIAN_HALF_S = 0.15; // local median window, each side
+const PEAK_HALF_S = 0.05;   // a peak must be the max within ±50 ms
+const MIN_GAP_S = 0.05;     // and at least 50 ms after the previous onset
+const SPREAD_K = 6;         // threshold = local median + K · the track's flux MAD
+const REL_FLOOR = 0.1;      // and at least 10 % of the track's strongest flux
+// and an absolute floor: on average every bin must rise by ≥0.05 (log units).
+// Steady tones wobble far below this (a 30 s sine peaks under 4); a
+// broadband hit clears it many times over.
+const ABS_FLOOR = 0.05 * N_BINS;
+
+function median(arr) {
+  const s = Float64Array.from(arr).sort();
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function countOnsets(flux, fps) {
+  const n = flux.length;
+  if (n < 3) return 0;
+  let max = 0;
+  for (let i = 0; i < n; i++) if (flux[i] > max) max = flux[i];
+  if (max < ABS_FLOOR) return 0;
+  const med = median(flux);
+  const spread = median(Array.from(flux, v => Math.abs(v - med))) || 1e-9;
+  const mh = Math.max(1, Math.round(MEDIAN_HALF_S * fps));
+  const ph = Math.max(1, Math.round(PEAK_HALF_S * fps));
+  const gap = Math.max(1, Math.round(MIN_GAP_S * fps));
+  const floor = Math.max(ABS_FLOOR, REL_FLOOR * max);
+  let count = 0, last = -Infinity;
+  const win = [];
+  for (let t = 0; t < n; t++) {
+    const v = flux[t];
+    if (v < floor) continue;
+    let isPeak = true;
+    for (let j = Math.max(0, t - ph); j <= Math.min(n - 1, t + ph); j++) {
+      if (flux[j] > v || (flux[j] === v && j < t)) { isPeak = false; break; }
+    }
+    if (!isPeak || t - last < gap) continue;
+    win.length = 0;
+    for (let j = Math.max(0, t - mh); j <= Math.min(n - 1, t + mh); j++) win.push(flux[j]);
+    if (v > median(win) + SPREAD_K * spread) { count++; last = t; }
+  }
+  return count;
+}
+
+// ---------------------------------------------------------------------------
+// ENERGY = 0.5·L + 0.25·C + 0.25·O, each term clamped to 0–1:
+//   L = (loudness + 45) / 40      -45 LUFS-like → 0, -5 → 1
+//   C = log2(centroid / 250) / 4  250 Hz → 0, 4 kHz → 1
+//   O = onsetDensity / 8          8 onsets per second or more → 1
+// Loudness dominates because it is the most robust of the three on a lossy
+// preview; brightness and onset rate separate "loud but smooth" from "loud
+// and busy". A silent clip (loudness at the -70 floor) is 0.
+
+const clamp01 = v => (v > 1 ? 1 : v > 0 ? v : 0);
+const ENERGY_WEIGHTS = Object.freeze({ loudness: 0.5, centroid: 0.25, onsets: 0.25 });
+
+function energyFrom({ loudness, centroidHz, onsetDensity }) {
+  if (loudness <= LUFS_FLOOR) return 0;
+  const L = clamp01((loudness + 45) / 40);
+  const C = centroidHz > 0 ? clamp01(Math.log2(centroidHz / 250) / 4) : 0;
+  const O = clamp01(onsetDensity / 8);
+  return ENERGY_WEIGHTS.loudness * L + ENERGY_WEIGHTS.centroid * C + ENERGY_WEIGHTS.onsets * O;
+}
+
+const round = (v, d) => { const p = 10 ** d; return Math.round(v * p) / p; };
+
+/**
+ * Loudness, brightness, onset rate and a blended energy for mono audio.
+ * @param {Float32Array|number[]} samples  mono, normally 16 kHz
+ * @param {{ sampleRate?: number }} [opts]
+ * @returns {{ rmsDb: number, loudness: number, shortTermMax: number,
+ *   centroidHz: number, onsetDensity: number, energy: number, version: string }}
+ *   loudness is the gated integrated LUFS-like value; shortTermMax the
+ *   loudest 3 s window; all values finite, rounded for stable storage.
+ */
+function loudness(samples, { sampleRate = SAMPLE_RATE } = {}) {
+  const n = samples.length;
+  const seconds = n / sampleRate;
+
+  // RMS of the raw signal.
+  let sq = 0;
+  for (let i = 0; i < n; i++) sq += samples[i] * samples[i];
+  const rmsDb = n && sq > 0 ? Math.max(RMS_FLOOR_DB, 10 * Math.log10(sq / n)) : RMS_FLOOR_DB;
+
+  // K-weighted, gated loudness.
+  const cum = kWeightedEnergyPrefix(samples, sampleRate);
+  const step = Math.round(BLOCK_STEP_S * sampleRate);
+  const blocks = windowMeans(cum, Math.round(BLOCK_S * sampleRate), step);
+  const integrated = gatedIntegrated(blocks);
+  const shortTerm = windowMeans(cum, Math.round(SHORT_TERM_S * sampleRate), step);
+  const shortTermMax = shortTerm.length ? Math.max(LUFS_FLOOR, toLufs(Math.max(...shortTerm))) : LUFS_FLOOR;
+
+  // STFT pass: centroid of the long-term magnitude spectrum, and flux.
+  const frames = n >= FRAME_SIZE ? Math.floor((n - FRAME_SIZE) / HOP_SIZE) + 1 : (n > 0 ? 1 : 0);
+  const frame = new Float64Array(FRAME_SIZE), re = new Float64Array(M), im = new Float64Array(M);
+  let mag = new Float64Array(N_BINS), prev = new Float64Array(N_BINS);
+  const flux = new Float64Array(frames);
+  const binHz = sampleRate / FRAME_SIZE;
+  let num = 0, den = 0;
+  for (let f = 0; f < frames; f++) {
+    const s = f * HOP_SIZE;
+    for (let i = 0; i < FRAME_SIZE; i++) frame[i] = (s + i < n ? samples[s + i] : 0) * HANN[i];
+    magnitudeSpectrum(frame, re, im, mag);
+    let fl = 0;
+    for (let k = 0; k < N_BINS; k++) {
+      const m = mag[k];
+      num += k * binHz * m; den += m;
+      const c = Math.log1p(FLUX_GAMMA * m);
+      prev[k] = c - prev[k]; // reuse prev as scratch: diff, then swap below
+      if (f > 0 && prev[k] > 0) fl += prev[k];
+      prev[k] = c;
+    }
+    flux[f] = fl;
+  }
+  const centroidHz = den > 1e-12 ? num / den : 0;
+  const onsetDensity = seconds > 0 ? countOnsets(flux, sampleRate / HOP_SIZE) / seconds : 0;
+
+  const out = {
+    rmsDb: round(rmsDb, 2),
+    loudness: round(integrated, 2),
+    shortTermMax: round(shortTermMax, 2),
+    centroidHz: round(centroidHz, 1),
+    onsetDensity: round(onsetDensity, 3),
+  };
+  out.energy = round(energyFrom({ loudness: integrated, centroidHz, onsetDensity }), 4);
+  out.version = LOUDNESS_VERSION;
+  return out;
+}
+return { LOUDNESS_VERSION, ENERGY_WEIGHTS, energyFrom, loudness };
+})();
+/* ---- core/audio/dsp/tempo.mjs ---- */
+__mod["core/audio/dsp/tempo.mjs"] = (function () {
+const { melFrames, SAMPLE_RATE, HOP_SIZE, N_BANDS } = __mod["core/audio/mel.mjs"];
+// Tempo (BPM) from 16 kHz mono audio, in plain JS.
+//
+// WP-D1 of docs/AUDIO-BUILD-PLAN.md. Isomorphic (no DOM, no Node APIs), no
+// dependencies. It reads the same log-mel frames the model does
+// (core/audio/mel.mjs), so the worker can get a tempo for the cost of an
+// autocorrelation by calling tempoFromMel() on frames it already has.
+//
+// Pipeline:
+//   1. onset strength: spectral flux of the log-mel frames (62.5 frames/s) in
+//      four band groups (kick, body, snare, hats), each minus a 1 s moving
+//      average, half-wave rectified, lightly smoothed;
+//   2. autocorrelation of each group, normalised and averaged: A(lag), to 6 s;
+//   3. a comb over the tempo range: comb(T) = mean of A at 1..4 beat periods;
+//      local maxima are candidates, each refined to 0.01 BPM with every
+//      harmonic that fits in the autocorrelation (that is what buys ±1 BPM at
+//      62.5 frames/s);
+//   4. score(T) = comb gated by A at the beat period itself (kills 3:2 and
+//      2:1 ghosts that only share multiples with the real pulse) × a
+//      log-normal tempo prior (120 BPM, σ one octave) × an accent term that
+//      marks down a level evenly divided by a faster in-range level (clicks
+//      at 174 are not "87 with 8ths").
+//
+// Octave ambiguity is reported, not averaged away (music-dna.mjs measured()
+// treats half/double time as the failure that matters): if the candidate at
+// twice or half the winner scores at least OCTAVE_AMBIGUOUS of the winner,
+// `octaveAmbiguous` is true and that partner is always in `alternates`. The
+// periodicity of a pulse train is genuinely the same at T and T/2; only the
+// prior and the accent pattern separate them, and on real music (DnB at
+// 87/174, footwork at 80/160) that is often not enough to be sure.
+//
+// Not measured on real music yet. This ships only with a measured number:
+// scripts/audio-dsp/tempo-vs-rekordbox.mjs compares it with Rekordbox on the
+// owner's files, and that accuracy goes into AUDIO-ANALYSIS-PLAN.md §0 before
+// anything shows or uses these values (WP-D4).
+
+
+
+const TEMPO_VERSION = '1.0.0';
+
+/** Envelope frame rate: one log-mel frame per hop. */
+const FPS = SAMPLE_RATE / HOP_SIZE; // 62.5
+
+/** Partner (×2 or ×½) score at or above this fraction of the winner's: ambiguous. */
+const OCTAVE_AMBIGUOUS = 0.7;
+
+const PRIOR_CENTER = 120;   // BPM; log-normal tempo prior on log2(T)
+const PRIOR_SIGMA = 1;      // octaves
+const ACCENT_PENALTY = 0.35;
+const MAX_LAG_S = 6;        // autocorrelation horizon
+const MIN_SECONDS = 4;      // shorter than this: no answer
+const SILENCE_RMS = 1e-4;   // about -80 dBFS
+const GRID_STEP = 0.25;     // BPM, coarse comb grid
+const MAX_ALTERNATES = 4;
+const MIN_PERIODICITY = 0.1; // below this the envelope has no beat: no answer
+
+const none = () => ({ bpm: null, confidence: 0, alternates: [], octaveAmbiguous: false, version: TEMPO_VERSION });
+const round = (x, d) => Math.round(x * 10 ** d) / 10 ** d;
+
+/**
+ * Estimate tempo from 16 kHz mono samples.
+ * Other sample rates are linearly resampled to 16 kHz first (good enough for
+ * onset timing; not for the model).
+ *
+ * @param {Float32Array|number[]} samples contiguous audio (not spliced windows)
+ * @param {{ sampleRate?: number, min?: number, max?: number }} [opts]
+ * @returns {{ bpm: number|null, confidence: number, alternates: {bpm:number, score:number}[],
+ *             octaveAmbiguous: boolean, version: string }}
+ *   `confidence` 0–1; `alternates` other tempi, best first, score relative to
+ *   the winner's (1 = as good). Silence or too little audio: bpm null, confidence 0.
+ */
+function tempo(samples, { sampleRate = SAMPLE_RATE, min = 60, max = 200 } = {}) {
+  checkRange(min, max);
+  if (!(sampleRate > 0)) throw new RangeError(`sampleRate must be positive, got ${sampleRate}`);
+  const x = sampleRate === SAMPLE_RATE ? samples : resample(samples, sampleRate, SAMPLE_RATE);
+  if (x.length < MIN_SECONDS * SAMPLE_RATE) return none();
+  let ss = 0;
+  for (let i = 0; i < x.length; i++) ss += x[i] * x[i];
+  if (Math.sqrt(ss / x.length) < SILENCE_RMS) return none();
+  return tempoFromMel(melFrames(x), { min, max });
+}
+
+/**
+ * Same as tempo(), from melFrames() output the caller already has.
+ * @param {{ frames: number, data: Float32Array }} mel
+ * @param {{ min?: number, max?: number }} [opts]
+ */
+function tempoFromMel(mel, { min = 60, max = 200 } = {}) {
+  checkRange(min, max);
+  if (!mel || mel.frames < MIN_SECONDS * FPS) return none();
+  const acf = autocorrelation(onsetEnvelopes(mel), Math.min(Math.round(MAX_LAG_S * FPS), Math.floor(mel.frames / 2)));
+  if (!acf) return none();
+
+  const at = lag => interp(acf, lag);
+  const lagOf = bpm => 60 * FPS / bpm;
+  const maxLag = acf.length - 3;
+  // comb over the first `K` beat periods that fit; A below zero counts as zero
+  const comb = (bpm, K = 4) => {
+    const P = lagOf(bpm);
+    const k = Math.min(K, Math.floor(maxLag / P));
+    if (k < 1) return -1;
+    let s = 0;
+    for (let i = 1; i <= k; i++) s += Math.max(0, at(i * P));
+    return s / k;
+  };
+  // fine position: every harmonic that fits, K fixed from the starting point
+  const refine = (bpm0, halfWidth) => {
+    const K = Math.max(1, Math.floor(maxLag / lagOf(Math.max(min, bpm0 - halfWidth))));
+    const lo = Math.max(min, bpm0 - halfWidth), steps = Math.floor((Math.min(max, bpm0 + halfWidth) - lo) / 0.01 + 1e-6);
+    let best = bpm0, bestV = -Infinity;
+    for (let i = 0; i <= steps; i++) {
+      const b = lo + i * 0.01, v = comb(b, K);
+      if (v > bestV) { bestV = v; best = b; }
+    }
+    return best;
+  };
+  const prior = bpm => Math.exp(-0.5 * (Math.log2(bpm / PRIOR_CENTER) / PRIOR_SIGMA) ** 2);
+  // periodicity: the comb, gated by the first period itself. A tempo fills
+  // the comb at some lags just by sharing multiples with the real one; if its
+  // own beat period shows little self-similarity (120 on clicks at 60, 85 on
+  // a 128 kick with off-beat hats) it is not a tempo. Full credit once A(P)
+  // reaches half the comb mean, so the gate removes, it does not rank.
+  const periodicity = bpm => {
+    const c = comb(bpm);
+    return c > 0 ? c * Math.min(1, Math.max(0, at(lagOf(bpm)) / (0.5 * c))) : 0;
+  };
+  // How evenly a faster level d·T (d = 2 or 3) divides this one: A at P/d
+  // over A at P. Near 1, this level carries no accent of its own: clicks at
+  // 174 are not "87 with 8ths", clicks at 200 are not "66.7 in triplets".
+  // Only asked when d·T is itself a tempo this call could answer, since it
+  // exists to choose between the two.
+  const evenness = bpm => {
+    const P = lagOf(bpm), a = at(P);
+    let e = 0;
+    for (const d of [2, 3]) {
+      if (d * bpm > max + 0.01) continue;
+      e = Math.max(e, a > 0 ? Math.min(1, Math.max(0, at(P / d)) / a) : 1);
+    }
+    return e;
+  };
+  const score = bpm => {
+    const c = periodicity(bpm);
+    return c > 0 ? c * prior(bpm) * (1 - ACCENT_PENALTY * evenness(bpm)) : 0;
+  };
+
+  // coarse grid, local maxima
+  const grid = [];
+  for (let i = 0; min + i * GRID_STEP <= max + 1e-9; i++) grid.push([min + i * GRID_STEP, comb(min + i * GRID_STEP)]);
+  const top = Math.max(...grid.map(g => g[1]));
+  if (!(top > 0)) return none();
+  const peaks = [];
+  for (let i = 0; i < grid.length; i++) {
+    const v = grid[i][1];
+    if (v < 0.25 * top) continue;
+    if (i > 0 && grid[i - 1][1] > v) continue;
+    if (i < grid.length - 1 && grid[i + 1][1] >= v) continue;
+    peaks.push(grid[i][0]);
+  }
+
+  const cands = [];
+  const add = bpm => {
+    if (bpm < min - 1e-9 || bpm > max + 1e-9) return null;
+    const near = cands.find(c => Math.abs(c.bpm - bpm) / bpm < 0.015);
+    if (near) return near;
+    const c = { bpm, score: score(bpm) };
+    cands.push(c);
+    return c;
+  };
+  for (const p of peaks) add(refine(p, 1));
+  cands.sort((a, b) => b.score - a.score);
+  const best = cands[0];
+  if (!best || !(periodicity(best.bpm) > MIN_PERIODICITY)) return none();
+
+  // octave partners, evaluated even when they are not peaks of their own
+  const partners = [best.bpm * 2, best.bpm / 2]
+    .filter(b => b >= min - 0.01 && b <= max + 0.01)
+    .map(b => Math.min(max, Math.max(min, b)))
+    .map(b => add(refine(b, b * 0.01)))
+    .filter(Boolean);
+  const partner = partners.sort((a, b) => b.score - a.score)[0] ?? null;
+  const ratio = partner ? partner.score / best.score : 0;
+  const octaveAmbiguous = ratio >= OCTAVE_AMBIGUOUS;
+
+  cands.sort((a, b) => b.score - a.score);
+  const others = cands.filter(c => c !== best && c.score > 0);
+  const alternates = others.slice(0, MAX_ALTERNATES);
+  if (octaveAmbiguous && !alternates.includes(partner)) alternates.splice(MAX_ALTERNATES - 1, 1, partner);
+
+  // confidence: how periodic the envelope is at the winner (gated comb, ~0.9
+  // for a clean click track, under 0.1 for noise), mapped to 0–1, then
+  // discounted by how close the octave partner came (×0.5 when level).
+  // Uncalibrated: the Rekordbox comparison is what gives it a meaning.
+  const conf = Math.min(1, Math.max(0, (periodicity(best.bpm) - MIN_PERIODICITY) / 0.6)) * (1 - ratio / 2);
+
+  return {
+    bpm: round(best.bpm, 1),
+    confidence: round(conf, 3),
+    alternates: alternates.map(c => ({ bpm: round(c.bpm, 1), score: round(c.score / best.score, 3) })),
+    octaveAmbiguous,
+    version: TEMPO_VERSION,
+  };
+}
+
+function checkRange(min, max) {
+  if (!(min > 0 && max > min)) throw new RangeError(`need 0 < min < max, got ${min}..${max}`);
+}
+
+/** Mel band groups (~0–230 Hz, 230–800 Hz, 0.8–2 kHz, 2–8 kHz): kick, body, snare, hats. */
+const BAND_GROUPS = [[0, 7], [7, 24], [24, 52], [52, N_BANDS]];
+
+/**
+ * Onset strength per band group and mel frame: positive log-mel flux summed
+ * over the group's bands, minus its 1 s moving average, half-wave rectified,
+ * smoothed by a 5-tap binomial kernel.
+ *
+ * Why per group: a kick on the beat and a hat on the off-beat are, summed
+ * across the spectrum, just an even pulse at twice the tempo, and that pulse
+ * also fits 2/3 of the tempo (85 for a 128 track). Autocorrelating each group
+ * separately keeps each instrument's own period and drops the cross terms.
+ * @returns {Float64Array[]}
+ */
+function onsetEnvelopes({ frames, data }) {
+  const half = Math.round(FPS / 2);
+  const K = [1, 4, 6, 4, 1];
+  return BAND_GROUPS.map(([b0, b1]) => {
+    const flux = new Float64Array(frames);
+    for (let f = 1; f < frames; f++) {
+      let s = 0;
+      const a = (f - 1) * N_BANDS, b = f * N_BANDS;
+      for (let k = b0; k < b1; k++) { const d = data[b + k] - data[a + k]; if (d > 0) s += d; }
+      flux[f] = s;
+    }
+    const cum = new Float64Array(frames + 1);
+    for (let f = 0; f < frames; f++) cum[f + 1] = cum[f] + flux[f];
+    const rect = new Float64Array(frames);
+    for (let f = 0; f < frames; f++) {
+      const lo = Math.max(0, f - half), hi = Math.min(frames, f + half + 1);
+      rect[f] = Math.max(0, flux[f] - (cum[hi] - cum[lo]) / (hi - lo));
+    }
+    const out = new Float64Array(frames);
+    for (let f = 0; f < frames; f++) {
+      let s = 0, w = 0;
+      for (let j = -2; j <= 2; j++) {
+        const g = f + j;
+        if (g >= 0 && g < frames) { s += K[j + 2] * rect[g]; w += K[j + 2]; }
+      }
+      out[f] = s / w;
+    }
+    return out;
+  });
+}
+
+/**
+ * Unbiased autocorrelation of each mean-removed envelope, normalised per
+ * group to 1 at lag 0, then averaged with equal weight. Equal, not by
+ * variance: on log-mel flux the hats have the most variance, and weighting
+ * by it hands the answer to the hat pulse, which fits every multiple of the
+ * half-beat (174 heard as 116). A group with almost no onset activity (under
+ * 1e-3 of the busiest) is left out rather than amplified. Null when all are flat.
+ */
+function autocorrelation(envs, maxLag) {
+  const n = envs[0].length;
+  if (maxLag < 4) return null;
+  const x = new Float64Array(n);
+  const per = envs.map(env => {
+    let mean = 0;
+    for (let i = 0; i < n; i++) mean += env[i];
+    mean /= n;
+    for (let i = 0; i < n; i++) x[i] = env[i] - mean;
+    const r = new Float64Array(maxLag + 1);
+    for (let lag = 0; lag <= maxLag; lag++) {
+      let s = 0;
+      for (let i = 0; i + lag < n; i++) s += x[i] * x[i + lag];
+      r[lag] = s / (n - lag);
+    }
+    return r;
+  });
+  const top = Math.max(...per.map(r => r[0]));
+  if (!(top > 1e-12)) return null;
+  const used = per.filter(r => r[0] > 1e-3 * top);
+  const acf = new Float64Array(maxLag + 1);
+  for (const r of used) for (let lag = 0; lag <= maxLag; lag++) acf[lag] += r[lag] / r[0] / used.length;
+  return acf;
+}
+
+/** Catmull-Rom interpolation of `a` at fractional index `x`. */
+function interp(a, x) {
+  const i = Math.floor(x), t = x - i;
+  const p0 = a[Math.max(0, i - 1)], p1 = a[i], p2 = a[Math.min(a.length - 1, i + 1)], p3 = a[Math.min(a.length - 1, i + 2)];
+  return p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+}
+
+function resample(x, from, to) {
+  const n = Math.floor(x.length * to / from), out = new Float32Array(n), r = from / to;
+  for (let i = 0; i < n; i++) {
+    const p = i * r, j = Math.floor(p), t = p - j;
+    out[i] = j + 1 < x.length ? x[j] * (1 - t) + x[j + 1] * t : x[Math.min(j, x.length - 1)];
+  }
+  return out;
+}
+return { TEMPO_VERSION, FPS, OCTAVE_AMBIGUOUS, tempo, tempoFromMel };
+})();
+/* ---- core/intrinsic/audio.mjs ---- */
+__mod["core/intrinsic/audio.mjs"] = (function () {
+const { validRecord, isCurrent, unpackEmbedding, EMB_DIM } = __mod["core/audio/record.mjs"];
+// What a track sounds like, against what each of this account's playlists
+// sounds like.
+//
+// WP-E1 of docs/AUDIO-BUILD-PLAN.md. Records come from the audio worker in the
+// frozen shape of `core/audio/record.mjs`; this module turns them into one more
+// nullable component for the intrinsic space, shaped like
+// `bonus-rekordbox.mjs`: an index, a per-destination profile, and a score that
+// is `null` — never 0 — whenever it cannot be judged.
+//
+// The rule it inherits from that module (and CLAUDE.md): with no audio records
+// the engine's output is byte-identical. Nothing here touches a space; it only
+// reads one. `combine()` drops null components and renormalises, so an account
+// with no analysed tracks pays nothing. `test/audiocomponent.test.mjs` asserts
+// it.
+//
+// Geometry, matching what phase 0 measured (scripts/audio-phase0/score.py §2,
+// 58% top-1 / 76% top-2 by nearest centroid): every embedding is unit-normalised
+// first, a playlist's centroid is the mean of its analysed members' unit
+// embeddings renormalised, and a track scores the plain cosine to it. The score
+// is a raw cosine in [-1, 1], not rescaled: how much weight it earns, and how
+// sharply to read it, is WP-E2's measured decision and calibrate.mjs's fit, not
+// a prior baked in here.
+//
+// Deliberately no import from `space.mjs`. WP-E2 wires this module into
+// space.mjs, and `bundler.mjs` refuses an import cycle (there is no order to
+// emit one in), so importing `MIN_DEFINITION_TRACKS` from there would make the
+// wiring unbuildable. The value is restated as `MIN_AUDIO_MEMBERS` and a test
+// pins the two equal, so they cannot drift apart silently.
+
+
+const AUDIO_COMPONENT_VERSION = '1.0.0';
+
+/**
+ * A playlist needs this many *analysed* members before its sound is a
+ * definition rather than a coincidence. Equal to space.mjs's
+ * `MIN_DEFINITION_TRACKS` (pinned by test), and for the same reason: below it
+ * a centroid is one or two records wearing a playlist's name.
+ */
+const MIN_AUDIO_MEMBERS = 5;
+
+const idOf = t => (typeof t === 'string' ? t : t?.id) || null;
+
+/** Unit-normalise into a new Float32Array, or null for a zero/non-finite vector. */
+function unit(v) {
+  let ss = 0;
+  for (let i = 0; i < v.length; i++) ss += v[i] * v[i];
+  if (!(ss > 0) || !Number.isFinite(ss)) return null;
+  const inv = 1 / Math.sqrt(ss);
+  const out = new Float32Array(v.length);
+  for (let i = 0; i < v.length; i++) out[i] = v[i] * inv;
+  return out;
+}
+
+function dot(a, b) {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += a[i] * b[i];
+  return d;
+}
+
+/** Records may arrive as an array, any iterable, a Map, or a plain id → record object. */
+function recordsOf(records) {
+  if (!records || typeof records !== 'object') return [];
+  if (records instanceof Map) return records.values();
+  if (typeof records[Symbol.iterator] === 'function') return records;
+  return Object.values(records);
+}
+
+/**
+ * Spotify id → `{ emb, styles, rec }` for every usable analysed record.
+ *
+ * Usable means: passes `validRecord` (the shape check for anything read back
+ * from storage), is not a miss, is from the current model (`isCurrent` — an
+ * embedding from another backbone lives in a different space and must never
+ * share a centroid with this one), and has a non-zero embedding. `emb` is
+ * unit-normalised. Never throws: junk, misses and stale records are simply
+ * not in the index, which is the ordinary case.
+ *
+ * Two records for one id: the newer (`at`) wins.
+ *
+ * @param {Iterable<object>|Record<string, object>|null} records
+ * @param {{ mel?: string }} [opts]  pass the page's MEL_VERSION to also drop
+ *        records computed with another front end
+ * @returns {Map<string, { emb: Float32Array, styles: Array<[number, number]>, rec: object }>}
+ */
+function audioIndex(records, { mel = undefined } = {}) {
+  const index = new Map();
+  for (const rec of recordsOf(records)) {
+    if (!validRecord(rec) || rec.miss) continue;
+    if (!isCurrent(rec, { mel })) continue;
+    const prev = index.get(rec.id);
+    if (prev && !((rec.at ?? 0) > (prev.rec.at ?? 0))) continue;
+    let emb;
+    try { emb = unit(unpackEmbedding(rec.emb)); } catch { emb = null; }
+    if (!emb || emb.length !== EMB_DIM) continue;
+    index.set(rec.id, { emb, styles: rec.styles, rec });
+  }
+  return index;
+}
+
+/**
+ * A playlist's sound: the mean of its analysed members' unit embeddings,
+ * renormalised. `members` counts distinct analysed tracks (a track filed twice
+ * is one sound, not two votes toward the definition threshold).
+ *
+ * Also carries what leave-one-out needs to be O(dimensions) instead of a
+ * rebuild: `sum` (the un-normalised sum of member unit embeddings) and `ids`
+ * (which tracks are in it). See `profileWithout`.
+ *
+ * @param {Iterable<string|{id:string}>} playlistTrackIds  ids or track objects
+ * @param {Map} index  from `audioIndex`
+ * @param {{ skip?: Set<string> }} [opts]  ids to treat as not filed (fold-level leave-out)
+ * @returns {{ centroid: Float32Array|null, members: number, sum: Float64Array, ids: Set<string> } | null}
+ *          null when no member is analysed. `centroid` is null only in the
+ *          degenerate case of members cancelling to a zero vector.
+ */
+function audioProfileOf(playlistTrackIds, index, { skip = null } = {}) {
+  if (!index?.size || !playlistTrackIds) return null;
+  const ids = new Set();
+  let sum = null;
+  for (const t of playlistTrackIds) {
+    const id = idOf(t);
+    if (!id || ids.has(id) || skip?.has(id)) continue;
+    const row = index.get(id);
+    if (!row) continue;
+    ids.add(id);
+    sum ??= new Float64Array(row.emb.length);
+    for (let i = 0; i < sum.length; i++) sum[i] += row.emb[i];
+  }
+  if (!ids.size) return null;
+  return { centroid: unit(sum), members: ids.size, sum, ids };
+}
+
+/**
+ * Leave-one-out: the same profile with one member taken out, as if it had
+ * never been filed there. Returns the profile unchanged when the track is not
+ * one of its analysed members, and null when removing it leaves nothing.
+ *
+ * Why it exists: scoring a filed track against a centroid that contains the
+ * track itself flatters every accuracy number (the track votes for its own
+ * home). WP-E2's with/without harness and WP-L1's learning curves need the
+ * honest version per track, and rebuilding every profile per track is
+ * needlessly slow. The result equals `audioProfileOf` over the remaining
+ * members up to float rounding (tested to 1e-6).
+ */
+function profileWithout(profile, trackId, index) {
+  const id = idOf(trackId);
+  if (!profile || !id || !profile.ids?.has(id)) return profile ?? null;
+  const row = index?.get(id);
+  if (!row || profile.members <= 1) return null;
+  const sum = Float64Array.from(profile.sum);
+  for (let i = 0; i < sum.length; i++) sum[i] -= row.emb[i];
+  const ids = new Set(profile.ids);
+  ids.delete(id);
+  return { centroid: unit(sum), members: ids.size, sum, ids };
+}
+
+/** A destination-like thing → its member ids. Space destinations carry `trackIds`. */
+function memberIdsOf(d) {
+  if (d?.trackIds) return d.trackIds;
+  if (Array.isArray(d?.tracks)) return d.tracks;
+  return null;
+}
+
+/**
+ * Every destination's sound profile, worked out once — the audio half of a
+ * space. WP-E2 attaches the result as `space.audio`; this module never edits
+ * the space it reads.
+ *
+ * `destinations` may be a whole space (its `.destinations` Map is used), that
+ * Map itself, or an array of playlists `{ id, tracks }`. Using the space's own
+ * destinations is the intended path: they are already filtered for mirrors,
+ * `targets` and `skip`, so audio judges exactly the buckets the rest of the
+ * engine does. `skip` is honoured again here for the raw-playlist path.
+ *
+ * Profiles below `minMembers` are kept (a UI can say "3 of 12 analysed") but
+ * score null in `audioScores`.
+ *
+ * @returns {{ index: Map, profiles: Map<string, object>, size: number, version: string, minMembers: number }}
+ *          `size` counts destinations with enough analysed members to judge.
+ */
+function buildAudioProfiles(destinations, index, { skip = null, minMembers = MIN_AUDIO_MEMBERS } = {}) {
+  const profiles = new Map();
+  let size = 0;
+  if (index?.size) {
+    const src = destinations?.destinations ?? destinations;
+    const list = src instanceof Map ? src.values() : (src ?? []);
+    for (const d of list) {
+      if (!d?.id) continue;
+      const prof = audioProfileOf(memberIdsOf(d) ?? [], index, { skip });
+      if (!prof) continue;
+      profiles.set(d.id, prof);
+      if (prof.members >= minMembers && prof.centroid) size++;
+    }
+  }
+  return { index: index ?? new Map(), profiles, size, version: AUDIO_COMPONENT_VERSION, minMembers };
+}
+
+/**
+ * Sound scores for one track: destination id → cosine to that destination's
+ * centroid, or null for a destination with fewer than `minMembers` analysed
+ * members (null, never 0: "can't judge" is not "sounds wrong").
+ *
+ * Returns null outright — as `bridgeScores` does — when the space has no audio
+ * or the track has not been heard, so the caller adds nothing to `parts` and
+ * the placement is byte-identical to one without this module.
+ *
+ * `space` is a space carrying `.audio` (from `buildAudioProfiles`), or that
+ * audio object itself.
+ *
+ * `leaveOneOut: true` scores a track against each playlist it is itself an
+ * analysed member of with itself removed (`profileWithout`), and re-applies
+ * the `minMembers` floor to what remains. Off by default to match the other
+ * components, which only leave a track out when the space was built with
+ * `skip`; turn it on when grading the engine against tracks already filed
+ * without rebuilding profiles per fold.
+ *
+ * @returns {Map<string, number|null> | null}
+ */
+function audioScores(track, space, { leaveOneOut = false, minMembers = null } = {}) {
+  const audio = space?.audio ?? (space?.profiles instanceof Map ? space : null);
+  if (!audio?.index?.size || !audio.profiles?.size) return null;
+  const id = idOf(track);
+  const row = id ? audio.index.get(id) : null;
+  if (!row) return null;
+  const floor = minMembers ?? audio.minMembers ?? MIN_AUDIO_MEMBERS;
+
+  const out = new Map();
+  for (const [destId, base] of audio.profiles) {
+    const prof = leaveOneOut ? profileWithout(base, id, audio.index) : base;
+    out.set(destId, prof?.centroid && prof.members >= floor ? +dot(row.emb, prof.centroid).toFixed(6) : null);
+  }
+  return out;
+}
+return { AUDIO_COMPONENT_VERSION, MIN_AUDIO_MEMBERS, audioIndex, audioProfileOf, profileWithout, buildAudioProfiles, audioScores };
+})();
+/* ---- core/intrinsic/audio-learn.mjs ---- */
+__mod["core/intrinsic/audio-learn.mjs"] = (function () {
+const { MIN_AUDIO_MEMBERS } = __mod["core/intrinsic/audio.mjs"];
+// What this account's playlists sound like, learned from their own members.
+//
+// WP-L1 of docs/AUDIO-BUILD-PLAN.md: the part that makes the audio "learn".
+// `audio.mjs` (WP-E1) scores a track by plain cosine to each playlist's
+// centroid. This module trains, in the page, on the account's own analysed
+// playlist members, and answers with a probability per playlist that
+// `calibrate.mjs` can band:
+//
+//   1. prototypes: the centroid baseline phase 0 measured (58% top-1, 76%
+//      top-2 from nine examples), turned into probabilities by a softmax whose
+//      temperature is fitted on a held-out fold
+//   2. a multinomial logistic regression on the standardised embeddings, with
+//      L2 regularisation, a class-balanced loss, and early stopping on the
+//      same held-out fold
+//
+// Both are fitted, both are scored on the held-out fold, and the learner keeps
+// whichever explained it better (lower class-balanced log loss). Logistic
+// regression has to beat the baseline honestly on tracks it did not see; it is
+// not assumed to. Then the winner is refitted on every example (logistic
+// regression for the epoch count early stopping chose), so a playlist with
+// five analysed members is not trained on four.
+//
+// Rules inherited from audio.mjs and CLAUDE.md:
+//   - no records, no learner: `learnAudio` returns null and `learnedScores`
+//     null, so the engine adds nothing and its output is byte-identical
+//   - a playlist with fewer than MIN_AUDIO_MEMBERS analysed members is not a
+//     class; it scores null, never 0
+//   - deterministic: the held-out fold comes from a hash of the track id, not
+//     Math.random, so the same library trains the same model
+//   - nothing leaves the account: the training data is this account's own
+//     playlist structure over Deezer audio embeddings, and the model is never
+//     shared or pooled (docs/SMARTER-GENRES-PLAN.md §3)
+//
+// No import from space.mjs, for the reason audio.mjs gives (WP-E2 wires both
+// into space.mjs; bundler.mjs refuses a cycle).
+
+
+const AUDIO_LEARN_VERSION = '1.0.0';
+
+const LEARN_DEFAULTS = {
+  /** A playlist needs this many analysed members to be a class (= audio.mjs's floor). */
+  minMembers: MIN_AUDIO_MEMBERS,
+  /** Share of each class held out for early stopping and model choice. */
+  holdout: 0.2,
+  /** L2 strengths tried on the held-out fold; the best is kept. Per unit of
+   *  standardised weight, so they mean the same at any dimension. */
+  l2: [1, 3],
+  /** Adam on the full batch. */
+  lr: 0.01,
+  maxEpochs: 150,
+  /** Stop when held-out loss has not improved for this many epochs. */
+  patience: 12,
+  /** Prototype softmax temperatures tried (cosines live in a narrow band). */
+  temperatures: [0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1, 0.15, 0.2],
+  /** 'auto' keeps the held-out winner; 'prototype' or 'logistic' forces one. */
+  model: 'auto',
+  /** Standardise each dimension (true) or only centre and scale globally (false). */
+  perDim: true,
+  /** Start from, and regularise toward, the prototype model instead of zero. */
+  prior: true,
+  /** Training examples kept per playlist (deterministic sample). Bounds the
+   *  cost of one fit to about K · maxPerClass · 1280 · epochs multiply-adds
+   *  whatever the library size; the learning curve flattens long before. */
+  maxPerClass: 200,
+  /** In 'auto', logistic regression is only tried when every playlist has at
+   *  least this many analysed members. Below it the held-out fold is one or
+   *  two tracks a playlist, too few to choose between models on: measured on
+   *  the phase 0 fixture, 'auto' at 5 per playlist picked logistic 8 times in
+   *  10 and lost a point of top-1 to the baseline (57.6% vs 58.8%). */
+  minForLogistic: 10,
+};
+
+const idOf = t => (typeof t === 'string' ? t : t?.id) || null;
+
+function memberIdsOf(d) {
+  if (d?.trackIds) return d.trackIds;
+  if (Array.isArray(d?.tracks)) return d.tracks;
+  return null;
+}
+
+/** FNV-1a, salted: a track's place in the held-out fold, independent of anything else. */
+function hash(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h;
+}
+
+/* ------------------------------------------------------------------ data */
+
+/**
+ * The training set: every analysed member of every destination with enough
+ * analysed members. A track filed in two playlists is one example whose target
+ * is split between them, not two contradicting examples.
+ *
+ * @param {object|Map|Array} destinations  a space, its `.destinations` Map, or [{ id, tracks|trackIds }]
+ * @param {Map} index  from audio.mjs `audioIndex` (unit embeddings)
+ * @param {{ skip?: Set<string>, minMembers?: number }} [opts]
+ * @returns {{ classes: string[], ids: string[], X: Float32Array[], Y: number[][], counts: number[], short: string[] }}
+ *          `Y[i]` lists the class indices example i belongs to. `short` names
+ *          destinations that had some, but too few, analysed members.
+ */
+function trainingSet(destinations, index, { skip = null, minMembers = LEARN_DEFAULTS.minMembers } = {}) {
+  const src = destinations?.destinations ?? destinations;
+  const list = src instanceof Map ? [...src.values()] : [...(src ?? [])];
+  const members = [], short = [];
+  for (const d of list) {
+    if (!d?.id) continue;
+    const ids = new Set();
+    for (const t of memberIdsOf(d) ?? []) {
+      const id = idOf(t);
+      if (id && !skip?.has(id) && index?.has(id)) ids.add(id);
+    }
+    if (ids.size >= minMembers) members.push([d.id, ids]);
+    else if (ids.size) short.push(d.id);
+  }
+  members.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  const classes = members.map(([id]) => id);
+  const rows = new Map();
+  members.forEach(([, ids], c) => { for (const id of ids) (rows.get(id) ?? rows.set(id, []).get(id)).push(c); });
+  const ids = [...rows.keys()].sort();
+  return {
+    classes, ids,
+    X: ids.map(id => index.get(id).emb),
+    Y: ids.map(id => rows.get(id)),
+    counts: members.map(([, s]) => s.size),
+    short,
+  };
+}
+
+/** Subset of a training set by example index (classes kept, counts recomputed). */
+function subset(set, keep) {
+  const counts = new Array(set.classes.length).fill(0);
+  for (const i of keep) for (const c of set.Y[i]) counts[c]++;
+  return { classes: set.classes, ids: keep.map(i => set.ids[i]), X: keep.map(i => set.X[i]),
+           Y: keep.map(i => set.Y[i]), counts, short: set.short ?? [] };
+}
+
+/**
+ * Deterministic held-out split: about `share` of each class's examples, never
+ * all of one (a class keeps at least one training example), always at least
+ * one held out when the class has two or more. An example is assigned by its
+ * first class. `groupOf` (e.g. id → artist) keeps a group on one side, so an
+ * artist cannot be learned in training and recognised in the fold.
+ */
+function holdoutSplit(set, { share = LEARN_DEFAULTS.holdout, groupOf = null, salt = 'audio-learn' } = {}) {
+  const byClass = new Map();
+  set.ids.forEach((id, i) => {
+    const c = set.Y[i][0];
+    (byClass.get(c) ?? byClass.set(c, []).get(c)).push(i);
+  });
+  const train = [], val = [];
+  for (const [, idx] of [...byClass].sort((a, b) => a[0] - b[0])) {
+    const key = i => `${salt}:${groupOf ? (groupOf(set.ids[i]) ?? set.ids[i]) : set.ids[i]}`;
+    const groups = new Map();
+    for (const i of idx) (groups.get(key(i)) ?? groups.set(key(i), []).get(key(i))).push(i);
+    const order = [...groups].sort((a, b) => hash(a[0]) - hash(b[0]) || (a[0] < b[0] ? -1 : 1));
+    const want = idx.length >= 2 ? Math.max(1, Math.round(idx.length * share)) : 0;
+    let held = 0;
+    for (const [, g] of order) {
+      if (held < want && held + g.length < idx.length) { val.push(...g); held += g.length; }
+      else train.push(...g);
+    }
+  }
+  return { train: train.sort((a, b) => a - b), val: val.sort((a, b) => a - b) };
+}
+
+/** Per-class weight so every playlist counts equally, whatever its size: N / (K · n_c). */
+function classWeights(set) {
+  const K = set.classes.length, N = set.ids.length;
+  return set.counts.map(n => (n > 0 ? N / (K * n) : 0));
+}
+
+/** Soft target: an example's mass split equally over its playlists. */
+function targetOf(y, K) {
+  const t = new Float64Array(K);
+  for (const c of y) t[c] += 1 / y.length;
+  return t;
+}
+
+/* ------------------------------------------------------------ prototypes */
+
+function unitInto(sum) {
+  let ss = 0;
+  for (let i = 0; i < sum.length; i++) ss += sum[i] * sum[i];
+  if (!(ss > 0)) return null;
+  const inv = 1 / Math.sqrt(ss), out = new Float32Array(sum.length);
+  for (let i = 0; i < sum.length; i++) out[i] = sum[i] * inv;
+  return out;
+}
+
+function dot(a, b) {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += a[i] * b[i];
+  return d;
+}
+
+/**
+ * Centroid per class, from unit embeddings (the geometry audio.mjs and phase 0
+ * use). `T` is the softmax temperature that turns cosines into probabilities.
+ */
+function trainPrototypes(set, { T = 0.05 } = {}) {
+  const K = set.classes.length, D = set.X[0]?.length ?? 0;
+  const sums = Array.from({ length: K }, () => new Float64Array(D));
+  set.X.forEach((x, i) => { for (const c of set.Y[i]) for (let k = 0; k < D; k++) sums[c][k] += x[k]; });
+  return { kind: 'prototype', classes: set.classes, centroids: sums.map(unitInto), T };
+}
+
+/* ------------------------------------------------------- logistic model */
+
+/** Mean and standard deviation per dimension, over the training examples. */
+function standardiser(X, perDim = true) {
+  const D = X[0].length, N = X.length;
+  const mean = new Float64Array(D), sd = new Float64Array(D);
+  for (const x of X) for (let k = 0; k < D; k++) mean[k] += x[k] / N;
+  for (const x of X) for (let k = 0; k < D; k++) sd[k] += (x[k] - mean[k]) ** 2 / N;
+  if (!perDim) {
+    // One scale for every dimension: centred, total variance D, geometry kept.
+    const tot = Math.sqrt(sd.reduce((a, b) => a + b, 0) / D) || 1;
+    sd.fill(tot * tot);
+  }
+  for (let k = 0; k < D; k++) sd[k] = Math.sqrt(sd[k]) || 1;
+  return { mean: Float32Array.from(mean), inv: Float32Array.from(sd, s => 1 / s) };
+}
+
+function standardise(X, { mean, inv }) {
+  const D = mean.length, out = new Float32Array(X.length * D);
+  X.forEach((x, i) => { const o = i * D; for (let k = 0; k < D; k++) out[o + k] = (x[k] - mean[k]) * inv[k]; });
+  return out;
+}
+
+/** Logits for row r of a flat [N × D] matrix into `z` (length K). */
+function logitsInto(z, W, b, Z, r, D, K) {
+  const o = r * D;
+  for (let c = 0; c < K; c++) {
+    let s = b[c];
+    const w = c * D;
+    for (let k = 0; k < D; k++) s += W[w + k] * Z[o + k];
+    z[c] = s;
+  }
+}
+
+function softmaxInPlace(z) {
+  let m = -Infinity;
+  for (const v of z) if (v > m) m = v;
+  let s = 0;
+  for (let c = 0; c < z.length; c++) { z[c] = Math.exp(z[c] - m); s += z[c]; }
+  for (let c = 0; c < z.length; c++) z[c] /= s;
+  return z;
+}
+
+/**
+ * Class-balanced cross-entropy of probability rows against targets:
+ * Σ_i Σ_c w_c t_ic (−log p_ic) / Σ_i Σ_c w_c t_ic.
+ */
+function balancedLoss(P, T, w) {
+  let loss = 0, mass = 0;
+  for (let i = 0; i < P.length; i++) {
+    for (let c = 0; c < w.length; c++) {
+      if (!T[i][c]) continue;
+      loss -= w[c] * T[i][c] * Math.log(Math.max(P[i][c], 1e-12));
+      mass += w[c] * T[i][c];
+    }
+  }
+  return mass ? loss / mass : 0;
+}
+
+/**
+ * Multinomial logistic regression, full-batch Adam.
+ *
+ * Loss: class-balanced cross-entropy (each playlist weighs the same, so a big
+ * playlist cannot win every track by being big) + (l2/2)·‖W‖², bias
+ * unregularised. With `val`, stops when the held-out balanced loss has not
+ * improved for `patience` epochs and keeps the best epoch's weights.
+ *
+ * @param {object} set  training set (from `trainingSet`/`subset`)
+ * @param {{ l2?: number, lr?: number, maxEpochs?: number, patience?: number, val?: object, epochs?: number }} [opts]
+ *        `epochs` trains exactly that many with no early stopping (the refit)
+ */
+function trainLogistic(set, opts = {}) {
+  const { l2 = LEARN_DEFAULTS.l2[0], lr = LEARN_DEFAULTS.lr, maxEpochs = LEARN_DEFAULTS.maxEpochs,
+          patience = LEARN_DEFAULTS.patience, val = null, epochs = null,
+          perDim = LEARN_DEFAULTS.perDim, prior = LEARN_DEFAULTS.prior, T0 = 0.05 } = opts;
+  const K = set.classes.length, D = set.X[0].length, N = set.X.length;
+  const std = standardiser(set.X, perDim);
+  const Z = standardise(set.X, std);
+  const w = classWeights(set);
+  const T = set.Y.map(y => targetOf(y, K));
+  const sw = T.map(t => t.reduce((s, v, c) => s + v * w[c], 0));
+  const S = sw.reduce((a, b) => a + b, 0) || 1;
+
+  const W = new Float32Array(K * D), b = new Float32Array(K);
+  // Prior: the prototype model written as logistic weights. cos(x, c)/T0 is
+  // linear in x, so in the standardised space z = (x − μ)·inv it is
+  // W0·z + b0 with W0[c,k] = c_k / (inv_k·T0) and b0_c = μ·c / T0. Training
+  // starts there and the L2 penalty pulls toward it instead of toward zero:
+  // with few examples the model stays the baseline, with more it moves only
+  // where the held-out loss says moving pays.
+  let W0 = null;
+  if (prior) {
+    const proto = trainPrototypes(set);
+    W0 = new Float32Array(K * D);
+    for (let c = 0; c < K; c++) {
+      const cen = proto.centroids[c];
+      if (!cen) continue;
+      let mb = 0;
+      for (let k = 0; k < D; k++) { W0[c * D + k] = cen[k] / (std.inv[k] * T0); mb += std.mean[k] * cen[k]; }
+      b[c] = mb / T0;
+    }
+    W.set(W0);
+  }
+  const gW = new Float32Array(K * D), gb = new Float64Array(K);
+  const mW = new Float32Array(K * D), vW = new Float32Array(K * D);
+  const mb = new Float64Array(K), vb = new Float64Array(K);
+  const b1 = 0.9, b2 = 0.999, eps = 1e-8;
+  const z = new Float64Array(K);
+
+  let Zv = null, Tv = null;
+  if (val && !epochs) { Zv = standardise(val.X, std); Tv = val.Y.map(y => targetOf(y, K)); }
+  const wv = val ? classWeights({ ...val, classes: set.classes }) : null;
+  const valLoss = () => {
+    const P = [];
+    for (let i = 0; i < val.X.length; i++) { logitsInto(z, W, b, Zv, i, D, K); P.push(Float64Array.from(softmaxInPlace(z))); }
+    return balancedLoss(P, Tv, wv.map((x, c) => (set.counts[c] ? x : 0)));
+  };
+
+  const limit = epochs ?? maxEpochs;
+  let best = { loss: Infinity, epoch: 0, W: null, b: null }, since = 0, ran = 0;
+  for (let e = 1; e <= limit; e++) {
+    gW.fill(0); gb.fill(0);
+    for (let i = 0; i < N; i++) {
+      logitsInto(z, W, b, Z, i, D, K);
+      softmaxInPlace(z);
+      const o = i * D;
+      for (let c = 0; c < K; c++) {
+        const g = (sw[i] * z[c] - w[c] * T[i][c]) / S;
+        if (!g) continue;
+        gb[c] += g;
+        const r = c * D;
+        for (let k = 0; k < D; k++) gW[r + k] += g * Z[o + k];
+      }
+    }
+    const c1 = 1 - b1 ** e, c2 = 1 - b2 ** e;
+    for (let j = 0; j < W.length; j++) {
+      const g = gW[j] + l2 * (W0 ? W[j] - W0[j] : W[j]);
+      mW[j] = b1 * mW[j] + (1 - b1) * g;
+      vW[j] = b2 * vW[j] + (1 - b2) * g * g;
+      W[j] -= (lr * (mW[j] / c1)) / (Math.sqrt(vW[j] / c2) + eps);
+    }
+    for (let c = 0; c < K; c++) {
+      mb[c] = b1 * mb[c] + (1 - b1) * gb[c];
+      vb[c] = b2 * vb[c] + (1 - b2) * gb[c] * gb[c];
+      b[c] -= (lr * (mb[c] / c1)) / (Math.sqrt(vb[c] / c2) + eps);
+    }
+    ran = e;
+    if (Zv) {
+      const l = valLoss();
+      if (l < best.loss - 1e-6) { best = { loss: l, epoch: e, W: W.slice(), b: b.slice() }; since = 0; }
+      else if (++since >= patience) break;
+    }
+  }
+  const model = { kind: 'logistic', classes: set.classes, mean: std.mean, inv: std.inv, l2,
+                  W: best.W ?? W, b: best.b ?? b, epochs: best.W ? best.epoch : ran };
+  if (Zv) model.valLoss = +best.loss.toFixed(6);
+  return model;
+}
+
+/* -------------------------------------------------------------- predict */
+
+/**
+ * Class probabilities for one unit embedding, in `model.classes` order.
+ * @returns {Float64Array}
+ */
+function predictProba(model, emb) {
+  const K = model.classes.length, z = new Float64Array(K);
+  if (model.kind === 'prototype') {
+    for (let c = 0; c < K; c++) z[c] = model.centroids[c] ? dot(emb, model.centroids[c]) / model.T : -Infinity;
+    return softmaxInPlace(z);
+  }
+  const D = model.mean.length, x = new Float32Array(D);
+  for (let k = 0; k < D; k++) x[k] = (emb[k] - model.mean[k]) * model.inv[k];
+  logitsInto(z, model.W, model.b, x, 0, D, K);
+  return softmaxInPlace(z);
+}
+
+/** Held-out balanced log loss and top-1 of a model on a set. */
+function heldOut(model, set) {
+  const K = set.classes.length;
+  const P = set.X.map(x => predictProba(model, x));
+  const T = set.Y.map(y => targetOf(y, K));
+  const w = classWeights(set);
+  let right = 0;
+  P.forEach((p, i) => { let a = 0; for (let c = 1; c < K; c++) if (p[c] > p[a]) a = c; if (set.Y[i].includes(a)) right++; });
+  return { loss: balancedLoss(P, T, w), top1: set.X.length ? right / set.X.length : null };
+}
+
+/** The prototype temperature with the lowest held-out balanced loss. */
+function fitPrototypeT(train, val, temperatures) {
+  const base = trainPrototypes(train);
+  let best = null;
+  for (const T of temperatures) {
+    const { loss } = heldOut({ ...base, T }, val);
+    if (!best || loss < best.loss) best = { T, loss };
+  }
+  return best;
+}
+
+/* ---------------------------------------------------------------- learn */
+
+/**
+ * Fit both models on a training set and keep the honest winner.
+ *
+ * Splits a held-out fold (`holdoutSplit`), fits the prototype temperature and
+ * the logistic model (each L2 in `opts.l2`, early-stopped) on the rest, picks
+ * by held-out balanced log loss, then refits the winner on every example.
+ * With too few examples to hold any out, it falls back to prototypes at the
+ * middle temperature — the baseline needs no tuning to be sane.
+ *
+ * @returns {object|null} a model plus `{ chosen, held: { prototype, logistic } }`, or null with fewer than two classes
+ */
+function fitSet(set, opts = {}) {
+  const o = { ...LEARN_DEFAULTS, ...opts };
+  if (!set || set.classes.length < 2 || !set.X.length) return null;
+  const { train, val } = holdoutSplit(set, { share: o.holdout, groupOf: o.groupOf });
+  const trainSet = subset(set, train), valSet = subset(set, val);
+  const fallbackT = o.temperatures[Math.floor(o.temperatures.length / 2)];
+
+  if (!val.length || trainSet.counts.some(n => n === 0)) {
+    const m = trainPrototypes(set, { T: fallbackT });
+    return { ...m, chosen: 'prototype', held: null };
+  }
+
+  const proto = fitPrototypeT(trainSet, valSet, o.temperatures);
+  const held = { prototype: { loss: +proto.loss.toFixed(6), top1: heldOut({ ...trainPrototypes(trainSet), T: proto.T }, valSet).top1, T: proto.T } };
+
+  let lr = null;
+  const tryLogistic = o.model === 'logistic' || (o.model === 'auto' && Math.min(...set.counts) >= o.minForLogistic);
+  if (tryLogistic) {
+    for (const l2 of [].concat(o.l2)) {
+      const m = trainLogistic(trainSet, { ...o, l2, val: valSet, T0: proto.T });
+      const h = heldOut(m, valSet);
+      if (!lr || h.loss < lr.loss) lr = { l2, epochs: m.epochs, loss: h.loss, top1: h.top1 };
+    }
+    held.logistic = { loss: +lr.loss.toFixed(6), top1: lr.top1, l2: lr.l2, epochs: lr.epochs };
+  }
+
+  const useLogistic = o.model === 'logistic' || (o.model === 'auto' && lr != null && lr.loss < proto.loss);
+  const model = useLogistic
+    ? trainLogistic(set, { ...o, l2: lr.l2, T0: proto.T, epochs: Math.max(1, lr.epochs) })
+    : trainPrototypes(set, { T: proto.T });
+  return { ...model, chosen: model.kind, held };
+}
+
+/** Keep at most `cap` examples per (first) class, chosen by id hash. Counts are of what is kept. */
+function capPerClass(set, cap) {
+  if (!(cap > 0) || !set.counts.some(n => n > cap)) return set;
+  const by = new Map();
+  set.ids.forEach((id, i) => { const c = set.Y[i][0]; (by.get(c) ?? by.set(c, []).get(c)).push(i); });
+  const keep = [];
+  for (const [, idx] of by) keep.push(...idx.sort((a, b) => hash(`cap:${set.ids[a]}`) - hash(`cap:${set.ids[b]}`) || a - b).slice(0, cap));
+  return subset(set, keep.sort((a, b) => a - b));
+}
+
+/**
+ * Learn this account's playlists' sound. The entry point for WP-E2.
+ *
+ * `destinations` is the space (or its destinations), as for audio.mjs's
+ * `buildAudioProfiles`, so the learner judges exactly the buckets the rest of
+ * the engine does. `skip` leaves tracks out as if never filed (fold-level
+ * leave-out for `placementAccuracy`).
+ *
+ * @param {object|Map|Array} destinations
+ * @param {Map} index  audio.mjs `audioIndex`
+ * @param {object} [opts]  LEARN_DEFAULTS overrides, plus `skip` and `groupOf`
+ * @returns {null | { version, model, classes: string[], counts: number[], short: string[], examples: number, index: Map, chosen, held }}
+ *          null when there is nothing to learn (no index, or fewer than two
+ *          playlists with `minMembers` analysed members)
+ */
+function learnAudio(destinations, index, opts = {}) {
+  if (!index?.size) return null;
+  const o = { ...LEARN_DEFAULTS, ...opts };
+  const set = capPerClass(trainingSet(destinations, index, { skip: o.skip, minMembers: o.minMembers }), o.maxPerClass);
+  const fitted = fitSet(set, o);
+  if (!fitted) return null;
+  const { chosen, held, ...model } = fitted;
+  return {
+    version: AUDIO_LEARN_VERSION, model, classes: set.classes, counts: set.counts,
+    short: set.short, examples: set.ids.length, index, chosen, held,
+  };
+}
+
+/**
+ * Per-playlist probabilities for one track: destination id → P(belongs there),
+ * summing to 1 over the learned playlists, plus `null` for each destination
+ * that had analysed members but too few to learn (null, never 0).
+ *
+ * Null outright when there is no learner or the track has not been heard, so
+ * the caller adds nothing and the placement is byte-identical.
+ *
+ * @param {string|{id:string}} track
+ * @param {object|null} learner  from `learnAudio`, or a space carrying `.learned`
+ * @param {{ index?: Map }} [opts]  index to read the track's embedding from (default: the learner's)
+ * @returns {Map<string, number|null> | null}
+ */
+function learnedScores(track, learner, { index = null } = {}) {
+  const L = learner?.model ? learner : learner?.learned;
+  if (!L?.model) return null;
+  const id = idOf(track);
+  const row = id ? (index ?? L.index)?.get(id) : null;
+  if (!row) return null;
+  const p = predictProba(L.model, row.emb);
+  const out = new Map();
+  L.classes.forEach((c, i) => out.set(c, +p[i].toFixed(6)));
+  for (const s of L.short ?? []) if (!out.has(s)) out.set(s, null);
+  return out;
+}
+
+/**
+ * The hook WP-E2's `buildSpace(lib, { audio: { learn } })` calls once per
+ * space (so once per fold in `placementAccuracy`): `learn({ index, profiles,
+ * minMembers })`, with `profiles` from audio.mjs `buildAudioProfiles` — their
+ * `.ids` are the analysed members with the fold already left out, so this
+ * trains on exactly those and nothing else.
+ *
+ *   buildSpace(lib, { audio: { records, learn: trainLearner } })
+ *
+ * @returns {null | { learner, learnedScores: (track) => Map<string, number|null> | null }}
+ */
+function trainLearner({ index, profiles, minMembers } = {}, opts = {}) {
+  if (!index?.size || !profiles?.size) return null;
+  const dests = [...profiles].map(([id, p]) => ({ id, trackIds: [...(p?.ids ?? [])] }));
+  const learner = learnAudio(dests, index, { ...opts, minMembers: minMembers ?? opts.minMembers ?? LEARN_DEFAULTS.minMembers });
+  if (!learner) return null;
+  return { learner, learnedScores: track => learnedScores(track, learner) };
+}
+
+/**
+ * `learnedScores` as `calibrate.mjs` rows want them: [[playlistId, log p], …],
+ * highest first, nulls dropped. Log probabilities, because calibrate softmaxes
+ * its scores at a fitted temperature, and softmax(log p) at T = 1 is p itself:
+ * the fit can keep the learner's own confidence or sharpen or soften it.
+ */
+function calibrationScores(scores) {
+  if (!scores) return [];
+  return [...scores]
+    .filter(([, p]) => p != null)
+    .map(([id, p]) => [id, +Math.log(Math.max(p, 1e-12)).toFixed(5)])
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+}
+
+/* ------------------------------------------------------------- measure */
+
+/**
+ * k-fold cross-validated accuracy of the prototype baseline and the learner
+ * (and which one `auto` chose) on a labelled set. Folds are by `groupOf` when
+ * given (artist), so no artist is in both training and test.
+ *
+ * @param {object} set  from `trainingSet` or a fixture
+ * @param {{ folds?: number, perClass?: number|null, repeats?: number, groupOf?: Function, salt?: string }} [opts]
+ *        `perClass` subsamples each class's training examples to that many
+ *        (a learning-curve point); the test fold is never subsampled
+ * @returns {{ n, prototype: {top1, top2}, logistic: {top1, top2}, auto: {top1, top2, logistic: number} }}
+ */
+function crossValidate(set, opts = {}) {
+  const { folds = 5, perClass = null, repeats = 1, groupOf = null, salt = 'cv', ...fit } = opts;
+  const acc = () => ({ n: 0, top1: 0, top2: 0 });
+  const res = { prototype: acc(), logistic: acc(), auto: acc(), autoLogistic: 0, runs: 0 };
+  const foldOf = i => hash(`${salt}:${groupOf ? groupOf(set.ids[i]) ?? set.ids[i] : set.ids[i]}`) % folds;
+  const score = (bucket, model, test) => {
+    test.X.forEach((x, i) => {
+      const p = predictProba(model, x);
+      const order = [...p.keys()].sort((a, b) => p[b] - p[a]);
+      bucket.n++;
+      if (test.Y[i].includes(order[0])) bucket.top1++;
+      if (test.Y[i].includes(order[0]) || test.Y[i].includes(order[1])) bucket.top2++;
+    });
+  };
+  for (let f = 0; f < folds; f++) {
+    const testIdx = [], poolIdx = [];
+    set.ids.forEach((_, i) => (foldOf(i) === f ? testIdx : poolIdx).push(i));
+    if (!testIdx.length) continue;
+    for (let r = 0; r < repeats; r++) {
+      let trainIdx = poolIdx;
+      if (perClass) {
+        const by = new Map();
+        for (const i of poolIdx) { const c = set.Y[i][0]; (by.get(c) ?? by.set(c, []).get(c)).push(i); }
+        trainIdx = [];
+        for (const [, idx] of by) {
+          const ord = idx.slice().sort((a, b) => hash(`${salt}:${f}:${r}:${set.ids[a]}`) - hash(`${salt}:${f}:${r}:${set.ids[b]}`));
+          trainIdx.push(...ord.slice(0, perClass));
+        }
+        trainIdx.sort((a, b) => a - b);
+      }
+      const train = subset(set, trainIdx), test = subset(set, testIdx);
+      if (train.counts.some(n => n === 0)) continue;
+      const gOf = groupOf;
+      const proto = fitSet(train, { ...fit, model: 'prototype', groupOf: gOf });
+      const logi = fitSet(train, { ...fit, model: 'logistic', groupOf: gOf });
+      const auto = fitSet(train, { ...fit, model: 'auto', groupOf: gOf });
+      score(res.prototype, proto, test);
+      score(res.logistic, logi, test);
+      score(res.auto, auto, test);
+      if (auto.chosen === 'logistic') res.autoLogistic++;
+      res.runs++;
+    }
+  }
+  const fin = b => ({ n: b.n, top1: b.n ? +(b.top1 / b.n).toFixed(4) : null, top2: b.n ? +(b.top2 / b.n).toFixed(4) : null });
+  return { n: res.prototype.n, runs: res.runs, prototype: fin(res.prototype), logistic: fin(res.logistic),
+           auto: { ...fin(res.auto), logisticShare: res.runs ? +(res.autoLogistic / res.runs).toFixed(3) : null } };
+}
+
+/**
+ * Learning curve: `crossValidate` at each training size per class.
+ * @returns {Array<{ perClass: number, ...crossValidate }>}
+ */
+function learningCurve(set, { sizes = [5, 10, 20, 40], ...opts } = {}) {
+  return sizes.map(perClass => ({ perClass, ...crossValidate(set, { ...opts, perClass }) }));
+}
+return { AUDIO_LEARN_VERSION, LEARN_DEFAULTS, trainingSet, subset, holdoutSplit, trainPrototypes, trainLogistic, predictProba, fitSet, capPerClass, learnAudio, learnedScores, trainLearner, calibrationScores, crossValidate, learningCurve };
+})();
 globalThis["BetterfyAudio"] = __mod["web/audio/index.mjs"];
 globalThis["BetterfyDeezer"] = __mod["core/sources/deezer.mjs"];
+globalThis["BetterfyAudioLearnIntrinsic"] = __mod["core/intrinsic/audio-learn.mjs"];
+globalThis["BetterfyAudioIntrinsic"] = __mod["core/intrinsic/audio.mjs"];
