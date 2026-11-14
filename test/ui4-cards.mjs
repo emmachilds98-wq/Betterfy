@@ -48,6 +48,9 @@ export function cards({ S = {}, R = {}, renderers = {} } = {}) {
   vm.runInContext(between('/** A row of tag chips', 'function describe(rows)', 'tagChips'), sandbox);
   vm.runInContext(between('function artHTML(t', 'function cmpTable(o)', 'vInbox'), sandbox);
   vm.runInContext(between('/** The discovery currently on the card. */', 'function vHistory()', 'vDiscover'), sandbox);
+  // The bundle's own web/ui/sound.mjs functions were just declared in this
+  // context; put the stand-ins back over them.
+  Object.assign(sandbox, renderers);
   return sandbox;
 }
 

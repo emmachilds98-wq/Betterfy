@@ -2032,8 +2032,13 @@ function artHTML(t, hook = 'data-act="play"') {
  * it — not an empty wrapper, not a space — so a card with no such data is byte
  * for byte the card it was before the slots existed (test/fixtures/ui4/). */
 const soundSlot = (cls, html) => html ? `<div class="${cls}">${html}</div>` : '';
-const trackChip = t => t?.sound ? soundSlot('sndchip', soundChip(t.sound)) : '';
-const trackStrip = t => t?.sound ? soundSlot('sndstrip', sectionStrip(t.sound)) : '';
+// Where a track's SoundVM comes from: one set on the track itself, else what
+// listening heard, through the audio side's adapter (WP-D4's dspSoundVM, which
+// stays null until its flag is on). No records or no adapter means no sound.
+const soundOf = t => t?.sound ?? (t?.id && typeof AUDIO !== 'undefined' && AUDIO.records
+  && globalThis.BetterfyAudio?.dspSoundVM ? BetterfyAudio.dspSoundVM(AUDIO.records.get(t.id)) ?? null : null);
+const trackChip = t => { const vm = soundOf(t); return vm ? soundSlot('sndchip', soundChip(vm)) : ''; };
+const trackStrip = t => { const vm = soundOf(t); return vm ? soundSlot('sndstrip', sectionStrip(vm)) : ''; };
 const pickBand = sg => sg?.band ? bandChip(sg.band) : '';
 const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
 
