@@ -1,7 +1,9 @@
 # Handoff — where the audio and genre work stands (2026-11-14)
 
-**Start here.** This is the current state of the work, written for the next
-agent. It supersedes the "order of work" in `docs/UPGRADE-PLAN.md`, which
+**Build 5 starts from `docs/BUILD-5-PLAN.md`**, which supersedes §6 below.
+The rest of this file is still the reference for the sound features.
+
+This is the current state of the work, written for the next agent. It supersedes the "order of work" in `docs/UPGRADE-PLAN.md`, which
 dates from 2026-10-31. The other plan docs are still accurate for their own
 areas; the map in "Read next" says which one covers what.
 

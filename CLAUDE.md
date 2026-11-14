@@ -35,7 +35,12 @@ over anything that needs a file most users won't have.
 - `V2-PLAN.md` — the longer-range architecture review; still mostly
   aspirational, but the "what v1 actually is" and defects sections are
   accurate and worth reading before a big change.
-- `docs/HANDOFF.md` — **start here**: the current state (open PR #88, what
+- `docs/BUILD-5-PLAN.md` — **start here for build 5** (2026-11-14): the full
+  review of the current build, verified bugs, the open-PR verdicts, the
+  restructure (Phase A), the 4-tab UI and motion system (Phase B), smarter
+  functions (Phase C), audio/knowledge upgrades (Phase D) and the wave order.
+  Supersedes HANDOFF §6 and UI-BUILD-PLAN §2/§6.
+- `docs/HANDOFF.md` — the sound features file by file: the current state (open PR #88, what
   waits on the owner), a file map of the sound features, and the ranked next
   work. Newer than `UPGRADE-PLAN.md`.
 - `docs/UPGRADE-PLAN.md` — the older (2026-10-31) order of work across the open PRs
