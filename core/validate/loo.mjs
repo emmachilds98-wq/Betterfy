@@ -33,8 +33,11 @@
 import { buildSpace, placements, BANDS, WEIGHTS } from '../intrinsic/space.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
 import { scoresOf } from '../intrinsic/calibrate.mjs';
+import { audioIndex } from '../intrinsic/audio.mjs';
+import { audioGate } from './gate.mjs';
 
-export const VALIDATE_VERSION = '4.0.0';
+// 4.1.0: `audio` (WP-E2). Without it the result is key for key what 4.0.0 gave.
+export const VALIDATE_VERSION = '4.1.0';
 
 export const DEFAULT_FOLDS = 5;
 
@@ -135,11 +138,18 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
  *                                 quietly leaking.
  * @param {number}  [opts.limit]   cap tracks scored, for a quick pass
  * @param {Function} [opts.isMirror]
+ * @param {*}       [opts.audio]   AudioRecords, or `{ records | index, mel, learn }`
+ *                                 as `buildSpace` takes them. Every track is then
+ *                                 also scored with sound let in (`withAudio`),
+ *                                 against the same fold's space: the sound
+ *                                 profiles and any learner are built without the
+ *                                 fold, so a track never hears itself. The
+ *                                 headline numbers are unchanged by it.
  */
 export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
                                          weights = null, targets = null, bridge = null,
-                                         collect = false } = {}) {
+                                         audio = null, collect = false } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -164,6 +174,16 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
   // core/intrinsic/calibrate.mjs to fit "how sure may it be" against. Every
   // destination has to be ranked for that, not just the top three.
   const rows = collect ? [] : null, rowsPlus = collect && bridge ? [] : null;
+
+  // With audio, the same again for sound: one more ranking per track against
+  // the same space, with `useAudio` letting the sound components in. The
+  // weights are the headline's (no bridge), so the difference between the two
+  // is sound and nothing else. The index is built once, not once per fold:
+  // which tracks have been heard does not depend on the fold, only which of
+  // them define a playlist's sound does, and buildSpace handles that.
+  const audioOpts = audioOptions(audio);
+  const sound = audioOpts ? { all: tally(), neverFiled: tally(), heard: 0, heardNeverFiled: 0,
+                              judged: 0, changed: 0, rows: collect ? [] : null } : null;
   const limit3 = collect ? Infinity : 3;
 
   const stats = {
@@ -181,7 +201,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
   for (const [, members] of groups) {
     const skip = leaky ? null : new Set(members);
-    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge });
+    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge, audio: audioOpts });
     const filed = filedArtists(space);
 
     for (const id of members) {
@@ -227,6 +247,20 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
         if (r[0]?.parts && 'bridge' in r[0].parts) bridgeJudged++;
         withPlus.scored++; if (p1) withPlus.top1++; if (p3) withPlus.top3++;
         if (fresh) { neverFiledPlus.scored++; if (p1) neverFiledPlus.top1++; if (p3) neverFiledPlus.top3++; }
+      }
+
+      if (sound) {
+        const more = space.audio
+          ? placements(track, space, { limit: limit3, weights: base, useAudio: true }) : out;
+        const r = more.results ?? [];
+        if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort() });
+        const s1 = r[0] && want.has(r[0].playlistId);
+        const s3 = r.slice(0, 3).some(x => want.has(x.playlistId));
+        if (space.audio?.index.has(id)) { sound.heard++; if (fresh) sound.heardNeverFiled++; }
+        if (r[0]?.parts && ('audio' in r[0].parts || 'learned' in r[0].parts)) sound.judged++;
+        if (r[0]?.playlistId !== ranked[0]?.playlistId) sound.changed++;
+        sound.all.scored++; if (s1) sound.all.top1++; if (s3) sound.all.top3++;
+        if (fresh) { sound.neverFiled.scored++; if (s1) sound.neverFiled.top1++; if (s3) sound.neverFiled.top3++; }
       }
 
       // Per-bucket, credited to every bucket the track really is in. This is
@@ -278,7 +312,21 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     // that is somebody's only home and a bucket that is a view of others.
     .sort((a, b) => (a.inTop3 ?? 0) - (b.inTop3 ?? 0) || b.n - a.n);
 
-  return {
+  const withAudio = sound ? {
+    ...tallyOut(sound.all),
+    neverFiled: tallyOut(sound.neverFiled),
+    // Of the scored tracks: how many had a record, how many of those were by
+    // never-filed artists, how many top answers sound had a say in, and how
+    // many top answers it moved.
+    heard: sound.heard, heardNeverFiled: sound.heardNeverFiled,
+    judged: sound.judged, changed: sound.changed,
+    analysed: audioOpts.index.size,
+    weights: { audio: base.audio ?? WEIGHTS.audio, learned: base.learned ?? WEIGHTS.learned },
+    learner: typeof audioOpts.learn === 'function',
+    ...(sound.rows ? { rows: sound.rows } : {}),
+  } : null;
+
+  const result = {
     mode: leaky ? 'leaky' : `${folds}-fold`,
     scored: stats.scored,
     top1: rate(stats.top1, stats.scored),
@@ -294,6 +342,20 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                judged: bridgeJudged, weight: bridgeWeight,
                                coverage: bridge.coverage ?? null,
                                ...(rowsPlus ? { rows: rowsPlus } : {}) } } : {}),
+    ...(withAudio ? { withAudio } : {}),
     version: VALIDATE_VERSION,
   };
+  // The verdict travels with the numbers it was read from, so no caller can
+  // show one run's numbers beside another run's verdict.
+  if (withAudio) withAudio.gate = audioGate(result);
+  return result;
+}
+
+/** `audio` as placementAccuracy was given it → buildSpace options with a prebuilt index, or null. */
+function audioOptions(audio) {
+  if (!audio) return null;
+  const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
+    && ('records' in audio || 'index' in audio || 'learn' in audio) ? audio : { records: audio };
+  const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
+  return { index, ...(typeof opts.learn === 'function' ? { learn: opts.learn } : {}) };
 }

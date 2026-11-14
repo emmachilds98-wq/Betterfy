@@ -4955,7 +4955,7 @@ async function engineLoadCalibration() {
     const c = await idb.get(CAL_KEY);
     if (c && c.stamp === calStamp() && c.fingerprint === BetterfyPersist.fingerprint(LIB)
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
-      ENG.calib = { base: c.base, bridge: c.bridge ?? null, at: c.at ?? null };
+      ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
 }
 
@@ -4966,12 +4966,14 @@ async function engineCalibrate(v) {
   await engineLoad();
   const base = BetterfyCalibrate.calibrationReport(mine.rows);
   const bridge = mine.withBridge?.rows ? BetterfyCalibrate.calibrationReport(mine.withBridge.rows) : null;
+  const audio = mine.withAudio?.rows ? BetterfyCalibrate.calibrationReport(mine.withAudio.rows) : null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
-  ENG.calib = { base, bridge, at: Date.now() };
+  if (mine.withAudio) delete mine.withAudio.rows;
+  ENG.calib = { base, bridge, audio, at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
-                             targets: engineTargets(), base, bridge, at: ENG.calib.at });
+                             targets: engineTargets(), base, bridge, audio, at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }
@@ -5306,6 +5308,34 @@ function bridgeCard(v, p) {
       ${esc(verdict.text)}</p>` : ''}`;
 }
 
+/**
+ * Sound against the same folds (WP-E2). Empty until a run was given audio
+ * records. The verdict is the engine's own (core/validate/gate.mjs), carried
+ * on the run: until it passes, sound is shown here and changes no suggestion.
+ */
+function audioCard(v, p) {
+  const w = v && !v.error ? v.mine?.withAudio : null;
+  if (!w) return '';
+  const nf = v.mine.neverFiled, g = w.gate ?? {};
+  return `<h3 style="margin:18px 0 6px; font-size:16px">Adding how it sounds</h3>
+    <p class="why">Each playlist's sound is learned from the tracks you filed there that have been listened to.
+      A track never hears itself: same tracks, same folds as above.</p>
+    <div class="facts" style="margin-top:10px">
+      <div><span><b>With sound</b> — right first time</span><b class="mono">${p(w.top1)}</b></div>
+      <div><span>…without</span><b class="mono">${p(v.mine.top1)}</b></div>
+      <hr>
+      <div><span>Tracks by artists not in any genre playlist yet</span><b class="mono">${nf.scored.toLocaleString()}</b></div>
+      <div><span>…right first time, with sound</span><b class="mono">${p(w.neverFiled.top1)}</b></div>
+      <div><span>…without</span><b class="mono">${p(nf.top1)}</b></div>
+      <hr>
+      <div><span>Scored tracks listened to</span><b class="mono">${w.heard.toLocaleString()} of ${v.mine.scored.toLocaleString()}</b></div>
+      <div><span>…of them by never-filed artists</span><b class="mono">${w.heardNeverFiled.toLocaleString()}</b></div>
+      <div><span>Top answers sound changed</span><b class="mono">${w.changed.toLocaleString()}</b></div>
+    </div>
+    <p class="why" style="margin-top:12px"><b>${g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.'}</b>
+      ${esc(g.text ?? '')}</p>`;
+}
+
 /** Whether long engine work will run off the main thread. */
 const engineInBackground = () => typeof Worker === 'function' && ENGINE_WORKER !== false;
 
@@ -5344,8 +5374,10 @@ function engineSummary() {
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
     v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
     ...bridgeLines(v, pc),
+    ...audioLines(v, pc),
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
+    calibLine('How sure, with sound', ENG.calib?.audio, pc),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   return lines.filter(Boolean).join('\n');
@@ -5367,6 +5399,20 @@ function bridgeLines(v, pc) {
     `Lookups took ${((v.bridgeMs ?? 0) / 1000).toFixed(1)}s${st.fromCache ? `, ${st.fromCache} remembered from before` : ''}`,
     verdict ? `Phase 0: ${verdict.pass === true ? 'PASS' : verdict.pass === false ? 'not yet' : 'undecided'} — ${verdict.text}` : null,
   ].filter(Boolean);
+}
+
+/** Sound's part of the pasteable summary. Counts and rates only. */
+function audioLines(v, pc) {
+  const w = v.mine?.withAudio;
+  if (!w) return [];
+  const g = w.gate ?? {};
+  return [
+    `With sound: top-1 ${pc(w.top1)}, top-3 ${pc(w.top3)} (weights audio ${w.weights?.audio}, learned ${w.learner ? w.weights?.learned : 'none'})`,
+    `Never-filed artists with sound: top-1 ${pc(w.neverFiled.top1)} (without ${pc(v.mine.neverFiled?.top1)})`,
+    `Sound coverage: ${w.heard} of ${v.mine.scored} scored tracks heard (${w.heardNeverFiled} never-filed), `
+      + `${w.analysed} analysed in all; had a say on ${w.judged}, changed ${w.changed} top answers`,
+    `Audio gate: ${g.pass === true ? 'PASS' : g.pass === false ? 'not yet' : 'undecided'} (${g.reason ?? '—'}) — ${g.text ?? ''}`,
+  ];
 }
 
 const engineCopy = guard(async () => {
@@ -5551,6 +5597,7 @@ function vEngine() {
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
       : 'There is nothing to choose between them on your library.'}</p>` : ''}
     ${bridgeCard(v, p)}
+    ${audioCard(v, p)}
     ${v && !v.error ? calibCard(p) : ''}
     ${weakBuckets(v).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
       <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
