@@ -1,0 +1,22 @@
+  /* ---------- Engine: the score with and without sound (UI-6) ----------
+     Two bars per metric on one 0–100% scale, and the gate as a line on the
+     with-sound bar: where it has to reach to count as earning a say. */
+  .sndscore .pairs{display:grid; gap:16px; margin-top:12px}
+  .pair-h{display:flex; justify-content:space-between; align-items:baseline; gap:12px;
+          font-size:14px; color:var(--ink-2); margin-bottom:6px}
+  .pair-d{font-size:13px; color:var(--ink-3)}
+  .pair-d.up{color:var(--ok)} .pair-d.down{color:var(--warn)}
+  .pbar{display:grid; grid-template-columns:76px 1fr 44px; align-items:center; gap:10px; margin-top:4px}
+  .pbar .pl{font-size:12px; color:var(--ink-3)}
+  .pbar>b{font-size:14px; text-align:right}
+  .pbar .trk{position:relative; height:10px; border-radius:999px; background:var(--surface-3)}
+  .pbar .trk>i{position:absolute; inset:0 auto 0 0; width:calc(var(--v) * 100%); border-radius:inherit;
+               background:var(--ink-3); opacity:.55}
+  .pbar.with .trk>i{background:var(--c5); opacity:1}
+  .pbar .trk>s.gate{position:absolute; top:-4px; bottom:-4px; left:calc(var(--g) * 100%); width:0;
+                    border-left:2px dashed var(--ink); transform:translateX(-1px)}
+  .pbar .trk>s.gate.met{border-left-color:var(--ok)}
+  .gateline{display:flex; gap:10px; align-items:center; margin:14px 0 0; font-size:13.5px; color:var(--ink-2); line-height:1.5}
+  .gateline>s.gate{flex:none; width:0; height:18px; border-left:2px dashed var(--ink)}
+  .gateverdict .tag{margin-right:6px}
+  @media (max-width: 760px){ .pbar{grid-template-columns:64px 1fr 40px; gap:8px} }
