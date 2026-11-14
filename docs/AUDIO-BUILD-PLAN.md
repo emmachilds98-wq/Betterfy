@@ -254,7 +254,23 @@ The coordinator's review is at high effort whatever the package used.
 | WP-0a `core/audio/mel.mjs` | **Done.** Worst error 2.1e-4 vs Essentia, frame rule pinned at 13 lengths, 38 ms per 30 s preview (#54) |
 | WP-0b `core/audio/record.mjs` | **Done.** Contract plus 6 tests: int8 embedding cosine > 0.999, ~2.5 KB per record with two windows (~4 KB with a full preview's section timeline) (#54) |
 | WP-0c phase 0 scripts | **Done**, `scripts/audio-phase0/` (#54) |
+| WP-V1 vocab | Built, #55. Review: OK |
+| WP-A1 fetch | Built, #56. Review: OK; preview URL never kept |
+| WP-A3 infer | Built, #57. Review: OK (header patch count corrected) |
+| WP-H1 sections | Built, #58. Review: OK |
+| WP-F1 heads | Built, #59. Open: check each head's class order against its model JSON when the models are hosted (WP-B2) |
+| WP-A4 queue | Built, #60. Review: OK; adds optional `targets`, `isMirror`, `now` |
+| WP-B1 worker | Built, #61. Note for WP-D4: DSP and mel run on the two windows joined, so run tempo/key per window |
+| WP-E1 audio component | Built, #62. Review: OK; byte-identical test passes |
+| WP-D3 loudness | Built, #63. Energy weights hand-picked; check on real previews in WP-D4 |
+| WP-D2 key | Built, #65. Synthetic only; not into records until the Rekordbox run is in §0 |
+| WP-S1 provider | Built, #66 (stacked on #55). Review: OK; engine byte-identical hash pinned |
+| WP-A2 decode | Built, #67. Reference is ffmpeg (Essentia not installable); top-5 through the model not run yet |
+| WP-D1 tempo | Built, #68. Synthetic only; not into records until the Rekordbox run is in §0 |
+| WP-L1, WP-E2, WP-B2 | In progress (2026-11-14), one thread each; B2 builds on UI-0 (#64) |
 | Everything else | Not started |
+
+All 13 built branches merged together pass the full suite (1042 pass, 1 skip), 2026-11-14.
 
 ## 5. Owner decisions recorded
 
