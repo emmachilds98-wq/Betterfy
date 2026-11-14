@@ -12,3 +12,5 @@ export { MEL_VERSION } from '../../core/audio/mel.mjs';
 export { HEADS, summariseHeads } from '../../core/audio/heads.mjs';
 export { dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY } from './dsp-view.mjs';
 export { measureWindows, needsDsp, DSP_VERSION } from '../../core/audio/dsp/combine.mjs';
+export { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean,
+  confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } from '../../core/audio/clap-search.mjs';
