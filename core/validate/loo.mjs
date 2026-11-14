@@ -30,7 +30,7 @@
 // engine. Pessimism is the safe direction for a number used to decide whether
 // to take over somebody's filing.
 // ---------------------------------------------------------------------------
-import { buildSpace, placements, BANDS } from '../intrinsic/space.mjs';
+import { buildSpace, placements, BANDS, WEIGHTS } from '../intrinsic/space.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
 
 export const VALIDATE_VERSION = '4.0.0';
@@ -85,6 +85,38 @@ export function truthOf(lib, { isMirror = null } = {}) {
 const rate = (n, d) => (d > 0 ? +(n / d).toFixed(4) : null);
 
 /**
+ * The filed tracks the harness scores, in the order it scores them.
+ *
+ * Exported so a caller can fetch something about exactly these tracks first —
+ * the page gathers the neighbour bridge for their artists before scoring —
+ * without re-deriving the selection and quietly drifting from it.
+ */
+export function scoredTracks(lib, { limit = null, isMirror = null, targets = null } = {}) {
+  const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
+  const allowed = targets ? new Set(targets) : null;
+  const byId = new Map();
+  for (const p of lib?.playlists ?? []) {
+    if (!p?.id || mirror(p)) continue;
+    if (allowed && !allowed.has(p.id)) continue;
+    for (const t of p.tracks ?? []) if (t?.id && !byId.has(t.id)) byId.set(t.id, t);
+  }
+  let ids = [...byId.keys()].sort();      // sorted so `limit` is reproducible
+  if (limit && ids.length > limit) ids = ids.slice(0, limit);
+  return ids.map(id => byId.get(id));
+}
+
+/** Every artist filed in any of the space's destinations. */
+const filedArtists = space => {
+  const out = new Set();
+  for (const d of space.destinations.values()) for (const a of d.artists) out.add(a);
+  return out;
+};
+
+/** A small tally, for the subsets reported beside the headline numbers. */
+const tally = () => ({ scored: 0, top1: 0, top3: 0 });
+const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: rate(t.top3, t.scored) });
+
+/**
  * Score the engine against the account's own filing.
  *
  * @param {object} lib
@@ -105,23 +137,27 @@ const rate = (n, d) => (d > 0 ? +(n / d).toFixed(4) : null);
  */
 export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
-                                         weights = null, targets = null } = {}) {
+                                         weights = null, targets = null, bridge = null } = {}) {
   const truth = truthOf(lib, { isMirror });
-  const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
   const allowed = targets ? new Set(targets) : null;
 
   // One row per distinct filed track, with the track object to score.
   const byId = new Map();
-  for (const p of lib?.playlists ?? []) {
-    if (!p?.id || mirror(p)) continue;
-    if (allowed && !allowed.has(p.id)) continue;
-    for (const t of p.tracks ?? []) if (t?.id && !byId.has(t.id)) byId.set(t.id, t);
-  }
+  for (const t of scoredTracks(lib, { limit, isMirror, targets: allowed })) byId.set(t.id, t);
+  const ids = [...byId.keys()];
 
-  let ids = [...byId.keys()].sort();      // sorted so `limit` is reproducible
-  if (limit && ids.length > limit) ids = ids.slice(0, limit);
+  // With a bridge, every track is scored twice against the same space: once as
+  // the engine stands (the headline numbers, unchanged in meaning) and once with
+  // the bridge's vote added (`withBridge`). Same folds, same tracks, one build
+  // per fold — so the difference between the two is the bridge and nothing else.
+  const base = { ...(weights ?? WEIGHTS) };
+  const bridgeWeight = base.bridge ?? WEIGHTS.bridge;
+  delete base.bridge;
+  const plus = bridge ? { ...base, bridge: bridgeWeight } : null;
+  const neverFiled = tally(), neverFiledPlus = tally(), withPlus = tally();
+  let bridgeJudged = 0;
 
   const stats = {
     scored: 0, top1: 0, top3: 0, declined: 0, declinedWouldHaveBeenRight: 0,
@@ -138,7 +174,8 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
   for (const [, members] of groups) {
     const skip = leaky ? null : new Set(members);
-    const space = buildSpace(lib, { skip, isMirror, targets: allowed });
+    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge });
+    const filed = filedArtists(space);
 
     for (const id of members) {
       const track = byId.get(id);
@@ -146,8 +183,12 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       const want = allowed && all ? new Set([...all].filter(pid => allowed.has(pid))) : all;
       if (!want?.size) continue;
 
-      const out = placements(track, space, { limit: 3, ...(weights ? { weights } : {}) });
+      const out = placements(track, space, { limit: 3, weights: base });
       stats.scored++;
+      // "Never filed": none of the track's artists is in any destination of a
+      // space that has not seen this track. The engine's weakest case, and the
+      // one the bridge exists for.
+      const fresh = !(track.artists ?? []).some(a => a?.id && filed.has(a.id));
 
       const band = out.band ?? BANDS.NONE;
       if (!stats.byBand.has(band)) stats.byBand.set(band, { n: 0, right: 0 });
@@ -167,6 +208,17 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
       if (hit1) { stats.top1++; bucket.right++; }
       if (hit3) stats.top3++;
+      if (fresh) { neverFiled.scored++; if (hit1) neverFiled.top1++; if (hit3) neverFiled.top3++; }
+
+      if (plus) {
+        const more = placements(track, space, { limit: 3, weights: plus });
+        const r = more.results ?? [];
+        const p1 = r[0] && want.has(r[0].playlistId);
+        const p3 = r.slice(0, 3).some(x => want.has(x.playlistId));
+        if (r[0]?.parts && 'bridge' in r[0].parts) bridgeJudged++;
+        withPlus.scored++; if (p1) withPlus.top1++; if (p3) withPlus.top3++;
+        if (fresh) { neverFiledPlus.scored++; if (p1) neverFiledPlus.top1++; if (p3) neverFiledPlus.top3++; }
+      }
 
       // Per-bucket, credited to every bucket the track really is in. This is
       // what finds the buckets the engine does not understand, which a single
@@ -227,6 +279,10 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     bands,
     playlists,
     worstPlaylists: playlists.slice(0, 10),
+    neverFiled: tallyOut(neverFiled),
+    ...(plus ? { withBridge: { ...tallyOut(withPlus), neverFiled: tallyOut(neverFiledPlus),
+                               judged: bridgeJudged, weight: bridgeWeight,
+                               coverage: bridge.coverage ?? null } } : {}),
     version: VALIDATE_VERSION,
   };
 }

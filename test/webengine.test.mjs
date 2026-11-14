@@ -62,9 +62,13 @@ function library() {
 
 /** The app shell the screen reads, and nothing it does not. */
 function screen({ lib = library(), backlog = null, tags = {}, durable = true,
-                  worker = null, isMirror = () => false, cfg = null } = {}) {
+                  worker = null, isMirror = () => false, cfg = null, bridge = false } = {}) {
   const store = new Map();
+  // Similar artists are off unless a test asks for them: everything else here
+  // must run without reaching for a network that is not there.
+  const ls = new Map(bridge ? [] : [['bf_bridge_off', '1']]);
   const sandbox = {
+    LS: { getItem: k => ls.get(k) ?? null, setItem: (k, v) => ls.set(k, String(v)), removeItem: k => ls.delete(k) },
     ...(worker ? { Worker: worker } : {}),
     console, performance, setTimeout, clearTimeout,
     requestAnimationFrame: fn => setTimeout(fn, 0),
@@ -316,7 +320,7 @@ function fakeWorker({ log = [], failToStart = false } = {}) {
   };
 }
 
-const strip = v => { const { ms, where, ...rest } = v; return JSON.parse(JSON.stringify(rest)); };
+const strip = v => { const { ms, where, bridgeMs, ...rest } = v; return JSON.parse(JSON.stringify(rest)); };
 
 test('the generated worker loads the engine from the same build as the page', () => {
   const page = PAGE.match(/engine-worker\.js\?v=([\w-]+)/)?.[1];
@@ -457,4 +461,127 @@ test('with no genre playlists the screen says where to mark some, instead of an 
   const html = vm.runInContext('vEngine()', s);
   assert.match(html, /No genre playlists yet/);
   assert.match(html, /data-eng="lists"/);
+});
+
+/* ---------- similar artists (docs/SMARTER-GENRES-PLAN.md, phase 0) ----------
+ *
+ * The page reaches Deezer through a sandboxed JSONP frame and Wikidata and
+ * ListenBrainz through fetch. Neither exists here, so both are replaced with
+ * stubs that answer from the fixture: each artist's "related" list is the rest
+ * of its own family. What is under test is the screen — that it gathers for the
+ * right tracks, scores both ways, remembers what it was told, and says what
+ * happened — not the network.
+ */
+function lookups(s, { lib = library() } = {}) {
+  const calls = { deezer: [], json: [] };
+  const byIsrc = new Map(), ids = new Map();
+  for (const t of [...lib.playlists.flatMap(p => p.tracks), ...lib.liked]) byIsrc.set(t.isrc, t);
+  const idOf = name => { if (!ids.has(name)) ids.set(name, 100 + ids.size); return ids.get(name); };
+  const family = name => name.replace(/\d+$/, '');
+  s.deezerJsonp = async url => {
+    calls.deezer.push(url);
+    const isrc = url.match(/isrc:([A-Z0-9]+)/)?.[1];
+    if (isrc) {
+      const t = byIsrc.get(isrc);
+      if (!t) return { error: { code: 800, message: 'no data' } };
+      const name = t.artists[0].name;
+      return { id: 1, isrc, artist: { id: idOf(name), name } };
+    }
+    const id = Number(url.match(/artist\/(\d+)\/related/)?.[1]);
+    const name = [...ids].find(([, v]) => v === id)?.[0] ?? '';
+    const kin = [0, 1, 2].map(i => family(name) + i).filter(n => n !== name);
+    return { data: kin.map(n => ({ id: idOf(n), name: n })) };
+  };
+  s.corsJson = async url => { calls.json.push(url); return url.includes('wikidata') ? { results: { bindings: [] } } : []; };
+  return calls;
+}
+
+test('with similar artists on, the score shows both ways, on the same tracks', async () => {
+  const s = screen({ bridge: true });
+  const calls = lookups(s);
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  const v = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', s));
+  assert.ok(!v.error, v.error);
+  assert.ok(v.mine.withBridge, 'the with-similar-artists score should be there');
+  assert.equal(v.mine.withBridge.scored, v.mine.scored, 'both ways over the same tracks');
+  assert.ok(v.mine.withBridge.coverage.asked > 0);
+  assert.ok(v.mine.withBridge.coverage.withNeighbours > 0);
+  assert.ok(calls.deezer.length > 0, 'Deezer is asked about each artist');
+  // The fixture's artist ids are not real Spotify ids, so there is nothing
+  // Wikidata could match and it is not asked at all.
+  assert.equal(calls.json.length, 0);
+
+  const html = vm.runInContext('vEngine()', s);
+  assert.match(html, /Adding similar artists/);
+  assert.match(html, /With similar artists<\/b> — right first time/);
+  assert.match(html, /not in any genre playlist yet/);
+  assert.match(html, /id="bridgeToggle" checked/);
+
+  const text = vm.runInContext('engineSummary()', s);
+  assert.match(text, /With similar artists: top-1 \d+%, top-3 \d+%/);
+  assert.match(text, /Never-filed artists: \d+ tracks/);
+  assert.match(text, /Similar-artist coverage: \d+ artists looked up/);
+  assert.match(text, /Phase 0: /);
+  assert.ok(!/undefined|NaN|\[object Object\]/.test(text), text);
+  assert.ok(!/Track \w+|House0|Amb0/.test(text), 'the summary must not leak track or artist names');
+});
+
+test('what similar artists were found is remembered, so the next score asks nobody', async () => {
+  const s = screen({ bridge: true });
+  const calls = lookups(s);
+  await vm.runInContext('engineValidate()', s);
+  const first = calls.deezer.length + calls.json.length;
+  assert.ok(first > 0);
+  assert.ok(vm.runInContext('idb.get("bridge-raw")', s)?.raw, 'the answers are kept on the device');
+  await vm.runInContext('engineValidate()', s);
+  assert.equal(calls.deezer.length + calls.json.length, first, 'a second run within the TTL asks nothing');
+  assert.ok(vm.runInContext('ENG.val.bridgeStats.fromCache', s) > 0);
+});
+
+test('with similar artists, the worker gives exactly what the page gives', async () => {
+  const viaWorker = screen({ bridge: true, worker: fakeWorker() });
+  lookups(viaWorker);
+  await vm.runInContext('engineValidate()', viaWorker);
+  const onPage = screen({ bridge: true });
+  lookups(onPage);
+  await vm.runInContext('engineValidate()', onPage);
+  const w = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', viaWorker));
+  const p = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', onPage));
+  assert.equal(w.where, 'worker');
+  assert.equal(p.where, 'page');
+  assert.ok(w.mine.withBridge, 'the bridge must reach the worker');
+  assert.deepEqual(strip(w), strip(p));
+});
+
+test('a lookup that fails costs the comparison, never the score', async () => {
+  const s = screen({ bridge: true });
+  s.engineBridge = async () => { throw new Error('offline'); };
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  const v = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', s));
+  assert.ok(!v.error && v.mine.scored > 0, 'scored anyway');
+  assert.equal(v.mine.withBridge, undefined);
+  assert.match(vm.runInContext('vEngine()', s), /couldn't be looked up\s+\(offline\)/);
+  assert.match(vm.runInContext('engineSummary()', s), /Similar artists: lookup failed \(offline\)/);
+});
+
+test('switched off, it asks nobody and says so', async () => {
+  const s = screen();
+  const calls = lookups(s);
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  assert.equal(calls.deezer.length + calls.json.length, 0);
+  assert.equal(vm.runInContext('ENG.val.mine.withBridge', s), undefined);
+  assert.match(vm.runInContext('engineSummary()', s), /Similar artists: switched off/);
+  assert.match(vm.runInContext('vEngine()', s), /id="bridgeToggle" (?!checked)/);
+});
+
+test('the Deezer frame is sandboxed without same-origin, and both sides pin the host', () => {
+  const src = SCREEN();
+  assert.match(src, /setAttribute\('sandbox', 'allow-scripts'\)/);
+  assert.ok(!/allow-same-origin/.test(src), 'same-origin would hand Deezer\'s script this page\'s storage');
+  assert.match(src, /e\.source !== parent \|\| !host\.test\(m\.url\)/, 'the frame checks who asked and for what');
+  assert.match(src, /if \(e\.source !== f\.contentWindow\) return;/, 'the page only listens to its own frame');
+  assert.match(src, /BetterfyDeezer\.isDeezerApiUrl\(url\)/, 'the page checks the address before sending it');
 });

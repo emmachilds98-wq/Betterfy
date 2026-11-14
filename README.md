@@ -1069,6 +1069,20 @@ misfiled library will be reproduced faithfully, and the engine cannot tell you s
 
 Plan, execution log and the measured numbers: **`docs/THINKING-ENGINE-PLAN.md`**.
 
+**The neighbour bridge** (`core/intrinsic/bridge.mjs`, phase 0 of
+`docs/SMARTER-GENRES-PLAN.md`) is aimed at this engine's weakest case: a track
+by an artist you've never filed, which it can only place on shape. It asks
+Deezer and ListenBrainz who sits near that artist, then asks only your
+question of the answer: *of those neighbours you have filed, which of your
+playlists did they go into?* The outside sources never name a genre or define
+a playlist, so the engine stays account-native. For now it only **measures**.
+**Score both engines** scores every track twice on the same folds, with and
+without it, overall and on tracks by artists not yet in a genre playlist, and
+reports against the plan's bar (+5 points on those, nothing lost overall).
+Answers are kept on the device for two months, and a switch on the card turns
+it off. From a checkout, `npm run validate:placement -- --bridge` does the same
+from `library.json` and keeps its answers in `bridge.json`.
+
 ## Data sources, and what they're worth
 
 | Source | Verdict |
@@ -1077,7 +1091,9 @@ Plan, execution log and the measured numbers: **`docs/THINKING-ENGINE-PLAN.md`**
 | **Discogs** release styles | Wired as a fallback: only queried for an artist Last.fm returned nothing for at all *and actually answered about* (a dropped request is not an empty answer), tallying `style` across that artist's releases (Breakbeat / Techno / Electro — finer than Last.fm's one flat tag per artist) and rescaling the tally to Last.fm's 0–100 so the two can be averaged at all. Needs a token in the `Authorization` header from Node, so this side is verified; the browser build sends it as a query param instead to avoid a custom header, which has **not** been checked against a real response — confirm it under Playlists once you have a token. |
 | **MusicBrainz** | Identity glue, wired into `npm run enrich` (`musicbrainz.mjs`): resolves a Spotify artist to an exact MusicBrainz id from the Spotify URL on its artist page, so the Last.fm fetch that follows can ask by id instead of a name autocorrect might match onto a same-named artist. No key, but wants a contact string in the User-Agent (`MUSICBRAINZ_CONTACT`) — off with none set. Node-only: the custom header a browser `fetch` cannot set is exactly what this needs, so the hosted page is unaffected either way. The response shape it parses is written from MusicBrainz's documented ws/2 JSON, unconfirmed against a live response from every environment — see `musicbrainz.mjs`. |
 | **GetSongBPM** | Tempo, key and Camelot notation — but only **20% coverage** measured over a 40-track sample of a current UK electronic library. Superseded by the Rekordbox import below; nothing calls it. |
-| **Deezer** | Has a public BPM field, but it was empty for 4 of 5 tested tracks. Not worth wiring. |
+| **Deezer** | Its public BPM field was empty for 4 of 5 tested tracks, so it isn't used for tempo. Its **related artists** are used, by the neighbour bridge below: keyless, reached by the ISRC Spotify already gives (ISRC → recording → credited artist, so no name matching), and read through a sandboxed frame because Deezer sends no CORS header. Measured on the owner's library: 81% of the scene artists Wikidata doesn't know have a related list. |
+| **ListenBrainz** | Similar artists from real listening sessions: keyless and CORS-open, keyed by MusicBrainz id. Used by the neighbour bridge. 90% of the owner's scene artists that have an MBID got at least one neighbour in the library. |
+| **Wikidata** | Spotify artist id → MusicBrainz id, exactly, 300 per query, CORS-open. It's how the page reaches ListenBrainz without MusicBrainz's one-request-a-second limit. Knows 41% of the owner's artists but few scene producers, which is why Deezer is the other half. |
 
 Tempo and musical key now come from **your own Rekordbox collection**, not a
 third-party lookup — `npm run rekordbox -- "path/to/collection.xml" --write`

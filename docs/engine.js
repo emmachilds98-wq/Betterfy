@@ -2134,6 +2134,426 @@ function bonusScores(track, bonusProfile, bonus) {
 }
 return { BONUS_VERSION, BPM_TOLERANCE, KEY_MATCH, bonusIndex, keyCompatibility, bonusProfileOf, MIN_KNOWN, bonusScores };
 })();
+/* ---- core/sources/provider.mjs ---- */
+__mod["core/sources/provider.mjs"] = (function () {
+// The provider interface — §7 and §36 of the v3 plan.
+//
+// Adding a source must mean writing an adapter, a mapper and tests, and
+// nothing else (§36). That only holds if the classifier never has to know a
+// provider exists, which in turn only holds if everything the classifier
+// would otherwise want to special-case is something the provider *declares*:
+// how much it is trusted, what it can answer, whether it is independent of
+// the sources already consulted, and what version of itself produced an
+// answer.
+//
+// Nothing here fetches. An adapter is split into a declaration plus pure
+// mapping functions, and a separate thin fetch function, so the mapping — the
+// part with all the judgement in it — is testable against a recorded fixture
+// with no network at all (§41.6, §41.7).
+
+/** What a provider can be asked for. Mirrors Evidence FIELDS plus 'identity'. */
+const CAPABILITIES = ['identity', 'genre', 'mood', 'context', 'era', 'descriptor',
+                             'bpm', 'key', 'energy', 'valence', 'voice', 'instrumentation', 'similarity'];
+
+/**
+ * @typedef {object} ProviderCapability
+ * @property {string} id                 stable provider id, used as Evidence.source
+ * @property {string} version            bumped when the adapter's mapping changes
+ * @property {string[]} capabilities     subset of CAPABILITIES
+ * @property {string[]} entityTypes      what it can be asked about
+ * @property {number} reliability        0-1, how much this source is trusted at all
+ * @property {string} independenceGroup  sources sharing a group are NOT independent
+ * @property {boolean} optional          true when absent-by-default costs nothing
+ * @property {string} requires           human-readable: what a user must configure
+ */
+
+/**
+ * Declare a provider. `reliability` is the one judgement call here and it is
+ * deliberately shallow — a coarse prior, to be replaced by benchmark-measured
+ * numbers (§9: "actual numerical weights must be validated using the
+ * benchmark dataset"). It is not a ranking the classifier reads directly; it
+ * is one factor among four in evidenceWeight().
+ */
+function defineProvider(spec) {
+  const p = {
+    id: spec.id,
+    version: spec.version ?? '0.0.0',
+    capabilities: spec.capabilities ?? [],
+    entityTypes: spec.entityTypes ?? [],
+    reliability: spec.reliability ?? 0.5,
+    // Default: every provider is its own group. Sharing one is the exception
+    // and has to be stated, because getting it wrong inflates confidence.
+    independenceGroup: spec.independenceGroup ?? spec.id,
+    optional: spec.optional ?? true,
+    requires: spec.requires ?? 'nothing',
+  };
+  for (const c of p.capabilities)
+    if (!CAPABILITIES.includes(c)) throw new Error(`${p.id} declares unknown capability: ${c}`);
+  return Object.freeze(p);
+}
+
+/**
+ * A set of providers the engine may consult, and the two lookups the
+ * weighting layer needs from them. Built per run, so a listener who has
+ * configured no Discogs token simply has a registry without it — there is no
+ * "disabled provider" state to reason about anywhere downstream.
+ */
+class ProviderRegistry {
+  constructor(providers = []) {
+    this.providers = new Map();
+    for (const p of providers) this.register(p);
+  }
+
+  register(p) {
+    if (!p?.id) throw new Error('a provider needs an id');
+    this.providers.set(p.id, p);
+    return this;
+  }
+
+  get(id) { return this.providers.get(id) ?? null; }
+  has(id) { return this.providers.has(id); }
+  get ids() { return [...this.providers.keys()]; }
+
+  /** For evidenceWeight(). Unknown sources are trusted at half. */
+  reliabilityOf = source => this.providers.get(source)?.reliability ?? 0.5;
+
+  /**
+   * For agreementFactor(). An unregistered source is treated as its own
+   * group — the conservative direction is to *under*-count correlation only
+   * when we genuinely know two sources share a crowd.
+   */
+  independenceOf = source => this.providers.get(source)?.independenceGroup ?? source;
+
+  /** Providers that can answer a given capability. */
+  providing(capability) {
+    return [...this.providers.values()].filter(p => p.capabilities.includes(capability));
+  }
+
+  /** The version stamp recorded on every profile this registry produced. */
+  versions() {
+    return Object.fromEntries([...this.providers.values()].map(p => [p.id, p.version]));
+  }
+}
+return { CAPABILITIES, defineProvider, ProviderRegistry };
+})();
+/* ---- core/sources/deezer.mjs ---- */
+__mod["core/sources/deezer.mjs"] = (function () {
+const { defineProvider } = __mod["core/sources/provider.mjs"];
+// Deezer: an exact artist id from an ISRC, and that artist's "fans also like".
+//
+// Why Deezer at all, when Spotify has an artist id already: Spotify's own
+// related-artists endpoint is gone, and Deezer's is keyless. Measured on the
+// owner's library (docs/SMARTER-GENRES-PLAN.md §2.1): of 70 scene-genre artists
+// Wikidata does not know at all, 68 were on Deezer and 57 had a related list —
+// and the lists stayed inside the scene (Coco Bryce → Tim Reaper, LTJ Bukem).
+//
+// Identity is the part with the judgement in it. Searching Deezer by name is
+// the Last.fm-autocorrect mistake again: a same-named artist wins and poisons
+// every answer about the real one. So the artist is reached through a
+// *recording*: the ISRC Spotify already gives identifies one track exactly, and
+// that track's credits name the Deezer artist. The name is then checked against
+// the Spotify credit, so an ISRC that Deezer has filed under a different
+// billing (a remixer as main artist) is caught rather than trusted.
+//
+// Nothing here fetches. The page reaches Deezer through JSONP in a sandboxed
+// frame (Deezer sends no CORS header — checked), Node with plain fetch; both
+// hand the parsed JSON to the functions below.
+
+
+const DEEZER = defineProvider({
+  id: 'deezer-related',
+  version: '1.0.0',
+  capabilities: ['identity', 'similarity'],
+  entityTypes: ['artist'],
+  // A prior. Phase 0 of the plan replaces it with the held-out number.
+  reliability: 0.5,
+  independenceGroup: 'deezer',
+  optional: true,
+  requires: 'nothing — public, keyless',
+});
+
+const API = 'https://api.deezer.com';
+
+/** How many related artists to keep. Deezer returns 20 by default; the tail is
+ *  where the list drifts out of the scene, so more is not better. */
+const RELATED_LIMIT = 25;
+
+const isrcUrl = isrc => `${API}/track/isrc:${encodeURIComponent(String(isrc).replace(/-/g, '').toUpperCase())}`;
+const relatedUrl = (id, limit = RELATED_LIMIT) => `${API}/artist/${encodeURIComponent(id)}/related?limit=${limit}`;
+
+/** Only these URLs may be fetched through the page's JSONP frame. A script tag
+ *  runs whatever it is given, so the host is pinned rather than trusted. */
+const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_-]*)?$/i.test(String(url));
+
+/**
+ * What a Deezer error body means for the cache.
+ *
+ *  - `none`   code 800 "no data": a real answer that there is nothing. Cacheable.
+ *  - `quota`  code 4: slow down and ask again. Never cached.
+ *  - `error`  anything else: not an answer. Never cached — the README's rule that
+ *             a request that failed must not be written down as "nothing here".
+ */
+function errorKind(json) {
+  const e = json?.error;
+  if (!e) return null;
+  const code = Number(e.code);
+  if (code === 800) return 'none';
+  if (code === 4) return 'quota';
+  return 'error';
+}
+
+/** Lower-case, accents and punctuation off, a leading "the" dropped. Enough to
+ *  see that "Ragga Twins" and "The Ragga Twins" are one act, and not so loose
+ *  that two different names collapse into one. */
+function normName(s) {
+  return String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/&/g, 'and').replace(/^the\s+/, '').replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * The Deezer artist behind a Spotify credit, from a `track/isrc:` answer.
+ *
+ * @param {object} json   the parsed response
+ * @param {string} name   the Spotify artist's name, to check the credit against
+ * @returns {{answered: true, artist: {id: number, name: string}|null}
+ *          |{answered: false, retry: boolean}}
+ */
+function artistFromIsrc(json, name) {
+  const kind = errorKind(json);
+  if (kind === 'none') return { answered: true, artist: null };
+  if (kind) return { answered: false, retry: kind === 'quota' };
+  if (!json || typeof json !== 'object' || json.id == null) return { answered: false, retry: false };
+
+  const want = normName(name);
+  const credits = [json.artist, ...(Array.isArray(json.contributors) ? json.contributors : [])]
+    .filter(a => a && a.id != null && a.name);
+  // The main artist first, then any contributor, but only ever one whose name
+  // matches the credit we asked about. No match is an answer — "Deezer has the
+  // recording but not under this artist" — not a reason to take the nearest.
+  const hit = want ? credits.find(a => normName(a.name) === want) : null;
+  return { answered: true, artist: hit ? { id: Number(hit.id), name: String(hit.name) } : null };
+}
+
+/**
+ * An artist's related artists, in Deezer's own order (most related first).
+ *
+ * @returns {{answered: true, related: {id: number, name: string}[]}
+ *          |{answered: false, retry: boolean}}
+ */
+function relatedFrom(json, { limit = RELATED_LIMIT } = {}) {
+  const kind = errorKind(json);
+  if (kind === 'none') return { answered: true, related: [] };
+  if (kind) return { answered: false, retry: kind === 'quota' };
+  if (!json || !Array.isArray(json.data)) return { answered: false, retry: false };
+  const related = json.data
+    .filter(a => a && a.id != null && a.name)
+    .slice(0, limit)
+    .map(a => ({ id: Number(a.id), name: String(a.name) }));
+  return { answered: true, related };
+}
+return { DEEZER, API, RELATED_LIMIT, isrcUrl, relatedUrl, isDeezerApiUrl, errorKind, normName, artistFromIsrc, relatedFrom };
+})();
+/* ---- core/intrinsic/bridge.mjs ---- */
+__mod["core/intrinsic/bridge.mjs"] = (function () {
+const { BILLING_DECAY } = __mod["core/intrinsic/cooccurrence.mjs"];
+const { normName } = __mod["core/sources/deezer.mjs"];
+// The neighbour bridge — "where did you file artists like this one?"
+//
+// The account-native engine's weakest case is a track by an artist this
+// account has never filed: the artist graph has nothing to say about them, so
+// it can only go on the record's shape (length, single or album, era), and
+// shape cannot tell bassline from UKG. docs/SMARTER-GENRES-PLAN.md §4.1(b).
+//
+// The bridge borrows a neighbourhood from outside — Deezer's "fans also like"
+// and ListenBrainz's listening-session similarity — and then asks only the
+// account's own question of it: of this artist's neighbours that you HAVE
+// filed, which of your playlists did they go into? So the outside sources never
+// get to name a genre or define a playlist. They only say who sits near whom,
+// and the votes land in this listener's own buckets, which keeps the engine
+// account-native.
+//
+// Everything here is pure. The fetching is in `bridge-fetch.mjs`, and a bridge
+// is plain JSON so it can cross to the worker and sit in IndexedDB unchanged.
+// With no bridge, nothing in the engine changes: `buildSpace` adds nothing to
+// the space and `placements` adds no component (test/bridge.test.mjs holds it
+// to that).
+
+
+
+const BRIDGE_VERSION = '1.0.0';
+
+/**
+ * Who to look up: the first-billed artist of each track, with one ISRC to reach
+ * them on Deezer by. First-billed, because the ISRC route checks the Deezer
+ * credit against this name and the main credit is the one that reliably
+ * matches. Order is kept, so a caller can put the artists that matter most
+ * first and a run that stops early still did the useful half.
+ *
+ * @returns {Map<string, {name: string, isrc: string|null}>}
+ */
+function sourceArtists(tracks) {
+  const out = new Map();
+  for (const t of tracks ?? []) {
+    const a = (t?.artists ?? []).find(x => x?.id);
+    if (!a) continue;
+    const isrc = /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(String(t.isrc ?? '').replace(/-/g, '').toUpperCase())
+      ? String(t.isrc).replace(/-/g, '').toUpperCase() : null;
+    const seen = out.get(a.id);
+    if (!seen) out.set(a.id, { name: a.name ?? '', isrc });
+    else if (!seen.isrc && isrc) seen.isrc = isrc;
+  }
+  return out;
+}
+
+/**
+ * Every artist in the library, by normalised name — the fallback that maps an
+ * outside neighbour back onto a Spotify artist when no exact id is known.
+ *
+ * A name two different artists in this library share maps to nothing. Inside
+ * one person's library that is rare, and guessing between them is exactly the
+ * same-name poisoning the ISRC route exists to avoid.
+ */
+function libraryNames(lib) {
+  const byName = new Map();
+  const add = t => {
+    for (const a of t?.artists ?? []) {
+      if (!a?.id || !a.name) continue;
+      const n = normName(a.name);
+      if (!n) continue;
+      const prev = byName.get(n);
+      if (prev === undefined) byName.set(n, a.id);
+      else if (prev !== a.id) byName.set(n, null);
+    }
+  };
+  for (const p of lib?.playlists ?? []) for (const t of p.tracks ?? []) add(t);
+  for (const t of lib?.liked ?? []) add(t);
+  return byName;
+}
+
+/**
+ * Turn raw lookups into a bridge: Spotify artist -> library neighbours, weighted.
+ *
+ * `raw[spotifyArtistId]` is what `gatherBridge()` stored:
+ *   { deezerId, deezer: [{id, name}], mbid, listenbrainz: [{mbid, name, score}] }
+ * Any of those may be missing; a source that was never answered just adds
+ * nothing.
+ *
+ * A neighbour is mapped back exactly where it can be — a Deezer id or MBID that
+ * some looked-up library artist resolved to — and by unique name otherwise.
+ * Neighbours that are not in the library are dropped: they could never vote.
+ *
+ * Weights: Deezer's list is ranked, so rank sets the weight (first = 1, last =
+ * 1/n); ListenBrainz gives a score, scaled so its best = 1. An artist both
+ * sources name gets both — agreement between two independent sources is worth
+ * more than either alone.
+ */
+function bridgeFrom(raw, lib) {
+  const byName = libraryNames(lib);
+  const byDeezer = new Map(), byMbid = new Map();
+  for (const [sid, e] of Object.entries(raw ?? {})) {
+    if (e?.deezerId != null) byDeezer.set(String(e.deezerId), sid);
+    if (e?.mbid) byMbid.set(String(e.mbid), sid);
+  }
+  const resolve = (exact, exactMap, name) =>
+    (exact != null ? exactMap.get(String(exact)) : undefined) ?? byName.get(normName(name)) ?? null;
+
+  const neighbours = {};
+  const coverage = { asked: 0, deezer: 0, listenbrainz: 0, withNeighbours: 0 };
+  for (const [sid, e] of Object.entries(raw ?? {})) {
+    coverage.asked++;
+    const w = new Map();
+    const bump = (n, x) => { if (n && n !== sid && x > 0) w.set(n, (w.get(n) ?? 0) + x); };
+
+    if (Array.isArray(e?.deezer)) {
+      coverage.deezer += e.deezer.length ? 1 : 0;
+      e.deezer.forEach((r, i, all) => bump(resolve(r.id, byDeezer, r.name), 1 - i / all.length));
+    }
+    if (Array.isArray(e?.listenbrainz)) {
+      coverage.listenbrainz += e.listenbrainz.length ? 1 : 0;
+      const best = Math.max(0, ...e.listenbrainz.map(r => Number(r.score) || 0));
+      if (best > 0) for (const r of e.listenbrainz) bump(resolve(r.mbid, byMbid, r.name), (Number(r.score) || 0) / best);
+    }
+
+    if (w.size) {
+      coverage.withNeighbours++;
+      neighbours[sid] = [...w].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+        .map(([n, x]) => [n, +x.toFixed(4)]);
+    }
+  }
+  return { version: BRIDGE_VERSION, neighbours, coverage };
+}
+
+/** The bridge as the scorer wants it: artist id -> [[neighbour id, weight]]. */
+function bridgeIndex(bridge) {
+  const idx = new Map();
+  for (const [sid, list] of Object.entries(bridge?.neighbours ?? {})) {
+    if (!Array.isArray(list)) continue;
+    const clean = list.filter(x => Array.isArray(x) && typeof x[0] === 'string' && Number.isFinite(x[1]) && x[1] > 0);
+    if (clean.length) idx.set(sid, clean);
+  }
+  return idx;
+}
+
+/**
+ * Where each artist is filed, across the space's destinations:
+ * artist id -> { total, byDest: Map(destination id -> tracks) }.
+ *
+ * Built from the destinations' own counts, so it inherits `skip`: an artist
+ * whose only filed tracks are held out is not filed anywhere, here as in the
+ * rest of the space.
+ */
+function artistHomes(destinations) {
+  const homes = new Map();
+  for (const d of destinations.values()) {
+    for (const [aid, row] of d.artistCounts) {
+      let h = homes.get(aid);
+      if (!h) { h = { total: 0, byDest: new Map() }; homes.set(aid, h); }
+      h.total += row.n;
+      h.byDest.set(d.id, (h.byDest.get(d.id) ?? 0) + row.n);
+    }
+  }
+  return homes;
+}
+
+/**
+ * The bridge's vote for one track: destination id -> share, or null when it
+ * has nothing to say (no neighbours known, or none of them filed anywhere).
+ *
+ * Each filed neighbour spreads its weight over the playlists it actually lives
+ * in, in proportion — a neighbour with 9 tracks in Jungle and 1 in Favourites
+ * votes 0.9 / 0.1, not 1 / 1. The track's own credited artists are left out:
+ * their filing is the artist graph's job, and counting it twice would let the
+ * bridge echo the graph instead of adding to it.
+ *
+ * Billing decays the way it does in the graph, so a featured vocalist's
+ * neighbourhood colours the vote without leading it.
+ */
+function bridgeScores(track, space) {
+  const idx = space?.bridge;
+  const homes = space?.artistHomes;
+  if (!idx?.size || !homes) return null;
+  const credits = track?.artists ?? [];
+  const own = new Set(credits.map(a => a?.id).filter(Boolean));
+  const votes = new Map();
+  let mass = 0;
+  credits.forEach((a, i) => {
+    const list = a?.id ? idx.get(a.id) : null;
+    if (!list) return;
+    const bill = BILLING_DECAY ** i;
+    for (const [n, w] of list) {
+      if (own.has(n)) continue;
+      const h = homes.get(n);
+      if (!h?.total) continue;
+      mass += bill * w;
+      for (const [d, c] of h.byDest) votes.set(d, (votes.get(d) ?? 0) + (bill * w * c) / h.total);
+    }
+  });
+  if (!(mass > 0)) return null;
+  for (const [d, v] of votes) votes.set(d, v / mass);
+  return votes;
+}
+return { BRIDGE_VERSION, sourceArtists, libraryNames, bridgeFrom, bridgeIndex, artistHomes, bridgeScores };
+})();
 /* ---- core/intrinsic/space.mjs ---- */
 __mod["core/intrinsic/space.mjs"] = (function () {
 const { cooccurrence, trackVector, cosine, centroid, norm } = __mod["core/intrinsic/cooccurrence.mjs"];
@@ -2141,6 +2561,7 @@ const { registrantIndex, profileOf, shapeScores, registrantOf, registrantWeight,
 const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 const { explain } = __mod["core/intrinsic/explain.mjs"];
 const { bonusIndex, bonusProfileOf, bonusScores } = __mod["core/intrinsic/bonus-rekordbox.mjs"];
+const { bridgeIndex, artistHomes, bridgeScores } = __mod["core/intrinsic/bridge.mjs"];
 // The intrinsic space — where a track sits, and which of this account's
 // buckets it sits nearest.
 //
@@ -2154,6 +2575,7 @@ const { bonusIndex, bonusProfileOf, bonusScores } = __mod["core/intrinsic/bonus-
 // thresholds, these have somewhere to go: leave-one-out placement accuracy over
 // the account's own library is a real fitness surface with thousands of rows,
 // and `core/validate/loo.mjs` computes it.
+
 
 
 
@@ -2185,6 +2607,12 @@ const WEIGHTS = {
   // cannot affect anybody who does not have the file.
   bpm:         0.40,
   key:         0.25,
+  // Neighbour bridge (docs/SMARTER-GENRES-PLAN.md §4.1b): where this artist's
+  // outside neighbours are filed. Only present when a bridge was gathered and
+  // passed in, and null for a track none of whose artists it knows, so like
+  // the bonus layer it costs nothing to anybody without one. A prior: phase 0
+  // exists to measure whether it earns any weight at all.
+  bridge:      0.50,
 };
 
 /**
@@ -2224,7 +2652,8 @@ const THRESHOLDS = {
  * flags are generated from one person's library — an account-native engine
  * cannot start by reading a file that assumes whose account it is.
  */
-function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targets = null } = {}) {
+function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targets = null,
+                                  bridge = null } = {}) {
   // `targets`, when given, is the set of playlists the listener files into —
   // their genre playlists. Only those become destinations. Every playlist still
   // feeds the artist graph below: a "Sunday" playlist is not somewhere to file
@@ -2308,8 +2737,13 @@ function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targe
     }
   }
 
+  // Only with a bridge does the space carry one, so a space built without it
+  // is the same object, key for key, that it always was.
+  const bridgeIdx = bridge ? bridgeIndex(bridge) : null;
+  const withBridge = bridgeIdx?.size ? { bridge: bridgeIdx, artistHomes: artistHomes(destinations) } : {};
+
   return { graph, registrants, destinations, baseline, bonus, version: SPACE_VERSION,
-           targets: allowed ? [...allowed].sort() : null };
+           targets: allowed ? [...allowed].sort() : null, ...withBridge };
 }
 
 /**
@@ -2352,6 +2786,10 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
 
   const vec = trackVector(track, space.graph);
   const vecNorm = norm(vec);
+  // Worked out once per track rather than per destination: it is one vote
+  // spread across all of them. Null — and then absent from every row — when the
+  // space has no bridge or it knows none of this track's artists.
+  const bridged = space.bridge ? bridgeScores(track, space) : null;
   const rows = [];
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
@@ -2360,7 +2798,9 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
       ? cosine(vec, d.centroid, vecNorm, d.centroidNorm) : null;
     const extra = space.bonus?.size ? bonusScores(track, d.bonusProfile, space.bonus)
                                     : { bpm: null, key: null };
-    const { score, used, judged } = combine({ graph, ...shape, ...extra }, weights);
+    const parts = bridged ? { graph, ...shape, ...extra, bridge: bridged.get(d.id) ?? 0 }
+                          : { graph, ...shape, ...extra };
+    const { score, used, judged } = combine(parts, weights);
     if (!judged) continue;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
     rows.push({ playlistId: d.id, name: d.name, score: +score.toFixed(4),
@@ -3061,7 +3501,7 @@ return { PERSIST_VERSION, ENGINE_STAMP, fingerprint, serialiseSpace, reviveSpace
 })();
 /* ---- core/validate/loo.mjs ---- */
 __mod["core/validate/loo.mjs"] = (function () {
-const { buildSpace, placements, BANDS } = __mod["core/intrinsic/space.mjs"];
+const { buildSpace, placements, BANDS, WEIGHTS } = __mod["core/intrinsic/space.mjs"];
 const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 // Held-out placement accuracy — the account grades the engine.
 //
@@ -3150,6 +3590,38 @@ function truthOf(lib, { isMirror = null } = {}) {
 const rate = (n, d) => (d > 0 ? +(n / d).toFixed(4) : null);
 
 /**
+ * The filed tracks the harness scores, in the order it scores them.
+ *
+ * Exported so a caller can fetch something about exactly these tracks first —
+ * the page gathers the neighbour bridge for their artists before scoring —
+ * without re-deriving the selection and quietly drifting from it.
+ */
+function scoredTracks(lib, { limit = null, isMirror = null, targets = null } = {}) {
+  const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
+  const allowed = targets ? new Set(targets) : null;
+  const byId = new Map();
+  for (const p of lib?.playlists ?? []) {
+    if (!p?.id || mirror(p)) continue;
+    if (allowed && !allowed.has(p.id)) continue;
+    for (const t of p.tracks ?? []) if (t?.id && !byId.has(t.id)) byId.set(t.id, t);
+  }
+  let ids = [...byId.keys()].sort();      // sorted so `limit` is reproducible
+  if (limit && ids.length > limit) ids = ids.slice(0, limit);
+  return ids.map(id => byId.get(id));
+}
+
+/** Every artist filed in any of the space's destinations. */
+const filedArtists = space => {
+  const out = new Set();
+  for (const d of space.destinations.values()) for (const a of d.artists) out.add(a);
+  return out;
+};
+
+/** A small tally, for the subsets reported beside the headline numbers. */
+const tally = () => ({ scored: 0, top1: 0, top3: 0 });
+const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: rate(t.top3, t.scored) });
+
+/**
  * Score the engine against the account's own filing.
  *
  * @param {object} lib
@@ -3170,23 +3642,27 @@ const rate = (n, d) => (d > 0 ? +(n / d).toFixed(4) : null);
  */
 function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
-                                         weights = null, targets = null } = {}) {
+                                         weights = null, targets = null, bridge = null } = {}) {
   const truth = truthOf(lib, { isMirror });
-  const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
   const allowed = targets ? new Set(targets) : null;
 
   // One row per distinct filed track, with the track object to score.
   const byId = new Map();
-  for (const p of lib?.playlists ?? []) {
-    if (!p?.id || mirror(p)) continue;
-    if (allowed && !allowed.has(p.id)) continue;
-    for (const t of p.tracks ?? []) if (t?.id && !byId.has(t.id)) byId.set(t.id, t);
-  }
+  for (const t of scoredTracks(lib, { limit, isMirror, targets: allowed })) byId.set(t.id, t);
+  const ids = [...byId.keys()];
 
-  let ids = [...byId.keys()].sort();      // sorted so `limit` is reproducible
-  if (limit && ids.length > limit) ids = ids.slice(0, limit);
+  // With a bridge, every track is scored twice against the same space: once as
+  // the engine stands (the headline numbers, unchanged in meaning) and once with
+  // the bridge's vote added (`withBridge`). Same folds, same tracks, one build
+  // per fold — so the difference between the two is the bridge and nothing else.
+  const base = { ...(weights ?? WEIGHTS) };
+  const bridgeWeight = base.bridge ?? WEIGHTS.bridge;
+  delete base.bridge;
+  const plus = bridge ? { ...base, bridge: bridgeWeight } : null;
+  const neverFiled = tally(), neverFiledPlus = tally(), withPlus = tally();
+  let bridgeJudged = 0;
 
   const stats = {
     scored: 0, top1: 0, top3: 0, declined: 0, declinedWouldHaveBeenRight: 0,
@@ -3203,7 +3679,8 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
   for (const [, members] of groups) {
     const skip = leaky ? null : new Set(members);
-    const space = buildSpace(lib, { skip, isMirror, targets: allowed });
+    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge });
+    const filed = filedArtists(space);
 
     for (const id of members) {
       const track = byId.get(id);
@@ -3211,8 +3688,12 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       const want = allowed && all ? new Set([...all].filter(pid => allowed.has(pid))) : all;
       if (!want?.size) continue;
 
-      const out = placements(track, space, { limit: 3, ...(weights ? { weights } : {}) });
+      const out = placements(track, space, { limit: 3, weights: base });
       stats.scored++;
+      // "Never filed": none of the track's artists is in any destination of a
+      // space that has not seen this track. The engine's weakest case, and the
+      // one the bridge exists for.
+      const fresh = !(track.artists ?? []).some(a => a?.id && filed.has(a.id));
 
       const band = out.band ?? BANDS.NONE;
       if (!stats.byBand.has(band)) stats.byBand.set(band, { n: 0, right: 0 });
@@ -3232,6 +3713,17 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
       if (hit1) { stats.top1++; bucket.right++; }
       if (hit3) stats.top3++;
+      if (fresh) { neverFiled.scored++; if (hit1) neverFiled.top1++; if (hit3) neverFiled.top3++; }
+
+      if (plus) {
+        const more = placements(track, space, { limit: 3, weights: plus });
+        const r = more.results ?? [];
+        const p1 = r[0] && want.has(r[0].playlistId);
+        const p3 = r.slice(0, 3).some(x => want.has(x.playlistId));
+        if (r[0]?.parts && 'bridge' in r[0].parts) bridgeJudged++;
+        withPlus.scored++; if (p1) withPlus.top1++; if (p3) withPlus.top3++;
+        if (fresh) { neverFiledPlus.scored++; if (p1) neverFiledPlus.top1++; if (p3) neverFiledPlus.top3++; }
+      }
 
       // Per-bucket, credited to every bucket the track really is in. This is
       // what finds the buckets the engine does not understand, which a single
@@ -3292,10 +3784,14 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     bands,
     playlists,
     worstPlaylists: playlists.slice(0, 10),
+    neverFiled: tallyOut(neverFiled),
+    ...(plus ? { withBridge: { ...tallyOut(withPlus), neverFiled: tallyOut(neverFiledPlus),
+                               judged: bridgeJudged, weight: bridgeWeight,
+                               coverage: bridge.coverage ?? null } } : {}),
     version: VALIDATE_VERSION,
   };
 }
-return { VALIDATE_VERSION, DEFAULT_FOLDS, foldOf, truthOf, placementAccuracy };
+return { VALIDATE_VERSION, DEFAULT_FOLDS, foldOf, truthOf, scoredTracks, placementAccuracy };
 })();
 /* ---- core/validate/baseline.mjs ---- */
 __mod["core/validate/baseline.mjs"] = (function () {
@@ -3416,6 +3912,296 @@ function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = null,
 }
 return { BASELINE_VERSION, libraryWithout, baselineAccuracy };
 })();
+/* ---- core/sources/listenbrainz.mjs ---- */
+__mod["core/sources/listenbrainz.mjs"] = (function () {
+const { defineProvider } = __mod["core/sources/provider.mjs"];
+// ListenBrainz similar artists, from real listening sessions.
+//
+// Keyless and CORS-open (checked: `access-control-allow-origin: *`), so the page
+// can call it directly. It is keyed by MusicBrainz id, which is why Wikidata
+// comes first: Wikidata maps a Spotify artist id to an MBID exactly, 300 at a
+// time, where MusicBrainz itself would want one request a second per artist.
+//
+// Measured on the owner's library (docs/SMARTER-GENRES-PLAN.md §2.1): 90% of
+// scene artists with an MBID had at least one neighbour in the library. One
+// MBID per request — a comma list is a 400 (checked).
+
+
+const LISTENBRAINZ = defineProvider({
+  id: 'listenbrainz-similar',
+  version: '1.0.0',
+  capabilities: ['similarity'],
+  entityTypes: ['artist'],
+  reliability: 0.5,
+  // Built from listening sessions, which is different evidence from Deezer's
+  // "fans also like", even where the two agree.
+  independenceGroup: 'listenbrainz',
+  optional: true,
+  requires: 'nothing — public, keyless',
+});
+
+const ENDPOINT = 'https://labs.api.listenbrainz.org/similar-artists/json';
+
+/** The algorithm the site's own similar-artists page uses; the one measured. */
+const ALGORITHM = 'session_based_days_7500_session_300_contribution_5_threshold_10_limit_100_filter_True_skip_30';
+
+/** Kept per artist. The list is score-ordered and long; the tail is weak. */
+const SIMILAR_LIMIT = 40;
+
+const MBID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isMbid = s => MBID_RE.test(String(s ?? ''));
+
+const similarUrl = mbid =>
+  `${ENDPOINT}?${new URLSearchParams({ artist_mbids: mbid, algorithm: ALGORITHM })}`;
+
+/**
+ * @returns {{answered: true, similar: {mbid: string, name: string, score: number}[]}
+ *          |{answered: false}}
+ */
+function similarFrom(json, { limit = SIMILAR_LIMIT } = {}) {
+  if (!Array.isArray(json)) return { answered: false };
+  const similar = json
+    .filter(a => a && isMbid(a.artist_mbid) && a.name && Number.isFinite(Number(a.score)))
+    .map(a => ({ mbid: String(a.artist_mbid).toLowerCase(), name: String(a.name), score: Number(a.score) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+  return { answered: true, similar };
+}
+return { LISTENBRAINZ, ENDPOINT, ALGORITHM, SIMILAR_LIMIT, isMbid, similarUrl, similarFrom };
+})();
+/* ---- core/sources/wikidata.mjs ---- */
+__mod["core/sources/wikidata.mjs"] = (function () {
+const { defineProvider } = __mod["core/sources/provider.mjs"];
+// Wikidata: a Spotify artist id to a MusicBrainz id, exactly, in batches.
+//
+// Wikidata item properties P1902 (Spotify artist id) and P434 (MusicBrainz
+// artist id) sit on the same item, so one SPARQL query turns up to 300 Spotify
+// ids into MBIDs with no name matching anywhere. CORS-open (checked).
+//
+// Measured on the owner's library (docs/SMARTER-GENRES-PLAN.md §2.1): 1,992 of
+// 4,866 artists found, 1,950 with an MBID. Weak on scene producers — which is
+// why Deezer, reached by ISRC, is the other half of the bridge.
+
+
+const WIKIDATA = defineProvider({
+  id: 'wikidata-identity',
+  version: '1.0.0',
+  capabilities: ['identity'],
+  entityTypes: ['artist'],
+  reliability: 0.9,
+  independenceGroup: 'wikidata',
+  optional: true,
+  requires: 'nothing — public, keyless',
+});
+
+const ENDPOINT = 'https://query.wikidata.org/sparql';
+
+/** Ids per query. Measured: 300 answers in a second or two and stays well inside
+ *  the endpoint's limits; much larger batches start timing out. */
+const BATCH = 300;
+
+const SPOTIFY_ID_RE = /^[0-9A-Za-z]{22}$/;
+const isSpotifyId = s => SPOTIFY_ID_RE.test(String(s ?? ''));
+
+/** The query for one batch. Ids are validated first: they are spliced into the
+ *  query text, and anything that is not a 22-character base-62 id is dropped
+ *  rather than escaped. */
+function mbidQuery(spotifyIds) {
+  const vals = [...new Set(spotifyIds)].filter(isSpotifyId).map(s => `"${s}"`).join(' ');
+  return `SELECT ?s ?mbid WHERE { VALUES ?s { ${vals} } ?a wdt:P1902 ?s . ?a wdt:P434 ?mbid . }`;
+}
+
+/** The POST body for one batch. A form body keeps it a simple CORS request. */
+const mbidRequest = spotifyIds => ({
+  url: ENDPOINT,
+  init: {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/sparql-results+json' },
+    body: new URLSearchParams({ query: mbidQuery(spotifyIds), format: 'json' }).toString(),
+  },
+});
+
+/**
+ * Spotify id -> MBID from a SPARQL answer.
+ *
+ * An item can carry two MBIDs (a merge nobody cleaned up). The first in
+ * sorted order wins, so the answer is the same every time it is asked.
+ *
+ * @returns {{answered: true, mbids: Map<string, string>}|{answered: false}}
+ */
+function mbidsFrom(json) {
+  const rows = json?.results?.bindings;
+  if (!Array.isArray(rows)) return { answered: false };
+  const all = new Map();
+  for (const b of rows) {
+    const s = b?.s?.value, m = String(b?.mbid?.value ?? '').toLowerCase();
+    if (!isSpotifyId(s) || !/^[0-9a-f-]{36}$/.test(m)) continue;
+    if (!all.has(s)) all.set(s, []);
+    all.get(s).push(m);
+  }
+  const mbids = new Map();
+  for (const [s, list] of all) mbids.set(s, list.sort()[0]);
+  return { answered: true, mbids };
+}
+return { WIKIDATA, ENDPOINT, BATCH, isSpotifyId, mbidQuery, mbidRequest, mbidsFrom };
+})();
+/* ---- core/intrinsic/bridge-fetch.mjs ---- */
+__mod["core/intrinsic/bridge-fetch.mjs"] = (function () {
+const { errorKind, artistFromIsrc, relatedFrom, isrcUrl, relatedUrl } = __mod["core/sources/deezer.mjs"];
+const { similarFrom, similarUrl } = __mod["core/sources/listenbrainz.mjs"];
+const { BATCH: WD_BATCH, mbidRequest, mbidsFrom, isSpotifyId } = __mod["core/sources/wikidata.mjs"];
+// Gather the raw material for the neighbour bridge, politely and resumably.
+//
+// The transports are injected, which is what lets one orchestrator serve both
+// environments and be tested with no network at all:
+//
+//   deezer(url)      -> parsed JSON. On the page this is JSONP through a
+//                       sandboxed frame (Deezer sends no CORS header); in Node
+//                       it is plain fetch.
+//   json(url, init)  -> parsed JSON, for the CORS-open sources (Wikidata,
+//                       ListenBrainz).
+//
+// Two rules from README's "a tag gap that was never answered is not an answer"
+// carry over unchanged:
+//
+//  - Only an answer is cached. A request that failed, timed out or hit a quota
+//    leaves the entry as it was, so the next run asks again rather than
+//    freezing "nothing here" for weeks.
+//  - A real "nothing" is an answer, and is cached like one — but with the same
+//    TTL as everything else, because Deezer's and ListenBrainz's catalogues
+//    grow.
+// Named imports only: the browser bundler (bundler.mjs) reads `import { … }`
+// and nothing else.
+
+
+
+
+const BRIDGE_FETCH_VERSION = '1.0.0';
+
+/** How long an answer is trusted before it is asked again. */
+const TTL_MS = 60 * 24 * 60 * 60 * 1000;
+
+/**
+ * Milliseconds between requests, per source. Deezer's published limit is 50
+ * requests per 5 seconds; 130ms is about 7.7 a second, comfortably under it.
+ * ListenBrainz and Wikidata publish no fixed number, so they get less, and one
+ * retry after `retry` ms: measured from a browser, ListenBrainz occasionally
+ * answers a burst with an error that carries no CORS header, and the same
+ * request a moment later is fine.
+ */
+const PACE = { deezer: 130, listenbrainz: 400, wikidata: 1000, retry: 2000 };
+
+/** After a Deezer quota answer, wait this long once, then give up for the run. */
+const QUOTA_WAIT_MS = 6000;
+
+const fresh = (at, now) => Number.isFinite(at) && now - at < TTL_MS;
+
+/**
+ * @param {Map<string, {name: string, isrc: string|null}>} artists  from `sourceArtists()`,
+ *        most important first
+ * @param {object} io
+ * @param {(url: string) => Promise<any>} io.deezer
+ * @param {(url: string, init?: object) => Promise<any>} io.json
+ * @param {object} [io.cache]      previous raw entries; copied, never mutated
+ * @param {(ms: number) => Promise<void>} [io.sleep]
+ * @param {(p: {stage: string, done: number, total: number}) => void} [io.onProgress]
+ * @param {number} [io.now]
+ * @param {object} [io.pace]
+ * @returns {Promise<{raw: object, stats: object}>}
+ */
+async function gatherBridge(artists, { deezer, json, cache = null, onProgress = null,
+                                              sleep = ms => new Promise(r => setTimeout(r, ms)),
+                                              now = Date.now(), pace = PACE } = {}) {
+  const raw = {};
+  for (const [sid, e] of Object.entries(cache ?? {})) raw[sid] = { ...e };
+  const entry = sid => (raw[sid] ??= {});
+  const ids = [...(artists ?? new Map()).keys()];
+  const stats = { asked: ids.length, wikidata: 0, deezer: 0, listenbrainz: 0,
+                  failed: 0, quota: false, fromCache: 0 };
+  const progress = (stage, done, total) => { try { onProgress?.({ stage, done, total }); } catch { /* a UI callback must not stop the run */ } };
+  const twice = async (url, init) => {
+    try { return await json(url, init); }
+    catch { await sleep(pace.retry ?? 0); return json(url, init); }
+  };
+
+  /* 1. Spotify id -> MBID, 300 at a time. ListenBrainz needs it. */
+  // Only real Spotify ids: anything else could never match, and asking about
+  // nothing is still a request.
+  const needMbid = ids.filter(sid => isSpotifyId(sid) && !fresh(raw[sid]?.mbidAt, now));
+  for (let i = 0; i < needMbid.length; i += WD_BATCH) {
+    const batch = needMbid.slice(i, i + WD_BATCH);
+    progress('wikidata', i, needMbid.length);
+    try {
+      const req = mbidRequest(batch);
+      const out = mbidsFrom(await twice(req.url, req.init));
+      if (out.answered) {
+        for (const sid of batch) Object.assign(entry(sid), { mbid: out.mbids.get(sid) ?? null, mbidAt: now });
+        stats.wikidata += batch.length;
+      } else stats.failed++;
+    } catch { stats.failed++; }
+    if (i + WD_BATCH < needMbid.length) await sleep(pace.wikidata);
+  }
+
+  /* 2 and 3 run side by side: they are different hosts with separate limits. */
+  const deezerRun = (async () => {
+    const todo = ids.filter(sid => !fresh(raw[sid]?.deezerAt, now));
+    stats.fromCache += ids.length - todo.length;
+    const ask = async url => {
+      let out = await deezer(url);
+      if (errorKind(out) === 'quota') {
+        await sleep(QUOTA_WAIT_MS);
+        out = await deezer(url);
+        if (errorKind(out) === 'quota') { stats.quota = true; return null; }
+      }
+      return out;
+    };
+    for (let i = 0; i < todo.length; i++) {
+      if (stats.quota) break;
+      progress('deezer', i, todo.length);
+      const sid = todo[i];
+      const { name, isrc } = artists.get(sid) ?? {};
+      if (!isrc) continue;                       // no recording to reach them by: not an answer
+      try {
+        const hit = artistFromIsrc(await ask(isrcUrl(isrc)), name);
+        await sleep(pace.deezer);
+        if (!hit.answered) { stats.failed++; continue; }
+        if (!hit.artist) {
+          Object.assign(entry(sid), { deezerId: null, deezer: [], deezerAt: now });
+          stats.deezer++;
+          continue;
+        }
+        const rel = relatedFrom(await ask(relatedUrl(hit.artist.id)));
+        await sleep(pace.deezer);
+        if (!rel.answered) { stats.failed++; continue; }
+        Object.assign(entry(sid), { deezerId: hit.artist.id, deezer: rel.related, deezerAt: now });
+        stats.deezer++;
+      } catch { stats.failed++; }
+    }
+    progress('deezer', todo.length, todo.length);
+  })();
+
+  const lbRun = (async () => {
+    const todo = ids.filter(sid => raw[sid]?.mbid && !fresh(raw[sid]?.lbAt, now));
+    for (let i = 0; i < todo.length; i++) {
+      progress('listenbrainz', i, todo.length);
+      const sid = todo[i];
+      try {
+        const out = similarFrom(await twice(similarUrl(raw[sid].mbid)));
+        if (out.answered) {
+          Object.assign(entry(sid), { listenbrainz: out.similar, lbAt: now });
+          stats.listenbrainz++;
+        } else stats.failed++;
+      } catch { stats.failed++; }
+      await sleep(pace.listenbrainz);
+    }
+    progress('listenbrainz', todo.length, todo.length);
+  })();
+
+  await Promise.all([deezerRun, lbRun]);
+  return { raw, stats };
+}
+return { BRIDGE_FETCH_VERSION, TTL_MS, PACE, QUOTA_WAIT_MS, gatherBridge };
+})();
 globalThis["BetterfyIntrinsic"] = __mod["core/intrinsic/space.mjs"];
 globalThis["BetterfyColdStart"] = __mod["core/intrinsic/coldstart.mjs"];
 globalThis["BetterfyExplain"] = __mod["core/intrinsic/explain.mjs"];
@@ -3423,3 +4209,6 @@ globalThis["BetterfyReports"] = __mod["core/intrinsic/reports.mjs"];
 globalThis["BetterfyPersist"] = __mod["core/intrinsic/persist.mjs"];
 globalThis["BetterfyValidate"] = __mod["core/validate/loo.mjs"];
 globalThis["BetterfyBaseline"] = __mod["core/validate/baseline.mjs"];
+globalThis["BetterfyBridge"] = __mod["core/intrinsic/bridge.mjs"];
+globalThis["BetterfyBridgeFetch"] = __mod["core/intrinsic/bridge-fetch.mjs"];
+globalThis["BetterfyDeezer"] = __mod["core/sources/deezer.mjs"];

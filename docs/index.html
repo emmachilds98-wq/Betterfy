@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-10-31-1701">
+<meta name="bf-build" content="2026-11-14-1443">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -897,7 +897,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-10-31-1701</span>
+    <span class="mono">build 2026-11-14-1443</span>
   </p>
 
   <div class="feat">
@@ -994,7 +994,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-31-1701</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1443</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1035,7 +1035,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-10-31-1701</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1443</span>
   </div>
 </div>
 
@@ -2168,7 +2168,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-10-31-1701';
+const BUILD = '2026-11-14-1443';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2489,7 +2489,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-10-31-1701', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-1443', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -5210,7 +5210,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-10-31-1701';
+    s.src = 'engine.js?v=2026-11-14-1443';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -5219,7 +5219,7 @@ function engineLoad() {
 }
 
 const ENG = { status:'idle', err:null, space:null, rung:null, shadow:null,
-              pairs:null, val:null, valRunning:false, ms:0, from:null };
+              pairs:null, val:null, valRunning:false, valStage:null, bridgeProgress:null, ms:0, from:null };
 
 /* The engine runs in a worker when it can, so learning and scoring a big library
  * leave the page usable instead of freezing it for seconds at a time (measured:
@@ -5232,7 +5232,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-10-31-1701');
+    const w = new Worker('engine-worker.js?v=2026-11-14-1443');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -5374,6 +5374,108 @@ const engineAnalyse = guard(async () => {
   render();
 });
 
+/* ---------- the neighbour bridge: docs/SMARTER-GENRES-PLAN.md, phase 0 ----------
+ * "Where did you file artists like this one?" Deezer's "fans also like" and
+ * ListenBrainz's listening-session neighbours, reached through the ISRC and
+ * Wikidata so nobody is matched by name. They only ever say who sits near whom;
+ * the vote goes to this account's own playlists. Phase 0 only measures it: the
+ * score shows each engine with and without it, and nothing else uses it yet. */
+const BRIDGE_KEY = 'bridge-raw';
+const bridgeOn = () => LS.getItem('bf_bridge_off') !== '1';
+
+/* Deezer sends no CORS header, so the one way a page can read it is a <script>
+ * tag (JSONP). A script tag runs whatever comes back with the page's full
+ * authority, Spotify sign-in included. So it runs inside a sandboxed frame
+ * instead: scripts allowed, same-origin not. That gives the frame an opaque
+ * origin with no reach into this page's storage, cookies or DOM, and its
+ * answers come back by postMessage as plain data. Both sides pin the host. */
+let DZ_FRAME = null, DZ_SEQ = 0;
+const DZ_WAIT = new Map();
+function deezerFrame() {
+  return DZ_FRAME ??= new Promise((ok, bad) => {
+    const f = document.createElement('iframe');
+    f.setAttribute('sandbox', 'allow-scripts');
+    f.setAttribute('aria-hidden', 'true');
+    f.setAttribute('title', 'Deezer lookups');
+    f.tabIndex = -1;
+    f.style.cssText = 'position:absolute; width:0; height:0; border:0; visibility:hidden';
+    f.srcdoc = `<!doctype html><meta charset="utf-8"><script>
+      var host = /^https:\\/\\/api\\.deezer\\.com\\/[a-z0-9/:._-]+(\\?[a-z0-9=&_-]*)?$/i, n = 0;
+      addEventListener('message', function (e) {
+        var m = e.data || {};
+        if (e.source !== parent || !host.test(m.url)) return;
+        var cb = 'dz' + (++n), s = document.createElement('script'), done = false;
+        function end(msg) {
+          if (done) return; done = true; delete window[cb]; s.remove();
+          parent.postMessage({ dz: m.id, ok: msg.ok, data: msg.data, timeout: !!msg.timeout }, '*');
+        }
+        window[cb] = function (data) { end({ ok: true, data: JSON.parse(JSON.stringify(data)) }); };
+        s.onerror = function () { end({ ok: false }); };
+        setTimeout(function () { end({ ok: false, timeout: true }); }, 15000);
+        s.src = m.url + (m.url.indexOf('?') < 0 ? '?' : '&') + 'output=jsonp&callback=' + cb;
+        document.head.appendChild(s);
+      });
+      parent.postMessage({ dzReady: true }, '*');
+    <\/script>`;
+    addEventListener('message', e => {
+      if (e.source !== f.contentWindow) return;
+      const d = e.data ?? {};
+      if (d.dzReady) return ok(f);
+      const wait = DZ_WAIT.get(d.dz);
+      if (!wait) return;
+      DZ_WAIT.delete(d.dz);
+      d.ok ? wait.ok(d.data) : wait.bad(new Error(d.timeout ? 'Deezer did not answer in time' : 'Deezer could not be reached'));
+    });
+    setTimeout(() => bad(new Error('the Deezer lookup frame did not start')), 10000);
+    document.body.appendChild(f);
+  }).catch(e => { DZ_FRAME = null; throw e; });
+}
+async function deezerJsonp(url) {
+  if (!BetterfyDeezer.isDeezerApiUrl(url)) throw new Error('not a Deezer API address');
+  const f = await deezerFrame();
+  return new Promise((ok, bad) => {
+    const id = ++DZ_SEQ;
+    DZ_WAIT.set(id, { ok, bad });
+    f.contentWindow.postMessage({ id, url }, '*');
+  });
+}
+/** Wikidata and ListenBrainz send CORS headers, so plain fetch works. */
+async function corsJson(url, init) {
+  const r = await fetch(url, init);
+  if (!r.ok) throw new Error(`${new URL(url).host} answered ${r.status}`);
+  return r.json();
+}
+
+function bridgeProgressText() {
+  const p = ENG.bridgeProgress ?? {};
+  const part = (label, x) => x ? `${label} ${Math.min(x.done, x.total).toLocaleString()} of ${x.total.toLocaleString()}` : null;
+  const bits = [part('Wikidata', p.wikidata), part('Deezer', p.deezer), part('ListenBrainz', p.listenbrainz)].filter(Boolean);
+  return `Looking up similar artists${bits.length ? ' — ' + bits.join(', ') : '…'}`;
+}
+
+/** Look up the neighbours of the artists about to be scored, remembering every
+ *  answer on this device so the next run only asks about what is new or stale. */
+async function engineBridge(tracks) {
+  const artists = BetterfyBridge.sourceArtists(tracks);
+  let cache = null;
+  try { cache = (await idb.get(BRIDGE_KEY))?.raw ?? null; } catch { /* no cache: ask everything */ }
+  let last = 0;
+  const { raw, stats } = await BetterfyBridgeFetch.gatherBridge(artists, {
+    deezer: deezerJsonp, json: corsJson, cache,
+    onProgress: p => {
+      ENG.bridgeProgress = { ...(ENG.bridgeProgress ?? {}), [p.stage]: p };
+      const now = performance.now();
+      if (now - last < 300) return;
+      last = now;
+      const el = document.getElementById('bridgeProgress');
+      if (el) el.textContent = bridgeProgressText();
+    },
+  });
+  try { await idb.set(BRIDGE_KEY, { at: Date.now(), raw }); }
+  catch { /* nowhere to remember it costs the next run time, nothing else */ }
+  return { bridge: BetterfyBridge.bridgeFrom(raw, LIB), stats };
+}
+
 /**
  * The gate, run here rather than on somebody's laptop.
  *
@@ -5387,30 +5489,101 @@ const engineAnalyse = guard(async () => {
  * empty table and reporting that it lost would be rigging the comparison.
  */
 const engineValidate = guard(async () => {
-  ENG.valRunning = true; ENG.val = null; render();
+  ENG.valRunning = true; ENG.val = null; ENG.valStage = null; render();
   try {
     const tags = TAGS && Object.keys(TAGS).length ? TAGS : null;
     const t0 = performance.now();
+
+    // The neighbour bridge, for exactly the tracks about to be scored. Any
+    // failure here costs the comparison, never the score: it carries on
+    // without, and says so.
+    let bridge = null, bridgeStats = null, bridgeErr = null;
+    const useBridge = bridgeOn();
+    if (useBridge) {
+      ENG.valStage = 'bridge'; ENG.bridgeProgress = {}; render();
+      try {
+        await engineLoad();
+        const tracks = BetterfyValidate.scoredTracks(LIB, { limit: VALIDATE_N, isMirror: isMirrorPlaylist,
+                                                           targets: new Set(engineTargets()) });
+        ({ bridge, stats: bridgeStats } = await engineBridge(tracks));
+      } catch (e) { bridge = null; bridgeErr = e?.message ?? String(e); }
+      ENG.valStage = 'score'; render();
+    }
+    const bridgeMs = useBridge ? Math.round(performance.now() - t0) : 0;
+    const t1 = performance.now();
+
     let done = null;
-    try { done = await inEngineWorker('validate', { lib: LIB, tags, opts: { folds: 5, limit: VALIDATE_N } }); }
+    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, opts: { folds: 5, limit: VALIDATE_N } }); }
     catch { done = null; }
+    const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
     if (done?.result?.mine) {
-      ENG.val = { ...done.result, ms: Math.round(performance.now() - t0), where: 'worker' };
+      ENG.val = { ...done.result, ...extra, ms: Math.round(performance.now() - t1), where: 'worker' };
     } else {
       // No worker, or it failed: the original main-thread path, same answer.
       await engineLoad();
       await yieldToPaint();
-      const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()) };
+      const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
-      ENG.val = { mine, base, ms: Math.round(performance.now() - t0), where: 'page' };
+      ENG.val = { mine, base, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }
-  ENG.valRunning = false; render();
+  ENG.valRunning = false; ENG.valStage = null; render();
 });
+
+/**
+ * Phase 0's question, answered from one run: does the bridge lift tracks by
+ * artists never filed in a genre playlist by at least 5 points, without
+ * costing anything overall? The bar is the plan's (§7), set before anyone saw
+ * a number. Null when there is nothing to judge.
+ */
+function bridgeVerdict(v) {
+  const w = v?.mine?.withBridge, nf = v?.mine?.neverFiled;
+  if (!w || !nf) return null;
+  const lift = (w.neverFiled.top1 ?? 0) - (nf.top1 ?? 0);
+  const overall = (w.top1 ?? 0) - (v.mine.top1 ?? 0);
+  const pts = x => `${x >= 0 ? '+' : '−'}${Math.abs(Math.round(x * 1000) / 10)} points`;
+  if (nf.scored < 20) return { pass: null, lift, overall,
+    text: `Only ${nf.scored} of the scored tracks are by artists not yet in a genre playlist — too few to judge it on.` };
+  if (overall < 0) return { pass: false, lift, overall,
+    text: `It helps never-filed artists by ${pts(lift)} but costs ${pts(overall)} overall, so it stays off.` };
+  if (lift >= 0.05) return { pass: true, lift, overall,
+    text: `Passes: ${pts(lift)} on tracks by artists you hadn't filed in a genre playlist yet, ${pts(overall)} overall.` };
+  return { pass: false, lift, overall,
+    text: `Not enough lift on never-filed artists (${pts(lift)}; the bar is +5 points), so it stays off.` };
+}
+
+/** The with/without comparison on the score card. Empty when there is none. */
+function bridgeCard(v, p) {
+  if (!v || v.error) return '';
+  if (v.bridgeOff) return '';
+  const w = v.mine?.withBridge;
+  if (!w) return v.bridgeErr ? `<p class="why" style="margin-top:14px">Similar artists couldn't be looked up
+    (${esc(v.bridgeErr)}), so this was scored without them.</p>` : '';
+  const nf = v.mine.neverFiled, c = w.coverage ?? {}, verdict = bridgeVerdict(v);
+  return `<h3 style="margin:18px 0 6px; font-size:16px">Adding similar artists</h3>
+    <p class="why">Deezer's "fans also like" and ListenBrainz's listening sessions say who sits near each artist.
+      They never name a genre: only where <b>you</b> filed those neighbours counts. Same tracks, same folds as above.</p>
+    <div class="facts" style="margin-top:10px">
+      <div><span><b>With similar artists</b> — right first time</span><b class="mono">${p(w.top1)}</b></div>
+      <div><span>…without</span><b class="mono">${p(v.mine.top1)}</b></div>
+      <hr>
+      <div><span>Tracks by artists not in any genre playlist yet</span><b class="mono">${nf.scored.toLocaleString()}</b></div>
+      <div><span>…right first time, with similar artists</span><b class="mono">${p(w.neverFiled.top1)}</b></div>
+      <div><span>…without</span><b class="mono">${p(nf.top1)}</b></div>
+      <hr>
+      <div><span>Artists looked up</span><b class="mono">${(c.asked ?? 0).toLocaleString()}</b></div>
+      <div><span>…with neighbours in your library</span><b class="mono">${(c.withNeighbours ?? 0).toLocaleString()}</b></div>
+      <div><span>Tracks it had a say on</span><b class="mono">${w.judged.toLocaleString()}</b></div>
+      ${v.bridgeStats?.quota ? `<p>Deezer asked the app to slow down partway, so some artists weren't looked up this time.
+        Running it again later picks up where it stopped.</p>` : ''}
+    </div>
+    ${verdict ? `<p class="why" style="margin-top:12px"><b>${verdict.pass === true ? 'Helps.' : verdict.pass === false ? 'Not yet.' : 'Undecided.'}</b>
+      ${esc(verdict.text)}</p>` : ''}`;
+}
 
 /** Whether long engine work will run off the main thread. */
 const engineInBackground = () => typeof Worker === 'function' && ENGINE_WORKER !== false;
@@ -5438,7 +5611,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-10-31-1701`,
+    `Betterfy engine score — build 2026-11-14-1443`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5448,9 +5621,29 @@ function engineSummary() {
     v.mine.declined ? `Declined: ${v.mine.declined}, of which would have been right: ${v.mine.declinedWouldHaveBeenRight ?? 0}` : null,
     weakBuckets(v).length ? `Weakest: ${weakBuckets(v).map(b => `${b.name} ${pc(b.inTop3)} of ${b.n}`).join('; ')}` : null,
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
+    v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
+    ...bridgeLines(v, pc),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   return lines.filter(Boolean).join('\n');
+}
+
+/** The bridge's part of the pasteable summary. Counts and rates only. */
+function bridgeLines(v, pc) {
+  if (v.bridgeOff) return ['Similar artists: switched off'];
+  if (v.bridgeErr && !v.mine.withBridge) return [`Similar artists: lookup failed (${v.bridgeErr})`];
+  const w = v.mine.withBridge;
+  if (!w) return [];
+  const c = w.coverage ?? {}, st = v.bridgeStats ?? {}, verdict = bridgeVerdict(v);
+  return [
+    `With similar artists: top-1 ${pc(w.top1)}, top-3 ${pc(w.top3)} (weight ${w.weight})`,
+    `Never-filed artists with similar artists: top-1 ${pc(w.neverFiled.top1)} (without ${pc(v.mine.neverFiled?.top1)})`,
+    `Similar-artist coverage: ${c.asked ?? 0} artists looked up, Deezer ${c.deezer ?? 0}, ListenBrainz ${c.listenbrainz ?? 0}, `
+      + `neighbours in library ${c.withNeighbours ?? 0}; had a say on ${w.judged} tracks`,
+    st.failed || st.quota ? `Lookups that failed: ${st.failed ?? 0}${st.quota ? ', Deezer rate-limited the run' : ''}` : null,
+    `Lookups took ${((v.bridgeMs ?? 0) / 1000).toFixed(1)}s${st.fromCache ? `, ${st.fromCache} remembered from before` : ''}`,
+    verdict ? `Phase 0: ${verdict.pass === true ? 'PASS' : verdict.pass === false ? 'not yet' : 'undecided'} — ${verdict.text}` : null,
+  ].filter(Boolean);
 }
 
 const engineCopy = guard(async () => {
@@ -5626,18 +5819,24 @@ function vEngine() {
       verdict === 'ahead' ? 'On your library, reading nothing but your own filing beats reading the tag table.'
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
       : 'There is nothing to choose between them on your library.'}</p>` : ''}
+    ${bridgeCard(v, p)}
     ${weakBuckets(v).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
       <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
         Low here means the engine has no real idea what that playlist is for.</p>
       <div class="facts" style="margin-top:10px">${weakBuckets(v).map(b =>
         `<div><span>${esc(b.name)} <span class="sub">· ${b.n} tracks</span></span><b class="mono">${p(b.inTop3)}</b></div>`).join('')}
       </div>` : ''}` : ''}
-    <div class="rowbtns" style="margin-top:18px">
+    <label class="check-row" style="margin-top:14px"><input type="checkbox" id="bridgeToggle" ${bridgeOn() ? 'checked' : ''}
+      ${ENG.valRunning ? 'disabled' : ''}> Also try similar artists (asks Deezer, ListenBrainz and Wikidata about the artists being scored)</label>
+    <div class="rowbtns" style="margin-top:10px">
       <button class="b ${v ? '' : 'go'}" data-eng="validate" ${ENG.valRunning ? 'disabled' : ''}>${
         ENG.valRunning ? 'Scoring…' : v ? 'Run it again' : 'Score both engines'}</button>
       ${v && !v.error && !ENG.valRunning ? `<button class="b" data-eng="copy">Copy results</button>` : ''}
     </div>
-    ${ENG.valRunning ? `<p class="why" style="margin-top:12px">Learning your library from scratch ten times over —
+    ${ENG.valRunning && ENG.valStage === 'bridge' ? `<p class="why" style="margin-top:12px" id="bridgeProgress" aria-live="polite">${esc(bridgeProgressText())}</p>
+      <p class="why">The first run asks about each artist being scored — a few hundred, a minute or two. Every answer is
+        remembered on this device for two months, so later runs only ask about what's new.</p>` : ''}
+    ${ENG.valRunning && ENG.valStage !== 'bridge' ? `<p class="why" style="margin-top:12px">Learning your library from scratch ten times over —
       five folds, two engines. ${engineInBackground()
         ? 'It runs in the background, so the app stays usable — just leave this screen open until it finishes.'
         : 'On a big library that can take a while, and the page will freeze in bursts while it happens.'}
@@ -5923,6 +6122,10 @@ document.addEventListener('change', guard(async e => {
   if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; S.shufCache = null; return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
+  if (e.target.id === 'bridgeToggle') {
+    if (e.target.checked) LS.removeItem('bf_bridge_off'); else LS.setItem('bf_bridge_off', '1');
+    return;
+  }
   if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
 
   // Axis / target edits are per-viewer and persist on this device.
