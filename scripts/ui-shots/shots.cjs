@@ -72,12 +72,26 @@ async function shoot(b, FORM, THEME) {
   await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
   await pg.waitForSelector('#app:not([hidden])', { timeout: 30000 });
   await pg.waitForTimeout(800);
-  const views = ['home','inbox','tidy','discover','shuffle','new','lists','engine','history'];
+  const views = ['home','inbox','tidy','discover','shuffle','new','lists','sources','engine','history'];
   for (const v of views) {
     await pg.evaluate(v => { try { go(v); } catch (e) { console.log(e); } }, v);
     await pg.waitForTimeout(v === 'engine' ? 2500 : 700);
     await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-${v}.png`), fullPage: true });
   }
+  // Home again with a ListenVM fixture (UI-5): the fifth "Heard" card and the
+  // listening indicator in the chrome. Until UI-2's listenPill() ships (it
+  // returns '' on main) the slot gets a stand-in pill so its placement shows.
+  await pg.evaluate(() => {
+    go('home');
+    setListen({ state: 'running', done: 37, total: 412, missed: {}, heard: 1284 });
+    const slot = document.getElementById('listenSlot');
+    if (slot && !slot.innerHTML) slot.innerHTML = '<span class="ui5-standin" style="display:inline-flex;align-items:center;gap:8px;'
+      + 'padding:7px 13px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--ink);'
+      + 'font:600 12.5px var(--mono);white-space:nowrap">▮▮▮▯▯ Listening · 37 / 412</span>';
+  });
+  await pg.waitForTimeout(700);
+  await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-home-listening.png`), fullPage: FORM !== 'phone' });
+  await pg.evaluate(() => setListen(null));
   await ctx.close();
   // The landing page: same server, no token.
   const c2 = await b.newContext({ ...vp, colorScheme: THEME });
