@@ -3,10 +3,12 @@
   /* Nothing here is meant to scroll sideways. clip (not hidden) because it
      doesn't turn the root into a scroll container, so sticky still works. */
   @supports (overflow-x:clip){ html{overflow-x:clip} }
-  body{margin:0; background:var(--ground); color:var(--ink); font-size:14px; line-height:1.5;
+  body{margin:0; background:var(--ground); color:var(--ink); font-size:var(--fs-body); line-height:1.5;
        font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased;
        -webkit-tap-highlight-color:transparent; overscroll-behavior-y:none}
   [hidden]{display:none!important}
+  ::selection{background:color-mix(in srgb, var(--accent) 28%, transparent)}
+  ::placeholder{color:var(--ink-3); opacity:1}
   a{color:var(--accent)}
   /* Everything below animates. Someone who has asked their phone to stop
      moving things gets the same app, still. */
