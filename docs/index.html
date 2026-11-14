@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-1910">
+<meta name="bf-build" content="2026-11-14-2003">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -50,7 +50,7 @@
     --rail:#F7F1E7;
     --ink:#1B1815; --ink-2:#554D45; --ink-3:#6E655B;
     --line:#E9E1D6; --line-2:#DCD1C0;
-    --accent:#D9502B; --accent-ink:#FFF; --accent-soft:#FBEAE4; --accent-lift:#EC663E;
+    --accent:#CD4825; --accent-ink:#FFF; --accent-soft:#FBEAE4; --accent-lift:#EC663E;
     --ok:#0F7A4E; --ok-ink:#FFF; --ok-soft:#E3F2EA; --warn:#835B0A; --warn-soft:#F8EFD9;
     --idle:#A79C8E;
     /* The tick inside a checked box: drawn in the ink a filled control
@@ -1071,7 +1071,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-1910</span>
+    <span class="mono">build 2026-11-14-2003</span>
   </p>
 
   <div class="feat">
@@ -1168,7 +1168,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1910</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2003</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1209,7 +1209,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1910</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2003</span>
   </div>
 </div>
 
@@ -2137,9 +2137,11 @@ const THEME_KEY = 'betterfy-theme';
  * one colour — it is the same colour twice, and which half you get follows the
  * theme rather than being something else to choose. */
 const ACCENTS = [
-  ['Ember',  '#FF7A52', '#D9502B'], ['Amber',  '#FFB43F', '#B37711'],
-  ['Lime',   '#C3DE55', '#6B9524'], ['Mint',   '#7AE0A6', '#17915F'],
-  ['Jade',   '#43D2A6', '#0E8A6D'], ['Teal',   '#4CD0D6', '#12878C'],
+  // The light halves of the first six sit a few points darker than they first
+  // did, just enough for white text on them (a primary button) to reach 4.5:1.
+  ['Ember',  '#FF7A52', '#CD4825'], ['Amber',  '#FFB43F', '#9F6A0F'],
+  ['Lime',   '#C3DE55', '#5C801F'], ['Mint',   '#7AE0A6', '#158557'],
+  ['Jade',   '#43D2A6', '#0D8469'], ['Teal',   '#4CD0D6', '#118186'],
   ['Sky',    '#63C8FF', '#1F72C0'], ['Blue',   '#8AA6FF', '#3F55C4'],
   ['Lilac',  '#C79BFF', '#6F4FCB'], ['Orchid', '#FF95E4', '#AE3B93'],
   ['Rose',   '#FF8A9E', '#C13A5A'], ['Sand',   '#E4C79B', '#8C6B3C'],
@@ -2187,6 +2189,8 @@ const hsl = (h,s,l) => `hsl(${((h%360)+360)%360} ${Math.max(0,Math.min(100,s))}%
  * cannot read. This walks the lightness until the colour is actually dark
  * enough (on a light background) or light enough (on a dark one).
  */
+/** Relative luminance of #17100B, the dark ink printed on a bright accent. */
+const INK_DARK_L = 0.0058;
 function lumOf(h, s, l) {
   h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
   const c = (1 - Math.abs(2*l - 1)) * s, x = c * (1 - Math.abs((h/60) % 2 - 1)), m = l - c/2;
@@ -2231,10 +2235,13 @@ function applyTheme() {
   // The top stop of the logo tile's gradient — a lift rather than a second hue,
   // so the mark stays one colour however far the sliders are pushed.
   root.setProperty('--accent-lift', hsl(hue, Math.min(depth+6,100), Math.min(brightness+9,92)));
-  // Which of the two inks to print on the accent, decided by how bright the
-  // colour actually is rather than by its lightness number: a 55% yellow and a
-  // 55% blue are nowhere near as bright as each other.
-  root.setProperty('--accent-ink', lumOf(hue, depth, brightness) > 0.42 ? '#17100B' : '#FFFFFF');
+  // Which of the two inks to print on the accent: whichever has the higher
+  // contrast with it, measured on how bright the colour actually is rather
+  // than its lightness number (a 55% yellow and a 55% blue are nowhere near as
+  // bright as each other). The old fixed cut-off at 0.42 put white on the
+  // dark theme's Ember, Blue and Rose at under 2.6:1.
+  const accL = lumOf(hue, depth, brightness);
+  root.setProperty('--accent-ink', 1.05 / (accL + .05) >= (accL + .05) / (INK_DARK_L + .05) ? '#FFFFFF' : '#17100B');
 
   // Eight hues spun off the chosen accent. Everything on screen that isn't a
   // control — stat tiles, screen headers, the tab bar, the landing cards —
@@ -2410,7 +2417,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-1910';
+const BUILD = '2026-11-14-2003';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2731,7 +2738,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-1910', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-2003', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -5778,7 +5785,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-1910';
+    s.src = 'engine.js?v=2026-11-14-2003';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -5800,7 +5807,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-1910');
+    const w = new Worker('engine-worker.js?v=2026-11-14-2003');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -6114,7 +6121,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-14-1910';
+    s.src = 'audio.js?v=2026-11-14-2003';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -6142,7 +6149,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-1910', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2003', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -6529,7 +6536,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-1910`,
+    `Betterfy engine score — build 2026-11-14-2003`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
