@@ -36,7 +36,7 @@ function load({ records = null, profileRow = () => '', panel = '<div id="audioPa
     LS: { getItem: () => '' },
     AUDIO: { records, labels: null },
     BetterfyAudio: records ? { profileVM: p => ({ heard: 3, members: p.tracks.length }) } : undefined,
-    profileRow, audioPanelHTML: () => panel,
+    profileRow, audioPanelHTML: () => panel, labelCheckHTML: () => '',
   };
   vm.createContext(sb);
   vm.runInContext(CODE + ';globalThis.vLists = vLists; globalThis.vSources = vSources;', sb);

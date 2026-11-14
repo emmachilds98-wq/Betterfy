@@ -2101,10 +2101,15 @@ function artHTML(t, hook = 'data-act="play"') {
  * for byte the card it was before the slots existed (test/fixtures/ui4/). */
 const soundSlot = (cls, html) => html ? `<div class="${cls}">${html}</div>` : '';
 // Where a track's SoundVM comes from: one set on the track itself, else what
-// listening heard, through the audio side's adapter (WP-D4's dspSoundVM, which
-// stays null until its flag is on). No records or no adapter means no sound.
+// listening heard, through the audio side's adapters (WP-D4's dspSoundVM, and
+// the mood/voice/energy labels once checked). Both stay null until their flags
+// are on. No records or no adapter means no sound.
 const soundOf = t => t?.sound ?? (t?.id && typeof AUDIO !== 'undefined' && AUDIO.records
-  && globalThis.BetterfyAudio?.dspSoundVM ? BetterfyAudio.dspSoundVM(AUDIO.records.get(t.id)) ?? null : null);
+  && globalThis.BetterfyAudio?.dspSoundVM ? audioSoundVM(AUDIO.records.get(t.id)) : null);
+const audioSoundVM = r => {
+  const A = BetterfyAudio, d = A.dspSoundVM(r) ?? null;
+  return A.mergeSoundVM && typeof labelsShownNow === 'function' ? A.mergeSoundVM(d, A.labelSoundVM(r, labelsShownNow())) : d;
+};
 const trackChip = t => { const vm = soundOf(t); return vm ? soundSlot('sndchip', soundChip(vm)) : ''; };
 const trackStrip = t => { const vm = soundOf(t); return vm ? soundSlot('sndstrip', sectionStrip(vm)) : ''; };
 const pickBand = sg => sg?.band ? bandChip(sg.band) : '';
@@ -3229,8 +3234,12 @@ function mixLabel(mix) {
  * (docs/UI-BUILD-PLAN.md §3 rule 3). The Listening settings themselves live
  * on Sources, in the card audioPanelHTML() draws. */
 const LISTS_SOUND = {
-  profile: id => AUDIO.records && globalThis.BetterfyAudio
-    ? BetterfyAudio.profileVM(LIB.playlists.find(x => x.id === id), AUDIO.records, AUDIO.labels) : null,
+  profile: id => {
+    if (!AUDIO.records || !globalThis.BetterfyAudio) return null;
+    const p = LIB.playlists.find(x => x.id === id), vm = BetterfyAudio.profileVM(p, AUDIO.records, AUDIO.labels);
+    return BetterfyAudio.withProfileEnergy && typeof labelsShownNow === 'function'
+      ? BetterfyAudio.withProfileEnergy(vm, p, AUDIO.records, labelsShownNow()) : vm;
+  },
 };
 
 /** One row of the axes table, plus a hidden sound-profile row under it when
@@ -3358,7 +3367,7 @@ function vSources() {
         <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
       </div>`)}
 
-    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>
+    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>${labelCheckHTML()}
     </div>`;
 }
 
@@ -4686,6 +4695,35 @@ async function audioInit() {
 async function audioRefresh() {
   if (!AUDIO.ctrl) return;
   AUDIO.records = await AUDIO.ctrl.refresh();
+  LABELCHECKS ??= (await idb.get(BetterfyAudio.CHECKS_KEY)) ?? {};
+}
+
+/* ---------- mood, voice and energy: shown once checked ----------
+ * web/audio/labels-view.mjs. The heads and D4's energy are in every record but
+ * hidden; the "Check sound labels" card on Sources asks the listener to mark
+ * 30 of them right or wrong, and a label type shows only once 70% of at least
+ * 20 are right. Verdicts are this account's only (keyed by Spotify user id).
+ * With no records nothing here draws anything. */
+let LABELCHECKS = null;
+const LABELS = { seed: 1, sample: null };
+const labelUser = () => LIB?.user?.id ?? null;
+const labelChecks = () => globalThis.BetterfyAudio && LABELCHECKS ? BetterfyAudio.checksFor(LABELCHECKS, labelUser()) : {};
+const labelsShownNow = () => globalThis.BetterfyAudio?.labelsShown ? BetterfyAudio.labelsShown(labelChecks(), LS) : null;
+function labelCheckHTML() {
+  if (!AUDIO.records?.size || !globalThis.BetterfyAudio?.reviewHTML || !labelUser()) return '';
+  const A = BetterfyAudio, checks = labelChecks();
+  LABELS.sample ??= A.reviewSample(LIB, AUDIO.records, { seed: LABELS.seed, checks, skip: p => isMirrorPlaylist(p) });
+  const html = A.reviewHTML(A.reviewVM(LABELS.sample, AUDIO.records, checks));
+  return html ? `<section class="srccard srclabels" id="src-labels" aria-labelledby="src-labels-h">${html}</section>` : '';
+}
+const labelCheckRedraw = () => { const el = document.getElementById('src-labels'); if (el) el.outerHTML = labelCheckHTML(); };
+async function labelVerdict(btn) {
+  const A = BetterfyAudio, id = btn.dataset.lchk, type = btn.dataset.lt, ok = btn.dataset.lok === '1', me = labelUser();
+  const reading = A.readingsOf(AUDIO.records?.get(id))[type];
+  const again = A.checksFor(LABELCHECKS, me)[id]?.[type] === ok;   // tapping the chosen answer again clears it
+  LABELCHECKS = A.withVerdict(LABELCHECKS, me, id, type, again ? null : ok, reading == null ? null : A.seenOf(type, reading));
+  await idb.set(A.CHECKS_KEY, LABELCHECKS);
+  labelCheckRedraw();
 }
 
 /** The heard tracks for the engine (WP-E2 reads them as `audio`), as an array of
@@ -5611,6 +5649,9 @@ document.addEventListener('click', guard(async e => {
   if (e.target.id === 'enrich') return enrichMissing();
   if (e.target.id === 'fillWikidata') return fillFromWikidata();
   if (e.target.id === 'audioGo') return audioStart();
+  const lchk = e.target.closest('[data-lchk]');
+  if (lchk && globalThis.BetterfyAudio) return labelVerdict(lchk);
+  if (e.target.id === 'labelCheckMore') { LABELS.seed++; LABELS.sample = null; return labelCheckRedraw(); }
   if (e.target.id === 'audioStop') { AUDIO.ctrl?.stop(); return; }
   if (e.target.id === 'audioWifiYes') { AUDIO.wifiOk = true; return audioStart(); }
 
