@@ -2025,6 +2025,18 @@ function artHTML(t, hook = 'data-act="play"') {
   return `<div class="art ph" ${hook} title="Play" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h+48)%360} 58% 44%))">${esc((t.title||'?').trim()[0]??'?')}</div>`;
 }
 
+/* ---------- the sound layer's slots on the File and Discover cards ----------
+ * docs/UI-BUILD-PLAN.md, UI-4. A track may carry `sound` (a SoundVM) and a
+ * suggestion `band` (a BandVM) and `evidence` (an EvidenceVM); the renderers are
+ * web/ui/sound.mjs's. Each slot reads its field and draws nothing at all without
+ * it — not an empty wrapper, not a space — so a card with no such data is byte
+ * for byte the card it was before the slots existed (test/fixtures/ui4/). */
+const soundSlot = (cls, html) => html ? `<div class="${cls}">${html}</div>` : '';
+const trackChip = t => t?.sound ? soundSlot('sndchip', soundChip(t.sound)) : '';
+const trackStrip = t => t?.sound ? soundSlot('sndstrip', sectionStrip(t.sound)) : '';
+const pickBand = sg => sg?.band ? bandChip(sg.band) : '';
+const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
+
 /* ---------- artist roll-forward: docs/SMARTER-GENRES-PLAN.md, phase 4 ----------
  * File one track by an artist and the same artist's other unfiled tracks usually
  * belong in the same place. So the File screen offers them, as a list you can see
@@ -2133,18 +2145,18 @@ function vInbox() {
           </div>
           <div class="txt">
             <p class="t">${esc(t.title)}</p><p class="a">${esc(t.artist)}</p>
-            <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0, 4))}</span><span>${mmss(t.dur)}</span></div>
+            <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0, 4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}
             ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
           </div>
-        </div>
+        </div>${trackStrip(t)}
         ${t.suggest.length ? `<div class="picks">${t.suggest.slice(0, 3).map((sg, n) => `
           <button class="pick ${n === 0 ? 'best' : ''}" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
               ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
-              : `${esc(sg.axis ?? '')} playlist`}</span></span>
-            <span class="rt"><span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
+              : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
+            <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
             <span class="nope" data-reject="${esc(sg.id)}" role="button" tabindex="0"
               title="Never suggest ${esc(sg.name)} for this track">✕</span>
@@ -2901,9 +2913,9 @@ function vDiscover() {
           <div class="artwrap">${art}</div>
           <div class="txt">
             <p class="t">${esc(t.track)}</p><p class="a">${esc(t.artist)}</p>
-            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>
+            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}
           </div>
-        </div>
+        </div>${trackStrip(t)}
 
         <div class="player">
           <button class="tbtn" id="pToggle" aria-label="Play">${ICON_PLAY}</button>
@@ -2916,13 +2928,13 @@ function vDiscover() {
         ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
         ${best ? `<button class="fitcall" data-dfile="${esc(best.id)}">
             <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
-              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ranked by the same model the file queue uses</span></span>
-            <span class="sc">${(best.score*100).toFixed(0)}% fit</span>
+              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ranked by the same model the file queue uses</span>${pickEvidence(best)}</span>
+            ${pickBand(best)}<span class="sc">${(best.score*100).toFixed(0)}% fit</span>
           </button>` : ''}
         ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
           `<button class="pick" data-dfile="${esc(sg.id)}"><span class="k">${n+2}</span>
-           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span></span>
-           <span class="rt"><span class="sc">${(sg.score*100).toFixed(0)}%</span>
+           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span>${pickEvidence(sg)}</span>
+           <span class="rt">${pickBand(sg)}<span class="sc">${(sg.score*100).toFixed(0)}%</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
         ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — Last.fm has no tags for this artist, or it fits nothing you have. Pick a playlist below.</p>`}
 

@@ -22,6 +22,15 @@
   .swipehint b{font-weight:600; color:var(--ink-2)}
   .counter{display:flex; align-items:center; justify-content:space-between; gap:6px 12px; margin-top:14px;
            flex-wrap:wrap; font-family:var(--mono); font-size:11.5px; color:var(--ink-3)}
+  /* ---- the sound layer's slots on the File and Discover cards (UI-4) ----
+     Placement only. The chip, strip, band and badges draw themselves
+     (web/ui/sound.mjs, 90-sound.css), and none of these boxes exists without
+     data, so a card with no audio is laid out exactly as before. */
+  .sndchip{margin-top:9px; min-width:0}
+  .sndstrip{margin-top:14px}
+  .fitcall .band{flex:none}
+  .fitcall .band + .sc{font-size:11.5px; font-weight:500; color:var(--ink-3)}
+  .fitcall .mid .evs{margin-top:7px}
 
   button.b, a.b{appearance:none; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:6px; font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
            background:var(--surface); color:var(--ink); border-radius:var(--r); padding:9px 15px;

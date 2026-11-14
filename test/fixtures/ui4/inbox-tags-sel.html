@@ -1,0 +1,65 @@
+<div class="counter" style="margin:0 0 16px">
+      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">1 of 2 · liked 2024-01-01</span>
+      <span>Keys: <b>1–3</b> pick, <b>Enter</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.</span>
+    </div>
+    <div class="deck">
+      <div class="peek" aria-hidden="true"></div>
+      <div class="card swipecard" id="swipeCard" data-best="p1">
+        <div class="verdicts" aria-hidden="true">
+          <span class="verdict file">1 playlist</span>
+          <span class="verdict skip">Skip</span>
+        </div>
+        <h2 style="margin:0 0 20px; font-size:26px; font-weight:800; letter-spacing:-.025em">Where does this one go?</h2>
+        <div class="now">
+          <div class="artwrap">
+            <img class="art" src="https://i.test/a.jpg" alt="" data-act="play" title="Play" loading="lazy" decoding="async">
+            <button class="pfab" data-act="play" aria-label="Play"><svg id="playicon"></svg></button>
+          </div>
+          <div class="txt">
+            <p class="t">Rinse It</p><p class="a">Tim Reaper</p>
+            <div class="m"><span>Future Retro</span><span>2023</span><span>4:14</span></div>
+            <div class="tagrow"><span class="tag" title="genre tag">jungle</span><span class="tag" title="genre tag">breakbeat</span></div>
+          </div>
+        </div>
+        <div class="picks">
+          <button class="pick best" data-selfile="p1"
+            >
+            <span class="k">1</span>
+            <span class="mid"><span class="nm">Jungle &amp; Breaks</span><span class="ax">genre playlist</span></span>
+            <span class="rt"><span class="sc">61%</span>
+              <span class="bar"><i style="width:61%"></i></span></span>
+            <span class="nope" data-reject="p1" role="button" tabindex="0"
+              title="Never suggest Jungle &amp; Breaks for this track">✕</span>
+          </button>
+          <button class="pick " data-selfile="p2"
+            style="border-color:var(--accent); background:var(--surface-2)">
+            <span class="k">✓</span>
+            <span class="mid"><span class="nm">Late Night &lt;Deep&gt;</span><span class="ax">mood playlist</span></span>
+            <span class="rt"><span class="sc">33%</span>
+              <span class="bar"><i style="width:33%"></i></span></span>
+            <span class="nope" data-reject="p2" role="button" tabindex="0"
+              title="Never suggest Late Night &lt;Deep&gt; for this track">✕</span>
+          </button>
+          <button class="pick " data-selfile="p3"
+            >
+            <span class="k">3</span>
+            <span class="mid"><span class="nm">Rollers</span><span class="ax">genre playlist</span></span>
+            <span class="rt"><span class="sc">21%</span>
+              <span class="bar"><i style="width:21%"></i></span></span>
+            <span class="nope" data-reject="p3" role="button" tabindex="0"
+              title="Never suggest Rollers for this track">✕</span>
+          </button></div>
+        
+        <div class="rowbtns" style="margin-top:22px">
+          <button class="b big go grow" data-filesel="1" >File in Late Night &lt;Deep&gt;</button>
+          <button class="b big" data-act="skip">Skip</button>
+        </div>
+        <div class="rowbtns" style="margin-top:10px">
+          <button class="b sm" data-act="unlike">Unlike</button>
+          <select id="anyPl"><option value="">Add another playlist…</option><option value="p1">Jungle &amp; Breaks</option><option value="p3">Rollers</option></select>
+        </div>
+        <p style="margin:14px 0 0; font-size:13px; color:var(--ink-3); text-align:center">Nothing is written to Spotify until you tap File or swipe — and it can be undone after.</p>
+      </div>
+    </div>
+    <div class="prog" style="margin-top:16px"><i style="width:0.00%"></i></div>
+    <div class="swipehint"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span></div>

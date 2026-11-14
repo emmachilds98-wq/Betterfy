@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-1732">
+<meta name="bf-build" content="2026-11-14-1738">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -458,6 +458,11 @@
   .pick .bar{display:block; width:62px; height:5px; border-radius:3px; overflow:hidden;
         background:color-mix(in srgb, var(--ink-3) 30%, transparent)}
   .pick .bar i{display:block; height:100%; background:var(--ink-3)}
+  /* With a confidence band (UI-4), the band is the headline and the percentage
+     its footnote: still there for whoever wants the number, no longer shouting. */
+  .pick .band + .sc{font-size:11.5px; font-weight:500; color:var(--ink-3)}
+  .pick.best .band + .sc{color:color-mix(in srgb, var(--ok) 70%, var(--ink-3))}
+  .pick .mid .evs{margin-top:7px}
   /* Player. The scrubber is a real range input so it is draggable, keyboard
      operable and announced as a slider, with the native track and thumb
      restyled rather than replaced by divs. */
@@ -536,6 +541,15 @@
   .swipehint b{font-weight:600; color:var(--ink-2)}
   .counter{display:flex; align-items:center; justify-content:space-between; gap:6px 12px; margin-top:14px;
            flex-wrap:wrap; font-family:var(--mono); font-size:11.5px; color:var(--ink-3)}
+  /* ---- the sound layer's slots on the File and Discover cards (UI-4) ----
+     Placement only. The chip, strip, band and badges draw themselves
+     (web/ui/sound.mjs, 90-sound.css), and none of these boxes exists without
+     data, so a card with no audio is laid out exactly as before. */
+  .sndchip{margin-top:9px; min-width:0}
+  .sndstrip{margin-top:14px}
+  .fitcall .band{flex:none}
+  .fitcall .band + .sc{font-size:11.5px; font-weight:500; color:var(--ink-3)}
+  .fitcall .mid .evs{margin-top:7px}
 
   button.b, a.b{appearance:none; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:6px; font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
            background:var(--surface); color:var(--ink); border-radius:var(--r); padding:9px 15px;
@@ -900,7 +914,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-1732</span>
+    <span class="mono">build 2026-11-14-1738</span>
   </p>
 
   <div class="feat">
@@ -997,7 +1011,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1732</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1738</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1038,7 +1052,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1732</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-1738</span>
   </div>
 </div>
 
@@ -2239,7 +2253,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-1732';
+const BUILD = '2026-11-14-1738';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -2560,7 +2574,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-1732', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-1738', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -3618,6 +3632,18 @@ function artHTML(t, hook = 'data-act="play"') {
   return `<div class="art ph" ${hook} title="Play" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h+48)%360} 58% 44%))">${esc((t.title||'?').trim()[0]??'?')}</div>`;
 }
 
+/* ---------- the sound layer's slots on the File and Discover cards ----------
+ * docs/UI-BUILD-PLAN.md, UI-4. A track may carry `sound` (a SoundVM) and a
+ * suggestion `band` (a BandVM) and `evidence` (an EvidenceVM); the renderers are
+ * web/ui/sound.mjs's. Each slot reads its field and draws nothing at all without
+ * it — not an empty wrapper, not a space — so a card with no such data is byte
+ * for byte the card it was before the slots existed (test/fixtures/ui4/). */
+const soundSlot = (cls, html) => html ? `<div class="${cls}">${html}</div>` : '';
+const trackChip = t => t?.sound ? soundSlot('sndchip', soundChip(t.sound)) : '';
+const trackStrip = t => t?.sound ? soundSlot('sndstrip', sectionStrip(t.sound)) : '';
+const pickBand = sg => sg?.band ? bandChip(sg.band) : '';
+const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
+
 /* ---------- artist roll-forward: docs/SMARTER-GENRES-PLAN.md, phase 4 ----------
  * File one track by an artist and the same artist's other unfiled tracks usually
  * belong in the same place. So the File screen offers them, as a list you can see
@@ -3726,18 +3752,18 @@ function vInbox() {
           </div>
           <div class="txt">
             <p class="t">${esc(t.title)}</p><p class="a">${esc(t.artist)}</p>
-            <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0, 4))}</span><span>${mmss(t.dur)}</span></div>
+            <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0, 4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}
             ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
           </div>
-        </div>
+        </div>${trackStrip(t)}
         ${t.suggest.length ? `<div class="picks">${t.suggest.slice(0, 3).map((sg, n) => `
           <button class="pick ${n === 0 ? 'best' : ''}" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
               ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
-              : `${esc(sg.axis ?? '')} playlist`}</span></span>
-            <span class="rt"><span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
+              : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
+            <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
             <span class="nope" data-reject="${esc(sg.id)}" role="button" tabindex="0"
               title="Never suggest ${esc(sg.name)} for this track">✕</span>
@@ -4494,9 +4520,9 @@ function vDiscover() {
           <div class="artwrap">${art}</div>
           <div class="txt">
             <p class="t">${esc(t.track)}</p><p class="a">${esc(t.artist)}</p>
-            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>
+            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}
           </div>
-        </div>
+        </div>${trackStrip(t)}
 
         <div class="player">
           <button class="tbtn" id="pToggle" aria-label="Play">${ICON_PLAY}</button>
@@ -4509,13 +4535,13 @@ function vDiscover() {
         ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
         ${best ? `<button class="fitcall" data-dfile="${esc(best.id)}">
             <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
-              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ranked by the same model the file queue uses</span></span>
-            <span class="sc">${(best.score*100).toFixed(0)}% fit</span>
+              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ranked by the same model the file queue uses</span>${pickEvidence(best)}</span>
+            ${pickBand(best)}<span class="sc">${(best.score*100).toFixed(0)}% fit</span>
           </button>` : ''}
         ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
           `<button class="pick" data-dfile="${esc(sg.id)}"><span class="k">${n+2}</span>
-           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span></span>
-           <span class="rt"><span class="sc">${(sg.score*100).toFixed(0)}%</span>
+           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span>${pickEvidence(sg)}</span>
+           <span class="rt">${pickBand(sg)}<span class="sc">${(sg.score*100).toFixed(0)}%</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
         ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — Last.fm has no tags for this artist, or it fits nothing you have. Pick a playlist below.</p>`}
 
@@ -5603,7 +5629,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-1732';
+    s.src = 'engine.js?v=2026-11-14-1738';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -5625,7 +5651,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-1732');
+    const w = new Worker('engine-worker.js?v=2026-11-14-1738');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -6109,7 +6135,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-1732`,
+    `Betterfy engine score — build 2026-11-14-1738`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
