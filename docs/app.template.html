@@ -3006,7 +3006,9 @@ function axisRowHTML(p, mix) {
     <div class="main"><div class="ttl">${esc(p.name)}</div>
       <div class="sub"><span class="mono">${p.tracks} tracks</span>
         <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span>
-        ${m ? `<span class="axmix" title="which kind of tag its tracks carry">${esc(m)}</span>` : ''}</div></div>
+        ${m ? `<span class="axmix" title="which kind of tag its tracks carry">${esc(m)}</span>` : ''}</div>
+      ${AUDIO.records && globalThis.BetterfyAudio
+        ? profileRow(BetterfyAudio.profileVM(LIB.playlists.find(x => x.id === p.id), AUDIO.records, AUDIO.labels)) : ''}</div>
     <div class="acts">
       <select data-ax="${esc(p.id)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select>
       <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2)">
@@ -3067,6 +3069,8 @@ function vLists() {
       <button class="b" id="saveDiscogs">Save token</button>
       <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
     </div>
+
+    ${audioPanelHTML()}
 
     ${(R.drift ?? []).length ? `<h2>Recently drifting</h2>
     <p class="lede">${R.drift.length} playlist${R.drift.length===1?'':'s'} whose newest additions read differently from everything added before them — not necessarily wrong, just worth a look. This is a trend across many tracks, not a single misfile.</p>
@@ -4094,11 +4098,14 @@ async function engineSpace() {
   const t0 = performance.now();
   let space = null, from = 'built', pairs;
   const targets = engineTargets();
+  const audio = await engineAudio();
   try {
     const cached = await idb.get(SPACE_KEY);
     if (cached) space = BetterfyPersist.reviveSpace(cached, LIB);
     // Built for a different set of genre playlists: right library, wrong question.
     if (space && JSON.stringify(space.targets ?? null) !== JSON.stringify(targets)) space = null;
+    // Or before more tracks were heard.
+    if (space && (cached.audioN ?? 0) !== (audio?.length ?? 0)) space = null;
     if (space) { from = 'cache'; pairs = cached.pairs; }
   } catch { /* a cache that cannot be read is the same situation as no cache */ }
 
@@ -4106,17 +4113,17 @@ async function engineSpace() {
     // Built in the worker and posted back serialised — the same object the
     // cache keeps — so the page only pays for reviving it, not building it.
     let json = null;
-    try { json = (await inEngineWorker('build', { lib: LIB }))?.result ?? null; }
+    try { json = (await inEngineWorker('build', { lib: LIB, audio }))?.result ?? null; }
     catch { json = null; }
     space = json ? BetterfyPersist.reviveSpace(json, LIB) : null;
     if (space) { ENG.where = 'worker'; pairs = json.pairs; }
     else {
       ENG.where = 'page';
       await yieldToPaint();
-      space = BetterfyIntrinsic.buildSpace(LIB, { isMirror: isMirrorPlaylist, targets });
+      space = BetterfyIntrinsic.buildSpace(LIB, { isMirror: isMirrorPlaylist, targets, audio });
       json = null;
     }
-    try { await idb.set(SPACE_KEY, json ?? BetterfyPersist.serialiseSpace(space, LIB)); }
+    try { await idb.set(SPACE_KEY, { ...(json ?? BetterfyPersist.serialiseSpace(space, LIB)), audioN: audio?.length ?? 0 }); }
     catch { /* nowhere to remember it is not a reason to refuse to use it */ }
   }
   // `pairs` is undefined when nothing worked it out yet, which tells the caller
@@ -4170,7 +4177,7 @@ function engineDecorate() {
     row.decision = null;
     const raw = cal && likedById.get(row.id);
     if (!raw) continue;
-    const full = BetterfyIntrinsic.placements(raw, space, { limit: Infinity });
+    const full = BetterfyIntrinsic.placements(raw, space, { limit: Infinity, useAudio: engineAudioGate()?.pass === true });
     const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []), cal);
     row.decision = { kind: d.kind,
                      playlists: d.playlists.map(id => ({ id, name: space.destinations.get(id)?.name ?? id })) };
@@ -4194,7 +4201,7 @@ const engineAnalyse = guard(async () => {
     for (const b of R.backlog.slice(0, SHADOW_N)) {
       const raw = likedById.get(b.id);
       if (!raw) continue;
-      const out = BetterfyIntrinsic.placements(raw, space, { why: true, limit: 3 });
+      const out = BetterfyIntrinsic.placements(raw, space, { why: true, limit: 3, useAudio: engineAudioGate()?.pass === true });
       const mine = out.results?.[0] ?? null;
       const theirs = b.suggest?.[0] ?? null;
       rows.push({ id: b.id, title: b.title, artist: b.artist,
@@ -4303,6 +4310,206 @@ async function corsJson(url, init) {
   return r.json();
 }
 
+/* ===========================================================================
+ * "Listen to my music" (docs/AUDIO-BUILD-PLAN.md WP-B2)
+ *
+ * Off until the listener switches it on, and then it costs nothing else
+ * until it does: docs/audio.js (~120 KB) is fetched on first use, the
+ * models (~22 MB, self-hosted under models/) and onnxruntime-web's WASM
+ * (~15 MB, jsDelivr) only when listening actually starts, and only on Wi-Fi
+ * unless told otherwise. Each track is looked up on Deezer by its ISRC, two
+ * ~10 s windows of the 30 s preview are downloaded and decoded, heard by the
+ * model in a Worker, and reduced to a ~2.5 KB record in IndexedDB. The audio
+ * itself is never kept.
+ *
+ * Nothing here changes a suggestion: the records are what the engine's audio
+ * component and the learner read, and WP-E2's gate decides when that counts.
+ * ======================================================================== */
+const ORT_BASE = '__ORT_BASE__', AUDIO_MODELS = '__AUDIO_MODELS__';
+const AUDIO_MODEL_FILE = 'discogs-effnet-bsdynamic-1.onnx';
+// The heads this build hosts. approachability/engagement are not shipped.
+const AUDIO_HEAD_FILES = { mtg_jamendo_moodtheme: 'mtg_jamendo_moodtheme-discogs-effnet-1.onnx',
+  voice_instrumental: 'voice_instrumental-discogs-effnet-1.onnx', danceability: 'danceability-discogs-effnet-1.onnx' };
+
+const AUDIO = { ctrl: null, store: null, vm: null, records: null, labels: null, wifiOk: false, err: null, worker: null };
+
+let AUDIO_JS = null;
+function audioLoad() {
+  return AUDIO_JS ??= new Promise((ok, bad) => {
+    if (globalThis.BetterfyAudio) return ok(true);
+    const s = document.createElement('script');
+    s.src = 'audio.js?v=__BUILD__';
+    s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
+    s.onerror = () => bad(new Error('could not fetch audio.js'));
+    document.head.appendChild(s);
+  }).catch(e => { AUDIO_JS = null; throw e; });
+}
+
+/** The saved settings; readable before audio.js has loaded, with the same defaults. */
+function audioSettings() {
+  if (globalThis.BetterfyAudio) return BetterfyAudio.readAudioSettings(LS);
+  let s = null; try { s = JSON.parse(LS.getItem('bf_audio') || 'null'); } catch { s = null; }
+  return { on: s?.on === true, wifiOnly: s?.wifiOnly !== false, scope: s?.scope === 'all' ? 'all' : 'playing+unfiled' };
+}
+
+const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;
+
+/** Load the bundle, open the store, build the controller. Once. */
+async function audioInit() {
+  if (AUDIO.ctrl) return AUDIO.ctrl;
+  await audioLoad();
+  const A = BetterfyAudio;
+  AUDIO.store = A.openAudioStore();
+  AUDIO.ctrl = A.createAudioController({
+    store: AUDIO.store,
+    lookup: (isrc, o) => A.lookup(isrc, { jsonp: deezerJsonp, ...o }),
+    fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
+    decode: buf => A.decodeTo16k(buf),
+    loadEar: async () => {
+      AUDIO.worker = new Worker('audio-worker.js?v=__BUILD__', { type: 'module' });
+      const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
+        headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
+      const r = await w.ready;
+      return { ear: w.ear, heads: r?.heads?.length ? w.heads : undefined, summariseHeads: A.summariseHeads };
+    },
+    onChange: vm => { AUDIO.vm = vm; audioRedraw(); },
+  });
+  await audioRefresh();
+  // The style names, for ProfileVM. Optional: a playlist row without them still says how much was heard.
+  fetch(audioModelUrl('discogs-effnet-bsdynamic-1.json')).then(r => r.ok ? r.json() : null)
+    .then(j => { AUDIO.labels = j?.classes ?? null; }).catch(() => {});
+  return AUDIO.ctrl;
+}
+
+async function audioRefresh() {
+  if (!AUDIO.ctrl) return;
+  AUDIO.records = await AUDIO.ctrl.refresh();
+}
+
+/** The heard tracks for the engine (WP-E2 reads them as `audio`), as an array of
+ *  records, or null. Null costs nothing: a listener who never switched listening
+ *  on never fetches audio.js for the Engine screen's sake. */
+async function engineAudio() {
+  if (!audioSettings().on && !AUDIO.records) return null;
+  try { await audioInit(); await audioRefresh(); } catch { return null; }
+  const recs = [...(AUDIO.records?.values() ?? [])].filter(r => !r.miss);
+  return recs.length ? recs : null;
+}
+/** Audio changes a suggestion only once WP-E2's gate has passed on this library. */
+const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?.gate ?? null);
+
+/** Redraw only the panel, and only while it is on screen: progress ticks every few seconds. */
+let AUDIO_DRAW = 0;
+function audioRedraw() {
+  if (view !== 'lists') return;
+  if (AUDIO_DRAW) return;
+  AUDIO_DRAW = requestAnimationFrame(() => {
+    AUDIO_DRAW = 0;
+    const el = document.getElementById('audioPanel');
+    if (el) el.outerHTML = audioPanelHTML();
+  });
+}
+
+/** What the queue should hear next, in order, cut to the chosen scope. */
+async function audioTracks() {
+  const A = BetterfyAudio, set = audioSettings();
+  let listening = null;
+  try { listening = await getListening(); } catch { listening = null; }
+  const targets = Object.entries(CFG ?? {}).filter(([, c]) => c.target).map(([id]) => id);
+  const isMirror = p => isMirrorPlaylist(p);
+  const store = AUDIO.records ?? new Map();
+  const allowed = A.scopeIds(LIB, { scope: set.scope, listening, targets, isMirror });
+  const ids = A.audioQueue(LIB, { listening, store, mel: A.MEL_VERSION, targets, isMirror })
+    .filter(id => !allowed || allowed.has(id));
+  const byId = new Map();
+  for (const t of LIB.liked ?? []) byId.set(t.id, t);
+  for (const p of LIB.playlists ?? []) for (const t of p.tracks ?? []) if (!byId.has(t.id)) byId.set(t.id, t);
+  return ids.map(id => byId.get(id)).filter(Boolean).map(t => ({ id: t.id, isrc: t.isrc ?? null, durationMs: t.duration_ms }));
+}
+
+function audioConnection() {
+  const set = audioSettings();
+  return BetterfyAudio.connectionVerdict(navigator.connection, { wifiOnly: set.wifiOnly, confirmed: AUDIO.wifiOk });
+}
+
+/** Start (or resume) listening, if switched on and the connection allows it. */
+async function audioStart({ quiet = false } = {}) {
+  const set = audioSettings();
+  if (!set.on || !LIB) return;
+  try { await audioInit(); } catch (e) { AUDIO.err = e.message; audioRedraw(); if (!quiet) toast('Couldn’t start listening: ' + e.message); return; }
+  if (AUDIO.ctrl.running) return;
+  const conn = audioConnection();
+  if (conn !== 'ok') {
+    AUDIO.vm = { ...AUDIO.ctrl.vm(), state: 'paused',
+      reason: conn === 'offline' ? 'offline' : conn === 'metered' ? 'waiting for Wi-Fi' : 'ask' };
+    return audioRedraw();
+  }
+  await audioRefresh();
+  const tracks = await audioTracks();
+  await AUDIO.ctrl.start(tracks);
+  await audioRefresh();
+  audioRedraw();
+}
+
+// A phone that leaves Wi-Fi stops after the track in flight, and carries on when it is back.
+try {
+  navigator.connection?.addEventListener?.('change', () => {
+    if (!AUDIO.ctrl || !globalThis.BetterfyAudio) return;
+    if (audioConnection() !== 'ok') { if (AUDIO.ctrl.running) AUDIO.ctrl.stop('waiting for Wi-Fi'); }
+    else if (audioSettings().on && !AUDIO.ctrl.running) audioStart({ quiet: true });
+  });
+} catch { /* no connection API: the listener is asked instead */ }
+
+function audioPanelHTML() {
+  const set = audioSettings();
+  const vm = AUDIO.vm ?? { state: set.on ? 'paused' : 'off', done: 0, total: 0, missed: {}, heard: 0 };
+  const scopes = globalThis.BetterfyAudio?.SCOPES
+    ?? { 'playing+unfiled': 'What I’m playing + unfiled', all: 'My whole library' };
+  const missText = globalThis.BetterfyAudio?.MISS_TEXT ?? {};
+  const missed = Object.entries(vm.missed ?? {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  const nMissed = missed.reduce((s, [, n]) => s + n, 0);
+  const running = vm.state === 'running';
+  const status = !set.on ? 'Off.'
+    : running ? (vm.total ? `Listening… ${vm.done.toLocaleString()} of ${vm.total.toLocaleString()} this run.` : 'Starting…')
+      + (vm.reason && vm.reason !== 'stopped' ? ` (${esc(vm.reason)})` : '')
+    : vm.reason === 'ask' ? ''
+    : vm.reason === 'waiting for Wi-Fi' ? 'Paused: waiting for Wi-Fi.'
+    : vm.reason === 'offline' ? 'Paused: offline.'
+    : vm.state === 'done' ? 'Up to date for this scope.'
+    : vm.state === 'paused' ? `Stopped${vm.reason && vm.reason !== 'stopped' ? ': ' + esc(vm.reason) : ''}. It carries on where it left off.`
+    : 'Ready.';
+  return `<div id="audioPanel">
+    <h2>Listen to my music</h2>
+    <p class="lede">Betterfy can listen to a 20-second sample of each track (two short windows of Deezer’s
+      30-second preview, found by the track’s ISRC) and remember what it sounds like, so tracks can be
+      placed by sound against your own playlists, not only by tags. The audio is never stored, only a
+      ~2.5 KB summary on this device. Switching it on downloads the listening model once (about 37 MB),
+      then about 330 KB per track. “What I’m playing + unfiled” also hears up to 20 tracks from each genre
+      playlist, so there is something to compare the rest against.</p>
+    <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioOn" ${set.on ? 'checked' : ''}> Listen to my music</label>
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioWifi" ${set.wifiOnly ? 'checked' : ''}> Wi-Fi only</label>
+      <select id="audioScope" aria-label="Which tracks to listen to">${Object.entries(scopes).map(([k, v]) =>
+        `<option value="${k}" ${set.scope === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
+      ${running ? '<button class="b" id="audioStop">Stop</button>'
+        : set.on ? '<button class="b p" id="audioGo">Listen now</button>' : ''}
+    </div>
+    ${set.on && vm.reason === 'ask' ? `<p class="sub" style="margin:8px 0">This browser doesn’t say whether it is on Wi-Fi.
+      <button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button></p>` : ''}
+    <p class="sub" id="audioStatus" style="margin:8px 0">${status}
+      ${vm.heard ? ` ${vm.heard.toLocaleString()} track${vm.heard === 1 ? '' : 's'} heard so far.` : ''}
+      ${running && vm.total ? `<progress max="${vm.total}" value="${vm.done}" style="width:100%"></progress>` : ''}</p>
+    ${listenPill(vm)}
+    ${missedList(vm) || (nMissed ? `<details class="sub" style="margin:8px 0"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
+      <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
+    ${AUDIO.err ? `<p class="sub">${esc(AUDIO.err)}</p>` : ''}
+    <p class="sub" style="margin:8px 0;font-size:12px">Listening model: Discogs-EffNet and its mood, voice and
+      danceability heads by the Music Technology Group, Universitat Pompeu Fabra
+      (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
+      used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Previews from Deezer.</p>
+  </div>`;
+}
+
 function bridgeProgressText() {
   const p = ENG.bridgeProgress ?? {};
   const part = (label, x) => x ? `${label} ${Math.min(x.done, x.total).toLocaleString()} of ${x.total.toLocaleString()}` : null;
@@ -4369,8 +4576,10 @@ const engineValidate = guard(async () => {
     const bridgeMs = useBridge ? Math.round(performance.now() - t0) : 0;
     const t1 = performance.now();
 
+    // Heard tracks, so the score runs with and without sound on the same folds (WP-E2).
+    const audio = await engineAudio();
     let done = null;
-    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, opts: { folds: 5, limit: VALIDATE_N, collect: true } }); }
+    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio, opts: { folds: 5, limit: VALIDATE_N, collect: true } }); }
     catch { done = null; }
     const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
     if (done?.result?.mine) {
@@ -4380,7 +4589,7 @@ const engineValidate = guard(async () => {
       await engineLoad();
       await yieldToPaint();
       const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
-                       collect: true };
+                       audio, collect: true };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
@@ -4999,6 +5208,9 @@ document.addEventListener('click', guard(async e => {
   }
   if (e.target.id === 'enrich') return enrichMissing();
   if (e.target.id === 'fillWikidata') return fillFromWikidata();
+  if (e.target.id === 'audioGo') return audioStart();
+  if (e.target.id === 'audioStop') { AUDIO.ctrl?.stop(); return; }
+  if (e.target.id === 'audioWifiYes') { AUDIO.wifiOk = true; return audioStart(); }
 
   const ea = e.target.closest('[data-editartist]');
   if (ea) { S.editingArtist = S.editingArtist === ea.dataset.editartist ? null : ea.dataset.editartist; render(); return; }
@@ -5078,6 +5290,18 @@ document.addEventListener('change', guard(async e => {
     return;
   }
   if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
+  if (e.target.id === 'audioOn' || e.target.id === 'audioWifi' || e.target.id === 'audioScope') {
+    await audioLoad().catch(() => {});
+    const change = e.target.id === 'audioOn' ? { on: e.target.checked }
+      : e.target.id === 'audioWifi' ? { wifiOnly: e.target.checked } : { scope: e.target.value };
+    if (globalThis.BetterfyAudio) BetterfyAudio.writeAudioSettings(LS, change);
+    else LS.setItem('bf_audio', JSON.stringify({ ...audioSettings(), ...change }));
+    const set = audioSettings();
+    // Turning it off, narrowing the scope or tightening Wi-Fi stops the run; the next start re-reads all three.
+    if (AUDIO.ctrl?.running) await AUDIO.ctrl.stop(set.on ? 'settings changed' : 'stopped');
+    if (set.on) audioStart(); else { AUDIO.vm = null; render(); }
+    return;
+  }
 
   // Axis / target edits are per-viewer and persist on this device.
   const ax = e.target.closest('[data-ax]'), tg = e.target.closest('[data-tg]');
@@ -5493,6 +5717,8 @@ async function start(force) {
     // Keyless genres for artists nothing has tagged. Cached per artist, so after
     // the first load this asks only about artists that are new or stale.
     if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});
+    // Listening resumes by itself where it left off, if it was switched on — after the first paint.
+    if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
   } catch (e) {
     if (retryable(e)) {
       const streak = e.status === 429 ? noteRateLimited() : 0;
