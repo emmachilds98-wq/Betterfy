@@ -113,6 +113,8 @@ const ENGINE_ENTRIES = [
   // orchestrator whose network calls are handed in by the page.
   'core/intrinsic/bridge.mjs',
   'core/intrinsic/bridge-fetch.mjs',
+  // How sure it may sound, fitted on held-out filing (plan phase 2).
+  'core/intrinsic/calibrate.mjs',
 ];
 
 const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
@@ -127,6 +129,7 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyBridge: 'core/intrinsic/bridge.mjs',
     BetterfyBridgeFetch: 'core/intrinsic/bridge-fetch.mjs',
     BetterfyDeezer: 'core/sources/deezer.mjs',
+    BetterfyCalibrate: 'core/intrinsic/calibrate.mjs',
   },
 });
 

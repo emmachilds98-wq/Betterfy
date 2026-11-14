@@ -1083,6 +1083,22 @@ Answers are kept on the device for two months, and a switch on the card turns
 it off. From a checkout, `npm run validate:placement -- --bridge` does the same
 from `library.json` and keeps its answers in `bridge.json`.
 
+**How sure it may sound** is fitted on the same run
+(`core/intrinsic/calibrate.mjs`, phase 2). A raw "42% fit" means nothing, so
+each held-out placement becomes one of three answers whose meaning is checked
+on your own tracks:
+
+- **confident**: one playlist, and only if suggestions at that level were right
+  90% of the time, with a lower confidence bound, not just an average
+- **a short list**: at most three playlists, built to hold the right one about
+  nine times in ten (split conformal prediction)
+- **not sure**
+
+The thresholds are fitted on half the tracks and checked on the other half, so
+the accuracy the screen shows comes from tracks they never saw. Once a score
+run has calibrated it, the comparison of waiting tracks shows "confident",
+"probably", "pick one" or "not sure" instead of a percentage.
+
 ## Data sources, and what they're worth
 
 | Source | Verdict |
