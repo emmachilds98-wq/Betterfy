@@ -72,7 +72,7 @@ async function shoot(b, FORM, THEME) {
   await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
   await pg.waitForSelector('#app:not([hidden])', { timeout: 30000 });
   await pg.waitForTimeout(800);
-  const views = ['home','inbox','tidy','discover','shuffle','new','lists','engine','history'];
+  const views = ['home','inbox','tidy','discover','shuffle','new','lists','sources','engine','history'];
   for (const v of views) {
     await pg.evaluate(v => { try { go(v); } catch (e) { console.log(e); } }, v);
     await pg.waitForTimeout(v === 'engine' ? 2500 : 700);
