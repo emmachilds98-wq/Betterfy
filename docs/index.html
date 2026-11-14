@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-14-2040">
+<meta name="bf-build" content="2026-11-14-2048">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1279,6 +1279,23 @@
 .smiss ul{margin:8px 0 0; padding-left:18px}
 .smiss li{margin:3px 0}
 .smiss b{font-family:var(--mono); color:var(--ink); font-variant-numeric:tabular-nums}
+/* "Check sound labels" on Sources (web/audio/labels-view.mjs) and the mood item in the sound chip. */
+.snd-mood{color:var(--ink-2)}
+.srclabels{grid-column:1 / -1}
+.lck-sum{list-style:none;margin:8px 0 12px;padding:0;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--ink-2)}
+.lck-agree b{color:var(--ink)}
+.lck-on .lck-st{color:var(--ok, var(--ink))}
+.lck-off .lck-st{color:var(--ink-3)}
+.lck-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.lck-row{border-top:1px solid var(--line);padding-top:10px;min-width:0}
+.lck-name{margin-bottom:4px;overflow-wrap:anywhere}
+.lck-pl{font-size:12px;color:var(--ink-3);margin-left:4px}
+.lck-cell{display:flex;flex-wrap:nowrap;align-items:center;gap:4px 8px;font-size:13px;margin:4px 0}
+.lck-t{color:var(--ink-3);min-width:4.5em}
+.lck-v{flex:1 1 0;min-width:6em}
+.lck-btns{display:inline-flex;gap:6px;margin-left:auto}
+.lck-b.lck-sel{background:var(--btn-accent);color:var(--btn-ink);border-color:transparent}
+.lck-name a{color:inherit;text-decoration:none}.lck-name a:hover b{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -1319,7 +1336,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-14-2040</span>
+    <span class="mono">build 2026-11-14-2048</span>
   </p>
 
   <div class="feat">
@@ -1422,7 +1439,7 @@
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2040</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2048</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1463,7 +1480,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2040</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-14-2048</span>
   </div>
 </div>
 
@@ -2344,6 +2361,9 @@ function soundChip(vm) {
     parts.push(item('energy', `energy <span class="snd-bars" aria-hidden="true">${bars}</span>`, `energy ${n} of 5 (a rough measure)`));
   }
   if (vm.voice === 'vocal' || vm.voice === 'instrumental') parts.push(item('voice', vm.voice));
+  // Moods (F1, mapped to ontology names): only reach a SoundVM once checked (web/audio/labels-view.mjs).
+  const moods = Array.isArray(vm.moods) ? vm.moods.filter(m => typeof m === 'string' && m.trim()).slice(0, 3) : [];
+  if (moods.length) parts.push(item('mood', esc(moods.join(', ')), 'mood, as heard in the preview'));
   if (!parts.length) return '';
   return `<span class="snd">${parts.join('<span class="snd-dot" aria-hidden="true">·</span>')}</span>`;
 }
@@ -2921,7 +2941,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-14-2040';
+const BUILD = '2026-11-14-2048';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3242,7 +3262,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-14-2040', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-14-2048', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -4363,10 +4383,15 @@ function artHTML(t, hook = 'data-act="play"') {
  * for byte the card it was before the slots existed (test/fixtures/ui4/). */
 const soundSlot = (cls, html) => html ? `<div class="${cls}">${html}</div>` : '';
 // Where a track's SoundVM comes from: one set on the track itself, else what
-// listening heard, through the audio side's adapter (WP-D4's dspSoundVM, which
-// stays null until its flag is on). No records or no adapter means no sound.
+// listening heard, through the audio side's adapters (WP-D4's dspSoundVM, and
+// the mood/voice/energy labels once checked). Both stay null until their flags
+// are on. No records or no adapter means no sound.
 const soundOf = t => t?.sound ?? (t?.id && typeof AUDIO !== 'undefined' && AUDIO.records
-  && globalThis.BetterfyAudio?.dspSoundVM ? BetterfyAudio.dspSoundVM(AUDIO.records.get(t.id)) ?? null : null);
+  && globalThis.BetterfyAudio?.dspSoundVM ? audioSoundVM(AUDIO.records.get(t.id)) : null);
+const audioSoundVM = r => {
+  const A = BetterfyAudio, d = A.dspSoundVM(r) ?? null;
+  return A.mergeSoundVM && typeof labelsShownNow === 'function' ? A.mergeSoundVM(d, A.labelSoundVM(r, labelsShownNow())) : d;
+};
 const trackChip = t => { const vm = soundOf(t); return vm ? soundSlot('sndchip', soundChip(vm)) : ''; };
 const trackStrip = t => { const vm = soundOf(t); return vm ? soundSlot('sndstrip', sectionStrip(vm)) : ''; };
 const pickBand = sg => sg?.band ? bandChip(sg.band) : '';
@@ -5491,8 +5516,12 @@ function mixLabel(mix) {
  * (docs/UI-BUILD-PLAN.md §3 rule 3). The Listening settings themselves live
  * on Sources, in the card audioPanelHTML() draws. */
 const LISTS_SOUND = {
-  profile: id => AUDIO.records && globalThis.BetterfyAudio
-    ? BetterfyAudio.profileVM(LIB.playlists.find(x => x.id === id), AUDIO.records, AUDIO.labels) : null,
+  profile: id => {
+    if (!AUDIO.records || !globalThis.BetterfyAudio) return null;
+    const p = LIB.playlists.find(x => x.id === id), vm = BetterfyAudio.profileVM(p, AUDIO.records, AUDIO.labels);
+    return BetterfyAudio.withProfileEnergy && typeof labelsShownNow === 'function'
+      ? BetterfyAudio.withProfileEnergy(vm, p, AUDIO.records, labelsShownNow()) : vm;
+  },
 };
 
 /** One row of the axes table, plus a hidden sound-profile row under it when
@@ -5620,7 +5649,7 @@ function vSources() {
         <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
       </div>`)}
 
-    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>
+    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>${labelCheckHTML()}
     </div>`;
 }
 
@@ -6553,7 +6582,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-14-2040';
+    s.src = 'engine.js?v=2026-11-14-2048';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -6575,7 +6604,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-14-2040');
+    const w = new Worker('engine-worker.js?v=2026-11-14-2048');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -6889,7 +6918,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-14-2040';
+    s.src = 'audio.js?v=2026-11-14-2048';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -6917,7 +6946,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2040', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-14-2048', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -6935,6 +6964,35 @@ async function audioInit() {
 async function audioRefresh() {
   if (!AUDIO.ctrl) return;
   AUDIO.records = await AUDIO.ctrl.refresh();
+  LABELCHECKS ??= (await idb.get(BetterfyAudio.CHECKS_KEY)) ?? {};
+}
+
+/* ---------- mood, voice and energy: shown once checked ----------
+ * web/audio/labels-view.mjs. The heads and D4's energy are in every record but
+ * hidden; the "Check sound labels" card on Sources asks the listener to mark
+ * 30 of them right or wrong, and a label type shows only once 70% of at least
+ * 20 are right. Verdicts are this account's only (keyed by Spotify user id).
+ * With no records nothing here draws anything. */
+let LABELCHECKS = null;
+const LABELS = { seed: 1, sample: null };
+const labelUser = () => LIB?.user?.id ?? null;
+const labelChecks = () => globalThis.BetterfyAudio && LABELCHECKS ? BetterfyAudio.checksFor(LABELCHECKS, labelUser()) : {};
+const labelsShownNow = () => globalThis.BetterfyAudio?.labelsShown ? BetterfyAudio.labelsShown(labelChecks(), LS) : null;
+function labelCheckHTML() {
+  if (!AUDIO.records?.size || !globalThis.BetterfyAudio?.reviewHTML || !labelUser()) return '';
+  const A = BetterfyAudio, checks = labelChecks();
+  LABELS.sample ??= A.reviewSample(LIB, AUDIO.records, { seed: LABELS.seed, checks, skip: p => isMirrorPlaylist(p) });
+  const html = A.reviewHTML(A.reviewVM(LABELS.sample, AUDIO.records, checks));
+  return html ? `<section class="srccard srclabels" id="src-labels" aria-labelledby="src-labels-h">${html}</section>` : '';
+}
+const labelCheckRedraw = () => { const el = document.getElementById('src-labels'); if (el) el.outerHTML = labelCheckHTML(); };
+async function labelVerdict(btn) {
+  const A = BetterfyAudio, id = btn.dataset.lchk, type = btn.dataset.lt, ok = btn.dataset.lok === '1', me = labelUser();
+  const reading = A.readingsOf(AUDIO.records?.get(id))[type];
+  const again = A.checksFor(LABELCHECKS, me)[id]?.[type] === ok;   // tapping the chosen answer again clears it
+  LABELCHECKS = A.withVerdict(LABELCHECKS, me, id, type, again ? null : ok, reading == null ? null : A.seenOf(type, reading));
+  await idb.set(A.CHECKS_KEY, LABELCHECKS);
+  labelCheckRedraw();
 }
 
 /** The heard tracks for the engine (WP-E2 reads them as `audio`), as an array of
@@ -7340,7 +7398,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-14-2040`,
+    `Betterfy engine score — build 2026-11-14-2048`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7841,6 +7899,9 @@ document.addEventListener('click', guard(async e => {
   if (e.target.id === 'enrich') return enrichMissing();
   if (e.target.id === 'fillWikidata') return fillFromWikidata();
   if (e.target.id === 'audioGo') return audioStart();
+  const lchk = e.target.closest('[data-lchk]');
+  if (lchk && globalThis.BetterfyAudio) return labelVerdict(lchk);
+  if (e.target.id === 'labelCheckMore') { LABELS.seed++; LABELS.sample = null; return labelCheckRedraw(); }
   if (e.target.id === 'audioStop') { AUDIO.ctrl?.stop(); return; }
   if (e.target.id === 'audioWifiYes') { AUDIO.wifiOk = true; return audioStart(); }
 

@@ -77,6 +77,9 @@ export function soundChip(vm) {
     parts.push(item('energy', `energy <span class="snd-bars" aria-hidden="true">${bars}</span>`, `energy ${n} of 5 (a rough measure)`));
   }
   if (vm.voice === 'vocal' || vm.voice === 'instrumental') parts.push(item('voice', vm.voice));
+  // Moods (F1, mapped to ontology names): only reach a SoundVM once checked (web/audio/labels-view.mjs).
+  const moods = Array.isArray(vm.moods) ? vm.moods.filter(m => typeof m === 'string' && m.trim()).slice(0, 3) : [];
+  if (moods.length) parts.push(item('mood', esc(moods.join(', ')), 'mood, as heard in the preview'));
   if (!parts.length) return '';
   return `<span class="snd">${parts.join('<span class="snd-dot" aria-hidden="true">·</span>')}</span>`;
 }
