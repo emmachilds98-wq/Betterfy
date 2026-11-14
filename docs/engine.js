@@ -2554,6 +2554,1008 @@ function bridgeScores(track, space) {
 }
 return { BRIDGE_VERSION, sourceArtists, libraryNames, bridgeFrom, bridgeIndex, artistHomes, bridgeScores };
 })();
+/* ---- core/audio/record.mjs ---- */
+__mod["core/audio/record.mjs"] = (function () {
+// AudioRecord — the one shape every audio package reads or writes.
+//
+// This file is the contract docs/AUDIO-BUILD-PLAN.md freezes first, so the
+// fetcher, the worker, the store, the engine component and the UI can be built
+// in parallel against it. Change it only with a version bump and a migration
+// note in that plan; a silent change here breaks packages built against it.
+//
+// What is kept per track is deliberately small (~2 KB): the audio itself is
+// never stored (plan §7). Everything is plain JSON so IndexedDB, Firestore-free
+// sync and Node scripts all hold it the same way.
+
+const RECORD_VERSION = 1;
+
+/** Identifies the ear. Bump MODEL when the backbone or its input changes. */
+const MODEL = 'discogs-effnet-bsdynamic-1';
+const N_STYLES = 400;
+const EMB_DIM = 1280;
+const TOP_STYLES = 10;      // styles kept per track
+const SECTION_TOP = 3;      // styles kept per section (patch)
+
+/** Why a track has no audio answer. A miss is cached too, with a TTL. */
+const MISS = Object.freeze({
+  NO_ISRC: 'NO_ISRC',             // Spotify gave no ISRC: never guess by name
+  NOT_ON_DEEZER: 'NOT_ON_DEEZER',
+  NO_PREVIEW: 'NO_PREVIEW',       // on Deezer, but no readable preview
+  IDENTITY: 'IDENTITY',           // duration check failed: probably another recording
+  TOO_SHORT: 'TOO_SHORT',         // fewer than one 128-frame patch decoded
+  FAILED: 'FAILED',               // network/decode error: NEVER cached as a miss
+});
+/** Misses that are facts about the catalogue, re-asked after MISS_TTL_MS. */
+const CACHEABLE_MISS = new Set([MISS.NO_ISRC, MISS.NOT_ON_DEEZER, MISS.NO_PREVIEW, MISS.IDENTITY, MISS.TOO_SHORT]);
+const MISS_TTL_MS = 90 * 24 * 3600 * 1000;
+
+/**
+ * Quantise an embedding to int8 with one scale, base64-packed: 1280 floats
+ * -> ~1.7 KB of text, cosine preserved to ~0.9999 (tested).
+ * @param {Float32Array|number[]} emb
+ * @returns {{ s: number, q: string }}
+ */
+function packEmbedding(emb) {
+  let max = 0;
+  for (const v of emb) max = Math.max(max, Math.abs(v));
+  const s = max > 0 ? max / 127 : 1;
+  const bytes = new Uint8Array(emb.length);
+  for (let i = 0; i < emb.length; i++) bytes[i] = (Math.round(emb[i] / s) + 256) & 0xff;
+  return { s, q: toBase64(bytes) };
+}
+
+/** @returns {Float32Array} */
+function unpackEmbedding({ s, q }) {
+  const bytes = fromBase64(q);
+  const out = new Float32Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) out[i] = (bytes[i] > 127 ? bytes[i] - 256 : bytes[i]) * s;
+  return out;
+}
+
+/**
+ * Build a record from one analysis. `activations` and `embeddings` are the
+ * model's per-patch outputs, row-major ([patches × 400], [patches × 1280]).
+ *
+ * @param {object} a
+ * @param {string} a.id            Spotify track id (the store key)
+ * @param {string} a.isrc
+ * @param {Float32Array} a.activations
+ * @param {Float32Array} a.embeddings
+ * @param {number} a.patches
+ * @param {object} a.source        { kind: 'deezer-isrc', deezerId, windows: [[startByte, bytes]...], seconds }
+ * @param {string} a.mel           MEL_VERSION used
+ * @param {object} [a.heads]       optional head outputs, see HEADS in docs/AUDIO-BUILD-PLAN.md
+ * @param {object} [a.dsp]         optional { bpm, bpmConf, key, keyConf, loudness, energy }
+ * @param {number} [a.at]
+ */
+function makeRecord({ id, isrc, activations, embeddings, patches, source, mel, heads = null, dsp = null, at = Date.now() }) {
+  if (!id || !(patches > 0)) throw new Error('makeRecord needs an id and at least one patch');
+  if (activations.length !== patches * N_STYLES || embeddings.length !== patches * EMB_DIM)
+    throw new Error('activation/embedding shape does not match patch count');
+
+  const meanAct = new Float32Array(N_STYLES), meanEmb = new Float32Array(EMB_DIM);
+  const sections = [];
+  for (let p = 0; p < patches; p++) {
+    const row = activations.subarray(p * N_STYLES, (p + 1) * N_STYLES);
+    for (let k = 0; k < N_STYLES; k++) meanAct[k] += row[k] / patches;
+    for (let k = 0; k < EMB_DIM; k++) meanEmb[k] += embeddings[p * EMB_DIM + k] / patches;
+    sections.push(topK(row, SECTION_TOP));
+  }
+  return {
+    v: RECORD_VERSION, id, isrc, model: MODEL, mel, at,
+    source,
+    styles: topK(meanAct, TOP_STYLES),   // [[classIndex, prob], ...] — labels are a hint, not a verdict
+    sections,                            // per patch, in time order: what changes inside the clip
+    emb: packEmbedding(meanEmb),         // the ear: what placement and learning use
+    heads, dsp,
+  };
+}
+
+/** A cacheable "could not hear it" answer. FAILED is refused: a dropped request is not an answer. */
+function makeMiss({ id, isrc = null, reason, at = Date.now() }) {
+  if (!CACHEABLE_MISS.has(reason)) throw new Error(`not a cacheable miss: ${reason}`);
+  return { v: RECORD_VERSION, id, isrc, model: MODEL, at, miss: reason };
+}
+
+/**
+ * Is this stored value still a usable, current answer? Stale model/mel
+ * versions and expired misses both mean "analyse again".
+ */
+function isCurrent(rec, { mel, now = Date.now() } = {}) {
+  if (!rec || rec.v !== RECORD_VERSION || rec.model !== MODEL) return false;
+  if (rec.miss) return now - rec.at < MISS_TTL_MS;
+  return !mel || rec.mel === mel;
+}
+
+/** Shape check for anything read back from storage. Never throws. */
+function validRecord(rec) {
+  try {
+    if (!rec || rec.v !== RECORD_VERSION || typeof rec.id !== 'string') return false;
+    if (rec.miss) return CACHEABLE_MISS.has(rec.miss);
+    if (!Array.isArray(rec.styles) || !rec.styles.length) return false;
+    if (!rec.styles.every(([i, p]) => Number.isInteger(i) && i >= 0 && i < N_STYLES && p >= 0 && p <= 1)) return false;
+    return unpackEmbedding(rec.emb).length === EMB_DIM && Number.isFinite(rec.emb.s);
+  } catch { return false; }
+}
+
+function topK(arr, k) {
+  const idx = Array.from(arr.keys()).sort((a, b) => arr[b] - arr[a]).slice(0, k);
+  return idx.map(i => [i, +arr[i].toFixed(4)]);
+}
+
+// btoa/atob exist in browsers and Node ≥16; Buffer is not used so this stays isomorphic.
+function toBase64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function fromBase64(str) {
+  const s = atob(str), out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+return { RECORD_VERSION, MODEL, N_STYLES, EMB_DIM, TOP_STYLES, SECTION_TOP, MISS, CACHEABLE_MISS, MISS_TTL_MS, packEmbedding, unpackEmbedding, makeRecord, makeMiss, isCurrent, validRecord };
+})();
+/* ---- core/intrinsic/audio.mjs ---- */
+__mod["core/intrinsic/audio.mjs"] = (function () {
+const { validRecord, isCurrent, unpackEmbedding, EMB_DIM } = __mod["core/audio/record.mjs"];
+// What a track sounds like, against what each of this account's playlists
+// sounds like.
+//
+// WP-E1 of docs/AUDIO-BUILD-PLAN.md. Records come from the audio worker in the
+// frozen shape of `core/audio/record.mjs`; this module turns them into one more
+// nullable component for the intrinsic space, shaped like
+// `bonus-rekordbox.mjs`: an index, a per-destination profile, and a score that
+// is `null` — never 0 — whenever it cannot be judged.
+//
+// The rule it inherits from that module (and CLAUDE.md): with no audio records
+// the engine's output is byte-identical. Nothing here touches a space; it only
+// reads one. `combine()` drops null components and renormalises, so an account
+// with no analysed tracks pays nothing. `test/audiocomponent.test.mjs` asserts
+// it.
+//
+// Geometry, matching what phase 0 measured (scripts/audio-phase0/score.py §2,
+// 58% top-1 / 76% top-2 by nearest centroid): every embedding is unit-normalised
+// first, a playlist's centroid is the mean of its analysed members' unit
+// embeddings renormalised, and a track scores the plain cosine to it. The score
+// is a raw cosine in [-1, 1], not rescaled: how much weight it earns, and how
+// sharply to read it, is WP-E2's measured decision and calibrate.mjs's fit, not
+// a prior baked in here.
+//
+// Deliberately no import from `space.mjs`. WP-E2 wires this module into
+// space.mjs, and `bundler.mjs` refuses an import cycle (there is no order to
+// emit one in), so importing `MIN_DEFINITION_TRACKS` from there would make the
+// wiring unbuildable. The value is restated as `MIN_AUDIO_MEMBERS` and a test
+// pins the two equal, so they cannot drift apart silently.
+
+
+const AUDIO_COMPONENT_VERSION = '1.0.0';
+
+/**
+ * A playlist needs this many *analysed* members before its sound is a
+ * definition rather than a coincidence. Equal to space.mjs's
+ * `MIN_DEFINITION_TRACKS` (pinned by test), and for the same reason: below it
+ * a centroid is one or two records wearing a playlist's name.
+ */
+const MIN_AUDIO_MEMBERS = 5;
+
+const idOf = t => (typeof t === 'string' ? t : t?.id) || null;
+
+/** Unit-normalise into a new Float32Array, or null for a zero/non-finite vector. */
+function unit(v) {
+  let ss = 0;
+  for (let i = 0; i < v.length; i++) ss += v[i] * v[i];
+  if (!(ss > 0) || !Number.isFinite(ss)) return null;
+  const inv = 1 / Math.sqrt(ss);
+  const out = new Float32Array(v.length);
+  for (let i = 0; i < v.length; i++) out[i] = v[i] * inv;
+  return out;
+}
+
+function dot(a, b) {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += a[i] * b[i];
+  return d;
+}
+
+/** Records may arrive as an array, any iterable, a Map, or a plain id → record object. */
+function recordsOf(records) {
+  if (!records || typeof records !== 'object') return [];
+  if (records instanceof Map) return records.values();
+  if (typeof records[Symbol.iterator] === 'function') return records;
+  return Object.values(records);
+}
+
+/**
+ * Spotify id → `{ emb, styles, rec }` for every usable analysed record.
+ *
+ * Usable means: passes `validRecord` (the shape check for anything read back
+ * from storage), is not a miss, is from the current model (`isCurrent` — an
+ * embedding from another backbone lives in a different space and must never
+ * share a centroid with this one), and has a non-zero embedding. `emb` is
+ * unit-normalised. Never throws: junk, misses and stale records are simply
+ * not in the index, which is the ordinary case.
+ *
+ * Two records for one id: the newer (`at`) wins.
+ *
+ * @param {Iterable<object>|Record<string, object>|null} records
+ * @param {{ mel?: string }} [opts]  pass the page's MEL_VERSION to also drop
+ *        records computed with another front end
+ * @returns {Map<string, { emb: Float32Array, styles: Array<[number, number]>, rec: object }>}
+ */
+function audioIndex(records, { mel = undefined } = {}) {
+  const index = new Map();
+  for (const rec of recordsOf(records)) {
+    if (!validRecord(rec) || rec.miss) continue;
+    if (!isCurrent(rec, { mel })) continue;
+    const prev = index.get(rec.id);
+    if (prev && !((rec.at ?? 0) > (prev.rec.at ?? 0))) continue;
+    let emb;
+    try { emb = unit(unpackEmbedding(rec.emb)); } catch { emb = null; }
+    if (!emb || emb.length !== EMB_DIM) continue;
+    index.set(rec.id, { emb, styles: rec.styles, rec });
+  }
+  return index;
+}
+
+/**
+ * A playlist's sound: the mean of its analysed members' unit embeddings,
+ * renormalised. `members` counts distinct analysed tracks (a track filed twice
+ * is one sound, not two votes toward the definition threshold).
+ *
+ * Also carries what leave-one-out needs to be O(dimensions) instead of a
+ * rebuild: `sum` (the un-normalised sum of member unit embeddings) and `ids`
+ * (which tracks are in it). See `profileWithout`.
+ *
+ * @param {Iterable<string|{id:string}>} playlistTrackIds  ids or track objects
+ * @param {Map} index  from `audioIndex`
+ * @param {{ skip?: Set<string> }} [opts]  ids to treat as not filed (fold-level leave-out)
+ * @returns {{ centroid: Float32Array|null, members: number, sum: Float64Array, ids: Set<string> } | null}
+ *          null when no member is analysed. `centroid` is null only in the
+ *          degenerate case of members cancelling to a zero vector.
+ */
+function audioProfileOf(playlistTrackIds, index, { skip = null } = {}) {
+  if (!index?.size || !playlistTrackIds) return null;
+  const ids = new Set();
+  let sum = null;
+  for (const t of playlistTrackIds) {
+    const id = idOf(t);
+    if (!id || ids.has(id) || skip?.has(id)) continue;
+    const row = index.get(id);
+    if (!row) continue;
+    ids.add(id);
+    sum ??= new Float64Array(row.emb.length);
+    for (let i = 0; i < sum.length; i++) sum[i] += row.emb[i];
+  }
+  if (!ids.size) return null;
+  return { centroid: unit(sum), members: ids.size, sum, ids };
+}
+
+/**
+ * Leave-one-out: the same profile with one member taken out, as if it had
+ * never been filed there. Returns the profile unchanged when the track is not
+ * one of its analysed members, and null when removing it leaves nothing.
+ *
+ * Why it exists: scoring a filed track against a centroid that contains the
+ * track itself flatters every accuracy number (the track votes for its own
+ * home). WP-E2's with/without harness and WP-L1's learning curves need the
+ * honest version per track, and rebuilding every profile per track is
+ * needlessly slow. The result equals `audioProfileOf` over the remaining
+ * members up to float rounding (tested to 1e-6).
+ */
+function profileWithout(profile, trackId, index) {
+  const id = idOf(trackId);
+  if (!profile || !id || !profile.ids?.has(id)) return profile ?? null;
+  const row = index?.get(id);
+  if (!row || profile.members <= 1) return null;
+  const sum = Float64Array.from(profile.sum);
+  for (let i = 0; i < sum.length; i++) sum[i] -= row.emb[i];
+  const ids = new Set(profile.ids);
+  ids.delete(id);
+  return { centroid: unit(sum), members: ids.size, sum, ids };
+}
+
+/** A destination-like thing → its member ids. Space destinations carry `trackIds`. */
+function memberIdsOf(d) {
+  if (d?.trackIds) return d.trackIds;
+  if (Array.isArray(d?.tracks)) return d.tracks;
+  return null;
+}
+
+/**
+ * Every destination's sound profile, worked out once — the audio half of a
+ * space. WP-E2 attaches the result as `space.audio`; this module never edits
+ * the space it reads.
+ *
+ * `destinations` may be a whole space (its `.destinations` Map is used), that
+ * Map itself, or an array of playlists `{ id, tracks }`. Using the space's own
+ * destinations is the intended path: they are already filtered for mirrors,
+ * `targets` and `skip`, so audio judges exactly the buckets the rest of the
+ * engine does. `skip` is honoured again here for the raw-playlist path.
+ *
+ * Profiles below `minMembers` are kept (a UI can say "3 of 12 analysed") but
+ * score null in `audioScores`.
+ *
+ * @returns {{ index: Map, profiles: Map<string, object>, size: number, version: string, minMembers: number }}
+ *          `size` counts destinations with enough analysed members to judge.
+ */
+function buildAudioProfiles(destinations, index, { skip = null, minMembers = MIN_AUDIO_MEMBERS } = {}) {
+  const profiles = new Map();
+  let size = 0;
+  if (index?.size) {
+    const src = destinations?.destinations ?? destinations;
+    const list = src instanceof Map ? src.values() : (src ?? []);
+    for (const d of list) {
+      if (!d?.id) continue;
+      const prof = audioProfileOf(memberIdsOf(d) ?? [], index, { skip });
+      if (!prof) continue;
+      profiles.set(d.id, prof);
+      if (prof.members >= minMembers && prof.centroid) size++;
+    }
+  }
+  return { index: index ?? new Map(), profiles, size, version: AUDIO_COMPONENT_VERSION, minMembers };
+}
+
+/**
+ * Sound scores for one track: destination id → cosine to that destination's
+ * centroid, or null for a destination with fewer than `minMembers` analysed
+ * members (null, never 0: "can't judge" is not "sounds wrong").
+ *
+ * Returns null outright — as `bridgeScores` does — when the space has no audio
+ * or the track has not been heard, so the caller adds nothing to `parts` and
+ * the placement is byte-identical to one without this module.
+ *
+ * `space` is a space carrying `.audio` (from `buildAudioProfiles`), or that
+ * audio object itself.
+ *
+ * `leaveOneOut: true` scores a track against each playlist it is itself an
+ * analysed member of with itself removed (`profileWithout`), and re-applies
+ * the `minMembers` floor to what remains. Off by default to match the other
+ * components, which only leave a track out when the space was built with
+ * `skip`; turn it on when grading the engine against tracks already filed
+ * without rebuilding profiles per fold.
+ *
+ * @returns {Map<string, number|null> | null}
+ */
+function audioScores(track, space, { leaveOneOut = false, minMembers = null } = {}) {
+  const audio = space?.audio ?? (space?.profiles instanceof Map ? space : null);
+  if (!audio?.index?.size || !audio.profiles?.size) return null;
+  const id = idOf(track);
+  const row = id ? audio.index.get(id) : null;
+  if (!row) return null;
+  const floor = minMembers ?? audio.minMembers ?? MIN_AUDIO_MEMBERS;
+
+  const out = new Map();
+  for (const [destId, base] of audio.profiles) {
+    const prof = leaveOneOut ? profileWithout(base, id, audio.index) : base;
+    out.set(destId, prof?.centroid && prof.members >= floor ? +dot(row.emb, prof.centroid).toFixed(6) : null);
+  }
+  return out;
+}
+return { AUDIO_COMPONENT_VERSION, MIN_AUDIO_MEMBERS, audioIndex, audioProfileOf, profileWithout, buildAudioProfiles, audioScores };
+})();
+/* ---- core/intrinsic/audio-learn.mjs ---- */
+__mod["core/intrinsic/audio-learn.mjs"] = (function () {
+const { MIN_AUDIO_MEMBERS } = __mod["core/intrinsic/audio.mjs"];
+// What this account's playlists sound like, learned from their own members.
+//
+// WP-L1 of docs/AUDIO-BUILD-PLAN.md: the part that makes the audio "learn".
+// `audio.mjs` (WP-E1) scores a track by plain cosine to each playlist's
+// centroid. This module trains, in the page, on the account's own analysed
+// playlist members, and answers with a probability per playlist that
+// `calibrate.mjs` can band:
+//
+//   1. prototypes: the centroid baseline phase 0 measured (58% top-1, 76%
+//      top-2 from nine examples), turned into probabilities by a softmax whose
+//      temperature is fitted on a held-out fold
+//   2. a multinomial logistic regression on the standardised embeddings, with
+//      L2 regularisation, a class-balanced loss, and early stopping on the
+//      same held-out fold
+//
+// Both are fitted, both are scored on the held-out fold, and the learner keeps
+// whichever explained it better (lower class-balanced log loss). Logistic
+// regression has to beat the baseline honestly on tracks it did not see; it is
+// not assumed to. Then the winner is refitted on every example (logistic
+// regression for the epoch count early stopping chose), so a playlist with
+// five analysed members is not trained on four.
+//
+// Rules inherited from audio.mjs and CLAUDE.md:
+//   - no records, no learner: `learnAudio` returns null and `learnedScores`
+//     null, so the engine adds nothing and its output is byte-identical
+//   - a playlist with fewer than MIN_AUDIO_MEMBERS analysed members is not a
+//     class; it scores null, never 0
+//   - deterministic: the held-out fold comes from a hash of the track id, not
+//     Math.random, so the same library trains the same model
+//   - nothing leaves the account: the training data is this account's own
+//     playlist structure over Deezer audio embeddings, and the model is never
+//     shared or pooled (docs/SMARTER-GENRES-PLAN.md §3)
+//
+// No import from space.mjs, for the reason audio.mjs gives (WP-E2 wires both
+// into space.mjs; bundler.mjs refuses a cycle).
+
+
+const AUDIO_LEARN_VERSION = '1.0.0';
+
+const LEARN_DEFAULTS = {
+  /** A playlist needs this many analysed members to be a class (= audio.mjs's floor). */
+  minMembers: MIN_AUDIO_MEMBERS,
+  /** Share of each class held out for early stopping and model choice. */
+  holdout: 0.2,
+  /** L2 strengths tried on the held-out fold; the best is kept. Per unit of
+   *  standardised weight, so they mean the same at any dimension. */
+  l2: [1, 3],
+  /** Adam on the full batch. */
+  lr: 0.01,
+  maxEpochs: 150,
+  /** Stop when held-out loss has not improved for this many epochs. */
+  patience: 12,
+  /** Prototype softmax temperatures tried (cosines live in a narrow band). */
+  temperatures: [0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1, 0.15, 0.2],
+  /** 'auto' keeps the held-out winner; 'prototype' or 'logistic' forces one. */
+  model: 'auto',
+  /** Standardise each dimension (true) or only centre and scale globally (false). */
+  perDim: true,
+  /** Start from, and regularise toward, the prototype model instead of zero. */
+  prior: true,
+  /** Training examples kept per playlist (deterministic sample). Bounds the
+   *  cost of one fit to about K · maxPerClass · 1280 · epochs multiply-adds
+   *  whatever the library size; the learning curve flattens long before. */
+  maxPerClass: 200,
+  /** In 'auto', logistic regression is only tried when every playlist has at
+   *  least this many analysed members. Below it the held-out fold is one or
+   *  two tracks a playlist, too few to choose between models on: measured on
+   *  the phase 0 fixture, 'auto' at 5 per playlist picked logistic 8 times in
+   *  10 and lost a point of top-1 to the baseline (57.6% vs 58.8%). */
+  minForLogistic: 10,
+};
+
+const idOf = t => (typeof t === 'string' ? t : t?.id) || null;
+
+function memberIdsOf(d) {
+  if (d?.trackIds) return d.trackIds;
+  if (Array.isArray(d?.tracks)) return d.tracks;
+  return null;
+}
+
+/** FNV-1a, salted: a track's place in the held-out fold, independent of anything else. */
+function hash(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h;
+}
+
+/* ------------------------------------------------------------------ data */
+
+/**
+ * The training set: every analysed member of every destination with enough
+ * analysed members. A track filed in two playlists is one example whose target
+ * is split between them, not two contradicting examples.
+ *
+ * @param {object|Map|Array} destinations  a space, its `.destinations` Map, or [{ id, tracks|trackIds }]
+ * @param {Map} index  from audio.mjs `audioIndex` (unit embeddings)
+ * @param {{ skip?: Set<string>, minMembers?: number }} [opts]
+ * @returns {{ classes: string[], ids: string[], X: Float32Array[], Y: number[][], counts: number[], short: string[] }}
+ *          `Y[i]` lists the class indices example i belongs to. `short` names
+ *          destinations that had some, but too few, analysed members.
+ */
+function trainingSet(destinations, index, { skip = null, minMembers = LEARN_DEFAULTS.minMembers } = {}) {
+  const src = destinations?.destinations ?? destinations;
+  const list = src instanceof Map ? [...src.values()] : [...(src ?? [])];
+  const members = [], short = [];
+  for (const d of list) {
+    if (!d?.id) continue;
+    const ids = new Set();
+    for (const t of memberIdsOf(d) ?? []) {
+      const id = idOf(t);
+      if (id && !skip?.has(id) && index?.has(id)) ids.add(id);
+    }
+    if (ids.size >= minMembers) members.push([d.id, ids]);
+    else if (ids.size) short.push(d.id);
+  }
+  members.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  const classes = members.map(([id]) => id);
+  const rows = new Map();
+  members.forEach(([, ids], c) => { for (const id of ids) (rows.get(id) ?? rows.set(id, []).get(id)).push(c); });
+  const ids = [...rows.keys()].sort();
+  return {
+    classes, ids,
+    X: ids.map(id => index.get(id).emb),
+    Y: ids.map(id => rows.get(id)),
+    counts: members.map(([, s]) => s.size),
+    short,
+  };
+}
+
+/** Subset of a training set by example index (classes kept, counts recomputed). */
+function subset(set, keep) {
+  const counts = new Array(set.classes.length).fill(0);
+  for (const i of keep) for (const c of set.Y[i]) counts[c]++;
+  return { classes: set.classes, ids: keep.map(i => set.ids[i]), X: keep.map(i => set.X[i]),
+           Y: keep.map(i => set.Y[i]), counts, short: set.short ?? [] };
+}
+
+/**
+ * Deterministic held-out split: about `share` of each class's examples, never
+ * all of one (a class keeps at least one training example), always at least
+ * one held out when the class has two or more. An example is assigned by its
+ * first class. `groupOf` (e.g. id → artist) keeps a group on one side, so an
+ * artist cannot be learned in training and recognised in the fold.
+ */
+function holdoutSplit(set, { share = LEARN_DEFAULTS.holdout, groupOf = null, salt = 'audio-learn' } = {}) {
+  const byClass = new Map();
+  set.ids.forEach((id, i) => {
+    const c = set.Y[i][0];
+    (byClass.get(c) ?? byClass.set(c, []).get(c)).push(i);
+  });
+  const train = [], val = [];
+  for (const [, idx] of [...byClass].sort((a, b) => a[0] - b[0])) {
+    const key = i => `${salt}:${groupOf ? (groupOf(set.ids[i]) ?? set.ids[i]) : set.ids[i]}`;
+    const groups = new Map();
+    for (const i of idx) (groups.get(key(i)) ?? groups.set(key(i), []).get(key(i))).push(i);
+    const order = [...groups].sort((a, b) => hash(a[0]) - hash(b[0]) || (a[0] < b[0] ? -1 : 1));
+    const want = idx.length >= 2 ? Math.max(1, Math.round(idx.length * share)) : 0;
+    let held = 0;
+    for (const [, g] of order) {
+      if (held < want && held + g.length < idx.length) { val.push(...g); held += g.length; }
+      else train.push(...g);
+    }
+  }
+  return { train: train.sort((a, b) => a - b), val: val.sort((a, b) => a - b) };
+}
+
+/** Per-class weight so every playlist counts equally, whatever its size: N / (K · n_c). */
+function classWeights(set) {
+  const K = set.classes.length, N = set.ids.length;
+  return set.counts.map(n => (n > 0 ? N / (K * n) : 0));
+}
+
+/** Soft target: an example's mass split equally over its playlists. */
+function targetOf(y, K) {
+  const t = new Float64Array(K);
+  for (const c of y) t[c] += 1 / y.length;
+  return t;
+}
+
+/* ------------------------------------------------------------ prototypes */
+
+function unitInto(sum) {
+  let ss = 0;
+  for (let i = 0; i < sum.length; i++) ss += sum[i] * sum[i];
+  if (!(ss > 0)) return null;
+  const inv = 1 / Math.sqrt(ss), out = new Float32Array(sum.length);
+  for (let i = 0; i < sum.length; i++) out[i] = sum[i] * inv;
+  return out;
+}
+
+function dot(a, b) {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += a[i] * b[i];
+  return d;
+}
+
+/**
+ * Centroid per class, from unit embeddings (the geometry audio.mjs and phase 0
+ * use). `T` is the softmax temperature that turns cosines into probabilities.
+ */
+function trainPrototypes(set, { T = 0.05 } = {}) {
+  const K = set.classes.length, D = set.X[0]?.length ?? 0;
+  const sums = Array.from({ length: K }, () => new Float64Array(D));
+  set.X.forEach((x, i) => { for (const c of set.Y[i]) for (let k = 0; k < D; k++) sums[c][k] += x[k]; });
+  return { kind: 'prototype', classes: set.classes, centroids: sums.map(unitInto), T };
+}
+
+/* ------------------------------------------------------- logistic model */
+
+/** Mean and standard deviation per dimension, over the training examples. */
+function standardiser(X, perDim = true) {
+  const D = X[0].length, N = X.length;
+  const mean = new Float64Array(D), sd = new Float64Array(D);
+  for (const x of X) for (let k = 0; k < D; k++) mean[k] += x[k] / N;
+  for (const x of X) for (let k = 0; k < D; k++) sd[k] += (x[k] - mean[k]) ** 2 / N;
+  if (!perDim) {
+    // One scale for every dimension: centred, total variance D, geometry kept.
+    const tot = Math.sqrt(sd.reduce((a, b) => a + b, 0) / D) || 1;
+    sd.fill(tot * tot);
+  }
+  for (let k = 0; k < D; k++) sd[k] = Math.sqrt(sd[k]) || 1;
+  return { mean: Float32Array.from(mean), inv: Float32Array.from(sd, s => 1 / s) };
+}
+
+function standardise(X, { mean, inv }) {
+  const D = mean.length, out = new Float32Array(X.length * D);
+  X.forEach((x, i) => { const o = i * D; for (let k = 0; k < D; k++) out[o + k] = (x[k] - mean[k]) * inv[k]; });
+  return out;
+}
+
+/** Logits for row r of a flat [N × D] matrix into `z` (length K). */
+function logitsInto(z, W, b, Z, r, D, K) {
+  const o = r * D;
+  for (let c = 0; c < K; c++) {
+    let s = b[c];
+    const w = c * D;
+    for (let k = 0; k < D; k++) s += W[w + k] * Z[o + k];
+    z[c] = s;
+  }
+}
+
+function softmaxInPlace(z) {
+  let m = -Infinity;
+  for (const v of z) if (v > m) m = v;
+  let s = 0;
+  for (let c = 0; c < z.length; c++) { z[c] = Math.exp(z[c] - m); s += z[c]; }
+  for (let c = 0; c < z.length; c++) z[c] /= s;
+  return z;
+}
+
+/**
+ * Class-balanced cross-entropy of probability rows against targets:
+ * Σ_i Σ_c w_c t_ic (−log p_ic) / Σ_i Σ_c w_c t_ic.
+ */
+function balancedLoss(P, T, w) {
+  let loss = 0, mass = 0;
+  for (let i = 0; i < P.length; i++) {
+    for (let c = 0; c < w.length; c++) {
+      if (!T[i][c]) continue;
+      loss -= w[c] * T[i][c] * Math.log(Math.max(P[i][c], 1e-12));
+      mass += w[c] * T[i][c];
+    }
+  }
+  return mass ? loss / mass : 0;
+}
+
+/**
+ * Multinomial logistic regression, full-batch Adam.
+ *
+ * Loss: class-balanced cross-entropy (each playlist weighs the same, so a big
+ * playlist cannot win every track by being big) + (l2/2)·‖W‖², bias
+ * unregularised. With `val`, stops when the held-out balanced loss has not
+ * improved for `patience` epochs and keeps the best epoch's weights.
+ *
+ * @param {object} set  training set (from `trainingSet`/`subset`)
+ * @param {{ l2?: number, lr?: number, maxEpochs?: number, patience?: number, val?: object, epochs?: number }} [opts]
+ *        `epochs` trains exactly that many with no early stopping (the refit)
+ */
+function trainLogistic(set, opts = {}) {
+  const { l2 = LEARN_DEFAULTS.l2[0], lr = LEARN_DEFAULTS.lr, maxEpochs = LEARN_DEFAULTS.maxEpochs,
+          patience = LEARN_DEFAULTS.patience, val = null, epochs = null,
+          perDim = LEARN_DEFAULTS.perDim, prior = LEARN_DEFAULTS.prior, T0 = 0.05 } = opts;
+  const K = set.classes.length, D = set.X[0].length, N = set.X.length;
+  const std = standardiser(set.X, perDim);
+  const Z = standardise(set.X, std);
+  const w = classWeights(set);
+  const T = set.Y.map(y => targetOf(y, K));
+  const sw = T.map(t => t.reduce((s, v, c) => s + v * w[c], 0));
+  const S = sw.reduce((a, b) => a + b, 0) || 1;
+
+  const W = new Float32Array(K * D), b = new Float32Array(K);
+  // Prior: the prototype model written as logistic weights. cos(x, c)/T0 is
+  // linear in x, so in the standardised space z = (x − μ)·inv it is
+  // W0·z + b0 with W0[c,k] = c_k / (inv_k·T0) and b0_c = μ·c / T0. Training
+  // starts there and the L2 penalty pulls toward it instead of toward zero:
+  // with few examples the model stays the baseline, with more it moves only
+  // where the held-out loss says moving pays.
+  let W0 = null;
+  if (prior) {
+    const proto = trainPrototypes(set);
+    W0 = new Float32Array(K * D);
+    for (let c = 0; c < K; c++) {
+      const cen = proto.centroids[c];
+      if (!cen) continue;
+      let mb = 0;
+      for (let k = 0; k < D; k++) { W0[c * D + k] = cen[k] / (std.inv[k] * T0); mb += std.mean[k] * cen[k]; }
+      b[c] = mb / T0;
+    }
+    W.set(W0);
+  }
+  const gW = new Float32Array(K * D), gb = new Float64Array(K);
+  const mW = new Float32Array(K * D), vW = new Float32Array(K * D);
+  const mb = new Float64Array(K), vb = new Float64Array(K);
+  const b1 = 0.9, b2 = 0.999, eps = 1e-8;
+  const z = new Float64Array(K);
+
+  let Zv = null, Tv = null;
+  if (val && !epochs) { Zv = standardise(val.X, std); Tv = val.Y.map(y => targetOf(y, K)); }
+  const wv = val ? classWeights({ ...val, classes: set.classes }) : null;
+  const valLoss = () => {
+    const P = [];
+    for (let i = 0; i < val.X.length; i++) { logitsInto(z, W, b, Zv, i, D, K); P.push(Float64Array.from(softmaxInPlace(z))); }
+    return balancedLoss(P, Tv, wv.map((x, c) => (set.counts[c] ? x : 0)));
+  };
+
+  const limit = epochs ?? maxEpochs;
+  let best = { loss: Infinity, epoch: 0, W: null, b: null }, since = 0, ran = 0;
+  for (let e = 1; e <= limit; e++) {
+    gW.fill(0); gb.fill(0);
+    for (let i = 0; i < N; i++) {
+      logitsInto(z, W, b, Z, i, D, K);
+      softmaxInPlace(z);
+      const o = i * D;
+      for (let c = 0; c < K; c++) {
+        const g = (sw[i] * z[c] - w[c] * T[i][c]) / S;
+        if (!g) continue;
+        gb[c] += g;
+        const r = c * D;
+        for (let k = 0; k < D; k++) gW[r + k] += g * Z[o + k];
+      }
+    }
+    const c1 = 1 - b1 ** e, c2 = 1 - b2 ** e;
+    for (let j = 0; j < W.length; j++) {
+      const g = gW[j] + l2 * (W0 ? W[j] - W0[j] : W[j]);
+      mW[j] = b1 * mW[j] + (1 - b1) * g;
+      vW[j] = b2 * vW[j] + (1 - b2) * g * g;
+      W[j] -= (lr * (mW[j] / c1)) / (Math.sqrt(vW[j] / c2) + eps);
+    }
+    for (let c = 0; c < K; c++) {
+      mb[c] = b1 * mb[c] + (1 - b1) * gb[c];
+      vb[c] = b2 * vb[c] + (1 - b2) * gb[c] * gb[c];
+      b[c] -= (lr * (mb[c] / c1)) / (Math.sqrt(vb[c] / c2) + eps);
+    }
+    ran = e;
+    if (Zv) {
+      const l = valLoss();
+      if (l < best.loss - 1e-6) { best = { loss: l, epoch: e, W: W.slice(), b: b.slice() }; since = 0; }
+      else if (++since >= patience) break;
+    }
+  }
+  const model = { kind: 'logistic', classes: set.classes, mean: std.mean, inv: std.inv, l2,
+                  W: best.W ?? W, b: best.b ?? b, epochs: best.W ? best.epoch : ran };
+  if (Zv) model.valLoss = +best.loss.toFixed(6);
+  return model;
+}
+
+/* -------------------------------------------------------------- predict */
+
+/**
+ * Class probabilities for one unit embedding, in `model.classes` order.
+ * @returns {Float64Array}
+ */
+function predictProba(model, emb) {
+  const K = model.classes.length, z = new Float64Array(K);
+  if (model.kind === 'prototype') {
+    for (let c = 0; c < K; c++) z[c] = model.centroids[c] ? dot(emb, model.centroids[c]) / model.T : -Infinity;
+    return softmaxInPlace(z);
+  }
+  const D = model.mean.length, x = new Float32Array(D);
+  for (let k = 0; k < D; k++) x[k] = (emb[k] - model.mean[k]) * model.inv[k];
+  logitsInto(z, model.W, model.b, x, 0, D, K);
+  return softmaxInPlace(z);
+}
+
+/** Held-out balanced log loss and top-1 of a model on a set. */
+function heldOut(model, set) {
+  const K = set.classes.length;
+  const P = set.X.map(x => predictProba(model, x));
+  const T = set.Y.map(y => targetOf(y, K));
+  const w = classWeights(set);
+  let right = 0;
+  P.forEach((p, i) => { let a = 0; for (let c = 1; c < K; c++) if (p[c] > p[a]) a = c; if (set.Y[i].includes(a)) right++; });
+  return { loss: balancedLoss(P, T, w), top1: set.X.length ? right / set.X.length : null };
+}
+
+/** The prototype temperature with the lowest held-out balanced loss. */
+function fitPrototypeT(train, val, temperatures) {
+  const base = trainPrototypes(train);
+  let best = null;
+  for (const T of temperatures) {
+    const { loss } = heldOut({ ...base, T }, val);
+    if (!best || loss < best.loss) best = { T, loss };
+  }
+  return best;
+}
+
+/* ---------------------------------------------------------------- learn */
+
+/**
+ * Fit both models on a training set and keep the honest winner.
+ *
+ * Splits a held-out fold (`holdoutSplit`), fits the prototype temperature and
+ * the logistic model (each L2 in `opts.l2`, early-stopped) on the rest, picks
+ * by held-out balanced log loss, then refits the winner on every example.
+ * With too few examples to hold any out, it falls back to prototypes at the
+ * middle temperature — the baseline needs no tuning to be sane.
+ *
+ * @returns {object|null} a model plus `{ chosen, held: { prototype, logistic } }`, or null with fewer than two classes
+ */
+function fitSet(set, opts = {}) {
+  const o = { ...LEARN_DEFAULTS, ...opts };
+  if (!set || set.classes.length < 2 || !set.X.length) return null;
+  const { train, val } = holdoutSplit(set, { share: o.holdout, groupOf: o.groupOf });
+  const trainSet = subset(set, train), valSet = subset(set, val);
+  const fallbackT = o.temperatures[Math.floor(o.temperatures.length / 2)];
+
+  if (!val.length || trainSet.counts.some(n => n === 0)) {
+    const m = trainPrototypes(set, { T: fallbackT });
+    return { ...m, chosen: 'prototype', held: null };
+  }
+
+  const proto = fitPrototypeT(trainSet, valSet, o.temperatures);
+  const held = { prototype: { loss: +proto.loss.toFixed(6), top1: heldOut({ ...trainPrototypes(trainSet), T: proto.T }, valSet).top1, T: proto.T } };
+
+  let lr = null;
+  const tryLogistic = o.model === 'logistic' || (o.model === 'auto' && Math.min(...set.counts) >= o.minForLogistic);
+  if (tryLogistic) {
+    for (const l2 of [].concat(o.l2)) {
+      const m = trainLogistic(trainSet, { ...o, l2, val: valSet, T0: proto.T });
+      const h = heldOut(m, valSet);
+      if (!lr || h.loss < lr.loss) lr = { l2, epochs: m.epochs, loss: h.loss, top1: h.top1 };
+    }
+    held.logistic = { loss: +lr.loss.toFixed(6), top1: lr.top1, l2: lr.l2, epochs: lr.epochs };
+  }
+
+  const useLogistic = o.model === 'logistic' || (o.model === 'auto' && lr != null && lr.loss < proto.loss);
+  const model = useLogistic
+    ? trainLogistic(set, { ...o, l2: lr.l2, T0: proto.T, epochs: Math.max(1, lr.epochs) })
+    : trainPrototypes(set, { T: proto.T });
+  return { ...model, chosen: model.kind, held };
+}
+
+/** Keep at most `cap` examples per (first) class, chosen by id hash. Counts are of what is kept. */
+function capPerClass(set, cap) {
+  if (!(cap > 0) || !set.counts.some(n => n > cap)) return set;
+  const by = new Map();
+  set.ids.forEach((id, i) => { const c = set.Y[i][0]; (by.get(c) ?? by.set(c, []).get(c)).push(i); });
+  const keep = [];
+  for (const [, idx] of by) keep.push(...idx.sort((a, b) => hash(`cap:${set.ids[a]}`) - hash(`cap:${set.ids[b]}`) || a - b).slice(0, cap));
+  return subset(set, keep.sort((a, b) => a - b));
+}
+
+/**
+ * Learn this account's playlists' sound. The entry point for WP-E2.
+ *
+ * `destinations` is the space (or its destinations), as for audio.mjs's
+ * `buildAudioProfiles`, so the learner judges exactly the buckets the rest of
+ * the engine does. `skip` leaves tracks out as if never filed (fold-level
+ * leave-out for `placementAccuracy`).
+ *
+ * @param {object|Map|Array} destinations
+ * @param {Map} index  audio.mjs `audioIndex`
+ * @param {object} [opts]  LEARN_DEFAULTS overrides, plus `skip` and `groupOf`
+ * @returns {null | { version, model, classes: string[], counts: number[], short: string[], examples: number, index: Map, chosen, held }}
+ *          null when there is nothing to learn (no index, or fewer than two
+ *          playlists with `minMembers` analysed members)
+ */
+function learnAudio(destinations, index, opts = {}) {
+  if (!index?.size) return null;
+  const o = { ...LEARN_DEFAULTS, ...opts };
+  const set = capPerClass(trainingSet(destinations, index, { skip: o.skip, minMembers: o.minMembers }), o.maxPerClass);
+  const fitted = fitSet(set, o);
+  if (!fitted) return null;
+  const { chosen, held, ...model } = fitted;
+  return {
+    version: AUDIO_LEARN_VERSION, model, classes: set.classes, counts: set.counts,
+    short: set.short, examples: set.ids.length, index, chosen, held,
+  };
+}
+
+/**
+ * Per-playlist probabilities for one track: destination id → P(belongs there),
+ * summing to 1 over the learned playlists, plus `null` for each destination
+ * that had analysed members but too few to learn (null, never 0).
+ *
+ * Null outright when there is no learner or the track has not been heard, so
+ * the caller adds nothing and the placement is byte-identical.
+ *
+ * @param {string|{id:string}} track
+ * @param {object|null} learner  from `learnAudio`, or a space carrying `.learned`
+ * @param {{ index?: Map }} [opts]  index to read the track's embedding from (default: the learner's)
+ * @returns {Map<string, number|null> | null}
+ */
+function learnedScores(track, learner, { index = null } = {}) {
+  const L = learner?.model ? learner : learner?.learned;
+  if (!L?.model) return null;
+  const id = idOf(track);
+  const row = id ? (index ?? L.index)?.get(id) : null;
+  if (!row) return null;
+  const p = predictProba(L.model, row.emb);
+  const out = new Map();
+  L.classes.forEach((c, i) => out.set(c, +p[i].toFixed(6)));
+  for (const s of L.short ?? []) if (!out.has(s)) out.set(s, null);
+  return out;
+}
+
+/**
+ * The hook WP-E2's `buildSpace(lib, { audio: { learn } })` calls once per
+ * space (so once per fold in `placementAccuracy`): `learn({ index, profiles,
+ * minMembers })`, with `profiles` from audio.mjs `buildAudioProfiles` — their
+ * `.ids` are the analysed members with the fold already left out, so this
+ * trains on exactly those and nothing else.
+ *
+ *   buildSpace(lib, { audio: { records, learn: trainLearner } })
+ *
+ * @returns {null | { learner, learnedScores: (track) => Map<string, number|null> | null }}
+ */
+function trainLearner({ index, profiles, minMembers } = {}, opts = {}) {
+  if (!index?.size || !profiles?.size) return null;
+  const dests = [...profiles].map(([id, p]) => ({ id, trackIds: [...(p?.ids ?? [])] }));
+  const learner = learnAudio(dests, index, { ...opts, minMembers: minMembers ?? opts.minMembers ?? LEARN_DEFAULTS.minMembers });
+  if (!learner) return null;
+  return { learner, learnedScores: track => learnedScores(track, learner) };
+}
+
+/**
+ * `learnedScores` as `calibrate.mjs` rows want them: [[playlistId, log p], …],
+ * highest first, nulls dropped. Log probabilities, because calibrate softmaxes
+ * its scores at a fitted temperature, and softmax(log p) at T = 1 is p itself:
+ * the fit can keep the learner's own confidence or sharpen or soften it.
+ */
+function calibrationScores(scores) {
+  if (!scores) return [];
+  return [...scores]
+    .filter(([, p]) => p != null)
+    .map(([id, p]) => [id, +Math.log(Math.max(p, 1e-12)).toFixed(5)])
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+}
+
+/* ------------------------------------------------------------- measure */
+
+/**
+ * k-fold cross-validated accuracy of the prototype baseline and the learner
+ * (and which one `auto` chose) on a labelled set. Folds are by `groupOf` when
+ * given (artist), so no artist is in both training and test.
+ *
+ * @param {object} set  from `trainingSet` or a fixture
+ * @param {{ folds?: number, perClass?: number|null, repeats?: number, groupOf?: Function, salt?: string }} [opts]
+ *        `perClass` subsamples each class's training examples to that many
+ *        (a learning-curve point); the test fold is never subsampled
+ * @returns {{ n, prototype: {top1, top2}, logistic: {top1, top2}, auto: {top1, top2, logistic: number} }}
+ */
+function crossValidate(set, opts = {}) {
+  const { folds = 5, perClass = null, repeats = 1, groupOf = null, salt = 'cv', ...fit } = opts;
+  const acc = () => ({ n: 0, top1: 0, top2: 0 });
+  const res = { prototype: acc(), logistic: acc(), auto: acc(), autoLogistic: 0, runs: 0 };
+  const foldOf = i => hash(`${salt}:${groupOf ? groupOf(set.ids[i]) ?? set.ids[i] : set.ids[i]}`) % folds;
+  const score = (bucket, model, test) => {
+    test.X.forEach((x, i) => {
+      const p = predictProba(model, x);
+      const order = [...p.keys()].sort((a, b) => p[b] - p[a]);
+      bucket.n++;
+      if (test.Y[i].includes(order[0])) bucket.top1++;
+      if (test.Y[i].includes(order[0]) || test.Y[i].includes(order[1])) bucket.top2++;
+    });
+  };
+  for (let f = 0; f < folds; f++) {
+    const testIdx = [], poolIdx = [];
+    set.ids.forEach((_, i) => (foldOf(i) === f ? testIdx : poolIdx).push(i));
+    if (!testIdx.length) continue;
+    for (let r = 0; r < repeats; r++) {
+      let trainIdx = poolIdx;
+      if (perClass) {
+        const by = new Map();
+        for (const i of poolIdx) { const c = set.Y[i][0]; (by.get(c) ?? by.set(c, []).get(c)).push(i); }
+        trainIdx = [];
+        for (const [, idx] of by) {
+          const ord = idx.slice().sort((a, b) => hash(`${salt}:${f}:${r}:${set.ids[a]}`) - hash(`${salt}:${f}:${r}:${set.ids[b]}`));
+          trainIdx.push(...ord.slice(0, perClass));
+        }
+        trainIdx.sort((a, b) => a - b);
+      }
+      const train = subset(set, trainIdx), test = subset(set, testIdx);
+      if (train.counts.some(n => n === 0)) continue;
+      const gOf = groupOf;
+      const proto = fitSet(train, { ...fit, model: 'prototype', groupOf: gOf });
+      const logi = fitSet(train, { ...fit, model: 'logistic', groupOf: gOf });
+      const auto = fitSet(train, { ...fit, model: 'auto', groupOf: gOf });
+      score(res.prototype, proto, test);
+      score(res.logistic, logi, test);
+      score(res.auto, auto, test);
+      if (auto.chosen === 'logistic') res.autoLogistic++;
+      res.runs++;
+    }
+  }
+  const fin = b => ({ n: b.n, top1: b.n ? +(b.top1 / b.n).toFixed(4) : null, top2: b.n ? +(b.top2 / b.n).toFixed(4) : null });
+  return { n: res.prototype.n, runs: res.runs, prototype: fin(res.prototype), logistic: fin(res.logistic),
+           auto: { ...fin(res.auto), logisticShare: res.runs ? +(res.autoLogistic / res.runs).toFixed(3) : null } };
+}
+
+/**
+ * Learning curve: `crossValidate` at each training size per class.
+ * @returns {Array<{ perClass: number, ...crossValidate }>}
+ */
+function learningCurve(set, { sizes = [5, 10, 20, 40], ...opts } = {}) {
+  return sizes.map(perClass => ({ perClass, ...crossValidate(set, { ...opts, perClass }) }));
+}
+return { AUDIO_LEARN_VERSION, LEARN_DEFAULTS, trainingSet, subset, holdoutSplit, trainPrototypes, trainLogistic, predictProba, fitSet, capPerClass, learnAudio, learnedScores, trainLearner, calibrationScores, crossValidate, learningCurve };
+})();
 /* ---- core/intrinsic/space.mjs ---- */
 __mod["core/intrinsic/space.mjs"] = (function () {
 const { cooccurrence, trackVector, cosine, centroid, norm } = __mod["core/intrinsic/cooccurrence.mjs"];
@@ -2562,6 +3564,8 @@ const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 const { explain } = __mod["core/intrinsic/explain.mjs"];
 const { bonusIndex, bonusProfileOf, bonusScores } = __mod["core/intrinsic/bonus-rekordbox.mjs"];
 const { bridgeIndex, artistHomes, bridgeScores } = __mod["core/intrinsic/bridge.mjs"];
+const { audioIndex, buildAudioProfiles, audioScores } = __mod["core/intrinsic/audio.mjs"];
+const { trainLearner } = __mod["core/intrinsic/audio-learn.mjs"];
 // The intrinsic space — where a track sits, and which of this account's
 // buckets it sits nearest.
 //
@@ -2582,7 +3586,12 @@ const { bridgeIndex, artistHomes, bridgeScores } = __mod["core/intrinsic/bridge.
 
 
 
-const SPACE_VERSION = '4.0.0';
+
+
+// 4.1.0: the audio layer (WP-E2 of docs/AUDIO-BUILD-PLAN.md). With no audio
+// passed, every output except this string is byte-identical to 4.0.0
+// (test/audioengine.test.mjs holds it to a hash of main's output).
+const SPACE_VERSION = '4.1.0';
 
 /**
  * Relative weights. `graph` leads because the artist neighbourhood is the only
@@ -2613,6 +3622,17 @@ const WEIGHTS = {
   // the bonus layer it costs nothing to anybody without one. A prior: phase 0
   // exists to measure whether it earns any weight at all.
   bridge:      0.50,
+  // Sound (docs/AUDIO-BUILD-PLAN.md WP-E1/E2/L1). `audio` is how close the
+  // track sounds to each playlist's analysed members (nearest centroid, which
+  // phase 0 measured at 58% top-1 on its own); `learned` is the per-account
+  // classifier trained on the same members. Both are priors, and both are
+  // **gated**: `placements` only lets them into the score with `useAudio`,
+  // which a caller sets only once `core/validate/gate.mjs` has passed on the
+  // account's own library. Until then they are computed and shown on each row
+  // (`heard`) and change no suggestion. Null for an unheard track, so like the
+  // bonus layer they cost nothing to anybody without audio.
+  audio:       0.50,
+  learned:     0.50,
 };
 
 /**
@@ -2653,7 +3673,7 @@ const THRESHOLDS = {
  * cannot start by reading a file that assumes whose account it is.
  */
 function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targets = null,
-                                  bridge = null } = {}) {
+                                  bridge = null, audio = null } = {}) {
   // `targets`, when given, is the set of playlists the listener files into —
   // their genre playlists. Only those become destinations. Every playlist still
   // feeds the artist graph below: a "Sunday" playlist is not somewhere to file
@@ -2742,8 +3762,112 @@ function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targe
   const bridgeIdx = bridge ? bridgeIndex(bridge) : null;
   const withBridge = bridgeIdx?.size ? { bridge: bridgeIdx, artistHomes: artistHomes(destinations) } : {};
 
+  // Same rule for sound: only with at least one usable record does the space
+  // carry an audio layer, so `audio: null`, `[]` or a pile of misses leaves the
+  // space exactly as it was. Profiles are built from `destinations`, which have
+  // already dropped mirrors, non-targets and `skip`, so a held-out fold is never
+  // part of the sound it is scored against, and a learner trained here never
+  // saw it either.
+  const withAudio = audioLayer(audio, destinations, skip);
+
   return { graph, registrants, destinations, baseline, bonus, version: SPACE_VERSION,
-           targets: allowed ? [...allowed].sort() : null, ...withBridge };
+           targets: allowed ? [...allowed].sort() : null, ...withBridge, ...withAudio };
+}
+
+/**
+ * `audio` may be the records themselves (array, Map, or id → record object,
+ * anything `audioIndex` reads), or options:
+ *
+ *   { records, mel }   records, optionally dropping another mel front end's
+ *   { index }          an `audioIndex` already built (reused across folds)
+ *   { learn }          a trainer, called once per space with
+ *                      `{ index, profiles, minMembers }`: `profiles` is
+ *                      destination id → analysed members (`.ids`), already
+ *                      without `skip`. It returns the learner: an object with
+ *                      `learnedScores(track)` (WP-L1's name) or a function of
+ *                      the track, giving destination id → probability as a
+ *                      Map, an object or [[id, p], …], or null when unheard.
+ *
+ * `learn` defaults to WP-L1's `trainLearner` (core/intrinsic/audio-learn.mjs);
+ * pass `learn: false` for the centroid alone.
+ *
+ * Returns the keys to spread into the space: `{}` when there is nothing to
+ * hear, so the space is key for key what it was without audio.
+ */
+function audioLayer(audio, destinations, skip) {
+  if (!audio) return {};
+  const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
+    && ('records' in audio || 'index' in audio || 'learn' in audio) ? audio : { records: audio };
+  const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
+  if (!index.size) return {};
+  const layer = buildAudioProfiles(destinations, index, { skip });
+  const out = { audio: layer };
+  const learn = opts.learn === undefined ? trainLearner : opts.learn;
+  if (typeof learn === 'function' && layer.profiles.size) {
+    const learner = learn({ index, profiles: layer.profiles, minMembers: layer.minMembers });
+    const fn = typeof learner?.learnedScores === 'function' ? t => learner.learnedScores(t)
+             : typeof learner === 'function' ? learner : null;
+    if (fn) out.learned = fn;
+  }
+  return out;
+}
+
+/**
+ * Put the audio layer back on a space that lost it, typically one revived from
+ * `persist.mjs`, which stores the graph and profiles but not sound (records
+ * live in their own store, and centroids are cheap to rebuild from them).
+ * Takes `audio` exactly as `buildSpace` does. Returns a new space; with
+ * nothing to hear, the space unchanged. Any existing layer is replaced.
+ */
+function withAudioLayer(space, audio) {
+  if (!space?.destinations) return space;
+  const { audio: _a, learned: _l, ...rest } = space;
+  const layer = audioLayer(audio, space.destinations, null);
+  return Object.keys(layer).length ? { ...rest, ...layer } : (('audio' in space || 'learned' in space) ? rest : space);
+}
+
+/** Whatever a learner returned → Map of finite numbers, or null. */
+function asScoreMap(x) {
+  if (!x) return null;
+  const entries = x instanceof Map ? [...x] : Array.isArray(x) ? x : Object.entries(x);
+  const out = new Map();
+  for (const [id, v] of entries) if (id != null && Number.isFinite(v)) out.set(id, v);
+  return out.size ? out : null;
+}
+
+/**
+ * One track's raw sound scores against every destination, rescaled into a
+ * component `combine()` can mix: 0 for the destination it sounds least like,
+ * 1 for the one it sounds most like, linearly between.
+ *
+ * Why relative rather than the raw cosine: embedding cosines bunch high (every
+ * track sounds somewhat like every electronic playlist), so a raw value would
+ * add a near-constant to every judged destination. That ranks nothing, and
+ * where some destinations are judged and others aren't (too few analysed
+ * members) it would quietly favour the judged ones. A destination that cannot
+ * be judged gets the mean of the judged ones instead of null, for the same
+ * reason: "can't tell" must neither help nor hurt it. Fewer than two judged
+ * destinations, or no spread at all, is nothing to rank by: null.
+ */
+function relativeSound(raw, destIds) {
+  if (!raw) return null;
+  const judged = [];
+  for (const v of raw.values()) if (Number.isFinite(v)) judged.push(v);
+  if (judged.length < 2) return null;
+  const lo = Math.min(...judged), hi = Math.max(...judged);
+  if (!(hi - lo > 1e-9)) return null;
+  const scaled = new Map();
+  let sum = 0;
+  for (const [id, v] of raw) {
+    if (!Number.isFinite(v)) continue;
+    const s = (v - lo) / (hi - lo);
+    scaled.set(id, s);
+    sum += s;
+  }
+  const neutral = sum / scaled.size;
+  const out = new Map();
+  for (const id of destIds) out.set(id, scaled.get(id) ?? neutral);
+  return out;
 }
 
 /**
@@ -2780,7 +3904,7 @@ function combine(parts, weights = WEIGHTS) {
  * none of them needs prose. A UI asks for it; a sweep does not.
  */
 function placements(track, space, { limit = 5, exclude = null, why = false,
-                                           weights = WEIGHTS } = {}) {
+                                           weights = WEIGHTS, useAudio = false } = {}) {
   if (!track?.id) return { declined: 'NO_TRACK', results: [] };
   if (!space?.destinations?.size) return { declined: 'NO_DESTINATIONS', results: [] };
 
@@ -2790,6 +3914,18 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
   // spread across all of them. Null — and then absent from every row — when the
   // space has no bridge or it knows none of this track's artists.
   const bridged = space.bridge ? bridgeScores(track, space) : null;
+  // Sound, likewise once per track. Only a heard track in a space with an audio
+  // layer gets any of this; for everyone else both are null, no row gains a
+  // key, and the output is what it was before audio existed.
+  //
+  // The gate: without `useAudio` these are shown on each row (`heard`, the raw
+  // cosine and probability) and never enter `parts`, so they change no score
+  // and no ranking. `core/validate/gate.mjs` decides when a caller may pass it.
+  const rawSound = space.audio ? audioScores(track, space) : null;
+  const rawLearned = rawSound && space.learned ? asScoreMap(space.learned(track)) : null;
+  const destIds = rawSound ? [...space.destinations.keys()] : null;
+  const sound = useAudio ? relativeSound(rawSound, destIds) : null;
+  const learned = useAudio ? relativeSound(rawLearned, destIds) : null;
   const rows = [];
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
@@ -2800,11 +3936,18 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
                                     : { bpm: null, key: null };
     const parts = bridged ? { graph, ...shape, ...extra, bridge: bridged.get(d.id) ?? 0 }
                           : { graph, ...shape, ...extra };
+    if (sound) parts.audio = sound.get(d.id);
+    if (learned) parts.learned = learned.get(d.id);
     const { score, used, judged } = combine(parts, weights);
     if (!judged) continue;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
-    rows.push({ playlistId: d.id, name: d.name, score: +score.toFixed(4),
-                parts: used, judged, sharedArtists: shared, members: d.n });
+    const row = { playlistId: d.id, name: d.name, score: +score.toFixed(4),
+                  parts: used, judged, sharedArtists: shared, members: d.n };
+    if (rawSound) {
+      row.heard = { audio: rawSound.get(d.id) ?? null,
+                    learned: rawLearned?.has(d.id) ? +rawLearned.get(d.id).toFixed(4) : null };
+    }
+    rows.push(row);
   }
 
   if (!rows.length) return { declined: 'NOTHING_JUDGEABLE', results: [] };
@@ -2833,7 +3976,7 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
     version: SPACE_VERSION,
   };
 }
-return { SPACE_VERSION, WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, combine, placements };
+return { SPACE_VERSION, WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, withAudioLayer, relativeSound, combine, placements };
 })();
 /* ---- core/intrinsic/coldstart.mjs ---- */
 __mod["core/intrinsic/coldstart.mjs"] = (function () {
@@ -3763,11 +4906,116 @@ function calibrationReport(rows, opts = {}) {
 }
 return { CALIBRATE_VERSION, DEFAULTS, BIN, scoresOf, softmax, TEMPERATURES, fitTemperature, isotonic, wilsonLower, fitCalibration, decide, evaluate, calibrationReport };
 })();
+/* ---- core/validate/gate.mjs ---- */
+__mod["core/validate/gate.mjs"] = (function () {
+const { calibrationReport } = __mod["core/intrinsic/calibrate.mjs"];
+// The audio gate: may sound change a suggestion on this account yet?
+//
+// docs/AUDIO-BUILD-PLAN.md §0.7 and WP-E2, from the handoff (issue #53):
+// audio earns a say in filing only once the account's own library shows
+//
+//   1. at least +5 points top-1 on tracks by never-filed artists (the case
+//      sound exists for: nobody has filed those artists yet, so the artist
+//      graph has nothing to say), and
+//   2. no loss overall.
+//
+// Both read from one `placementAccuracy(lib, { audio })` run, which scores
+// every track twice on the same folds, so the difference is sound and nothing
+// else. The bar was set before anyone saw a number, the same one the bridge
+// was held to (`bridgeVerdict` on the page). It is meant to be able to fail;
+// failing leaves audio shown but display-only, which is a result, not a bug
+// (plan §6).
+//
+// Pure: no clock, no storage. A caller keeps the verdict next to the run it
+// came from and passes `useAudio: audioInUse(verdict)` to `placements`.
+
+
+const GATE_VERSION = '1.0.0';
+
+const GATE = {
+  /** Top-1 lift on never-filed artists that counts as earning it. */
+  minLift: 0.05,
+  /** Fewer never-filed tracks than this cannot show a 5-point lift from noise. */
+  minNeverFiled: 20,
+  /** And fewer of them heard than this means sound never really got a hearing. */
+  minHeardNeverFiled: 10,
+};
+
+/** Rounding slack: rates arrive at 4 decimal places. */
+const EPS = 1e-9;
+
+const pts = x => `${x >= 0 ? '+' : '−'}${Math.abs(Math.round(x * 1000) / 10)} points`;
+
+/**
+ * Read a `placementAccuracy` result that was run with `audio`.
+ *
+ * `pass` is true, false, or null for "can't tell yet" (no audio, or too few
+ * tracks to judge on). Only `true` lets sound change suggestions. `reason` is
+ * a stable code for tests and storage; `text` is for people.
+ *
+ * @returns {{ pass: boolean|null, reason: string, lift: number|null, overall: number|null,
+ *             neverFiled: number, heard: number, heardNeverFiled: number, text: string,
+ *             bar: object, version: string }}
+ */
+function audioGate(acc, opts = {}) {
+  const bar = { ...GATE, ...opts };
+  const w = acc?.withAudio;
+  const nf = acc?.neverFiled;
+  const out = (pass, reason, text, extra = {}) => ({
+    pass, reason, text, lift: null, overall: null,
+    neverFiled: nf?.scored ?? 0, heard: w?.heard ?? 0, heardNeverFiled: w?.heardNeverFiled ?? 0,
+    bar, version: GATE_VERSION, ...extra,
+  });
+
+  if (!w || !nf) return out(null, 'NOT_RUN', 'Scored without sound, so there is nothing to compare.');
+  if (!w.heard) return out(null, 'NOTHING_HEARD', 'None of the scored tracks has been listened to yet.');
+
+  const lift = (w.neverFiled?.top1 ?? 0) - (nf.top1 ?? 0);
+  const overall = (w.top1 ?? 0) - (acc.top1 ?? 0);
+  const nums = { lift: +lift.toFixed(4), overall: +overall.toFixed(4) };
+
+  if (nf.scored < bar.minNeverFiled) {
+    return out(null, 'TOO_FEW_NEVER_FILED',
+      `Only ${nf.scored} of the scored tracks are by artists not yet in a genre playlist, too few to judge it on.`, nums);
+  }
+  if ((w.heardNeverFiled ?? 0) < bar.minHeardNeverFiled) {
+    return out(null, 'TOO_FEW_HEARD',
+      `Only ${w.heardNeverFiled ?? 0} tracks by never-filed artists have been listened to so far, too few to judge it on.`, nums);
+  }
+  if (overall < -EPS) {
+    return out(false, 'COSTS_OVERALL',
+      `It changes never-filed artists by ${pts(lift)} but costs ${pts(overall)} overall, so it stays display-only.`, nums);
+  }
+  if (lift + EPS < bar.minLift) {
+    return out(false, 'NOT_ENOUGH_LIFT',
+      `Not enough lift on never-filed artists (${pts(lift)}; the bar is ${pts(bar.minLift)}), so it stays display-only.`, nums);
+  }
+  return out(true, 'PASS',
+    `${pts(lift)} on tracks by artists you hadn't filed in a genre playlist yet, and ${pts(overall)} overall.`, nums);
+}
+
+/** The one question a caller asks: may `placements` use sound? Only a pass says yes. */
+const audioInUse = verdict => verdict?.pass === true;
+
+/**
+ * Both halves of a run through calibrate.mjs: how sure the engine may be
+ * without sound and with it, each checked on tracks it was not fitted on.
+ * Needs a run with `collect: true`. Null halves when there are no rows.
+ */
+function audioCalibration(acc, opts = {}) {
+  const without = acc?.rows?.length ? calibrationReport(acc.rows, opts) : null;
+  const withAudio = acc?.withAudio?.rows?.length ? calibrationReport(acc.withAudio.rows, opts) : null;
+  return { without, withAudio };
+}
+return { GATE_VERSION, GATE, audioGate, audioInUse, audioCalibration };
+})();
 /* ---- core/validate/loo.mjs ---- */
 __mod["core/validate/loo.mjs"] = (function () {
 const { buildSpace, placements, BANDS, WEIGHTS } = __mod["core/intrinsic/space.mjs"];
 const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 const { scoresOf } = __mod["core/intrinsic/calibrate.mjs"];
+const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
+const { audioGate } = __mod["core/validate/gate.mjs"];
 // Held-out placement accuracy — the account grades the engine.
 //
 // This is the reason the intrinsic approach is worth building. Every other
@@ -3804,7 +5052,10 @@ const { scoresOf } = __mod["core/intrinsic/calibrate.mjs"];
 
 
 
-const VALIDATE_VERSION = '4.0.0';
+
+
+// 4.1.0: `audio` (WP-E2). Without it the result is key for key what 4.0.0 gave.
+const VALIDATE_VERSION = '4.1.0';
 
 const DEFAULT_FOLDS = 5;
 
@@ -3905,11 +5156,18 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
  *                                 quietly leaking.
  * @param {number}  [opts.limit]   cap tracks scored, for a quick pass
  * @param {Function} [opts.isMirror]
+ * @param {*}       [opts.audio]   AudioRecords, or `{ records | index, mel, learn }`
+ *                                 as `buildSpace` takes them. Every track is then
+ *                                 also scored with sound let in (`withAudio`),
+ *                                 against the same fold's space: the sound
+ *                                 profiles and any learner are built without the
+ *                                 fold, so a track never hears itself. The
+ *                                 headline numbers are unchanged by it.
  */
 function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
                                          weights = null, targets = null, bridge = null,
-                                         collect = false } = {}) {
+                                         audio = null, collect = false } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -3934,6 +5192,16 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
   // core/intrinsic/calibrate.mjs to fit "how sure may it be" against. Every
   // destination has to be ranked for that, not just the top three.
   const rows = collect ? [] : null, rowsPlus = collect && bridge ? [] : null;
+
+  // With audio, the same again for sound: one more ranking per track against
+  // the same space, with `useAudio` letting the sound components in. The
+  // weights are the headline's (no bridge), so the difference between the two
+  // is sound and nothing else. The index is built once, not once per fold:
+  // which tracks have been heard does not depend on the fold, only which of
+  // them define a playlist's sound does, and buildSpace handles that.
+  const audioOpts = audioOptions(audio);
+  const sound = audioOpts ? { all: tally(), neverFiled: tally(), heard: 0, heardNeverFiled: 0,
+                              judged: 0, changed: 0, rows: collect ? [] : null } : null;
   const limit3 = collect ? Infinity : 3;
 
   const stats = {
@@ -3951,7 +5219,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
   for (const [, members] of groups) {
     const skip = leaky ? null : new Set(members);
-    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge });
+    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge, audio: audioOpts });
     const filed = filedArtists(space);
 
     for (const id of members) {
@@ -3997,6 +5265,20 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
         if (r[0]?.parts && 'bridge' in r[0].parts) bridgeJudged++;
         withPlus.scored++; if (p1) withPlus.top1++; if (p3) withPlus.top3++;
         if (fresh) { neverFiledPlus.scored++; if (p1) neverFiledPlus.top1++; if (p3) neverFiledPlus.top3++; }
+      }
+
+      if (sound) {
+        const more = space.audio
+          ? placements(track, space, { limit: limit3, weights: base, useAudio: true }) : out;
+        const r = more.results ?? [];
+        if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort() });
+        const s1 = r[0] && want.has(r[0].playlistId);
+        const s3 = r.slice(0, 3).some(x => want.has(x.playlistId));
+        if (space.audio?.index.has(id)) { sound.heard++; if (fresh) sound.heardNeverFiled++; }
+        if (r[0]?.parts && ('audio' in r[0].parts || 'learned' in r[0].parts)) sound.judged++;
+        if (r[0]?.playlistId !== ranked[0]?.playlistId) sound.changed++;
+        sound.all.scored++; if (s1) sound.all.top1++; if (s3) sound.all.top3++;
+        if (fresh) { sound.neverFiled.scored++; if (s1) sound.neverFiled.top1++; if (s3) sound.neverFiled.top3++; }
       }
 
       // Per-bucket, credited to every bucket the track really is in. This is
@@ -4048,7 +5330,21 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     // that is somebody's only home and a bucket that is a view of others.
     .sort((a, b) => (a.inTop3 ?? 0) - (b.inTop3 ?? 0) || b.n - a.n);
 
-  return {
+  const withAudio = sound ? {
+    ...tallyOut(sound.all),
+    neverFiled: tallyOut(sound.neverFiled),
+    // Of the scored tracks: how many had a record, how many of those were by
+    // never-filed artists, how many top answers sound had a say in, and how
+    // many top answers it moved.
+    heard: sound.heard, heardNeverFiled: sound.heardNeverFiled,
+    judged: sound.judged, changed: sound.changed,
+    analysed: audioOpts.index.size,
+    weights: { audio: base.audio ?? WEIGHTS.audio, learned: base.learned ?? WEIGHTS.learned },
+    learner: audioOpts.learn !== false && audioOpts.learn !== null,
+    ...(sound.rows ? { rows: sound.rows } : {}),
+  } : null;
+
+  const result = {
     mode: leaky ? 'leaky' : `${folds}-fold`,
     scored: stats.scored,
     top1: rate(stats.top1, stats.scored),
@@ -4064,8 +5360,23 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                judged: bridgeJudged, weight: bridgeWeight,
                                coverage: bridge.coverage ?? null,
                                ...(rowsPlus ? { rows: rowsPlus } : {}) } } : {}),
+    ...(withAudio ? { withAudio } : {}),
     version: VALIDATE_VERSION,
   };
+  // The verdict travels with the numbers it was read from, so no caller can
+  // show one run's numbers beside another run's verdict.
+  if (withAudio) withAudio.gate = audioGate(result);
+  return result;
+}
+
+/** `audio` as placementAccuracy was given it → buildSpace options with a prebuilt index, or null. */
+function audioOptions(audio) {
+  if (!audio) return null;
+  const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
+    && ('records' in audio || 'index' in audio || 'learn' in audio) ? audio : { records: audio };
+  const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
+  // Passed through as given: undefined lets buildSpace use its default learner.
+  return { index, ...('learn' in opts ? { learn: opts.learn } : {}) };
 }
 return { VALIDATE_VERSION, DEFAULT_FOLDS, foldOf, truthOf, scoredTracks, placementAccuracy };
 })();
