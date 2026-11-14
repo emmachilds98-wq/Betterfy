@@ -39,7 +39,7 @@ over anything that needs a file most users won't have.
   waits on the owner), a file map of the sound features, and the ranked next
   work. Newer than `UPGRADE-PLAN.md`.
 - `docs/UPGRADE-PLAN.md` — the older (2026-10-31) order of work across the open PRs
-  and plans, and what is waiting on the owner. Start here.
+  and plans, and what was waiting on the owner then.
 - `docs/GENRE-RECOGNITION-PLAN.md` — why filing went into non-genre
   playlists, what was fixed, and the ranked signals for genres crowd tags
   can't see (donk: 4 artists tagged in the whole shipped table).
