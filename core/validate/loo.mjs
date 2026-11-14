@@ -138,7 +138,7 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
  *                                 quietly leaking.
  * @param {number}  [opts.limit]   cap tracks scored, for a quick pass
  * @param {Function} [opts.isMirror]
- * @param {*}       [opts.audio]   AudioRecords, or `{ records | index, mel, learn }`
+ * @param {*}       [opts.audio]   AudioRecords, or `{ records | index, mel, learn, feedback }`
  *                                 as `buildSpace` takes them. Every track is then
  *                                 also scored with sound let in (`withAudio`),
  *                                 against the same fold's space: the sound
@@ -355,8 +355,11 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 function audioOptions(audio) {
   if (!audio) return null;
   const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
-    && ('records' in audio || 'index' in audio || 'learn' in audio) ? audio : { records: audio };
+    && ('records' in audio || 'index' in audio || 'learn' in audio || 'feedback' in audio) ? audio : { records: audio };
   const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
   // Passed through as given: undefined lets buildSpace use its default learner.
-  return { index, ...('learn' in opts ? { learn: opts.learn } : {}) };
+  // `feedback` (WP-L2) too: buildSpace hands it to the learner with each fold's
+  // skip, so a verdict on a held-out track never trains the learner scoring it.
+  return { index, ...('learn' in opts ? { learn: opts.learn } : {}),
+           ...(opts.feedback ? { feedback: opts.feedback } : {}) };
 }
