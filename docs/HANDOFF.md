@@ -1,6 +1,9 @@
 # Handoff — where the audio and genre work stands (2026-11-14)
 
-**Start here.** This is the current state of the work, written for whoever
+**Build 5 starts from `docs/BUILD-5-PLAN.md`**, which supersedes §6 below.
+The rest of this file is still the reference for the sound features.
+
+This is the current state of the work, written for whoever
 picks it up next (updated 2026-11-14, end of the sound-everywhere round). It
 supersedes the "order of work" in `docs/UPGRADE-PLAN.md`. The other plan docs
 are still accurate for their own areas; "Read next" (§8) says which covers what.
