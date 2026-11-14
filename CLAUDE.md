@@ -42,9 +42,15 @@ over anything that needs a file most users won't have.
   can't see (donk: 4 artists tagged in the whole shipped table).
 - `docs/AUDIO-ANALYSIS-PLAN.md` — v3 phase 5: track-level genre/mood/
   similarity from 30-second Deezer previews (looked up by the ISRC Spotify
-  already gives) run through an ONNX model in the listener's browser. Plan
-  only; phase 0 is a coverage and speed measurement that can stop it. Read
-  its §2 before re-checking any of the external facts it lists.
+  already gives) run through an ONNX model in the listener's browser. Phase 0
+  is measured (its §0): the model's labels are weak on scene genres, but
+  placing by sound against the account's own playlists works, so the owner
+  chose Option B (learn from your playlists), then C. Read its §2 before
+  re-checking any of the external facts it lists.
+- `docs/AUDIO-BUILD-PLAN.md` — how B and C get built: work packages for
+  parallel agents, the frozen contracts (`core/audio/mel.mjs`,
+  `core/audio/record.mjs`), file ownership, and the gate. Any audio work
+  starts from its package list.
 - `docs/SMARTER-GENRES-PLAN.md` — the current genre plan: free
   similar-artist bridges (Deezer, ListenBrainz via Wikidata, measured on the
   owner's library), calibrated confidence, the Gaps screen for proposing new
