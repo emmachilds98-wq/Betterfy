@@ -192,6 +192,13 @@ self.onmessage = function (e) {
   var m = e.data || {};
   var mirrors = new Set(m.mirrorIds || []);
   var isMirror = function (p) { return !!p && mirrors.has(p.id); };
+  // The hosted app fits nothing to playlist membership: its sound learner is
+  // prototypes only (docs/BUILD-5-PLAN.md §2.3, option b), whatever arrives.
+  var prototypesOnly = function (a) {
+    if (!a) return null;
+    var o = (typeof a === 'object' && !Array.isArray(a) && ('records' in a || 'index' in a)) ? a : { records: a };
+    return Object.assign({}, o, { model: 'prototype' });
+  };
   var t0 = performance.now();
   try {
     var result;
@@ -201,7 +208,7 @@ self.onmessage = function (e) {
       // genreGraph: the artist graph learns from genre playlists only, so
       // mood and event playlists stop teaching genre (sound-first filing).
       var space = BetterfyIntrinsic.buildSpace(m.lib, { isMirror: isMirror, targets: m.targets || null,
-                                                        audio: m.audio || null, genreGraph: m.genreGraph === true });
+                                                        audio: prototypesOnly(m.audio), genreGraph: m.genreGraph === true });
       result = BetterfyPersist.serialiseSpace(space, m.lib);
       // The "can't tell apart" report costs more than the build on a big
       // library (2.9s for 250 playlists) and needs nothing but the space, so it
@@ -211,7 +218,7 @@ self.onmessage = function (e) {
     } else if (m.op === 'validate') {
       var common = Object.assign({}, m.opts, { isMirror: isMirror,
                                                 targets: m.targets ? new Set(m.targets) : null,
-                                                bridge: m.bridge || null, audio: m.audio || null,
+                                                bridge: m.bridge || null, audio: prototypesOnly(m.audio),
                                                 // The sound variant is scored the way the File screen
                                                 // files a heard track: sound leading.
                                                 soundWeights: m.opts && m.opts.soundFirst

@@ -107,6 +107,11 @@ Other `claude/*` branches whose PRs are merged are history only.
   - **R3:** lookups and counts on your own library, shown back to you, are fine.
 
   The sound ID and matching work is nearest-neighbour lookups and counts only. Keep it that way.
+  The sound learner in the page and its worker is prototypes only (`model: 'prototype'`, set in
+  `engineAudioIn` and the worker's `prototypesOnly`; BUILD-5-PLAN §2 item 3, option b): each playlist's
+  sound is the average of the account's own heard tracks in it, moved by accepts and rejects. No
+  regression is fitted to playlist membership in the hosted app. Logistic regression stays in
+  `audio-learn.mjs` (default `model: 'auto'`) for offline scripts and tests only.
 - **Byte-identical when absent.** A card with no sound data must render exactly as before; the UI-4 goldens in `test/webinbox-sound.test.mjs` check this. Put any new slot on the same line as the existing one; a newline breaks the goldens.
 - **Frozen contracts.** `core/audio/mel.mjs` and `record.mjs` are frozen. A change goes in its own PR, with a line in `docs/AUDIO-BUILD-PLAN.md` §7.
 - **Generated files.** `docs/index.html`, `docs/engine.js`, `docs/engine-worker.js` and `docs/audio.js` come from `node build-web.mjs`. On a merge conflict, rebuild them; never hand-merge.

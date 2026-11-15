@@ -641,9 +641,13 @@ guess, and everything downstream reads the file, not the rules.
 
 With **Listen to my music** on (Sources, or the File screen's prompt), the File
 screen files a heard track by **how it sounds**, not by who made it. Its picks
-come from the account-native engine with sound leading: a small model trained
-on each genre playlist's own heard tracks, the playlist it sounds nearest, and
-only then the artist graph. That graph now learns from **genre playlists
+come from the account-native engine with sound leading: each genre playlist's
+sound prototype (the average of your own heard tracks in it, nudged toward a
+track you file there and away from one you turn down), the playlist it sounds
+nearest, and only then the artist graph. In the app the learner is prototypes
+only: no model is fitted to your playlist membership
+(`docs/BUILD-5-PLAN.md` §2 item 3). The logistic-regression variant in
+`core/intrinsic/audio-learn.mjs` is kept for offline measurement only. That graph now learns from **genre playlists
 only**, so a mood playlist or a one-night event playlist can't teach that a
 jungle artist and a house artist "go together". The tag engine's best pick
 stays on the card as the third choice. A track not heard yet (or with no
@@ -684,7 +688,9 @@ tracks a track could be beatmatched with (Rekordbox data wins where present).
 The Score run measures naming on tracks you've already filed ("Naming genres
 by sound": genre and sub-genre right, model alone vs with your library, and how
 often the tempo fits the playlist's genre). All of it is nearest-neighbour
-lookups and counts on your own heard tracks: nothing is trained or shared.
+lookups and counts on your own heard tracks, plus the per-playlist prototypes
+above (averages of your own heard tracks): no model is fitted to your playlist
+membership, and nothing is shared.
 
 ## Design decisions worth knowing
 
