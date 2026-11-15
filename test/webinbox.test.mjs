@@ -208,15 +208,15 @@ test('"Next up to file" opens the track that was tapped', () => {
   // The cards under it show the head of the queue, so their index is an
   // absolute position in it. Adding it to wherever the queue had been left
   // instead opened a different track than the one under the finger.
-  const go = [];
-  const ctx = { S: { inboxAt: 5 }, R: { backlog: [1, 2, 3, 4] }, go: v => go.push(v) };
+  const rendered = [];
+  const ctx = { S: { inboxAt: 5 }, R: { backlog: [1, 2, 3, 4] }, render: () => rendered.push(1) };
   HOME.actions.goinbox(ctx, { dataset: { goinbox: '2' } });
   assert.equal(ctx.S.inboxAt, 2);
   HOME.actions.goinbox(ctx, { dataset: { goinbox: '9' } });
   assert.equal(ctx.S.inboxAt, 3, 'clamped to the end of the queue');
-  assert.deepEqual(go, ['inbox', 'inbox']);
-  assert.match(BUNDLE, /const upNext = R\.backlog\.slice\(0, 4\);/,
-    'which is only an absolute position because the cards come off the head of the queue');
+  assert.equal(rendered.length, 2, 'File is already showing: it only redraws');
+  assert.match(BUNDLE, /R\.backlog\.map\(\(t, i\) => \[t, i\]\)\.slice\(at \+ 1/,
+    'and the index is absolute because each card carries its own position in the queue');
 });
 
 /* ---------- artist roll-forward (docs/SMARTER-GENRES-PLAN.md, phase 4) ---------- */

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-1020">
+<meta name="bf-build" content="2026-11-15-1024">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -286,27 +286,14 @@
      four take one of the mark's colours each, so the tab, the Home card that
      opens it and the screen itself are the same colour, and that colour is
      the same one every time rather than whatever the accent spun off. */
-  [data-v="home"]{--vc:var(--accent); --vc-ink:var(--accent-ink)}
   [data-v="inbox"]{--vc:var(--m0); --vc-ink:var(--m0-ink)}
   [data-v="tidy"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
   [data-v="discover"]{--vc:var(--m3); --vc-ink:var(--m3-ink)}
   [data-v="shuffle"]{--vc:var(--m4); --vc-ink:var(--m4-ink)}
   [data-v="new"]{--vc:var(--m2); --vc-ink:var(--m2-ink)}
   [data-v="lists"]{--vc:var(--m4); --vc-ink:var(--m4-ink)}
-  [data-v="engine"]{--vc:var(--m2); --vc-ink:var(--m2-ink)}
-  [data-v="history"]{--vc:var(--m3); --vc-ink:var(--m3-ink)}
-  /* Behind More on a desktop as well as on a phone: five destinations is the
-     whole point of the fold, and the sheet lists them on both. */
-  aside .nav[data-sec]{display:none}
-  /* Lives in the More sheet on both form factors now. */
+  /* Disconnect and the account line live in the Settings sheet now. */
   .railfoot{display:none}
-  /* "More": same pill, on the top bar as well as the tab bar. */
-  .tabmore{appearance:none; border:1px solid var(--line); background:transparent; font:inherit; cursor:pointer;
-        padding:9px 16px; color:var(--ink-2); display:flex; align-items:center; gap:8px; flex:none;
-        border-radius:999px; font-size:13.5px; font-weight:600; white-space:nowrap}
-  .tabmore .ic{display:none}
-  .tabmore:hover{background:var(--surface-2); color:var(--ink); border-color:var(--line-2)}
-  .tabmore[aria-expanded="true"],.tabmore[aria-current="true"]{background:var(--surface-2); color:var(--ink)}
   /* The listening indicator: on a desktop it sits just before More, so the
      nav row (flex:1) gives up the room and More stays where it was (B8); the
      phone rule in 80-responsive moves it into the header. It holds
@@ -436,6 +423,61 @@
 .analyse { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; }
 .analyse .d { color: var(--ink-3); font-size: 13px; flex: 1 1 240px; }
 .analyse[role="status"] { padding: 10px 14px; border-radius: 12px; background: var(--card, rgba(127,127,127,.1)); font-variant-numeric: tabular-nums; }
+  /* ================= the shell (UI-D) =================
+     The File tab's status line and Up next strip, Library's segmented switch,
+     and the Settings sheet's "Under the hood" sections. */
+
+  /* One line: "42 to file · 1 to tidy · listening 37/412". */
+  .status{display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; margin:0 0 14px;
+          font-size:14px; color:var(--ink-2)}
+  .status b{font-family:var(--mono); font-weight:600; color:var(--ink)}
+  .status .dot{color:var(--ink-3)}
+  .status button{appearance:none; border:0; background:none; font:inherit; color:inherit; padding:0; cursor:pointer;
+          text-decoration:underline; text-decoration-color:var(--line-2); text-underline-offset:3px}
+  .status button:hover{color:var(--ink); text-decoration-color:var(--accent)}
+  .status .st-listen{color:var(--m2-ink, var(--ink-2))}
+
+  /* Up next: a strip you scroll sideways, under the deck. */
+  .upnext.strip{display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x proximity; padding:2px 2px 12px;
+          scrollbar-width:thin; -webkit-overflow-scrolling:touch}
+  .upnext.strip .u{flex:0 0 150px; scroll-snap-align:start; text-align:left; font:inherit; color:inherit; cursor:pointer}
+  .upnext.strip .u .cov{font-size:34px}
+  .upnext.strip .u .bd{padding:10px 12px 12px}
+  .upnext.strip .u .t{font-size:14px}
+  .upnext.strip .u .a{font-size:12.5px}
+  .upnext.strip .u .h{margin-top:7px; font-size:11px}
+  .libbar{margin-top:18px}
+
+  /* Library's way into New playlists and Shuffle. */
+  .libnav{display:flex; gap:4px; margin:0 0 16px; padding:4px; border-radius:999px; background:var(--surface-2);
+          width:max-content; max-width:100%; overflow-x:auto; scrollbar-width:none}
+  .libnav::-webkit-scrollbar{display:none}
+  .libnav .seg{appearance:none; border:0; background:none; font:inherit; font-size:13.5px; font-weight:600;
+          color:var(--ink-2); padding:7px 14px; border-radius:999px; cursor:pointer; white-space:nowrap;
+          transition:background var(--dur-1) ease, color var(--dur-1) ease}
+  .libnav .seg:hover{color:var(--ink)}
+  .libnav .seg[aria-selected="true"]{background:var(--surface); color:var(--ink); box-shadow:inset 0 0 0 1px var(--line-2)}
+  .libnav .c{display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 5px; margin-left:5px;
+          border-radius:9px; background:var(--m2); color:var(--m2-ink, #fff); font-size:10.5px; font-weight:700}
+
+  /* Settings: Under the hood. */
+  .settings-body #underHood{gap:0}
+  .uh{border:1px solid var(--line); border-radius:var(--r-2); margin:0 0 8px; background:var(--surface)}
+  .uh.open{background:var(--surface-2)}
+  .uhhead{appearance:none; border:0; background:none; font:inherit; color:inherit; cursor:pointer; width:100%;
+          display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; text-align:left}
+  .settings-body .uhhead{align-self:stretch}
+  .uht{display:flex; flex-direction:column; gap:2px; min-width:0}
+  .uht b{font-size:14.5px}
+  .uhs{font-size:12px; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .uhhead .chev{flex:none; width:8px; height:8px; border-right:2px solid var(--ink-3); border-bottom:2px solid var(--ink-3);
+          transform:rotate(45deg); transition:transform var(--dur-2) var(--ease-out)}
+  .uh.open .chev{transform:rotate(-135deg)}
+  .uhbody{padding:2px 14px 16px; overflow-x:auto}
+  /* The modules were written as whole screens: keep them inside a 390px sheet. */
+  .uhbody h2{font-size:15px; margin-top:18px}
+  .uhbody .card,.uhbody .panel{padding:14px; border-radius:var(--r-2)}
+  .uhbody table{max-width:100%}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-4); padding:26px 28px 28px; box-shadow:var(--shadow-2)}
   .prog{height:5px; background:var(--surface-3); border-radius:3px; overflow:hidden; margin-bottom:18px}
   .prog i{display:block; height:100%; border-radius:3px; transition:width var(--dur-3) var(--ease-out);
@@ -1137,29 +1179,6 @@
   .compact .row{padding:6px 12px 6px 15px}
   .compact .rows{gap:4px}
 
-  /* ---- the "More" sheet: the screens that don't fit the tab bar ---- */
-  .sheet{position:fixed; left:0; right:0; bottom:0; z-index:30; background:var(--surface);
-         border-top:1px solid var(--line); border-radius:20px 20px 0 0; box-shadow:0 -12px 34px rgba(0,0,0,.22);
-         transform:translateY(101%); visibility:hidden; transition:transform var(--dur-3) var(--ease-out);
-         padding-bottom:calc(var(--sab) + 12px); max-height:88dvh; display:flex; flex-direction:column}
-  .sheet.open{transform:translateY(0); visibility:visible}
-  /* On a wide screen a full-bleed drawer reads as a mistake. Same sheet,
-     narrowed and centred, so it is clearly a panel over the page. */
-  @media (min-width:821px){
-    .sheet{left:50%; right:auto; width:420px; transform:translate(-50%,101%);
-           border-radius:20px; border:1px solid var(--line); bottom:18px; padding-bottom:12px}
-    .sheet.open{transform:translate(-50%,0)}
-  }
-  .sheet h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0; padding:2px 20px 12px}
-  .sheetlist{overflow-y:auto; overscroll-behavior:contain; padding:0 12px 6px}
-  .sheet .nav{border:0; border-radius:14px; padding:12px 14px; font-size:14.5px; font-weight:600;
-        justify-content:flex-start; width:100%; white-space:normal}
-  .sheet .nav .ic{display:grid}
-  .sheet .nav .lbl{flex:1; text-align:left}
-  .sheet .nav[aria-current="true"]{background:var(--surface-2); color:var(--vc)}
-  .sheet .nav[aria-current="true"] .c{background:var(--surface-3); color:var(--ink-2)}
-  .sheet .nav .ic{width:22px; height:22px} .sheet .nav .ic svg{width:19px; height:19px}
-  .sheetfoot{display:flex; gap:8px; padding:12px 20px 0; border-top:1px solid var(--line); flex-wrap:wrap}
 
   /* ---- swiping between screens ---- */
   /* Screen change is a View Transition (web/app/motion.js): <main> is the only
@@ -1213,17 +1232,11 @@
   .discfit.out{color:var(--ink-3)}
   .discfit.hi .sub, .discfit.out .sub{font-weight:400}
   .discnokey input{flex:1 1 220px; min-width:0}
-  /* Which screen you are on, out of how many — the swipe needs an anchor. */
-  .dots{display:none; gap:5px; justify-content:center; padding:2px 0 10px; align-items:center}
-  .dots i{width:5px; height:5px; border-radius:50%; background:var(--line-2); transition:background var(--dur-2) ease, width var(--dur-2) ease}
-  .dots i.on{width:16px; border-radius:3px; background:var(--view)}
 
   /* ================= iPhone and other narrow screens ================= */
   @media (max-width:820px){
     .app{min-height:0}
     .mtop{display:flex}
-    /* Clears the fixed header for the first thing in the scroller. */
-    .dots{display:flex; padding-top:calc(var(--sat) + 60px)}
     .fabBar{top:calc(6px + var(--sat)); right:calc(10px + var(--sar))}
     .swipehint{display:flex}
 
@@ -1257,29 +1270,27 @@
     .listenslot .lp-bars i{width:3.5px}
     .listenslot .lp-txt{position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap}
     .navwrap{display:contents}
-    aside .nav, .tabmore{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    aside .nav{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
           gap:3px; padding:6px 2px 4px; border-radius:12px; min-height:48px;
           background:none; appearance:none; border:0; font:inherit; color:var(--ink-3); cursor:pointer}
-    aside .nav .ic, .tabmore .ic{display:grid}
-    aside .nav .lbl, .tabmore .lbl{flex:none; font-size:10px; letter-spacing:-.01em; font-weight:600; line-height:1;
+    aside .nav .ic{display:grid}
+    aside .nav .lbl{flex:none; font-size:10px; letter-spacing:-.01em; font-weight:600; line-height:1;
           max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-    aside .nav .ic, .tabmore .ic{width:24px; height:24px; border-radius:9px; transition:background var(--dur-1) ease, color var(--dur-1) ease}
-    aside .nav .ic svg, .tabmore .ic svg{width:19px; height:19px}
+    aside .nav .ic{width:24px; height:24px; border-radius:9px; transition:background var(--dur-1) ease, color var(--dur-1) ease}
+    aside .nav .ic svg{width:19px; height:19px}
     aside .nav[aria-current="true"]{background:none; color:var(--vc); view-transition-name:none}
     aside .nav[aria-current="true"] .ic{view-transition-name:vt-pill}
     aside .nav[aria-current="true"] .ic{background:color-mix(in srgb, var(--vc) 16%, transparent); color:var(--vc)}
-    .tabmore[aria-expanded="true"]{color:var(--ink); background:none}
-    /* Lit whenever the open screen is one of the three behind it. */
-    .tabmore[aria-current="true"]{color:var(--view); background:none}
-    .tabmore[aria-current="true"] .ic{background:color-mix(in srgb, var(--view) 16%, transparent); color:var(--view)}
-    aside .nav:active, .tabmore:active{transform:scale(.94)}
+    aside .nav:active{transform:scale(.94)}
     /* Counts ride the icon as a badge instead of sitting in a column. */
     aside .nav .c, aside .nav[aria-current="true"] .c{position:absolute; z-index:1; top:2px; left:50%; margin-left:5px;
           min-width:16px; height:16px; padding:0 4px;
           display:grid; place-items:center; border-radius:8px; font-size:9.5px; font-weight:700; line-height:1;
           background:var(--vc); color:var(--vc-ink); border:2px solid var(--surface)}
+    aside .nav .c:empty, aside .nav[aria-current="true"] .c:empty{display:none}
 
-    main{padding:8px calc(14px + var(--sar)) calc(var(--tabh) + var(--sab) + 26px) calc(14px + var(--sal)); max-width:none}
+    /* The top padding clears the fixed header for the first thing in the scroller. */
+    main{padding:calc(var(--sat) + 68px) calc(14px + var(--sar)) calc(var(--tabh) + var(--sab) + 26px) calc(14px + var(--sal)); max-width:none}
     h1{font-size:26px; margin-bottom:2px} h1::before{width:28px; height:3px; margin-bottom:8px}
     h2{font-size:16px; margin-top:24px}
     .lede{font-size:14px}
@@ -1348,7 +1359,7 @@
   }
   @media (max-width:344px){
     .acts4{grid-template-columns:1fr}
-    aside .nav .lbl, .tabmore .lbl{font-size:9.5px}
+    aside .nav .lbl{font-size:9.5px}
   }
 /* soundChip (WP-D4): one compact row per track, "174 BPM · 8A A minor". */
 .snd{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:.15em .45em;font-family:var(--mono);font-size:.78rem;line-height:1.35;color:var(--ink-2);font-variant-numeric:tabular-nums}
@@ -1491,7 +1502,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-1020</span>
+    <span class="mono">build 2026-11-15-1024</span>
   </p>
 
   <div class="feat">
@@ -1535,7 +1546,7 @@
   <p class="lede" style="font-size:13px">
     <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
     genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a>
-    (Spotify no longer provides genre — top yours up from the Sources screen) ·
+    (Spotify no longer provides genre — top yours up under Settings) ·
     release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
     <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.
   </p>
@@ -1555,7 +1566,6 @@
     </svg>
     <span class="title" id="mtitle">Overview</span>
   </div>
-  <div class="dots" id="dots" aria-hidden="true"></div>
   <aside>
     <div class="brand">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -1569,33 +1579,22 @@
       Better<span>fy</span>
     </div>
     <div class="who" id="who"></div>
-    <!-- Five destinations. Duplicates, Cross-filed and Misfiles were three
-         screens asking the same question — "is this in the right place?" — so
-         they are one screen, Tidy, with a section each. The three that remain
-         are marked data-sec and live behind More on both form factors. -->
+    <!-- Four tabs (docs/BUILD-5-PLAN.md §4.1). Sources, Engine and History live
+         in the Settings sheet ("Under the hood"); New playlists and Shuffle are
+         reached from Library. -->
     <div class="navwrap">
-      <button class="nav" data-v="home" aria-current="true"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg></span><span class="lbl">Home</span></button>
       <button class="nav" data-v="inbox"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/></svg></span><span class="lbl">File</span><span class="c" data-count="inbox"></span></button>
       <button class="nav" data-v="tidy"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 4.5H6a2.5 2.5 0 0 0-2.5 2.5v9.5"/></svg></span><span class="lbl">Tidy</span><span class="c" data-count="tidy"></span></button>
       <button class="nav" data-v="discover"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/></svg></span><span class="lbl">Discover</span></button>
-      <button class="nav" data-v="shuffle"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 4.5 20.5 7 17 9.5"/><path d="M17 14.5 20.5 17 17 19.5"/><path d="M3.5 7h3.2c1.2 0 2.3.6 3 1.6l4.6 6.8c.7 1 1.8 1.6 3 1.6h3.2"/><path d="M3.5 17h3.2c1.2 0 2.3-.6 3-1.6l.9-1.3"/><path d="M14.4 9.9l.9-1.3c.7-1 1.8-1.6 3-1.6h2.2"/></svg></span><span class="lbl">Shuffle</span></button>
-      <button class="nav" data-v="new" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11.5v5"/><path d="M9.5 14h5"/></svg></span><span class="lbl">New playlists</span><span class="c" data-count="new"></span></button>
-      <button class="nav" data-v="lists" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Playlists</span><span class="c" data-count="lists"></span></button>
-      <button class="nav" data-v="engine" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.1"/><path d="M12 4.2V7"/><path d="M12 17v2.8"/><path d="M4.2 12H7"/><path d="M17 12h2.8"/><path d="M6.5 6.5 8.4 8.4"/><path d="M15.6 15.6l1.9 1.9"/><path d="M17.5 6.5 15.6 8.4"/><path d="M8.4 15.6 6.5 17.5"/></svg></span><span class="lbl">Engine</span></button>
-      <button class="nav" data-v="history" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 12a8.4 8.4 0 1 0 2.6-6"/><path d="M3.4 3.6v4.2h4.2"/><path d="M12 7.8V12l3 1.8"/></svg></span><span class="lbl">History</span></button>
-      <button class="nav" data-v="sources" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="2.8"/><path d="M4.5 6v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6"/><path d="M4.5 12v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></svg></span><span class="lbl">Sources</span></button>
+      <button class="nav" data-v="lists"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Library</span><span class="c" data-count="new"></span></button>
     </div>
     <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): on a desktop it
-         sits just before More, so More stays put when it appears (B8); on a
+         sits at the end of the bar, so the tabs stay put when it appears (B8); on a
          phone it moves up into the header beside the corner buttons. Empty —
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
-    <!-- The screens that don't sit on the bar, on a phone and on a desktop. -->
-    <button class="tabmore" id="tabMore" aria-expanded="false" aria-controls="moreSheet">
-      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
-      <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1020</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1024</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1615,30 +1614,9 @@
      inside the app afterwards — both toggle #land/#app visibility, but
      neither ever hides this. -->
 <div class="fabBar">
-  <button class="fab" id="btnUpdate" title="Check for a newer version of Betterfy" aria-label="Check for a newer version of Betterfy">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M12 3.5v10.5"/><path d="M7.6 9.6 12 14l4.4-4.4"/><path d="M4.5 17v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2"/>
-    </svg>
-  </button>
   <button class="fab" id="btnSettings" title="Settings" aria-expanded="false" aria-controls="settingsPanel">⚙</button>
 </div>
 <div class="scrim" id="scrim"></div>
-
-<!-- The screens that don't fit on the tab bar. Filled from the rail so the two
-     can never list different things. -->
-<div class="sheet" id="moreSheet" aria-hidden="true" aria-label="More screens">
-  <div class="grabber" id="sheetGrab"></div>
-  <h2>More</h2>
-  <div class="sheetlist" id="sheetList"></div>
-  <div class="sheetfoot">
-    <button class="b sm" id="sheetSettings">Settings</button>
-    <button class="b sm" id="sheetDisconnect">Disconnect</button>
-    <!-- The rail used to carry these two. It is a bar now, with no room. -->
-    <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1020</span>
-  </div>
-</div>
 
 <div class="settings" id="settingsPanel" aria-hidden="true" aria-label="Settings">
   <div class="grabber"></div>
@@ -1647,6 +1625,12 @@
     <button class="iconbtn" id="closeSettings" aria-label="Close settings">✕</button>
   </div>
   <div class="settings-body">
+    <!-- Listening, the genre sources, the engine and History: filled by
+         app/shell.js, one open section at a time. -->
+    <section id="underHood">
+      <h3>Under the hood</h3>
+      <div id="uhBody"></div>
+    </section>
     <section>
       <h3>Appearance</h3>
       <p class="hint">Betterfy opens in Nightshift. System follows whatever your phone is doing, including its sunset schedule.</p>
@@ -1703,7 +1687,7 @@
       <p class="hint">Betterfy keeps up as you file, so this is only for changes made
         <em>outside</em> Betterfy — a playlist edited in Spotify itself. It re-reads every
         playlist and can take a few minutes on a large library. This is not the app
-        update: that is <b>⬇ Check for updates</b>, top right.</p>
+        update: that is <b>Check for updates</b>, under About below.</p>
       <button class="b" id="settingsResync" type="button">Re-sync library from Spotify</button>
     </section>
     <!-- Hidden entirely unless the build has a Firebase project configured —
@@ -1723,6 +1707,19 @@
       <div class="rowbtns">
         <input id="syncRedeemInput" placeholder="Code from the other device" size="22" inputmode="numeric" maxlength="6">
         <button class="b" id="syncRedeem" type="button">Link this device</button>
+      </div>
+    </section>
+    <section id="aboutSection">
+      <h3>About</h3>
+      <p class="hint">Betterfy, build 2026-11-15-1024. <span id="sheetWho" class="mono"></span><br>
+        <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
+        genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> ·
+        <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
+        release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
+        <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source and licences on GitHub</a>.</p>
+      <div class="rowbtns">
+        <button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button>
+        <button class="b" id="disconnect" type="button">Disconnect</button>
       </div>
     </section>
     <button class="b" id="resetTheme" type="button">Reset to defaults</button>
@@ -3117,58 +3114,36 @@ return { SOUND_UI_VERSION, SURE_CONF, soundChip, soundMark, sectionStrip, eviden
 })();
 /* ---- web/screens/home.mjs ---- */
 __mod["web/screens/home.mjs"] = (function () {
-/** Icons for the four things Home offers to do, matched to the tab bar. */
-const ACT_IC = {
-  inbox: '<path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/>',
-  tidy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 4.5H6a2.5 2.5 0 0 0-2.5 2.5v9.5"/>',
-  discover: '<circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/>',
-  shuffle: '<path d="M17 4.5 20.5 7 17 9.5"/><path d="M17 14.5 20.5 17 17 19.5"/><path d="M3.5 7h3.2c1.2 0 2.3.6 3 1.6l4.6 6.8c.7 1 1.8 1.6 3 1.6h3.2"/><path d="M3.5 17h3.2c1.2 0 2.3-.6 3-1.6l.9-1.3"/><path d="M14.4 9.9l.9-1.3c.7-1 1.8-1.6 3-1.6h2.2"/>',
-};
-ACT_IC.heard = '<path d="M5 14.5v4"/><path d="M9.5 9.5v9"/><path d="M14 5v13.5"/><path d="M18.5 10.5v8"/>';
-const actIcon = v => `<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ACT_IC[v]}</svg></span>`;
+/* File, the home tab (docs/BUILD-5-PLAN.md §4.1, UI-D). Home and File were two
+ * screens; this is one: a single status line, the "Analyse my library" strip,
+ * the File deck itself (the `inbox` module, handed in as ctx.deck), and Up next
+ * as a horizontal strip. With nothing left to file it is the done state and the
+ * library bar. The old Home's hero, four cards and facts panel are gone: the
+ * tab bar is the four cards, and Settings holds the rest. */
 
-/** "Evening" rather than a clock: the greeting is a tone, not a timestamp. */
-function partOfDay(d = new Date()) {
-  const h = d.getHours();
-  return h < 5 ? 'Late night' : h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
+/** "42 to file · 1 to tidy · listening 37/412", each part only when there is something to say. */
+function statusParts({ R, listenStatus }) {
+  const backlog = R.backlog.length, toTidy = R.within.length + R.misfiled.length;
+  const listen = typeof listenStatus === 'function' ? listenStatus() : '';
+  return { backlog, toTidy, listen };
 }
 
-function view(ctx) {
-  const { S, R, LIB, esc, isMirrorPlaylist, listenEverRan, listenHeard, listenTarget, tagCoverage,
-          analyseHTML, VHUE, HEARD_HUE, hueOf, filePicks } = ctx;
-  const exact = R.within.filter(x => x.verdict === 'same-recording').length;
-  const clash = R.within.length - exact;
-  const uniq = new Set(); let placements = 0;
-  for (const p of LIB.playlists) { if (isMirrorPlaylist(p)) continue;
-    for (const t of p.tracks) { uniq.add(t.id); placements++; } }
+function statusHTML(ctx) {
+  const { esc } = ctx;
+  const { backlog, toTidy, listen } = statusParts(ctx);
+  const parts = [`<span class="st-file"><b>${backlog.toLocaleString()}</b> to file</span>`,
+    `<button class="st-tidy" data-go="tidy"><b>${toTidy.toLocaleString()}</b> to tidy</button>`];
+  // Nothing is said about listening until it has run, so a listener who never
+  // turns it on reads the same line as before.
+  if (listen) parts.push(`<button class="st-listen" data-act="openlisten" data-listenstat>${esc(listen)}</button>`);
+  return `<div class="status" id="fileStatus" role="status">${parts.join('<span class="dot" aria-hidden="true">·</span>')}</div>`;
+}
 
+/** Where the library sits, as one bar over one population: your liked songs. */
+function libraryBarHTML({ R, LIB, esc, isMirrorPlaylist }) {
+  const uniq = new Set();
+  for (const p of LIB.playlists) { if (isMirrorPlaylist(p)) continue; for (const t of p.tracks) uniq.add(t.id); }
   const backlog = R.backlog.length;
-  const toTidy = R.within.length + R.misfiled.length;
-  const found = (S.discover ?? []).length;
-  const shufflable = LIB.playlists.filter(p => p.tracks.length >= 8).length;
-  const first = String(LIB.user?.name ?? '').trim().split(/\s+/)[0] ?? '';
-  const name = (!first.includes('@') && first.length <= 18) ? first : '';
-
-  // The four cards are the four screens, in the order you would work them.
-  const acts = [
-    ['inbox', backlog, 'likes with no home', 'File them one at a time, each with a suggested playlist.'],
-    ['tidy', toTidy, 'things to tidy', 'Repeats, version clashes and tracks filed in the wrong place.'],
-    ['discover', found, found ? "records you don't own" : 'nothing found yet',
-      found ? 'Built from what you actually played, minus everything you have.' : 'Run a search: weighted by what you played, minus what you own.'],
-    ['shuffle', shufflable, 'playlists to re-order', 'Spacing that keeps the same artist from clumping.'],
-  ];
-  // A fifth card once listening has ever run, and never before: a listener who
-  // never turns it on gets the same four cards, byte for byte.
-  if (listenEverRan()) acts.push(['heard', listenHeard(), listenHeard() === 1 ? 'track heard' : 'tracks heard',
-    'Previews listened to on this device, to place tracks by how they sound.']);
-
-  // Where the library sits, as one bar over one population: your liked songs.
-  // It used to mix three that came from different ones — liked-and-filed,
-  // cross-filing measured across the whole library, and a Tidy total that had
-  // already counted some of the same tracks twice — so the segments could sum
-  // to more than the library, and "Filed" clamped to zero on any library with
-  // much to tidy.
   const liked = LIB.liked.length;
   const likedIds = new Set(LIB.liked.map(t => t?.id).filter(Boolean));
   const crossLiked = R.across.filter(x => likedIds.has(x.id)).length;
@@ -3179,70 +3154,25 @@ function view(ctx) {
     ['Unfiled', backlog, 'm0'],
   ];
   const tot = seg.reduce((n, x) => n + x[1], 0) || 1;
-  const cov = tagCoverage();
-  const upNext = R.backlog.slice(0, 4);
-
-  return `<div class="hero">
-      <div class="in">
-        <div class="txt">
-          <div class="when">${esc(partOfDay())}${LIB.captured_at ? ' · synced ' + esc(LIB.captured_at.slice(0, 10)) : ''}</div>
-          <h1>${esc(partOfDay())}${name ? ', ' + esc(name) : ''}. ${backlog
-            ? `${backlog.toLocaleString()} liked ${backlog === 1 ? 'song' : 'songs'} still ${backlog === 1 ? 'needs' : 'need'} a home.`
-            : 'Your library is in good shape.'}</h1>
-          <p>Nothing is written to Spotify until you tap something — and every change can be undone.</p>
-        </div>
-        <div class="tile">
-          <svg viewBox="0 0 32 32" aria-hidden="true">
-            <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
-            <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" style="fill:var(--m1)"/>
-            <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7" style="fill:var(--m2)"/>
-            <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/>
-            <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
-          </svg>
-        </div>
+  return `<div class="panel libbar">
+      <div class="ph">
+        <h2>Where your library sits</h2>
+        <span class="mono">${uniq.size.toLocaleString()} tracks · ${LIB.playlists.length} playlists</span>
       </div>
-    </div>
+      <div class="bar">${seg.map(([, n, c]) =>
+        `<i style="width:${(100 * n / tot).toFixed(2)}%; background:var(--${c})"></i>`).join('')}</div>
+      <div class="key">${seg.map(([l, n, c]) =>
+        `<span><i style="background:var(--${c})"></i>${esc(l)} <b>${n.toLocaleString()}</b></span>`).join('')}</div>
+    </div>`;
+}
 
-    ${analyseHTML()}
-
-    <div class="acts4${acts.length > 4 ? ' five' : ''}">${acts.map(([v, n, label, desc]) => `
-      <button class="act" data-go="${v === 'heard' ? listenTarget() : v}"${v === 'heard' ? ' data-heard' : ''} style="--ac:var(--${VHUE[v] ?? HEARD_HUE}); --ac-ink:var(--${VHUE[v] ?? HEARD_HUE}-ink)">
-        ${actIcon(v)}
-        <span class="n">${n.toLocaleString()}</span>
-        <span class="l">${esc(label)}</span>
-        <span class="d">${esc(desc)}</span>
-      </button>`).join('')}</div>
-
-    <div class="split">
-      <div class="panel">
-        <div class="ph">
-          <h2>Where your library sits</h2>
-          <span class="mono">${uniq.size.toLocaleString()} tracks · ${LIB.playlists.length} playlists</span>
-        </div>
-        <div class="bar">${seg.map(([, n, c]) =>
-          `<i style="width:${(100 * n / tot).toFixed(2)}%; background:var(--${c})"></i>`).join('')}</div>
-        <div class="key">${seg.map(([l, n, c]) =>
-          `<span><i style="background:var(--${c})"></i>${esc(l)} <b>${n.toLocaleString()}</b></span>`).join('')}</div>
-      </div>
-      <div class="panel">
-        <h2 style="margin:0 0 16px">Your library</h2>
-        <div class="facts">
-          <div><span>Liked songs</span><b class="mono">${liked.toLocaleString()}</b></div>
-          <div><span>Placements</span><b class="mono">${placements.toLocaleString()}</b></div>
-          <div><span>Exact repeats</span><b class="mono">${exact.toLocaleString()}</b></div>
-          <div><span>Version clashes</span><b class="mono">${clash.toLocaleString()}</b></div>
-          <div><span>Genre coverage</span><b class="mono">${cov.pct}%</b></div>
-          <hr>
-          <p>Genre comes from Last.fm — Spotify stopped providing it. Top yours up under Sources.</p>
-        </div>
-      </div>
-    </div>
-
-    ${upNext.length ? `<div class="seehead">
-      <h2 style="margin:0">Next up to file</h2>
-      <button class="more" data-go="inbox">Open the queue →</button>
-    </div>
-    <div class="upnext">${upNext.map((t, i) => {
+/** The next few after the one on the deck, as a strip you can scroll sideways. */
+function upNextHTML({ S, R, esc, hueOf, filePicks }) {
+  const at = Math.min(S.inboxAt ?? 0, R.backlog.length - 1);
+  const upNext = R.backlog.map((t, i) => [t, i]).slice(at + 1, at + 9);
+  if (!upNext.length) return '';
+  return `<div class="seehead"><h2 style="margin:0">Up next</h2></div>
+    <div class="upnext strip">${upNext.map(([t, i]) => {
       const best = (filePicks ? filePicks(t) : t.suggest ?? [])[0];
       const strong = best && best.score >= 0.7;
       const h = hueOf(t.id ?? t.title ?? '');
@@ -3255,21 +3185,29 @@ function view(ctx) {
         <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
           ? `→ ${esc(best.name)} ${(best.score * 100).toFixed(0)}%` : '→ no confident pick'}</span>
       </span></button>`;
-    }).join('')}</div>` : ''}`;
+    }).join('')}</div>`;
 }
 
+function view(ctx) {
+  const { R, analyseHTML, deck } = ctx;
+  const head = statusHTML(ctx) + analyseHTML();
+  // Nothing to file: the deck's own done card, then where the library stands.
+  if (!R.backlog.length) return `${head}${deck()}${libraryBarHTML(ctx)}`;
+  return `${head}${deck()}${upNextHTML(ctx)}`;
+}
 
 const actions = {
   analyseGo: ({ analyseGo }) => analyseGo(),
-  // A card under "Next up to file" opens the queue on that track, not at the top.
+  openlisten: ({ openUnderHood }) => openUnderHood('sources'),
+  // A card under "Up next" opens the queue on that track, not at the top.
   // Its index is an absolute position in the queue, not an offset from wherever
   // the queue was left.
-  goinbox({ S, R, go }, el) {
+  goinbox({ S, R, render }, el) {
     S.inboxAt = Math.min(+el.dataset.goinbox || 0, Math.max(R.backlog.length - 1, 0));
-    return go('inbox');
+    return render();
   },
 };
-return { partOfDay, view, actions };
+return { statusParts, statusHTML, libraryBarHTML, upNextHTML, view, actions };
 })();
 /* ---- web/screens/history.mjs ---- */
 __mod["web/screens/history.mjs"] = (function () {
@@ -3823,7 +3761,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-1020`,
+    `Betterfy engine score — build 2026-11-15-1024`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5365,13 +5303,13 @@ const store = (() => {
 /* Which slices repaint which screen. `ui.<screen>` always repaints that screen
  * (and only it); the shared slices are listed here. A screen not listed for a
  * slice ignores it. */
-const STORE_SCREENS = ['home', 'inbox', 'tidy', 'new', 'discover', 'shuffle', 'lists', 'engine', 'history', 'sources'];
+const STORE_SCREENS = ['inbox', 'tidy', 'new', 'discover', 'shuffle', 'lists', 'engine', 'history', 'sources'];
 const STORE_WATCH = {
   lib:     STORE_SCREENS,
   reports: STORE_SCREENS,
   eng:     ['engine'],
-  sound:   ['home', 'inbox'],
-  audio:   ['home', 'inbox', 'tidy'],
+  sound:   ['inbox'],
+  audio:   ['inbox', 'tidy', 'sources'],
   gaps:    ['new'],
   player:  [],
 };
@@ -5382,6 +5320,9 @@ for (const screen of STORE_SCREENS)
 
 /** Repaint the current screen if it is one of `screens` and the page is up. */
 function storeRepaint(screens) {
+  // Engine, History and Sources are sections of the Settings sheet now: repaint
+  // the one that is open, and not the page behind it.
+  if (typeof settingsOpen === 'function' && settingsOpen() && screens.includes(S.uhOpen)) underHoodRefresh();
   if (typeof view === 'undefined' || !screens.includes(view) || !document.getElementById('main')) return;
   render();
 }
@@ -5591,7 +5532,7 @@ function openSettings(open) {
   const panel = $('#settingsPanel'), scrim = $('#scrim'), trigger = $('#btnSettings');
   panel.classList.toggle('open', open); scrim.classList.toggle('open', open);
   panel.setAttribute('aria-hidden', String(!open)); trigger.setAttribute('aria-expanded', String(open));
-  if (open) $('#closeSettings').focus(); else trigger.focus();
+  if (open) { $('#closeSettings').focus(); underHoodOpen(); } else trigger.focus();
   routeNote();
 }
 
@@ -5621,11 +5562,10 @@ function initSettingsPanel() {
   const panel = $('#settingsPanel'), scrim = $('#scrim'), trigger = $('#btnSettings');
   trigger.onclick = () => openSettings(!panel.classList.contains('open'));
   $('#closeSettings').onclick = () => openSettings(false);
-  scrim.onclick = () => { openSettings(false); openSheet(false); };
+  scrim.onclick = () => openSettings(false);
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     if (panel.classList.contains('open')) openSettings(false);
-    closeSheet();
   });
 
   // On System, the accent has to swap to its other twin when the phone does.
@@ -5678,7 +5618,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-1020';
+const BUILD = '2026-11-15-1024';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -5999,7 +5939,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-1020', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-1024', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -6613,7 +6553,7 @@ function backlogSuggest(t, lib, cfg, tags, profiles, idf,
 }
 
 /* ===================== UI ===================== */
-let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'home';
+let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'inbox';
 const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null,
             fileSel:new Set(), fileSelFor:null, shown:{} };
 
@@ -6633,24 +6573,37 @@ function moreButton(key, total) {
     <span class="mono" style="color:var(--ink-3)">· ${n.toLocaleString()} of ${total.toLocaleString()}</span></button></div>`;
 }
 
-// Bar order, which is also swipe order: swiping left and right on a phone
+// Bar order: the four tabs, which is also swipe order. Swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
-const VORDER = ['home','inbox','tidy','discover','shuffle','new','lists','engine','history','sources'];
+// New playlists and Shuffle follow Library: they are reached from it, and a
+// swipe on from Library lands on them. Sources, Engine and History are not
+// screens any more: they are sections of the Settings sheet (app/shell.js).
+const TABS = ['inbox','tidy','discover','lists'];
+const VORDER = [...TABS, 'new', 'shuffle'];
 // The five colours of the mark, one per screen — see the [data-v=…] rules in
 // the stylesheet, which have to agree with this.
-const VHUE = { home:'accent', inbox:'m0', tidy:'m1', discover:'m3', shuffle:'m4',
-               new:'m2', lists:'m4', engine:'m2', history:'m3', sources:'m1' };
-const VTITLE = { home:'Home', inbox:'File', tidy:'Tidy', discover:'Discover', shuffle:'Shuffle',
-                 new:'New playlists', lists:'Playlists', engine:'Engine', history:'History',
-                 sources:'Sources' };
-// The three that live behind "More" rather than on the bar.
-const SECONDARY = new Set(['new','lists','engine','history','sources']);
+const VHUE = { inbox:'m0', tidy:'m1', discover:'m3', lists:'m4', new:'m2', shuffle:'m4' };
+const VTITLE = { inbox:'File', tidy:'Tidy', discover:'Discover', lists:'Library',
+                 new:'New playlists', shuffle:'Shuffle' };
+// Screens that sit under another tab on the bar.
+const TAB_OF = { new:'lists', shuffle:'lists' };
+const tabOf = v => TAB_OF[v] ?? v;
+// Old screen names and where they went: Home became File; Sources, Engine and
+// History became sections of the Settings sheet. go() and the router use it.
+const LEGACY_VIEWS = {
+  home:    { view: 'inbox' },
+  sources: { section: 'sources' },
+  engine:  { section: 'engine' },
+  history: { section: 'history' },
+};
 let toastT;
 function toast(msg, undoFn) {
   const el = $('#toast');
-  el.innerHTML = esc(msg) + (undoFn ? ' <button id="undoBtn">Undo</button>' : '');
+  // Every Undo toast also says where the full log is: the Settings sheet's History.
+  el.innerHTML = esc(msg) + (undoFn ? ' <button id="undoBtn">Undo</button> <button id="histBtn">History</button>' : '');
   el.hidden = false;
   if (undoFn) $('#undoBtn').onclick = async () => { try { await undoFn(); toast('Restored.'); } catch(e){ toast('Undo failed: '+e.message); } };
+  if (undoFn) $('#histBtn').onclick = () => { el.hidden = true; openUnderHood('history'); };
   clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, undoFn ? 9000 : 3200);
 }
 
@@ -6916,9 +6869,6 @@ async function playTrack(id) {
  * With no ListenVM the slot stays empty and Home keeps its four cards. */
 let LISTEN = null;
 const HEARD_HUE = 'm2';
-/** Where a tap on the indicator or the Heard card goes: Sources → Listening once
- *  that screen exists (UI-3), Playlists until then. */
-const listenTarget = () => (typeof VIEWS !== 'undefined' && VIEWS.sources) ? 'sources' : 'lists';
 /** Tracks heard so far, all runs together: B2's ListenVM counts them as `heard`
  *  (`done` restarts with every run), and a bare ListenVM falls back to `done`. */
 const listenHeard = () => LISTEN ? (LISTEN.heard ?? LISTEN.done ?? 0) : 0;
@@ -6931,12 +6881,13 @@ function setListen(vm) {
   const had = listenEverRan();
   LISTEN = vm ?? null;
   paintListen();
-  if (typeof view === 'undefined' || view !== 'home' || !$('#main')) return;
-  // Only a card appearing or going re-draws Home; a count ticking up while
-  // listening runs updates in place, so the cards don't replay their entrance.
-  if (had !== listenEverRan()) return store.touch('ui.home');
-  const n = $('#main .act[data-heard] .n');
-  if (n) n.textContent = listenHeard().toLocaleString();
+  if (typeof view === 'undefined' || view !== 'inbox' || !$('#main')) return;
+  // Only the status part appearing or going re-draws File; a count ticking up
+  // while listening runs updates in place, so the deck doesn't repaint under
+  // a hand that is picking a playlist.
+  if (had !== listenEverRan()) return store.touch('ui.inbox');
+  const n = $('#main [data-listenstat]');
+  if (n) n.textContent = listenStatus();
 }
 
 function paintListen() {
@@ -6953,7 +6904,7 @@ function paintListen() {
 }
 {
   const slot = document.getElementById('listenSlot');
-  const open = () => { if (slot.childElementCount || slot.textContent.trim()) go(listenTarget()); };
+  const open = () => { if (slot.childElementCount || slot.textContent.trim()) openUnderHood('sources'); };
   slot?.addEventListener('click', open);
   slot?.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
 }
@@ -8692,9 +8643,14 @@ function swapScreen(dir, update) {
   const t = typed ? document.startViewTransition({ update, types: [type] }) : document.startViewTransition(update);
   t.finished.finally(() => { delete root.dataset.dir; });
 }
-const VIEWS = { home:screenView('home'), inbox:screenView('inbox'), tidy:screenView('tidy'),
-                new:screenView('new'), discover:screenView('discover'), shuffle:screenView('shuffle'), lists:screenView('lists'),
-                engine:screenView('engine'), history:screenView('history'), sources:screenView('sources') };
+// File is the home tab: the `home` module composes the status strip, the File
+// deck (the `inbox` module) and Up next. Library is, for now, Playlists with
+// New playlists and Shuffle one tap away (libNav, app/shell.js); the screens
+// themselves are untouched.
+const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
+                lists:() => libNav('lists') + screenView('lists')(),
+                new:() => libNav('new') + screenView('new')(),
+                shuffle:() => libNav('shuffle') + screenView('shuffle')() };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -8713,11 +8669,12 @@ function render(dir) {
   const main = $('#main');
   main.dataset.view = view;
   main.innerHTML = VIEWS[view]();
-  SCREEN_MODS[view]?.mount?.(screenCtx(view));
+  for (const m of actScreens(view)) SCREEN_MODS[m]?.mount?.(screenCtx(m));
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
-  document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
-  $('#tabMore').setAttribute('aria-current', String(SECONDARY.has(view)));
+  document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === tabOf(view))));
+  // The Settings sheet's sections repaint with the page they sit on.
+  underHoodRefresh();
 
   const counts = { inbox:R.backlog.length, tidy:R.within.length + R.misfiled.length,
                    new:R.clusters.length, lists:LIB.playlists.length };
@@ -8726,11 +8683,6 @@ function render(dir) {
     // On the tab bar this rides the icon, so it has to stay narrow.
     el.textContent = !n ? '' : n > 999 ? '999+' : String(n);
   });
-
-  const dots = $('#dots');
-  if (dots.childElementCount !== VORDER.length) dots.innerHTML = VORDER.map(() => '<i></i>').join('');
-  const at = VORDER.indexOf(view);
-  [...dots.children].forEach((d, i) => d.classList.toggle('on', i === at));
 
   bindSwipeCard();
 
@@ -8744,6 +8696,14 @@ function render(dir) {
 
 /** Move to another screen: animates in the direction of travel and starts at the top. */
 function go(v) {
+  // Screens that moved: Home became File; Sources, Engine and History became
+  // sections of the Settings sheet. Anything still asking for them lands there.
+  if (LEGACY_VIEWS[v]) {
+    const to = LEGACY_VIEWS[v];
+    return to.section ? openUnderHood(to.section) : go(to.view);
+  }
+  // A tap on a tab or card takes you out of the sheet.
+  if (settingsOpen()) openSettings(false);
   if (v === view) return render();
   const dir = VORDER.indexOf(v) >= VORDER.indexOf(view) ? 1 : -1;
   view = v;
@@ -8866,7 +8826,7 @@ function bindAppGestures() {
     if (m === 'page' && Math.abs(dx) > VTH) {
       const at = VORDER.indexOf(view);
       const next = VORDER[at + (dx < 0 ? 1 : -1)];
-      if (next) { buzz(6); if (next === 'history') S.history = await getLog(); go(next); }
+      if (next) { buzz(6); go(next); }
     }
   };
   // guard() itself isn't declared until further down the script — bindAppGestures()
@@ -8880,52 +8840,28 @@ function bindAppGestures() {
   });
 }
 
-/* ---------- the "More" sheet ---------- */
-function openSheet(open) {
-  const sheet = $('#moreSheet');
-  sheet.classList.toggle('open', open);
-  sheet.setAttribute('aria-hidden', String(!open));
-  $('#scrim').classList.toggle('open', open);
-  $('#tabMore').setAttribute('aria-expanded', String(open));
-  routeNote();
-}
-const closeSheet = () => { if ($('#moreSheet').classList.contains('open')) openSheet(false); };
-
+/* ---------- sheet dragging ----------
+ * The Settings sheet is the only sheet now (the More sheet went with the fifth
+ * and later tabs, docs/BUILD-5-PLAN.md UI-D). On a phone it can be dragged down
+ * by its handle to dismiss it, the way every other sheet on the phone behaves. */
 function initSheet() {
-  // Cloned from the rail so the two lists can never disagree.
-  const list = $('#sheetList');
-  document.querySelectorAll('aside .nav[data-sec]').forEach(n => {
-    const c = n.cloneNode(true);
-    c.removeAttribute('data-sec');
-    list.appendChild(c);
+  const el = $('#settingsPanel'), close = () => $('#closeSettings').click();
+  let y0 = 0, d = 0, on = false;
+  const grab = el.querySelector('.grabber') ?? el;
+  grab.addEventListener('touchstart', e => {
+    if (!isPhone()) return;
+    on = true; d = 0; y0 = e.touches[0].clientY; el.style.transition = 'none';
+  }, { passive: true });
+  grab.addEventListener('touchmove', e => {
+    if (!on) return;
+    d = Math.max(0, e.touches[0].clientY - y0);
+    el.style.transform = `translateY(${d}px)`;
+  }, { passive: true });
+  grab.addEventListener('touchend', () => {
+    if (!on) return;
+    on = false; el.style.transition = ''; el.style.transform = '';
+    if (d > 70) close();
   });
-  $('#tabMore').onclick = () => openSheet(!$('#moreSheet').classList.contains('open'));
-  $('#sheetSettings').onclick = () => { closeSheet(); $('#btnSettings').click(); };
-  $('#sheetDisconnect').onclick = () => { closeSheet(); $('#disconnect').click(); };
-
-  // Drag either sheet down by its handle to dismiss it, the way every other
-  // sheet on the phone behaves.
-  for (const [el, close] of [[$('#moreSheet'), () => openSheet(false)],
-                             [$('#settingsPanel'), () => $('#closeSettings').click()]]) {
-    let y0 = 0, d = 0, on = false;
-    const grab = el.querySelector('.grabber') ?? el;
-    // Phone only: above the breakpoint the More sheet is centred with its own
-    // translate, and writing a bare translateY here would throw it off-centre.
-    grab.addEventListener('touchstart', e => {
-      if (!isPhone()) return;
-      on = true; d = 0; y0 = e.touches[0].clientY; el.style.transition = 'none';
-    }, { passive: true });
-    grab.addEventListener('touchmove', e => {
-      if (!on) return;
-      d = Math.max(0, e.touches[0].clientY - y0);
-      el.style.transform = `translateY(${d}px)`;
-    }, { passive: true });
-    grab.addEventListener('touchend', () => {
-      if (!on) return;
-      on = false; el.style.transition = ''; el.style.transform = '';
-      if (d > 70) close();
-    });
-  }
 }
 
 /* A hairline under the phone header once the content has scrolled beneath it. */
@@ -8933,24 +8869,31 @@ addEventListener('scroll', () => {
   const top = $('#mtop');
   if (top) top.classList.toggle('stuck', scrollY > 4);
 }, { passive: true });
-
 /* ---------- router (docs/BUILD-5-PLAN.md A6, fixes B9) ----------
  * One history entry per screen and per open sheet, so the browser's and
  * Android's back button closes a sheet first and then walks back through the
  * screens instead of leaving the app. The address is a hash (#/tidy,
- * #/tidy/more, #/tidy/settings): it works on static hosting with no server
+ * #/tidy/settings): it works on static hosting with no server
  * rewrites, and it never touches the ?code= / ?error= query sign-in returns on.
  *
  * makeRouter() takes everything it touches, so the tests can run it against a
- * fake history. go(), openSheet() and openSettings() call routeNote() after
+ * fake history. go() and openSettings() call routeNote() after
  * they change anything; boot calls ROUTER.start() once the app is showing. */
 function makeRouter(env) {
   const { views, hist, loc, getView, setView, getSheet, setSheet } = env;
-  let active = false, applying = false, settling = false;
+  // Screens that moved (UI-D): { name: { view } } for one that is now another
+  // screen, { name: { section } } for one that is now a section of the Settings
+  // sheet. An old link or bookmark still lands somewhere sensible.
+  const moved = env.moved ?? {}, fallback = env.fallback ?? 'inbox';
+  let active = false, applying = false, settling = false, landedSection = null;
 
   const parse = hash => {
     const [v, s] = String(hash || '').replace(/^#\/?/, '').split('/');
-    return { view: views.includes(v) ? v : null, sheet: s === 'more' || s === 'settings' ? s : null };
+    const old = Object.hasOwn(moved, v) ? moved[v] : null;
+    const r = { view: views.includes(v) ? v : old?.view ?? null,
+                sheet: s === 'settings' || old?.section ? 'settings' : null };
+    if (old?.section) r.section = old.section;
+    return r;
   };
   const hashOf = (view, sheet) => '#/' + view + (sheet ? '/' + sheet : '');
   const here = () => ({ view: getView(), sheet: getSheet() });
@@ -8989,22 +8932,24 @@ function makeRouter(env) {
 
   /** The screen the URL asks for, falling back to home; claims the first entry. */
   function start() {
-    const view = parse(loc.hash).view ?? 'home';
+    const at = parse(loc.hash), view = at.view ?? fallback;
+    landedSection = at.section ?? null;
     active = true;
     hist.replaceState(stamp({ view, sheet: null }), '', hashOf(view, null));
     return view;
   }
 
-  return { parse, hashOf, start, note, onPop, get active() { return active; } };
+  return { parse, hashOf, start, note, onPop, get active() { return active; },
+           /** The Settings section an old link (#/sources) asked for; read once, after start(). */
+           get section() { const s = landedSection; landedSection = null; return s; } };
 }
 
 const ROUTER = typeof document === 'undefined' ? null : makeRouter({
-  views: VORDER, hist: history, loc: location,
+  views: VORDER, hist: history, loc: location, moved: LEGACY_VIEWS, fallback: 'inbox',
   getView: () => view,
-  getSheet: () => $('#moreSheet').classList.contains('open') ? 'more'
-    : $('#settingsPanel').classList.contains('open') ? 'settings' : null,
+  getSheet: () => settingsOpen() ? 'settings' : null,
   setView: v => go(v),
-  setSheet: s => { openSettings(s === 'settings'); openSheet(s === 'more'); },
+  setSheet: s => openSettings(s === 'settings'),
 });
 if (ROUTER) addEventListener('popstate', () => ROUTER.onPop());
 function routeNote() { ROUTER?.note(); }
@@ -9055,7 +9000,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-1020';
+    s.src = 'engine.js?v=2026-11-15-1024';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -9077,7 +9022,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-1020');
+    const w = new Worker('engine-worker.js?v=2026-11-15-1024');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9552,7 +9497,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-1020';
+    s.src = 'audio.js?v=2026-11-15-1024';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -9588,7 +9533,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1020', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1024', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -9640,7 +9585,7 @@ function audioMidRun(vm) {
   fire((async () => {
     try { await audioRefresh(); } finally { AUDIO_MIDRUN_AT.busy = false; }
     // The File card picks new tracks up through soundHear; a rebuild is due only once enough more was heard.
-    if (view === 'inbox' || view === 'home') soundWarm();
+    if (view === 'inbox') soundWarm();
     store.touch('audio');
   })());
 }
@@ -9958,7 +9903,7 @@ async function blendStart() {
     if (!base) { BLEND.status = 'off'; return; }
     Object.assign(BLEND, { rec, base, native, targets: targets.join(), status: 'ready', err: null });
     blendSetBridge(raw);
-    if (view === 'inbox' || view === 'home') render();
+    if (view === 'inbox') render();
     fire(blendFetch());
   } catch (e) {
     Object.assign(BLEND, { status: 'error', err: e?.message ?? String(e), space: null });
@@ -10241,7 +10186,7 @@ function soundSearchHTML() {
 let AUDIO_DRAW = 0;
 function audioRedraw() {
   setListen(AUDIO.vm);
-  if (view !== 'sources') return;
+  if (!settingsOpen() || S.uhOpen !== 'sources') return;
   if (AUDIO_DRAW) return;
   AUDIO_DRAW = requestAnimationFrame(() => {
     AUDIO_DRAW = 0;
@@ -10322,7 +10267,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1020', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1024', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -10520,7 +10465,7 @@ function analyseDeps() {
       if (el) { el.hidden = !st.running; el.querySelector('.txt').textContent = analyseStatus(st); }
       const b = document.getElementById('analyseGo'); if (b) b.disabled = !!st.running;
     },
-    go: v => { if (view === 'home') go(v); },
+    go: v => { if (view === 'inbox') go(v); },
   };
 }
 
@@ -10586,9 +10531,12 @@ async function dispatchAct(e) {
   const el = e.target.closest?.('[data-act]');
   if (!el) return false;
   if ((e.type === 'change') !== el.matches('select, input[type=checkbox], input[type=radio]')) return false;
-  const fn = SCREEN_MODS[view]?.actions?.[el.dataset.act];
-  if (!fn) return false;
-  await fn(screenCtx(view), el, e);
+  // A control inside a Settings section belongs to that section's module,
+  // whichever tab is showing behind the sheet.
+  const host = el.closest('[data-uh]')?.dataset.uh;
+  const owner = (host ? [host] : actScreens(view)).find(n => SCREEN_MODS[n]?.actions?.[el.dataset.act]);
+  if (!owner) return false;
+  await SCREEN_MODS[owner].actions[el.dataset.act](screenCtx(owner), el, e);
   return true;
 }
 
@@ -10615,8 +10563,9 @@ SCREEN_CTX.new = () => ({
 });
 // --- home/inbox ---
 Object.assign(SCREEN_CTX, {
-  home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenEverRan, listenHeard, listenTarget, tagCoverage,
-                 analyseHTML, analyseGo, VHUE, HEARD_HUE, hueOf, filePicks, go }),
+  // The File tab: the status line and Up next around the `inbox` module's deck.
+  home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks,
+                 render, openUnderHood, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
                   addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, recordSkip, recordReject,
@@ -10636,12 +10585,103 @@ SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, disc
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
   runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall });
 // --- end shuffle/discover ---
+/* ---------- the shell: four tabs and the Settings sheet (docs/BUILD-5-PLAN.md §4.1, UI-D) ----------
+ * File, Tidy, Discover and Library are the tabs. Everything that used to be a
+ * screen of its own and is not one of those lives in the Settings sheet under
+ * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs),
+ * Engine and History. Their modules (screens/sources|engine|history.mjs) are
+ * unchanged: this file paints each one's view into the sheet, one section open
+ * at a time, and dispatchAct() (screens.js) finds their actions through the
+ * [data-uh] wrapper. Anything still asking for the old screens by name is sent
+ * to the right place (LEGACY_VIEWS, used by go() and the router). */
+
+/** The sections of "Under the hood", in order, and what each says when closed. */
+const UH_SECTIONS = [
+  ['sources', 'Listening and genre sources', () => {
+    let on = false, key = false;
+    try { on = !!audioSettings().on; } catch { /* before the audio glue loads */ }
+    try { key = !!lfmKey(); } catch { /* no key */ }
+    return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? 'connected' : 'no key'} · Wikidata · Discogs`;
+  }],
+  ['engine', 'Engine', () => 'How picks are scored, and how well'],
+  ['history', 'History', () => 'Everything Betterfy wrote to Spotify, with undo'],
+];
+
+/** The screens whose modules answer a click on the page behind `v`: File is two. */
+const actScreens = v => v === 'inbox' ? ['home', 'inbox'] : [v];
+
+const settingsOpen = () => !!$('#settingsPanel')?.classList.contains('open');
+
+/** One line of status for the File tab: "listening 37/412", or empty before listening has ever run. */
+function listenStatus() {
+  if (!listenEverRan()) return '';
+  const done = LISTEN.done ?? 0, total = LISTEN.total ?? 0;
+  if (LISTEN.state === 'running' && total) return `listening ${Math.min(done, total).toLocaleString()}/${total.toLocaleString()}`;
+  const heard = listenHeard();
+  return heard ? `${heard.toLocaleString()} heard` : '';
+}
+
+/** The strip at the top of Library's screens: Playlists, New playlists, Shuffle. */
+function libNav(cur) {
+  const n = R.clusters.length;
+  const tabs = [['lists', 'Playlists', ''], ['new', 'New playlists', n ? ` <span class="c">${n > 999 ? '999+' : n}</span>` : ''],
+                ['shuffle', 'Shuffle', '']];
+  return `<div class="libnav" role="tablist" aria-label="Library">${tabs.map(([v, l, c]) =>
+    `<button class="seg" role="tab" data-go="${v}" aria-selected="${v === cur}">${l}${c}</button>`).join('')}</div>`;
+}
+
+function underHoodHTML() {
+  return UH_SECTIONS.map(([name, title, sub]) => {
+    const open = S.uhOpen === name;
+    let body = '';
+    if (open) {
+      // The module's own page heading is the section title here.
+      try { body = SCREEN_MODS[name].view(screenCtx(name)).replace(/^\s*<h1>[^<]*<\/h1>/, ''); }
+      catch (e) { body = `<p class="hint">Couldn’t draw this: ${esc(e.message)}</p>`; }
+    }
+    return `<div class="uh${open ? ' open' : ''}" data-uhsec="${name}">
+      <button class="uhhead" type="button" data-uhtoggle="${name}" aria-expanded="${open}">
+        <span class="uht"><b>${esc(title)}</b><span class="uhs">${esc(sub())}</span></span><span class="chev" aria-hidden="true"></span>
+      </button>${open ? `<div class="uhbody" data-uh="${name}">${body}</div>` : ''}</div>`;
+  }).join('');
+}
+
+/** Repaint the sections while the sheet is up. Keeps the sheet's scroll where it was. */
+function underHoodRefresh() {
+  const host = $('#uhBody');
+  if (!host || !settingsOpen()) return;
+  const scroller = host.closest('.settings-body'), top = scroller?.scrollTop ?? 0;
+  host.innerHTML = underHoodHTML();
+  if (scroller) scroller.scrollTop = top;
+}
+
+/** Load what the open section needs, then paint. The sheet calls this each time it opens. */
+async function underHoodOpen() {
+  if (S.uhOpen === 'history') S.history = await getLog();
+  underHoodRefresh();
+  if (S.uhJump) {
+    S.uhJump = false;
+    document.querySelector(`[data-uhsec="${S.uhOpen}"]`)?.scrollIntoView({ block: 'start' });
+  }
+}
+
+/** Open the Settings sheet on one of its sections (or just open it with none). */
+function openUnderHood(section) {
+  if (section) { S.uhOpen = section; S.uhJump = true; }
+  if (settingsOpen()) underHoodOpen(); else openSettings(true);
+}
+
+document.addEventListener('click', guard(async e => {
+  const t = e.target.closest?.('[data-uhtoggle]');
+  if (!t) return;
+  const name = t.dataset.uhtoggle;
+  S.uhOpen = S.uhOpen === name ? null : name;
+  await underHoodOpen();
+}));
 document.addEventListener('click', guard(async e => {
   if (await dispatchAct(e)) return;
   const nav = e.target.closest('.nav');
   if (nav) {
-    closeSheet();
-    if (nav.dataset.v === 'history') S.history = await getLog();
     return go(nav.dataset.v);
   }
 
@@ -10762,7 +10802,6 @@ document.addEventListener('keydown', guard(async e => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   const next = VORDER[VORDER.indexOf(view) + (e.key === 'ArrowRight' ? 1 : -1)];
   if (!next) return;
-  if (next === 'history') S.history = await getLog();
   go(next);
 }));
 
@@ -11067,6 +11106,8 @@ async function start(force) {
     $('#who').textContent = whoName;
     $('#sheetWho').textContent = whoName;
     view = ROUTER.start(); S.inboxAt = 0; render();
+    // An old link such as #/sources opens the Settings sheet on that section.
+    const landed = ROUTER.section; if (landed) openUnderHood(landed);
     window.scrollTo(0, 0);
     // Background, after the first paint — never delays it, and only redraws
     // again if another device actually had feedback this one did not, rather

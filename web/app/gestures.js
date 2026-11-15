@@ -112,7 +112,7 @@ function bindAppGestures() {
     if (m === 'page' && Math.abs(dx) > VTH) {
       const at = VORDER.indexOf(view);
       const next = VORDER[at + (dx < 0 ? 1 : -1)];
-      if (next) { buzz(6); if (next === 'history') S.history = await getLog(); go(next); }
+      if (next) { buzz(6); go(next); }
     }
   };
   // guard() itself isn't declared until further down the script — bindAppGestures()

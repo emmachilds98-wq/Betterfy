@@ -125,7 +125,7 @@ __STYLES__</style>
   <p class="lede" style="font-size:13px">
     <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
     genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a>
-    (Spotify no longer provides genre — top yours up from the Sources screen) ·
+    (Spotify no longer provides genre — top yours up under Settings) ·
     release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
     <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.
   </p>
@@ -145,7 +145,6 @@ __STYLES__</style>
     </svg>
     <span class="title" id="mtitle">Overview</span>
   </div>
-  <div class="dots" id="dots" aria-hidden="true"></div>
   <aside>
     <div class="brand">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -159,32 +158,21 @@ __STYLES__</style>
       Better<span>fy</span>
     </div>
     <div class="who" id="who"></div>
-    <!-- Five destinations. Duplicates, Cross-filed and Misfiles were three
-         screens asking the same question — "is this in the right place?" — so
-         they are one screen, Tidy, with a section each. The three that remain
-         are marked data-sec and live behind More on both form factors. -->
+    <!-- Four tabs (docs/BUILD-5-PLAN.md §4.1). Sources, Engine and History live
+         in the Settings sheet ("Under the hood"); New playlists and Shuffle are
+         reached from Library. -->
     <div class="navwrap">
-      <button class="nav" data-v="home" aria-current="true"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg></span><span class="lbl">Home</span></button>
       <button class="nav" data-v="inbox"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/></svg></span><span class="lbl">File</span><span class="c" data-count="inbox"></span></button>
       <button class="nav" data-v="tidy"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 4.5H6a2.5 2.5 0 0 0-2.5 2.5v9.5"/></svg></span><span class="lbl">Tidy</span><span class="c" data-count="tidy"></span></button>
       <button class="nav" data-v="discover"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/></svg></span><span class="lbl">Discover</span></button>
-      <button class="nav" data-v="shuffle"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 4.5 20.5 7 17 9.5"/><path d="M17 14.5 20.5 17 17 19.5"/><path d="M3.5 7h3.2c1.2 0 2.3.6 3 1.6l4.6 6.8c.7 1 1.8 1.6 3 1.6h3.2"/><path d="M3.5 17h3.2c1.2 0 2.3-.6 3-1.6l.9-1.3"/><path d="M14.4 9.9l.9-1.3c.7-1 1.8-1.6 3-1.6h2.2"/></svg></span><span class="lbl">Shuffle</span></button>
-      <button class="nav" data-v="new" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11.5v5"/><path d="M9.5 14h5"/></svg></span><span class="lbl">New playlists</span><span class="c" data-count="new"></span></button>
-      <button class="nav" data-v="lists" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Playlists</span><span class="c" data-count="lists"></span></button>
-      <button class="nav" data-v="engine" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.1"/><path d="M12 4.2V7"/><path d="M12 17v2.8"/><path d="M4.2 12H7"/><path d="M17 12h2.8"/><path d="M6.5 6.5 8.4 8.4"/><path d="M15.6 15.6l1.9 1.9"/><path d="M17.5 6.5 15.6 8.4"/><path d="M8.4 15.6 6.5 17.5"/></svg></span><span class="lbl">Engine</span></button>
-      <button class="nav" data-v="history" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 12a8.4 8.4 0 1 0 2.6-6"/><path d="M3.4 3.6v4.2h4.2"/><path d="M12 7.8V12l3 1.8"/></svg></span><span class="lbl">History</span></button>
-      <button class="nav" data-v="sources" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="2.8"/><path d="M4.5 6v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6"/><path d="M4.5 12v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></svg></span><span class="lbl">Sources</span></button>
+      <button class="nav" data-v="lists"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Library</span><span class="c" data-count="new"></span></button>
     </div>
     <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): on a desktop it
-         sits just before More, so More stays put when it appears (B8); on a
+         sits at the end of the bar, so the tabs stay put when it appears (B8); on a
          phone it moves up into the header beside the corner buttons. Empty —
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
-    <!-- The screens that don't sit on the bar, on a phone and on a desktop. -->
-    <button class="tabmore" id="tabMore" aria-expanded="false" aria-controls="moreSheet">
-      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
-      <button class="b sm" id="disconnect">Disconnect</button>
       <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build __BUILD__</span>
     </div>
   </aside>
@@ -205,30 +193,9 @@ __STYLES__</style>
      inside the app afterwards — both toggle #land/#app visibility, but
      neither ever hides this. -->
 <div class="fabBar">
-  <button class="fab" id="btnUpdate" title="Check for a newer version of Betterfy" aria-label="Check for a newer version of Betterfy">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M12 3.5v10.5"/><path d="M7.6 9.6 12 14l4.4-4.4"/><path d="M4.5 17v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2"/>
-    </svg>
-  </button>
   <button class="fab" id="btnSettings" title="Settings" aria-expanded="false" aria-controls="settingsPanel">⚙</button>
 </div>
 <div class="scrim" id="scrim"></div>
-
-<!-- The screens that don't fit on the tab bar. Filled from the rail so the two
-     can never list different things. -->
-<div class="sheet" id="moreSheet" aria-hidden="true" aria-label="More screens">
-  <div class="grabber" id="sheetGrab"></div>
-  <h2>More</h2>
-  <div class="sheetlist" id="sheetList"></div>
-  <div class="sheetfoot">
-    <button class="b sm" id="sheetSettings">Settings</button>
-    <button class="b sm" id="sheetDisconnect">Disconnect</button>
-    <!-- The rail used to carry these two. It is a bar now, with no room. -->
-    <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build __BUILD__</span>
-  </div>
-</div>
 
 <div class="settings" id="settingsPanel" aria-hidden="true" aria-label="Settings">
   <div class="grabber"></div>
@@ -237,6 +204,12 @@ __STYLES__</style>
     <button class="iconbtn" id="closeSettings" aria-label="Close settings">✕</button>
   </div>
   <div class="settings-body">
+    <!-- Listening, the genre sources, the engine and History: filled by
+         app/shell.js, one open section at a time. -->
+    <section id="underHood">
+      <h3>Under the hood</h3>
+      <div id="uhBody"></div>
+    </section>
     <section>
       <h3>Appearance</h3>
       <p class="hint">Betterfy opens in Nightshift. System follows whatever your phone is doing, including its sunset schedule.</p>
@@ -293,7 +266,7 @@ __STYLES__</style>
       <p class="hint">Betterfy keeps up as you file, so this is only for changes made
         <em>outside</em> Betterfy — a playlist edited in Spotify itself. It re-reads every
         playlist and can take a few minutes on a large library. This is not the app
-        update: that is <b>⬇ Check for updates</b>, top right.</p>
+        update: that is <b>Check for updates</b>, under About below.</p>
       <button class="b" id="settingsResync" type="button">Re-sync library from Spotify</button>
     </section>
     <!-- Hidden entirely unless the build has a Firebase project configured —
@@ -313,6 +286,19 @@ __STYLES__</style>
       <div class="rowbtns">
         <input id="syncRedeemInput" placeholder="Code from the other device" size="22" inputmode="numeric" maxlength="6">
         <button class="b" id="syncRedeem" type="button">Link this device</button>
+      </div>
+    </section>
+    <section id="aboutSection">
+      <h3>About</h3>
+      <p class="hint">Betterfy, build __BUILD__. <span id="sheetWho" class="mono"></span><br>
+        <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
+        genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> ·
+        <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
+        release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
+        <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source and licences on GitHub</a>.</p>
+      <div class="rowbtns">
+        <button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button>
+        <button class="b" id="disconnect" type="button">Disconnect</button>
       </div>
     </section>
     <button class="b" id="resetTheme" type="button">Reset to defaults</button>

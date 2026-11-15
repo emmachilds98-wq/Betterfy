@@ -1,5 +1,5 @@
 /* ===================== UI ===================== */
-let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'home';
+let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'inbox';
 const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null,
             fileSel:new Set(), fileSelFor:null, shown:{} };
 
@@ -19,24 +19,37 @@ function moreButton(key, total) {
     <span class="mono" style="color:var(--ink-3)">· ${n.toLocaleString()} of ${total.toLocaleString()}</span></button></div>`;
 }
 
-// Bar order, which is also swipe order: swiping left and right on a phone
+// Bar order: the four tabs, which is also swipe order. Swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
-const VORDER = ['home','inbox','tidy','discover','shuffle','new','lists','engine','history','sources'];
+// New playlists and Shuffle follow Library: they are reached from it, and a
+// swipe on from Library lands on them. Sources, Engine and History are not
+// screens any more: they are sections of the Settings sheet (app/shell.js).
+const TABS = ['inbox','tidy','discover','lists'];
+const VORDER = [...TABS, 'new', 'shuffle'];
 // The five colours of the mark, one per screen — see the [data-v=…] rules in
 // the stylesheet, which have to agree with this.
-const VHUE = { home:'accent', inbox:'m0', tidy:'m1', discover:'m3', shuffle:'m4',
-               new:'m2', lists:'m4', engine:'m2', history:'m3', sources:'m1' };
-const VTITLE = { home:'Home', inbox:'File', tidy:'Tidy', discover:'Discover', shuffle:'Shuffle',
-                 new:'New playlists', lists:'Playlists', engine:'Engine', history:'History',
-                 sources:'Sources' };
-// The three that live behind "More" rather than on the bar.
-const SECONDARY = new Set(['new','lists','engine','history','sources']);
+const VHUE = { inbox:'m0', tidy:'m1', discover:'m3', lists:'m4', new:'m2', shuffle:'m4' };
+const VTITLE = { inbox:'File', tidy:'Tidy', discover:'Discover', lists:'Library',
+                 new:'New playlists', shuffle:'Shuffle' };
+// Screens that sit under another tab on the bar.
+const TAB_OF = { new:'lists', shuffle:'lists' };
+const tabOf = v => TAB_OF[v] ?? v;
+// Old screen names and where they went: Home became File; Sources, Engine and
+// History became sections of the Settings sheet. go() and the router use it.
+const LEGACY_VIEWS = {
+  home:    { view: 'inbox' },
+  sources: { section: 'sources' },
+  engine:  { section: 'engine' },
+  history: { section: 'history' },
+};
 let toastT;
 function toast(msg, undoFn) {
   const el = $('#toast');
-  el.innerHTML = esc(msg) + (undoFn ? ' <button id="undoBtn">Undo</button>' : '');
+  // Every Undo toast also says where the full log is: the Settings sheet's History.
+  el.innerHTML = esc(msg) + (undoFn ? ' <button id="undoBtn">Undo</button> <button id="histBtn">History</button>' : '');
   el.hidden = false;
   if (undoFn) $('#undoBtn').onclick = async () => { try { await undoFn(); toast('Restored.'); } catch(e){ toast('Undo failed: '+e.message); } };
+  if (undoFn) $('#histBtn').onclick = () => { el.hidden = true; openUnderHood('history'); };
   clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, undoFn ? 9000 : 3200);
 }
 

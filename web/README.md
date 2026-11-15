@@ -36,7 +36,7 @@ by screen in A4.
 | `app/ui.js` | page state (`LIB`, `S`, `view`), screen order and names, `toast()` |
 | `app/actionlog.js` | the History log, undo, playlist and library writes |
 | `app/player.js` | Spotify Connect playback bar |
-| `screens/home.js` | `vHome` and its action icons |
+| `screens/home.mjs` | File, the home tab: status line, deck (the `inbox` module) and Up next |
 | `app/listening.js` | the listening indicator (`setListen`), cover thumbnails |
 | `app/soundslots.js` | sound chips/strips on the File and Discover cards, sound-first picks |
 | `screens/inbox.js` | `vInbox` (File) and artist roll-forward |
@@ -55,7 +55,8 @@ by screen in A4.
 | `app/store.js` | `store.get/set/touch/on`: background jobs write a slice, the mounted screen that watches it repaints (A3) |
 | `app/render.js` | `VIEWS`, `render()`, `go()` |
 | `app/gestures.js` | touch gestures |
-| `app/more.js` | the More sheet |
+| `app/sheet.js` | dragging the Settings sheet down to close it |
+| `app/shell.js` | the 4-tab shell (UI-D): the Settings sheet's "Under the hood" sections (Sources, Engine, History), Library's switch, the File status line |
 | `app/errors.js` | `guard()`, `fire()`: nothing fails in silence |
 | `app/engine.js` | engine glue: lazy `engine.js`, the worker, calibration, the neighbour bridge |
 | `app/audio.js` | listening glue: lazy `audio.js`, settings, mood/voice/energy |
