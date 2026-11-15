@@ -46,13 +46,17 @@ function morphArt(cover, id, update) {
 /** Drag the top inbox card: right files it into the best suggestion, left skips. */
 function bindSwipeCard() {
   const card = $('#swipeCard');
-  if (!card) return;
+  // patch() keeps this node across a re-render, so its listeners are bound once;
+  // they read the card's data-best and verdict children live.
+  if (!card || card._swipeBound) return;
+  card._swipeBound = true;
   const TH = 76;                       // travel, in px, before a swipe counts
   let x0 = 0, y0 = 0, dx = 0, mode = null, trail = [];
   const FLICK = 0.55, FLICK_MIN = 28;   // px/ms, and the least travel a flick may commit on
-  const vFile = card.querySelector('.verdict.file'), vSkip = card.querySelector('.verdict.skip');
+  const verdicts = () => [card.querySelector('.verdict.file'), card.querySelector('.verdict.skip')];
 
   const paint = () => {
+    const [vFile, vSkip] = verdicts();
     const t = Math.max(-1, Math.min(1, dx / 160));
     card.style.transform = `translate3d(${dx}px,0,0) rotate(${t * 6}deg)`;
     if (vFile) vFile.style.opacity = dx > 12 ? Math.min(1, (dx - 12) / 60) : 0;
@@ -63,6 +67,7 @@ function bindSwipeCard() {
   const reset = () => {
     card.classList.remove('drag', 'to-file', 'to-skip');
     card.style.transform = '';
+    const [vFile, vSkip] = verdicts();
     if (vFile) vFile.style.opacity = 0;
     if (vSkip) vSkip.style.opacity = 0;
   };

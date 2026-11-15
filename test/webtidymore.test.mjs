@@ -32,7 +32,7 @@ function tidy({ exact = 0, clash = 0, cross = 0 } = {}) {
     },
   };
 }
-const rows = html => html.split('<div class="row">').length - 1;
+const rows = html => (html.match(/<div class="row"[ >]/g) ?? []).length;
 const more = (c, key) => { c.S.shown[key] = c.shownOf(key) + 60; };
 
 test('a long repeats list shows a page, then the rest a page at a time', () => {

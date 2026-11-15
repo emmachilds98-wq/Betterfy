@@ -1,11 +1,12 @@
 // File is the home tab: the `home` module composes the status strip, the File
-// deck (the `inbox` module) and Up next. Library is, for now, Playlists with
-// New playlists and Shuffle one tap away (libNav, app/shell.js); the screens
-// themselves are untouched.
+// deck (the `inbox` module) and Up next. Library is the `lists` module; New
+// playlists and Shuffle open from it and carry a way back (libBack, app/shell.js).
+/** The screen last drawn into #main, or null when the next draw must replace it whole. */
+let paintedView = null;
 const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
-                lists:() => libNav('lists') + screenView('lists')(),
-                new:() => libNav('new') + screenView('new')(),
-                shuffle:() => libNav('shuffle') + screenView('shuffle')() };
+                lists:screenView('lists'),
+                new:() => libBack('new') + screenView('new')(),
+                shuffle:() => libBack('shuffle') + screenView('shuffle')() };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -23,13 +24,21 @@ function render(dir) {
 
   const main = $('#main');
   main.dataset.view = view;
-  main.innerHTML = VIEWS[view]();
+  // The screen already showing, redrawn in place (a click, a store repaint):
+  // patch() keeps the focused input, its caret and scroll, and slides rows
+  // that moved (A5, UI-G). A screen change or a sync (stage() forgets what was
+  // painted) is a full replace.
+  const html = VIEWS[view]();
+  if (dir === undefined && paintedView === view && typeof patch === 'function') patch(main, html);
+  else main.innerHTML = html;
+  paintedView = view;
   for (const m of actScreens(view)) SCREEN_MODS[m]?.mount?.(screenCtx(m));
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === tabOf(view))));
   // The Settings sheet's sections repaint with the page they sit on.
   underHoodRefresh();
+  plSheetPaint();
 
   const counts = { inbox:R.backlog.length, tidy:R.within.length + R.misfiled.length,
                    new:R.clusters.length, lists:LIB.playlists.length };
@@ -59,6 +68,7 @@ function go(v) {
   }
   // A tap on a tab or card takes you out of the sheet.
   if (settingsOpen()) openSettings(false);
+  closePlSheet();
   if (v === view) return render();
   const dir = VORDER.indexOf(v) >= VORDER.indexOf(view) ? 1 : -1;
   view = v;

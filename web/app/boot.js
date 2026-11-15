@@ -132,10 +132,12 @@ const LOGO_HTML = `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
 </svg>Better<span>fy</span>`;
 
 function stage(msg, pct, extra = '') {
+  paintedView = null;
   $('#app').hidden = true; $('#land').hidden = false;
   $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
     <p class="tagline">${esc(msg)}</p>
-    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>${extra}`;
+    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>${extra}
+    <div style="max-width:420px;margin:24px auto 0">${typeof skeleton === 'function' ? skeleton('card', 1) : ''}</div>`;
 }
 
 // A single 429 is ordinary. Several in a row on this page's default client ID

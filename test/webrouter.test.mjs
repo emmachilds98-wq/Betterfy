@@ -127,3 +127,17 @@ test('the router is wired into the page in order, and its hooks are in place', (
   assert.match(read('web/app/theme.js'), /function openSettings[\s\S]*routeNote\(\)/);
   assert.match(read('web/app/boot.js'), /view = ROUTER\.start\(\)/);
 });
+
+test('a playlist sheet gets its own entry (#/lists/pl:<id>) and back closes it before leaving Library', async () => {
+  const t = rig(); t.r.start();
+  t.go('lists');
+  t.sheet('pl:37i9dQZF1');
+  assert.equal(t.stack[t.at()].hash, '#/lists/pl:37i9dQZF1');
+  assert.deepEqual({ ...t.r.parse('#/lists/pl:abc') }, { view: 'lists', sheet: 'pl:abc' });
+  assert.equal(t.r.parse('#/lists/pl:').sheet, null);
+  await t.back();
+  assert.equal(t.app.sheet, null);
+  assert.equal(t.app.view, 'lists');
+  t.sheet('pl:x'); t.sheet(null); await settle();
+  assert.equal(t.stack[t.at()].hash, '#/lists', 'closing from its own button takes the entry off');
+});

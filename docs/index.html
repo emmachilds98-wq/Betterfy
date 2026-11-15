@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-1039">
+<meta name="bf-build" content="2026-11-15-1054">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -917,6 +917,47 @@
   @media (hover:none) and (pointer:coarse){
     .counter > span:nth-child(2):not(.how-touch){display:none}
   }
+/* Library (UI-E, docs/BUILD-5-PLAN.md §4.1): compact playlist rows, the Suggested
+   section, the detail sheet, and the way back on New playlists / Shuffle. */
+  .libnav{background:none; padding:0; border-radius:0; width:auto; display:flex; align-items:center; gap:10px; overflow:visible}
+
+  .plrows{display:flex; flex-direction:column; background:var(--surface); border:1px solid var(--line);
+          border-radius:var(--r-3); overflow:hidden; margin-bottom:22px}
+  .plrow{appearance:none; border:0; border-bottom:1px solid var(--line); background:none; font:inherit; color:inherit; text-align:left;
+         display:flex; align-items:center; gap:14px; width:100%; padding:12px 14px; min-height:56px; cursor:pointer}
+  .plrow:last-child{border-bottom:0}
+  .plrow:hover{background:var(--surface-2)}
+  .plrow:focus-visible{outline:2px solid var(--vc, var(--accent)); outline-offset:-2px}
+  .plmain{display:flex; flex-direction:column; gap:3px; min-width:0; flex:1}
+  .plmain .ttl{font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .plmeta{display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12.5px; color:var(--ink-3); margin:0}
+  .plmeta .tag{padding:2px 9px; font-size:11.5px}
+  .plmeta .mono{color:var(--ink-2)}
+
+  /* The sound strip: top styles as a stacked bar, or the energy range as five cells. */
+  .plspark{display:flex; gap:2px; width:64px; height:8px; flex:none; border-radius:4px; overflow:hidden}
+  .plspark i{display:block; height:100%; min-width:3px; background:var(--line-2)}
+  .plspark i.sp0{background:var(--m0)} .plspark i.sp1{background:var(--m2)} .plspark i.sp2{background:var(--m3)}
+  .plspark-e{gap:3px} .plspark-e i{flex:1; border-radius:2px} .plspark-e i.on{background:var(--ink-2)}
+
+  .plsugg{margin:0 0 22px}
+  .plsugg-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px}
+  .plsugg-head h2{margin:0}
+  .plsugg .plrows{margin-bottom:0}
+  .plsg{border-left:3px solid var(--m2)}
+
+  /* The detail sheet. */
+  .plsheet .pls-head{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px 10px; flex:none}
+  .plsheet .pls-head h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0;
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .pls-body{padding:0 18px calc(24px + var(--sab, 0px)); overflow-y:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:18px; min-height:0}
+  .pls-sec h3{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:600; margin:0 0 6px}
+  .pls-sec .hint{margin:0 0 8px}
+  .pls-f{display:flex; align-items:center; gap:10px; margin:6px 0; font-size:14px}
+  .plhealth{display:flex; align-items:baseline; gap:8px; margin:0 0 6px; font-weight:600}
+  .plhealth .mono{font-size:26px}
+  .plh-ok .mono{color:var(--ok)} .plh-low .mono{color:var(--warn)}
+  .plnotes{margin:0; padding-left:18px; color:var(--ink-2); font-size:14px}
 /* Playlists (axes table) and Sources — UI-3, docs/UI-BUILD-PLAN.md §6. */
   [data-v="sources"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
 
@@ -1557,7 +1598,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-1039</span>
+    <span class="mono">build 2026-11-15-1054</span>
   </p>
 
   <div class="feat">
@@ -1649,7 +1690,7 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1039</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1054</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1766,7 +1807,7 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-15-1039. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-15-1054. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3167,6 +3208,164 @@ function missedList(vm) {
 }
 return { SOUND_UI_VERSION, SURE_CONF, soundChip, soundMark, sectionStrip, evidenceBadges, bandChip, profileRow, listenPill, listenCard, missedList };
 })();
+/* ---- web/app/patch.mjs ---- */
+__mod["web/app/patch.mjs"] = (function () {
+// A5 of docs/BUILD-5-PLAN.md: the keyed patcher.
+//
+// patch(el, html) makes el's children match `html` while reusing the nodes it
+// already has, so a re-render after a click no longer throws away the focused
+// input, its caret, or a scrolled list. Children are matched by `data-key`
+// when they carry one, and by position (same tag) when they don't.
+//
+// The page still does a full innerHTML render on a screen change or a sync;
+// patch() is for re-renders of the screen already showing (A4 wires it in).
+//
+// Rules a screen can rely on:
+//   - A child with data-key="k" is the same node before and after, wherever it
+//     moves, as long as its tag is unchanged. Keys only need to be unique among
+//     siblings. A duplicate key gets a fresh node.
+//   - The focused element keeps focus and its selection, even when a reorder
+//     moves it (browsers blur a node on move); its `value` is never overwritten.
+//   - Scroll offsets are kept on `el` itself and on every element with a
+//     data-key or a data-keep-scroll attribute (browsers reset scroll on move).
+//   - data-patch="skip" on the new markup leaves that element's existing
+//     attributes and subtree alone (a playing <audio>, a third-party widget).
+//
+// It needs only the plain DOM (template, insertBefore, attributes), so the
+// tests run it against a small fake DOM, not jsdom.
+
+const ELEMENT = 1, TEXT = 3, COMMENT = 8;
+
+const keyOf = n => (n.nodeType === ELEMENT ? n.getAttribute('data-key') : null);
+const sameKind = (a, b) => a.nodeType === b.nodeType
+  && (a.nodeType !== ELEMENT || a.tagName === b.tagName);
+const contains = (root, n) => { for (; n; n = n.parentNode) if (n === root) return true; return false; };
+
+/** Patch el's children to match html. Returns el. */
+function patch(el, html) {
+  const doc = el.ownerDocument;
+  const tpl = doc.createElement('template');
+  tpl.innerHTML = html;
+  const saved = remember(el, doc);
+  // Rows that opt in with data-flip slide to their new place (motion.js).
+  const flip = typeof globalThis.flipRecord === 'function' ? globalThis.flipRecord(el) : null;
+  morphChildren(el, tpl.content, saved.active);
+  restore(saved, doc);
+  if (flip && flip.size) globalThis.flipPlay(el, flip);
+  return el;
+}
+
+/** Note focus, caret and scroll offsets, which moving a node would lose. */
+function remember(el, doc) {
+  const active = doc.activeElement && doc.activeElement !== doc.body
+    && contains(el, doc.activeElement) ? doc.activeElement : null;
+  let sel = null;
+  if (active) {
+    try {
+      if (typeof active.selectionStart === 'number') {
+        sel = [active.selectionStart, active.selectionEnd, active.selectionDirection || 'none'];
+      }
+    } catch { /* inputs like checkbox throw on selectionStart */ }
+  }
+  const scrolls = [];
+  const note = n => { if (n.scrollTop || n.scrollLeft) scrolls.push([n, n.scrollTop, n.scrollLeft]); };
+  note(el);
+  for (const n of el.querySelectorAll('[data-key],[data-keep-scroll]')) note(n);
+  return { el, active, sel, scrolls };
+}
+
+function restore({ el, active, sel, scrolls }, doc) {
+  for (const [n, top, left] of scrolls) {
+    if (!contains(el, n)) continue;
+    if (n.scrollTop !== top) n.scrollTop = top;
+    if (n.scrollLeft !== left) n.scrollLeft = left;
+  }
+  if (!active || !contains(el, active)) return;
+  if (doc.activeElement !== active) active.focus({ preventScroll: true });
+  if (sel && typeof active.setSelectionRange === 'function') {
+    try { active.setSelectionRange(sel[0], sel[1], sel[2]); } catch { /* not a text input */ }
+  }
+}
+
+function morphChildren(from, to, active) {
+  const keyed = new Map();
+  for (let c = from.firstChild; c; c = c.nextSibling) {
+    const k = keyOf(c);
+    if (k != null && !keyed.has(k)) keyed.set(k, c);
+  }
+  // Everything before `cur` is already in its final place.
+  let cur = from.firstChild;
+  for (let n = to.firstChild; n;) {
+    const next = n.nextSibling;
+    const k = keyOf(n);
+    let match = null;
+    if (k != null) {
+      match = keyed.get(k) || null;
+      if (match) keyed.delete(k);
+      if (match && !sameKind(match, n)) match = null;
+    } else if (cur && keyOf(cur) == null && sameKind(cur, n)) {
+      match = cur;
+    }
+    if (match) {
+      if (match === cur) cur = cur.nextSibling;
+      else from.insertBefore(match, cur);
+      morphNode(match, n, active);
+    } else {
+      from.insertBefore(n, cur); // adopts the new node out of the template
+    }
+    n = next;
+  }
+  // Whatever is left was not asked for.
+  while (cur) { const nx = cur.nextSibling; from.removeChild(cur); cur = nx; }
+}
+
+function morphNode(a, b, active) {
+  if (a.nodeType === TEXT || a.nodeType === COMMENT) {
+    if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue;
+    return;
+  }
+  if (b.getAttribute('data-patch') === 'skip') return;
+  syncAttributes(a, b);
+  const tag = a.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'OPTION') {
+    syncFormState(a, b, a === active);
+    if (tag === 'TEXTAREA') return; // its text is its value
+  }
+  morphChildren(a, b, active);
+}
+
+function syncAttributes(a, b) {
+  const want = b.attributes;
+  for (let i = 0; i < want.length; i++) {
+    const { name, value } = want[i];
+    if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+  }
+  const have = a.attributes;
+  for (let i = have.length - 1; i >= 0; i--) {
+    const { name } = have[i];
+    if (!b.hasAttribute(name)) a.removeAttribute(name);
+  }
+}
+
+/** Attributes don't move a live control's state; set the properties too. */
+function syncFormState(a, b, focused) {
+  const tag = a.tagName;
+  if (tag === 'OPTION') {
+    const on = b.hasAttribute('selected');
+    if (a.selected !== on) a.selected = on;
+    return;
+  }
+  if (tag === 'INPUT' && (a.type === 'checkbox' || a.type === 'radio')) {
+    const on = b.hasAttribute('checked');
+    if (a.checked !== on) a.checked = on;
+    return;
+  }
+  if (focused || tag === 'SELECT') return; // the person is typing; SELECT follows its options
+  const v = tag === 'TEXTAREA' ? b.textContent : (b.getAttribute('value') ?? '');
+  if (a.value !== v) a.value = v;
+}
+return { patch };
+})();
 /* ---- web/screens/home.mjs ---- */
 __mod["web/screens/home.mjs"] = (function () {
 /* File, the home tab (docs/BUILD-5-PLAN.md §4.1, UI-D). Home and File were two
@@ -3284,7 +3483,7 @@ function view({ S, esc, isUndone, emptyState }) {
     else rows.push({ one:x });
   }
   const undone = `<span class="sub">Undone</span>`;
-  const one = x => `<div class="row"><div class="main">
+  const one = x => `<div class="row" data-flip data-key="${esc(`h:${x.at}:${x.op}:${x.playlistId ?? ''}`)}"><div class="main">
       <div class="ttl">${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span></div>
       <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))} · ${(x.trackIds??[]).length} track(s)${x.reason?' · '+esc(x.reason):''}</div>
     </div><div class="acts">${['remove','add','unlike'].includes(x.op) ? (isUndone(x, h) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(x.at)}">Undo</button>`) : ''}</div></div>`;
@@ -3296,7 +3495,7 @@ function view({ S, esc, isUndone, emptyState }) {
       ? `Moved <span class="sub">${esc(mv?.fromName ?? rem?.playlistName ?? '')} → ${esc(mv?.toName ?? add?.playlistName ?? '')}</span>`
       : `${esc(newest.op)} <span class="sub">${esc(g.map(x => x.playlistName).filter(Boolean).join(', '))}</span>`;
     const n = new Set(g.flatMap(x => x.trackIds ?? [])).size;
-    return `<div class="row"><div class="main">
+    return `<div class="row" data-flip data-key="${esc(`hg:${oldest.at}:${newest.at}`)}"><div class="main">
       <div class="ttl">${title}</div>
       <div class="sub mono">${esc(oldest.at.replace('T',' ').slice(0,19))} · ${n} track(s)</div>
     </div><div class="acts">${g.every(x => isUndone(x, h)) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(oldest.at)}">Undo</button>`}</div></div>`;
@@ -3843,7 +4042,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-1039`,
+    `Betterfy engine score — build 2026-11-15-1054`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -4356,7 +4555,7 @@ function secDupes(c) {
   const clash = R.within.filter(x => x.verdict !== 'same-recording');
   const sec = (title, list, note, key) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
     <p class="lede">${note}</p>
-    <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
+    <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row" data-flip data-key="${esc(`dup:${c.playlistId}:${c.options.map(o => o.id).join(',')}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
     </div><div class="acts">${c.options.map(o =>
@@ -4378,7 +4577,7 @@ function secCross(c) {
   return `<p class="lede">Tracks in several playlists. Usually deliberate — nothing is preselected. Tap a playlist to remove the track from just that one.</p>
     <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
       `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-act="cmin" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
-    <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
+    <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
@@ -4422,7 +4621,7 @@ function secSound(c) {
   const checked = acc?.scored ? `<p class="sub tsacc">Checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
     acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>` : '';
   const lede = `<p class="lede">Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn't place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>`;
-  if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true });
+  if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true }) + (c.skeleton ? c.skeleton('rows', 3) : '');
   if (TSOUND.status === 'error' && !TSOUND.res) return lede + emptyState('Couldn’t compare by sound', esc(TSOUND.err ?? ''), { compact: true });
   const m = rows.filter(x => x.band === band);
   return `${lede}${checked}
@@ -4430,7 +4629,7 @@ function secSound(c) {
       `<button type="button" aria-pressed="${band === b}" data-act="tsb" data-tsb="${b}">${mfBandChip(c, vm === 'HIGH' ? 'high' : 'medium')} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
     <div class="rows">${m.slice(0, shownOf('tsound-' + band)).map(x => {
       const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
-      return `<div class="row tsrow ${done ? 'done' : ''}">${thumbHTML(t)}<div class="main">
+      return `<div class="row tsrow ${done ? 'done' : ''}" data-flip data-key="${esc(`ts:${x.id}`)}">${thumbHTML(t)}<div class="main">
         <div class="ttl">${esc(t.title)} <span class="sub">— ${esc(t.artist)}</span></div>
         <div class="tssound">${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
         <div class="swap"><span class="from">${esc(x.fromName)}</span><span class="arw">→</span><span class="to">${esc(x.toName)}</span>
@@ -4470,7 +4669,7 @@ function secMisfile(c) {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
       const playedALot = recentlyActive?.has(x.artist);
-      return `<div class="row ${done ? 'done' : ''}">${thumbHTML(x)}<div class="main">
+      return `<div class="row ${done ? 'done' : ''}" data-flip data-key="${esc(`mf:${x.id}:${x.currentPlaylistId}`)}">${thumbHTML(x)}<div class="main">
         <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
         ${to ? `<div class="swap"><span class="from">${esc(x.current)}</span><span class="arw">→</span><span class="to">${esc(to.name)}</span>
           <span class="mono" style="color:var(--ink-3)">${(x.currentScore * 100).toFixed(0)}% → ${(to.score * 100).toFixed(0)}%</span></div>`
@@ -4612,7 +4811,7 @@ return { secDupes, secCross, secSound, secMisfile, view, actions };
 })();
 /* ---- web/screens/lists.mjs ---- */
 __mod["web/screens/lists.mjs"] = (function () {
-/* The Playlists screen (docs/BUILD-5-PLAN.md A4): an ES module. Reaches nothing but `ctx`;
+/* The Library tab (docs/BUILD-5-PLAN.md A4, UI-E): compact playlist rows, a Suggested playlists section, and a detail sheet per playlist. Was the Playlists screen: an ES module. Reaches nothing but `ctx`;
  * SCREEN_CTX.lists in app/screens.js builds it. playlistMixes, tagCoverage, the sound profiles
  * and the split job stay classic in app/screenjobs.js. */
 
@@ -4629,113 +4828,142 @@ function mixLabel(mix) {
   return parts.join(' · ');
 }
 
-function listsSplitHTML(c, splits) {
-  const { LIB, LPROF, esc, BetterfyPlProfile } = c;
-  if (!splits.length) return '';
-  const byId = new Map(LIB.playlists.flatMap(p => p.tracks ?? []).map(t => [t.id, t]));
-  const card = ({ p, split }) => {
-    const { keep, move } = split, name = BetterfyPlProfile.splitName(p.name, split);
-    const made = LPROF.made.has(p.id);
-    const eg = move.ids.slice(0, 3).map(id => byId.get(id)).filter(Boolean)
-      .map(t => `<li>${esc(t.name ?? '')}<span class="sub"> · ${esc((t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '))}</span></li>`).join('');
-    return `<div class="row lsplit${made ? ' done' : ''}"><div class="main">
-      <div class="ttl">${esc(p.name)}</div>
-      <div class="lsplit-bar" aria-hidden="true"><i style="flex:${keep.n}"></i><i class="mv" style="flex:${move.n}"></i></div>
-      <div class="sub"><b>${keep.n}</b> sound like ${esc(keep.name)} · <b>${move.n}</b> sound like ${esc(move.name)}</div>
-      ${eg ? `<ul class="lsplit-eg">${eg}</ul>` : ''}
-    </div><div class="acts">${made ? '<span class="tag ok">Made</span>'
-      : `<button class="b sm" data-act="lsplit" data-lsplit="${esc(p.id)}">Make “${esc(name)}”</button>`}</div></div>`;
-  };
-  return `<h2>Two genres by sound</h2>
-    <p class="lede">${splits.length === 1 ? 'This playlist’s' : 'These playlists’'} heard tracks fall into two groups that
-      sound apart and name different genres. Making the new playlist copies the second group into it; nothing is taken
-      out of the original until you do that yourself.</p>
-    <div class="rows">${splits.map(card).join('')}</div>`;
+/** The proposals worth a line at the top of Library: genres with no playlist, hybrids and new
+ *  genres by sound, backlog groups. Nothing until the gaps are worked out; nothing already made.
+ *  Same data the New playlists screen draws in full. */
+function suggestionsOf(GAPS, R) {
+  if (!GAPS || GAPS.status !== 'ready') return [];
+  const made = n => GAPS.made?.has(String(n).toLowerCase());
+  const out = [];
+  for (const g of GAPS.gaps ?? []) if (!made(g.label)) out.push({ title: g.label, n: g.size, why: 'genre with no playlist' });
+  for (const [i, o] of (GAPS.sound?.orphans ?? []).entries())
+    if (!GAPS.filed?.has('o' + i)) out.push({ title: o.confirmed ?? o.suggest?.name ?? 'New genre?', n: o.size, why: 'new genre, by sound' });
+  for (const h of GAPS.sound?.hybrids ?? []) if (!made(h.name)) out.push({ title: h.name, n: h.size, why: 'sits between two of yours' });
+  for (const x of R?.clusters ?? []) out.push({ title: x.tags?.[0] ?? 'Unfiled group', n: x.size, why: 'unfiled tracks that sit together' });
+  return out;
 }
 
-/** One row of the axes table, plus a hidden sound-profile row under it when
- *  there is a profile to show. No profile, no toggle and no hidden row. */
-function axisRowHTML(c, p, mix) {
-  const { esc, profileRow, LISTS_SOUND, MIN_FOR_TARGET } = c;
-  const m = mixLabel(mix);
-  const prof = profileRow(LISTS_SOUND.profile(p.id));
+/** 0-100 and the reasons, from what Betterfy already knows about one playlist: misfiled tracks,
+ *  drift, a second genre, an axis nobody has settled. Null under eight tracks (too few to judge). */
+function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false } = {}) {
+  if (tracks < 8) return null;
+  const notes = [];
+  let score = 100;
+  if (misfiled) { score -= Math.min(45, Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
+  if (drifting) { score -= 15; notes.push('newest additions read differently from the rest'); }
+  if (split) { score -= 20; notes.push('sounds like two genres'); }
+  if (undecided) { score -= 10; notes.push('no axis decided yet'); }
+  score = Math.max(0, score);
+  return { score, word: score >= 85 ? 'Healthy' : score >= 65 ? 'Fine' : 'Needs a look', notes };
+}
+
+/** A thin strip of how a playlist sounds: its top styles as a stacked bar, else its energy range. '' without a profile. */
+function sparkHTML(vm) {
+  const styles = (Array.isArray(vm?.styles) ? vm.styles : []).filter(s => Array.isArray(s) && s[1] > 0).slice(0, 3);
+  if (styles.length) return `<span class="plspark" aria-hidden="true">${styles.map(([, p], i) =>
+    `<i class="sp${i}" style="flex:${Math.max(0.05, p)}"></i>`).join('')}</span>`;
+  const en = vm?.energy;
+  if (Array.isArray(en) && en.length === 2 && en.every(Number.isFinite)) {
+    const [lo, hi] = [Math.min(...en), Math.max(...en)];
+    return `<span class="plspark plspark-e" aria-hidden="true">${Array.from({ length: 5 }, (_, i) => {
+      const c = (i + .5) / 5; return `<i${c >= lo - .1 && c <= hi + .1 ? ' class="on"' : ''}></i>`; }).join('')}</span>`;
+  }
+  return '';
+}
+
+/** Everything the rows and the sheet need to know about one playlist, in one place. */
+function plInfo(c, p, splitIds, undecidedIds) {
+  const { R, LISTS_SOUND } = c;
+  const vm = LISTS_SOUND.profile(p.id);
+  const health = playlistHealth({ tracks: p.tracks,
+    misfiled: (R.misfiled ?? []).filter(m => m.playlistId === p.id).length,
+    drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
+    split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
+  return { vm, health };
+}
+
+const plRowHTML = (c, p, info, undecided) => {
+  const { esc } = c;
+  const spark = sparkHTML(info.vm), h = info.health;
+  return `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(p.id)}" aria-haspopup="dialog">
+    <span class="plmain"><span class="ttl">${esc(p.name)}</span>
+      <span class="plmeta"><span class="mono">${p.tracks}</span> tracks · <span class="tag">${esc(p.axis)}</span>${
+        undecided ? ' <span class="tag warn">pick an axis</span>' : p.target ? ' <span class="tag ok">files here</span>' : ''}${
+        h && h.score < 65 ? ' <span class="tag warn">needs a look</span>' : ''}</span></span>${spark}</button>`;
+};
+
+/** The playlist detail sheet's body (opened by plopen; shell.js draws it into #plSheet). */
+function sheetHTML(c, id) {
+  const { CFG, LIB, esc, profileRow, MIN_FOR_TARGET, BetterfyPlProfile, LPROF } = c;
+  const p = CFG[id], pl = LIB.playlists.find(x => x.id === id);
+  if (!p || !pl) return '';
+  const split = c.listsSplits().find(x => x.p.id === id)?.split;
+  const undecided = p.why === c.NO_SIGNAL;
+  const info = plInfo(c, { id, ...p }, new Set(split ? [id] : []), new Set(undecided ? [id] : []));
+  const { health } = info;
+  const mix = mixLabel(c.playlistMixes().mix.get(id));
+  const prof = profileRow(info.vm);
   const few = p.tracks < MIN_FOR_TARGET;
-  return `<tr class="axrow" data-axrow="${esc(p.id)}">
-      <th scope="row" class="axname">${prof ? `<button class="axexp" data-act="axexp" data-axexp="${esc(p.id)}" aria-expanded="false"
-          aria-controls="axprof-${esc(p.id)}" aria-label="Sound profile of ${esc(p.name)}"></button>` : ''}<span class="ttl">${esc(p.name)}</span>
-        <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span></th>
-      <td class="axn mono">${p.tracks}</td>
-      <td class="axmix">${m ? `<span title="which kind of tag its tracks carry">${esc(m)}</span>` : ''}</td>
-      <td class="axsel"><select data-act="axis" data-ax="${esc(p.id)}" aria-label="Axis of ${esc(p.name)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select></td>
-      <td class="axtg"><label><input type="checkbox" data-act="target" data-tg="${esc(p.id)}" ${p.target?'checked':''} ${few ? 'disabled title="too few tracks to model"' : ''}>
-        <span class="axtglbl">receives suggestions</span></label></td>
-    </tr>${prof ? `
-    <tr class="axprof" id="axprof-${esc(p.id)}" hidden><td colspan="5">${prof}</td></tr>` : ''}`;
-}
-
-/** The axes table. Columns are labelled once at the top rather than on
- *  every row; on a phone each row folds into a two-line card (62-lists.css). */
-function axisTableHTML(c, list, mixes) {
-  return `<div class="axtable"><table class="axtbl">
-    <thead><tr><th scope="col">Playlist</th><th scope="col" class="axn">Tracks</th><th scope="col">Tagged as</th>
-      <th scope="col">Axis</th><th scope="col">Receives suggestions</th></tr></thead>
-    <tbody>${list.map(p => axisRowHTML(c, p, mixes.get(p.id))).join('')}</tbody></table></div>`;
+  const canMix = c.mixHeardIn(pl.tracks) >= (c.BetterfyOrder?.MIN_MIX ?? 8);
+  const made = LPROF?.made?.has(id);
+  const splitName = split ? BetterfyPlProfile.splitName(pl.name, split) : '';
+  return `<div class="pls-head"><h2>${esc(pl.name)}</h2><button class="iconbtn" type="button" data-plclose aria-label="Close">✕</button></div>
+    <div class="pls-body">
+    <p class="plmeta"><span class="mono">${p.tracks}</span> tracks${mix ? ` · ${esc(mix)}` : ''}</p>
+    ${health ? `<section class="pls-sec"><h3>Health</h3>
+      <p class="plhealth plh-${health.score >= 85 ? 'ok' : health.score >= 65 ? 'fine' : 'low'}"><b class="mono">${health.score}</b> ${esc(health.word)}</p>
+      ${health.notes.length ? `<ul class="plnotes">${health.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : '<p class="hint">Nothing out of place.</p>'}</section>` : ''}
+    <section class="pls-sec"><h3>How it is treated</h3>
+      <p class="hint">${esc(p.why ?? '')}</p>
+      <label class="pls-f">Axis <select data-act="axis" data-ax="${esc(id)}" aria-label="Axis of ${esc(pl.name)}">${AXES.map(a =>
+        `<option value="${a}" ${p.axis === a ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
+      <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to model"' : ''}>
+        receives suggestions</label></section>
+    ${prof ? `<section class="pls-sec"><h3>Sound</h3>${prof}</section>` : ''}
+    ${split ? `<section class="pls-sec"><h3>Two genres?</h3>
+      <p class="hint"><b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.
+        Making the new playlist copies the second group; nothing leaves this one.</p>
+      ${made ? '<span class="tag ok">Made</span>' : `<button class="b sm" data-act="lsplit" data-lsplit="${esc(id)}">Make “${esc(splitName)}”</button>`}</section>` : ''}
+    ${pl.tracks.length >= 8 ? `<section class="pls-sec"><h3>Shuffle</h3>
+      <p class="hint">Spaces out the same artist, then writes it as a playlist to play with Spotify’s shuffle off.</p>
+      <div class="rowbtns"><button class="b p" data-act="plshuffle" data-pl="${esc(id)}">Shuffle</button>${
+        canMix ? `<button class="b" data-act="pldj" data-pl="${esc(id)}">DJ order</button>` : ''}</div></section>` : ''}
+    </div>`;
 }
 
 function view(c) {
-  const { CFG, R, esc, tagCoverage, playlistMixes, listsSplits, NO_SIGNAL } = c;
-  const rows = Object.entries(CFG).map(([id,v]) => ({ id, ...v })).sort((a,b) => b.tracks - a.tracks);
+  const { CFG, R, GAPS, esc, tagCoverage, NO_SIGNAL, listsSplits } = c;
+  c.gapsKick?.();
+  const rows = Object.entries(CFG).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.tracks - a.tracks);
   const cov = tagCoverage();
-  const { mix: mixes } = playlistMixes();
-  // Everything classify() could not read from the name or the dates. Nothing
-  // is filed into these until the listener says which ones are genre
-  // playlists — the silent "treat it as genre" default used to be exactly what
-  // turned "Sunday" or "Favourites" into a wrong suggestion.
-  const undecided = rows.filter(p => p.why === NO_SIGNAL);
-  const splits = listsSplits();
-  return `<h1>Playlists</h1>
-    <p class="lede">How each playlist is treated, and which ones Betterfy files tracks into.</p>
-    <details class="how"><summary>How this works</summary>
-      <p>Tracks are only filed into playlists marked <b>receives suggestions</b> — by default, the ones whose name says what
-        genre they are (“Donk”, “D&amp;B Rollers”, “Tech House”). Tick any other playlist to file into it too. A track
-        is only ever compared against playlists on its own axis, so a metal track in a mood playlist is not flagged as
-        misfiled. Each guess says what it was made from — the name, the dates the tracks were filed, or what kind of
-        tags they carry — and correcting one is remembered on this device.</p>
-      <p><b>Tagged as</b> is what a playlist's tracks are tagged with. Only the <b>genre</b> share tells a genre
-        playlist apart from another one; the mood, decade and occasion tags are what a <b>mood</b> or <b>context</b>
-        playlist is really held together by, and each axis weighs them accordingly.</p>
-    </details>
+  const splitIds = new Set(listsSplits().map(x => x.p.id));
+  const undecidedIds = new Set(rows.filter(p => p.why === NO_SIGNAL).map(p => p.id));
+  const sugg = suggestionsOf(GAPS, R);
+  const suggHTML = sugg.length ? `<section class="plsugg" aria-labelledby="plsugg-h">
+      <div class="plsugg-head"><h2 id="plsugg-h">Suggested playlists</h2>
+        <button class="b sm" data-go="new">See all ${sugg.length}</button></div>
+      <div class="plrows">${sugg.slice(0, 3).map(s => `<button class="plrow plsg" type="button" data-go="new">
+        <span class="plmain"><span class="ttl">${esc(s.title)}</span>
+          <span class="plmeta"><span class="mono">${s.n}</span> tracks · ${esc(s.why)}</span></span></button>`).join('')}</div>
+    </section>` : '';
+  return `<h1>Library</h1>
+    <p class="lede">Your playlists and how Betterfy treats each. Tap one for its axis, health and shuffle.</p>
+    ${suggHTML}
+    <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
-      <button class="b sm" data-go="sources">Genre sources</button></p>
-
-    ${undecided.length ? `<h2>Needs your input</h2>
-    <p class="lede">${undecided.length} playlist${undecided.length===1?' has':'s have'} no genre in ${undecided.length===1?'its':'their'} name,
-      nothing in the dates, and no strong lean in the tags either — so nothing is filed into ${undecided.length===1?'it':'them'} until you say so.
-      If one of these <i>is</i> a genre playlist, tick <b>receives suggestions</b> (or set it to genre); otherwise set what it really is.</p>
-    ${axisTableHTML(c, undecided, mixes)}` : ''}
-
-    ${(R.drift ?? []).length ? `<h2>Recently drifting</h2>
-    <p class="lede">${R.drift.length} playlist${R.drift.length===1?'':'s'} whose newest additions read differently from everything added before them — not necessarily wrong, just worth a look. This is a trend across many tracks, not a single misfile.</p>
-    <div class="rows">${R.drift.map(d => `<div class="row">
-      <div class="main"><div class="ttl">${esc(d.playlistName)}</div>
-        <div class="sub">newest ${d.recentCount}: <b>${d.recentTags.map(esc).join(', ') || '—'}</b>
-          &nbsp;·&nbsp; the other ${d.olderCount}: <b>${d.olderTags.map(esc).join(', ') || '—'}</b>
-          &nbsp;·&nbsp; ${Math.round(d.similarity*100)}% alike</div></div>
-    </div>`).join('')}</div>` : ''}
-${listsSplitHTML(c, splits)}
-    <h2>Axes</h2>
-    ${axisTableHTML(c, rows, mixes)}`;
+      <button class="b sm" data-go="sources">Genre sources</button>
+      <button class="b sm" data-go="shuffle">Shuffle everything</button></p>`;
 }
 
 
 const actions = {
-  /** A playlist's sound profile row, shown under it on demand. */
-  axexp(c, el) {
-    const open = el.getAttribute('aria-expanded') !== 'true';
-    el.setAttribute('aria-expanded', String(open));
-    const pr = c.document.getElementById(el.getAttribute('aria-controls'));
-    if (pr) pr.hidden = !open;
-  },
+  /** Tap a playlist: its detail sheet. */
+  plopen(c, el) { c.openPlSheet(el.dataset.pl); },
+
+  /** The sheet's Shuffle: the Shuffle screen on this playlist, as a spaced shuffle. */
+  plshuffle(c, el) { return plShuffle(c, el.dataset.pl, ''); },
+  /** The sheet's DJ order: the same, in the first DJ-order mode. */
+  pldj(c, el) { return plShuffle(c, el.dataset.pl, Object.keys(c.MIX_MODES)[0]); },
 
   /** "Two genres by sound": make the playlist for the half that sounds apart. */
   async lsplit(c, el) {
@@ -4773,7 +5001,14 @@ function setAxis(c, id, ax, tg) {
   // Shared with linked devices straight away, not only at the next load.
   c.syncAxes().then(changed => { if (changed) c.store.set('reports', c.rebuildReports()); });
 }
-return { view, actions };
+
+function plShuffle(c, id, mode) {
+  c.S.shufPl = id; c.S.shufCache = null; c.S.shufMode = mode;
+  try { c.LS.setItem('bf_shuf_mode', mode); } catch { /* private mode */ }
+  c.closePlSheet();
+  c.go('shuffle');
+}
+return { suggestionsOf, playlistHealth, sparkHTML, sheetHTML, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -4791,16 +5026,16 @@ function mixEnergyHTML(energy, { labelsShownNow, esc }) {
   return `<div class="mx-arc" role="img" aria-label="Energy along the mix, calm to intense">${energy.map(e =>
     `<span style="height:${Math.max(8, Math.round(e * 100))}%"></span>`).join('')}</div>`;
 }
-function mixHTML(mix, tracks, p, { S, esc, emptyState, artistOf, MIX_PAGE, MIX_MODES, labelsShownNow, BetterfyAudio }) {
+function mixHTML(mix, tracks, p, { S, esc, emptyState, skeleton, artistOf, MIX_PAGE, MIX_MODES, labelsShownNow, BetterfyAudio }) {
   if (mix.pending) return MIX_PAGE.err
     ? emptyState('The mix couldn’t load', esc(MIX_PAGE.err), { compact: true })
-    : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true });
+    : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true }) + (skeleton ? skeleton('rows', 4) : '');
   const st = mix.stats, nv = mix.naive, bpmOn = BetterfyAudio?.bpmShown ? BetterfyAudio.bpmShown() : true;
   const row = (t, i) => {
     const heard = i < mix.mixed, step = i > 0 && i < mix.mixed ? mix.steps[i - 1] : null;
     const bpm = heard && bpmOn ? mixBpmOf(mix.index, t.id) : null;
     const jump = step && !step.rel;
-    return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}">
+    return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}" data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
       <span class="a">${esc(artistOf(t))}</span>${bpm ? `<span class="mx-bpm"${step?.rel && step.rel !== 'same' ? ` title="${step.rel === 'half' ? 'double' : 'half'} time"` : ''}>${bpm}</span>` : ''}${jump ? '<span class="mx-tag">tempo change</span>' : ''}</div>`;
@@ -4869,7 +5104,7 @@ function view(ctx) {
     </div>
     <p class="lede" style="margin:-10px 0 20px; font-size:14px">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
     <h2>Order</h2>
-    <div class="order">${order.slice(0,40).map((t,i) => `<div>
+    <div class="order">${order.slice(0,40).map((t,i) => `<div data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
       <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;
@@ -5306,6 +5541,7 @@ Object.assign(globalThis, __mod["credits.mjs"]);
 Object.assign(globalThis, __mod["profile.mjs"]);
 Object.assign(globalThis, __mod["core/playlists/axes.mjs"]);
 Object.assign(globalThis, __mod["web/ui/sound.mjs"]);
+Object.assign(globalThis, __mod["web/app/patch.mjs"]);
 globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], tidy: __mod["web/screens/tidy.mjs"], lists: __mod["web/screens/lists.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"], new: __mod["web/screens/new.mjs"] };
 /* =============================================================== */
 
@@ -5700,7 +5936,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-1039';
+const BUILD = '2026-11-15-1054';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -6021,7 +6257,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-1039', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-1054', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -8774,13 +9010,14 @@ function skeleton(kind, n) {
   return `<div class="sk-wrap" role="status" aria-label="Loading">${(kind === 'card' ? card : row).repeat(count)}</div>`;
 }
 // File is the home tab: the `home` module composes the status strip, the File
-// deck (the `inbox` module) and Up next. Library is, for now, Playlists with
-// New playlists and Shuffle one tap away (libNav, app/shell.js); the screens
-// themselves are untouched.
+// deck (the `inbox` module) and Up next. Library is the `lists` module; New
+// playlists and Shuffle open from it and carry a way back (libBack, app/shell.js).
+/** The screen last drawn into #main, or null when the next draw must replace it whole. */
+let paintedView = null;
 const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
-                lists:() => libNav('lists') + screenView('lists')(),
-                new:() => libNav('new') + screenView('new')(),
-                shuffle:() => libNav('shuffle') + screenView('shuffle')() };
+                lists:screenView('lists'),
+                new:() => libBack('new') + screenView('new')(),
+                shuffle:() => libBack('shuffle') + screenView('shuffle')() };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -8798,13 +9035,21 @@ function render(dir) {
 
   const main = $('#main');
   main.dataset.view = view;
-  main.innerHTML = VIEWS[view]();
+  // The screen already showing, redrawn in place (a click, a store repaint):
+  // patch() keeps the focused input, its caret and scroll, and slides rows
+  // that moved (A5, UI-G). A screen change or a sync (stage() forgets what was
+  // painted) is a full replace.
+  const html = VIEWS[view]();
+  if (dir === undefined && paintedView === view && typeof patch === 'function') patch(main, html);
+  else main.innerHTML = html;
+  paintedView = view;
   for (const m of actScreens(view)) SCREEN_MODS[m]?.mount?.(screenCtx(m));
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === tabOf(view))));
   // The Settings sheet's sections repaint with the page they sit on.
   underHoodRefresh();
+  plSheetPaint();
 
   const counts = { inbox:R.backlog.length, tidy:R.within.length + R.misfiled.length,
                    new:R.clusters.length, lists:LIB.playlists.length };
@@ -8834,6 +9079,7 @@ function go(v) {
   }
   // A tap on a tab or card takes you out of the sheet.
   if (settingsOpen()) openSettings(false);
+  closePlSheet();
   if (v === view) return render();
   const dir = VORDER.indexOf(v) >= VORDER.indexOf(view) ? 1 : -1;
   view = v;
@@ -8890,13 +9136,17 @@ function morphArt(cover, id, update) {
 /** Drag the top inbox card: right files it into the best suggestion, left skips. */
 function bindSwipeCard() {
   const card = $('#swipeCard');
-  if (!card) return;
+  // patch() keeps this node across a re-render, so its listeners are bound once;
+  // they read the card's data-best and verdict children live.
+  if (!card || card._swipeBound) return;
+  card._swipeBound = true;
   const TH = 76;                       // travel, in px, before a swipe counts
   let x0 = 0, y0 = 0, dx = 0, mode = null, trail = [];
   const FLICK = 0.55, FLICK_MIN = 28;   // px/ms, and the least travel a flick may commit on
-  const vFile = card.querySelector('.verdict.file'), vSkip = card.querySelector('.verdict.skip');
+  const verdicts = () => [card.querySelector('.verdict.file'), card.querySelector('.verdict.skip')];
 
   const paint = () => {
+    const [vFile, vSkip] = verdicts();
     const t = Math.max(-1, Math.min(1, dx / 160));
     card.style.transform = `translate3d(${dx}px,0,0) rotate(${t * 6}deg)`;
     if (vFile) vFile.style.opacity = dx > 12 ? Math.min(1, (dx - 12) / 60) : 0;
@@ -8907,6 +9157,7 @@ function bindSwipeCard() {
   const reset = () => {
     card.classList.remove('drag', 'to-file', 'to-skip');
     card.style.transform = '';
+    const [vFile, vSkip] = verdicts();
     if (vFile) vFile.style.opacity = 0;
     if (vSkip) vSkip.style.opacity = 0;
   };
@@ -9059,7 +9310,7 @@ function makeRouter(env) {
     const [v, s] = String(hash || '').replace(/^#\/?/, '').split('/');
     const old = Object.hasOwn(moved, v) ? moved[v] : null;
     const r = { view: views.includes(v) ? v : old?.view ?? null,
-                sheet: s === 'settings' || old?.section ? 'settings' : null };
+                sheet: s === 'settings' || old?.section ? 'settings' : /^pl:./.test(s ?? '') ? s : null };
     if (old?.section) r.section = old.section;
     return r;
   };
@@ -9115,9 +9366,13 @@ function makeRouter(env) {
 const ROUTER = typeof document === 'undefined' ? null : makeRouter({
   views: VORDER, hist: history, loc: location, moved: LEGACY_VIEWS, fallback: 'inbox',
   getView: () => view,
-  getSheet: () => settingsOpen() ? 'settings' : null,
+  getSheet: () => settingsOpen() ? 'settings' : S.plSheet ? 'pl:' + S.plSheet : null,
   setView: v => go(v),
-  setSheet: s => openSettings(s === 'settings'),
+  setSheet: s => {
+    if (/^pl:/.test(s ?? '')) return openPlSheet(s.slice(3));
+    closePlSheet();
+    if (s === 'settings' || settingsOpen()) openSettings(s === 'settings');
+  },
 });
 if (ROUTER) addEventListener('popstate', () => ROUTER.onPop());
 function routeNote() { ROUTER?.note(); }
@@ -9168,7 +9423,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-1039';
+    s.src = 'engine.js?v=2026-11-15-1054';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -9190,7 +9445,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-1039');
+    const w = new Worker('engine-worker.js?v=2026-11-15-1054');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9665,7 +9920,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-1039';
+    s.src = 'audio.js?v=2026-11-15-1054';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -9701,7 +9956,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1039', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1054', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -10435,7 +10690,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1039', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1054', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -10714,13 +10969,17 @@ SCREEN_CTX.tidy = () => ({
   store, getListening, toast, render, saveTheme, recordKeep, recordMove, playlistIds, delTracks, addTracks,
   logAction, getLog, undoAction, newGroup, tidySoundOn, tidySoundRows, tidySoundCount, tidySoundWarm,
   get bandChip() { return typeof bandChip === 'function' ? bandChip : undefined; },
+  get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get LISTENING_CACHE() { return LISTENING_CACHE; },
   get LISTENING_PENDING() { return LISTENING_PENDING; },
 });
 SCREEN_CTX.lists = () => ({
-  CFG, LIB, LS, R, LPROF, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
+  CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render,
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
+  // Library's Suggested section reads the same gaps New playlists draws: start them the way that screen does.
+  gapsKick: () => { if (GAPS.status === 'idle' || (GAPS.status === 'ready' && GAPS.for !== R)) { GAPS.status = 'working'; fire(gapsCompute()); } },
+  get BetterfyOrder() { return globalThis.BetterfyOrder; },
   get BetterfyPlProfile() { return globalThis.BetterfyPlProfile; },
   get document() { return globalThis.document; },
 });
@@ -10746,6 +11005,7 @@ Object.assign(SCREEN_CTX, {
 // --- shuffle/discover ---
 SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, dedupe, spacedShuffle, shuffleStats, rnd, artistOf,
   mixHeardIn, shuffleMix, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
+  get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
   labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
 SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
@@ -10789,13 +11049,54 @@ function listenStatus() {
   return heard ? `${heard.toLocaleString()} heard` : '';
 }
 
-/** The strip at the top of Library's screens: Playlists, New playlists, Shuffle. */
-function libNav(cur) {
-  const n = R.clusters.length;
-  const tabs = [['lists', 'Playlists', ''], ['new', 'New playlists', n ? ` <span class="c">${n > 999 ? '999+' : n}</span>` : ''],
-                ['shuffle', 'Shuffle', '']];
-  return `<div class="libnav" role="tablist" aria-label="Library">${tabs.map(([v, l, c]) =>
-    `<button class="seg" role="tab" data-go="${v}" aria-selected="${v === cur}">${l}${c}</button>`).join('')}</div>`;
+/** The strip at the top of Library's sub-screens, New playlists and Shuffle: the way back. */
+function libBack(cur) {
+  const n = cur === 'new' ? R.clusters.length : 0;
+  return `<div class="libnav"><button class="b sm" data-go="lists">\u2190 Library</button>${n ? `<span class="c">${n > 999 ? '999+' : n}</span>` : ''}</div>`;
+}
+
+/* ---------- the playlist sheet (UI-E) ----------
+ * Tapping a Library row opens #plSheet, built on the Settings sheet's own look and
+ * the same scrim. S.plSheet is the open playlist's id. The router gives it a
+ * history entry ("#/lists/pl:<id>") so back closes it; lists.mjs draws the body. */
+function plSheetEl() {
+  let el = $('#plSheet');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'plSheet'; el.className = 'settings plsheet';
+    el.setAttribute('role', 'dialog'); el.setAttribute('aria-hidden', 'true'); el.setAttribute('aria-label', 'Playlist');
+    document.body.appendChild(el);
+    // Wired once, when the sheet is first made.
+    addEventListener('click', e => {
+      if (e.target.closest?.('[data-plclose]') || (S.plSheet && e.target.id === 'scrim')) closePlSheet();
+    });
+    addEventListener('keydown', e => { if (e.key === 'Escape' && S.plSheet) closePlSheet(); });
+  }
+  return el;
+}
+function plSheetPaint() {
+  if (!S.plSheet) return;
+  const el = plSheetEl(), top = el.querySelector('.pls-body')?.scrollTop ?? 0;
+  el.innerHTML = '<div class="grabber"></div>' + (SCREEN_MODS.lists.sheetHTML(screenCtx('lists'), S.plSheet) || '');
+  const b = el.querySelector('.pls-body'); if (b) b.scrollTop = top;
+  if (!b) closePlSheet();
+}
+function openPlSheet(id) {
+  if (!id) return;
+  S.plSheet = id;
+  plSheetPaint();
+  plSheetEl().classList.add('open'); plSheetEl().setAttribute('aria-hidden', 'false');
+  $('#scrim').classList.add('open');
+  plSheetEl().querySelector('[data-plclose]')?.focus();
+  routeNote();
+}
+function closePlSheet() {
+  if (!S.plSheet) return;
+  S.plSheet = null;
+  const el = plSheetEl();
+  el.classList.remove('open'); el.setAttribute('aria-hidden', 'true');
+  if (!settingsOpen()) $('#scrim').classList.remove('open');
+  routeNote();
 }
 
 function underHoodHTML() {
@@ -11126,10 +11427,12 @@ const LOGO_HTML = `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
 </svg>Better<span>fy</span>`;
 
 function stage(msg, pct, extra = '') {
+  paintedView = null;
   $('#app').hidden = true; $('#land').hidden = false;
   $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
     <p class="tagline">${esc(msg)}</p>
-    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>${extra}`;
+    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>${extra}
+    <div style="max-width:420px;margin:24px auto 0">${typeof skeleton === 'function' ? skeleton('card', 1) : ''}</div>`;
 }
 
 // A single 429 is ordinary. Several in a row on this page's default client ID

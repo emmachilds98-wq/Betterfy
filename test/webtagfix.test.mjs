@@ -163,15 +163,14 @@ test('choosing an axis by hand marks it "set by you" immediately, not just after
 
 test('the Playlists view surfaces playlists classify() defaulted with no real signal, and only those', () => {
   const body = readFileSync(new URL('../web/screens/lists.mjs', import.meta.url), 'utf8');
-  assert.match(body, /Needs your input/);
-  assert.match(body, /undecided = rows\.filter\(p => p\.why === NO_SIGNAL\)/);
+  assert.match(body, /pick an axis/);
+  assert.match(body, /p\.why === NO_SIGNAL/);
 });
 
 test('the Playlists view shows drifting playlists only when findDrift actually found some', () => {
   const body = readFileSync(new URL('../web/screens/lists.mjs', import.meta.url), 'utf8');
-  assert.match(body, /\(R\.drift \?\? \[\]\)\.length \?/, 'gated on there being anything to show');
-  assert.match(body, /Recently drifting/);
-  assert.match(body, /d\.recentTags\.map\(esc\)\.join/, 'shows what the newest additions actually look like');
+  assert.match(body, /\(R\.drift \?\? \[\]\)\.some\(d => d\.playlistId === p\.id\)/, 'only the playlists findDrift flagged');
+  assert.match(body, /newest additions read differently/);
 });
 
 test('buildReports computes drift alongside misfiled, from the same idf table', () => {
