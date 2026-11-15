@@ -1,3 +1,4 @@
+// @bundle engine-global BetterfyWikidata 125
 // Wikidata: a Spotify artist id to a MusicBrainz id, exactly, in batches.
 //
 // Wikidata item properties P1902 (Spotify artist id) and P434 (MusicBrainz

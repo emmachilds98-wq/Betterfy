@@ -57,6 +57,7 @@ function screen({ lib = library(), listening = null, listeningFails = false } = 
   };
   s.fire = p => { s.pending.push(Promise.resolve(p)); };
   s.render = () => { s.renders++; };
+  s.store = { get() {}, on() {}, set() { s.render(); }, touch() { s.render(); } };
   s.toast = m => s.toasts.push(m);
   s.engineLoad = async () => true;
   s.engineTargets = () => Object.entries(s.CFG).filter(([, v]) => v.target).map(([id]) => id).sort();

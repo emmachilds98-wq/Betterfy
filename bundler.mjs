@@ -37,7 +37,7 @@
 //   - a module importing `node:` anything, since it cannot run in a browser.
 //     Detected rather than listed, because a hardcoded exclusion list goes
 //     stale the first time somebody adds a module and nobody updates it.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
 
 export const BUNDLER_VERSION = '1.0.0';
@@ -60,6 +60,9 @@ const specifiers = s => s.split(',').map(x => x.trim()).filter(Boolean)
     return { imported, local: local ?? imported };
   });
 // `a as b` binds locally as b, which is the name that must be declared.
+/** A `// @bundle ...` line; see discoverBundles(). */
+const BUNDLE_HEADER_RE = /^\/\/ @bundle [^\n]*\n?/gm;
+
 const names = s => specifiers(s).map(x => x.local);
 
 /** The imports, re-exports and exported names of one module. */
@@ -105,6 +108,8 @@ export function moduleShape(src) {
  *  modules use it, and each would have shipped as a syntax error. */
 export function stripModuleSyntax(src) {
   return src
+    // `// @bundle ...` is build metadata for discoverBundles(), not code to ship.
+    .replace(BUNDLE_HEADER_RE, '')
     .replace(IMPORT_RE, '')
     .replace(REEXPORT_FROM_RE, '')
     .replace(/^import\s*['"][^'"]+['"]\s*;?/gm, '')
@@ -226,4 +231,42 @@ export function bundleModules(entries, { read = f => readFileSync(f, 'utf8'),
   }
 
   return { code: parts.join('\n'), files: order, version: BUNDLER_VERSION };
+}
+
+/**
+ * Find the modules that declare which bundle they belong to, by scanning `dir`
+ * for a `// @bundle` header comment, so a new module opts in from its own file
+ * and nobody edits build-web.mjs to register it.
+ *
+ *   // @bundle engine <Global|-> <order>   an entry of the `engine` bundle; the
+ *                                          exports become `Global` (`-` for none)
+ *   // @bundle engine-global <Global> <order>   not an entry (something else pulls
+ *                                          it in), but its exports become `Global`
+ *
+ * Entries are emitted by ascending `order` (ties by path), the same explicit
+ * ordering the hand-kept list used to carry; the namespace follows the same
+ * order across both kinds. Returns `{ entries, namespace }` for bundleModules().
+ */
+export function discoverBundles(dir = 'core', bundle = 'engine',
+                                { read = f => readFileSync(f, 'utf8'),
+                                  list = d => readdirSync(d, { withFileTypes: true }) } = {}) {
+  const found = [];
+  const walk = d => {
+    for (const e of list(d)) {
+      const path = `${d}/${e.name}`;
+      if (e.isDirectory()) walk(path);
+      else if (e.name.endsWith('.mjs')) {
+        const m = /^\/\/ @bundle (\S+) (\S+) (\S+)[ \t]*$/m.exec(read(path));
+        if (!m || (m[1] !== bundle && m[1] !== `${bundle}-global`)) continue;
+        const order = Number(m[3]);
+        if (!Number.isFinite(order)) throw new Error(`${path}: "// @bundle" header needs a numeric order`);
+        found.push({ path, order, entry: m[1] === bundle, global: m[2] === '-' ? null : m[2] });
+      }
+    }
+  };
+  walk(dir);
+  found.sort((a, b) => a.order - b.order || (a.path < b.path ? -1 : 1));
+  const namespace = {};
+  for (const f of found) if (f.global) namespace[f.global] = f.path;
+  return { entries: found.filter(f => f.entry).map(f => f.path), namespace };
 }

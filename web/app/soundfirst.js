@@ -31,7 +31,9 @@ function soundWarm() {
   if (SOUND.status === 'working' || !LIB) return;
   const on = audioSettings().on;
   if (!on && !AUDIO.records?.size) return;
-  const targets = engineTargets().join(), n = soundHeard();
+  // The ear is part of the key (WP-C1): a Score run that picks another ear rebuilds.
+  const ear = typeof engineEar === 'function' ? engineEar(AUDIO.records) : 'effnet';
+  const targets = engineTargets().join() + (ear === 'effnet' ? '' : '|' + ear), n = soundHeard();
   if (SOUND.status === 'ready' && SOUND.targets === targets
       && (!AUDIO.records || n - SOUND.n < SOUND_REBUILD(SOUND.n))) return;
   // Failed on this same input: don't retry in a loop on every render.
@@ -53,7 +55,7 @@ async function soundBuild(targets) {
   } catch (e) {
     Object.assign(SOUND, { status: 'error', err: e?.message ?? String(e), n: soundHeard(), targets, memo: null });
   }
-  if (view === 'inbox' || view === 'home') render();
+  store.touch('sound');
 }
 
 /** A space learned elsewhere that the File screen can use as it is: built for

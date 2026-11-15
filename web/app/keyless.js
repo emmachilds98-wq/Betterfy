@@ -46,7 +46,7 @@ async function fillFromWikidata({ quiet = false } = {}) {
     $('#land').hidden = true; $('#app').hidden = false;
     toast(`Wikidata had genres for ${found.toLocaleString()} of ${ids.length.toLocaleString()} untagged artists.`
       + (failed ? ` ${failed.toLocaleString()} could not be reached — try again later.` : ''));
-    render();
+    store.touch('reports');
   }
   return found;
 }

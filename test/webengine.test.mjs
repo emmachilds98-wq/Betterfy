@@ -98,6 +98,7 @@ function screen({ lib = library(), backlog = null, tags = {}, durable = true,
     document: { head: { appendChild() {} }, createElement: () => ({}) },
   };
   sandbox.render = () => { sandbox.renders++; };
+  sandbox.store = { get() {}, on() {}, set() { sandbox.render(); }, touch() { sandbox.render(); } };
   sandbox.toast = m => sandbox.toasts.push(m);
   vm.createContext(sandbox);
   // The engine bundle first, so the screen's lazy loader finds it already present

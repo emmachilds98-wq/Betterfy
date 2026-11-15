@@ -1,3 +1,4 @@
+// @bundle engine BetterfyBlendScore 106
 // Held-out accuracy for the blend of the two engines, and the one weight it
 // runs at — docs/SMARTER-GENRES-PLAN.md phase 1.
 //

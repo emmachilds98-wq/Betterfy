@@ -21,12 +21,12 @@
   .updatebar .b{white-space:nowrap}
   /* Narrow: sit under the corner buttons rather than behind them. */
   @media (max-width:820px){ .updatebar{top:calc(62px + var(--sat)); left:calc(12px + var(--sal)); right:calc(12px + var(--sar)); transform:none; max-width:none} }
-  .scrim{position:fixed; inset:0; background:rgba(8,10,14,.4); z-index:29; opacity:0; pointer-events:none; transition:opacity .18s ease}
+  .scrim{position:fixed; inset:0; background:rgba(8,10,14,.4); z-index:29; opacity:0; pointer-events:none; transition:opacity var(--dur-2) ease}
   .scrim.open{opacity:1; pointer-events:auto}
   .settings{position:fixed; top:0; right:0; height:100vh; height:100dvh; width:390px; max-width:92vw; background:var(--surface);
             border-left:1px solid var(--line); z-index:30; display:flex; flex-direction:column;
             box-shadow:-14px 0 32px rgba(0,0,0,.18); transform:translateX(100%); visibility:hidden;
-            transition:transform .18s ease}
+            transition:transform var(--dur-2) ease}
   .settings.open{transform:translateX(0); visibility:visible}
   .settings-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); flex:none}
   .settings-head h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0}
@@ -88,7 +88,7 @@
   /* ---- the "More" sheet: the screens that don't fit the tab bar ---- */
   .sheet{position:fixed; left:0; right:0; bottom:0; z-index:30; background:var(--surface);
          border-top:1px solid var(--line); border-radius:20px 20px 0 0; box-shadow:0 -12px 34px rgba(0,0,0,.22);
-         transform:translateY(101%); visibility:hidden; transition:transform .24s var(--ease-out);
+         transform:translateY(101%); visibility:hidden; transition:transform var(--dur-3) var(--ease-out);
          padding-bottom:calc(var(--sab) + 12px); max-height:88dvh; display:flex; flex-direction:column}
   .sheet.open{transform:translateY(0); visibility:visible}
   /* On a wide screen a full-bleed drawer reads as a mistake. Same sheet,
@@ -110,7 +110,24 @@
   .sheetfoot{display:flex; gap:8px; padding:12px 20px 0; border-top:1px solid var(--line); flex-wrap:wrap}
 
   /* ---- swiping between screens ---- */
-  @keyframes slideL{from{opacity:0; transform:translateX(22px)}}
-  @keyframes slideR{from{opacity:0; transform:translateX(-22px)}}
-  main.in-l{animation:slideL .26s var(--ease-out)}
-  main.in-r{animation:slideR .26s var(--ease-out)}
+  /* Screen change is a View Transition (web/app/motion.js): <main> is the only
+     thing that moves; the top bar, tab bar and rail keep their own names so
+     they stay still, and the active tab pill is named so it glides between
+     tabs. <html data-dir> is "forward" or "back" for the length of a change
+     (motion.js also passes the matching transition type). */
+  #main{view-transition-name:vt-main}
+  .mtop{view-transition-name:vt-top}
+  aside{view-transition-name:vt-tabs}
+  aside .nav[aria-current="true"]{view-transition-name:vt-pill}
+  ::view-transition-group(root){animation:none}
+  ::view-transition-group(vt-top), ::view-transition-group(vt-tabs){animation:none}
+  ::view-transition-group(vt-pill){animation-duration:var(--dur-3); animation-timing-function:var(--ease-spring)}
+  ::view-transition-group(vt-main){animation:none}
+  ::view-transition-old(vt-main){animation:vtOut var(--dur-2) var(--ease-in) both}
+  ::view-transition-new(vt-main){animation:vtIn var(--dur-3) var(--ease-out) both}
+  :root[data-dir="back"]::view-transition-old(vt-main){animation-name:vtOutBack}
+  :root[data-dir="back"]::view-transition-new(vt-main){animation-name:vtInBack}
+  @keyframes vtOut{to{opacity:0; transform:translateX(calc(var(--slide) * -.5))}}
+  @keyframes vtIn{from{opacity:0; transform:translateX(var(--slide))}}
+  @keyframes vtOutBack{to{opacity:0; transform:translateX(calc(var(--slide) * .5))}}
+  @keyframes vtInBack{from{opacity:0; transform:translateX(calc(var(--slide) * -1))}}

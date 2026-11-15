@@ -17,7 +17,19 @@ models collection: https://essentia.upf.edu/models.html
       Classification heads on the Discogs-EffNet embedding.
       From https://essentia.upf.edu/models/classification-heads/
 
-They are redistributed here unmodified (downloaded 2026-11-14), so a browser
+  discogs-maest-10s-pw-2-int8.onnx, discogs-maest-10s-pw-2.json
+      MAEST, music style classification and embeddings (the "second ear").
+      Pablo Alonso-Jiménez, Xavier Serra, Dmitry Bogdanov, "Efficient
+      Supervised Training of Audio Transformers for Music Representation
+      Learning", ISMIR 2023.
+      From https://essentia.upf.edu/models/feature-extractors/maest/
+      MODIFIED: derived from discogs-maest-10s-pw-2.onnx by keeping only the
+      `activations` and `layer_08_embeddings` outputs and quantising the
+      MatMul/Gemm weights to int8 (scripts/audio-maest/quantise.py). The
+      .json is unmodified. The modified file is shared under the same
+      licence as the original.
+
+The other files are redistributed here unmodified (downloaded 2026-11-14), so a browser
 can load them (essentia.upf.edu sends no CORS header). They are licensed under
 the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
 licence, reproduced below. Betterfy uses them non-commercially; the page

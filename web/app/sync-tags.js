@@ -150,6 +150,6 @@ async function enrichMissing() {
     + (viaDiscogs ? ` ${viaDiscogs} from Discogs, where Last.fm had nothing.` : '')
     + (blank ? ` ${blank} have no tags anywhere.` : '')
     + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : ''));
-  render();
+  store.touch('reports');
 }
 

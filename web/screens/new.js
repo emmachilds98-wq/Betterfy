@@ -41,7 +41,7 @@ async function gapsCompute() {
   } catch (e) {
     GAPS.status = 'error'; GAPS.err = e?.message ?? String(e);
   }
-  render();
+  store.touch('gaps');
 }
 
 /** Make a private playlist holding these tracks. Nothing else in the library changes. */
@@ -50,7 +50,7 @@ async function gapsCreate(name, ids) {
   await addTracks(pl.id, ids);
   GAPS.made.add(name.toLowerCase());
   toast(`Created “${name}” with ${ids.length} tracks. It becomes a place to file into after your next sync.`);
-  render();
+  store.touch('gaps');
 }
 
 /** Add these tracks to a playlist they already sound like. Nothing is taken out of anywhere. */
@@ -58,7 +58,7 @@ async function gapsFile(playlistId, name, ids, key) {
   await addTracks(playlistId, ids);
   GAPS.filed.add(key);
   toast(`Added ${ids.length} track${ids.length === 1 ? '' : 's'} to “${name}”.`);
-  render();
+  store.touch('gaps');
 }
 
 /** Proposals by sound: pick one of two, hybrid playlists, new genre? Nothing at all without audio.

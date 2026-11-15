@@ -56,7 +56,42 @@ async function audioStart({ quiet = false } = {}) {
   }
   await audioRefresh();
   const tracks = await audioTracks();
+  // One writer at a time: the second ear finishes its track in flight first,
+  // so a listening run's DSP or CLAP top-up never overwrites its answer (or it theirs).
+  await AUDIO.maest?.stop('listening');
   await AUDIO.ctrl.start(tracks);
+  await audioRefresh();
+  audioRedraw();
+  maestStart({ quiet: true });
+}
+
+/* ---------- the second ear (WP-C1): MAEST on a laptop, behind Deep listen ----------
+ * Gives tracks listening already heard a MAEST answer (web/audio/maest-run.mjs),
+ * a few dozen per run after each listening run. It changes no suggestion by
+ * itself: the File screen places with it only once a Score run has chosen it
+ * (engineEar). The model is fetched once (about 90 MB) and freed after each run. */
+async function maestStart({ quiet = false } = {}) {
+  if (!deepSettings().maest || !LIB) return;
+  try { await audioInit(); } catch (e) { if (!quiet) toast('Couldn’t start the second ear: ' + e.message); return; }
+  const A = BetterfyAudio;
+  if (deepAllowed('maest') !== 'ok') return audioRedraw();
+  // Listening has the store: the second ear starts again when that run ends.
+  if (AUDIO.ctrl?.running) return;
+  AUDIO.maest ??= A.createMaestRunner({
+    store: AUDIO.store,
+    lookup: (isrc, o) => A.lookup(isrc, { jsonp: deezerJsonp, ...o }),
+    fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
+    decode: buf => A.decodeTo16k(buf),
+    loadMaest: async () => {
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=__BUILD__', { type: 'module' }),
+        { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
+      try { await w.ready; } catch (e) { w.release(); throw e; }
+      return w;
+    },
+    onChange: vm => { AUDIO.maestVm = vm; audioRedraw(); },
+  });
+  if (AUDIO.maest.running) return;
+  await AUDIO.maest.start();
   await audioRefresh();
   audioRedraw();
 }
@@ -67,6 +102,8 @@ try {
     if (!AUDIO.ctrl || !globalThis.BetterfyAudio) return;
     if (audioConnection() !== 'ok') { if (AUDIO.ctrl.running) AUDIO.ctrl.stop('waiting for Wi-Fi'); }
     else if (audioSettings().on && !AUDIO.ctrl.running) audioStart({ quiet: true });
+    // The second ear holds itself to Wi-Fi as well: off it, it stops after the track in flight.
+    if (AUDIO.maest?.running && deepAllowed('maest') !== 'ok') AUDIO.maest.stop('waiting for Wi-Fi');
   });
 } catch { /* no connection API: the listener is asked instead */ }
 
@@ -119,7 +156,8 @@ function audioPanelHTML() {
     <p class="sub credit">Listening model: Discogs-EffNet and its mood, voice and
       danceability heads by the Music Technology Group, Universitat Pompeu Fabra
       (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
-      used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Previews from Deezer.</p>
+      used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Previews from Deezer.${
+      deepSettings().maest ? ' Second ear: MAEST (discogs-maest-10s-pw-2) by the same group, quantised to int8 for the page, same licence.' : ''}</p>
   </div>`;
 }
 
@@ -137,8 +175,18 @@ function deepPanelHTML() {
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP, about 77 MB)</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has the memory (8 GB or more)</label>
     </div>
-    ${why('maest')}${why('clap')}${clapStatusHTML(d)}
+    ${why('maest')}${d.maest ? maestLineHTML() : ''}${why('clap')}${clapStatusHTML(d)}
   </div>`;
+}
+
+function maestLineHTML() {
+  const v = AUDIO.maestVm, run = v?.state === 'running';
+  const text = globalThis.BetterfyAudio?.maestStatusText ? BetterfyAudio.maestStatusText(v) : '';
+  const ok = deepAllowed('maest') === 'ok';
+  return `<p class="sub" id="maestStatus" style="margin:4px 0">${esc(text)}
+    ${run ? '<button class="b sm" id="maestStop">Stop</button>' : ok && audioSettings().on ? '<button class="b sm" id="maestGo">Listen with the second ear now</button>' : ''}
+    ${deepAllowed('maest') === 'unknown' ? '<button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button>' : ''}</p>
+    <p class="sub">It changes no suggestion until a Score run (More → Engine) shows it places your tracks better than the first ear.</p>`;
 }
 
 /** CLAP's line in the Deep listen block: how many heard tracks it has described. Nothing while off. */

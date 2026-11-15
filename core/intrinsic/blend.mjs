@@ -1,3 +1,4 @@
+// @bundle engine BetterfyBlend 104
 // Blending today's tag engine with the account-native engine (and its
 // neighbour bridge) — docs/SMARTER-GENRES-PLAN.md §4.2(1), phase 1.
 //

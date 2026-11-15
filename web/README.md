@@ -52,6 +52,7 @@ by screen in A4.
 | `app/sync-tags.js` | tag corrections and playlist types, synced |
 | `app/keyless.js` | genres for artists with no key at all |
 | `app/tagfix.js` | correcting one artist's tags |
+| `app/store.js` | `store.get/set/touch/on`: background jobs write a slice, the mounted screen that watches it repaints (A3) |
 | `app/render.js` | `VIEWS`, `render()`, `go()` |
 | `app/gestures.js` | touch gestures |
 | `app/more.js` | the More sheet |

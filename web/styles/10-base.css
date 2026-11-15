@@ -14,5 +14,8 @@
      moving things gets the same app, still. */
   @media (prefers-reduced-motion:reduce){
     *,*::before,*::after{animation-duration:.001ms!important; animation-iteration-count:1!important; transition-duration:.001ms!important}
+    /* Screen changes are a cut: the View Transition's own pseudo-elements sit
+       outside the selector above. */
+    ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
   }
 

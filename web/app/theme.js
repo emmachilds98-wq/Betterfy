@@ -205,6 +205,7 @@ function openSettings(open) {
   panel.classList.toggle('open', open); scrim.classList.toggle('open', open);
   panel.setAttribute('aria-hidden', String(!open)); trigger.setAttribute('aria-expanded', String(open));
   if (open) $('#closeSettings').focus(); else trigger.focus();
+  routeNote();
 }
 
 function initSettingsPanel() {
