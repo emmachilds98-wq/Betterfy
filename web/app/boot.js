@@ -290,6 +290,8 @@ async function start(force) {
     if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});
     // Listening resumes by itself where it left off, if it was switched on — after the first paint.
     if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
+    // One-tap analysis runs once by itself when a Last.fm key (shared or own) is there.
+    setTimeout(() => { try { analyseAuto(); } catch { /* optional */ } }, 4000);
   } catch (e) {
     if (retryable(e)) {
       const streak = e.status === 429 ? noteRateLimited() : 0;

@@ -86,8 +86,12 @@ since each person's app has only ever needed to authorise its own creator.
 
 The prebuilt genre tags shipped with the page cover one person's artists, so
 your suggestions may start thin. The **Playlists** view shows your tag coverage
-and can fill the gaps in your browser given a free
-[Last.fm key](https://www.last.fm/api/account/create) — paste the **API key**
+and can fill the gaps in your browser. The hosted page ships with a shared,
+read-only Last.fm key (`LASTFM_PUBLIC_KEY` at build time; public by design, as
+read methods need only the API key), so **Analyse my library** on Home works
+with nothing to set up; your own free
+[Last.fm key](https://www.last.fm/api/account/create) is optional and raises
+limits — paste the **API key**
 only; Betterfy only ever reads public tag data, so the shared secret that
 comes with a Last.fm app is not needed anywhere in this project. The
 **Discover** screen works without it: with no key, its candidates come from

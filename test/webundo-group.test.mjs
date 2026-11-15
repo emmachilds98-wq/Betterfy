@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadPage, slice, own } from './fixtures/page-spotify.mjs';
+import * as HISTORY from '../web/screens/history.mjs';
 import { feedbackExamples } from '../core/intrinsic/audio-feedback.mjs';
 
 // A move in Tidy is two writes to Spotify — add to the new playlist, remove
@@ -20,12 +21,16 @@ const MOVE = slice("const mv = e.target.closest('[data-mvto]');", "const dp = e.
 function page(playlists) {
   const app = loadPage({ playlists });
   app.run(slice('const esc = s =>', '\n', 'esc'));
-  app.run(slice('function vHistory()', 'const AXES =', 'vHistory'));
   app.run(`async function doMove(e) {\n${MOVE}\n}`);
   app.CFG = { from: { name: 'Jungle' }, to: { name: 'Drum & Bass' } };
   app.S.moved = new Set();
   app.toasts = [];
   app.toast = (msg, fn) => app.toasts.push({ msg, fn });
+  // What the History screen is given (web/app/screens.js builds the same from the page).
+  app.ctx = { S: app.S, esc: app.run('esc'), isUndone: app.run('isUndone'),
+              emptyState: (t, b) => `<empty ${t}>`, undoAction: app.undoAction, toast: app.toast, render() {},
+              getLog: () => app.run('getLog()') };
+  app.vHistory = () => HISTORY.view(app.ctx);
   return app;
 }
 
@@ -135,7 +140,20 @@ test('an ordinary row renders exactly as it did before groups existed', async ()
     <div class="rows"><div class="row"><div class="main">
       <div class="ttl">remove <span class="sub">P</span></div>
       <div class="sub mono">2026-11-01 10:00:00 · 1 track(s) · duplicate</div>
-    </div><div class="acts"><button class="b sm" data-undo="2026-11-01T10:00:00.000Z">Undo</button></div></div></div>`);
+    </div><div class="acts"><button class="b sm" data-act="undo" data-undo="2026-11-01T10:00:00.000Z">Undo</button></div></div></div>`);
+});
+
+test('the Undo action undoes the row, says so, and redraws from the log', async () => {
+  const app = page({ from: ['x'], to: [] });
+  await move(app, 'x');
+  const at = app.log().find(e => e.op === 'remove').at;
+  let drawn = 0;
+  const btn = { disabled: false, dataset: { undo: at } };
+  await HISTORY.actions.undo({ ...app.ctx, render: () => drawn++ }, btn);
+  assert.equal(app.toasts.at(-1).msg, 'Restored.');
+  assert.deepEqual(app.ids('from'), ['x']);
+  assert.equal(drawn, 1);
+  assert.equal(app.S.history.length, app.log().length, 'the screen reads the fresh log');
 });
 
 test('two entries logged in the same millisecond still get different times', async () => {

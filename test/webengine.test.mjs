@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as ENGINE_SCREEN from '../web/screens/engine.mjs';
 
 /*
  * The Engine screen, run rather than reasoned about.
@@ -30,6 +31,10 @@ function slice(from, to, what) {
 
 const SCREEN = () => slice('/* ======================= the account-native engine',
   "document.addEventListener('click', guard(async e => {", 'the Engine screen');
+
+/** What the Engine screen module is given: the page's own ctx factory (web/app/screens.js). */
+const ctxOf = s => vm.runInContext("screenCtx('engine')", s);
+const vEngine = s => ENGINE_SCREEN.view(ctxOf(s));
 
 const track = (id, artist, over = {}) => ({
   id, name: 'Track ' + id, artists: [{ id: 'ar-' + artist, name: artist }],
@@ -88,6 +93,7 @@ function screen({ lib = library(), backlog = null, tags = {}, durable = true,
     guard: fn => fn,
     isMirrorPlaylist: isMirror,
     renders: 0,
+    go: () => {},
     toasts: [],
     idb: {
       get durable() { return durable; },
@@ -123,9 +129,9 @@ test('the engine bundle defines every global the screen reaches for', () => {
 
 test('before anything is analysed the screen offers to do it, and claims nothing', async () => {
   const s = screen();
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   assert.match(html, /Learn my library/);
-  assert.match(html, /data-eng="go"/);
+  assert.match(html, /data-act="go"/);
   // The promise that makes this screen safe to ship has to be on it.
   assert.match(html, /files nothing/i);
   assert.ok(!/%/.test(html.replace(/[^%]/g, '')) || !/right first time/.test(html),
@@ -136,7 +142,7 @@ test('analysing renders the rung, the comparison, and an explanation per track',
   const s = screen();
   await vm.runInContext('engineAnalyse()', s);
   assert.equal(vm.runInContext('ENG.status', s), 'ready', vm.runInContext('ENG.err ?? ""', s));
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
 
   assert.match(html, /How much it has to go on/);
   assert.match(html, /Playlists it can file into/);
@@ -166,7 +172,7 @@ test('a placement resting on shape alone is marked as one, whatever its percenta
   assert.equal(row.shapeOnly, true, 'no clause should name anything about this artist');
   assert.ok(row.why.length, 'and it should still say what it did go on');
 
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   assert.match(html, /shape only/);
   assert.match(html, /Treat this one as a shrug/);
   assert.match(html, /Placed on shape alone/, 'and the summary should count them');
@@ -181,13 +187,13 @@ test('a placement backed by the artist graph is not marked shape-only', async ()
   const row = JSON.parse(vm.runInContext('JSON.stringify(ENG.shadow.rows[0])', s));
   assert.equal(row.shapeOnly, false, 'an artist the account files should produce named evidence');
   assert.ok(row.why.some(w => w.mark === '\u2713'), 'with at least one strong clause');
-  assert.ok(!/Treat this one as a shrug/.test(vm.runInContext('vEngine()', s)));
+  assert.ok(!/Treat this one as a shrug/.test(vEngine(s)));
 });
 
 test('the shadow comparison never calls agreement accuracy', async () => {
   const s = screen();
   await vm.runInContext('engineAnalyse()', s);
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   // These tracks are unfiled: there is no ground truth, so claiming accuracy
   // here would be the exact dishonesty the whole screen is built to avoid.
   const shadow = html.slice(html.indexOf('What it would do differently'),
@@ -214,7 +220,7 @@ test('a browser that stores nothing still works, and says the result is not reme
   await vm.runInContext('engineAnalyse()', s);
   assert.equal(vm.runInContext('ENG.status', s), 'ready');
   assert.equal(vm.runInContext('ENG.from', s), 'built');
-  assert.match(vm.runInContext('vEngine()', s), /not remembered/);
+  assert.match(vEngine(s), /not remembered/);
 });
 
 test('scoring both engines reports the same denominator for each', async () => {
@@ -233,7 +239,7 @@ test('scoring both engines reports the same denominator for each', async () => {
   assert.equal(val.mine.scored, val.base.scored,
     'a comparison is only a comparison if both engines scored the same tracks');
 
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   assert.match(html, /right first time/);
   // One of the three verdicts, and never a claim of musical truth.
   assert.match(html, /Ahead\.|Behind\.|Level\./);
@@ -246,7 +252,7 @@ test('with no tags at all the tag engine is not scored, rather than scored as ze
   await vm.runInContext('engineValidate()', s);
   const val = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', s));
   assert.equal(val.base, null, 'handing it an empty table and declaring it beaten would be rigging');
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   assert.match(html, /nothing to compare against/i);
   assert.ok(!/Ahead\.|Behind\.|Level\./.test(html), 'and no verdict should be announced');
 });
@@ -254,10 +260,10 @@ test('with no tags at all the tag engine is not scored, rather than scored as ze
 test('forgetting clears the cache and returns the screen to its opening state', async () => {
   const s = screen();
   await vm.runInContext('engineAnalyse()', s);
-  await vm.runInContext('engineReset()', s);
+  await ENGINE_SCREEN.actions.reset(ctxOf(s));
   assert.equal(vm.runInContext('ENG.status', s), 'idle');
   assert.equal(vm.runInContext('ENG.space', s), null);
-  assert.match(vm.runInContext('vEngine()', s), /Learn my library/);
+  assert.match(vEngine(s), /Learn my library/);
   // And the next analysis genuinely rebuilds rather than reviving what it just
   // promised to forget.
   await vm.runInContext('engineAnalyse()', s);
@@ -270,15 +276,15 @@ test('an engine that cannot be fetched leaves a retry, not a dead screen', async
   vm.runInContext('ENGINE_JS = Promise.reject(new Error("could not fetch engine.js"));', s);
   await vm.runInContext('engineAnalyse()', s);
   assert.equal(vm.runInContext('ENG.status', s), 'error');
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   assert.match(html, /didn't work/);
-  assert.match(html, /data-eng="go"/, 'and the retry must still be reachable');
+  assert.match(html, /data-act="go"/, 'and the retry must still be reachable');
 });
 
 test('the screen is reachable: it is in the view table, the order and the bar', () => {
   // A screen nothing routes to is a screen nobody can open, and that failure is
-  // invisible to every test that calls vEngine() directly.
-  assert.match(PAGE, /engine:vEngine/, 'VIEWS must map the view');
+  // invisible to every test that calls the screen's view directly.
+  assert.match(PAGE, /engine:screenView\('engine'\)/, 'VIEWS must map the view');
   assert.match(PAGE, /'lists','engine','history'/, 'VORDER must include it, for swipe and keys');
   assert.match(PAGE, /engine:'Engine'/, 'VTITLE must name it');
   assert.match(PAGE, /SECONDARY = new Set\(\[[^\]]*'engine'/, 'it belongs behind More, not on the bar');
@@ -393,7 +399,7 @@ test('a worker that cannot start falls back to the page, with the same answer', 
   assert.ok(!vm.runInContext('ENG.val.error', s));
   // And the screen must stop promising it runs in the background.
   vm.runInContext('ENG.valRunning = true', s);
-  assert.match(vm.runInContext('vEngine()', s), /page will freeze/);
+  assert.match(vEngine(s), /page will freeze/);
 });
 
 test('the score can be copied as plain text that names no track or artist', async () => {
@@ -401,10 +407,10 @@ test('the score can be copied as plain text that names no track or artist', asyn
   const s = screen({ tags, worker: fakeWorker() });
   await vm.runInContext('engineAnalyse()', s);
   await vm.runInContext('engineValidate()', s);
-  const html = vm.runInContext('vEngine()', s);
-  assert.match(html, /data-eng="copy"/);
+  const html = vEngine(s);
+  assert.match(html, /data-act="copy"/);
 
-  const text = vm.runInContext('engineSummary()', s);
+  const text = ENGINE_SCREEN.summary(ctxOf(s));
   assert.match(text, /This engine: top-1 \d+%, top-3 \d+%/);
   assert.match(text, /Today's engine: top-1 \d+%/);
   assert.match(text, /Rung: /);
@@ -418,14 +424,14 @@ test('the weakest playlists are named, weakest first, and only with enough track
   const s = screen({ worker: fakeWorker() });
   await vm.runInContext('engineAnalyse()', s);
   await vm.runInContext('engineValidate()', s);
-  const weak = JSON.parse(vm.runInContext('JSON.stringify(weakBuckets(ENG.val))', s));
+  const weak = JSON.parse(JSON.stringify(ENGINE_SCREEN.weakBuckets(vm.runInContext('ENG.val', s), vm.runInContext('LIB', s))));
   assert.ok(weak.length > 0, 'the fixture has three playlists with enough tracks');
   for (const b of weak) {
     assert.ok(b.n >= 5);
     assert.ok(['Tech House', 'Ambient', 'Late Night'].includes(b.name), `named by the listener's own name: ${b.name}`);
   }
   for (let i = 1; i < weak.length; i++) assert.ok(weak[i - 1].inTop3 <= weak[i].inTop3);
-  assert.match(vm.runInContext('vEngine()', s), /Playlists it understands least/);
+  assert.match(vEngine(s), /Playlists it understands least/);
 });
 
 
@@ -460,9 +466,9 @@ test('changing which playlists take suggestions rebuilds rather than reusing the
 test('with no genre playlists the screen says where to mark some, instead of an empty result', () => {
   const lib = library();
   const s = screen({ lib, cfg: Object.fromEntries(lib.playlists.map(p => [p.id, { target: false }])) });
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   assert.match(html, /No genre playlists yet/);
-  assert.match(html, /data-eng="lists"/);
+  assert.match(html, /data-act="lists"/);
 });
 
 /* ---------- similar artists (docs/SMARTER-GENRES-PLAN.md, phase 0) ----------
@@ -514,13 +520,13 @@ test('with similar artists on, the score shows both ways, on the same tracks', a
   // Wikidata could match and it is not asked at all.
   assert.equal(calls.json.length, 0);
 
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   assert.match(html, /Adding similar artists/);
   assert.match(html, /With similar artists<\/b> — right first time/);
   assert.match(html, /not in any genre playlist yet/);
   assert.match(html, /id="bridgeToggle" checked/);
 
-  const text = vm.runInContext('engineSummary()', s);
+  const text = ENGINE_SCREEN.summary(ctxOf(s));
   assert.match(text, /With similar artists: top-1 \d+%, top-3 \d+%/);
   assert.match(text, /Never-filed artists: \d+ tracks/);
   assert.match(text, /Similar-artist coverage: \d+ artists looked up/);
@@ -543,13 +549,13 @@ test('with tags and similar artists, the score blends the two and keeps the fit 
   const kept = vm.runInContext('idb.get("engine-blend")', s);
   assert.equal(kept.weight, v.blend.weight);
   assert.equal(kept.beatsTags, v.blend.beatsTags);
-  assert.match(vm.runInContext('vEngine()', s), /Today’s engine and this one, together/);
-  const text = vm.runInContext('engineSummary()', s);
+  assert.match(vEngine(s), /Today’s engine and this one, together/);
+  const text = ENGINE_SCREEN.summary(ctxOf(s));
   assert.match(text, /Blended \(tags [\d.]+ \+ this engine with similar artists\): top-1 \d+%, top-3 \d+%/);
   assert.match(text, /Phase 1: /);
   assert.ok(!/undefined|NaN|\[object Object\]/.test(text), text);
   // Forgetting the engine forgets the fit too.
-  await vm.runInContext('engineReset()', s);
+  await ENGINE_SCREEN.actions.reset(ctxOf(s));
   assert.equal(vm.runInContext('idb.get("engine-blend")', s), null);
 });
 
@@ -588,8 +594,8 @@ test('a lookup that fails costs the comparison, never the score', async () => {
   const v = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', s));
   assert.ok(!v.error && v.mine.scored > 0, 'scored anyway');
   assert.equal(v.mine.withBridge, undefined);
-  assert.match(vm.runInContext('vEngine()', s), /couldn't be looked up\s+\(offline\)/);
-  assert.match(vm.runInContext('engineSummary()', s), /Similar artists: lookup failed \(offline\)/);
+  assert.match(vEngine(s), /couldn't be looked up\s+\(offline\)/);
+  assert.match(ENGINE_SCREEN.summary(ctxOf(s)), /Similar artists: lookup failed \(offline\)/);
 });
 
 test('switched off, it asks nobody and says so', async () => {
@@ -599,8 +605,8 @@ test('switched off, it asks nobody and says so', async () => {
   await vm.runInContext('engineValidate()', s);
   assert.equal(calls.deezer.length + calls.json.length, 0);
   assert.equal(vm.runInContext('ENG.val.mine.withBridge', s), undefined);
-  assert.match(vm.runInContext('engineSummary()', s), /Similar artists: switched off/);
-  assert.match(vm.runInContext('vEngine()', s), /id="bridgeToggle" (?!checked)/);
+  assert.match(ENGINE_SCREEN.summary(ctxOf(s)), /Similar artists: switched off/);
+  assert.match(vEngine(s), /id="bridgeToggle" (?!checked)/);
 });
 
 test('the Deezer frame is sandboxed without same-origin, and both sides pin the host', () => {
@@ -625,11 +631,11 @@ test('scoring calibrates, keeps the calibration, and drops the raw rows', async 
   assert.equal(c.base.checked.n, v.mine.scored, 'checked on every scored track, each from the other half');
   assert.ok(vm.runInContext('idb.get(CAL_KEY)', s), 'remembered on the device');
 
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   assert.match(html, /How sure it is, checked/);
   assert.match(html, /Short list/);
   assert.match(html, /Not sure/);
-  const text = vm.runInContext('engineSummary()', s);
+  const text = ENGINE_SCREEN.summary(ctxOf(s));
   assert.match(text, /How sure: (confident|confident: none earned yet)/);
   assert.ok(!/undefined|NaN|\[object Object\]/.test(text), text);
 });
@@ -643,7 +649,7 @@ test('once calibrated, every compared track gets a checked answer, not a raw per
   assert.ok(sh.decided, 'scoring should have decorated the comparison');
   assert.equal(sh.decided.confident + sh.decided.choose + sh.decided.unsure,
                sh.rows.filter(r => r.decision).length);
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   assert.match(html, /Confident · short list · not sure/);
   assert.match(html, /tag ok">confident|tag">probably|tag warn">pick one|<i>not sure<\/i>/);
 });
@@ -664,7 +670,7 @@ test('a calibration is reused for the same library, and not for a different ques
 
 test('decisions read as words a person would say', () => {
   const s = screen();
-  const d = (kind, ...names) => vm.runInContext(`decisionHtml(${JSON.stringify({ kind, playlists: names.map(n => ({ id: n, name: n })) })})`, s);
+  const d = (kind, ...names) => ENGINE_SCREEN.decisionHtml({ kind, playlists: names.map(n => ({ id: n, name: n })) }, s.esc);
   assert.match(d('confident', 'Jungle'), /<b>Jungle<\/b> <span class="tag ok">confident/);
   assert.match(d('choose', 'Jungle'), /<b>Jungle<\/b> <span class="tag">probably/);
   assert.match(d('choose', 'Jungle', 'DnB'), /<b>Jungle<\/b> or <b>DnB<\/b> <span class="tag warn">pick one/);
@@ -676,9 +682,40 @@ test('forgetting also forgets the calibration', async () => {
   const s = screen();
   await vm.runInContext('engineAnalyse()', s);
   await vm.runInContext('engineValidate()', s);
-  await vm.runInContext('engineReset()', s);
+  await ENGINE_SCREEN.actions.reset(ctxOf(s));
   assert.equal(vm.runInContext('ENG.calib', s), null);
   assert.equal(vm.runInContext('idb.get(CAL_KEY)', s), null);
+});
+
+test("the screen's actions are wired: go, validate and lists call the page, the tick writes the setting", async () => {
+  const s = screen({ bridge: true });
+  const seen = [];
+  const c = { ...ctxOf(s), engineAnalyse: () => seen.push('go'), engineValidate: () => seen.push('validate'),
+              go: v => seen.push('go:' + v) };
+  ENGINE_SCREEN.actions.go(c); ENGINE_SCREEN.actions.validate(c); ENGINE_SCREEN.actions.lists(c);
+  assert.deepEqual(seen, ['go', 'validate', 'go:lists']);
+  ENGINE_SCREEN.actions.bridgeToggle(c, { checked: false });
+  assert.equal(c.LS.getItem('bf_bridge_off'), '1');
+  ENGINE_SCREEN.actions.bridgeToggle(c, { checked: true });
+  assert.equal(c.LS.getItem('bf_bridge_off'), null);
+});
+
+test('Copy results writes the summary to the clipboard, and falls back to share, then a prompt', async () => {
+  const s = screen();
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  const base = ctxOf(s);
+  const text = ENGINE_SCREEN.summary(base);
+  const copied = [];
+  await ENGINE_SCREEN.actions.copy({ ...base, navigator: { clipboard: { writeText: async t => copied.push(t) } } });
+  assert.deepEqual(copied, [text]);
+  const shared = [];
+  await ENGINE_SCREEN.actions.copy({ ...base, navigator: { clipboard: { writeText: async () => { throw new Error('no'); } },
+                                                          share: async o => shared.push(o.text) } });
+  assert.deepEqual(shared, [text]);
+  const asked = [];
+  await ENGINE_SCREEN.actions.copy({ ...base, navigator: {}, prompt: (m, t) => asked.push(t) });
+  assert.deepEqual(asked, [text]);
 });
 
 /* ---------- weights fitted to the account's filing (core/validate/weights.mjs) ---------- */
@@ -709,16 +746,16 @@ test('the Score run fits this engine\'s weights, shows them beside the defaults,
   assert.equal(!!blendRec.nativeFitted, !!v.blend.nativeFitted);
   assert.equal(!!v.blend.nativeFitted, !!v.weights.bridge.use);
 
-  const html = vm.runInContext('vEngine()', s);
+  const html = vEngine(s);
   assert.match(html, /Weights fitted to your filing/);
   assert.match(html, /with weights fitted to your filing/);
-  const text = vm.runInContext('engineSummary()', s);
+  const text = ENGINE_SCREEN.summary(ctxOf(s));
   assert.match(text, /This engine, weights fitted to your filing: top-1 \d+%, top-3 \d+% \(default weights \d+% \/ \d+%\); artist graph (×[\d.]+|off), label/);
   assert.match(text, /With similar artists, weights fitted: top-1 \d+%/);
   assert.ok(!/undefined|NaN|\[object Object\]/.test(text), text);
 
   // "Forget and learn again" forgets the fit too.
-  await vm.runInContext('engineReset()', s);
+  await ENGINE_SCREEN.actions.reset(ctxOf(s));
   assert.equal(vm.runInContext('idb.get("engine-weights")', s), null);
   assert.equal(vm.runInContext('fittedWeights("plain")', s), null);
 });
@@ -740,7 +777,7 @@ test('without a fit that earned its place, the comparison is byte-identical to t
   const fresh = screen();
   await vm.runInContext('engineAnalyse()', fresh);
   const today = shadowOf(fresh);
-  const page = s => vm.runInContext('vEngine()', s).replace(/learned in \d+ms/, 'learned in —');
+  const page = s => vEngine(s).replace(/learned in \d+ms/, 'learned in —');
   const html = page(fresh);
   const fit = (s, over) => ({ stamp: vm.runInContext('wfitStamp()', s), targets: vm.runInContext('engineTargets()', s),
     plain: { use: true, weights: { ...vm.runInContext('BetterfyIntrinsic.WEIGHTS', s), graph: 8, minutes: 0, era: 0 } }, ...over });

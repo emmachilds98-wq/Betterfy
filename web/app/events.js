@@ -1,4 +1,5 @@
 document.addEventListener('click', guard(async e => {
+  if (await dispatchAct(e)) return;
   const nav = e.target.closest('.nav');
   if (nav) {
     closeSheet();
@@ -78,19 +79,6 @@ document.addEventListener('click', guard(async e => {
       like.textContent = 'Liked'; like.disabled = true; toast('Added to your Liked Songs.'); }
     catch (err) { toast('Failed: '+err.message); } return; }
 
-  const un = e.target.closest('[data-undo]');
-  if (un) { un.disabled = true;
-    try { await undoAction(un.dataset.undo); toast('Restored.'); S.history = await getLog(); render(); }
-    catch (err) { toast('Undo failed: '+err.message); un.disabled = false; } return; }
-  const eng = e.target.closest('[data-eng]');
-  if (eng) {
-    if (eng.dataset.eng === 'go') return engineAnalyse();
-    if (eng.dataset.eng === 'validate') return engineValidate();
-    if (eng.dataset.eng === 'copy') return engineCopy();
-    if (eng.dataset.eng === 'lists') return go('lists');
-    if (eng.dataset.eng === 'reset') return engineReset();
-    return;
-  }
   const gto = e.target.closest('[data-go]'); if (gto) return go(gto.dataset.go);
   const ti = e.target.closest('[data-tidy]'); if (ti) { S.tidySec = ti.dataset.tidy; return render(); }
   // A card under "Next up to file" opens the queue on that track, not at the top.
@@ -233,20 +221,7 @@ document.addEventListener('click', guard(async e => {
   }
   const dfile = e.target.closest('[data-dfile]'); if (dfile) return discAdd(dfile.dataset.dfile);
 
-  if (e.target.id === 'saveLfm') {
-    const v = $('#lfmKey').value.trim();
-    if (v) { LS.setItem('bf_lfm', v); toast('Key saved.'); render(); }
-    else { LS.removeItem('bf_lfm'); toast('Key cleared.'); render(); }
-    return;
-  }
-  if (e.target.id === 'saveDiscogs') {
-    const v = $('#discogsKey').value.trim();
-    if (v) { LS.setItem('bf_discogs', v); toast('Token saved.'); render(); }
-    else { LS.removeItem('bf_discogs'); toast('Token cleared.'); render(); }
-    return;
-  }
-  if (e.target.id === 'enrich') return enrichMissing();
-  if (e.target.id === 'fillWikidata') return fillFromWikidata();
+  if (e.target.id === 'analyseGo') return analyseGo();
   if (e.target.id === 'audioGo') return audioStart();
   if (e.target.id === 'maestGo') return maestStart();
   if (e.target.id === 'maestStop') { AUDIO.maest?.stop(); return; }
@@ -376,16 +351,11 @@ document.addEventListener('click', guard(async e => {
 }));
 
 document.addEventListener('change', guard(async e => {
+  if (await dispatchAct(e)) return;
   if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; S.shufCache = null; return render(); }
   if (e.target.id === 'shufMode') { S.shufMode = e.target.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
-  if (e.target.id === 'bridgeToggle') {
-    if (e.target.checked) LS.removeItem('bf_bridge_off'); else LS.setItem('bf_bridge_off', '1');
-    // File's blend reads the switch on every pick; this lets it re-check from the start.
-    if (typeof blendForget === 'function') blendForget();
-    return;
-  }
   if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
   if (e.target.id === 'deepMaest' || e.target.id === 'deepClap' || e.target.id === 'deepMemory') {
     await audioLoad().catch(() => {});

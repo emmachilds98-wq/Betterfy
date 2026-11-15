@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as SOURCES from '../web/screens/sources.mjs';
 import {
   LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, readingsOf, checksFor, withVerdict, agreement,
   labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, moodsOf, voiceOf,
@@ -32,11 +33,12 @@ test('Sources with no audio is byte-identical to main before this change', () =>
   const LIB = { user: { id: 'u1' }, playlists: [{ id: 'P1', name: 'Jungle', tracks: [{ id: 'a' }] }], liked: [] };
   const sb = { LIB, CFG: { P1: { axis: 'genre', target: true, tracks: 1, why: 'x' } }, TAGS: {}, R: { drift: [] },
     NO_SIGNAL: 'n', MIN_FOR_TARGET: 12, facetMix: () => ({ tracks: 1, genre: 0.9, mood: 0.1 }), isMirrorPlaylist: () => false,
-    tagCoverage: () => ({ total: 10, have: 9, missing: 1, pct: 90 }), esc: s => String(s ?? ''), LS: { getItem: () => '' },
+    tagCoverage: () => ({ total: 10, have: 9, missing: 1, pct: 90 }), esc: s => String(s ?? ''), LS: { getItem: () => '' }, lfmKey: () => null,
     AUDIO: { records: null, labels: null }, profileRow: () => '', audioPanelHTML: () => '<div id="audioPanel">panel</div>' };
   vm.createContext(sb);
-  vm.runInContext(between('let LABELCHECKS = null;', '/** The heard tracks for the engine') + CODE + ';globalThis.out = vSources();', sb);
-  assert.equal(sb.out, readFileSync(new URL('./fixtures/labels/sources-no-audio.html', import.meta.url), 'utf8'));
+  vm.runInContext(between('let LABELCHECKS = null;', '/** The heard tracks for the engine') + CODE, sb);
+  const out = SOURCES.view({ lfmKey: () => '', ...sb, playlistMixes: vm.runInContext('playlistMixes', sb) });
+  assert.equal(out, readFileSync(new URL('./fixtures/labels/sources-no-audio.html', import.meta.url), 'utf8'));
 });
 
 test('with the flag off, every adapter returns exactly what it did before', () => {

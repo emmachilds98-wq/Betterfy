@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as ENGINE from '../web/screens/engine.mjs';
 
 // UI-6 (docs/UI-BUILD-PLAN.md): Tidy's band filter in Sure/Likely/Unsure, real
 // empty states, New playlists' one proposal card, and the Engine's paired
@@ -130,19 +131,12 @@ test('no proposal, no markup', () => {
 });
 
 // ---- Engine ----
-function engine() {
-  const s = { esc };
-  vm.createContext(s);
-  vm.runInContext(slice('function pairBars(', '/** Whether long engine work'), s);
-  return s;
-}
 const p = x => x == null ? '—' : Math.round(x * 100) + '%';
 const run = (gate, nfWith = 0.5) => ({ mine: { top1: 0.6, scored: 200, neverFiled: { scored: 40, top1: 0.4 },
   withAudio: { top1: 0.62, heard: 150, heardNeverFiled: 30, changed: 12, neverFiled: { top1: nfWith }, gate } } });
 
 test('the score card pairs without/with bars and draws the gate at +5 on never-filed artists', () => {
-  const s = engine();
-  const html = vm.runInContext('audioCard', s)(run({ pass: true, text: 'ok', bar: { minLift: 0.05 } }), p);
+  const html = ENGINE.audioCard(run({ pass: true, text: 'ok', bar: { minLift: 0.05 } }), p, esc);
   assert.equal(html.match(/class="pair"/g).length, 2);
   assert.match(html, /Adding how it sounds/);
   assert.match(html, /--v:0\.4000[\s\S]*--v:0\.5000/);
@@ -154,13 +148,12 @@ test('the score card pairs without/with bars and draws the gate at +5 on never-f
 });
 
 test('a lift short of the bar leaves the gate line unmet and says so', () => {
-  const html = vm.runInContext('audioCard', engine())(run({ pass: false, text: 'short', bar: { minLift: 0.05 } }, 0.42), p);
+  const html = ENGINE.audioCard(run({ pass: false, text: 'short', bar: { minLift: 0.05 } }, 0.42), p, esc);
   assert.match(html, /class="gate " style="--g:0\.4500"/);
   assert.match(html, /Not yet, so it only shows\./);
 });
 
 test('scored without sound: no card at all', () => {
-  const s = engine();
-  assert.equal(vm.runInContext('audioCard', s)({ mine: { top1: 0.6 } }, p), '');
-  assert.equal(vm.runInContext('audioCard', s)(null, p), '');
+  assert.equal(ENGINE.audioCard({ mine: { top1: 0.6 } }, p, esc), '');
+  assert.equal(ENGINE.audioCard(null, p, esc), '');
 });

@@ -1,6 +1,6 @@
 const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
                 new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
-                engine:vEngine, history:vHistory, sources:vSources };
+                engine:screenView('engine'), history:screenView('history'), sources:screenView('sources') };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -19,6 +19,7 @@ function render(dir) {
   const main = $('#main');
   main.dataset.view = view;
   main.innerHTML = VIEWS[view]();
+  SCREEN_MODS[view]?.mount?.(screenCtx(view));
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));

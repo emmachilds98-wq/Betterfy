@@ -213,3 +213,33 @@ test('no .env at all is fine — CI builds that way', t => {
   const { out } = build(dir, ['--allow-missing-id']);
   assert.doesNotMatch(out, /ENOENT|Cannot read/, out);
 });
+
+const PUB = 'abcdef0123456789abcdef0123456789';
+
+test('LASTFM_PUBLIC_KEY is baked into the page as the default Last.fm key', t => {
+  const dir = sandbox({ env: `SPOTIFY_CLIENT_ID=${CLIENT_ID}\nLASTFM_PUBLIC_KEY=${PUB}\n` });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const { ok, out } = build(dir);
+  assert.ok(ok, out);
+  assert.match(readFileSync(join(dir, 'docs', 'index.html'), 'utf8'), new RegExp(`DEFAULT_LFM_KEY = '${PUB}'`));
+});
+
+test('without LASTFM_PUBLIC_KEY the default is empty', t => {
+  const dir = sandbox({ env: `SPOTIFY_CLIENT_ID=${CLIENT_ID}\n` });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const { ok, out } = build(dir);
+  assert.ok(ok, out);
+  assert.match(readFileSync(join(dir, 'docs', 'index.html'), 'utf8'), /DEFAULT_LFM_KEY = ''/);
+});
+
+test('the same key as LASTFM_API_KEY is not a leak, but the shared secret still is', t => {
+  const same = sandbox({ env: `SPOTIFY_CLIENT_ID=${CLIENT_ID}\nLASTFM_PUBLIC_KEY=${PUB}\nLASTFM_API_KEY=${PUB}\n` });
+  t.after(() => rmSync(same, { recursive: true, force: true }));
+  const r = build(same);
+  assert.ok(r.ok, r.out);
+  const bad = sandbox({ env: `SPOTIFY_CLIENT_ID=${CLIENT_ID}\nLASTFM_PUBLIC_KEY=${PUB}\nLASTFM_SHARED_SECRET=${SECRET}\n`, poison: SECRET });
+  t.after(() => rmSync(bad, { recursive: true, force: true }));
+  const r2 = build(bad);
+  assert.equal(r2.ok, false);
+  assert.match(r2.out, /LASTFM_SHARED_SECRET/);
+});

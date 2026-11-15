@@ -95,7 +95,7 @@ async function runDiscovery(seedPlaylistId) {
   // No key is not a dead end any more (CLAUDE.md: every account, Spotify
   // library alone): without one, the candidates come from Deezer's and
   // ListenBrainz's "fans also like" for the artists you play.
-  const key = LS.getItem('bf_lfm');
+  const key = lfmKey();
 
   const ownedArtist = new Set(), ownedTrack = new Set();
   const own = t => { for (const a of t?.artists ?? []) ownedArtist.add(norm(a.name));
@@ -397,7 +397,7 @@ function discFitHTML(t) {
 function vDiscover() {
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
-  const hasKey = !!LS.getItem('bf_lfm');
+  const hasKey = !!lfmKey();
   const head = `<h1>Discover</h1>
     <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
       <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>

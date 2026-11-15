@@ -13,12 +13,18 @@ merge so a fresh session can pick up where the last one stopped.
 - UI-B motion tokens + View Transitions ✅ (PR open)
 - Default Last.fm key (`LASTFM_PUBLIC_KEY`, baked at build) + one-tap "Analyse my library" (agent running)
 
+- A4 pilot ✅: history, sources, engine are ES modules (convention in web/README.md "Screen modules (A4)")
+
+- PR #114 open: default Last.fm key + one-tap Analyse, A4 pilot (history/sources/engine), merged with main #105/#111/#116/#117
+- A4 screens, run one agent at a time to stay under usage limits: home/inbox (running) → tidy/lists/new → shuffle/discover
+
 ## Next
-- Wave 3: A4 screens → ES modules, in 3 groups:
-  (home, inbox, inbox-actions) · (tidy, lists, new, shuffle) · (discover, sources, engine, history); UI-D 4-tab shell + Settings sheet
+- Wave 3: remaining A4 screens, in groups:
+  (home, inbox, inbox-actions) · (tidy, lists, new) · (shuffle, discover); UI-D 4-tab shell + Settings sheet
 - Wave 4: UI-C, UI-E, UI-F, UI-G; §5.2–§5.6
 - Deferred (need model export + measurement): Beat This tempo, S-KEY key step 2
 
 ## Notes for agents
 - Worktrees can start from a stale base: first `git checkout -B <branch> <current tip>`.
 - After merging branches, run `npm run build:web` once and commit the rebuilt `docs/` (build stamp must match across page and worker).
+- `test/pageload.test.mjs` loads the built page in Chromium: run it after any web/app load-order change.
