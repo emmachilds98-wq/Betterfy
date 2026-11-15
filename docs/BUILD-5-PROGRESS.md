@@ -15,6 +15,9 @@ merge so a fresh session can pick up where the last one stopped.
 
 - A4 pilot ✅: history, sources, engine are ES modules (convention in web/README.md "Screen modules (A4)")
 
+- PR #114 open: default Last.fm key + one-tap Analyse, A4 pilot (history/sources/engine), merged with main #105/#111/#116/#117
+- A4 screens, run one agent at a time to stay under usage limits: home/inbox (running) → tidy/lists/new → shuffle/discover
+
 ## Next
 - Wave 3: remaining A4 screens, in groups:
   (home, inbox, inbox-actions) · (tidy, lists, new) · (shuffle, discover); UI-D 4-tab shell + Settings sheet
