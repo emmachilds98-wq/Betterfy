@@ -51,8 +51,17 @@ function describe(rows) {
 const shape = t => ({
   id: t.id, album: t.album, albumType: t.albumType, released: t.released,
   duration_ms: t.duration_ms, dur: mmss(t.duration_ms), isrc: t.isrc,
-  popularity: t.popularity, name: t.name,
+  name: t.name,
 });
+
+// Which copy of a repeat to keep: the release filed in more playlists, then
+// the one added first, then playlist order. (It used to be the most popular
+// copy, but Spotify removed `popularity` from tracks in February 2026.) The
+// same rule as the page's buildReports().
+const plCount = new Map();
+for (const p of lib.playlists)
+  for (const id of new Set((p.tracks ?? []).map(t => t?.id).filter(Boolean))) plCount.set(id, (plCount.get(id) ?? 0) + 1);
+const addedAt = t => { const x = Date.parse(t?.added_at); return Number.isFinite(x) ? x : Infinity; };
 
 // ---------- within a playlist ----------
 const within = [];
@@ -68,9 +77,9 @@ for (const p of lib.playlists) {
     if (rows.length < 2) continue;
     const shaped = rows.map(shape);
     const d = describe(shaped);
-    // Default keep: the most popular copy, which is the one Spotify will
-    // surface elsewhere anyway — a better bet than the earliest release.
-    const keep = [...shaped].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))[0];
+    const order = rows.map((t, i) => ({ i, n: plCount.get(t.id) ?? 0, at: addedAt(t) }))
+      .sort((a, b) => (b.n - a.n) || (a.at - b.at) || (a.i - b.i));
+    const keep = shaped[order[0].i];
     within.push({
       playlist: p.name, playlistId: p.id,
       artist: rows[0].artists?.[0]?.name, title: rows[0].name,
