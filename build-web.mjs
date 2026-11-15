@@ -7,6 +7,7 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { bundleModules } from './bundler.mjs';
 import { GENRES } from './core/ontology/genres.mjs';
 import { canonTag } from './profile.mjs';
+import { assembledTemplate } from './web/manifest.mjs';
 
 // argv, then .env, then whatever the last build baked into docs/index.html.
 // That last fallback is the important one: .env is gitignored, so a rebuild in
@@ -139,6 +140,15 @@ const ENGINE_ENTRIES = [
   // mixes with, from the account's own heard tracks.
   'core/audio/match.mjs',
   'core/audio/identify.mjs',
+  // Tidy by sound: filed tracks whose sound disagrees with their playlist.
+  'core/audio/misfit.mjs',
+  // Each playlist's genre mix, BPM range and "two genres?" from its heard members.
+  'core/audio/plprofile.mjs',
+  // Shuffle's DJ order: heard tracks sequenced so each next one beatmatches.
+  'core/audio/order.mjs',
+  // Discover by sound: re-rank picks by fit to the seed, and the keyless
+  // candidate path over the neighbour bridge's cached lookups.
+  'core/audio/discover.mjs',
 ];
 
 const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
@@ -159,6 +169,10 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyWikidata: 'core/sources/wikidata.mjs',
     BetterfyMatch: 'core/audio/match.mjs',
     BetterfyIdentify: 'core/audio/identify.mjs',
+    BetterfyMisfit: 'core/audio/misfit.mjs',
+    BetterfyPlProfile: 'core/audio/plprofile.mjs',
+    BetterfyOrder: 'core/audio/order.mjs',
+    BetterfyDiscover: 'core/audio/discover.mjs',
   },
 });
 
@@ -179,6 +193,13 @@ self.onmessage = function (e) {
   var m = e.data || {};
   var mirrors = new Set(m.mirrorIds || []);
   var isMirror = function (p) { return !!p && mirrors.has(p.id); };
+  // The hosted app fits nothing to playlist membership: its sound learner is
+  // prototypes only (docs/BUILD-5-PLAN.md §2.3, option b), whatever arrives.
+  var prototypesOnly = function (a) {
+    if (!a) return null;
+    var o = (typeof a === 'object' && !Array.isArray(a) && ('records' in a || 'index' in a)) ? a : { records: a };
+    return Object.assign({}, o, { model: 'prototype' });
+  };
   var t0 = performance.now();
   try {
     var result;
@@ -188,7 +209,7 @@ self.onmessage = function (e) {
       // genreGraph: the artist graph learns from genre playlists only, so
       // mood and event playlists stop teaching genre (sound-first filing).
       var space = BetterfyIntrinsic.buildSpace(m.lib, { isMirror: isMirror, targets: m.targets || null,
-                                                        audio: m.audio || null, genreGraph: m.genreGraph === true });
+                                                        audio: prototypesOnly(m.audio), genreGraph: m.genreGraph === true });
       result = BetterfyPersist.serialiseSpace(space, m.lib);
       // The "can't tell apart" report costs more than the build on a big
       // library (2.9s for 250 playlists) and needs nothing but the space, so it
@@ -198,7 +219,7 @@ self.onmessage = function (e) {
     } else if (m.op === 'validate') {
       var common = Object.assign({}, m.opts, { isMirror: isMirror,
                                                 targets: m.targets ? new Set(m.targets) : null,
-                                                bridge: m.bridge || null, audio: m.audio || null,
+                                                bridge: m.bridge || null, audio: prototypesOnly(m.audio),
                                                 // The sound variant is scored the way the File screen
                                                 // files a heard track: sound leading.
                                                 soundWeights: m.opts && m.opts.soundFirst
@@ -209,6 +230,11 @@ self.onmessage = function (e) {
       try { result.identify = m.audio ? BetterfyIdentify.identifyAccuracyFor(m.lib, m.audio,
               { targets: m.targets || null, isMirror: isMirror }) : null; }
       catch (e) { result.identify = null; }
+    } else if (m.op === 'misfits') {
+      // Tidy by sound: an all-pairs nearest-neighbour pass over the heard
+      // tracks, too long for the page's thread on a big library.
+      result = BetterfyMisfit.soundMisfitsFor(m.lib, m.audio || null,
+        { targets: m.targets || null, isMirror: isMirror, measure: m.measure !== false });
     } else {
       throw new Error('unknown engine op: ' + m.op);
     }
@@ -228,7 +254,7 @@ const listMjs = dir => { try { return readdirSync(dir).filter(f => /\.(mjs|js)$/
 const AUDIO_INTRINSIC = readdirSync('core/intrinsic').filter(f => /^audio.*\.mjs$/.test(f)).sort().map(f => `core/intrinsic/${f}`);
 // Engine-side lookups over the sound space (sound ID, sound-alikes, mixes):
 // they ship in engine.js, and would only add the genre ontology (~100 KB) here.
-const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs']);
+const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs', 'core/audio/misfit.mjs', 'core/audio/plprofile.mjs', 'core/audio/order.mjs', 'core/audio/discover.mjs']);
 const AUDIO_ENTRIES = ['web/audio/index.mjs', ...listMjs('core/audio').filter(f => !ENGINE_SIDE.has(f)),
                        ...listMjs('core/audio/dsp'), ...AUDIO_INTRINSIC];
 const camel = f => f.replace(/^.*\//, '').replace(/\.m?js$/, '').split(/[-_]/).map(w => w[0].toUpperCase() + w.slice(1)).join('');
@@ -253,12 +279,12 @@ const AUDIO_MODELS = arg('audio-models') ?? readEnv('AUDIO_MODELS') ?? 'models/'
 /* The inference worker: a module worker, because onnxruntime-web 1.31 ships as
  * ES modules. It holds the ear and the heads and nothing else; the page keeps
  * lookup, download, decode and the mel (core/audio/worker.js explains why). */
-const { code: earCode } = bundleModules(['core/audio/infer.mjs', 'core/audio/heads.mjs'], {
-  namespace: { BetterfyInfer: 'core/audio/infer.mjs', BetterfyHeads: 'core/audio/heads.mjs' },
+const { code: earCode } = bundleModules(['core/audio/infer.mjs', 'core/audio/heads.mjs', 'core/audio/clap.mjs'], {
+  namespace: { BetterfyInfer: 'core/audio/infer.mjs', BetterfyHeads: 'core/audio/heads.mjs', BetterfyClap: 'core/audio/clap.mjs' },
 });
 const AUDIO_WORKER = `/* Generated by build-web.mjs — do not edit here. */
 ${earCode}
-let ort = null, ear = null, heads = null;
+let ort = null, ear = null, heads = null, clapEar = null;
 const opts = () => ({ executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
 self.onmessage = async function (e) {
   const m = e.data || {};
@@ -284,6 +310,13 @@ self.onmessage = async function (e) {
       if (!heads) throw new Error('no heads loaded');
       result = await heads.run(m.emb, m.patches);
       transfer = Object.values(result).map(a => a.buffer);
+    } else if (m.op === 'clapInit') {
+      // CLAP (WP-C2): only when the page's "Search by description" switch is on.
+      clapEar = clapEar || await BetterfyClap.createClapEar({ ort, modelUrl: m.modelUrl, sessionOptions: opts() });
+      result = true;
+    } else if (m.op === 'clap') {
+      if (!clapEar) throw new Error('CLAP not loaded');
+      result = await BetterfyClap.clapEmbed(clapEar, m.windows);
     } else {
       throw new Error('unknown audio op: ' + m.op);
     }
@@ -309,7 +342,10 @@ const GENRE_WORDS = [...new Set(Object.entries(GENRES)
   .map(canonTag)
   .filter(w => w && !NOT_ALONE.has(w)))].sort();
 
-const html = readFileSync('docs/app.template.html', 'utf8')
+/* The page's own script lives in web/app/ and web/screens/ (docs/BUILD-5-PLAN.md
+ * A1), listed in load order in web/manifest.mjs, and goes back in where the
+ * template says __APP__ before any other placeholder is filled. */
+const html = assembledTemplate()
   // A function, not a string: CSS is free to contain `$&` and friends.
   .replace('__STYLES__', () => STYLES)
   .replace("'__GENRE_WORDS__'", JSON.stringify(GENRE_WORDS))

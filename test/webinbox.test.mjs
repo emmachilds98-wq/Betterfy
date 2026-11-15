@@ -34,6 +34,9 @@ function load({ backlog = [], inboxAt = 0, sel = new Set(), fb = {} } = {}) {
     logAction: async e => { calls.log.push(e); },
     getLog: async () => [{ at: 'T' + calls.log.length }],
     undoAction: async at => { calls.undo.push(at); },
+    // fileCurrent records the accept (B7); the real helpers are covered in
+    // webverdicts.test.mjs, so here they only need to exist.
+    recordAccept: async () => {}, forgetAccept: async () => {},
     console,
   };
   vm.createContext(sandbox);

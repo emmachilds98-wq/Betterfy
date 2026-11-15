@@ -8,6 +8,7 @@ import { createAudioController, createWorkerEar, listenVM, profileVM, styleName 
 import { audioQueue } from '../core/audio/queue.mjs';
 import { makeRecord, makeMiss, MISS, N_STYLES, EMB_DIM, validRecord } from '../core/audio/record.mjs';
 import { MEL_VERSION, SAMPLE_RATE } from '../core/audio/mel.mjs';
+import { assembledTemplate } from '../web/manifest.mjs';
 
 // WP-B2: the page's store, settings and run loop. These are what
 // docs/audio.js exposes as BetterfyAudio; the template only renders them.
@@ -136,7 +137,7 @@ test('settings changes merge and persist', () => {
 });
 
 test('the page template falls back to the same defaults before audio.js has loaded', () => {
-  const tpl = readFileSync(new URL('../docs/app.template.html', import.meta.url), 'utf8');
+  const tpl = assembledTemplate(); // the template with web/app/ and web/screens/ put back
   const i = tpl.indexOf('function audioSettings()'), j = tpl.indexOf('const audioModelUrl');
   assert.ok(i > 0 && j > i, 'audioSettings() not found in the template');
   const ls = memLS();

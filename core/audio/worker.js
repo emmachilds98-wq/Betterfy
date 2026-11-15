@@ -19,9 +19,13 @@
 // nothing, and FAILED is returned as a result, never written as a miss.
 import { melFrames, melPatches, MEL_VERSION, SAMPLE_RATE } from './mel.mjs';
 import { makeRecord, makeMiss, MISS, CACHEABLE_MISS } from './record.mjs';
+import { addClap } from './clap.mjs';
 
 // 1.1.0 (WP-D4): `deps.dsp` gets the decoded windows separately, never the
 // joined samples, and fillDsp() measures dsp for a record heard before it.
+// WP-C2 adds an optional `deps.clap` ({ decode, embed }) that puts the CLAP
+// field on the record in the same pass; without it nothing changes, so the
+// version stays.
 export const WORKER_VERSION = '1.1.0';
 
 /**
@@ -36,6 +40,8 @@ export const WORKER_VERSION = '1.1.0';
  * @param {(outputs: object, n: number) => object} [deps.summariseHeads]
  * @param {(windows: Float32Array[]) => object|null} [deps.dsp]                               optional DSP (WP-D4): gets each decoded
  *        window on its own (contiguous audio), never the joined samples; core/audio/dsp/combine.mjs measureWindows
+ * @param {{ decode(buf: ArrayBuffer): Promise<Float32Array>, embed(windows: Float32Array[]): Promise<object|null> }} [deps.clap]
+ *        optional CLAP (WP-C2): 48 kHz decode and core/audio/clap.mjs clapEmbed, bound to its ear
  * @param {() => number} [deps.now]
  * @param {{ id: string, isrc?: string, durationMs?: number }} track
  * @returns {Promise<{ record: object } | { miss: object } | { failed: { id: string, stage: string, detail: string } }>}
@@ -59,6 +65,15 @@ export async function analyseOne(deps, track) {
   let got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
   if (got?.miss) return failed('download', got.detail ?? got.miss);
 
+  // CLAP (WP-C2), only when the page passes deps.clap: the same windows at
+  // 48 kHz, decoded first because decoding detaches the buffer it is given.
+  // A bonus: a failure here leaves CLAP out, it never fails the track.
+  let clap48 = null;
+  if (deps.clap) {
+    try { clap48 = []; for (const b of got.buffers) clap48.push(await deps.clap.decode(b.slice(0))); }
+    catch { clap48 = null; }
+  }
+
   // Decode each window separately (a cut MP3 resyncs on its own) and join them.
   let samples, parts;
   try { parts = await decodeAll(deps, got.buffers); samples = concat(parts); }
@@ -66,7 +81,9 @@ export async function analyseOne(deps, track) {
   const { windows, sliced } = got;
   got = null; // drop the compressed audio
 
-  return analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+  const res = await analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+  if (res.record && clap48) res.record = await addClap(deps.clap, res.record, clap48);
+  return res;
 }
 
 /**

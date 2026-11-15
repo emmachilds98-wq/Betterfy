@@ -35,9 +35,16 @@ over anything that needs a file most users won't have.
 - `V2-PLAN.md` — the longer-range architecture review; still mostly
   aspirational, but the "what v1 actually is" and defects sections are
   accurate and worth reading before a big change.
-- `docs/HANDOFF.md` — **start here**: the current state (open PR #88, what
-  waits on the owner), a file map of the sound features, and the ranked next
-  work. Newer than `UPGRADE-PLAN.md`.
+- `docs/BUILD-5-PLAN.md` — **start here for build 5** (2026-11-14): the full
+  review of the current build, verified bugs, the open-PR verdicts, the
+  restructure (Phase A), the 4-tab UI and motion system (Phase B), smarter
+  functions (Phase C), audio/knowledge upgrades (Phase D) and the wave order.
+  Supersedes HANDOFF §6 and UI-BUILD-PLAN §2/§6.
+- `docs/HANDOFF.md` — the sound features: the current state (what's merged, what's
+  open on GitHub, what waits on the owner's machine), a file map of the sound
+  features, and the ranked next work. Newer than `UPGRADE-PLAN.md`.
+- `docs/SOUND-EVERYWHERE-PLAN.md` — the round that spread sound to Tidy,
+  Playlists, Shuffle and Discover (S1–S4 merged) and the key work (S5).
 - `docs/UPGRADE-PLAN.md` — the older (2026-10-31) order of work across the open PRs
   and plans, and what was waiting on the owner then.
 - `docs/GENRE-RECOGNITION-PLAN.md` — why filing went into non-genre
@@ -58,6 +65,10 @@ over anything that needs a file most users won't have.
   review, the sound-layer view models (`web/ui/sound.mjs`), and who owns which
   stylesheet partial in `web/styles/`. CSS goes in a partial, never back into
   `docs/app.template.html`; `npm run shots` screenshots every screen offline.
+- `web/README.md` — since build 5's A1 the template is markup only: the
+  page's script lives in `web/app/*.js` and `web/screens/*.js`, classic
+  scripts joined in the order `web/manifest.mjs` lists. Script changes go
+  there, never back into the template.
 - `docs/SMARTER-GENRES-PLAN.md` — the current genre plan: free
   similar-artist bridges (Deezer, ListenBrainz via Wikidata, measured on the
   owner's library), calibrated confidence, the Gaps screen for proposing new

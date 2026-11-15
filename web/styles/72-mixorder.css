@@ -1,0 +1,19 @@
+
+  /* ---------- Shuffle: DJ order (core/audio/order.mjs) ----------
+     Drawn only once listening has heard enough of the playlist and a DJ order
+     is chosen; the spaced shuffle is laid out exactly as before. */
+  #shufMode{max-width:100%}
+  .mx-sum{margin:-10px 0 20px; font-size:14px}
+  .mx-order .mx-bpm{margin-left:auto; flex:none; font-family:var(--mono); font-size:12px; color:var(--ink-2);
+                    padding:2px 7px; border-radius:999px; background:var(--surface, transparent); border:1px solid var(--line)}
+  .mx-order .mx-tag{flex:none; font-size:11.5px; letter-spacing:.04em; color:var(--warn)}
+  .mx-order .mx-bpm + .mx-tag{margin-left:0}
+  .mx-order > .mx-jump{box-shadow:inset 3px 0 0 var(--warn)}
+  .mx-order > .mx-unheard{opacity:.72}
+  .mx-arc{display:flex; align-items:flex-end; gap:3px; height:44px; margin:-8px 0 18px; padding:6px 8px;
+          border-radius:12px; background:var(--surface-2)}
+  .mx-arc span{flex:1; min-width:2px; border-radius:3px 3px 1px 1px; background:color-mix(in srgb, var(--ok) 70%, var(--surface-2))}
+  @media (max-width:560px){
+    .mx-order > div{flex-wrap:wrap; gap:4px 10px}
+    .mx-order .t{flex:1 1 60%; min-width:0; overflow-wrap:anywhere}
+  }

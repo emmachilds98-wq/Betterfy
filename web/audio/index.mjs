@@ -17,3 +17,4 @@ export { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_
 export { readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB } from './deep-settings.mjs';
 export { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean,
   confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } from '../../core/audio/clap-search.mjs';
+export { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } from '../../core/audio/clap.mjs';
