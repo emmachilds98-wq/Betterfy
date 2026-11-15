@@ -122,23 +122,24 @@ test('the sheet Shuffle and DJ order point the Shuffle screen at the playlist, c
 test('Sources holds the three genre sources and the Listening card', () => {
   const sb = load();
   const html = SOURCES.view({ lfmKey: () => '', ...sb, playlistMixes: vm.runInContext('playlistMixes', sb) });
-  for (const id of ['lfmKey', 'saveLfm', 'enrich', 'fillWikidata', 'discogsKey', 'saveDiscogs']) assert.ok(html.includes(`id="${id}"`), id);
+  assert.match(html, /data-lfmconnect/, 'Last.fm connects through the one shared sheet');
+  for (const id of ['enrich', 'fillWikidata', 'discogsKey', 'saveDiscogs']) assert.ok(html.includes(`id="${id}"`), id);
   assert.match(html, /<button class="b p" id="enrich" data-act="enrich" disabled>/); // no key yet
   assert.match(html, /<section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h"><div id="audioPanel">panel<\/div><\/section>/);
 });
 
-test('Sources actions: saving a key stores it, clearing removes it, and both redraw', () => {
+test('Sources actions: the Discogs token clears and redraws', () => {
   const kept = new Map(), said = [];
   let drawn = 0;
   const c = { LS: { setItem: (k, v) => kept.set(k, v), removeItem: k => kept.delete(k) },
               $: sel => ({ value: sel === '#lfmKey' ? '  abc  ' : '' }),
               toast: m => said.push(m), render: () => drawn++ };
-  SOURCES.actions.saveLfm(c);
-  assert.equal(kept.get('bf_lfm'), 'abc');
+  // The Last.fm key is saved by the shared connect sheet (app/sheet.js), not here.
+  assert.equal(SOURCES.actions.saveLfm, undefined);
   SOURCES.actions.saveDiscogs(c);
   assert.ok(!kept.has('bf_discogs'));
-  assert.deepEqual(said, ['Key saved.', 'Token cleared.']);
-  assert.equal(drawn, 2);
+  assert.deepEqual(said, ['Token cleared.']);
+  assert.equal(drawn, 1);
   const seen = [];
   SOURCES.actions.enrich({ enrichMissing: () => seen.push('enrich') });
   SOURCES.actions.fillWikidata({ fillFromWikidata: () => seen.push('wikidata') });

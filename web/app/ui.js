@@ -42,6 +42,16 @@ const LEGACY_VIEWS = {
   engine:  { section: 'engine' },
   history: { section: 'history' },
 };
+/* ---------- ⓘ: "how this works" lives behind a button, not in the page ----------
+ * One shared helper (docs/BUILD-5-PLAN.md §4.1, UI-F). A screen puts infoBtn()
+ * next to its heading with the title and body; tapping it opens the small
+ * #infoSheet (web/app/sheet.js). The body is kept by id so the markup stays one
+ * short attribute. Screen modules receive it through screenCtx() as ctx.infoBtn. */
+const INFO = {};
+function infoBtn(id, title, html) {
+  INFO[id] = { title, html };
+  return `<button class="info" type="button" data-info="${esc(id)}" aria-label="${esc(title)}: how this works">\u24D8</button>`;
+}
 let toastT;
 function toast(msg, undoFn) {
   const el = $('#toast');

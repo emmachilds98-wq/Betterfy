@@ -129,12 +129,11 @@ function audioPanelHTML() {
     <div class="srchead"><h2 id="src-listening-h">Listen to my music</h2><span class="tag ${!set.on ? 'idle' : running || vm.state === 'done' ? 'ok' : 'idle'}">${
       !set.on ? 'Off' : running ? 'Listening' : vm.state === 'done' ? 'Up to date' : 'Paused'}</span></div>
     <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. Off until you switch it on.</p>
-    <details class="how"><summary>How this works</summary>
-      <p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
+    ${infoBtn('listen', 'Listening', `<p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
       30-second preview, found by the track’s ISRC) and remembers what it sounds like. The audio is never stored, only a
       ~2.5 KB summary on this device. Switching it on downloads the listening model once (about 37 MB),
       then about 330 KB per track. “What I’m playing + unfiled” also hears up to 20 tracks from each genre
-      playlist, so there is something to compare the rest against.</p></details>
+      playlist, so there is something to compare the rest against.</p>`)}
     <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioOn" ${set.on ? 'checked' : ''}> Listen to my music</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioWifi" ${set.wifiOnly ? 'checked' : ''}> Wi-Fi only</label>
@@ -153,11 +152,6 @@ function audioPanelHTML() {
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
     ${AUDIO.err ? `<p class="sub">${esc(AUDIO.err)}</p>` : ''}
     ${set.on ? deepPanelHTML() : ''}
-    <p class="sub credit">Listening model: Discogs-EffNet and its mood, voice and
-      danceability heads by the Music Technology Group, Universitat Pompeu Fabra
-      (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
-      used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Previews from Deezer.${
-      deepSettings().maest ? ' Second ear: MAEST (discogs-maest-10s-pw-2) by the same group, quantised to int8 for the page, same licence.' : ''}</p>
   </div>`;
 }
 

@@ -94,7 +94,7 @@ export function view(ctx) {
   const touch = matchMedia('(hover:none) and (pointer:coarse)').matches;
   const how = touch
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
-    : `Keys: <b>1–3</b> pick, <b>Enter</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.`;
+    : '';
 
   return `${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
@@ -143,15 +143,17 @@ export function view(ctx) {
           <button class="b big go grow" data-act="filesel" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
           <button class="b big" data-act="skip">Skip</button>
         </div>
-        <div class="rowbtns" style="margin-top:10px">
-          <button class="b sm" data-act="unlike">Unlike</button>
-          <select id="anyPl" data-act="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
-        </div>
-        <p style="margin:14px 0 0; font-size:13px; color:var(--ink-3); text-align:center">Nothing is written to Spotify until you tap File or swipe — and it can be undone after.</p>
+        <details class="cardmore"><summary aria-label="More: unlike, or add another playlist" title="More">\u22EF</summary>
+          <div class="rowbtns">
+            <button class="b sm" data-act="unlike">Unlike</button>
+            <select id="anyPl" data-act="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+          </div>
+        </details>
       </div>
     </div>
     <div class="prog" style="margin-top:16px"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
-    <div class="swipehint"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span></div>`;
+    ${touch ? '' : `<div class="swipehint" role="note"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span>
+      <span><b>1–3</b> pick · <b>Enter</b> file · <b>S</b> skip · <b>U</b> unlike</span></div>`}`;
 }
 
 /** Toggle one playlist in or out of the pending selection for the track on screen. */

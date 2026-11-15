@@ -273,6 +273,16 @@
   .empty-state.compact p{margin:0; max-width:none; font-size:var(--fs-small)}
   .empty-state.compact .es-acts{margin:0 0 0 auto; justify-content:flex-end}
 
+  /* ---------- ⓘ and its small sheet (UI-F) ---------- */
+  .info{appearance:none; border:0; background:none; color:var(--ink-3); font:inherit; font-size:17px; line-height:1;
+        cursor:pointer; padding:2px 6px; margin-left:4px; border-radius:50%; vertical-align:middle}
+  .info:hover, .info:focus-visible{color:var(--ink)}
+  dialog.infosheet{max-width:min(440px, calc(100vw - 32px)); background:var(--surface); color:var(--ink);
+       border:1px solid var(--line); border-radius:var(--r); padding:18px 20px; box-shadow:var(--shadow-2)}
+  dialog.infosheet::backdrop{background:rgba(0,0,0,.5)}
+  dialog.infosheet h2{margin:0 0 10px; font-size:18px}
+  .infobody{font-size:var(--fs-small); color:var(--ink-2); line-height:1.6; margin-bottom:14px}
+  .infobody p{margin:0 0 8px}
   /* ---------- "How this works" (UI-1) ----------
      A screen's lede is one sentence; the explanation it used to carry sits
      behind this, shut by default. */

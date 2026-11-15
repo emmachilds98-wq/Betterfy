@@ -135,7 +135,7 @@ export function view(c) {
           <span class="plmeta"><span class="mono">${s.n}</span> tracks · ${esc(s.why)}</span></span></button>`).join('')}</div>
     </section>` : '';
   return `<h1>Library</h1>
-    <p class="lede">Your playlists and how Betterfy treats each. Tap one for its axis, health and shuffle.</p>
+    <p class="lede">Tap a playlist for its axis, health and shuffle.</p>
     ${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
