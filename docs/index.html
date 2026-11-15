@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0405">
+<meta name="bf-build" content="2026-11-15-0527">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1465,7 +1465,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0405</span>
+    <span class="mono">build 2026-11-15-0527</span>
   </p>
 
   <div class="feat">
@@ -1569,7 +1569,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0405</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0527</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1610,7 +1610,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0405</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0527</span>
   </div>
 </div>
 
@@ -3140,6 +3140,52 @@ const LS = (() => {
 })();
 const mmss = ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`;
 
+/* The store (docs/BUILD-5-PLAN.md A3). Background jobs (engine, listening,
+ * sync, tag fills, the Gaps and Tidy-by-sound builds) say WHAT changed by
+ * writing a slice, instead of calling render() blind. The slices are named in
+ * the plan: lib, reports, eng, sound, audio, gaps, player and ui.<screen>.
+ * Only the screen that is mounted AND watches that slice repaints; a job that
+ * finishes while another screen is open costs nothing. The live objects (LIB,
+ * R, ENG, ...) stay where they are: set() stores a reference and, like touch()
+ * for state mutated in place, notifies. test/webstore.test.mjs bans a bare
+ * render() in the background files. */
+const store = (() => {
+  const data = {}, subs = {};
+  const api = {
+    get: k => data[k],
+    /** Replace a slice and tell its subscribers. Same value is still a change: state is mutated in place. */
+    set(k, v) { data[k] = v; api.touch(k); return v; },
+    /** The slice changed in place. */
+    touch(k) { for (const fn of [...(subs[k] ?? [])]) { try { fn(data[k], k); } catch (e) { console.error(e); } } },
+    /** Subscribe; returns the unsubscribe function. */
+    on(k, fn) { (subs[k] ??= new Set()).add(fn); return () => subs[k].delete(fn); },
+  };
+  return api;
+})();
+
+/* Which slices repaint which screen. `ui.<screen>` always repaints that screen
+ * (and only it); the shared slices are listed here. A screen not listed for a
+ * slice ignores it. */
+const STORE_SCREENS = ['home', 'inbox', 'tidy', 'new', 'discover', 'shuffle', 'lists', 'engine', 'history', 'sources'];
+const STORE_WATCH = {
+  lib:     STORE_SCREENS,
+  reports: STORE_SCREENS,
+  eng:     ['engine'],
+  sound:   ['home', 'inbox'],
+  audio:   ['home', 'inbox', 'tidy'],
+  gaps:    ['new'],
+  player:  [],
+};
+for (const [slice, screens] of Object.entries(STORE_WATCH))
+  store.on(slice, () => storeRepaint(screens));
+for (const screen of STORE_SCREENS)
+  store.on('ui.' + screen, () => storeRepaint([screen]));
+
+/** Repaint the current screen if it is one of `screens` and the page is up. */
+function storeRepaint(screens) {
+  if (typeof view === 'undefined' || !screens.includes(view) || !document.getElementById('main')) return;
+  render();
+}
 /* ---------------- theme (colour, density, remembered filters) ----------------
  * Lives outside #land/#app so it works before Spotify is connected, not just
  * inside the synced app — the trigger button is a fixed element, not part of
@@ -3432,7 +3478,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0405';
+const BUILD = '2026-11-15-0527';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3753,7 +3799,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0405', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0527', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -4825,7 +4871,7 @@ function setListen(vm) {
   if (typeof view === 'undefined' || view !== 'home' || !$('#main')) return;
   // Only a card appearing or going re-draws Home; a count ticking up while
   // listening runs updates in place, so the cards don't replay their entrance.
-  if (had !== listenEverRan()) return render();
+  if (had !== listenEverRan()) return store.touch('ui.home');
   const n = $('#main .act[data-heard] .n');
   if (n) n.textContent = listenHeard().toLocaleString();
 }
@@ -5204,7 +5250,7 @@ function tidySoundWarm() {
 async function tidySoundLoad() {
   try { await engineAudio(); } catch { /* no records: Tidy stays as it was */ }
   TSOUND.status = 'idle';
-  if (view === 'tidy' && tidySoundOn()) render();
+  if (tidySoundOn()) store.touch('ui.tidy');
 }
 async function tidySoundBuild(key) {
   try {
@@ -5223,7 +5269,7 @@ async function tidySoundBuild(key) {
   } catch (e) {
     Object.assign(TSOUND, { status: 'error', key, err: e?.message ?? String(e) });
   }
-  if (view === 'tidy') render();
+  store.touch('ui.tidy');
 }
 function tidySoundTrack(id) {
   for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id === id)
@@ -5276,7 +5322,7 @@ function secMisfile() {
   // and the row renders immediately either way; the note appears once the
   // fetch resolves, without blocking anything on it.
   const recentlyActive = LISTENING_CACHE?.recentlyActive ?? null;
-  if (!recentlyActive && !LISTENING_PENDING) getListening().then(() => render());
+  if (!recentlyActive && !LISTENING_PENDING) getListening().then(() => store.touch('ui.tidy'));
   // Only draw the (stateful, id-bearing) editor once, even if the artist
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
@@ -5374,7 +5420,7 @@ async function gapsCompute() {
   } catch (e) {
     GAPS.status = 'error'; GAPS.err = e?.message ?? String(e);
   }
-  render();
+  store.touch('gaps');
 }
 
 /** Make a private playlist holding these tracks. Nothing else in the library changes. */
@@ -5383,7 +5429,7 @@ async function gapsCreate(name, ids) {
   await addTracks(pl.id, ids);
   GAPS.made.add(name.toLowerCase());
   toast(`Created “${name}” with ${ids.length} tracks. It becomes a place to file into after your next sync.`);
-  render();
+  store.touch('gaps');
 }
 
 /** Add these tracks to a playlist they already sound like. Nothing is taken out of anywhere. */
@@ -5391,7 +5437,7 @@ async function gapsFile(playlistId, name, ids, key) {
   await addTracks(playlistId, ids);
   GAPS.filed.add(key);
   toast(`Added ${ids.length} track${ids.length === 1 ? '' : 's'} to “${name}”.`);
-  render();
+  store.touch('gaps');
 }
 
 /** Proposals by sound: pick one of two, hybrid playlists, new genre? Nothing at all without audio.
@@ -5834,8 +5880,8 @@ function mixIndexNow() {
  *  { pending } while engine.js loads. */
 function shuffleMix(sel, tracks, mode) {
   if (!globalThis.BetterfyOrder) {
-    if (!MIX_PAGE.err) fire(engineLoad().then(() => { if (view === 'shuffle') render(); },
-      e => { MIX_PAGE.err = e?.message ?? String(e); if (view === 'shuffle') render(); }));
+    if (!MIX_PAGE.err) fire(engineLoad().then(() => { store.touch('ui.shuffle'); },
+      e => { MIX_PAGE.err = e?.message ?? String(e); store.touch('ui.shuffle'); }));
     return { pending: true };
   }
   const index = mixIndexNow();
@@ -6302,7 +6348,7 @@ function discSoundRedraw() {
   if (view !== 'discover') return;
   const el = document.getElementById('discSnd');
   if (el) el.outerHTML = discSoundLine();
-  else render();
+  else store.touch('ui.discover');
 }
 
 /** The discovery currently on the card. */
@@ -6551,7 +6597,7 @@ function listsProfiles() {
     // The engine bundle is fetched on demand; fetch it and draw again.
     if (!LPROF.loading && typeof engineLoad === 'function') {
       LPROF.loading = true;
-      fire(Promise.resolve(engineLoad()).then(() => { if (view === 'lists') render(); }, () => {}));
+      fire(Promise.resolve(engineLoad()).then(() => { store.touch('ui.lists'); }, () => {}));
     }
     return null;
   }
@@ -6583,7 +6629,7 @@ function listsProfileRun(key) {
     if (!done) return void setTimeout(slice, 0);
     LPROF.busy = false;
     try { LPROF.out = LPROF.pr.result(); } catch { LPROF.out = null; }
-    if (view === 'lists') render();
+    store.touch('ui.lists');
   };
   setTimeout(slice, 0);
 }
@@ -7230,7 +7276,7 @@ async function enrichMissing() {
     + (viaDiscogs ? ` ${viaDiscogs} from Discogs, where Last.fm had nothing.` : '')
     + (blank ? ` ${blank} have no tags anywhere.` : '')
     + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : ''));
-  render();
+  store.touch('reports');
 }
 
 /* ---------- genres with no key at all: docs/SMARTER-GENRES-PLAN.md §4.1(c) ----------
@@ -7281,7 +7327,7 @@ async function fillFromWikidata({ quiet = false } = {}) {
     $('#land').hidden = true; $('#app').hidden = false;
     toast(`Wikidata had genres for ${found.toLocaleString()} of ${ids.length.toLocaleString()} untagged artists.`
       + (failed ? ` ${failed.toLocaleString()} could not be reached — try again later.` : ''));
-    render();
+    store.touch('reports');
   }
   return found;
 }
@@ -7323,7 +7369,7 @@ async function noteCorrection(id, tags) {
   const c = await loadCorrections();
   c[id] = { tags, at: Date.now() };
   await idb.set(CORR_KEY, c);
-  syncCorrections().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+  syncCorrections().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
 }
 
 /** Corrections from linked devices, applied exactly as if made here. */
@@ -7703,7 +7749,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0405';
+    s.src = 'engine.js?v=2026-11-15-0527';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -7725,7 +7771,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0405');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0527');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -7899,7 +7945,7 @@ function engineDecorate() {
 /** Learn the account, then show what this engine would do with the same tracks
  *  the File screen is currently offering the tag engine's answer for. */
 const engineAnalyse = guard(async () => {
-  ENG.status = 'working'; ENG.err = null; render();
+  ENG.status = 'working'; ENG.err = null; store.touch('eng');
   try {
     await engineLoad();
     const { space, from, ms, pairs } = await engineSpace();
@@ -7947,7 +7993,7 @@ const engineAnalyse = guard(async () => {
   } catch (e) {
     ENG.status = 'error'; ENG.err = e?.message ?? String(e);
   }
-  render();
+  store.touch('eng');
 });
 
 /* ---------- the neighbour bridge: docs/SMARTER-GENRES-PLAN.md, phase 0 ----------
@@ -8050,7 +8096,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0405';
+    s.src = 'audio.js?v=2026-11-15-0527';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -8086,7 +8132,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0405', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0527', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -8138,8 +8184,8 @@ function audioMidRun(vm) {
   fire((async () => {
     try { await audioRefresh(); } finally { AUDIO_MIDRUN_AT.busy = false; }
     // The File card picks new tracks up through soundHear; a rebuild is due only once enough more was heard.
-    if (view === 'inbox' || view === 'home') { soundWarm(); render(); }
-    else if (view === 'tidy') render();
+    if (view === 'inbox' || view === 'home') soundWarm();
+    store.touch('audio');
   })());
 }
 
@@ -8253,7 +8299,7 @@ async function soundBuild(targets) {
   } catch (e) {
     Object.assign(SOUND, { status: 'error', err: e?.message ?? String(e), n: soundHeard(), targets, memo: null });
   }
-  if (view === 'inbox' || view === 'home') render();
+  store.touch('sound');
 }
 
 /** A space learned elsewhere that the File screen can use as it is: built for
@@ -8384,7 +8430,7 @@ async function clapNames() { return (CLAPS.names ??= (await idb.get(CLAP_NAMES_K
 async function clapConfirm(ids, name) {
   CLAPS.names = BetterfyAudio.confirmName(await clapNames(), ids, name);
   await idb.set(CLAP_NAMES_KEY, CLAPS.names);
-  syncClusterNames().then(changed => { if (changed) render(); });
+  syncClusterNames().then(changed => { if (changed) { store.touch('ui.new'); store.touch('ui.discover'); } });
 }
 
 /** Names given on the listener's other linked devices. */
@@ -8415,9 +8461,9 @@ async function clapNameOrphans(orphans, records) {
 /** Run a search for what is in the box. Prompts only: free text has no encoder in the page. */
 async function clapSearch(q) {
   CLAPS.q = String(q ?? '').trim();
-  if (!CLAPS.q) { CLAPS.res = null; return render(); }
+  if (!CLAPS.q) { CLAPS.res = null; return store.touch('ui.discover'); }
   const table = await clapTable();
-  if (!table) { CLAPS.res = null; return render(); }
+  if (!table) { CLAPS.res = null; return store.touch('ui.discover'); }
   const idx = BetterfyAudio.clapIndex(AUDIO.records, { dim: table.dim });
   const r = BetterfyAudio.soundsLike(CLAPS.q, idx, table);
   const ids = new Set(r.results.map(x => x.id));
@@ -8427,7 +8473,7 @@ async function clapSearch(q) {
   CLAPS.res = { q: CLAPS.q, prompt: r.prompt, heard: r.heard,
     results: r.results.map(x => ({ ...x, t: info.get(x.id) ?? null })).filter(x => x.t),
     near: r.prompt ? [] : BetterfyAudio.suggestPrompts(CLAPS.q, table, { limit: 6 }) };
-  render();
+  store.touch('ui.discover');
 }
 
 /** Discover's "sounds like" card. '' unless CLAP has heard something in this library. */
@@ -8436,7 +8482,7 @@ function soundSearchHTML() {
   const heard = BetterfyAudio.clapHeard(AUDIO.records);
   if (!heard) return '';
   const t = CLAPS.table;
-  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => render()));
+  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => store.touch('ui.discover')));
   const n = x => x.toLocaleString();
   const list = t ? `<datalist id="sndqList">${t.prompts.map(p => `<option value="${esc(p.label)}"></option>`).join('')}</datalist>` : '';
   const res = CLAPS.res;
@@ -8656,7 +8702,7 @@ async function engineBridge(tracks) {
  * empty table and reporting that it lost would be rigging the comparison.
  */
 const engineValidate = guard(async () => {
-  ENG.valRunning = true; ENG.val = null; ENG.valStage = null; render();
+  ENG.valRunning = true; ENG.val = null; ENG.valStage = null; store.touch('eng');
   try {
     const tags = TAGS && Object.keys(TAGS).length ? TAGS : null;
     const t0 = performance.now();
@@ -8667,14 +8713,14 @@ const engineValidate = guard(async () => {
     let bridge = null, bridgeStats = null, bridgeErr = null;
     const useBridge = bridgeOn();
     if (useBridge) {
-      ENG.valStage = 'bridge'; ENG.bridgeProgress = {}; render();
+      ENG.valStage = 'bridge'; ENG.bridgeProgress = {}; store.touch('eng');
       try {
         await engineLoad();
         const tracks = BetterfyValidate.scoredTracks(LIB, { limit: VALIDATE_N, isMirror: isMirrorPlaylist,
                                                            targets: new Set(engineTargets()) });
         ({ bridge, stats: bridgeStats } = await engineBridge(tracks));
       } catch (e) { bridge = null; bridgeErr = e?.message ?? String(e); }
-      ENG.valStage = 'score'; render();
+      ENG.valStage = 'score'; store.touch('eng');
     }
     const bridgeMs = useBridge ? Math.round(performance.now() - t0) : 0;
     const t1 = performance.now();
@@ -8710,7 +8756,7 @@ const engineValidate = guard(async () => {
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }
-  ENG.valRunning = false; ENG.valStage = null; render();
+  ENG.valRunning = false; ENG.valStage = null; store.touch('eng');
 });
 
 /**
@@ -8914,7 +8960,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0405`,
+    `Betterfy engine score — build 2026-11-15-0527`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -9662,7 +9708,7 @@ document.addEventListener('change', guard(async e => {
     toast('Updated — suggestions recomputed.');
     render();
     // Shared with linked devices straight away, not only at the next load.
-    syncAxes().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+    syncAxes().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
   }
 }));
 
@@ -9873,7 +9919,7 @@ $('#syncRedeem').onclick = async () => {
     input.value = '';
     toast('Linked — pulling in what the other device knows…');
     const changed = await syncEverything();
-    if (changed) { R = buildReports(LIB, CFG, TAGS); render(); }
+    if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); }
   } catch (e) { toast('Could not link: ' + e.message); }
   finally { btn.disabled = false; }
 };
@@ -10054,7 +10100,7 @@ async function start(force) {
     // Background, after the first paint — never delays it, and only redraws
     // again if another device actually had feedback this one did not, rather
     // than resetting the screen on every load for nothing.
-    syncEverything().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+    syncEverything().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
     // Keyless genres for artists nothing has tagged. Cached per artist, so after
     // the first load this asks only about artists that are new or stale.
     if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});

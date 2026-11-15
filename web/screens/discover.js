@@ -358,7 +358,7 @@ function discSoundRedraw() {
   if (view !== 'discover') return;
   const el = document.getElementById('discSnd');
   if (el) el.outerHTML = discSoundLine();
-  else render();
+  else store.touch('ui.discover');
 }
 
 /** The discovery currently on the card. */

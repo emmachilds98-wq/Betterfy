@@ -171,6 +171,7 @@ const line = re => { const m = BUNDLE.match(re); assert.ok(m, String(re)); retur
 function page(extra = {}) {
   const sandbox = { S: {}, CFG: { pX: { name: 'Jungle', axis: 'genre', target: true }, pY: { name: 'Dubstep', axis: 'genre', target: true } },
                     BetterfyDiscover: D, view: 'discover', console, render() { sandbox.rendered++; }, rendered: 0,
+                    store: { get() {}, on() {}, set() { sandbox.rendered++; }, touch() { sandbox.rendered++; } },
                     document: { getElementById: () => null }, ...extra };
   vm.createContext(sandbox);
   vm.runInContext(line(/const esc = [^\n]+/), sandbox);

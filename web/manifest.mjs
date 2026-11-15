@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 
 export const APP_FILES = [
   'app/storage.js',
+  'app/store.js',
   'app/theme.js',
   'app/version.js',
   'app/auth.js',

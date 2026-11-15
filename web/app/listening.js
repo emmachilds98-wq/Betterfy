@@ -23,7 +23,7 @@ function setListen(vm) {
   if (typeof view === 'undefined' || view !== 'home' || !$('#main')) return;
   // Only a card appearing or going re-draws Home; a count ticking up while
   // listening runs updates in place, so the cards don't replay their entrance.
-  if (had !== listenEverRan()) return render();
+  if (had !== listenEverRan()) return store.touch('ui.home');
   const n = $('#main .act[data-heard] .n');
   if (n) n.textContent = listenHeard().toLocaleString();
 }

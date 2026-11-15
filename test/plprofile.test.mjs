@@ -200,7 +200,7 @@ function page({ recs = records, withEngine = true } = {}) {
     profileRow: v => (v ? `<div class="prof">${v.bpm ? v.bpm.join('-') : ''}|${(v.styles ?? []).map(s => s[0]).join(',')}</div>` : ''),
     audioPanelHTML: () => '', labelCheckHTML: () => '',
     fire: p => Promise.resolve(p).catch(() => {}),
-    render: () => renders.push(1), toast: m => calls.push(['toast', m]),
+    render: () => renders.push(1), store: { get() {}, on() {}, set: () => renders.push(1), touch: () => renders.push(1) }, toast: m => calls.push(['toast', m]),
     sp: async (path, o) => { calls.push(['sp', path, JSON.parse(o.body)]); return { id: 'NEW' }; },
     addTracks: async (id, ids) => calls.push(['add', id, ids]),
     setTimeout, Date,

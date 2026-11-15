@@ -70,13 +70,13 @@ function load({ tags = {}, cache = {}, wikidata = {}, wikidataFails = false, las
     engineLoad: async () => true,
     getListening: async () => ({ weights: new Map() }), byListening: e => e,
     contributeTags: () => {}, buildReports: () => ({ rebuilt: true }),
-    toast: m => { s.told = m; }, stage: () => {}, render: () => {}, $: () => ({ hidden: false }),
+    toast: m => { s.told = m; }, stage: () => {}, render: () => {}, store: { get() {}, on() {}, set() {}, touch() {} }, $: () => ({ hidden: false }),
     URLSearchParams, URL, setTimeout, console,
   };
   vm.createContext(s);
   vm.runInContext(ENGINE, s);
   vm.runInContext(block, s);
-  return Object.assign(s, { store: () => store.tags_extra, asked });
+  return Object.assign(s, { cached: () => store.tags_extra, asked });
 }
 const own = x => JSON.parse(JSON.stringify(x));
 
@@ -86,7 +86,7 @@ test('only artists with no tags at all are asked, and what is found is used stra
   assert.equal(found, 1);
   assert.deepEqual(app.asked.wikidata.sort(), [ID(1), ID(2), ID(3)], 'the tagged artist is never asked');
   assert.deepEqual(own(app.TAGS[ID(1)].tags), [['house', 100]]);
-  assert.equal(app.store()[ID(1)].source, 'wikidata');
+  assert.equal(app.cached()[ID(1)].source, 'wikidata');
   assert.match(app.told, /Wikidata had genres for 1 of 3 untagged artists/);
 });
 
@@ -98,8 +98,8 @@ test('an artist Wikidata does not know is remembered as asked, and not asked aga
   await app.fillFromWikidata();
   assert.equal(app.asked.wikidata.length, 0);
   // Six months on, a "nothing" answer is worth another look.
-  for (const e of Object.values(app.store())) e.checkedAt -= 200 * 24 * 3600 * 1000;
-  await app.idb.set('tags_extra', app.store());
+  for (const e of Object.values(app.cached())) e.checkedAt -= 200 * 24 * 3600 * 1000;
+  await app.idb.set('tags_extra', app.cached());
   await app.fillFromWikidata();
   assert.equal(app.asked.wikidata.length, 4);
 });
@@ -107,7 +107,7 @@ test('an artist Wikidata does not know is remembered as asked, and not asked aga
 test('a request that failed is not written down as "nothing there"', async () => {
   const app = load({ wikidataFails: true });
   await app.fillFromWikidata();
-  assert.deepEqual(own(app.store()), {});
+  assert.deepEqual(own(app.cached()), {});
   assert.match(app.told, /could not be reached/);
 });
 
@@ -126,5 +126,5 @@ test('with a Last.fm key, Last.fm is still asked about Wikidata-filled artists, 
   assert.ok(app.asked.lastfm.includes('A') && app.asked.lastfm.includes('B'));
   assert.deepEqual(own(app.TAGS[ID(0)].tags).map(([t]) => t), ['deep house', 'house', 'chill'], 'Last.fm replaces it');
   assert.deepEqual(own(app.TAGS[ID(1)].tags), [['rock', 100]], 'an empty Last.fm answer keeps the Wikidata genre');
-  assert.equal(app.store()[ID(1)].source, 'wikidata');
+  assert.equal(app.cached()[ID(1)].source, 'wikidata');
 });
