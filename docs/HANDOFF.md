@@ -70,7 +70,7 @@ Other `claude/*` branches whose PRs are merged are history only.
 | `core/ontology/tempo.mjs` | A working BPM range per ontology genre, a half-time set, `tempoFit`, `resolveOctave` |
 | `core/audio/match.mjs` | `nearest`, `playlistConcepts` (playlist name → genres), `genreMembership`, `filedNeighbours`, `tempoOf`, `tempoRelation`, `mixesWith` |
 | `core/audio/identify.mjs` | `identify(record, { neighbours, tags })` → genre, path, sub-genre, BPM, blend, support, why. Also `identifyAccuracy` and `identifyAccuracyFor` |
-| `build-web.mjs` | Bundles `match`/`identify` into `engine.js` as `BetterfyMatch` and `BetterfyIdentify`, and keeps them out of `audio.js` (`ENGINE_SIDE`). The worker's build and validate ops pass `genreGraph`/`soundFirst` and return `identify` |
+| `build-web.mjs` | Bundles `match`/`identify` into `engine.js` as `BetterfyMatch` and `BetterfyIdentify`, and keeps them out of `audio.js` (since A7 by their own `// @bundle engine` line, see `web/bundles.mjs`; it was the `ENGINE_SIDE` list). The worker's build and validate ops pass `genreGraph`/`soundFirst` and return `identify` |
 | `docs/app.template.html` | The engine section and the File card. Details below |
 | `web/styles/68-soundid.css` | Styles for the File card's "Sounds like" box |
 

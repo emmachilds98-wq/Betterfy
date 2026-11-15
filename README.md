@@ -592,6 +592,14 @@ npm run rekordbox -- "collection.xml" --write  # import tempo/key from Rekordbox
 Everything is **dry-run by default**. Commands that change your Spotify library
 print what they would do and stop; add `--apply` to commit.
 
+All but `rekordbox` are the Node-only v1 tools, which since build 5's A7 live in
+`legacy/` with the local app (`legacy/server.mjs`, `legacy/ui/`), the v1/v3
+review pages (`legacy/review*.html`, `legacy/build-review*.mjs`) and
+`legacy/analyse-v3.mjs`. The hosted page uses none of them; the `npm run`
+names are unchanged. Run them from the repo root, as `npm run` does: they read
+`library.json` and the reports from the working directory. `Betterfy.bat`
+stays at the root so a pinned shortcut keeps working.
+
 ### The local app (`npm start`)
 
 **Refresh** sits at the top right of Overview — the first page you land on —
@@ -939,12 +947,13 @@ membership, and nothing is shared.
 | `musicbrainz.mjs` | resolves a Spotify artist to a MusicBrainz id, so enrich-lastfm.mjs can ask Last.fm by id instead of a name — Node-only, optional |
 | `listening.mjs` | real listening behaviour (top artists, recent plays) as a weight per artist — best-effort, works with no Spotify auth available too |
 | `snapshot.mjs` | dumps the whole library to `library.json` |
-| `actions.mjs` | every library mutation, with the undo log |
-| `server.mjs` + `ui/` | the local app |
-| `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
+| `legacy/actions.mjs` | every library mutation of the local app, with the undo log |
+| `legacy/server.mjs` + `legacy/ui/` | the local app (`npm start`) |
+| `legacy/` | the Node-only v1 CLIs (`dupes`, `misfile`, `discover`, `shuffle`, `consolidate`, `write`, `analyse`, `verify-untouched`) and the review pages; the hosted page uses none of them |
+| `build-web.mjs` + `docs/` | the browser build for GitHub Pages; `web/bundles.mjs` reads which modules go into the lazy `engine.js`/`audio.js` from each module's `// @bundle` line |
 | `core/` | the v3 evidence engine — ontology, identity, evidence, providers, track classifier, playlist intelligence, recommendations, benchmarks. Not wired into the app; see `docs/ENGINE-V3-ARCHITECTURE.md` |
 | `enrich-lastfm-tracks.mjs` | track-level Last.fm tags, prioritised by what you play and what the engine is least sure about — optional, resumable |
-| `analyse-v3.mjs` | runs the v3 engine over your `library.json` and existing caches: bands, playlist types, relationships, and the review queue |
+| `legacy/analyse-v3.mjs` | runs the v3 engine over your `library.json` and existing caches: bands, playlist types, relationships, and the review queue |
 | `make-icons.mjs` | renders the logo to the PNG sizes browsers and phones ask for |
 
 `build-web.mjs` bundles `norm`, `credits` and `profile` verbatim into the page,

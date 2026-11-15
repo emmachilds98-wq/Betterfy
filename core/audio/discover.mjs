@@ -1,3 +1,4 @@
+// @bundle engine order=200 global=BetterfyDiscover
 // Discover by sound (docs/SOUND-EVERYWHERE-PLAN.md, S4).
 //
 // Two things Discover could not do before:

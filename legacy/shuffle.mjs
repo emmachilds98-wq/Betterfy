@@ -2,13 +2,13 @@
 // the same artist and the same album, instead of uniform-random (which clumps)
 // or Spotify's weighted shuffle (which clumps on purpose).
 //
-//   node shuffle.mjs "Techno Emma"            # dry run + quality stats
-//   node shuffle.mjs "Techno Emma" --apply    # write to a shuffled playlist
-//   node shuffle.mjs "Techno Emma" --play     # apply, then start playback
+//   node legacy/shuffle.mjs "Techno Emma"          # dry run + quality stats
+//   node legacy/shuffle.mjs "Techno Emma" --apply  # write to a shuffled playlist
+//   node legacy/shuffle.mjs "Techno Emma" --play   # apply, then start playback
 import { readFileSync } from 'node:fs';
-import { api } from './spotify.mjs';
+import { api } from '../spotify.mjs';
 import { findOrCreate, replaceAll } from './write.mjs';
-import { dedupe } from './norm.mjs';
+import { dedupe } from '../norm.mjs';
 
 const args = process.argv.slice(2);
 const APPLY = args.includes('--apply') || args.includes('--play');

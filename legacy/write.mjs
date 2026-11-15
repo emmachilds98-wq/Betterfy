@@ -1,6 +1,6 @@
 // Playlist write helpers. Spotify renamed /tracks -> /items on reads; try the
 // new path first on writes too and fall back if the account is on the old shape.
-import { api } from './spotify.mjs';
+import { api } from '../spotify.mjs';
 
 const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 

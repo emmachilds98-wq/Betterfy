@@ -1,3 +1,5 @@
+// @bundle engine order=100 global=BetterfyDeezer
+// @bundle audio order=20 global=BetterfyDeezer
 // Deezer: an exact artist id from an ISRC, and that artist's "fans also like".
 //
 // Why Deezer at all, when Spotify has an artist id already: Spotify's own

@@ -52,6 +52,8 @@ const REEXPORT_FROM_RE = /^export\s*\{([\s\S]*?)\}\s*from\s*['"]([^'"]+)['"]\s*;
 const REEXPORT_RE = /^export\s*\{([\s\S]*?)\}\s*;?\s*$/gm;
 /** `export const|let|var|function|async function|class NAME`. */
 const EXPORT_DECL_RE = /^export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm;
+/** `// @bundle engine order=10 global=BetterfyX`, the whole line with its newline. */
+export const BUNDLE_HEADER_LINE_RE = /^\/\/ @bundle\b[^\n]*(?:\n|$)/gm;
 
 /** Each `a` or `a as b` in a brace list, as { imported, local }. */
 const specifiers = s => s.split(',').map(x => x.trim()).filter(Boolean)
@@ -102,9 +104,14 @@ export function moduleShape(src) {
 /** Remove module syntax, leaving a body that is valid inside a function.
  *
  *  Handles `export async function`, which the original build did not — five
- *  modules use it, and each would have shipped as a syntax error. */
+ *  modules use it, and each would have shipped as a syntax error.
+ *
+ *  A `// @bundle ...` line (web/bundles.mjs) goes too: it is build metadata,
+ *  like the import lines, and taking it out is what let the convention land
+ *  without changing a byte of what ships. */
 export function stripModuleSyntax(src) {
   return src
+    .replace(BUNDLE_HEADER_LINE_RE, '')
     .replace(IMPORT_RE, '')
     .replace(REEXPORT_FROM_RE, '')
     .replace(/^import\s*['"][^'"]+['"]\s*;?/gm, '')

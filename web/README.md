@@ -13,6 +13,40 @@
   (`docs/UI-BUILD-PLAN.md` §3). CSS goes here, never into the template.
 - `ui/sound.mjs`: the sound layer's renderers, bundled as globals.
 - `audio/`: "Listen to my music", bundled into the lazy `docs/audio.js`.
+- `bundles.mjs`: which modules go into the lazy `docs/engine.js` and
+  `docs/audio.js` (below).
+
+## The lazy bundles: `// @bundle` lines
+
+Since `docs/BUILD-5-PLAN.md` A7 there is no list of engine modules in
+`build-web.mjs`. A module joins a bundle by saying so in its first line:
+
+```js
+// @bundle engine order=110 global=BetterfyCalibrate
+```
+
+- `engine` or `audio`; a module may carry one line per bundle
+  (`core/sources/deezer.mjs` is in both).
+- `global=` is the name the page uses (`BetterfyCalibrate.…`). Optional.
+- `order=` only fixes where the module's code sits in the built file (it was
+  how the convention replaced the old lists without changing a byte). **Leave
+  it off a new module**; unnumbered ones go after the numbered ones, by path.
+- The line is stripped from the bundle, like an import.
+
+`docs/audio.js` is also a folder sweep, as before: all of `core/audio/` and
+`core/audio/dsp/`, plus `core/intrinsic/audio*.mjs` named automatically
+(`audio-learn.mjs` → `BetterfyAudioLearnIntrinsic`). A `core/audio/` module that
+says `// @bundle engine` (sound ID, sound-alikes, mixes, DJ order…) ships in
+`engine.js` instead and the sweep skips it; that is what `ENGINE_SIDE` used to
+say by hand. The page's inline core (`norm`, `credits`, `profile`,
+`core/playlists/axes.mjs`, `ui/sound.mjs`) and the audio worker's ear modules
+stay explicit lists in `build-web.mjs`: the first costs every load, the second
+is edited together with the worker's ops.
+
+`test/bundles.test.mjs` fails if the committed `docs/engine.js`/`docs/audio.js`
+carry different modules or globals from what the lines declare (a line went
+missing, or you added one and need to rebuild), or if the page uses a
+`Betterfy*` name no line declares.
 
 ## app/ and screens/
 
@@ -32,7 +66,7 @@ by screen in A4.
 | `app/cache.js` | the IndexedDB library cache (`idb`) |
 | `app/feedback.js` | skips and rejects (`FB`) |
 | `app/classify.js` | `classify()`: the page's wrapper over `core/playlists/axes.mjs`, which `axes.mjs` runs too |
-| `app/reports.js` | `buildReports()`, mirrors `dupes.mjs` / `misfile.mjs` |
+| `app/reports.js` | `buildReports()`, mirrors `legacy/dupes.mjs` / `legacy/misfile.mjs` |
 | `app/ui.js` | page state (`LIB`, `S`, `view`), screen order and names, `toast()` |
 | `app/actionlog.js` | the History log, undo, playlist and library writes |
 | `app/player.js` | Spotify Connect playback bar |
@@ -71,3 +105,7 @@ by screen in A4.
 - A change to these files needs `node build-web.mjs` before `npm test`: most
   web tests read the built `docs/index.html`.
 - New file: add it to `APP_FILES` at the point its top-level code must run.
+  (A7 kept this list explicit: load order matters here, and a filename-prefix
+  convention would rename every file.)
+- New module for the Engine screen or listening: a `// @bundle` line in the
+  module, not an edit to `build-web.mjs`.

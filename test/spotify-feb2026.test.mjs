@@ -133,7 +133,7 @@ test('popularity no longer decides anything, even where an old snapshot still ha
 /** actions.mjs with `api` and the log stubbed out, run as a plain script. */
 function actions({ reject = () => null } = {}) {
   const calls = [], logged = [];
-  const src = readFileSync(new URL('../actions.mjs', import.meta.url), 'utf8')
+  const src = readFileSync(new URL('../legacy/actions.mjs', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '')
     .replace(/^export /gm, '');
   const sandbox = {

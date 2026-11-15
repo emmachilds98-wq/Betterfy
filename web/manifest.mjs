@@ -7,8 +7,12 @@
 // __APP__. web/README.md says which file owns what.
 //
 // To add a file, put it in this list where its code has to run. Nothing is
-// picked up from the folders on its own (A7 may replace this list with a
-// convention).
+// picked up from the folders on its own, on purpose: A7 looked at replacing this
+// list with a convention and kept it. Load order is real here (a file may use
+// what any file above it declared), and the only convention that could say so
+// is a numeric prefix on every file name, which would rename all forty and
+// collide with every open branch. The lazy bundles, where order does not matter,
+// went to `// @bundle` lines instead (web/bundles.mjs).
 import { readFileSync } from 'node:fs';
 
 export const APP_FILES = [

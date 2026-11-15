@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { moveInArray } from '../actions.mjs';
+import { moveInArray } from '../legacy/actions.mjs';
 
 // moveInArray must match Spotify's documented reorder semantics for a single
 // item (range_length=1), since undo-remove uses it to simulate playlist state

@@ -1,7 +1,7 @@
 // Maintain one playlist holding every unique track in the library.
 // Dry run by default; pass --apply to actually write.
 import { readFileSync } from 'node:fs';
-import { api } from './spotify.mjs';
+import { api } from '../spotify.mjs';
 import { findOrCreate, append } from './write.mjs';
 
 const APPLY = process.argv.includes('--apply');

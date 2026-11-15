@@ -17,7 +17,7 @@ const data = {
   playlists: lib.playlists.length,
 };
 
-const html = readFileSync('review.html', 'utf8')
+const html = readFileSync(new URL('./review.html', import.meta.url), 'utf8')
   .replace('__DATA__', JSON.stringify(data).replace(/</g, '\\u003c'));
 writeFileSync('review.build.html', html);
 

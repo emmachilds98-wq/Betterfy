@@ -2,7 +2,7 @@
 rem Launch Betterfy. Double-click this, or pin it to the taskbar.
 cd /d "%~dp0"
 title Betterfy
-node server.mjs
+node legacy\server.mjs
 if errorlevel 1 (
   echo.
   echo Betterfy stopped with an error. Common causes:

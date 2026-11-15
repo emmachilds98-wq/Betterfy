@@ -1,15 +1,15 @@
 // Discovery that is new BY CONSTRUCTION: every artist and track you already
 // own is subtracted before ranking, so nothing recycles your own library.
 //
-//   node discover.mjs                      # seeded from your top artists
-//   node discover.mjs --like "Jungle & Breaks Emma"
-//   node discover.mjs --like "Techno Emma" --n 40
+//   node legacy/discover.mjs               # seeded from your top artists
+//   node legacy/discover.mjs --like "Jungle & Breaks Emma"
+//   node legacy/discover.mjs --like "Techno Emma" --n 40
 import { readFileSync, writeFileSync } from 'node:fs';
-import { env } from './env.mjs';
-import { api } from './spotify.mjs';
-import { Cache, sleep, retry } from './cache.mjs';
-import { norm } from './norm.mjs';
-import { ownsAnyOf } from './credits.mjs';
+import { env } from '../env.mjs';
+import { api } from '../spotify.mjs';
+import { Cache, sleep, retry } from '../cache.mjs';
+import { norm } from '../norm.mjs';
+import { ownsAnyOf } from '../credits.mjs';
 
 // Collaboration credits ('Shy FX & T Power', 'dwarde & Tim Reaper') must be
 // split before the ownership test, or a seed artist re-enters as half of a duo.

@@ -7,6 +7,7 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { bundleModules } from './bundler.mjs';
 import { genreWords } from './core/playlists/genre-words.mjs';
 import { assembledTemplate } from './web/manifest.mjs';
+import { engineBundle, audioBundle } from './web/bundles.mjs';
 
 // argv, then .env, then whatever the last build baked into docs/index.html.
 // That last fallback is the important one: .env is gitignored, so a rebuild in
@@ -91,6 +92,10 @@ const AXES_MODULES = ['core/playlists/axes.mjs'];
  * globals like v1, because every screen calls them; with no audio data each one
  * returns '' so they cost a listener who never turns listening on nothing but
  * their few hundred bytes. */
+// These three lists stay explicit (docs/BUILD-5-PLAN.md A7) where the lazy
+// bundles went to `// @bundle` lines: what is inlined here every listener
+// downloads on every load, so putting a module here should be an edit to the
+// build that a reviewer sees, not a line in the module.
 const UI_MODULES = ['web/ui/sound.mjs'];
 
 const { code: core, files: bundled } = bundleModules([...V1_MODULES, ...AXES_MODULES, ...UI_MODULES],
@@ -121,66 +126,15 @@ const STYLES = readdirSync('web/styles').filter(f => f.endsWith('.css')).sort()
  *
  * `core/engine.mjs` — the provider/evidence path — is deliberately NOT here. It
  * is the part that needs Last.fm and Discogs keys, and the whole point of this
- * screen is what the account can do without them. */
-const ENGINE_ENTRIES = [
-  'core/intrinsic/space.mjs',
-  'core/intrinsic/coldstart.mjs',
-  'core/intrinsic/explain.mjs',
-  'core/intrinsic/reports.mjs',
-  'core/intrinsic/persist.mjs',
-  'core/validate/loo.mjs',
-  'core/validate/baseline.mjs',
-  // The neighbour bridge (docs/SMARTER-GENRES-PLAN.md phase 0). Pure, plus an
-  // orchestrator whose network calls are handed in by the page.
-  'core/intrinsic/bridge.mjs',
-  'core/intrinsic/bridge-fetch.mjs',
-  // How sure it may sound, fitted on held-out filing (plan phase 2).
-  'core/intrinsic/calibrate.mjs',
-  // Genres with no playlist, and playlists that are two genres (plan phase 3).
-  // Brings the ontology with it, which is why it lives in the lazy bundle.
-  'core/recommend/gaps.mjs',
-  // The same screen's proposals by sound (docs/AUDIO-BUILD-PLAN.md WP-H2).
-  // Empty without audio records; brings the style vocabulary with it.
-  'core/recommend/audio-gaps.mjs',
-  // What a heard track is (genre, sub-genre, tempo) and what it sounds like and
-  // mixes with, from the account's own heard tracks.
-  'core/audio/match.mjs',
-  'core/audio/identify.mjs',
-  // Tidy by sound: filed tracks whose sound disagrees with their playlist.
-  'core/audio/misfit.mjs',
-  // Each playlist's genre mix, BPM range and "two genres?" from its heard members.
-  'core/audio/plprofile.mjs',
-  // Shuffle's DJ order: heard tracks sequenced so each next one beatmatches.
-  'core/audio/order.mjs',
-  // Discover by sound: re-rank picks by fit to the seed, and the keyless
-  // candidate path over the neighbour bridge's cached lookups.
-  'core/audio/discover.mjs',
-];
-
-const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
-  namespace: {
-    BetterfyIntrinsic: 'core/intrinsic/space.mjs',
-    BetterfyColdStart: 'core/intrinsic/coldstart.mjs',
-    BetterfyExplain: 'core/intrinsic/explain.mjs',
-    BetterfyReports: 'core/intrinsic/reports.mjs',
-    BetterfyPersist: 'core/intrinsic/persist.mjs',
-    BetterfyValidate: 'core/validate/loo.mjs',
-    BetterfyBaseline: 'core/validate/baseline.mjs',
-    BetterfyBridge: 'core/intrinsic/bridge.mjs',
-    BetterfyBridgeFetch: 'core/intrinsic/bridge-fetch.mjs',
-    BetterfyDeezer: 'core/sources/deezer.mjs',
-    BetterfyCalibrate: 'core/intrinsic/calibrate.mjs',
-    BetterfyGaps: 'core/recommend/gaps.mjs',
-    BetterfyAudioGaps: 'core/recommend/audio-gaps.mjs',
-    BetterfyWikidata: 'core/sources/wikidata.mjs',
-    BetterfyMatch: 'core/audio/match.mjs',
-    BetterfyIdentify: 'core/audio/identify.mjs',
-    BetterfyMisfit: 'core/audio/misfit.mjs',
-    BetterfyPlProfile: 'core/audio/plprofile.mjs',
-    BetterfyOrder: 'core/audio/order.mjs',
-    BetterfyDiscover: 'core/audio/discover.mjs',
-  },
-});
+ * screen is what the account can do without them.
+ *
+ * Which modules are in it is not listed here any more (docs/BUILD-5-PLAN.md
+ * A7): each one says so in its own first line, `// @bundle engine global=...`,
+ * and web/bundles.mjs collects them. Adding a module to the Engine screen is an
+ * edit to that module alone. */
+const ENGINE_BUNDLE = engineBundle();
+const { code: engine, files: engineFiles } = bundleModules(ENGINE_BUNDLE.entries,
+  { namespace: ENGINE_BUNDLE.namespace });
 
 /* The worker that runs the engine off the page's main thread.
  *
@@ -255,24 +209,14 @@ self.onmessage = function (e) {
  * fetched only when somebody switches listening on, for the same reason the
  * engine is one. Everything core/audio has, plus whichever audio engine
  * components (core/intrinsic/audio*.mjs) exist on this branch, so a package
- * that lands one does not also need a build edit to reach the page. */
-const listMjs = dir => { try { return readdirSync(dir).filter(f => /\.(mjs|js)$/.test(f)).sort().map(f => `${dir}/${f}`); } catch { return []; } };
-const AUDIO_INTRINSIC = readdirSync('core/intrinsic').filter(f => /^audio.*\.mjs$/.test(f)).sort().map(f => `core/intrinsic/${f}`);
-// Engine-side lookups over the sound space (sound ID, sound-alikes, mixes):
-// they ship in engine.js, and would only add the genre ontology (~100 KB) here.
-const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs', 'core/audio/misfit.mjs', 'core/audio/plprofile.mjs', 'core/audio/order.mjs', 'core/audio/discover.mjs']);
-const AUDIO_ENTRIES = ['web/audio/index.mjs', ...listMjs('core/audio').filter(f => !ENGINE_SIDE.has(f)),
-                       ...listMjs('core/audio/dsp'), ...AUDIO_INTRINSIC];
-const camel = f => f.replace(/^.*\//, '').replace(/\.m?js$/, '').split(/[-_]/).map(w => w[0].toUpperCase() + w.slice(1)).join('');
-const { code: audio, files: audioFiles } = bundleModules(AUDIO_ENTRIES, {
-  namespace: {
-    BetterfyAudio: 'web/audio/index.mjs',
-    // deezerJsonp() checks addresses with it; the engine bundle defines it too.
-    BetterfyDeezer: 'core/sources/deezer.mjs',
-    // core/intrinsic/audio.mjs → BetterfyAudioIntrinsic, audio-learn.mjs → BetterfyAudioLearnIntrinsic
-    ...Object.fromEntries(AUDIO_INTRINSIC.map(f => [`Betterfy${camel(f)}Intrinsic`, f])),
-  },
-});
+ * that lands one does not also need a build edit to reach the page. A
+ * core/audio module that says `// @bundle engine` (a lookup over the sound
+ * space: sound ID, sound-alikes, mixes) ships in engine.js instead, where it
+ * would not drag the genre ontology (~100 KB) in here. web/bundles.mjs has the
+ * whole rule. */
+const AUDIO_BUNDLE = audioBundle();
+const { code: audio, files: audioFiles } = bundleModules(AUDIO_BUNDLE.entries,
+  { namespace: AUDIO_BUNDLE.namespace });
 
 /* Where onnxruntime-web and the models come from. ORT is pinned (1.31.1) and
  * runs WASM only, single-threaded: GitHub Pages cannot send COOP/COEP, so no
@@ -284,7 +228,9 @@ const AUDIO_MODELS = arg('audio-models') ?? readEnv('AUDIO_MODELS') ?? 'models/'
 
 /* The inference worker: a module worker, because onnxruntime-web 1.31 ships as
  * ES modules. It holds the ear and the heads and nothing else; the page keeps
- * lookup, download, decode and the mel (core/audio/worker.js explains why). */
+ * lookup, download, decode and the mel (core/audio/worker.js explains why).
+ * Listed here rather than by `// @bundle` line: every module in it needs an op
+ * in the worker text just below, so the two are always edited together. */
 const { code: earCode } = bundleModules(['core/audio/infer.mjs', 'core/audio/heads.mjs', 'core/audio/clap.mjs'], {
   namespace: { BetterfyInfer: 'core/audio/infer.mjs', BetterfyHeads: 'core/audio/heads.mjs', BetterfyClap: 'core/audio/clap.mjs' },
 });

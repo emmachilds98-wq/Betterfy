@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { api, paged } from './spotify.mjs';
+import { api, paged } from '../spotify.mjs';
 const snap = JSON.parse(readFileSync('library.json', 'utf8'));
 
 const live = await paged('/me/playlists?limit=50');

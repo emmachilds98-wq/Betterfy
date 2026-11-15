@@ -3,13 +3,17 @@
 // holds the tokens; nothing is exposed beyond 127.0.0.1.
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
-import { extname } from 'node:path';
+import { extname, join, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { api } from './spotify.mjs';
+import { api } from '../spotify.mjs';
 import { removeFrom, addTo, moveTrack, unlikeTrack, undoTxn, history, devices, playTrack, pause, log, snapshotPlaylist } from './actions.mjs';
 import { findOrCreate } from './write.mjs';
 
 const PORT = 8787;
+// The local app's page, beside this file in legacy/ui/. Data files (library.json,
+// the reports) are still read from the working directory: run from the repo root.
+const UI = fileURLToPath(new URL('./ui', import.meta.url));
 const readJson = f => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
 
 // Loaded once at boot and refreshed when a report is regenerated.
@@ -208,10 +212,11 @@ const ROUTES = {
   },
   'POST /api/refresh':  async b => {
     // Re-run a pipeline step in a child process, then reload the reports.
-    const script = { snapshot:'snapshot.mjs', dupes:'dupes.mjs', misfile:'misfile.mjs' }[b.step];
+    // Paths from this file, so the server still finds them from legacy/ (A7).
+    const script = { snapshot:'../snapshot.mjs', dupes:'./dupes.mjs', misfile:'./misfile.mjs' }[b.step];
     if (!script) throw new Error('Unknown step');
     await new Promise((ok, bad) => {
-      const p = spawn(process.execPath, [script], { stdio: 'inherit' });
+      const p = spawn(process.execPath, [fileURLToPath(new URL(script, import.meta.url))], { stdio: 'inherit' });
       p.on('exit', c => c === 0 ? ok() : bad(new Error(`${script} exited ${c}`)));
     });
     reload();
@@ -256,8 +261,8 @@ createServer(async (req, res) => {
   }
 
   // static
-  let file = url.pathname === '/' ? 'ui/index.html' : 'ui' + url.pathname;
-  if (!existsSync(file) || file.includes('..')) { res.writeHead(404).end('not found'); return; }
+  let file = join(UI, url.pathname === '/' ? 'index.html' : url.pathname);
+  if (url.pathname.includes('..') || !file.startsWith(UI + sep) || !existsSync(file)) { res.writeHead(404).end('not found'); return; }
   res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
   res.end(readFileSync(file));
 }).listen(PORT, '127.0.0.1', () => {

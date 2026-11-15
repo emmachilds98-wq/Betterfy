@@ -144,6 +144,8 @@ No framework, no new dependencies, still one static page built by
 
 A1 is one serial PR. A2–A8 can then run in parallel (different files).
 
+*A7 built 2026-11-15 (draft PR, `claude/b5-a7-build`): `ENGINE_ENTRIES`, the engine namespace map and `ENGINE_SIDE` are gone; each lazy-bundle module carries `// @bundle engine|audio [order=N] [global=Name]` on its first line, collected by `web/bundles.mjs` and stripped by the bundler, so `docs/index.html`, `engine.js`, `audio.js` and both workers rebuilt byte-identical (sha256). `audio.js` keeps its folder sweep. The page's inline core, the ear worker's list and `web/manifest.mjs` `APP_FILES` stay explicit (load order; renaming every file to encode it was not worth the conflicts). The local app and the Node-only v1/v3 CLIs (`server.mjs`, `ui/`, `actions`, `write`, `dupes`, `misfile`, `discover`, `shuffle`, `consolidate`, `analyse`, `analyse-v3`, `verify-untouched`, `review*.html`, `build-review*.mjs`) are in `legacy/`; `npm run` names unchanged. Guard: `test/bundles.test.mjs`.*
+
 ---
 
 ## 4. Phase B — the new app: navigation, layout and motion

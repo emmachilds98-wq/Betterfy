@@ -3,7 +3,7 @@
 // been curated by hand, nothing should be irreversible.
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { api } from './spotify.mjs';
+import { api } from '../spotify.mjs';
 
 const LOG = 'actions.log.jsonl';
 

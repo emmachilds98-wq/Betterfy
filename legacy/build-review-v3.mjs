@@ -6,23 +6,23 @@
 // still answers every question with v1, which is the whole point of building
 // v3 beside it.
 //
-//   node analyse-v3.mjs --queue     # produces the two inputs
-//   node build-review-v3.mjs        # writes review-v3.build.html
+//   node legacy/analyse-v3.mjs --queue     # produces the two inputs
+//   node legacy/build-review-v3.mjs        # writes review-v3.build.html
 //
 // The page writes nothing by itself. Answers are collected in the browser and
 // exported as a corrections.json for you to save into the repo, which is
 // exactly the loop docs/ENGINE-V3-ARCHITECTURE.md claims: work the queue, and
 // the answers become both your personal layer and benchmark rows.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { GENRES } from './core/ontology/genres.mjs';
-import { MOODS, CONTEXTS } from './core/ontology/facets.mjs';
-import { TYPES } from './core/playlists/classify.mjs';
-import { ONTOLOGY_VERSION } from './core/ontology/index.mjs';
-import { ENGINE_VERSION } from './core/engine.mjs';
+import { GENRES } from '../core/ontology/genres.mjs';
+import { MOODS, CONTEXTS } from '../core/ontology/facets.mjs';
+import { TYPES } from '../core/playlists/classify.mjs';
+import { ONTOLOGY_VERSION } from '../core/ontology/index.mjs';
+import { ENGINE_VERSION } from '../core/engine.mjs';
 
 const need = f => {
   if (existsSync(f)) return JSON.parse(readFileSync(f, 'utf8'));
-  console.error(`No ${f} — run: node analyse-v3.mjs --queue`);
+  console.error(`No ${f} — run: node legacy/analyse-v3.mjs --queue`);
   process.exit(1);
 };
 
@@ -52,7 +52,7 @@ const data = {
   existing: existing.entries ?? [],
 };
 
-const html = readFileSync('review-v3.html', 'utf8')
+const html = readFileSync(new URL('./review-v3.html', import.meta.url), 'utf8')
   .replace('__DATA__', JSON.stringify(data).replace(/</g, '\\u003c'));
 writeFileSync('review-v3.build.html', html);
 

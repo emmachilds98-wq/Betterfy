@@ -1,3 +1,4 @@
+// @bundle audio order=10 global=BetterfyAudio
 // What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
 // One namespace so the template reaches core/audio through a single name.
 export { openAudioStore, AUDIO_DB, AUDIO_STORE } from './store.mjs';
