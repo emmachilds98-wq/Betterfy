@@ -81,8 +81,8 @@
         font-size:13.5px; font-weight:600; cursor:pointer}
 
   /* The card animation, kept: the action cards on Home use it. */
-  @keyframes tileIn{from{opacity:0; transform:translateY(9px)}}
-  .acts4 .act{animation:tileIn var(--dur-3) var(--ease-out) backwards}
+  .acts4 .act{transition:opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out)}
+  @starting-style{ .acts4 .act{opacity:0; transform:translateY(9px)} }
   .acts4 .act:nth-child(2){animation-delay:.04s}
   .acts4 .act:nth-child(3){animation-delay:.08s}
   .acts4 .act:nth-child(4){animation-delay:.12s}

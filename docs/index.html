@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-1029">
+<meta name="bf-build" content="2026-11-15-1032">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -412,8 +412,8 @@
         font-size:13.5px; font-weight:600; cursor:pointer}
 
   /* The card animation, kept: the action cards on Home use it. */
-  @keyframes tileIn{from{opacity:0; transform:translateY(9px)}}
-  .acts4 .act{animation:tileIn var(--dur-3) var(--ease-out) backwards}
+  .acts4 .act{transition:opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out)}
+  @starting-style{ .acts4 .act{opacity:0; transform:translateY(9px)} }
   .acts4 .act:nth-child(2){animation-delay:.04s}
   .acts4 .act:nth-child(3){animation-delay:.08s}
   .acts4 .act:nth-child(4){animation-delay:.12s}
@@ -876,8 +876,10 @@
   .toast{position:fixed; right:calc(18px + var(--sar)); bottom:calc(18px + var(--sab));
          background:var(--surface-2); color:var(--ink); border:1px solid var(--line);
          padding:13px 18px; border-radius:var(--r-2); font-size:13.5px; display:flex; gap:16px; align-items:center;
-         z-index:28; max-width:420px; box-shadow:var(--shadow-2); animation:toastIn var(--dur-2) var(--ease-out)}
-  @keyframes toastIn{from{opacity:0; transform:translateY(10px)}}
+         z-index:28; max-width:420px; box-shadow:var(--shadow-2);
+         transition:opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out), display var(--dur-2) allow-discrete}
+  @starting-style{ .toast{opacity:0; transform:translateY(10px)} }
+  .toast[hidden]{opacity:0; transform:translateY(10px)}
   .toast button{appearance:none; border:0; background:none; color:var(--accent); font:inherit; font-weight:700; cursor:pointer; padding:0}
 
   /* ---- fixed corner controls (reachable from the landing screen too) ---- */
@@ -1232,6 +1234,55 @@
   .discfit.out{color:var(--ink-3)}
   .discfit.hi .sub, .discfit.out .sub{font-weight:400}
   .discnokey input{flex:1 1 220px; min-width:0}
+/* ================= motion, part two (UI-G, docs/BUILD-5-PLAN.md §4.2) =================
+   Entrances via @starting-style, skeletons, the scroll-driven title.
+   Reduced motion turns every one of these off at the bottom. */
+
+/* ---- entrances: rows that appear, the listening pill, popovers ---- */
+.lpill, .lc-head .lpill{transition:opacity var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-spring)}
+@starting-style{ .lpill{opacity:0; transform:scale(.9)} }
+[data-flip]{transition:opacity var(--dur-3) var(--ease-out)}
+@starting-style{ [data-flip]{opacity:0} }
+[popover]{transition:opacity var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-spring),
+          overlay var(--dur-2) allow-discrete, display var(--dur-2) allow-discrete}
+[popover]:not(:popover-open){opacity:0; transform:translateY(6px) scale(.97)}
+@starting-style{ [popover]:popover-open{opacity:0; transform:translateY(6px) scale(.97)} }
+/* The settings sheet already slides on transform; let it also leave visibility
+   on the same clock so it is not cut at the end. */
+.settings{transition:transform var(--dur-3) var(--ease-out), visibility var(--dur-3) allow-discrete}
+
+/* ---- skeletons (motion.js skeleton()) ---- */
+.sk{display:block; border-radius:6px; background:var(--surface-2);
+    background-image:linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--ink) 7%, transparent) 50%, transparent 70%);
+    background-size:200% 100%; animation:skShimmer 1.4s linear infinite}
+@keyframes skShimmer{from{background-position:120% 0} to{background-position:-80% 0}}
+.sk-wrap{display:flex; flex-direction:column; gap:12px}
+.sk-row{display:flex; align-items:center; gap:12px; padding:8px 0}
+.sk-row > span{flex:1; display:flex; flex-direction:column; gap:8px; min-width:0}
+.sk-cov{width:44px; height:44px; flex:none; border-radius:var(--r-1, 8px)}
+.sk-l1{height:12px; width:62%}
+.sk-l2{height:10px; width:38%}
+.sk-card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-4); padding:22px;
+         display:flex; flex-direction:column; gap:12px}
+.sk-art{width:100%; aspect-ratio:1; max-height:260px; border-radius:var(--r-2)}
+
+/* ---- large title into the header title as the page scrolls ----
+   Opt-in markup: .lgtitle (the big one in the page) and .hdrtitle (the small
+   one in the bar, rendered hidden-by-opacity). Browsers without scroll-driven
+   animations just show the large title and no header title. */
+@supports (animation-timeline: scroll()) {
+  .hdrtitle{opacity:0; animation:hdrTitleIn linear both; animation-timeline:scroll(root block); animation-range:0 120px}
+  .lgtitle{animation:lgTitleOut linear both; animation-timeline:scroll(root block); animation-range:0 120px}
+  @keyframes hdrTitleIn{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
+  @keyframes lgTitleOut{from{opacity:1; transform:none} to{opacity:0; transform:translateY(-8px)}}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .sk{animation:none}
+  .hdrtitle{animation:none}
+  .lgtitle{animation:none}
+  @starting-style{ .lpill, [data-flip], .toast, [popover]:popover-open, .acts4 .act{opacity:1; transform:none} }
+}
 
   /* ================= iPhone and other narrow screens ================= */
   @media (max-width:820px){
@@ -1502,7 +1553,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-1029</span>
+    <span class="mono">build 2026-11-15-1032</span>
   </p>
 
   <div class="feat">
@@ -1594,7 +1645,7 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1029</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1032</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1711,7 +1762,7 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-15-1029. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-15-1032. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3761,7 +3812,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-1029`,
+    `Betterfy engine score — build 2026-11-15-1032`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5618,7 +5669,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-1029';
+const BUILD = '2026-11-15-1032';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -5939,7 +5990,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-1029', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-1032', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -8643,6 +8694,54 @@ function swapScreen(dir, update) {
   const t = typed ? document.startViewTransition({ update, types: [type] }) : document.startViewTransition(update);
   t.finished.finally(() => { delete root.dataset.dir; });
 }
+
+/* ---- FLIP for rows that move or leave (docs/BUILD-5-PLAN.md §4.2, UI-G) ----
+ * Rows opt in with data-flip (and a data-key, which the keyed patcher already
+ * wants). flipRecord(root) notes where each one is; after the DOM changes,
+ * flipPlay(root, before) slides every row that moved from its old place to its
+ * new one with el.animate on --ease-spring (transform only, never opacity).
+ * Rows that were added fade in from CSS (@starting-style); rows that left are
+ * not animated, their neighbours close the gap. patch() calls both, so a
+ * screen only adds the attribute. Reduced motion, or no el.animate: nothing. */
+function flipRecord(root) {
+  const before = new Map();
+  if (!root || !root.querySelectorAll) return before;
+  for (const n of root.querySelectorAll('[data-flip][data-key]')) {
+    const r = n.getBoundingClientRect();
+    before.set(n.getAttribute('data-key'), { x: r.left, y: r.top });
+  }
+  return before;
+}
+
+function flipPlay(root, before) {
+  if (!before || !before.size || !root || !root.querySelectorAll) return 0;
+  if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return 0;
+  const doc = root.ownerDocument || document;
+  const win = doc.defaultView;
+  const css = win && win.getComputedStyle ? win.getComputedStyle(doc.documentElement) : null;
+  const easing = (css && css.getPropertyValue('--ease-spring').trim()) || 'ease-out';
+  let moved = 0;
+  for (const n of root.querySelectorAll('[data-flip][data-key]')) {
+    const was = before.get(n.getAttribute('data-key'));
+    if (!was || typeof n.animate !== 'function') continue;
+    const r = n.getBoundingClientRect();
+    const dx = was.x - r.left, dy = was.y - r.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+    n.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }],
+      { duration: 300, easing, fill: 'backwards' });
+    moved++;
+  }
+  return moved;
+}
+
+/* Skeleton blocks for first sync, Discover search and listening: the card's
+ * and a row's shapes, shimmering (web/styles/74-motion.css). */
+function skeleton(kind, n) {
+  const row = '<div class="sk-row" aria-hidden="true"><i class="sk sk-cov"></i><span><i class="sk sk-l1"></i><i class="sk sk-l2"></i></span></div>';
+  const card = '<div class="sk-card" aria-hidden="true"><i class="sk sk-art"></i><i class="sk sk-l1"></i><i class="sk sk-l2"></i></div>';
+  const count = Math.max(1, (n | 0) || (kind === 'card' ? 1 : 4));
+  return `<div class="sk-wrap" role="status" aria-label="Loading">${(kind === 'card' ? card : row).repeat(count)}</div>`;
+}
 // File is the home tab: the `home` module composes the status strip, the File
 // deck (the `inbox` module) and Up next. Library is, for now, Playlists with
 // New playlists and Shuffle one tap away (libNav, app/shell.js); the screens
@@ -9000,7 +9099,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-1029';
+    s.src = 'engine.js?v=2026-11-15-1032';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -9022,7 +9121,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-1029');
+    const w = new Worker('engine-worker.js?v=2026-11-15-1032');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9497,7 +9596,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-1029';
+    s.src = 'audio.js?v=2026-11-15-1032';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -9533,7 +9632,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1029', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1032', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -10267,7 +10366,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1029', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1032', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
