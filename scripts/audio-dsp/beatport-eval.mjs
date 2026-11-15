@@ -49,7 +49,17 @@ function decode(path) {
 }
 
 const rows = [];
-const files = readdirSync(mp3Dir).filter(f => f.endsWith('.mp3')).sort().slice(0, limit);
+// --half A|B keeps one seed-split half (the same FNV hash of the track id the
+// v2 key weights were trained against: B was held out of that training).
+const halfArg = arg('--half', null);
+export function halfOf(id, seed = 1) {
+  let h = 2166136261 ^ seed;
+  for (const ch of String(id)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+  return (h >>> 0) % 2 === 0 ? 'A' : 'B';
+}
+const files = readdirSync(mp3Dir).filter(f => f.endsWith('.mp3')).sort().slice(0, limit)
+  .filter(f => !halfArg || halfOf(idOf(f)) === halfArg);
 let skipped = { noMeta: 0, noBpm: 0, keyAmbiguous: 0, decode: 0, short: 0 };
 for (const f of files) {
   const id = idOf(f);

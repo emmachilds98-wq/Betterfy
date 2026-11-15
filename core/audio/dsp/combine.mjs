@@ -99,6 +99,13 @@ export function combineKey(ws) {
   return out(a, a.confidence * DISAGREE_PENALTY, false, b.camelot);
 }
 
+function keyPooled(parts) {
+  let r; try { r = keyOf(parts); } catch { return null; }
+  if (!r?.key || !r.camelot || !ok(r.confidence)) return null;
+  return { key: r.key, camelot: r.camelot, keyConf: r3(Math.max(0, Math.min(1, r.confidence))), agree: null,
+           ...(r.alternates?.[0] ? { keyAlt: r.alternates[0].camelot } : {}) };
+}
+
 /** Power-mean loudness and mean energy (loudness.mjs shape). */
 export function combineLoudness(ws) {
   const good = (ws ?? []).filter(w => w && ok(w.loudness) && ok(w.energy));
@@ -121,7 +128,9 @@ export function measureWindows(windows, est = {}) {
   if (!parts.length) return null;
   const each = f => parts.map(w => { try { return f(w); } catch { return null; } });
   const t = combineTempo(each(tempo));
-  const k = combineKey(each(key));
+  // The default key estimator pools both windows into one chroma (as
+  // measured for key v3); an injected one is run per window and reconciled.
+  const k = est.key ? combineKey(each(key)) : keyPooled(parts);
   const l = combineLoudness(each(loudness));
   if (!t && !k && !l) return null;
   const out = { v: DSP_VERSION, windows: parts.length };
