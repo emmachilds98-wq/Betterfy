@@ -81,12 +81,6 @@ document.addEventListener('click', guard(async e => {
 
   const gto = e.target.closest('[data-go]'); if (gto) return go(gto.dataset.go);
   const ti = e.target.closest('[data-tidy]'); if (ti) { S.tidySec = ti.dataset.tidy; return render(); }
-  // A card under "Next up to file" opens the queue on that track, not at the top.
-  const gi = e.target.closest('[data-goinbox]');
-  // The cards under "Next up to file" show the head of the queue, so their
-  // index is an absolute position in it. Adding it to wherever the queue
-  // happened to be left instead opened a different track than the one tapped.
-  if (gi) { S.inboxAt = Math.min(+gi.dataset.goinbox || 0, Math.max(R.backlog.length - 1, 0)); return go('inbox'); }
   const more = e.target.closest('[data-more]');
   if (more) { S.shown[more.dataset.more] = shownOf(more.dataset.more) + TIDY_PAGE; return render(); }
   const cmin = e.target.closest('[data-cmin]');
@@ -107,38 +101,6 @@ document.addEventListener('click', guard(async e => {
   const mfb = e.target.closest('[data-mfb]');
   if (mfb) { S.mfBand = mfb.dataset.mfb; if (T.rememberFilters) { T.mfBand = S.mfBand; saveTheme(); } return render(); }
 
-  // Checked before the pick itself, since the ✕ sits inside that button.
-  const reject = e.target.closest('[data-reject]');
-  if (reject) {
-    e.stopPropagation();
-    const t = inboxTrack(); if (!t) return;
-    // nameOf() is local to the File view; CFG is the global source of names.
-    const pid = reject.dataset.reject, pname = CFG[pid]?.name ?? pid;
-    await recordReject(t.id, pid);
-    S.fileSel.delete(pid);
-    // Re-rank this one track now, so the slot fills with the next real
-    // candidate instead of leaving a gap — through the same backlogSuggest()
-    // that made the card, so the filing-history fallback and `via` survive.
-    const raw = LIB.liked.find(x => x.id === t.id);
-    t.suggest = raw ? backlogSuggest(raw, LIB, CFG, gateTags(TAGS, tagGate(TAGS)), R.profiles, R.idf) : [];
-    // The artist's other cards re-rank too: the rejection lowers this playlist
-    // for them (backlogSuggest reads it through rejectFactors).
-    const lead = t.artists?.[0]?.id;
-    if (lead) {
-      const gated = gateTags(TAGS, tagGate(TAGS)), mem = artistRejectMemory(FB, LIB);
-      for (const b of R.backlog) {
-        if (b.id === t.id || b.artists?.[0]?.id !== lead) continue;
-        const rb = LIB.liked.find(x => x.id === b.id);
-        if (rb) b.suggest = backlogSuggest(rb, LIB, CFG, gated, R.profiles, R.idf, undefined, mem);
-      }
-    }
-    toast(`Won't suggest ${pname} for this track again.`, async () => {
-      const f = FB[t.id]; if (f) { f.rejected = f.rejected.filter(x => x !== pid); fbUnstamp(f, 'rejectedAt', [pid]); }
-      await saveFeedback(); R = buildReports(LIB, CFG, TAGS); render();
-    });
-    return render();
-  }
-
   // The File screen's "listen to my music" nudge: the same switch as Sources'.
   if (e.target.closest('[data-soundon]')) {
     await audioLoad().catch(() => {});
@@ -149,10 +111,6 @@ document.addEventListener('click', guard(async e => {
     return render();
   }
   if (e.target.closest('[data-soundno]')) { LS.setItem('bf_sound_nudge', 'no'); return render(); }
-  const selfile = e.target.closest('[data-selfile]'); if (selfile) return toggleFileSel(selfile.dataset.selfile);
-  const filesel = e.target.closest('[data-filesel]');
-  if (filesel) return fileCurrent(S.fileSel.size ? [...S.fileSel] : filePicks(inboxTrack())[0]?.id);
-  const act = e.target.closest('[data-act]'); if (act) return inboxAct(act.dataset.act);
 
   const keep = e.target.closest('[data-keep]');
   if (keep) {
@@ -221,7 +179,6 @@ document.addEventListener('click', guard(async e => {
   }
   const dfile = e.target.closest('[data-dfile]'); if (dfile) return discAdd(dfile.dataset.dfile);
 
-  if (e.target.id === 'analyseGo') return analyseGo();
   if (e.target.id === 'audioGo') return audioStart();
   if (e.target.id === 'maestGo') return maestStart();
   if (e.target.id === 'maestStop') { AUDIO.maest?.stop(); return; }
@@ -254,19 +211,6 @@ document.addEventListener('click', guard(async e => {
   const reset = e.target.closest('[data-resettags]');
   if (reset) { await resetArtistTags(reset.dataset.resettags); render(); return; }
 
-  const rl = e.target.closest('[data-roll]');
-  if (rl) {
-    if (rl.dataset.roll === 'no') { S.roll = null; return render(); }
-    rl.disabled = true;
-    try { await rollForwardGo(); } catch (err) { rl.disabled = false; toast('Failed: ' + err.message); }
-    return;
-  }
-  const rp = e.target.closest('[data-rollpick]');
-  if (rp && S.roll) {
-    const id = rp.dataset.rollpick;
-    if (S.roll.off.has(id)) S.roll.off.delete(id); else S.roll.off.add(id);
-    return render();
-  }
   const gp = e.target.closest('[data-gap]');
   if (gp) {
     const g = GAPS.gaps?.[+gp.dataset.gap];
@@ -352,7 +296,6 @@ document.addEventListener('click', guard(async e => {
 
 document.addEventListener('change', guard(async e => {
   if (await dispatchAct(e)) return;
-  if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; S.shufCache = null; return render(); }
   if (e.target.id === 'shufMode') { S.shufMode = e.target.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }

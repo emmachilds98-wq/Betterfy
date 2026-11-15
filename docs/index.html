@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0940">
+<meta name="bf-build" content="2026-11-15-0953">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1491,7 +1491,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0940</span>
+    <span class="mono">build 2026-11-15-0953</span>
   </p>
 
   <div class="feat">
@@ -1595,7 +1595,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0940</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0953</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1636,7 +1636,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0940</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0953</span>
   </div>
 </div>
 
@@ -3115,6 +3115,162 @@ function missedList(vm) {
 }
 return { SOUND_UI_VERSION, SURE_CONF, soundChip, soundMark, sectionStrip, evidenceBadges, bandChip, profileRow, listenPill, listenCard, missedList };
 })();
+/* ---- web/screens/home.mjs ---- */
+__mod["web/screens/home.mjs"] = (function () {
+/** Icons for the four things Home offers to do, matched to the tab bar. */
+const ACT_IC = {
+  inbox: '<path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/>',
+  tidy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 4.5H6a2.5 2.5 0 0 0-2.5 2.5v9.5"/>',
+  discover: '<circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/>',
+  shuffle: '<path d="M17 4.5 20.5 7 17 9.5"/><path d="M17 14.5 20.5 17 17 19.5"/><path d="M3.5 7h3.2c1.2 0 2.3.6 3 1.6l4.6 6.8c.7 1 1.8 1.6 3 1.6h3.2"/><path d="M3.5 17h3.2c1.2 0 2.3-.6 3-1.6l.9-1.3"/><path d="M14.4 9.9l.9-1.3c.7-1 1.8-1.6 3-1.6h2.2"/>',
+};
+ACT_IC.heard = '<path d="M5 14.5v4"/><path d="M9.5 9.5v9"/><path d="M14 5v13.5"/><path d="M18.5 10.5v8"/>';
+const actIcon = v => `<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ACT_IC[v]}</svg></span>`;
+
+/** "Evening" rather than a clock: the greeting is a tone, not a timestamp. */
+function partOfDay(d = new Date()) {
+  const h = d.getHours();
+  return h < 5 ? 'Late night' : h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
+}
+
+function view(ctx) {
+  const { S, R, LIB, esc, isMirrorPlaylist, listenEverRan, listenHeard, listenTarget, tagCoverage,
+          analyseHTML, VHUE, HEARD_HUE, hueOf, filePicks } = ctx;
+  const exact = R.within.filter(x => x.verdict === 'same-recording').length;
+  const clash = R.within.length - exact;
+  const uniq = new Set(); let placements = 0;
+  for (const p of LIB.playlists) { if (isMirrorPlaylist(p)) continue;
+    for (const t of p.tracks) { uniq.add(t.id); placements++; } }
+
+  const backlog = R.backlog.length;
+  const toTidy = R.within.length + R.misfiled.length;
+  const found = (S.discover ?? []).length;
+  const shufflable = LIB.playlists.filter(p => p.tracks.length >= 8).length;
+  const first = String(LIB.user?.name ?? '').trim().split(/\s+/)[0] ?? '';
+  const name = (!first.includes('@') && first.length <= 18) ? first : '';
+
+  // The four cards are the four screens, in the order you would work them.
+  const acts = [
+    ['inbox', backlog, 'likes with no home', 'File them one at a time, each with a suggested playlist.'],
+    ['tidy', toTidy, 'things to tidy', 'Repeats, version clashes and tracks filed in the wrong place.'],
+    ['discover', found, found ? "records you don't own" : 'nothing found yet',
+      found ? 'Built from what you actually played, minus everything you have.' : 'Run a search: weighted by what you played, minus what you own.'],
+    ['shuffle', shufflable, 'playlists to re-order', 'Spacing that keeps the same artist from clumping.'],
+  ];
+  // A fifth card once listening has ever run, and never before: a listener who
+  // never turns it on gets the same four cards, byte for byte.
+  if (listenEverRan()) acts.push(['heard', listenHeard(), listenHeard() === 1 ? 'track heard' : 'tracks heard',
+    'Previews listened to on this device, to place tracks by how they sound.']);
+
+  // Where the library sits, as one bar over one population: your liked songs.
+  // It used to mix three that came from different ones — liked-and-filed,
+  // cross-filing measured across the whole library, and a Tidy total that had
+  // already counted some of the same tracks twice — so the segments could sum
+  // to more than the library, and "Filed" clamped to zero on any library with
+  // much to tidy.
+  const liked = LIB.liked.length;
+  const likedIds = new Set(LIB.liked.map(t => t?.id).filter(Boolean));
+  const crossLiked = R.across.filter(x => likedIds.has(x.id)).length;
+  const filed = Math.max(liked - backlog, 0);
+  const seg = [
+    ['Filed', Math.max(filed - crossLiked, 0), 'm4'],
+    ['Cross-filed', Math.min(crossLiked, filed), 'm3'],
+    ['Unfiled', backlog, 'm0'],
+  ];
+  const tot = seg.reduce((n, x) => n + x[1], 0) || 1;
+  const cov = tagCoverage();
+  const upNext = R.backlog.slice(0, 4);
+
+  return `<div class="hero">
+      <div class="in">
+        <div class="txt">
+          <div class="when">${esc(partOfDay())}${LIB.captured_at ? ' · synced ' + esc(LIB.captured_at.slice(0, 10)) : ''}</div>
+          <h1>${esc(partOfDay())}${name ? ', ' + esc(name) : ''}. ${backlog
+            ? `${backlog.toLocaleString()} liked ${backlog === 1 ? 'song' : 'songs'} still ${backlog === 1 ? 'needs' : 'need'} a home.`
+            : 'Your library is in good shape.'}</h1>
+          <p>Nothing is written to Spotify until you tap something — and every change can be undone.</p>
+        </div>
+        <div class="tile">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
+            <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" style="fill:var(--m1)"/>
+            <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7" style="fill:var(--m2)"/>
+            <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/>
+            <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    ${analyseHTML()}
+
+    <div class="acts4${acts.length > 4 ? ' five' : ''}">${acts.map(([v, n, label, desc]) => `
+      <button class="act" data-go="${v === 'heard' ? listenTarget() : v}"${v === 'heard' ? ' data-heard' : ''} style="--ac:var(--${VHUE[v] ?? HEARD_HUE}); --ac-ink:var(--${VHUE[v] ?? HEARD_HUE}-ink)">
+        ${actIcon(v)}
+        <span class="n">${n.toLocaleString()}</span>
+        <span class="l">${esc(label)}</span>
+        <span class="d">${esc(desc)}</span>
+      </button>`).join('')}</div>
+
+    <div class="split">
+      <div class="panel">
+        <div class="ph">
+          <h2>Where your library sits</h2>
+          <span class="mono">${uniq.size.toLocaleString()} tracks · ${LIB.playlists.length} playlists</span>
+        </div>
+        <div class="bar">${seg.map(([, n, c]) =>
+          `<i style="width:${(100 * n / tot).toFixed(2)}%; background:var(--${c})"></i>`).join('')}</div>
+        <div class="key">${seg.map(([l, n, c]) =>
+          `<span><i style="background:var(--${c})"></i>${esc(l)} <b>${n.toLocaleString()}</b></span>`).join('')}</div>
+      </div>
+      <div class="panel">
+        <h2 style="margin:0 0 16px">Your library</h2>
+        <div class="facts">
+          <div><span>Liked songs</span><b class="mono">${liked.toLocaleString()}</b></div>
+          <div><span>Placements</span><b class="mono">${placements.toLocaleString()}</b></div>
+          <div><span>Exact repeats</span><b class="mono">${exact.toLocaleString()}</b></div>
+          <div><span>Version clashes</span><b class="mono">${clash.toLocaleString()}</b></div>
+          <div><span>Genre coverage</span><b class="mono">${cov.pct}%</b></div>
+          <hr>
+          <p>Genre comes from Last.fm — Spotify stopped providing it. Top yours up under Sources.</p>
+        </div>
+      </div>
+    </div>
+
+    ${upNext.length ? `<div class="seehead">
+      <h2 style="margin:0">Next up to file</h2>
+      <button class="more" data-go="inbox">Open the queue →</button>
+    </div>
+    <div class="upnext">${upNext.map((t, i) => {
+      const best = (filePicks ? filePicks(t) : t.suggest ?? [])[0];
+      const strong = best && best.score >= 0.7;
+      const h = hueOf(t.id ?? t.title ?? '');
+      const cover = t.art
+        ? `<img class="cov" src="${esc(t.art)}" alt="" loading="lazy" decoding="async">`
+        : `<span class="cov" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h + 48) % 360} 58% 44%))">${esc((t.title || '?').trim()[0] ?? '?')}</span>`;
+      return `<button class="u" data-act="goinbox" data-goinbox="${i}" title="${esc(t.title)} — ${esc(t.artist)}">${cover}<span class="bd">
+        <span class="t">${esc(t.title)}</span>
+        <span class="a">${esc(t.artist)}</span>
+        <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
+          ? `→ ${esc(best.name)} ${(best.score * 100).toFixed(0)}%` : '→ no confident pick'}</span>
+      </span></button>`;
+    }).join('')}</div>` : ''}`;
+}
+
+
+const actions = {
+  analyseGo: ({ analyseGo }) => analyseGo(),
+  // A card under "Next up to file" opens the queue on that track, not at the top.
+  // Its index is an absolute position in the queue, not an offset from wherever
+  // the queue was left.
+  goinbox({ S, R, go }, el) {
+    S.inboxAt = Math.min(+el.dataset.goinbox || 0, Math.max(R.backlog.length - 1, 0));
+    return go('inbox');
+  },
+};
+return { partOfDay, view, actions };
+})();
 /* ---- web/screens/history.mjs ---- */
 __mod["web/screens/history.mjs"] = (function () {
 /**
@@ -3166,6 +3322,294 @@ const actions = {
   },
 };
 return { view, actions };
+})();
+/* ---- web/screens/inbox.mjs ---- */
+__mod["web/screens/inbox.mjs"] = (function () {
+/* ---------- artist roll-forward: docs/SMARTER-GENRES-PLAN.md, phase 4 ----------
+ * File one track by an artist and the same artist's other unfiled tracks usually
+ * belong in the same place. So the File screen offers them, as a list you can see
+ * and untick, never a silent bulk move. Tracks already turned down for that
+ * playlist are left out: a rejection is an answer. */
+const ROLL_MAX = 40;
+
+/** Other backlog tracks by `track`'s first-billed artist that could follow it into `playlistIds`. */
+function rollForwardFor(track, backlog, playlistIds, fb = {}) {
+  const lead = track?.artists?.[0]?.id;
+  if (!lead || !playlistIds?.length) return [];
+  return (backlog ?? []).filter(b => b.id !== track.id && b.artists?.[0]?.id === lead
+      && !playlistIds.some(pid => fb?.[b.id]?.rejected?.includes(pid)))
+    .slice(0, ROLL_MAX);
+}
+
+function rollForwardHTML({ S, esc }) {
+  const rf = S.roll;
+  if (!rf?.rows?.length) return '';
+  const on = rf.rows.filter(r => !rf.off.has(r.id)).length;
+  const where = rf.names.length > 1 ? `those ${rf.names.length} playlists` : esc(rf.names[0]);
+  return `<div class="card" id="rollCard" style="margin:0 0 16px">
+    <p style="margin:0 0 8px"><b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed. Put ${
+      rf.rows.length === 1 ? 'it' : 'them'} in ${where} too?</p>
+    <div class="rows" style="max-height:220px; overflow:auto">${rf.rows.map(r => `
+      <label class="check-row"><input type="checkbox" data-act="rollpick" data-rollpick="${esc(r.id)}" ${rf.off.has(r.id) ? '' : 'checked'}>
+        ${esc(r.title)}</label>`).join('')}</div>
+    <div class="rowbtns" style="margin-top:10px">
+      <button class="b sm p" data-act="roll" data-roll="go" ${on ? '' : 'disabled'}>File ${on} into ${where}</button>
+      <button class="b sm" data-act="roll" data-roll="no">Not now</button>
+    </div>
+  </div>`;
+}
+
+/** File the ticked ones, one History entry per playlist, one undo for the lot. */
+async function rollForwardGo(ctx) {
+  const { S, R, CFG, addTracks, logAction, getLog, undoAction, toast, render } = ctx;
+  const rf = S.roll;
+  if (!rf) return;
+  const ids = rf.rows.map(r => r.id).filter(id => !rf.off.has(id));
+  if (!ids.length) { S.roll = null; return render(); }
+  const ats = [];
+  for (const pid of rf.playlistIds) {
+    await addTracks(pid, ids);
+    await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
+                      reason:`filed with the rest of ${rf.artist}` });
+    ats.push((await getLog())[0]?.at);
+  }
+  // In place, and keeping whichever track is on screen on screen.
+  const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(ids);
+  for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
+  S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+  S.roll = null;
+  const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
+  toast(`Filed ${ids.length} more by ${rf.artist}.`, undoAll);
+  render();
+}
+
+function view(ctx) {
+  const { S, R, CFG, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip, tagChips, trackStrip,
+          soundIdHTML, soundNote, pickEvidence, pickBand, matchMedia } = ctx;
+  const rows = R.backlog;
+  if (!rows.length) return `<h1>File</h1>
+    <div class="empty done">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
+        <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" style="fill:var(--m1)"/>
+        <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7" style="fill:var(--m2)"/>
+        <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/>
+        <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
+      </svg>
+      <b>That's the lot.</b>Every liked song sits in at least one playlist. Nothing left to file.</div>`;
+
+  const i = Math.min(S.inboxAt, rows.length - 1), t = rows[i];
+  // A tap only ever builds a selection now — it never writes to Spotify by
+  // itself, which is what a misclick used to cost. The selection belongs to
+  // whichever track is on screen, so it clears the moment that changes.
+  if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; }
+  if (typeof soundWarm === 'function') soundWarm();
+  const picks = filePicks(t);
+  const opts = Object.entries(CFG).filter(([, v]) => v.target).map(([id, v]) => ({ id, ...v }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const nameOf = id => opts.find(o => o.id === id)?.name ?? picks.find(s => s.id === id)?.name ?? id;
+  const best = picks[0];
+  const canFile = S.fileSel.size > 0 || !!best;
+  const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
+    : S.fileSel.size === 1 ? `File in ${esc(nameOf([...S.fileSel][0]))}`
+    : best ? `File in ${esc(best.name)}` : 'Pick a playlist below';
+  // Say whichever of the two is actually available to the hand on the device.
+  const touch = matchMedia('(hover:none) and (pointer:coarse)').matches;
+  const how = touch
+    ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
+    : `Keys: <b>1–3</b> pick, <b>Enter</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.`;
+
+  return `${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
+      <span${touch ? ' class="how-touch"' : ''}>${how}</span>
+    </div>
+    <div class="deck">
+      ${rows[i + 1] ? '<div class="peek" aria-hidden="true"></div>' : ''}
+      <div class="card swipecard" id="swipeCard" ${canFile ? `data-best="${esc(best?.id ?? '')}"` : ''}>
+        <div class="verdicts" aria-hidden="true">
+          <span class="verdict file">${S.fileSel.size ? `${S.fileSel.size} playlist${S.fileSel.size>1?'s':''}` : best ? esc(best.name) : 'No pick'}</span>
+          <span class="verdict skip">Skip</span>
+        </div>
+        <h2 style="margin:0 0 20px; font-size:26px; font-weight:800; letter-spacing:-.025em">Where does this one go?</h2>
+        <div class="now">
+          <div class="artwrap">
+            ${artHTML(t)}
+            <button class="pfab" data-act="play" aria-label="Play">${ICON_PLAY}</button>
+          </div>
+          <div class="txt">
+            <p class="t">${esc(t.title)}</p><p class="a">${esc(t.artist)}</p>
+            <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0, 4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}
+            ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
+          </div>
+        </div>${trackStrip(t)}${soundIdHTML(t)}
+        ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
+          <button class="pick ${n === 0 ? 'best' : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
+            ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
+            <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
+            <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
+              ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
+              : sg.via === 'sound' ? `sounds like this playlist${sg.tagsAgree ? ' · tags agree' : ''}`
+              : sg.via === 'blend' ? (sg.untagged ? 'where you file this artist and ones like them'
+                : sg.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record')
+              : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
+            <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
+              <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
+            <span class="nope" data-act="reject" data-reject="${esc(sg.id)}" role="button" tabindex="0"
+              title="Never suggest ${esc(sg.name)} for this track">✕</span>
+          </button>`).join('')}</div>`
+        : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
+        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
+          ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).map(id =>
+            `<button class="chip" data-act="selfile" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
+        </div>` : ''}
+        <div class="rowbtns" style="margin-top:22px">
+          <button class="b big go grow" data-act="filesel" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
+          <button class="b big" data-act="skip">Skip</button>
+        </div>
+        <div class="rowbtns" style="margin-top:10px">
+          <button class="b sm" data-act="unlike">Unlike</button>
+          <select id="anyPl" data-act="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+        </div>
+        <p style="margin:14px 0 0; font-size:13px; color:var(--ink-3); text-align:center">Nothing is written to Spotify until you tap File or swipe — and it can be undone after.</p>
+      </div>
+    </div>
+    <div class="prog" style="margin-top:16px"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
+    <div class="swipehint"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span></div>`;
+}
+
+/** Toggle one playlist in or out of the pending selection for the track on screen. */
+function toggleFileSel({ S, render }, id) {
+  if (S.fileSel.has(id)) S.fileSel.delete(id); else S.fileSel.add(id);
+  render();
+}
+
+/**
+ * The track the File screen is actually showing. vInbox() clamps its index to
+ * the end of the queue, and every action below used to read R.backlog[S.inboxAt]
+ * raw — so once filing had shortened the queue past the position "Next up to
+ * file" had jumped to, the card on screen and the track the buttons acted on
+ * were different rows, and at the very end of the queue there was no such row
+ * at all: File, Skip, Unlike and Play each returned silently, with the card
+ * still sitting there. Clamped in one place instead, so the screen and its
+ * buttons cannot disagree.
+ */
+const inboxIndex = ({ S, R }) => Math.min(Math.max(S.inboxAt | 0, 0), Math.max(R.backlog.length - 1, 0));
+const inboxTrack = ctx => ctx.R.backlog[inboxIndex(ctx)] ?? null;
+
+/** File the current inbox track into one or several playlists at once. Takes
+ *  a single id (the swipe gesture, keyboard 1-3 followed by Enter's fallback)
+ *  or an array (the multi-select confirm button) — either way nothing is
+ *  written until this actually runs. */
+async function fileCurrent(ctx, playlistIds) {
+  const { S, R, CFG, FB, addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, toast, render } = ctx;
+  const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
+  if (!ids.length) return;
+  const at = inboxIndex(ctx), t = R.backlog[at]; if (!t) return;
+  const names = ids.map(id => CFG[id]?.name ?? id);
+  try {
+    // One log entry per playlist, so History and its per-row undo stay exact —
+    // the toast just chains all of them for the common "undo the lot" case.
+    const ats = [];
+    for (const id of ids) {
+      await addTracks(id, [t.id]);
+      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox' });
+      ats.push((await getLog())[0]?.at);
+    }
+    // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so
+    // the sound learner hears "yes, there" before the next sync shows it.
+    await recordAccept(t.id, ids);
+    const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
+                                  await forgetAccept(t.id, ids); };
+    toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
+    S.fileSel = new Set();
+    R.backlog.splice(at, 1); S.inboxAt = inboxIndex(ctx);
+    const more = rollForwardFor(t, R.backlog, ids, FB);
+    S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
+                             rows: more.map(b => ({ id: b.id, title: b.title })), off: new Set() } : null;
+    render();
+  } catch (e) { toast('Failed: '+e.message); }
+}
+async function inboxAct(ctx, a) {
+  const { S, R, recordSkip, libraryCall, logAction, getLog, undoAction, playTrack, toast, render } = ctx;
+  const at = inboxIndex(ctx), t = R.backlog[at]; if (!t) return;
+  if (a === 'play') { try { toast('Playing on ' + await playTrack(t.id)); } catch(e){ toast(e.message); } return; }
+  if (a === 'skip') {
+    await recordSkip(t.id);
+    // Move it to the back rather than stepping past it, so the rest of the
+    // queue advances now and the skip still holds after a reload.
+    t.skips = (t.skips ?? 0) + 1;
+    R.backlog.splice(at, 1);
+    R.backlog.push(t);
+    // The skipped card is now the last row, so staying on the last index would
+    // show it straight back — which is what skipping the final track in the
+    // queue used to do: the skip was recorded, and nothing on screen moved.
+    S.inboxAt = at >= R.backlog.length - 1 ? 0 : at;
+    S.fileSel = new Set();
+    return render();
+  }
+  if (a === 'unlike') {
+    try {
+      await libraryCall('DELETE', [t.id]);
+      await logAction({ op:'unlike', trackIds:[t.id], reason:'from inbox' });
+      const logAt = (await getLog())[0]?.at;
+      toast(`Unliked “${t.title}”.`, () => undoAction(logAt));
+      R.backlog.splice(at, 1); S.inboxAt = inboxIndex(ctx); render();
+    } catch(e){ toast('Failed: '+e.message); }
+  }
+}
+
+
+/** data-act handlers: the File screen's clicks and changes, moved out of events.js. */
+const actions = {
+  selfile: (ctx, el) => toggleFileSel(ctx, el.dataset.selfile),
+  anyPl: (ctx, el) => { if (el.value) toggleFileSel(ctx, el.value); },
+  filesel: (ctx) => fileCurrent(ctx, ctx.S.fileSel.size ? [...ctx.S.fileSel] : ctx.filePicks(inboxTrack(ctx))[0]?.id),
+  play: (ctx) => inboxAct(ctx, 'play'),
+  skip: (ctx) => inboxAct(ctx, 'skip'),
+  unlike: (ctx) => inboxAct(ctx, 'unlike'),
+  async roll(ctx, el) {
+    if (el.dataset.roll === 'no') { ctx.S.roll = null; return ctx.render(); }
+    el.disabled = true;
+    try { await rollForwardGo(ctx); } catch (err) { el.disabled = false; ctx.toast('Failed: ' + err.message); }
+  },
+  rollpick({ S, render }, el) {
+    if (!S.roll) return;
+    const id = el.dataset.rollpick;
+    if (S.roll.off.has(id)) S.roll.off.delete(id); else S.roll.off.add(id);
+    render();
+  },
+  async reject(ctx, el, e) {
+    const { S, R, LIB, CFG, FB, TAGS, toast, render, recordReject, backlogSuggest, gateTags, tagGate,
+            artistRejectMemory, fbUnstamp, saveFeedback, rebuildReports } = ctx;
+    e?.stopPropagation?.();
+    const t = inboxTrack(ctx); if (!t) return;
+    const pid = el.dataset.reject, pname = CFG[pid]?.name ?? pid;
+    await recordReject(t.id, pid);
+    S.fileSel.delete(pid);
+    // Re-rank this one track now, so the slot fills with the next real
+    // candidate instead of leaving a gap, through the same backlogSuggest()
+    // that made the card, so the filing-history fallback and `via` survive.
+    const raw = LIB.liked.find(x => x.id === t.id);
+    t.suggest = raw ? backlogSuggest(raw, LIB, CFG, gateTags(TAGS, tagGate(TAGS)), R.profiles, R.idf) : [];
+    // The artist's other cards re-rank too: the rejection lowers this playlist
+    // for them (backlogSuggest reads it through rejectFactors).
+    const lead = t.artists?.[0]?.id;
+    if (lead) {
+      const gated = gateTags(TAGS, tagGate(TAGS)), mem = artistRejectMemory(FB, LIB);
+      for (const b of R.backlog) {
+        if (b.id === t.id || b.artists?.[0]?.id !== lead) continue;
+        const rb = LIB.liked.find(x => x.id === b.id);
+        if (rb) b.suggest = backlogSuggest(rb, LIB, CFG, gated, R.profiles, R.idf, undefined, mem);
+      }
+    }
+    toast(`Won't suggest ${pname} for this track again.`, async () => {
+      const f = FB[t.id]; if (f) { f.rejected = f.rejected.filter(x => x !== pid); fbUnstamp(f, 'rejectedAt', [pid]); }
+      await saveFeedback(); rebuildReports(); render();
+    });
+    render();
+  },
+};
+return { rollForwardFor, rollForwardHTML, rollForwardGo, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions };
 })();
 /* ---- web/screens/engine.mjs ---- */
 __mod["web/screens/engine.mjs"] = (function () {
@@ -3374,7 +3818,7 @@ function summary({ ENG, LIB, maestScoreText }) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0940`,
+    `Betterfy engine score — build 2026-11-15-0953`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -3870,7 +4314,7 @@ Object.assign(globalThis, __mod["credits.mjs"]);
 Object.assign(globalThis, __mod["profile.mjs"]);
 Object.assign(globalThis, __mod["core/playlists/axes.mjs"]);
 Object.assign(globalThis, __mod["web/ui/sound.mjs"]);
-globalThis.BetterfyScreens = { history: __mod["web/screens/history.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"] };
+globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"] };
 /* =============================================================== */
 
 const $ = s => document.querySelector(s);
@@ -4262,7 +4706,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0940';
+const BUILD = '2026-11-15-0953';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -4583,7 +5027,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0940', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0953', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -5493,145 +5937,6 @@ async function playTrack(id) {
 }
 
 
-/** Icons for the four things Home offers to do, matched to the tab bar. */
-const ACT_IC = {
-  inbox: '<path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/>',
-  tidy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 4.5H6a2.5 2.5 0 0 0-2.5 2.5v9.5"/>',
-  discover: '<circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/>',
-  shuffle: '<path d="M17 4.5 20.5 7 17 9.5"/><path d="M17 14.5 20.5 17 17 19.5"/><path d="M3.5 7h3.2c1.2 0 2.3.6 3 1.6l4.6 6.8c.7 1 1.8 1.6 3 1.6h3.2"/><path d="M3.5 17h3.2c1.2 0 2.3-.6 3-1.6l.9-1.3"/><path d="M14.4 9.9l.9-1.3c.7-1 1.8-1.6 3-1.6h2.2"/>',
-};
-ACT_IC.heard = '<path d="M5 14.5v4"/><path d="M9.5 9.5v9"/><path d="M14 5v13.5"/><path d="M18.5 10.5v8"/>';
-const actIcon = v => `<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ACT_IC[v]}</svg></span>`;
-
-/** "Evening" rather than a clock: the greeting is a tone, not a timestamp. */
-function partOfDay(d = new Date()) {
-  const h = d.getHours();
-  return h < 5 ? 'Late night' : h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
-}
-
-function vHome() {
-  const exact = R.within.filter(x => x.verdict === 'same-recording').length;
-  const clash = R.within.length - exact;
-  const uniq = new Set(); let placements = 0;
-  for (const p of LIB.playlists) { if (isMirrorPlaylist(p)) continue;
-    for (const t of p.tracks) { uniq.add(t.id); placements++; } }
-
-  const backlog = R.backlog.length;
-  const toTidy = R.within.length + R.misfiled.length;
-  const found = (S.discover ?? []).length;
-  const shufflable = LIB.playlists.filter(p => p.tracks.length >= 8).length;
-  const first = String(LIB.user?.name ?? '').trim().split(/\s+/)[0] ?? '';
-  const name = (!first.includes('@') && first.length <= 18) ? first : '';
-
-  // The four cards are the four screens, in the order you would work them.
-  const acts = [
-    ['inbox', backlog, 'likes with no home', 'File them one at a time, each with a suggested playlist.'],
-    ['tidy', toTidy, 'things to tidy', 'Repeats, version clashes and tracks filed in the wrong place.'],
-    ['discover', found, found ? "records you don't own" : 'nothing found yet',
-      found ? 'Built from what you actually played, minus everything you have.' : 'Run a search: weighted by what you played, minus what you own.'],
-    ['shuffle', shufflable, 'playlists to re-order', 'Spacing that keeps the same artist from clumping.'],
-  ];
-  // A fifth card once listening has ever run, and never before: a listener who
-  // never turns it on gets the same four cards, byte for byte.
-  if (listenEverRan()) acts.push(['heard', listenHeard(), listenHeard() === 1 ? 'track heard' : 'tracks heard',
-    'Previews listened to on this device, to place tracks by how they sound.']);
-
-  // Where the library sits, as one bar over one population: your liked songs.
-  // It used to mix three that came from different ones — liked-and-filed,
-  // cross-filing measured across the whole library, and a Tidy total that had
-  // already counted some of the same tracks twice — so the segments could sum
-  // to more than the library, and "Filed" clamped to zero on any library with
-  // much to tidy.
-  const liked = LIB.liked.length;
-  const likedIds = new Set(LIB.liked.map(t => t?.id).filter(Boolean));
-  const crossLiked = R.across.filter(x => likedIds.has(x.id)).length;
-  const filed = Math.max(liked - backlog, 0);
-  const seg = [
-    ['Filed', Math.max(filed - crossLiked, 0), 'm4'],
-    ['Cross-filed', Math.min(crossLiked, filed), 'm3'],
-    ['Unfiled', backlog, 'm0'],
-  ];
-  const tot = seg.reduce((n, x) => n + x[1], 0) || 1;
-  const cov = tagCoverage();
-  const upNext = R.backlog.slice(0, 4);
-
-  return `<div class="hero">
-      <div class="in">
-        <div class="txt">
-          <div class="when">${esc(partOfDay())}${LIB.captured_at ? ' · synced ' + esc(LIB.captured_at.slice(0, 10)) : ''}</div>
-          <h1>${esc(partOfDay())}${name ? ', ' + esc(name) : ''}. ${backlog
-            ? `${backlog.toLocaleString()} liked ${backlog === 1 ? 'song' : 'songs'} still ${backlog === 1 ? 'needs' : 'need'} a home.`
-            : 'Your library is in good shape.'}</h1>
-          <p>Nothing is written to Spotify until you tap something — and every change can be undone.</p>
-        </div>
-        <div class="tile">
-          <svg viewBox="0 0 32 32" aria-hidden="true">
-            <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
-            <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" style="fill:var(--m1)"/>
-            <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7" style="fill:var(--m2)"/>
-            <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/>
-            <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
-          </svg>
-        </div>
-      </div>
-    </div>
-
-    ${analyseHTML()}
-
-    <div class="acts4${acts.length > 4 ? ' five' : ''}">${acts.map(([v, n, label, desc]) => `
-      <button class="act" data-go="${v === 'heard' ? listenTarget() : v}"${v === 'heard' ? ' data-heard' : ''} style="--ac:var(--${VHUE[v] ?? HEARD_HUE}); --ac-ink:var(--${VHUE[v] ?? HEARD_HUE}-ink)">
-        ${actIcon(v)}
-        <span class="n">${n.toLocaleString()}</span>
-        <span class="l">${esc(label)}</span>
-        <span class="d">${esc(desc)}</span>
-      </button>`).join('')}</div>
-
-    <div class="split">
-      <div class="panel">
-        <div class="ph">
-          <h2>Where your library sits</h2>
-          <span class="mono">${uniq.size.toLocaleString()} tracks · ${LIB.playlists.length} playlists</span>
-        </div>
-        <div class="bar">${seg.map(([, n, c]) =>
-          `<i style="width:${(100 * n / tot).toFixed(2)}%; background:var(--${c})"></i>`).join('')}</div>
-        <div class="key">${seg.map(([l, n, c]) =>
-          `<span><i style="background:var(--${c})"></i>${esc(l)} <b>${n.toLocaleString()}</b></span>`).join('')}</div>
-      </div>
-      <div class="panel">
-        <h2 style="margin:0 0 16px">Your library</h2>
-        <div class="facts">
-          <div><span>Liked songs</span><b class="mono">${liked.toLocaleString()}</b></div>
-          <div><span>Placements</span><b class="mono">${placements.toLocaleString()}</b></div>
-          <div><span>Exact repeats</span><b class="mono">${exact.toLocaleString()}</b></div>
-          <div><span>Version clashes</span><b class="mono">${clash.toLocaleString()}</b></div>
-          <div><span>Genre coverage</span><b class="mono">${cov.pct}%</b></div>
-          <hr>
-          <p>Genre comes from Last.fm — Spotify stopped providing it. Top yours up under Sources.</p>
-        </div>
-      </div>
-    </div>
-
-    ${upNext.length ? `<div class="seehead">
-      <h2 style="margin:0">Next up to file</h2>
-      <button class="more" data-go="inbox">Open the queue →</button>
-    </div>
-    <div class="upnext">${upNext.map((t, i) => {
-      const best = (typeof filePicks === 'function' ? filePicks(t) : t.suggest ?? [])[0];
-      const strong = best && best.score >= 0.7;
-      const h = hueOf(t.id ?? t.title ?? '');
-      const cover = t.art
-        ? `<img class="cov" src="${esc(t.art)}" alt="" loading="lazy" decoding="async">`
-        : `<span class="cov" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h + 48) % 360} 58% 44%))">${esc((t.title || '?').trim()[0] ?? '?')}</span>`;
-      return `<button class="u" data-goinbox="${i}" title="${esc(t.title)} — ${esc(t.artist)}">${cover}<span class="bd">
-        <span class="t">${esc(t.title)}</span>
-        <span class="a">${esc(t.artist)}</span>
-        <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
-          ? `→ ${esc(best.name)} ${(best.score * 100).toFixed(0)}%` : '→ no confident pick'}</span>
-      </span></button>`;
-    }).join('')}</div>` : ''}`;
-}
-
 /* ---------- the listening indicator (docs/UI-BUILD-PLAN.md §2.5) ----------
  * The chrome owns the slot; listenPill() (web/ui/sound.mjs) owns what is in it;
  * the audio build owns the state and hands it over as a plain ListenVM through
@@ -5778,164 +6083,6 @@ function soundNote(t, picks) {
   if (rec.miss) return `<p class="why sndnote" style="margin-top:12px">Couldn’t be heard (no preview), so picks are from tags.</p>`;
   if (SOUND.status === 'ready' && !SOUND.space) return `<p class="why sndnote" style="margin-top:12px">Not enough of your genre playlists heard yet to compare against. Picks are from tags.</p>`;
   return '';
-}
-
-/* ---------- artist roll-forward: docs/SMARTER-GENRES-PLAN.md, phase 4 ----------
- * File one track by an artist and the same artist's other unfiled tracks usually
- * belong in the same place. So the File screen offers them, as a list you can see
- * and untick, never a silent bulk move. Tracks already turned down for that
- * playlist are left out: a rejection is an answer. */
-const ROLL_MAX = 40;
-
-/** Other backlog tracks by `track`'s first-billed artist that could follow it into `playlistIds`. */
-function rollForwardFor(track, backlog, playlistIds, fb = {}) {
-  const lead = track?.artists?.[0]?.id;
-  if (!lead || !playlistIds?.length) return [];
-  return (backlog ?? []).filter(b => b.id !== track.id && b.artists?.[0]?.id === lead
-      && !playlistIds.some(pid => fb?.[b.id]?.rejected?.includes(pid)))
-    .slice(0, ROLL_MAX);
-}
-
-function rollForwardHTML() {
-  const rf = S.roll;
-  if (!rf?.rows?.length) return '';
-  const on = rf.rows.filter(r => !rf.off.has(r.id)).length;
-  const where = rf.names.length > 1 ? `those ${rf.names.length} playlists` : esc(rf.names[0]);
-  return `<div class="card" id="rollCard" style="margin:0 0 16px">
-    <p style="margin:0 0 8px"><b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed. Put ${
-      rf.rows.length === 1 ? 'it' : 'them'} in ${where} too?</p>
-    <div class="rows" style="max-height:220px; overflow:auto">${rf.rows.map(r => `
-      <label class="check-row"><input type="checkbox" data-rollpick="${esc(r.id)}" ${rf.off.has(r.id) ? '' : 'checked'}>
-        ${esc(r.title)}</label>`).join('')}</div>
-    <div class="rowbtns" style="margin-top:10px">
-      <button class="b sm p" data-roll="go" ${on ? '' : 'disabled'}>File ${on} into ${where}</button>
-      <button class="b sm" data-roll="no">Not now</button>
-    </div>
-  </div>`;
-}
-
-/** File the ticked ones, one History entry per playlist, one undo for the lot. */
-async function rollForwardGo() {
-  const rf = S.roll;
-  if (!rf) return;
-  const ids = rf.rows.map(r => r.id).filter(id => !rf.off.has(id));
-  if (!ids.length) { S.roll = null; return render(); }
-  const ats = [];
-  for (const pid of rf.playlistIds) {
-    await addTracks(pid, ids);
-    await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
-                      reason:`filed with the rest of ${rf.artist}` });
-    ats.push((await getLog())[0]?.at);
-  }
-  // In place, and keeping whichever track is on screen on screen.
-  const keep = R.backlog[inboxIndex()]?.id, gone = new Set(ids);
-  for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
-  S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
-  S.roll = null;
-  const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
-  toast(`Filed ${ids.length} more by ${rf.artist}.`, undoAll);
-  render();
-}
-
-function vInbox() {
-  const rows = R.backlog;
-  if (!rows.length) return `<h1>File</h1>
-    <div class="empty done">
-      <svg viewBox="0 0 32 32" aria-hidden="true">
-        <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
-        <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" style="fill:var(--m1)"/>
-        <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7" style="fill:var(--m2)"/>
-        <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/>
-        <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
-      </svg>
-      <b>That's the lot.</b>Every liked song sits in at least one playlist. Nothing left to file.</div>`;
-
-  const i = Math.min(S.inboxAt, rows.length - 1), t = rows[i];
-  // A tap only ever builds a selection now — it never writes to Spotify by
-  // itself, which is what a misclick used to cost. The selection belongs to
-  // whichever track is on screen, so it clears the moment that changes.
-  if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; }
-  if (typeof soundWarm === 'function') soundWarm();
-  const picks = filePicks(t);
-  const opts = Object.entries(CFG).filter(([, v]) => v.target).map(([id, v]) => ({ id, ...v }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const nameOf = id => opts.find(o => o.id === id)?.name ?? picks.find(s => s.id === id)?.name ?? id;
-  const best = picks[0];
-  const canFile = S.fileSel.size > 0 || !!best;
-  const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
-    : S.fileSel.size === 1 ? `File in ${esc(nameOf([...S.fileSel][0]))}`
-    : best ? `File in ${esc(best.name)}` : 'Pick a playlist below';
-  // Say whichever of the two is actually available to the hand on the device.
-  const touch = matchMedia('(hover:none) and (pointer:coarse)').matches;
-  const how = touch
-    ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
-    : `Keys: <b>1–3</b> pick, <b>Enter</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.`;
-
-  return `${rollForwardHTML()}<div class="counter" style="margin:0 0 16px">
-      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
-      <span${touch ? ' class="how-touch"' : ''}>${how}</span>
-    </div>
-    <div class="deck">
-      ${rows[i + 1] ? '<div class="peek" aria-hidden="true"></div>' : ''}
-      <div class="card swipecard" id="swipeCard" ${canFile ? `data-best="${esc(best?.id ?? '')}"` : ''}>
-        <div class="verdicts" aria-hidden="true">
-          <span class="verdict file">${S.fileSel.size ? `${S.fileSel.size} playlist${S.fileSel.size>1?'s':''}` : best ? esc(best.name) : 'No pick'}</span>
-          <span class="verdict skip">Skip</span>
-        </div>
-        <h2 style="margin:0 0 20px; font-size:26px; font-weight:800; letter-spacing:-.025em">Where does this one go?</h2>
-        <div class="now">
-          <div class="artwrap">
-            ${artHTML(t)}
-            <button class="pfab" data-act="play" aria-label="Play">${ICON_PLAY}</button>
-          </div>
-          <div class="txt">
-            <p class="t">${esc(t.title)}</p><p class="a">${esc(t.artist)}</p>
-            <div class="m"><span>${esc(t.album ?? '')}</span><span>${esc((t.released ?? '').slice(0, 4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}
-            ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
-          </div>
-        </div>${trackStrip(t)}${soundIdHTML(t)}
-        ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
-          <button class="pick ${n === 0 ? 'best' : ''}" data-selfile="${esc(sg.id)}"
-            ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
-            <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
-            <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
-              ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
-              : sg.via === 'sound' ? `sounds like this playlist${sg.tagsAgree ? ' · tags agree' : ''}`
-              : sg.via === 'blend' ? (sg.untagged ? 'where you file this artist and ones like them'
-                : sg.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record')
-              : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
-            <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
-              <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
-            <span class="nope" data-reject="${esc(sg.id)}" role="button" tabindex="0"
-              title="Never suggest ${esc(sg.name)} for this track">✕</span>
-          </button>`).join('')}</div>`
-        : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
-        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
-          ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).map(id =>
-            `<button class="chip" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
-        </div>` : ''}
-        <div class="rowbtns" style="margin-top:22px">
-          <button class="b big go grow" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
-          <button class="b big" data-act="skip">Skip</button>
-        </div>
-        <div class="rowbtns" style="margin-top:10px">
-          <button class="b sm" data-act="unlike">Unlike</button>
-          <select id="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
-        </div>
-        <p style="margin:14px 0 0; font-size:13px; color:var(--ink-3); text-align:center">Nothing is written to Spotify until you tap File or swipe — and it can be undone after.</p>
-      </div>
-    </div>
-    <div class="prog" style="margin-top:16px"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
-    <div class="swipehint"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span></div>`;
-}
-
-function cmpTable(o) {
-  const d = f => new Set(o.map(x=>x[f])).size > 1;
-  const [dD,dT,dR,dI] = ['dur','albumType','released','isrc'].map(d);
-  return `<table class="cmp"><thead><tr><th>Length</th><th>Release</th><th>Date</th><th>ISRC</th><th>Album</th></tr></thead><tbody>
-    ${o.map(x=>`<tr><td class="mono ${dD?'differs':''}">${esc(x.dur)}</td><td class="${dT?'differs':''}">${esc(x.albumType??'—')}</td>
-    <td class="mono ${dR?'differs':''}">${esc((x.released??'').slice(0,10))}</td><td class="mono ${dI?'differs':''}">${esc(x.isrc??'—')}</td>
-    <td>${esc(x.album)}</td></tr>`).join('')}</tbody></table>`;
 }
 
 /* ---------- Tidy: three screens' worth of the same question ----------
@@ -8187,7 +8334,7 @@ function swapScreen(dir, update) {
   const t = typed ? document.startViewTransition({ update, types: [type] }) : document.startViewTransition(update);
   t.finished.finally(() => { delete root.dataset.dir; });
 }
-const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
+const VIEWS = { home:screenView('home'), inbox:screenView('inbox'), tidy:vTidy,
                 new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
                 engine:screenView('engine'), history:screenView('history'), sources:screenView('sources') };
 /**
@@ -8550,7 +8697,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0940';
+    s.src = 'engine.js?v=2026-11-15-0953';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -8572,7 +8719,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0940');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0953');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9047,7 +9194,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0940';
+    s.src = 'audio.js?v=2026-11-15-0953';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -9083,7 +9230,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0940', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0953', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -9817,7 +9964,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-0940', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-0953', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -10034,7 +10181,7 @@ function analyseAuto() {
 function analyseHTML() {
   if (ANALYSE.running) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen }))}</span></div>`;
   if (!analyseWanted().any) return '';
-  return `<div class="analyse"><button class="b p" id="analyseGo">Analyse my library</button>
+  return `<div class="analyse"><button class="b p" id="analyseGo" data-act="analyseGo">Analyse my library</button>
     <span class="d">Reads tags and listens to your liked songs, then suggests where each one goes. Nothing is written to Spotify until you tap.</span></div>
     <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
 }
@@ -10084,6 +10231,20 @@ async function dispatchAct(e) {
   await fn(screenCtx(view), el, e);
   return true;
 }
+
+// --- home/inbox ---
+Object.assign(SCREEN_CTX, {
+  home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenEverRan, listenHeard, listenTarget, tagCoverage,
+                 analyseHTML, analyseGo, VHUE, HEARD_HUE, hueOf, filePicks, go }),
+  inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
+                  tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
+                  addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, recordSkip, recordReject,
+                  libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
+                  saveFeedback, toast, render,
+                  rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
+                  matchMedia: q => globalThis.matchMedia(q) }),
+});
+// --- /home/inbox ---
 document.addEventListener('click', guard(async e => {
   if (await dispatchAct(e)) return;
   const nav = e.target.closest('.nav');
@@ -10167,12 +10328,6 @@ document.addEventListener('click', guard(async e => {
 
   const gto = e.target.closest('[data-go]'); if (gto) return go(gto.dataset.go);
   const ti = e.target.closest('[data-tidy]'); if (ti) { S.tidySec = ti.dataset.tidy; return render(); }
-  // A card under "Next up to file" opens the queue on that track, not at the top.
-  const gi = e.target.closest('[data-goinbox]');
-  // The cards under "Next up to file" show the head of the queue, so their
-  // index is an absolute position in it. Adding it to wherever the queue
-  // happened to be left instead opened a different track than the one tapped.
-  if (gi) { S.inboxAt = Math.min(+gi.dataset.goinbox || 0, Math.max(R.backlog.length - 1, 0)); return go('inbox'); }
   const more = e.target.closest('[data-more]');
   if (more) { S.shown[more.dataset.more] = shownOf(more.dataset.more) + TIDY_PAGE; return render(); }
   const cmin = e.target.closest('[data-cmin]');
@@ -10193,38 +10348,6 @@ document.addEventListener('click', guard(async e => {
   const mfb = e.target.closest('[data-mfb]');
   if (mfb) { S.mfBand = mfb.dataset.mfb; if (T.rememberFilters) { T.mfBand = S.mfBand; saveTheme(); } return render(); }
 
-  // Checked before the pick itself, since the ✕ sits inside that button.
-  const reject = e.target.closest('[data-reject]');
-  if (reject) {
-    e.stopPropagation();
-    const t = inboxTrack(); if (!t) return;
-    // nameOf() is local to the File view; CFG is the global source of names.
-    const pid = reject.dataset.reject, pname = CFG[pid]?.name ?? pid;
-    await recordReject(t.id, pid);
-    S.fileSel.delete(pid);
-    // Re-rank this one track now, so the slot fills with the next real
-    // candidate instead of leaving a gap — through the same backlogSuggest()
-    // that made the card, so the filing-history fallback and `via` survive.
-    const raw = LIB.liked.find(x => x.id === t.id);
-    t.suggest = raw ? backlogSuggest(raw, LIB, CFG, gateTags(TAGS, tagGate(TAGS)), R.profiles, R.idf) : [];
-    // The artist's other cards re-rank too: the rejection lowers this playlist
-    // for them (backlogSuggest reads it through rejectFactors).
-    const lead = t.artists?.[0]?.id;
-    if (lead) {
-      const gated = gateTags(TAGS, tagGate(TAGS)), mem = artistRejectMemory(FB, LIB);
-      for (const b of R.backlog) {
-        if (b.id === t.id || b.artists?.[0]?.id !== lead) continue;
-        const rb = LIB.liked.find(x => x.id === b.id);
-        if (rb) b.suggest = backlogSuggest(rb, LIB, CFG, gated, R.profiles, R.idf, undefined, mem);
-      }
-    }
-    toast(`Won't suggest ${pname} for this track again.`, async () => {
-      const f = FB[t.id]; if (f) { f.rejected = f.rejected.filter(x => x !== pid); fbUnstamp(f, 'rejectedAt', [pid]); }
-      await saveFeedback(); R = buildReports(LIB, CFG, TAGS); render();
-    });
-    return render();
-  }
-
   // The File screen's "listen to my music" nudge: the same switch as Sources'.
   if (e.target.closest('[data-soundon]')) {
     await audioLoad().catch(() => {});
@@ -10235,10 +10358,6 @@ document.addEventListener('click', guard(async e => {
     return render();
   }
   if (e.target.closest('[data-soundno]')) { LS.setItem('bf_sound_nudge', 'no'); return render(); }
-  const selfile = e.target.closest('[data-selfile]'); if (selfile) return toggleFileSel(selfile.dataset.selfile);
-  const filesel = e.target.closest('[data-filesel]');
-  if (filesel) return fileCurrent(S.fileSel.size ? [...S.fileSel] : filePicks(inboxTrack())[0]?.id);
-  const act = e.target.closest('[data-act]'); if (act) return inboxAct(act.dataset.act);
 
   const keep = e.target.closest('[data-keep]');
   if (keep) {
@@ -10307,7 +10426,6 @@ document.addEventListener('click', guard(async e => {
   }
   const dfile = e.target.closest('[data-dfile]'); if (dfile) return discAdd(dfile.dataset.dfile);
 
-  if (e.target.id === 'analyseGo') return analyseGo();
   if (e.target.id === 'audioGo') return audioStart();
   if (e.target.id === 'maestGo') return maestStart();
   if (e.target.id === 'maestStop') { AUDIO.maest?.stop(); return; }
@@ -10340,19 +10458,6 @@ document.addEventListener('click', guard(async e => {
   const reset = e.target.closest('[data-resettags]');
   if (reset) { await resetArtistTags(reset.dataset.resettags); render(); return; }
 
-  const rl = e.target.closest('[data-roll]');
-  if (rl) {
-    if (rl.dataset.roll === 'no') { S.roll = null; return render(); }
-    rl.disabled = true;
-    try { await rollForwardGo(); } catch (err) { rl.disabled = false; toast('Failed: ' + err.message); }
-    return;
-  }
-  const rp = e.target.closest('[data-rollpick]');
-  if (rp && S.roll) {
-    const id = rp.dataset.rollpick;
-    if (S.roll.off.has(id)) S.roll.off.delete(id); else S.roll.off.add(id);
-    return render();
-  }
   const gp = e.target.closest('[data-gap]');
   if (gp) {
     const g = GAPS.gaps?.[+gp.dataset.gap];
@@ -10438,7 +10543,6 @@ document.addEventListener('click', guard(async e => {
 
 document.addEventListener('change', guard(async e => {
   if (await dispatchAct(e)) return;
-  if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; S.shufCache = null; return render(); }
   if (e.target.id === 'shufMode') { S.shufMode = e.target.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
@@ -10518,84 +10622,15 @@ document.addEventListener('change', guard(async e => {
   }
 }));
 
-/** Toggle one playlist in or out of the pending selection for the track on screen. */
-function toggleFileSel(id) {
-  if (S.fileSel.has(id)) S.fileSel.delete(id); else S.fileSel.add(id);
-  render();
-}
+/* File's classic glue: the screen is web/screens/inbox.mjs; gestures.js and the
+ * keyboard handler below reach it through these. cmpTable stays here for Tidy. */
+const FILE_GLUE = {
+  track: () => SCREEN_MODS.inbox.inboxTrack(screenCtx('inbox')),
+  toggle: id => SCREEN_MODS.inbox.toggleFileSel(screenCtx('inbox'), id),
+};
+const fileCurrent = ids => SCREEN_MODS.inbox.fileCurrent(screenCtx('inbox'), ids);
+const inboxAct = a => SCREEN_MODS.inbox.inboxAct(screenCtx('inbox'), a);
 
-/**
- * The track the File screen is actually showing. vInbox() clamps its index to
- * the end of the queue, and every action below used to read R.backlog[S.inboxAt]
- * raw — so once filing had shortened the queue past the position "Next up to
- * file" had jumped to, the card on screen and the track the buttons acted on
- * were different rows, and at the very end of the queue there was no such row
- * at all: File, Skip, Unlike and Play each returned silently, with the card
- * still sitting there. Clamped in one place instead, so the screen and its
- * buttons cannot disagree.
- */
-const inboxIndex = () => Math.min(Math.max(S.inboxAt | 0, 0), Math.max(R.backlog.length - 1, 0));
-const inboxTrack = () => R.backlog[inboxIndex()] ?? null;
-
-/** File the current inbox track into one or several playlists at once. Takes
- *  a single id (the swipe gesture, keyboard 1-3 followed by Enter's fallback)
- *  or an array (the multi-select confirm button) — either way nothing is
- *  written until this actually runs. */
-async function fileCurrent(playlistIds) {
-  const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
-  if (!ids.length) return;
-  const at = inboxIndex(), t = R.backlog[at]; if (!t) return;
-  const names = ids.map(id => CFG[id]?.name ?? id);
-  try {
-    // One log entry per playlist, so History and its per-row undo stay exact —
-    // the toast just chains all of them for the common "undo the lot" case.
-    const ats = [];
-    for (const id of ids) {
-      await addTracks(id, [t.id]);
-      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox' });
-      ats.push((await getLog())[0]?.at);
-    }
-    // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so
-    // the sound learner hears "yes, there" before the next sync shows it.
-    await recordAccept(t.id, ids);
-    const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
-                                  await forgetAccept(t.id, ids); };
-    toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
-    S.fileSel = new Set();
-    R.backlog.splice(at, 1); S.inboxAt = inboxIndex();
-    const more = rollForwardFor(t, R.backlog, ids, FB);
-    S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
-                             rows: more.map(b => ({ id: b.id, title: b.title })), off: new Set() } : null;
-    render();
-  } catch (e) { toast('Failed: '+e.message); }
-}
-async function inboxAct(a) {
-  const at = inboxIndex(), t = R.backlog[at]; if (!t) return;
-  if (a === 'play') { try { toast('Playing on ' + await playTrack(t.id)); } catch(e){ toast(e.message); } return; }
-  if (a === 'skip') {
-    await recordSkip(t.id);
-    // Move it to the back rather than stepping past it, so the rest of the
-    // queue advances now and the skip still holds after a reload.
-    t.skips = (t.skips ?? 0) + 1;
-    R.backlog.splice(at, 1);
-    R.backlog.push(t);
-    // The skipped card is now the last row, so staying on the last index would
-    // show it straight back — which is what skipping the final track in the
-    // queue used to do: the skip was recorded, and nothing on screen moved.
-    S.inboxAt = at >= R.backlog.length - 1 ? 0 : at;
-    S.fileSel = new Set();
-    return render();
-  }
-  if (a === 'unlike') {
-    try {
-      await libraryCall('DELETE', [t.id]);
-      await logAction({ op:'unlike', trackIds:[t.id], reason:'from inbox' });
-      const logAt = (await getLog())[0]?.at;
-      toast(`Unliked “${t.title}”.`, () => undoAction(logAt));
-      R.backlog.splice(at, 1); S.inboxAt = inboxIndex(); render();
-    } catch(e){ toast('Failed: '+e.message); }
-  }
-}
 // Keyboard parity for the swipe: the same walk through VORDER, for anyone not
 // using a touchscreen.
 document.addEventListener('keydown', guard(async e => {
@@ -10612,13 +10647,22 @@ document.addEventListener('keydown', guard(async e => {
 
 document.addEventListener('keydown', e => {
   if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
-  const t = inboxTrack(); if (!t) return;
-  if (['1','2','3'].includes(e.key)) { const s = filePicks(t)[+e.key-1]; if (s) toggleFileSel(s.id); }
+  const t = FILE_GLUE.track(); if (!t) return;
+  if (['1','2','3'].includes(e.key)) { const s = filePicks(t)[+e.key-1]; if (s) FILE_GLUE.toggle(s.id); }
   if (e.key === 'Enter' && (S.fileSel.size || filePicks(t)[0])) fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : filePicks(t)[0].id));
   if (e.key.toLowerCase()==='p') inboxAct('play');
   if (e.key.toLowerCase()==='s') inboxAct('skip');
   if (e.key.toLowerCase()==='u') inboxAct('unlike');
 });
+
+function cmpTable(o) {
+  const d = f => new Set(o.map(x=>x[f])).size > 1;
+  const [dD,dT,dR,dI] = ['dur','albumType','released','isrc'].map(d);
+  return `<table class="cmp"><thead><tr><th>Length</th><th>Release</th><th>Date</th><th>ISRC</th><th>Album</th></tr></thead><tbody>
+    ${o.map(x=>`<tr><td class="mono ${dD?'differs':''}">${esc(x.dur)}</td><td class="${dT?'differs':''}">${esc(x.albumType??'—')}</td>
+    <td class="mono ${dR?'differs':''}">${esc((x.released??'').slice(0,10))}</td><td class="mono ${dI?'differs':''}">${esc(x.isrc??'—')}</td>
+    <td>${esc(x.album)}</td></tr>`).join('')}</tbody></table>`;
+}
 
 /* ---------- boot ---------- */
 $('#redirectShow').textContent = REDIRECT;

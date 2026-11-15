@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as HOME from '../web/screens/home.mjs';
+import { ctxOf } from './screenctx.mjs';
 
 // UI-5: Home, the chrome's listening slot and the landing line. The sound layer
 // must be invisible to anyone who never turns listening on: with no ListenVM,
@@ -43,10 +45,10 @@ function home({ views = {} } = {}) {
       backlog: [track(2, { suggest: [{ name: 'Deep house', score: 0.82 }] }), track(3)] },
   };
   vm.createContext(sandbox);
-  vm.runInContext(slice('const ACT_IC = {', '/** A row-sized cover.', 'Home and the listening slot'), sandbox);
+  vm.runInContext(slice('/* ---------- the listening indicator', '/** A row-sized cover.', 'Home and the listening slot'), sandbox);
   return sandbox;
 }
-const html = (s, code = 'vHome()') => vm.runInContext(code, s);
+const html = (s, code) => code ? vm.runInContext(code, s) : HOME.view(ctxOf(s));
 
 test('with no ListenVM, Home is byte-identical whatever "nothing" the audio side hands over', () => {
   const base = html(home());

@@ -44,3 +44,17 @@ async function dispatchAct(e) {
   await fn(screenCtx(view), el, e);
   return true;
 }
+
+// --- home/inbox ---
+Object.assign(SCREEN_CTX, {
+  home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenEverRan, listenHeard, listenTarget, tagCoverage,
+                 analyseHTML, analyseGo, VHUE, HEARD_HUE, hueOf, filePicks, go }),
+  inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
+                  tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
+                  addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, recordSkip, recordReject,
+                  libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
+                  saveFeedback, toast, render,
+                  rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
+                  matchMedia: q => globalThis.matchMedia(q) }),
+});
+// --- /home/inbox ---

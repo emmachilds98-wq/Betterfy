@@ -1,4 +1,4 @@
-const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
+const VIEWS = { home:screenView('home'), inbox:screenView('inbox'), tidy:vTidy,
                 new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
                 engine:screenView('engine'), history:screenView('history'), sources:screenView('sources') };
 /**

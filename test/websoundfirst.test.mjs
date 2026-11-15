@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { withInbox } from './screenctx.mjs';
 
 import { fixture, FAMILIES } from './fixtures/engine-library.mjs';
 import { makeRecord, N_STYLES, EMB_DIM } from '../core/audio/record.mjs';
@@ -90,7 +91,7 @@ function page({ on = true, heardNew = true, fb = {}, nudge = null, bpm = false }
   };
   vm.createContext(s);
   vm.runInContext(ENGINE, s);
-  vm.runInContext(CARD, s);
+  vm.runInContext(CARD, s); withInbox(s);
   vm.runInContext('/*' + SOUND_CODE, s);
   return s;
 }

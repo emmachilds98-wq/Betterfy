@@ -1,3 +1,4 @@
+// @bundle screens home 10
 /** Icons for the four things Home offers to do, matched to the tab bar. */
 const ACT_IC = {
   inbox: '<path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/>',
@@ -10,12 +11,14 @@ const actIcon = v => `<span class="ic"><svg viewBox="0 0 24 24" fill="none" stro
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ACT_IC[v]}</svg></span>`;
 
 /** "Evening" rather than a clock: the greeting is a tone, not a timestamp. */
-function partOfDay(d = new Date()) {
+export function partOfDay(d = new Date()) {
   const h = d.getHours();
   return h < 5 ? 'Late night' : h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
 }
 
-function vHome() {
+export function view(ctx) {
+  const { S, R, LIB, esc, isMirrorPlaylist, listenEverRan, listenHeard, listenTarget, tagCoverage,
+          analyseHTML, VHUE, HEARD_HUE, hueOf, filePicks } = ctx;
   const exact = R.within.filter(x => x.verdict === 'same-recording').length;
   const clash = R.within.length - exact;
   const uniq = new Set(); let placements = 0;
@@ -122,13 +125,13 @@ function vHome() {
       <button class="more" data-go="inbox">Open the queue →</button>
     </div>
     <div class="upnext">${upNext.map((t, i) => {
-      const best = (typeof filePicks === 'function' ? filePicks(t) : t.suggest ?? [])[0];
+      const best = (filePicks ? filePicks(t) : t.suggest ?? [])[0];
       const strong = best && best.score >= 0.7;
       const h = hueOf(t.id ?? t.title ?? '');
       const cover = t.art
         ? `<img class="cov" src="${esc(t.art)}" alt="" loading="lazy" decoding="async">`
         : `<span class="cov" style="background:linear-gradient(150deg,hsl(${h} 62% 56%),hsl(${(h + 48) % 360} 58% 44%))">${esc((t.title || '?').trim()[0] ?? '?')}</span>`;
-      return `<button class="u" data-goinbox="${i}" title="${esc(t.title)} — ${esc(t.artist)}">${cover}<span class="bd">
+      return `<button class="u" data-act="goinbox" data-goinbox="${i}" title="${esc(t.title)} — ${esc(t.artist)}">${cover}<span class="bd">
         <span class="t">${esc(t.title)}</span>
         <span class="a">${esc(t.artist)}</span>
         <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
@@ -137,3 +140,14 @@ function vHome() {
     }).join('')}</div>` : ''}`;
 }
 
+
+export const actions = {
+  analyseGo: ({ analyseGo }) => analyseGo(),
+  // A card under "Next up to file" opens the queue on that track, not at the top.
+  // Its index is an absolute position in the queue, not an offset from wherever
+  // the queue was left.
+  goinbox({ S, R, go }, el) {
+    S.inboxAt = Math.min(+el.dataset.goinbox || 0, Math.max(R.backlog.length - 1, 0));
+    return go('inbox');
+  },
+};

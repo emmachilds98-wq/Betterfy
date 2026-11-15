@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { withInbox } from './screenctx.mjs';
 import { feedbackExamples } from '../core/intrinsic/audio-feedback.mjs';
 
 /*
@@ -82,7 +83,7 @@ function filing(backlog) {
     logAction: async () => {}, getLog: async () => [{ at: 'T' + calls.add.length }],
     undoAction: async at => { calls.undo.push(at); },
   });
-  vm.runInContext(slice('function toggleFileSel(id)', '// Keyboard parity', 'fileCurrent'), s);
+  withInbox(s);
   return Object.assign(s, { calls });
 }
 

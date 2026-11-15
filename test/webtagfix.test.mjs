@@ -160,7 +160,7 @@ test('buildReports carries artist ids through to misfiled and backlog rows, not 
 
 test('choosing an axis by hand marks it "set by you" immediately, not just after the next sync', () => {
   const from = BUNDLE.indexOf("const ax = e.target.closest('[data-ax]')");
-  const to = BUNDLE.indexOf('async function fileCurrent');
+  const to = from + 2500;
   const body = BUNDLE.slice(from, to);
   assert.match(body, /CFG\[id\]\.axis = ax\.value;\s*\n\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*CFG\[id\]\.why = 'set by you';/,
     'so a playlist just fixed drops out of "Needs your input" without a reload');
