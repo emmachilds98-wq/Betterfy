@@ -228,6 +228,9 @@ function shufflePage({ records = null, mode = undefined, energyShown = false, en
   if (engine) vm.runInContext(ENGINE, sandbox);
   vm.runInContext(PAGE.slice(i, j).replace('const ALL_SONGS_NAME', 'var ALL_SONGS_NAME')
 , sandbox);
+  // The shared empty state (UI-1), which the mix's loading and error boxes use.
+  const e = PAGE.indexOf('function emptyState('), f = PAGE.indexOf('/* The misfile confidence tiers', e);
+  vm.runInContext(PAGE.slice(e, f), sandbox);
   return sandbox;
 }
 const heardRecords = (n, o = {}) => new Map(Array.from({ length: n }, (_, k) =>

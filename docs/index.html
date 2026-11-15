@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0020">
+<meta name="bf-build" content="2026-11-15-0024">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -109,6 +109,20 @@
     --ev-tags:var(--m4); --ev-history:var(--m0); --ev-sound:var(--m2); --ev-learned:var(--m3);
     --tabh:60px;                       /* bottom tab bar, excluding the inset */
     --topbar:52px;                     /* mobile header, excluding the inset */
+    /* Motion (docs/BUILD-5-PLAN.md §4.2). Four durations and the curves that
+       go with them, so every transition in the app agrees on what "quick"
+       and "a screen change" mean. Same in both themes. Springs and the bounce
+       are for transform only, never opacity. */
+    --dur-1:120ms;  /* press, hover, colour */
+    --dur-2:200ms;  /* chips, toggles, toast, fades */
+    --dur-3:300ms;  /* screen change, sheet, row add/remove */
+    --dur-4:450ms;  /* shared element, deck promote */
+    --ease-out:cubic-bezier(.2,.7,.3,1);   /* the existing curve, named */
+    --ease-in:cubic-bezier(.4,0,1,1);      /* exits */
+    --ease-std:cubic-bezier(.3,0,.2,1);    /* moves on screen */
+    --ease-spring:linear(0,.106,.325,.556,.748,.886,.972,1.018,1.036,1.038,1.031,1.022,1.014,1.007,1.003,1);
+    --ease-bounce:linear(0,.166,.493,.802,1.011,1.109,1.124,1.095,1.053,1.016,.994,.985,.985,.989,.995,.999,1);
+    --slide:24px;
   }
   /* Nightshift. Warm near-black rather than the blue-black it was, so the
      amber end of the mark and the accent don't fight the ground. */
@@ -290,11 +304,12 @@
   .tabmore .ic{display:none}
   .tabmore:hover{background:var(--surface-2); color:var(--ink); border-color:var(--line-2)}
   .tabmore[aria-expanded="true"],.tabmore[aria-current="true"]{background:var(--surface-2); color:var(--ink)}
-  /* The listening indicator: the end of the top bar on a desktop (the
-     phone rule in 80-responsive floats it above the tab bar). It holds
+  /* The listening indicator: on a desktop it sits just before More, so the
+     nav row (flex:1) gives up the room and More stays where it was (B8); the
+     phone rule in 80-responsive moves it into the header. It holds
      listenPill()'s markup and nothing else, so with no ListenVM it is empty
      and takes no room at all. */
-  .listenslot{flex:none; display:flex; align-items:center; min-width:0; margin-left:4px;
+  .listenslot{flex:none; display:flex; align-items:center; min-width:0; margin:0 4px;
         border-radius:999px; cursor:pointer}
   .listenslot:empty{display:none}
   .listenslot:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
@@ -311,7 +326,7 @@
         padding:calc(var(--sat) + 11px) calc(var(--sar) + 150px) 11px calc(var(--sal) + 14px);
         background:color-mix(in srgb, var(--ground) 82%, transparent);
         -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
-        border-bottom:1px solid transparent; transition:border-color .2s ease}
+        border-bottom:1px solid transparent; transition:border-color var(--dur-2) ease}
   .mtop.stuck{border-bottom-color:var(--line)}
   .mtop .mark{width:26px; height:26px; flex:none}
   .mtop .title{font-family:var(--display); font-weight:800; font-size:19px; letter-spacing:-.03em;
@@ -355,7 +370,7 @@
        font:inherit; display:flex; flex-direction:column; gap:6px;
        background:color-mix(in srgb, var(--ac) 15%, var(--surface));
        border:1px solid color-mix(in srgb, var(--ac) 32%, transparent);
-       transition:transform .12s ease, box-shadow .14s ease}
+       transition:transform var(--dur-1) ease, box-shadow .14s ease}
   .act:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
   .act:active{transform:scale(.99)}
   .act .ic{width:40px; height:40px; border-radius:14px; background:var(--ac); color:var(--ac-ink);
@@ -373,7 +388,7 @@
   .panel .ph h2{margin:0; font-size:19px}
   .panel .ph .mono{font-size:12px; color:var(--ink-3)}
   .bar{display:flex; height:22px; border-radius:11px; overflow:hidden; background:var(--surface-3)}
-  .bar i{display:block; transition:width .4s cubic-bezier(.2,.7,.3,1)}
+  .bar i{display:block; transition:width .4s var(--ease-out)}
   .key{display:flex; gap:22px; margin-top:14px; flex-wrap:wrap; font-size:13.5px; color:var(--ink-2)}
   .key span{display:flex; align-items:center; gap:8px}
   .key i{width:10px; height:10px; border-radius:3px; display:block}
@@ -389,7 +404,7 @@
   .upnext{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px}
   .upnext .u{border-radius:var(--r-3); overflow:hidden; background:var(--surface); border:1px solid var(--line);
         text-align:left; font:inherit; color:var(--ink); cursor:pointer; padding:0;
-        transition:transform .12s ease, box-shadow .14s ease;
+        transition:transform var(--dur-1) ease, box-shadow .14s ease;
         display:flex; flex-direction:column; min-width:0}
   .upnext .u:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
   .upnext .u .cov{aspect-ratio:1; width:100%; display:grid; place-items:center; object-fit:cover;
@@ -408,14 +423,14 @@
 
   /* The card animation, kept: the action cards on Home use it. */
   @keyframes tileIn{from{opacity:0; transform:translateY(9px)}}
-  .acts4 .act{animation:tileIn .34s cubic-bezier(.2,.7,.3,1) backwards}
+  .acts4 .act{animation:tileIn .34s var(--ease-out) backwards}
   .acts4 .act:nth-child(2){animation-delay:.04s}
   .acts4 .act:nth-child(3){animation-delay:.08s}
   .acts4 .act:nth-child(4){animation-delay:.12s}
   .acts4 .act:nth-child(5){animation-delay:.16s}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-4); padding:26px 28px 28px; box-shadow:var(--shadow-2)}
   .prog{height:5px; background:var(--surface-3); border-radius:3px; overflow:hidden; margin-bottom:18px}
-  .prog i{display:block; height:100%; border-radius:3px; transition:width .35s cubic-bezier(.2,.7,.3,1);
+  .prog i{display:block; height:100%; border-radius:3px; transition:width .35s var(--ease-out);
           background:linear-gradient(90deg, var(--progress-accent), color-mix(in srgb, var(--view) 70%, var(--progress-accent)))}
   .now{display:flex; gap:14px; align-items:flex-start}
   .now .txt{min-width:0; flex:1}
@@ -472,7 +487,7 @@
   .picks{display:flex; flex-direction:column; gap:9px; margin-top:24px}
   .pick{display:flex; align-items:center; gap:14px; border:1px solid var(--line); border-radius:18px; background:var(--surface-2);
         padding:16px 18px; cursor:pointer; font:inherit; font-size:15px; color:var(--ink); text-align:left; width:100%;
-        transition:border-color .12s ease, background .12s ease, transform .08s ease}
+        transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform .08s ease}
   .pick:hover{border-color:var(--hover-accent)}
   .pick:active{transform:scale(.99)}
   /* The suggestion you get by swiping right is the one flagged here — and it
@@ -491,7 +506,7 @@
   .pick .rt{flex:none; display:flex; flex-direction:column; align-items:flex-end; gap:6px}
   /* Sits inside the pick button, so its handler stops propagation. */
   .pick .nope{flex:none; width:22px; height:22px; display:grid; place-items:center; border-radius:6px;
-    color:var(--ink-3); font-size:12px; line-height:1; cursor:pointer; opacity:0; transition:opacity .12s}
+    color:var(--ink-3); font-size:12px; line-height:1; cursor:pointer; opacity:0; transition:opacity var(--dur-1)}
   .pick:hover .nope, .pick:focus-within .nope{opacity:1}
   .pick .nope:hover{background:var(--accent-soft); color:var(--accent)}
   @media (hover:none){ .pick .nope{opacity:1} }
@@ -510,7 +525,7 @@
   .player{display:flex; align-items:center; gap:12px; margin-top:16px}
   .tbtn{width:44px; height:44px; flex:none; border-radius:50%; border:1px solid var(--btn-accent); background:var(--btn-accent);
         color:var(--btn-ink); display:grid; place-items:center; cursor:pointer; box-shadow:var(--shadow);
-        transition:transform .08s ease, filter .12s ease}
+        transition:transform .08s ease, filter var(--dur-1) ease}
   .tbtn:hover{filter:brightness(1.06)}
   .tbtn:active{transform:scale(.96)}
   .tbtn:disabled{opacity:.5; cursor:default}
@@ -569,7 +584,7 @@
   input[type=checkbox]:not(.native):not(.tgl){-webkit-appearance:none; appearance:none; flex:none;
        width:18px; height:18px; margin:0 2px 0 0; padding:0; vertical-align:-3px; cursor:pointer;
        border:1.5px solid var(--line-2); border-radius:6px; background:var(--surface) center/14px no-repeat;
-       transition:background-color .12s ease, border-color .12s ease, box-shadow .12s ease}
+       transition:background-color var(--dur-1) ease, border-color var(--dur-1) ease, box-shadow var(--dur-1) ease}
   input[type=checkbox]:not(.native):not(.tgl):hover{border-color:var(--ink-3)}
   input[type=checkbox]:not(.native):not(.tgl):checked{background-color:var(--btn-accent); border-color:var(--btn-accent);
        background-image:var(--tick)}
@@ -599,13 +614,13 @@
                         linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
        background-position:calc(100% - 18px) 52%, calc(100% - 13px) 52%;
        background-size:5px 5px; background-repeat:no-repeat;
-       transition:border-color .12s ease}
+       transition:border-color var(--dur-1) ease}
   select:not(.native):not([multiple]):hover{border-color:var(--ink-3)}
   select:not(.native):disabled{opacity:.5; cursor:default}
   select:not(.native) option{background:var(--surface); color:var(--ink)}
   input:is([type=text],[type=search],[type=password],[type=url],[type=email],[type=number],:not([type])):not(.native),
   textarea:not(.native){min-height:var(--ctl-h); border:1px solid var(--line-2); border-radius:var(--r);
-       background:var(--surface); color:var(--ink); transition:border-color .12s ease, box-shadow .12s ease}
+       background:var(--surface); color:var(--ink); transition:border-color var(--dur-1) ease, box-shadow var(--dur-1) ease}
   input:is([type=text],[type=search],[type=password],[type=url],[type=email],[type=number],:not([type])):not(.native):hover,
   textarea:not(.native):hover{border-color:var(--ink-3)}
   input:is([type=text],[type=search],[type=password],[type=url],[type=email],[type=number],:not([type])):not(.native):focus,
@@ -620,7 +635,7 @@
   .seg>button{appearance:none; border:0; background:transparent; color:var(--ink-2); cursor:pointer;
        font:inherit; font-size:var(--fs-small); font-weight:600; padding:6px 14px; border-radius:999px;
        min-height:var(--ctl-h-sm); display:inline-flex; align-items:center; gap:6px;
-       transition:background .12s ease, color .12s ease}
+       transition:background var(--dur-1) ease, color var(--dur-1) ease}
   .seg>button:hover{color:var(--ink)}
   .seg>button[aria-pressed="true"]{background:var(--surface); color:var(--ink); box-shadow:var(--shadow),
        0 0 0 1px var(--line-2)}
@@ -714,9 +729,9 @@
   .peek{position:absolute; inset:14px 0 auto; height:120px; border-radius:var(--r-4); background:var(--surface);
         border:1px solid var(--line); transform:scale(.955); opacity:.75; z-index:0}
   .swipecard{position:relative; z-index:1; touch-action:pan-y; will-change:transform;
-             transition:transform .28s cubic-bezier(.2,.7,.3,1), box-shadow .2s ease}
+             transition:transform .28s var(--ease-out), box-shadow var(--dur-2) ease}
   .swipecard.drag{transition:none}
-  .swipecard.gone{transition:transform .3s ease-out, opacity .3s ease-out; opacity:0}
+  .swipecard.gone{transition:transform var(--dur-3) ease-out, opacity var(--dur-3) ease-out; opacity:0}
   .verdicts{position:absolute; inset:0; pointer-events:none; z-index:3; border-radius:var(--r-4); overflow:hidden}
   .verdict{position:absolute; top:16px; display:flex; align-items:center; gap:7px; padding:8px 15px; border-radius:999px;
            font-family:var(--display); font-weight:800; font-size:13px; letter-spacing:.06em; text-transform:uppercase;
@@ -743,7 +758,7 @@
 
   button.b, a.b{appearance:none; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:6px; font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
            background:var(--surface); color:var(--ink); border-radius:var(--r); padding:9px 15px;
-           transition:border-color .12s ease, background .12s ease, transform .08s ease, box-shadow .12s ease}
+           transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform .08s ease, box-shadow var(--dur-1) ease}
   button.b:hover, a.b:hover{border-color:var(--ink-3)}
   button.b:active, a.b:active{transform:scale(.97)}
   button.b.p{background:var(--btn-accent); border-color:var(--btn-accent); color:var(--btn-ink); box-shadow:var(--shadow)}
@@ -767,7 +782,7 @@
   .rows{gap:10px}
   .row{position:relative; background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:15px 17px;
        display:flex; gap:15px; align-items:center; justify-content:space-between; flex-wrap:wrap; overflow:hidden;
-       transition:border-color .12s ease}
+       transition:border-color var(--dur-1) ease}
   .row::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--view); opacity:.55}
   /* A move that has been applied stays on screen, dimmed, so the list does
      not jump under the thumb that just tapped it. */
@@ -795,7 +810,7 @@
   table.cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:0 10px 3px 0}
   table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
   table.cmp .differs{color:var(--accent); font-weight:600}
-  .chip{font-size:12.5px; border:1px solid var(--line); border-radius:999px; padding:7px 14px; background:var(--surface-2); color:var(--ink-2); cursor:pointer; font-family:inherit; transition:border-color .12s ease, transform .08s ease}
+  .chip{font-size:12.5px; border:1px solid var(--line); border-radius:999px; padding:7px 14px; background:var(--surface-2); color:var(--ink-2); cursor:pointer; font-family:inherit; transition:border-color var(--dur-1) ease, transform .08s ease}
   .chip:hover{border-color:var(--hover-accent); color:var(--ink)}
   .chip:active{transform:scale(.96)}
   .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
@@ -811,7 +826,7 @@
   .toast{position:fixed; right:calc(18px + var(--sar)); bottom:calc(18px + var(--sab));
          background:var(--surface-2); color:var(--ink); border:1px solid var(--line);
          padding:13px 18px; border-radius:var(--r-2); font-size:13.5px; display:flex; gap:16px; align-items:center;
-         z-index:28; max-width:420px; box-shadow:var(--shadow-2); animation:toastIn .22s cubic-bezier(.2,.7,.3,1)}
+         z-index:28; max-width:420px; box-shadow:var(--shadow-2); animation:toastIn .22s var(--ease-out)}
   @keyframes toastIn{from{opacity:0; transform:translateY(10px)}}
   .toast button{appearance:none; border:0; background:none; color:var(--accent); font:inherit; font-weight:700; cursor:pointer; padding:0}
 
@@ -819,7 +834,7 @@
   .fabBar{position:fixed; top:calc(14px + var(--sat)); right:calc(16px + var(--sar)); z-index:25; display:flex; gap:8px}
   .fab{appearance:none; position:relative; border:1px solid var(--line); background:var(--surface); color:var(--ink-2);
     border-radius:13px; width:38px; height:38px; font-size:16px; cursor:pointer; display:flex;
-    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color .12s ease, color .12s ease, transform .08s ease}
+    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color var(--dur-1) ease, color var(--dur-1) ease, transform .08s ease}
   .fab:active{transform:scale(.94)}
   .fab:hover{border-color:var(--hover-accent); color:var(--ink)}
   .fab[aria-expanded="true"]{background:var(--surface-2); color:var(--ink)}
@@ -827,6 +842,25 @@
   .fab.spin{animation:spin .6s linear infinite}
   .fab.busy{animation:pulse 1s ease-in-out infinite}
   @keyframes pulse{50%{opacity:.4}}
+
+  /* ---- the File button stays in reach on a phone (BUILD-5-PLAN B3) ----
+     At 390×844 the card is taller than the screen, so File and Skip sat
+     under the tab bar until you scrolled. The row now sticks just above the
+     tab bar, over a fade of the card's own surface, and settles back into
+     the card once the card's foot scrolls up to it. CSS only: the card's
+     markup is pinned by the UI-4 goldens. */
+  @media (max-width:820px){
+    .swipecard > .rowbtns:has(> [data-filesel]){position:sticky; z-index:4; bottom:calc(var(--tabh) + var(--sab));
+      margin-left:-6px; margin-right:-6px; padding:12px 6px 10px;
+      background:linear-gradient(to bottom, transparent, var(--surface) 12px)}
+    /* The undo toast rises above the pinned row instead of covering File. */
+    body:has(.swipecard > .rowbtns > [data-filesel]) .toast{bottom:calc(var(--tabh) + var(--sab) + 90px)}
+  }
+  /* A keyboard hint is noise under a thumb. vInbox already picks the touch
+     wording when it can tell; this catches a touch screen it couldn't. */
+  @media (hover:none) and (pointer:coarse){
+    .counter > span:nth-child(2):not(.how-touch){display:none}
+  }
 /* Playlists (axes table) and Sources — UI-3, docs/UI-BUILD-PLAN.md §6. */
   [data-v="sources"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
 
@@ -1098,7 +1132,7 @@
   /* ---- the "More" sheet: the screens that don't fit the tab bar ---- */
   .sheet{position:fixed; left:0; right:0; bottom:0; z-index:30; background:var(--surface);
          border-top:1px solid var(--line); border-radius:20px 20px 0 0; box-shadow:0 -12px 34px rgba(0,0,0,.22);
-         transform:translateY(101%); visibility:hidden; transition:transform .24s cubic-bezier(.2,.7,.3,1);
+         transform:translateY(101%); visibility:hidden; transition:transform .24s var(--ease-out);
          padding-bottom:calc(var(--sab) + 12px); max-height:88dvh; display:flex; flex-direction:column}
   .sheet.open{transform:translateY(0); visibility:visible}
   /* On a wide screen a full-bleed drawer reads as a mistake. Same sheet,
@@ -1122,8 +1156,8 @@
   /* ---- swiping between screens ---- */
   @keyframes slideL{from{opacity:0; transform:translateX(22px)}}
   @keyframes slideR{from{opacity:0; transform:translateX(-22px)}}
-  main.in-l{animation:slideL .26s cubic-bezier(.2,.7,.3,1)}
-  main.in-r{animation:slideR .26s cubic-bezier(.2,.7,.3,1)}
+  main.in-l{animation:slideL .26s var(--ease-out)}
+  main.in-r{animation:slideR .26s var(--ease-out)}
 
   /* ---------- Shuffle: DJ order (core/audio/order.mjs) ----------
      Drawn only once listening has heard enough of the playlist and a DJ order
@@ -1156,7 +1190,7 @@
   .discnokey input{flex:1 1 220px; min-width:0}
   /* Which screen you are on, out of how many — the swipe needs an anchor. */
   .dots{display:none; gap:5px; justify-content:center; padding:2px 0 10px; align-items:center}
-  .dots i{width:5px; height:5px; border-radius:50%; background:var(--line-2); transition:background .2s ease, width .2s ease}
+  .dots i{width:5px; height:5px; border-radius:50%; background:var(--line-2); transition:background var(--dur-2) ease, width var(--dur-2) ease}
   .dots i.on{width:16px; border-radius:3px; background:var(--view)}
 
   /* ================= iPhone and other narrow screens ================= */
@@ -1181,10 +1215,22 @@
           background:color-mix(in srgb, var(--surface) 90%, transparent);
           -webkit-backdrop-filter:saturate(180%) blur(18px); backdrop-filter:saturate(180%) blur(18px)}
     .brand,.who,.railfoot{display:none}
-    /* Floats just above the tab bar, centred; absolute, so the five tabs and
-       More keep their widths whether or not anything is listening. */
-    .listenslot{position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%);
-          margin:0; max-width:calc(100vw - 24px); box-shadow:var(--shadow-2)}
+    /* Up in the header, just left of the corner buttons (B8). Floating over
+       the tab bar it covered whatever sat there: Home's "tracks heard"
+       figure, the File button. <aside> is fixed and blurred, so it is the
+       containing block; the slot is placed from its foot (the foot of the
+       screen) up to the corner buttons' centre line, and stays absolute so
+       the five tabs and More keep their widths. Here it is the meter alone,
+       the size of the buttons beside it: the words stay for screen readers,
+       and a tap still opens Listening. The header already keeps 150px clear
+       on the right, which covers both. */
+    .listenslot{position:absolute; left:auto; right:calc(var(--sar) + 102px);
+          bottom:calc(100dvh - var(--sat) - 25px); transform:translateY(50%); margin:0; border-radius:13px}
+    .listenslot .lpill{width:38px; height:38px; padding:0; gap:0; justify-content:center; border-radius:13px;
+          background:var(--surface); box-shadow:inset 0 0 0 1px var(--line), var(--shadow)}
+    .listenslot .lp-bars{height:16px; gap:2.5px}
+    .listenslot .lp-bars i{width:3.5px}
+    .listenslot .lp-txt{position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap}
     .navwrap{display:contents}
     aside .nav, .tabmore{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
           gap:3px; padding:6px 2px 4px; border-radius:12px; min-height:48px;
@@ -1208,8 +1254,6 @@
           background:var(--vc); color:var(--vc-ink); border:2px solid var(--surface)}
 
     main{padding:8px calc(14px + var(--sar)) calc(var(--tabh) + var(--sab) + 26px) calc(14px + var(--sal)); max-width:none}
-    /* Room for the floating indicator, so it never sits over the last row. */
-    .app:has(.listenslot:not(:empty)) main{padding-bottom:calc(var(--tabh) + var(--sab) + 70px)}
     h1{font-size:26px; margin-bottom:2px} h1::before{width:28px; height:3px; margin-bottom:8px}
     h2{font-size:16px; margin-top:24px}
     .lede{font-size:14px}
@@ -1268,7 +1312,7 @@
     .settings{top:auto; bottom:0; left:0; right:0; width:auto; max-width:none; height:auto; max-height:88dvh;
               border-left:0; border-top:1px solid var(--line); border-radius:20px 20px 0 0;
               transform:translateY(101%); box-shadow:0 -12px 34px rgba(0,0,0,.22);
-              transition:transform .24s cubic-bezier(.2,.7,.3,1)}
+              transition:transform .24s var(--ease-out)}
     .settings.open{transform:translateY(0)}
     .grabber{display:block}
     .settings-head{padding:10px 18px 14px; border-bottom:0}
@@ -1285,7 +1329,10 @@
 .snd>span{white-space:nowrap}
 .snd-unit,.snd-sub{color:var(--ink-3)}
 .snd-dot{color:var(--ink-3)}
-.snd-unsure{opacity:.7}
+/* Unsure reads one step quieter in colour, not through opacity: .7 opacity
+   took the unit and the "?" (already --ink-3) down to 3.0–3.2:1. --ink-3 on
+   its own is at least 4.66:1 on every surface, in both themes. */
+.snd-unsure,.snd-unsure .snd-unit,.snd-unsure .snd-q{color:var(--ink-3)}
 .snd-q{color:var(--ink-3);margin-left:.05em}
 .snd-bars{display:inline-flex;gap:2px;vertical-align:baseline}
 .snd-bars i{display:inline-block;width:4px;height:.7em;border-radius:1px;background:var(--line-2)}
@@ -1418,7 +1465,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0020</span>
+    <span class="mono">build 2026-11-15-0024</span>
   </p>
 
   <div class="feat">
@@ -1512,16 +1559,17 @@
       <button class="nav" data-v="history" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 12a8.4 8.4 0 1 0 2.6-6"/><path d="M3.4 3.6v4.2h4.2"/><path d="M12 7.8V12l3 1.8"/></svg></span><span class="lbl">History</span></button>
       <button class="nav" data-v="sources" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="2.8"/><path d="M4.5 6v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6"/><path d="M4.5 12v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></svg></span><span class="lbl">Sources</span></button>
     </div>
+    <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): on a desktop it
+         sits just before More, so More stays put when it appears (B8); on a
+         phone it moves up into the header beside the corner buttons. Empty —
+         and so invisible — until something calls setListen() with a ListenVM. -->
+    <div class="listenslot" id="listenSlot"></div>
     <!-- The screens that don't sit on the bar, on a phone and on a desktop. -->
     <button class="tabmore" id="tabMore" aria-expanded="false" aria-controls="moreSheet">
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
-    <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): end of the top bar
-         on a desktop, floating above the tab bar on a phone. Empty — and so
-         invisible — until something calls setListen() with a ListenVM. -->
-    <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0020</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0024</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1562,7 +1610,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0020</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0024</span>
   </div>
 </div>
 
@@ -3023,7 +3071,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0020';
+const BUILD = '2026-11-15-0024';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3344,7 +3392,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0020', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0024', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -4785,7 +4833,7 @@ function vInbox() {
 
   return `${rollForwardHTML()}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
-      <span>${how}</span>
+      <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
     <div class="deck">
       ${rows[i + 1] ? '<div class="peek" aria-hidden="true"></div>' : ''}
@@ -5065,11 +5113,16 @@ function vTidy() {
   tidySoundWarm();
   const n = { misfile: R.misfiled.length, dupes: R.within.length, cross: R.across.length, sound: tidySoundCount() };
   const secs = tidySections();
-  if (!secs.some(([id]) => id === (S.tidySec ?? 'misfile'))) S.tidySec = 'misfile';
-  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound }[S.tidySec ?? 'misfile'];
+  // Opens on the first section with something in it rather than on "Wrong
+  // place 0" while Repeats has work. A section the listener picked (S.tidySec,
+  // set only by a tap) is kept; one that has gone away falls back the same way.
+  const first = (secs.find(([id]) => n[id] > 0) ?? secs[0])[0];
+  if (S.tidySec != null && !secs.some(([id]) => id === S.tidySec)) S.tidySec = first;
+  const sec = S.tidySec ?? first;
+  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound }[sec];
   return `<h1>Tidy</h1>
     <div class="seg tidysecs" role="group" aria-label="Section">${secs.map(([id, label]) =>
-      `<button type="button" aria-pressed="${(S.tidySec ?? 'misfile') === id}" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
+      `<button type="button" aria-pressed="${sec === id}" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
     ${body()}`;
 }
 
@@ -5604,8 +5657,8 @@ function mixEnergyHTML(energy) {
 }
 function mixHTML(mix, tracks, p) {
   if (mix.pending) return MIX_PAGE.err
-    ? `<div class="empty"><b>The mix couldn’t load</b>${esc(MIX_PAGE.err)}</div>`
-    : '<div class="empty"><b>Working out the mix…</b>Matching tempos and sounds across what listening has heard.</div>';
+    ? emptyState('The mix couldn’t load', esc(MIX_PAGE.err), { compact: true })
+    : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true });
   const st = mix.stats, nv = mix.naive, bpmOn = globalThis.BetterfyAudio?.bpmShown ? BetterfyAudio.bpmShown() : true;
   const row = (t, i) => {
     const heard = i < mix.mixed, step = i > 0 && i < mix.mixed ? mix.steps[i - 1] : null;
@@ -5681,7 +5734,7 @@ function vShuffle() {
     <div class="order">${order.slice(0,40).map((t,i) => `<div>
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
-      <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : '<div class="empty"><b>Pick a playlist</b>Anything with eight tracks or more can be re-spaced.</div>'}`;
+      <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;
 }
 
 /* ---------- discovery: new by construction ----------
@@ -6108,7 +6161,7 @@ function vDiscover() {
 
   // WP-C3: "find tracks that sound like ___". '' without CLAP records.
   const sounds = typeof soundSearchHTML === 'function' ? soundSearchHTML() : '';
-  if (!d.length) return head + sounds + '<div class="empty"><b>Nothing found yet</b>Pick what to seed from above, then hit Find new music. A run takes a minute or two.</div>';
+  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'Pick what to seed from above, then hit Find new music. A run takes a minute or two.');
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
   const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
@@ -6219,7 +6272,7 @@ function vHistory() {
   return `<h1>History</h1>
     <p class="lede">Every change Betterfy made to your Spotify library, newest first. Removals record their position, so undo puts a track back where it was rather than at the end.</p>
     <div class="rows">${rows.map(r => r.group ? grouped(r.group) : one(r.one)).join('')
-      || '<div class="empty"><b>Nothing changed yet</b>Every edit Betterfy makes lands here, and can be undone from it.</div>'}</div>`;
+      || emptyState('Nothing changed yet', 'Every edit Betterfy makes lands here, and can be undone from it.')}</div>`;
 }
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
@@ -7437,7 +7490,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0020';
+    s.src = 'engine.js?v=2026-11-15-0024';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -7459,7 +7512,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0020');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0024');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -7784,7 +7837,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0020';
+    s.src = 'audio.js?v=2026-11-15-0024';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -7820,7 +7873,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0020', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0024', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     const r = await w.ready;
@@ -8622,7 +8675,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0020`,
+    `Betterfy engine score — build 2026-11-15-0024`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,

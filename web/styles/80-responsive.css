@@ -1,6 +1,6 @@
   /* Which screen you are on, out of how many — the swipe needs an anchor. */
   .dots{display:none; gap:5px; justify-content:center; padding:2px 0 10px; align-items:center}
-  .dots i{width:5px; height:5px; border-radius:50%; background:var(--line-2); transition:background .2s ease, width .2s ease}
+  .dots i{width:5px; height:5px; border-radius:50%; background:var(--line-2); transition:background var(--dur-2) ease, width var(--dur-2) ease}
   .dots i.on{width:16px; border-radius:3px; background:var(--view)}
 
   /* ================= iPhone and other narrow screens ================= */
@@ -25,10 +25,22 @@
           background:color-mix(in srgb, var(--surface) 90%, transparent);
           -webkit-backdrop-filter:saturate(180%) blur(18px); backdrop-filter:saturate(180%) blur(18px)}
     .brand,.who,.railfoot{display:none}
-    /* Floats just above the tab bar, centred; absolute, so the five tabs and
-       More keep their widths whether or not anything is listening. */
-    .listenslot{position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%);
-          margin:0; max-width:calc(100vw - 24px); box-shadow:var(--shadow-2)}
+    /* Up in the header, just left of the corner buttons (B8). Floating over
+       the tab bar it covered whatever sat there: Home's "tracks heard"
+       figure, the File button. <aside> is fixed and blurred, so it is the
+       containing block; the slot is placed from its foot (the foot of the
+       screen) up to the corner buttons' centre line, and stays absolute so
+       the five tabs and More keep their widths. Here it is the meter alone,
+       the size of the buttons beside it: the words stay for screen readers,
+       and a tap still opens Listening. The header already keeps 150px clear
+       on the right, which covers both. */
+    .listenslot{position:absolute; left:auto; right:calc(var(--sar) + 102px);
+          bottom:calc(100dvh - var(--sat) - 25px); transform:translateY(50%); margin:0; border-radius:13px}
+    .listenslot .lpill{width:38px; height:38px; padding:0; gap:0; justify-content:center; border-radius:13px;
+          background:var(--surface); box-shadow:inset 0 0 0 1px var(--line), var(--shadow)}
+    .listenslot .lp-bars{height:16px; gap:2.5px}
+    .listenslot .lp-bars i{width:3.5px}
+    .listenslot .lp-txt{position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap}
     .navwrap{display:contents}
     aside .nav, .tabmore{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
           gap:3px; padding:6px 2px 4px; border-radius:12px; min-height:48px;
@@ -52,8 +64,6 @@
           background:var(--vc); color:var(--vc-ink); border:2px solid var(--surface)}
 
     main{padding:8px calc(14px + var(--sar)) calc(var(--tabh) + var(--sab) + 26px) calc(14px + var(--sal)); max-width:none}
-    /* Room for the floating indicator, so it never sits over the last row. */
-    .app:has(.listenslot:not(:empty)) main{padding-bottom:calc(var(--tabh) + var(--sab) + 70px)}
     h1{font-size:26px; margin-bottom:2px} h1::before{width:28px; height:3px; margin-bottom:8px}
     h2{font-size:16px; margin-top:24px}
     .lede{font-size:14px}
@@ -112,7 +122,7 @@
     .settings{top:auto; bottom:0; left:0; right:0; width:auto; max-width:none; height:auto; max-height:88dvh;
               border-left:0; border-top:1px solid var(--line); border-radius:20px 20px 0 0;
               transform:translateY(101%); box-shadow:0 -12px 34px rgba(0,0,0,.22);
-              transition:transform .24s cubic-bezier(.2,.7,.3,1)}
+              transition:transform .24s var(--ease-out)}
     .settings.open{transform:translateY(0)}
     .grabber{display:block}
     .settings-head{padding:10px 18px 14px; border-bottom:0}

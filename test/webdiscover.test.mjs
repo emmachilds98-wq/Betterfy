@@ -54,6 +54,7 @@ function load({ discover = [], discAt = 0, key = 'lfm-key' } = {}) {
   vm.runInContext(between('/** A row of tag chips', 'function describe(rows)', 'tagChips'), sandbox);
   vm.runInContext(between('function artHTML(t', 'function vInbox()', 'artHTML'), sandbox);
   vm.runInContext(between('/** The discovery currently on the card. */', 'function vHistory()', 'the Discover view'), sandbox);
+  vm.runInContext(between('function emptyState(', '/* The misfile confidence tiers', 'emptyState'), sandbox);
   return Object.assign(sandbox, { added });
 }
 
