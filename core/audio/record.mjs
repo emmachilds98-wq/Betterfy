@@ -38,7 +38,11 @@ export const SECTION_TOP = 3;      // styles kept per section (patch)
 export const MAEST_MODEL = 'discogs-maest-10s-pw-2-int8';
 export const MAEST_DIM = 768;
 export const MAEST_N_STYLES = 400;
-export const CLAP_MODEL = 'larger_clap_music-audio-q8-1';
+// larger_clap_music_and_speech, not larger_clap_music: the music-only
+// checkpoint's text tower is collapsed (every prompt within cosine 0.999 of
+// every other, measured 2026-11-14), so text and audio could never be matched.
+// Same architecture and size; see docs/AUDIO-BUILD-PLAN.md §7.
+export const CLAP_MODEL = 'larger_clap_music_and_speech-audio-q8-1';
 export const CLAP_DIM = 512;
 export const EARS = Object.freeze({
   maest: Object.freeze({ model: MAEST_MODEL, dim: MAEST_DIM, nStyles: MAEST_N_STYLES }),

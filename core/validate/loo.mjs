@@ -159,7 +159,8 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
 export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
                                          weights = null, targets = null, bridge = null,
-                                         audio = null, collect = false } = {}) {
+                                         audio = null, collect = false,
+                                         genreGraph = false, soundWeights = null } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -213,7 +214,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
   for (const [, members] of groups) {
     const skip = leaky ? null : new Set(members);
-    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge, audio: audioOpts });
+    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge, audio: audioOpts, genreGraph });
     const filed = filedArtists(space);
     // Same graph, only the sound layer swapped for each other ear.
     const armSpaces = arms.map(a => withAudioLayer(space, a.opts, { skip }));
@@ -265,7 +266,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
       if (sound) {
         const more = space.audio
-          ? placements(track, space, { limit: limit3, weights: base, useAudio: true }) : out;
+          ? placements(track, space, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
         const r = more.results ?? [];
         if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort() });
         const s1 = r[0] && want.has(r[0].playlistId);
@@ -349,7 +350,11 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     heard: sound.heard, heardNeverFiled: sound.heardNeverFiled,
     judged: sound.judged, changed: sound.changed,
     analysed: audioOpts.index.size,
-    weights: { audio: base.audio ?? WEIGHTS.audio, learned: base.learned ?? WEIGHTS.learned },
+    // The weights the sound variant actually ran with: soundWeights when given
+    // (sound-first), else the headline's.
+    weights: { audio: (soundWeights ?? base).audio ?? WEIGHTS.audio,
+               learned: (soundWeights ?? base).learned ?? WEIGHTS.learned },
+    ...(soundWeights ? { soundFirst: true } : {}),
     learner: audioOpts.learn !== false && audioOpts.learn !== null,
     ...(sound.rows ? { rows: sound.rows } : {}),
   } : null;

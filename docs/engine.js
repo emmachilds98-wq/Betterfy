@@ -200,7 +200,7 @@ function artistsOf(playlist, { skip = null } = {}) {
  *            playlists: number, artists: number, pairsConsidered: number,
  *            wideSkipped: number, version: string}}
  */
-function cooccurrence(lib, { skip = null, isMirror = null } = {}) {
+function cooccurrence(lib, { skip = null, isMirror = null, only = null } = {}) {
   const structural = mirrorPredicate(lib, { also: isMirror ?? undefined });
 
   // A playlist holding the whole library co-occurs everything with everything
@@ -209,6 +209,11 @@ function cooccurrence(lib, { skip = null, isMirror = null } = {}) {
   const sets = [];
   for (const p of lib?.playlists ?? []) {
     if (structural(p)) continue;
+    // `only`: learn who goes with whom from these playlists alone. Sound-first
+    // filing passes the genre playlists, so a mood or event playlist ("Sunday",
+    // "Fabric 14 Sept") cannot teach that a jungle and a house artist belong
+    // together just because one night or one feeling put them side by side.
+    if (only && !only.has(p.id)) continue;
     const a = artistsOf(p, { skip });
     if (a.size >= 2) sets.push(a);
   }
@@ -2596,7 +2601,11 @@ const SECTION_TOP = 3;      // styles kept per section (patch)
 const MAEST_MODEL = 'discogs-maest-10s-pw-2-int8';
 const MAEST_DIM = 768;
 const MAEST_N_STYLES = 400;
-const CLAP_MODEL = 'larger_clap_music-audio-q8-1';
+// larger_clap_music_and_speech, not larger_clap_music: the music-only
+// checkpoint's text tower is collapsed (every prompt within cosine 0.999 of
+// every other, measured 2026-11-14), so text and audio could never be matched.
+// Same architecture and size; see docs/AUDIO-BUILD-PLAN.md §7.
+const CLAP_MODEL = 'larger_clap_music_and_speech-audio-q8-1';
 const CLAP_DIM = 512;
 const EARS = Object.freeze({
   maest: Object.freeze({ model: MAEST_MODEL, dim: MAEST_DIM, nStyles: MAEST_N_STYLES }),
@@ -3876,6 +3885,160 @@ function learningCurve(set, { sizes = [5, 10, 20, 40], ...opts } = {}) {
 }
 return { AUDIO_LEARN_VERSION, LEARN_DEFAULTS, trainingSet, subset, holdoutSplit, trainPrototypes, trainLogistic, predictProba, fitSet, capPerClass, learnAudio, learnedScores, trainLearner, calibrationScores, crossValidate, learningCurve };
 })();
+/* ---- core/audio/match.mjs ---- */
+__mod["core/audio/match.mjs"] = (function () {
+const { resolveConcept } = __mod["core/ontology/index.mjs"];
+const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
+// Matching by sound: tracks that sound alike, tracks that mix together, and
+// which of your genre playlists the sound-alikes sit in.
+//
+// Everything here is a nearest-neighbour lookup or a count over the account's
+// own heard tracks (SMARTER-GENRES-PLAN.md §3, R3): nothing is trained,
+// nothing leaves the device, nothing is pooled across accounts. The vectors
+// are the audio model's embeddings of Deezer previews (audio.mjs `audioIndex`
+// rows: unit-normalised, so a dot product is the cosine).
+
+
+
+
+const MATCH_VERSION = '1.0.0';
+
+/** Beatmatching range: within 6% a DJ can pitch one onto the other. */
+const MIX_TOLERANCE = 0.06;
+/** A tempo reading below this confidence is not used for mixing. */
+const MIX_MIN_CONF = 0.3;
+
+function dot(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
+}
+
+/**
+ * The k heard tracks that sound most like `emb`, highest cosine first.
+ * @param {Float32Array} emb  unit-normalised
+ * @param {Map<string, {emb: Float32Array}>} index  from `audioIndex`
+ * @param {{ k?: number, exclude?: Set<string>|null, filter?: (id: string) => boolean }} [o]
+ * @returns {Array<{ id: string, sim: number }>}
+ */
+function nearest(emb, index, { k = 12, exclude = null, filter = null } = {}) {
+  if (!emb || !index?.size) return [];
+  const top = [];
+  for (const [id, row] of index) {
+    if (exclude?.has(id) || (filter && !filter(id)) || !row?.emb || row.emb.length !== emb.length) continue;
+    const sim = dot(emb, row.emb);
+    if (top.length < k) { top.push({ id, sim }); top.sort((a, b) => b.sim - a.sim); }
+    else if (sim > top[k - 1].sim) { top[k - 1] = { id, sim }; top.sort((a, b) => b.sim - a.sim); }
+  }
+  return top.map(r => ({ id: r.id, sim: +r.sim.toFixed(4) }));
+}
+
+/**
+ * The genres a playlist's name says it is, as ontology slugs.
+ * "Drum & Bass" is one genre; "Jungle & Breaks" is two; "Sunday" is none.
+ * A name is read whole first, so an alias with "&" in it is not split.
+ */
+function playlistConcepts(name) {
+  const whole = resolveConcept(String(name ?? ''));
+  if (whole.facet === 'genre' && whole.concept && whole.via === 'alias') return [whole.concept];
+  const parts = String(name ?? '').split(/\s*(?:&|\+|\/|,|\||\band\b|\bx\b)\s*/i).map(s => s.trim()).filter(Boolean);
+  const out = [];
+  if (parts.length > 1) {
+    for (const p of parts) {
+      const r = resolveConcept(p);
+      if (r.facet === 'genre' && r.concept && !out.includes(r.concept)) out.push(r.concept);
+    }
+  }
+  if (!out.length && whole.facet === 'genre' && whole.concept) out.push(whole.concept);
+  return out;
+}
+
+/**
+ * Which genre playlists each track is in, and what each playlist's name says.
+ * Only `targets` (the genre playlists) count; mirrors are left out.
+ * @returns {{ playlists: Map<string, {name: string, concepts: string[]}>, of: Map<string, string[]> }}
+ */
+function genreMembership(lib, { targets = null, isMirror = null } = {}) {
+  const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
+  const allowed = targets ? new Set(targets) : null;
+  const playlists = new Map(), of = new Map();
+  for (const p of lib?.playlists ?? []) {
+    if (!p?.id || mirror(p) || (allowed && !allowed.has(p.id))) continue;
+    playlists.set(p.id, { name: p.name ?? p.id, concepts: playlistConcepts(p.name) });
+    for (const t of p.tracks ?? []) {
+      if (!t?.id) continue;
+      const list = of.get(t.id) ?? [];
+      if (!list.includes(p.id)) list.push(p.id);
+      of.set(t.id, list);
+    }
+  }
+  return { playlists, of };
+}
+
+/**
+ * The sound-alikes of one track that are filed in a genre playlist, each with
+ * the playlists it is in and what their names say. What `identify` reads as
+ * "your library's view", and what the File card lists.
+ */
+function filedNeighbours(trackId, index, membership, { k = 12, exclude = null } = {}) {
+  const row = index?.get(trackId);
+  if (!row || !membership?.of) return [];
+  const skip = new Set(exclude ?? []);
+  skip.add(trackId);
+  return nearest(row.emb, index, { k, exclude: skip, filter: id => membership.of.has(id) }).map(n => {
+    const pids = membership.of.get(n.id) ?? [];
+    const concepts = [...new Set(pids.flatMap(pid => membership.playlists.get(pid)?.concepts ?? []))];
+    return { ...n, playlists: pids, concepts };
+  });
+}
+
+/** A record's usable tempo: { bpm, alt, conf } or null. */
+function tempoOf(record) {
+  const d = record && !record.miss ? record.dsp : null;
+  if (!d || !Number.isFinite(d.bpm) || d.bpm <= 0) return null;
+  return { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
+           conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+}
+
+/**
+ * How two tempos line up for a mix: 'same' within MIX_TOLERANCE, 'double' or
+ * 'half' when one is twice the other within it, else null. `diff` is the
+ * pitch change needed, as a fraction.
+ */
+function tempoRelation(a, b, tolerance = MIX_TOLERANCE) {
+  if (!(a > 0) || !(b > 0)) return null;
+  let best = null;
+  for (const [rel, k] of [['same', 1], ['double', 2], ['half', 0.5]]) {
+    const diff = Math.abs(b * k - a) / a;
+    if (diff <= tolerance && (!best || diff < best.diff)) best = { rel, diff: +diff.toFixed(4) };
+  }
+  return best;
+}
+
+/**
+ * Heard tracks that mix with this one: a tempo you can beatmatch (straight,
+ * or half/double time), ranked by how alike they sound, then by how little
+ * pitching they need. A track's own tempo can be passed in (`bpm`) when it
+ * has been settled elsewhere (identify's octave check); otherwise its record's.
+ * @returns {Array<{ id: string, sim: number, bpm: number, rel: string, diff: number }>}
+ */
+function mixesWith(trackId, index, { k = 8, bpm = null, tolerance = MIX_TOLERANCE, pool = 200 } = {}) {
+  const row = index?.get(trackId);
+  const own = bpm ?? tempoOf(row?.rec)?.bpm ?? null;
+  if (!row || !(own > 0)) return [];
+  const out = [];
+  for (const n of nearest(row.emb, index, { k: pool, exclude: new Set([trackId]) })) {
+    const t = tempoOf(index.get(n.id)?.rec);
+    if (!t || t.conf < MIX_MIN_CONF) continue;
+    const r = tempoRelation(own, t.bpm, tolerance) ?? (t.alt ? tempoRelation(own, t.alt, tolerance) : null);
+    if (!r) continue;
+    out.push({ id: n.id, sim: n.sim, bpm: +t.bpm.toFixed(1), rel: r.rel, diff: r.diff });
+    if (out.length >= k) break;
+  }
+  return out;
+}
+return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith };
+})();
 /* ---- core/intrinsic/space.mjs ---- */
 __mod["core/intrinsic/space.mjs"] = (function () {
 const { cooccurrence, trackVector, cosine, centroid, norm } = __mod["core/intrinsic/cooccurrence.mjs"];
@@ -3886,6 +4049,7 @@ const { bonusIndex, bonusProfileOf, bonusScores } = __mod["core/intrinsic/bonus-
 const { bridgeIndex, artistHomes, bridgeScores } = __mod["core/intrinsic/bridge.mjs"];
 const { audioIndex, buildAudioProfiles, audioScores } = __mod["core/intrinsic/audio.mjs"];
 const { trainLearner } = __mod["core/intrinsic/audio-learn.mjs"];
+const { tempoOf, tempoRelation, MIX_MIN_CONF } = __mod["core/audio/match.mjs"];
 // The intrinsic space — where a track sits, and which of this account's
 // buckets it sits nearest.
 //
@@ -3899,6 +4063,7 @@ const { trainLearner } = __mod["core/intrinsic/audio-learn.mjs"];
 // thresholds, these have somewhere to go: leave-one-out placement accuracy over
 // the account's own library is a real fitness surface with thousands of rows,
 // and `core/validate/loo.mjs` computes it.
+
 
 
 
@@ -3956,6 +4121,32 @@ const WEIGHTS = {
 };
 
 /**
+ * Sound-first filing: the owner's call (2026-11-14) that what a track *sounds
+ * like* should decide where it goes, with who-you-file-together only breaking
+ * ties. Used for a track the app has heard; an unheard track is scored with
+ * WEIGHTS exactly as before. The learner (trained on each genre playlist's own
+ * tracks) leads, the nearest-sound centroid backs it up, and the artist graph,
+ * built from genre playlists only so a mood or event playlist cannot vote,
+ * stays in at a lower weight because an artist's other filing still says
+ * something. Priors, measured by the Score run's sound variant
+ * (placementAccuracy's `soundWeights`) on the account's own library.
+ */
+const SOUND_FIRST_WEIGHTS = Object.freeze({
+  learned:     2.00,
+  audio:       1.50,
+  graph:       0.50,
+  bridge:      0.40,
+  bpm:         0.40,
+  registrant:  0.25,
+  era:         0.15,
+  minutes:     0.10,
+  albumType:   0.10,
+  key:         0.10,
+  albumTracks: 0.05,
+  popularity:  0.05,
+});
+
+/**
  * A bucket needs enough members to have a definition at all. Below this its
  * centroid is one or two records wearing a playlist's name, and treating that
  * as a learned meaning is how an engine acquires confident nonsense.
@@ -3993,7 +4184,7 @@ const THRESHOLDS = {
  * cannot start by reading a file that assumes whose account it is.
  */
 function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targets = null,
-                                  bridge = null, audio = null } = {}) {
+                                  bridge = null, audio = null, genreGraph = false } = {}) {
   // `targets`, when given, is the set of playlists the listener files into —
   // their genre playlists. Only those become destinations. Every playlist still
   // feeds the artist graph below: a "Sunday" playlist is not somewhere to file
@@ -4003,7 +4194,10 @@ function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targe
   // empty lookup, which makes every bonus score null, which makes the whole
   // layer free.
   const bonus = bonusIndex(rekordbox);
-  const graph = cooccurrence(lib, { skip, isMirror });
+  // `genreGraph`: the artist graph learns only from the genre playlists
+  // (`targets`), so mood and event playlists stop teaching genre. Off by
+  // default, so every existing caller's space is unchanged.
+  const graph = cooccurrence(lib, { skip, isMirror, only: genreGraph && allowed ? allowed : null });
   const registrants = registrantIndex(lib, { skip, isMirror });
 
   // A playlist holding essentially the whole library is a record rather than a
@@ -4159,6 +4353,81 @@ function withAudioLayer(space, audio, { skip = null } = {}) {
   return Object.keys(layer).length ? { ...rest, ...layer } : (('audio' in space || 'learned' in space) ? rest : space);
 }
 
+/**
+ * Let a space built earlier hear tracks heard since, without rebuilding it.
+ *
+ * Listening keeps going after the File screen's space is built, and the track
+ * on screen is usually one of the unfiled ones it has just heard. Rebuilding
+ * for each would cost the learner's training every time; this only makes the
+ * new tracks *scorable*. Each playlist's sound and the learner are left exactly
+ * as they were trained, which is right for an unfiled track: it is in no
+ * playlist, so it was never part of either.
+ *
+ * Adds to the space's index in place, because the learner reads the same index
+ * (audio-learn.mjs keeps the Map it was given). A track already in the index is
+ * not replaced: its row may be a member the profiles were built from. Records
+ * are checked as `audioIndex` checks them, so a miss or another model's record
+ * adds nothing.
+ *
+ * @param {object} space  from `buildSpace` or `withAudioLayer`
+ * @param {Iterable<object>|Map|null} records
+ * @returns {number} how many tracks became scorable
+ */
+function hearMore(space, records, { mel = undefined } = {}) {
+  const index = space?.audio?.index;
+  if (!(index instanceof Map) || !records) return 0;
+  let n = 0;
+  for (const [id, row] of audioIndex(records, { mel })) {
+    if (index.has(id)) continue;
+    index.set(id, row);
+    n++;
+  }
+  return n;
+}
+
+/** Fewer heard members with a tempo than this, and a playlist's tempo says nothing. */
+const MIN_TEMPO_MEMBERS = 5;
+const TEMPO_CACHE = new WeakMap();
+
+/** A playlist's heard members' tempos (confident readings only), worked out once per profile. */
+function memberTempos(profile, index) {
+  if (!profile?.ids) return [];
+  let list = TEMPO_CACHE.get(profile);
+  if (!list) {
+    list = [];
+    for (const id of profile.ids) {
+      const t = tempoOf(index?.get(id)?.rec);
+      if (t && t.conf >= MIX_MIN_CONF) list.push(t);
+    }
+    TEMPO_CACHE.set(profile, list);
+  }
+  return list;
+}
+
+/**
+ * Sound-path tempo: the share of a playlist's heard members this track could be
+ * beatmatched with (straight within 6%, or half/double time at half credit).
+ * A share, not a distance from the mean, so a playlist that is half 130 and
+ * half 140 is a fair home for both. Null when the track's tempo is unsure or the
+ * playlist has too few heard tempos; the Rekordbox file, when present, wins.
+ */
+function tempoShare(t, profile, index) {
+  const members = memberTempos(profile, index);
+  if (members.length < MIN_TEMPO_MEMBERS) return null;
+  let s = 0;
+  for (const m of members) {
+    let best = 0;
+    for (const a of [t.bpm, t.alt]) {
+      for (const b of [m.bpm, m.alt]) {
+        const r = a && b ? tempoRelation(a, b) : null;
+        if (r) best = Math.max(best, r.rel === 'same' ? 1 : 0.5);
+      }
+    }
+    s += best;
+  }
+  return +(s / members.length).toFixed(4);
+}
+
 /** Whatever a learner returned → Map of finite numbers, or null. */
 function asScoreMap(x) {
   if (!x) return null;
@@ -4237,9 +4506,15 @@ function combine(parts, weights = WEIGHTS) {
  * none of them needs prose. A UI asks for it; a sweep does not.
  */
 function placements(track, space, { limit = 5, exclude = null, why = false,
-                                           weights = WEIGHTS, useAudio = false } = {}) {
+                                           weights = WEIGHTS, useAudio = false, soundFirst = false } = {}) {
   if (!track?.id) return { declined: 'NO_TRACK', results: [] };
   if (!space?.destinations?.size) return { declined: 'NO_DESTINATIONS', results: [] };
+  // Sound-first: a heard track is scored with sound let in and leading. An
+  // unheard one (or a space with no audio layer) falls through untouched.
+  if (soundFirst && space.audio && audioScores(track, space)) {
+    useAudio = true;
+    weights = SOUND_FIRST_WEIGHTS;
+  }
 
   const vec = trackVector(track, space.graph);
   const vecNorm = norm(vec);
@@ -4259,6 +4534,10 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
   const destIds = rawSound ? [...space.destinations.keys()] : null;
   const sound = useAudio ? relativeSound(rawSound, destIds) : null;
   const learned = useAudio ? relativeSound(rawLearned, destIds) : null;
+  // Tempo measured from the preview, on the sound path only (so a placement
+  // without sound is unchanged): only a confident reading counts.
+  const heardTempo = useAudio && rawSound ? tempoOf(space.audio.index?.get(track.id)?.rec) : null;
+  const tempo = heardTempo && heardTempo.conf >= MIX_MIN_CONF ? heardTempo : null;
   const rows = [];
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
@@ -4271,6 +4550,10 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
                           : { graph, ...shape, ...extra };
     if (sound) parts.audio = sound.get(d.id);
     if (learned) parts.learned = learned.get(d.id);
+    if (tempo && (parts.bpm === null || parts.bpm === undefined)) {
+      const f = tempoShare(tempo, space.audio.profiles?.get(d.id), space.audio.index);
+      if (f !== null) parts.bpm = f;
+    }
     const { score, used, judged } = combine(parts, weights);
     if (!judged) continue;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
@@ -4309,7 +4592,7 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
     version: SPACE_VERSION,
   };
 }
-return { SPACE_VERSION, WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, withAudioLayer, relativeSound, combine, placements };
+return { SPACE_VERSION, WEIGHTS, SOUND_FIRST_WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, withAudioLayer, hearMore, MIN_TEMPO_MEMBERS, relativeSound, combine, placements };
 })();
 /* ---- core/intrinsic/coldstart.mjs ---- */
 __mod["core/intrinsic/coldstart.mjs"] = (function () {
@@ -5562,7 +5845,8 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
 function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
                                          weights = null, targets = null, bridge = null,
-                                         audio = null, collect = false } = {}) {
+                                         audio = null, collect = false,
+                                         genreGraph = false, soundWeights = null } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -5616,7 +5900,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
   for (const [, members] of groups) {
     const skip = leaky ? null : new Set(members);
-    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge, audio: audioOpts });
+    const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge, audio: audioOpts, genreGraph });
     const filed = filedArtists(space);
     // Same graph, only the sound layer swapped for each other ear.
     const armSpaces = arms.map(a => withAudioLayer(space, a.opts, { skip }));
@@ -5668,7 +5952,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
       if (sound) {
         const more = space.audio
-          ? placements(track, space, { limit: limit3, weights: base, useAudio: true }) : out;
+          ? placements(track, space, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
         const r = more.results ?? [];
         if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort() });
         const s1 = r[0] && want.has(r[0].playlistId);
@@ -5752,7 +6036,11 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     heard: sound.heard, heardNeverFiled: sound.heardNeverFiled,
     judged: sound.judged, changed: sound.changed,
     analysed: audioOpts.index.size,
-    weights: { audio: base.audio ?? WEIGHTS.audio, learned: base.learned ?? WEIGHTS.learned },
+    // The weights the sound variant actually ran with: soundWeights when given
+    // (sound-first), else the headline's.
+    weights: { audio: (soundWeights ?? base).audio ?? WEIGHTS.audio,
+               learned: (soundWeights ?? base).learned ?? WEIGHTS.learned },
+    ...(soundWeights ? { soundFirst: true } : {}),
     learner: audioOpts.learn !== false && audioOpts.learn !== null,
     ...(sound.rows ? { rows: sound.rows } : {}),
   } : null;
@@ -7669,6 +7957,392 @@ function soundProposals({ lib, targets, records = null, index = null, learned = 
 }
 return { AUDIO_GAPS_VERSION, SOUND, soundPlaylists, tightGroups, soundProposals };
 })();
+/* ---- core/ontology/tempo.mjs ---- */
+__mod["core/ontology/tempo.mjs"] = (function () {
+const { GENRE_INDEX, ancestorsOf } = __mod["core/ontology/index.mjs"];
+// Typical tempo per genre: the ranges DJs and producers work in.
+//
+// Why a table: tempo is the one thing about a track that is both cheap to
+// measure from a preview (core/audio/dsp/tempo.mjs: 86% within ±1 BPM at
+// confidence ≥ 0.3 on the Beatport set) and strongly tied to genre. Drum & bass
+// lives at 170-176, house at 120-128, UK garage at 130-138. So each can check
+// the other:
+//   - a "87 or 174?" reading is settled by which octave fits the genre it
+//     sounds like (`resolveOctave`);
+//   - a genre guess whose range excludes a confidently measured tempo is
+//     marked down (`tempoFit`), which catches the audio model's most common
+//     confusions inside electronic music (it hears "breakbeat" in both jungle
+//     and UK breaks; 170 against 132 tells them apart).
+//
+// These are soft priors, never vetoes: a 160 BPM house edit exists. Ranges are
+// the common working range, deliberately a little generous. `null` means tempo
+// says nothing about the genre (rock, pop, ambient), and a genre with no row
+// inherits its nearest ancestor's (see `tempoRangeOf`).
+//
+// Half-time genres (dubstep, trap, halftime DnB) are listed at the tempo a DJ
+// would set, with `half: true`: a tempo tracker often reports half of it, and
+// that is a match, not a miss.
+
+
+
+const TEMPO_VERSION = '1.0.0';
+
+/** slug → [low, high] BPM, or null for "tempo says nothing". */
+const TEMPO = Object.freeze({
+  'electronic': null,
+  'house': [115, 130], 'deep-house': [112, 126], 'tech-house': [120, 130], 'progressive-house': [118, 130],
+  'acid-house': [116, 130], 'disco-house': [112, 128], 'electro-house': [124, 132], 'afro-house': [115, 126],
+  'melodic-house': [112, 126], 'garage-house': [115, 128], 'minimal-house': [118, 128], 'bass-house': [122, 132],
+  'hard-house': [138, 152], 'donk': [140, 160],
+  'techno': [120, 150], 'minimal-techno': [118, 130], 'acid-techno': [128, 148], 'detroit-techno': [118, 135],
+  'hard-techno': [138, 165], 'dub-techno': [112, 128],
+  'trance': [125, 145], 'progressive-trance': [124, 136], 'psytrance': [136, 150], 'uplifting-trance': [134, 142],
+  'hard-trance': [138, 155],
+  'breakbeat': [120, 140], 'big-beat': [95, 135], 'uk-breaks': [126, 140], 'breakcore': [160, 260],
+  'drum-and-bass': [160, 180], 'jungle': [155, 175], 'liquid-dnb': [168, 178], 'neurofunk': [168, 180],
+  'jump-up': [168, 180], 'halftime': [160, 180],
+  'uk-garage': [128, 140], 'bassline': [132, 144], 'future-garage': [125, 140], 'grime': [136, 144],
+  'uk-funky': [126, 134],
+  'dubstep': [136, 150], 'brostep': [138, 152], 'uk-bass': [126, 145],
+  'hardcore': [160, 200], 'gabber': [160, 220], 'hardstyle': [145, 160], 'jumpstyle': [138, 152], 'makina': [160, 180],
+  'jersey-club': [130, 145], 'footwork': [155, 165], 'gqom': [118, 130],
+  'ambient': null, 'downtempo': [80, 112], 'idm': null, 'electro': [118, 135], 'synthwave': [80, 120],
+  'synth-pop': [100, 132], 'eurodance': [128, 145],
+  'hip-hop': [80, 105], 'uk-hip-hop': [80, 100], 'drill': [136, 148], 'trap': [130, 155], 'phonk': [120, 150],
+  'boom-bap': [84, 98], 'conscious-hip-hop': [80, 100], 'g-funk': [86, 100], 'lo-fi-hip-hop': [65, 95],
+  'rnb': [60, 110], 'neo-soul': [65, 100], 'soul': null, 'motown': null, 'funk': [90, 125], 'disco': [110, 132],
+  'rock': null, 'pop': null, 'dance-pop': [110, 132], 'k-pop': null, 'hyperpop': null,
+  'jazz': null, 'reggae': [60, 95], 'dub': [60, 90], 'dancehall': [88, 110], 'afrobeats': [95, 118],
+  'latin': null, 'folk': null, 'country': null, 'blues': null, 'classical': null, 'soundtrack': null,
+});
+
+/** Played at this tempo but felt (and often tracked) at half of it. */
+const HALF_TIME = Object.freeze(new Set(['dubstep', 'brostep', 'halftime', 'trap', 'drill', 'phonk']));
+
+/** How much a half- or double-time reading counts: real, but weaker than a straight one. */
+const OCTAVE_CREDIT = 0.6;
+/** Outside the range, fit falls to zero over this many BPM. */
+const FALLOFF = 12;
+
+/**
+ * The working range for a genre: its own row, else its nearest ancestor's.
+ * Null when tempo says nothing about it (or it isn't a known genre).
+ */
+function tempoRangeOf(slug) {
+  if (!slug) return null;
+  if (Object.hasOwn(TEMPO, slug)) return TEMPO[slug];
+  if (!GENRE_INDEX.has(slug)) return null;
+  for (const a of ancestorsOf(slug)) if (Object.hasOwn(TEMPO, a)) return TEMPO[a];
+  return null;
+}
+
+const straight = (bpm, [lo, hi]) =>
+  bpm >= lo && bpm <= hi ? 1 : Math.max(0, 1 - (bpm < lo ? lo - bpm : bpm - hi) / FALLOFF);
+
+/**
+ * How well a tempo fits a genre, 0–1, or null when tempo says nothing about it.
+ * Half or double the tempo counts at OCTAVE_CREDIT (full credit for half-time
+ * genres read at half), so a tracker's octave slip never zeroes a right genre.
+ * @returns {{ fit: number, bpm: number } | null}  `bpm`: the octave that fitted best
+ */
+function tempoFit(bpm, slug) {
+  const range = tempoRangeOf(slug);
+  if (!range || !Number.isFinite(bpm) || bpm <= 0) return null;
+  const half = HALF_TIME.has(slug) || ancestorsOf(slug).some(a => HALF_TIME.has(a));
+  let best = { fit: straight(bpm, range), bpm };
+  for (const [k, credit] of [[2, half ? 1 : OCTAVE_CREDIT], [0.5, OCTAVE_CREDIT]]) {
+    const f = straight(bpm * k, range) * credit;
+    if (f > best.fit) best = { fit: f, bpm: bpm * k };
+  }
+  return { fit: +best.fit.toFixed(4), bpm: +best.bpm.toFixed(1) };
+}
+
+/**
+ * Settle a "87 or 174?" reading with what the track sounds like.
+ * `candidates` are [slug, weight] pairs (any order); the reading whose straight
+ * fit, weighted by them, is higher wins. Ties and no information keep the
+ * tracker's own first reading.
+ * @returns {{ bpm: number, from: 'tracker'|'genre' }}
+ */
+function resolveOctave(bpm, alt, candidates = []) {
+  if (!Number.isFinite(alt) || alt <= 0 || !Number.isFinite(bpm)) return { bpm, from: 'tracker' };
+  let a = 0, b = 0;
+  for (const [slug, w] of candidates) {
+    const range = tempoRangeOf(slug);
+    if (!range || !(w > 0)) continue;
+    a += w * straight(bpm, range);
+    b += w * straight(alt, range);
+  }
+  return b > a + 1e-9 ? { bpm: alt, from: 'genre' } : { bpm, from: 'tracker' };
+}
+
+/** Every slug in the table is a real genre (checked by the test). */
+const tempoSlugs = () => Object.keys(TEMPO);
+return { TEMPO_VERSION, TEMPO, HALF_TIME, OCTAVE_CREDIT, FALLOFF, tempoRangeOf, tempoFit, resolveOctave, tempoSlugs };
+})();
+/* ---- core/audio/identify.mjs ---- */
+__mod["core/audio/identify.mjs"] = (function () {
+const { styleHints } = __mod["core/sources/audio-vocab.mjs"];
+const { GENRE_INDEX, lineageOf } = __mod["core/ontology/index.mjs"];
+const { tempoFit, resolveOctave } = __mod["core/ontology/tempo.mjs"];
+const { hybridOf } = __mod["core/audio/sections.mjs"];
+const { tempoOf, filedNeighbours, genreMembership } = __mod["core/audio/match.mjs"];
+const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
+const { conceptLabel } = __mod["core/recommend/gaps.mjs"];
+// What a heard track is: genre, sub-genre and tempo, with how sure, and why.
+//
+// Four sources, each a vote over the genre ontology (core/ontology/genres.mjs):
+//   model    the audio model's Discogs styles (core/sources/audio-vocab.mjs).
+//            Good at families, weak on scene genres: 29% top-1 on them in
+//            phase 0 (AUDIO-ANALYSIS-PLAN.md §0). Hears donk as "hard house".
+//   library  the heard tracks it sounds most like that you have already filed
+//            in a genre playlist, and what those playlists' names say
+//            (match.mjs `filedNeighbours`). This is what knows your scenes:
+//            if it sounds like the twelve tracks in your "Donk" playlist, it
+//            is donk, whatever the model calls it. Leads by default.
+//   tags     the artist's tag genres, at a discount: an artist is not a track.
+//   tempo    not a vote but a check (core/ontology/tempo.mjs): a genre whose
+//            working range excludes a confidently measured tempo is marked
+//            down, and a "87 or 174?" reading is settled by the genres heard.
+//
+// The votes are added up the hierarchy (a vote for jungle is a vote for drum
+// & bass), the genre is the best-supported top-level genre (inside electronic,
+// its children: house, techno, drum & bass…), and the path goes down while
+// a child holds at least SPECIFIC of its parent's support. So a track the
+// sources agree is "drum & bass" but split on which kind says "Drum & Bass",
+// not a coin-flip sub-genre.
+//
+// Nearest-neighbour lookups and counts on the account's own library only
+// (SMARTER-GENRES-PLAN.md §3, R3). Nothing is trained.
+
+
+
+
+
+
+
+
+
+const IDENTIFY_VERSION = '1.0.0';
+
+/** How much each source's (normalised) vote counts. */
+const SOURCES = Object.freeze({ model: 1.0, library: 1.6, tags: 0.5 });
+/** A child genre is named only when it holds at least this share of its parent's support. */
+const SPECIFIC = 0.5;
+/** Tempo at or above this confidence is used to check genres. */
+const TEMPO_CONF = 0.3;
+/** Worst a tempo mismatch can do to a genre's support: it keeps this share. */
+const TEMPO_FLOOR = 0.35;
+/** Below this share of all support, the genre is not named at all. */
+const MIN_GENRE = 0.25;
+
+const ROOT_FAMILY = 'electronic';
+
+/** The level a person calls "the genre": electronic's children, or a root elsewhere. */
+function genreLevel(slug) {
+  const line = lineageOf(slug);
+  if (!line.length) return null;
+  const root = line[line.length - 1];
+  if (root === ROOT_FAMILY) return line.length >= 2 ? line[line.length - 2] : root;
+  return root;
+}
+
+const nameOf = slug => conceptLabel(slug);
+
+function normalised(votes) {
+  let sum = 0;
+  for (const v of votes.values()) sum += v;
+  if (!(sum > 0)) return new Map();
+  return new Map([...votes].map(([k, v]) => [k, v / sum]));
+}
+
+function add(map, k, v) { if (k && v > 0) map.set(k, (map.get(k) ?? 0) + v); }
+
+/** Each source's vote, normalised to sum to 1 (empty when it has nothing to say). */
+function votesOf(record, { neighbours, tags }) {
+  const model = new Map();
+  for (const h of styleHints(record?.styles ?? [])) {
+    if (GENRE_INDEX.has(h.concept)) add(model, h.concept, h.p * h.reliability);
+  }
+  const library = new Map();
+  for (const n of neighbours ?? []) {
+    const cs = (n.concepts ?? []).filter(c => GENRE_INDEX.has(c));
+    const w = Math.max(0, n.sim) ** 2;
+    for (const c of cs) add(library, c, w / cs.length);
+  }
+  const tag = new Map();
+  for (const c of (tags ?? []).filter(c => GENRE_INDEX.has(c))) add(tag, c, 1);
+  return { model: normalised(model), library: normalised(library), tags: normalised(tag) };
+}
+
+/**
+ * @param {object} record  an AudioRecord (a miss gives null)
+ * @param {{ neighbours?: Array<{sim: number, concepts: string[], playlists?: string[]}>,
+ *           tags?: string[], playlistName?: (id: string) => string, weights?: object }} [o]
+ * @returns {null | {
+ *   genre: { slug: string, name: string, conf: number },
+ *   path: Array<{ slug: string, name: string, share: number }>,
+ *   sub: { slug: string, name: string, share: number } | null,
+ *   bpm: { value: number, conf: number, from: 'tracker'|'genre', fit: number|null } | null,
+ *   blend: [string, string] | null,
+ *   support: { model: number, library: number, tags: number },
+ *   why: string[], version: string }}
+ */
+function identify(record, { neighbours = [], tags = [], playlistName = null, weights = SOURCES } = {}) {
+  if (!record || record.miss) return null;
+  const votes = votesOf(record, { neighbours, tags });
+
+  // One weighted vote per concept.
+  const flat = new Map();
+  for (const [src, w] of Object.entries(weights)) for (const [c, v] of votes[src] ?? []) add(flat, c, w * v);
+
+  // Tempo: settle the octave with the genres heard, then check each genre against it.
+  const t = tempoOf(record);
+  let bpm = null;
+  if (t) {
+    const octave = resolveOctave(t.bpm, t.alt, [...flat]);
+    bpm = { value: +octave.bpm.toFixed(1), conf: t.conf, from: octave.from, fit: null };
+    if (t.conf >= TEMPO_CONF) {
+      for (const [c, v] of flat) {
+        const f = tempoFit(bpm.value, c);
+        if (f) flat.set(c, v * (TEMPO_FLOOR + (1 - TEMPO_FLOOR) * f.fit));
+      }
+    }
+  }
+
+  // Up the hierarchy: a vote for a sub-genre is a vote for everything above it.
+  const tree = new Map();
+  let total = 0;
+  for (const [c, v] of flat) { total += v; for (const a of lineageOf(c)) add(tree, a, v); }
+  if (!(total > 0)) return bpm ? { genre: null, path: [], sub: null, bpm, blend: null,
+                                   support: { model: 0, library: 0, tags: 0 }, why: [], version: IDENTIFY_VERSION } : null;
+
+  // The genre: the best-supported genre-level node.
+  const level = new Map();
+  for (const c of flat.keys()) { const g = genreLevel(c); if (g && !level.has(g)) level.set(g, tree.get(g) ?? 0); }
+  const [gSlug, gMass] = [...level].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  const conf = gMass / total;
+  if (conf < MIN_GENRE) {
+    return { genre: null, path: [], sub: null, bpm, blend: null,
+             support: { model: 0, library: 0, tags: 0 }, why: ['The sources disagree too much to name a genre.'],
+             version: IDENTIFY_VERSION };
+  }
+
+  // Down while a child holds enough of its parent.
+  const path = [{ slug: gSlug, name: nameOf(gSlug), share: +conf.toFixed(3) }];
+  for (let at = gSlug; ;) {
+    const kids = (GENRE_INDEX.get(at)?.children ?? []).map(k => [k, tree.get(k) ?? 0]).filter(([, v]) => v > 0)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (!kids.length) break;
+    const [k, v] = kids[0], share = v / (tree.get(at) ?? 1);
+    if (share < SPECIFIC) break;
+    path.push({ slug: k, name: nameOf(k), share: +share.toFixed(3) });
+    at = k;
+  }
+  if (bpm && t.conf >= TEMPO_CONF) bpm.fit = tempoFit(bpm.value, path[path.length - 1].slug)?.fit ?? null;
+
+  // How much each source backs the genre chosen.
+  const backs = src => { let s = 0; for (const [c, v] of votes[src] ?? []) if (lineageOf(c).includes(gSlug)) s += v; return +s.toFixed(3); };
+  const support = { model: backs('model'), library: backs('library'), tags: backs('tags') };
+
+  // Two genres in one clip (sections, or a near-tie at the top).
+  let blend = null;
+  const h = hybridOf(record);
+  if (h.hybrid) {
+    const named = h.styles.map(i => styleHints([[i, 1]])[0]?.concept).filter(Boolean).map(genreLevel);
+    if (named.length === 2 && named[0] && named[1] && named[0] !== named[1]) blend = [nameOf(named[0]), nameOf(named[1])];
+  }
+
+  const why = [];
+  if (support.library > 0) {
+    const near = (neighbours ?? []).filter(n => (n.concepts ?? []).some(c => lineageOf(c).includes(gSlug)));
+    const counts = new Map();
+    for (const n of near) for (const p of n.playlists ?? []) counts.set(p, (counts.get(p) ?? 0) + 1);
+    const top = [...counts].sort((a, b) => b[1] - a[1])[0];
+    const label = top && playlistName ? playlistName(top[0]) : null;
+    why.push(`${near.length} of the ${neighbours.length} tracks it sounds most like${label ? `, mostly in ${label},` : ''} are ${nameOf(gSlug)}`);
+  }
+  if (support.model > 0) {
+    const heard = styleHints(record.styles ?? []).filter(x => lineageOf(x.concept).includes(gSlug)).slice(0, 2).map(x => x.name);
+    if (heard.length) why.push(`the sound model hears ${heard.join(', ')}`);
+  }
+  if (support.tags > 0) why.push(`the artist is tagged ${nameOf(gSlug)}`);
+  if (bpm?.fit != null) why.push(bpm.fit >= 0.8 ? `${Math.round(bpm.value)} BPM fits` : `${Math.round(bpm.value)} BPM is unusual for it`);
+
+  return { genre: { slug: gSlug, name: nameOf(gSlug), conf: +conf.toFixed(3) }, path,
+           sub: path.length > 1 ? path[path.length - 1] : null, bpm, blend, support, why, version: IDENTIFY_VERSION };
+}
+
+/**
+ * How well `identify` names the genres of tracks you have already filed, with
+ * each held out from its own neighbours. Only tracks in a genre playlist whose
+ * name the ontology reads are scored (a "Bangers" playlist says nothing).
+ *
+ *   genre     the genre named is the genre-level node of one of its playlists
+ *   specific  the most specific name is that playlist's genre, or inside it
+ *   modelOnly the same two with the sound model alone (no library votes)
+ *   tempo     share whose settled tempo fits one of its playlists' genres
+ *
+ * @param {{ index: Map, membership: {playlists: Map, of: Map}, k?: number, limit?: number }} o
+ */
+function identifyAccuracy({ index, membership, k = 12, limit = 600 } = {}) {
+  const ids = [...(index?.keys() ?? [])].filter(id => {
+    const pids = membership?.of?.get(id) ?? [];
+    return pids.some(p => membership.playlists.get(p)?.concepts?.length);
+  }).sort().slice(0, limit);
+  const tally = { scored: 0, genre: 0, specific: 0, model: { genre: 0, specific: 0 }, tempo: 0, tempoJudged: 0 };
+  const byGenre = new Map();
+  const judge = (res, truth) => {
+    if (!res?.genre) return { genre: false, specific: false };
+    const leaf = res.path[res.path.length - 1].slug;
+    return { genre: truth.some(c => genreLevel(c) === res.genre.slug),
+             specific: truth.some(c => leaf === c || lineageOf(leaf).includes(c)) };
+  };
+  for (const id of ids) {
+    const row = index.get(id);
+    const truth = [...new Set((membership.of.get(id) ?? []).flatMap(p => membership.playlists.get(p)?.concepts ?? []))];
+    const res = identify(row.rec, { neighbours: filedNeighbours(id, index, membership, { k }) });
+    const full = judge(res, truth);
+    const alone = judge(identify(row.rec, {}), truth);
+    tally.scored++;
+    if (full.genre) tally.genre++;
+    if (full.specific) tally.specific++;
+    if (alone.genre) tally.model.genre++;
+    if (alone.specific) tally.model.specific++;
+    if (res?.bpm && res.bpm.conf >= TEMPO_CONF) {
+      const fits = truth.map(c => tempoFit(res.bpm.value, c)?.fit).filter(f => f != null);
+      if (fits.length) { tally.tempoJudged++; if (Math.max(...fits) >= 0.8) tally.tempo++; }
+    }
+    const g = genreLevel(truth[0]);
+    const b = byGenre.get(g) ?? { slug: g, name: nameOf(g), n: 0, right: 0 };
+    b.n++; if (full.genre) b.right++;
+    byGenre.set(g, b);
+  }
+  const rate = (a, n) => (n ? +(a / n).toFixed(4) : null);
+  return {
+    scored: tally.scored,
+    genre: rate(tally.genre, tally.scored), specific: rate(tally.specific, tally.scored),
+    modelOnly: { genre: rate(tally.model.genre, tally.scored), specific: rate(tally.model.specific, tally.scored) },
+    tempo: rate(tally.tempo, tally.tempoJudged), tempoJudged: tally.tempoJudged,
+    byGenre: [...byGenre.values()].sort((a, b) => b.n - a.n).slice(0, 8),
+    version: IDENTIFY_VERSION,
+  };
+}
+
+/**
+ * `identifyAccuracy` from a library and its heard records, for the Score run.
+ * Null with nothing heard. `records` may be the engine's `{ records, feedback }`.
+ */
+function identifyAccuracyFor(lib, records, { targets = null, isMirror = null, limit = 600, k = 12 } = {}) {
+  const recs = records && !Array.isArray(records) && !(records instanceof Map) && 'records' in records ? records.records : records;
+  const index = audioIndex(recs);
+  if (!index.size) return null;
+  const membership = genreMembership(lib, { targets, isMirror });
+  const out = identifyAccuracy({ index, membership, k, limit });
+  return out.scored ? out : null;
+}
+return { IDENTIFY_VERSION, SOURCES, SPECIFIC, TEMPO_CONF, TEMPO_FLOOR, MIN_GENRE, genreLevel, identify, identifyAccuracy, identifyAccuracyFor };
+})();
 globalThis["BetterfyIntrinsic"] = __mod["core/intrinsic/space.mjs"];
 globalThis["BetterfyColdStart"] = __mod["core/intrinsic/coldstart.mjs"];
 globalThis["BetterfyExplain"] = __mod["core/intrinsic/explain.mjs"];
@@ -7683,3 +8357,5 @@ globalThis["BetterfyCalibrate"] = __mod["core/intrinsic/calibrate.mjs"];
 globalThis["BetterfyGaps"] = __mod["core/recommend/gaps.mjs"];
 globalThis["BetterfyAudioGaps"] = __mod["core/recommend/audio-gaps.mjs"];
 globalThis["BetterfyWikidata"] = __mod["core/sources/wikidata.mjs"];
+globalThis["BetterfyMatch"] = __mod["core/audio/match.mjs"];
+globalThis["BetterfyIdentify"] = __mod["core/audio/identify.mjs"];
