@@ -229,7 +229,7 @@ function shufflePage({ records = null, mode = undefined, energyShown = false, en
   vm.runInContext(PAGE.slice(i, j).replace('const ALL_SONGS_NAME', 'var ALL_SONGS_NAME')
 , sandbox);
   // The shared empty state (UI-1), which the mix's loading and error boxes use.
-  const e = PAGE.indexOf('function emptyState('), f = PAGE.indexOf('/* The misfile confidence tiers', e);
+  const e = PAGE.indexOf('function emptyState('), f = PAGE.indexOf('/* ---------- Tidy by sound', e);
   vm.runInContext(PAGE.slice(e, f), sandbox);
   return sandbox;
 }

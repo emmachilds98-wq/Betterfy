@@ -21,7 +21,7 @@ const between = (from, to, what) => {
   assert.ok(i > 0 && j > i, `${what} not found — rebuild with node build-web.mjs`);
   return PAGE.slice(i, j);
 };
-const INBOX = between('function artHTML(t', 'function vTidy()', 'vInbox');
+const INBOX = between('function artHTML(t', 'function emptyState(', 'vInbox');
 const BLEND_SRC = between('/* ======================= tags and the engine, blended on File', '/* ---------- CLAP: names for', 'app/blend.js');
 
 /* A library: two genre playlists of core artists, a newcomer nobody has tagged

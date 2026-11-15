@@ -23,7 +23,7 @@ function slice(from, to, what) {
   assert.ok(i > 0 && j > i, `${what} was not found — rebuild with npm run build:web`);
   return PAGE.slice(i, j);
 }
-const CARD = slice('function artHTML(t', 'function vTidy()', 'the File screen');
+const CARD = slice('function artHTML(t', 'function emptyState(', 'the File screen');
 const SOUND_CODE = slice(' * Sound-first filing (the owner', '/* ---------- CLAP: names for', 'the sound-first section');
 
 const TARGETS = FAMILIES.map(f => `p-${f}`);

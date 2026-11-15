@@ -174,10 +174,11 @@ test('`playlists` limits which get a profile; tags count for a little', () => {
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as PlProfile from '../core/audio/plprofile.mjs';
+import * as LISTS from '../web/screens/lists.mjs';
 
 const BUNDLE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
 const SLICE = (() => {
-  const i = BUNDLE.indexOf('const AXES = '), j = BUNDLE.indexOf('function tagCoverage()', i);
+  const i = BUNDLE.indexOf('/* ---------- Playlists: mixes, sound profiles, splits'), j = BUNDLE.indexOf('function tagCoverage()', i);
   assert.ok(i > 0 && j > i, 'Playlists block not found — rebuild with node build-web.mjs');
   return BUNDLE.slice(i, j);
 })();
@@ -206,7 +207,8 @@ function page({ recs = records, withEngine = true } = {}) {
     setTimeout, Date,
   };
   vm.createContext(sb);
-  vm.runInContext(SLICE + ';globalThis.vLists = vLists; globalThis.listsSplitMake = listsSplitMake; globalThis.LPROF = LPROF;', sb);
+  sb.jobs = vm.runInContext(SLICE + ';({ playlistMixes, listsSplits, listsSplitMake, LPROF, LISTS_SOUND })', sb);
+  Object.assign(sb, { LPROF: sb.jobs.LPROF, listsSplitMake: sb.jobs.listsSplitMake, vLists: () => LISTS.view({ ...sb, ...sb.jobs }) });
   return { sb, calls, renders };
 }
 const settle = async sb => { for (let i = 0; i < 200 && (sb.LPROF.busy || !sb.LPROF.out); i++) await new Promise(r => setTimeout(r, 0)); };

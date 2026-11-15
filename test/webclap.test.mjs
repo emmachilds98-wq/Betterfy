@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { installNew } from './newctx.mjs';
 import { soundLibrary } from './fixtures/sound-library.mjs';
 import { table, clapField, resetSeed } from './fixtures/clap-fixture.mjs';
 import { DISCOVER, renderDiscover, GOLDEN } from './ui4-cards.mjs';
@@ -23,7 +24,7 @@ function slice(from, to) {
 }
 const GAPS_CODE = slice('/* ======================= gaps: docs/SMARTER-GENRES-PLAN.md, phase 3',
                         '/* ---------- shuffle: spacing, not randomness');
-const EMPTY = slice('function emptyState(', '/* The misfile confidence tiers');
+const EMPTY = slice('function emptyState(', '/* ---------- Tidy by sound');
 const CLAP_CODE = slice('/* ---------- CLAP: names for "new genre?" groups', '/** Redraw only the panel');
 
 const esc = x => String(x ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -55,8 +56,7 @@ function screen({ lib, records, bare = false, tableJson = table() }) {
   vm.createContext(s);
   vm.runInContext(ENGINE, s);
   if (!bare) vm.runInContext(AUDIOJS, s);
-  vm.runInContext(EMPTY, s);
-  vm.runInContext(GAPS_CODE, s);
+  installNew(s, slice);
   if (!bare) vm.runInContext(CLAP_CODE, s);
   return s;
 }
