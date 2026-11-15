@@ -27,7 +27,7 @@ function home({ views = {} } = {}) {
   const sandbox = {
     slot, heardN, calls,
     esc: s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
-    partOfDay: () => 'Evening', tagCoverage: () => ({ pct: 62 }), isMirrorPlaylist: () => false,
+    partOfDay: () => 'Evening', tagCoverage: () => ({ pct: 62 }), isMirrorPlaylist: () => false, analyseHTML: () => '',
     VHUE: { home: 'accent', inbox: 'm0', tidy: 'm1', discover: 'm3', shuffle: 'm4' },
     VIEWS: views, view: 'home', go() {},
     render() { calls.render++; },

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0536">
+<meta name="bf-build" content="2026-11-15-0545">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -431,6 +431,11 @@
   .acts4 .act:nth-child(3){animation-delay:.08s}
   .acts4 .act:nth-child(4){animation-delay:.12s}
   .acts4 .act:nth-child(5){animation-delay:.16s}
+
+/* One-tap analysis: the button and its single progress strip. */
+.analyse { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; }
+.analyse .d { color: var(--ink-3); font-size: 13px; flex: 1 1 240px; }
+.analyse[role="status"] { padding: 10px 14px; border-radius: 12px; background: var(--card, rgba(127,127,127,.1)); font-variant-numeric: tabular-nums; }
   .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-4); padding:26px 28px 28px; box-shadow:var(--shadow-2)}
   .prog{height:5px; background:var(--surface-3); border-radius:3px; overflow:hidden; margin-bottom:18px}
   .prog i{display:block; height:100%; border-radius:3px; transition:width var(--dur-3) var(--ease-out);
@@ -1486,7 +1491,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0536</span>
+    <span class="mono">build 2026-11-15-0545</span>
   </p>
 
   <div class="feat">
@@ -1590,7 +1595,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0536</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0545</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1631,7 +1636,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0536</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0545</span>
   </div>
 </div>
 
@@ -3159,6 +3164,12 @@ const LS = (() => {
     removeItem(k) { mem.delete(k); try { real?.removeItem(k); } catch {} },
   };
 })();
+/* The Last.fm key the page uses: the viewer's own if they saved one, else the
+ * shared default baked in at build time, else none. The default is public by
+ * design (read-only methods need only the API key) and '' when the build had
+ * none, in which case this behaves exactly as it did before the default. */
+const DEFAULT_LFM_KEY = '';
+const lfmKey = () => LS.getItem('bf_lfm') || DEFAULT_LFM_KEY || null;
 const mmss = ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`;
 
 /* The store (docs/BUILD-5-PLAN.md A3). Background jobs (engine, listening,
@@ -3500,7 +3511,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0536';
+const BUILD = '2026-11-15-0545';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3821,7 +3832,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0536', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0545', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -4814,6 +4825,8 @@ function vHome() {
         </div>
       </div>
     </div>
+
+    ${analyseHTML()}
 
     <div class="acts4${acts.length > 4 ? ' five' : ''}">${acts.map(([v, n, label, desc]) => `
       <button class="act" data-go="${v === 'heard' ? listenTarget() : v}"${v === 'heard' ? ' data-heard' : ''} style="--ac:var(--${VHUE[v] ?? HEARD_HUE}); --ac-ink:var(--${VHUE[v] ?? HEARD_HUE}-ink)">
@@ -6107,7 +6120,7 @@ async function runDiscovery(seedPlaylistId) {
   // No key is not a dead end any more (CLAUDE.md: every account, Spotify
   // library alone): without one, the candidates come from Deezer's and
   // ListenBrainz's "fans also like" for the artists you play.
-  const key = LS.getItem('bf_lfm');
+  const key = lfmKey();
 
   const ownedArtist = new Set(), ownedTrack = new Set();
   const own = t => { for (const a of t?.artists ?? []) ownedArtist.add(norm(a.name));
@@ -6409,7 +6422,7 @@ function discFitHTML(t) {
 function vDiscover() {
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
-  const hasKey = !!LS.getItem('bf_lfm');
+  const hasKey = !!lfmKey();
   const head = `<h1>Discover</h1>
     <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
       <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
@@ -6788,7 +6801,7 @@ function vSources() {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
-  const lfm = LS.getItem('bf_lfm') || '', discogs = LS.getItem('bf_discogs') || '';
+  const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
   return `<h1>Sources</h1>
     <p class="lede">Where your genre data comes from, and how to fill the gaps.</p>
     <details class="how"><summary>How this works</summary>
@@ -6804,10 +6817,11 @@ function vSources() {
       artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
 
     <div class="srcgrid">
-    ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfm ? 'Key saved' : 'No key',
-      'Crowd genre tags for the artists the shipped set doesn\'t cover. Needs a free API key.',
+    ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
+      'Crowd genre tags for the artists the shipped set doesn\'t cover. '
+        + (!lfmOwn && lfm ? 'Using Betterfy\'s shared Last.fm key — add your own to raise limits.' : 'Needs a free API key.'),
       `<div class="rowbtns">
-        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(lfm)}" aria-label="Last.fm API key">
+        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(lfmOwn)}" aria-label="Last.fm API key">
         <button class="b" id="saveLfm">Save key</button>
         <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
       </div>
@@ -7226,9 +7240,9 @@ const REASK_AFTER_MS = 1000 * 60 * 60 * 24 * 180; // ~6 months
 const worthReasking = e => !e || (e.tags?.length ?? 0) < REASK_TAG_FLOOR && (Date.now() - (e.checkedAt ?? 0)) > REASK_AFTER_MS;
 
 /** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
-async function enrichMissing() {
-  const key = LS.getItem('bf_lfm');
-  if (!key) return toast('Add a Last.fm key first.');
+async function enrichMissing({ quiet = false, onProgress = null } = {}) {
+  const key = lfmKey();
+  if (!key) return quiet ? 0 : toast('Add a Last.fm key first.');
   const discogsToken = LS.getItem('bf_discogs');
   // "Missing" means thin, not just "no entry at all" — fewer tags than
   // REASK_TAG_FLOOR is treated the same as zero, so a gap Last.fm barely
@@ -7240,7 +7254,7 @@ async function enrichMissing() {
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
   let todo = [...names];
-  if (!todo.length) return toast('Nothing missing.');
+  if (!todo.length) return quiet ? 0 : toast('Nothing missing.');
 
   // Hundreds of gaps can take a while — cover what you actually listen to
   // first, so leaving the screen partway through still improves the
@@ -7249,7 +7263,9 @@ async function enrichMissing() {
 
   const cached = (await idb.get('tags_extra')) ?? {};
   let done = 0, viaDiscogs = 0, failed = 0, blank = 0;
+  let seen = 0;
   for (const [id, name] of todo) {
+    onProgress?.(seen++, todo.length);
     // Already asked about, and not stale-thin enough to be worth asking
     // again yet. A real, well-tagged answer is never re-asked — there's no
     // upside — and a thin or empty one only gets a second look after
@@ -7294,11 +7310,13 @@ async function enrichMissing() {
   await idb.set('tags_extra', cached);
   R = buildReports(LIB, CFG, TAGS);
   $('#land').hidden = true; $('#app').hidden = false;
-  toast(`Tags filled for ${done} of ${todo.length} artists.`
+  onProgress?.(todo.length, todo.length);
+  if (!quiet) toast(`Tags filled for ${done} of ${todo.length} artists.`
     + (viaDiscogs ? ` ${viaDiscogs} from Discogs, where Last.fm had nothing.` : '')
     + (blank ? ` ${blank} have no tags anywhere.` : '')
     + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : ''));
   store.touch('reports');
+  return done;
 }
 
 /* ---------- genres with no key at all: docs/SMARTER-GENRES-PLAN.md §4.1(c) ----------
@@ -7455,7 +7473,7 @@ async function resetArtistTags(id) {
 /** Ask Last.fm again for one artist, ignoring whatever it is shipped with —
  *  for the case where autocorrect or the crowd tags have since improved. */
 async function refetchArtist(id, name) {
-  const key = LS.getItem('bf_lfm');
+  const key = lfmKey();
   if (!key) return toast('Add a Last.fm key on the Sources screen first.');
   try {
     const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
@@ -7478,7 +7496,7 @@ function tagEditorHTML(id, name) {
       <input id="newTagVal" placeholder="Add a tag" size="16">
       <button class="b sm" data-addtag="${esc(id)}">Add</button>
       <button class="b sm" data-refetchtags="${esc(id)}" data-artistname="${esc(name)}"
-        ${LS.getItem('bf_lfm') ? '' : 'disabled title="Add a Last.fm key on the Sources screen first"'}>Refetch from Last.fm</button>
+        ${lfmKey() ? '' : 'disabled title="Add a Last.fm key on the Sources screen first"'}>Refetch from Last.fm</button>
       <button class="b sm" data-resettags="${esc(id)}">Reset to shipped</button>
       <button class="b sm" data-closetagedit="1">Done</button>
     </div>
@@ -7872,7 +7890,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0536';
+    s.src = 'engine.js?v=2026-11-15-0545';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -7894,7 +7912,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0536');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0545');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -8219,7 +8237,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0536';
+    s.src = 'audio.js?v=2026-11-15-0545';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -8255,7 +8273,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0536', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0545', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -8782,6 +8800,113 @@ function clapStatusHTML(d) {
   return `<p class="sub" style="margin:4px 0">Described ${done.toLocaleString()} of ${heard.length.toLocaleString()} heard track${heard.length === 1 ? '' : 's'}${
     done < heard.length ? `, ${BetterfyAudio.CLAP_FILL_PER_RUN} more each time it listens` : ''}. The model is about 77 MB, downloaded once.</p>`;
 }
+/* ===========================================================================
+ * "Analyse my library" — one tap (docs/BUILD-5-PLAN.md, owner's ask).
+ *
+ * One button runs the two things that make File's suggestions good, in the
+ * background and under one status line: the tag gaps are filled (enrichMissing
+ * already goes in listening order) and listening to the liked songs is started
+ * (audioStart, on by default). When the tags are in, it opens File, where the
+ * playlist and genre/mood/BPM suggestions already live. Nothing here writes to
+ * Spotify, and nothing is asked of anyone without a key or without data: with
+ * no Last.fm key it only listens, and with nothing to do it only routes.
+ *
+ * analyseRun() takes its collaborators as `d` so it can be tested with stubs;
+ * analyseGo()/analyseAuto() wire the real ones.
+ * ======================================================================== */
+const ANALYSE = { running: false, tags: [0, 0], listen: null, timer: null };
+
+/** Artists whose tags are thin — the same gap enrichMissing() fills. */
+function analyseGapCount() {
+  if (typeof LIB === 'undefined' || !LIB) return 0;
+  const ids = new Set();
+  const gap = id => (TAGS[id]?.tags?.length ?? 0) < REASK_TAG_FLOOR || TAGS[id]?.source === 'wikidata';
+  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && gap(a.id)) ids.add(a.id);
+  for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && gap(a.id)) ids.add(a.id);
+  return ids.size;
+}
+
+/** "Reading tags 120/400 · listening 37/412", from whatever has started. */
+function analyseStatus(st) {
+  const parts = [];
+  const [td, tt] = st.tags ?? [0, 0];
+  if (tt) parts.push(`Reading tags ${td.toLocaleString()}/${tt.toLocaleString()}`);
+  const l = st.listen;
+  if (l && l.total) parts.push(`listening ${Math.min(l.done ?? 0, l.total).toLocaleString()}/${l.total.toLocaleString()}`);
+  else if (l?.state === 'paused') parts.push('listening waits for Wi-Fi');
+  return parts.length ? parts.join(' · ') : 'Starting…';
+}
+
+/** Is there something worth offering? Gaps to fill, or listening that has not run. */
+function analyseWanted(d = {}) {
+  const gaps = (d.gaps ?? analyseGapCount)();
+  const ran = (d.listenRan ?? (() => typeof listenEverRan === 'function' && listenEverRan()))();
+  const canListen = (d.canListen ?? (() => audioSettings().on))();
+  return { gaps, listen: canListen && !ran, any: (!!(d.key ?? lfmKey)() && gaps > 0) || (canListen && !ran) };
+}
+
+/**
+ * Run it. Resolves with what was done; never throws (a failed half just stops).
+ * `d`: key(), gaps(), enrich({quiet,onProgress}), listen(), listenVM(), status(st), go(view).
+ */
+async function analyseRun(d, { route = true } = {}) {
+  if (ANALYSE.running) return { skipped: true };
+  ANALYSE.running = true; ANALYSE.tags = [0, 0]; ANALYSE.listen = null;
+  const push = () => d.status?.({ tags: ANALYSE.tags, listen: ANALYSE.listen, running: true });
+  const out = { tags: false, listen: false };
+  try {
+    // Listening first: it runs by itself while the tags are read.
+    try { await d.listen(); out.listen = true; } catch { /* its own error shows on Sources */ }
+    const poll = () => { ANALYSE.listen = d.listenVM?.() ?? null; push(); };
+    ANALYSE.timer = setInterval(poll, 600); poll();
+    if (d.key() && d.gaps() > 0) {
+      await d.enrich({ quiet: true, onProgress: (n, t) => { ANALYSE.tags = [n, t]; push(); } });
+      out.tags = true;
+    }
+    poll();
+  } catch { /* leave whatever finished */ }
+  finally {
+    clearInterval(ANALYSE.timer); ANALYSE.timer = null; ANALYSE.running = false;
+    d.status?.({ tags: ANALYSE.tags, listen: ANALYSE.listen, running: false });
+  }
+  if (route) d.go('inbox');
+  return out;
+}
+
+function analyseDeps() {
+  return {
+    key: lfmKey, gaps: analyseGapCount,
+    enrich: o => enrichMissing(o),
+    listen: () => audioStart({ quiet: true }),
+    listenVM: () => AUDIO.vm,
+    status: st => {
+      const el = document.getElementById('analyseStrip');
+      if (el) { el.hidden = !st.running; el.querySelector('.txt').textContent = analyseStatus(st); }
+      const b = document.getElementById('analyseGo'); if (b) b.disabled = !!st.running;
+    },
+    go: v => { if (view === 'home') go(v); },
+  };
+}
+
+/** The button. */
+function analyseGo() { LS.setItem('bf_analysed', '1'); return analyseRun(analyseDeps()); }
+
+/** Once, after the first load with a key: the same run, without taking the screen away. */
+function analyseAuto() {
+  if (LS.getItem('bf_analysed') || !lfmKey() || ANALYSE.running) return;
+  if (!analyseWanted().any) return;
+  LS.setItem('bf_analysed', '1');
+  analyseRun(analyseDeps(), { route: false });
+}
+
+/** Home's button and its progress strip. Empty when there is nothing to offer. */
+function analyseHTML() {
+  if (ANALYSE.running) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen }))}</span></div>`;
+  if (!analyseWanted().any) return '';
+  return `<div class="analyse"><button class="b p" id="analyseGo">Analyse my library</button>
+    <span class="d">Reads tags and listens to your liked songs, then suggests where each one goes. Nothing is written to Spotify until you tap.</span></div>
+    <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
+}
 function bridgeProgressText() {
   const p = ENG.bridgeProgress ?? {};
   const part = (label, x) => x ? `${label} ${Math.min(x.done, x.total).toLocaleString()} of ${x.total.toLocaleString()}` : null;
@@ -9083,7 +9208,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0536`,
+    `Betterfy engine score — build 2026-11-15-0545`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -9628,6 +9753,7 @@ document.addEventListener('click', guard(async e => {
     return;
   }
   if (e.target.id === 'enrich') return enrichMissing();
+  if (e.target.id === 'analyseGo') return analyseGo();
   if (e.target.id === 'fillWikidata') return fillFromWikidata();
   if (e.target.id === 'audioGo') return audioStart();
   const lchk = e.target.closest('[data-lchk]');
@@ -10229,6 +10355,8 @@ async function start(force) {
     if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});
     // Listening resumes by itself where it left off, if it was switched on — after the first paint.
     if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
+    // One-tap analysis runs once by itself when a Last.fm key (shared or own) is there.
+    setTimeout(() => { try { analyseAuto(); } catch { /* optional */ } }, 4000);
   } catch (e) {
     if (retryable(e)) {
       const streak = e.status === 429 ? noteRateLimited() : 0;

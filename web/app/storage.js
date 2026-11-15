@@ -41,5 +41,11 @@ const LS = (() => {
     removeItem(k) { mem.delete(k); try { real?.removeItem(k); } catch {} },
   };
 })();
+/* The Last.fm key the page uses: the viewer's own if they saved one, else the
+ * shared default baked in at build time, else none. The default is public by
+ * design (read-only methods need only the API key) and '' when the build had
+ * none, in which case this behaves exactly as it did before the default. */
+const DEFAULT_LFM_KEY = '__LASTFM_PUBLIC_KEY__';
+const lfmKey = () => LS.getItem('bf_lfm') || DEFAULT_LFM_KEY || null;
 const mmss = ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`;
 

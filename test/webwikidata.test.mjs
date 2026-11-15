@@ -54,6 +54,7 @@ function load({ tags = {}, cache = {}, wikidata = {}, wikidataFails = false, las
     CFG: {},
     TAGS: JSON.parse(JSON.stringify({ ...cache, ...tags })),
     LS: { getItem: k => (k === 'bf_lfm' ? 'lfm-key' : null) },
+    lfmKey: () => ({ getItem: k => (k === 'bf_lfm' ? 'lfm-key' : null) }).getItem('bf_lfm'),
     idb: { get: async k => JSON.parse(JSON.stringify(store[k] ?? null)), set: async (k, v) => { store[k] = JSON.parse(JSON.stringify(v)); } },
     corsJson: async (url, init) => {
       if (wikidataFails) throw new Error('offline');
