@@ -18,7 +18,7 @@ export function secDupes(c) {
   const clash = R.within.filter(x => x.verdict !== 'same-recording');
   const sec = (title, list, note, key) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
     <p class="lede">${note}</p>
-    <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
+    <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row" data-flip data-key="${esc(`dup:${c.playlistId}:${c.options.map(o => o.id).join(',')}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
     </div><div class="acts">${c.options.map(o =>
@@ -40,7 +40,7 @@ export function secCross(c) {
   return `<p class="lede">Tracks in several playlists. Usually deliberate — nothing is preselected. Tap a playlist to remove the track from just that one.</p>
     <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
       `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-act="cmin" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
-    <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
+    <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
@@ -84,7 +84,7 @@ export function secSound(c) {
   const checked = acc?.scored ? `<p class="sub tsacc">Checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
     acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>` : '';
   const lede = `<p class="lede">Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn't place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>`;
-  if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true });
+  if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true }) + (c.skeleton ? c.skeleton('rows', 3) : '');
   if (TSOUND.status === 'error' && !TSOUND.res) return lede + emptyState('Couldn’t compare by sound', esc(TSOUND.err ?? ''), { compact: true });
   const m = rows.filter(x => x.band === band);
   return `${lede}${checked}
@@ -92,7 +92,7 @@ export function secSound(c) {
       `<button type="button" aria-pressed="${band === b}" data-act="tsb" data-tsb="${b}">${mfBandChip(c, vm === 'HIGH' ? 'high' : 'medium')} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
     <div class="rows">${m.slice(0, shownOf('tsound-' + band)).map(x => {
       const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
-      return `<div class="row tsrow ${done ? 'done' : ''}">${thumbHTML(t)}<div class="main">
+      return `<div class="row tsrow ${done ? 'done' : ''}" data-flip data-key="${esc(`ts:${x.id}`)}">${thumbHTML(t)}<div class="main">
         <div class="ttl">${esc(t.title)} <span class="sub">— ${esc(t.artist)}</span></div>
         <div class="tssound">${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
         <div class="swap"><span class="from">${esc(x.fromName)}</span><span class="arw">→</span><span class="to">${esc(x.toName)}</span>
@@ -132,7 +132,7 @@ export function secMisfile(c) {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
       const playedALot = recentlyActive?.has(x.artist);
-      return `<div class="row ${done ? 'done' : ''}">${thumbHTML(x)}<div class="main">
+      return `<div class="row ${done ? 'done' : ''}" data-flip data-key="${esc(`mf:${x.id}:${x.currentPlaylistId}`)}">${thumbHTML(x)}<div class="main">
         <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
         ${to ? `<div class="swap"><span class="from">${esc(x.current)}</span><span class="arw">→</span><span class="to">${esc(to.name)}</span>
           <span class="mono" style="color:var(--ink-3)">${(x.currentScore * 100).toFixed(0)}% → ${(to.score * 100).toFixed(0)}%</span></div>`

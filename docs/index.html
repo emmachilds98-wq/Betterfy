@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-1051">
+<meta name="bf-build" content="2026-11-15-1054">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1598,7 +1598,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-1051</span>
+    <span class="mono">build 2026-11-15-1054</span>
   </p>
 
   <div class="feat">
@@ -1690,7 +1690,7 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1051</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1054</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1807,7 +1807,7 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-15-1051. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-15-1054. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3208,6 +3208,164 @@ function missedList(vm) {
 }
 return { SOUND_UI_VERSION, SURE_CONF, soundChip, soundMark, sectionStrip, evidenceBadges, bandChip, profileRow, listenPill, listenCard, missedList };
 })();
+/* ---- web/app/patch.mjs ---- */
+__mod["web/app/patch.mjs"] = (function () {
+// A5 of docs/BUILD-5-PLAN.md: the keyed patcher.
+//
+// patch(el, html) makes el's children match `html` while reusing the nodes it
+// already has, so a re-render after a click no longer throws away the focused
+// input, its caret, or a scrolled list. Children are matched by `data-key`
+// when they carry one, and by position (same tag) when they don't.
+//
+// The page still does a full innerHTML render on a screen change or a sync;
+// patch() is for re-renders of the screen already showing (A4 wires it in).
+//
+// Rules a screen can rely on:
+//   - A child with data-key="k" is the same node before and after, wherever it
+//     moves, as long as its tag is unchanged. Keys only need to be unique among
+//     siblings. A duplicate key gets a fresh node.
+//   - The focused element keeps focus and its selection, even when a reorder
+//     moves it (browsers blur a node on move); its `value` is never overwritten.
+//   - Scroll offsets are kept on `el` itself and on every element with a
+//     data-key or a data-keep-scroll attribute (browsers reset scroll on move).
+//   - data-patch="skip" on the new markup leaves that element's existing
+//     attributes and subtree alone (a playing <audio>, a third-party widget).
+//
+// It needs only the plain DOM (template, insertBefore, attributes), so the
+// tests run it against a small fake DOM, not jsdom.
+
+const ELEMENT = 1, TEXT = 3, COMMENT = 8;
+
+const keyOf = n => (n.nodeType === ELEMENT ? n.getAttribute('data-key') : null);
+const sameKind = (a, b) => a.nodeType === b.nodeType
+  && (a.nodeType !== ELEMENT || a.tagName === b.tagName);
+const contains = (root, n) => { for (; n; n = n.parentNode) if (n === root) return true; return false; };
+
+/** Patch el's children to match html. Returns el. */
+function patch(el, html) {
+  const doc = el.ownerDocument;
+  const tpl = doc.createElement('template');
+  tpl.innerHTML = html;
+  const saved = remember(el, doc);
+  // Rows that opt in with data-flip slide to their new place (motion.js).
+  const flip = typeof globalThis.flipRecord === 'function' ? globalThis.flipRecord(el) : null;
+  morphChildren(el, tpl.content, saved.active);
+  restore(saved, doc);
+  if (flip && flip.size) globalThis.flipPlay(el, flip);
+  return el;
+}
+
+/** Note focus, caret and scroll offsets, which moving a node would lose. */
+function remember(el, doc) {
+  const active = doc.activeElement && doc.activeElement !== doc.body
+    && contains(el, doc.activeElement) ? doc.activeElement : null;
+  let sel = null;
+  if (active) {
+    try {
+      if (typeof active.selectionStart === 'number') {
+        sel = [active.selectionStart, active.selectionEnd, active.selectionDirection || 'none'];
+      }
+    } catch { /* inputs like checkbox throw on selectionStart */ }
+  }
+  const scrolls = [];
+  const note = n => { if (n.scrollTop || n.scrollLeft) scrolls.push([n, n.scrollTop, n.scrollLeft]); };
+  note(el);
+  for (const n of el.querySelectorAll('[data-key],[data-keep-scroll]')) note(n);
+  return { el, active, sel, scrolls };
+}
+
+function restore({ el, active, sel, scrolls }, doc) {
+  for (const [n, top, left] of scrolls) {
+    if (!contains(el, n)) continue;
+    if (n.scrollTop !== top) n.scrollTop = top;
+    if (n.scrollLeft !== left) n.scrollLeft = left;
+  }
+  if (!active || !contains(el, active)) return;
+  if (doc.activeElement !== active) active.focus({ preventScroll: true });
+  if (sel && typeof active.setSelectionRange === 'function') {
+    try { active.setSelectionRange(sel[0], sel[1], sel[2]); } catch { /* not a text input */ }
+  }
+}
+
+function morphChildren(from, to, active) {
+  const keyed = new Map();
+  for (let c = from.firstChild; c; c = c.nextSibling) {
+    const k = keyOf(c);
+    if (k != null && !keyed.has(k)) keyed.set(k, c);
+  }
+  // Everything before `cur` is already in its final place.
+  let cur = from.firstChild;
+  for (let n = to.firstChild; n;) {
+    const next = n.nextSibling;
+    const k = keyOf(n);
+    let match = null;
+    if (k != null) {
+      match = keyed.get(k) || null;
+      if (match) keyed.delete(k);
+      if (match && !sameKind(match, n)) match = null;
+    } else if (cur && keyOf(cur) == null && sameKind(cur, n)) {
+      match = cur;
+    }
+    if (match) {
+      if (match === cur) cur = cur.nextSibling;
+      else from.insertBefore(match, cur);
+      morphNode(match, n, active);
+    } else {
+      from.insertBefore(n, cur); // adopts the new node out of the template
+    }
+    n = next;
+  }
+  // Whatever is left was not asked for.
+  while (cur) { const nx = cur.nextSibling; from.removeChild(cur); cur = nx; }
+}
+
+function morphNode(a, b, active) {
+  if (a.nodeType === TEXT || a.nodeType === COMMENT) {
+    if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue;
+    return;
+  }
+  if (b.getAttribute('data-patch') === 'skip') return;
+  syncAttributes(a, b);
+  const tag = a.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'OPTION') {
+    syncFormState(a, b, a === active);
+    if (tag === 'TEXTAREA') return; // its text is its value
+  }
+  morphChildren(a, b, active);
+}
+
+function syncAttributes(a, b) {
+  const want = b.attributes;
+  for (let i = 0; i < want.length; i++) {
+    const { name, value } = want[i];
+    if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+  }
+  const have = a.attributes;
+  for (let i = have.length - 1; i >= 0; i--) {
+    const { name } = have[i];
+    if (!b.hasAttribute(name)) a.removeAttribute(name);
+  }
+}
+
+/** Attributes don't move a live control's state; set the properties too. */
+function syncFormState(a, b, focused) {
+  const tag = a.tagName;
+  if (tag === 'OPTION') {
+    const on = b.hasAttribute('selected');
+    if (a.selected !== on) a.selected = on;
+    return;
+  }
+  if (tag === 'INPUT' && (a.type === 'checkbox' || a.type === 'radio')) {
+    const on = b.hasAttribute('checked');
+    if (a.checked !== on) a.checked = on;
+    return;
+  }
+  if (focused || tag === 'SELECT') return; // the person is typing; SELECT follows its options
+  const v = tag === 'TEXTAREA' ? b.textContent : (b.getAttribute('value') ?? '');
+  if (a.value !== v) a.value = v;
+}
+return { patch };
+})();
 /* ---- web/screens/home.mjs ---- */
 __mod["web/screens/home.mjs"] = (function () {
 /* File, the home tab (docs/BUILD-5-PLAN.md §4.1, UI-D). Home and File were two
@@ -3325,7 +3483,7 @@ function view({ S, esc, isUndone, emptyState }) {
     else rows.push({ one:x });
   }
   const undone = `<span class="sub">Undone</span>`;
-  const one = x => `<div class="row"><div class="main">
+  const one = x => `<div class="row" data-flip data-key="${esc(`h:${x.at}:${x.op}:${x.playlistId ?? ''}`)}"><div class="main">
       <div class="ttl">${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span></div>
       <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))} · ${(x.trackIds??[]).length} track(s)${x.reason?' · '+esc(x.reason):''}</div>
     </div><div class="acts">${['remove','add','unlike'].includes(x.op) ? (isUndone(x, h) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(x.at)}">Undo</button>`) : ''}</div></div>`;
@@ -3337,7 +3495,7 @@ function view({ S, esc, isUndone, emptyState }) {
       ? `Moved <span class="sub">${esc(mv?.fromName ?? rem?.playlistName ?? '')} → ${esc(mv?.toName ?? add?.playlistName ?? '')}</span>`
       : `${esc(newest.op)} <span class="sub">${esc(g.map(x => x.playlistName).filter(Boolean).join(', '))}</span>`;
     const n = new Set(g.flatMap(x => x.trackIds ?? [])).size;
-    return `<div class="row"><div class="main">
+    return `<div class="row" data-flip data-key="${esc(`hg:${oldest.at}:${newest.at}`)}"><div class="main">
       <div class="ttl">${title}</div>
       <div class="sub mono">${esc(oldest.at.replace('T',' ').slice(0,19))} · ${n} track(s)</div>
     </div><div class="acts">${g.every(x => isUndone(x, h)) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(oldest.at)}">Undo</button>`}</div></div>`;
@@ -3884,7 +4042,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-1051`,
+    `Betterfy engine score — build 2026-11-15-1054`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -4397,7 +4555,7 @@ function secDupes(c) {
   const clash = R.within.filter(x => x.verdict !== 'same-recording');
   const sec = (title, list, note, key) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
     <p class="lede">${note}</p>
-    <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
+    <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row" data-flip data-key="${esc(`dup:${c.playlistId}:${c.options.map(o => o.id).join(',')}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
     </div><div class="acts">${c.options.map(o =>
@@ -4419,7 +4577,7 @@ function secCross(c) {
   return `<p class="lede">Tracks in several playlists. Usually deliberate — nothing is preselected. Tap a playlist to remove the track from just that one.</p>
     <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
       `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-act="cmin" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
-    <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
+    <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
@@ -4463,7 +4621,7 @@ function secSound(c) {
   const checked = acc?.scored ? `<p class="sub tsacc">Checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
     acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>` : '';
   const lede = `<p class="lede">Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn't place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>`;
-  if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true });
+  if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true }) + (c.skeleton ? c.skeleton('rows', 3) : '');
   if (TSOUND.status === 'error' && !TSOUND.res) return lede + emptyState('Couldn’t compare by sound', esc(TSOUND.err ?? ''), { compact: true });
   const m = rows.filter(x => x.band === band);
   return `${lede}${checked}
@@ -4471,7 +4629,7 @@ function secSound(c) {
       `<button type="button" aria-pressed="${band === b}" data-act="tsb" data-tsb="${b}">${mfBandChip(c, vm === 'HIGH' ? 'high' : 'medium')} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
     <div class="rows">${m.slice(0, shownOf('tsound-' + band)).map(x => {
       const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
-      return `<div class="row tsrow ${done ? 'done' : ''}">${thumbHTML(t)}<div class="main">
+      return `<div class="row tsrow ${done ? 'done' : ''}" data-flip data-key="${esc(`ts:${x.id}`)}">${thumbHTML(t)}<div class="main">
         <div class="ttl">${esc(t.title)} <span class="sub">— ${esc(t.artist)}</span></div>
         <div class="tssound">${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
         <div class="swap"><span class="from">${esc(x.fromName)}</span><span class="arw">→</span><span class="to">${esc(x.toName)}</span>
@@ -4511,7 +4669,7 @@ function secMisfile(c) {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
       const playedALot = recentlyActive?.has(x.artist);
-      return `<div class="row ${done ? 'done' : ''}">${thumbHTML(x)}<div class="main">
+      return `<div class="row ${done ? 'done' : ''}" data-flip data-key="${esc(`mf:${x.id}:${x.currentPlaylistId}`)}">${thumbHTML(x)}<div class="main">
         <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
         ${to ? `<div class="swap"><span class="from">${esc(x.current)}</span><span class="arw">→</span><span class="to">${esc(to.name)}</span>
           <span class="mono" style="color:var(--ink-3)">${(x.currentScore * 100).toFixed(0)}% → ${(to.score * 100).toFixed(0)}%</span></div>`
@@ -4868,16 +5026,16 @@ function mixEnergyHTML(energy, { labelsShownNow, esc }) {
   return `<div class="mx-arc" role="img" aria-label="Energy along the mix, calm to intense">${energy.map(e =>
     `<span style="height:${Math.max(8, Math.round(e * 100))}%"></span>`).join('')}</div>`;
 }
-function mixHTML(mix, tracks, p, { S, esc, emptyState, artistOf, MIX_PAGE, MIX_MODES, labelsShownNow, BetterfyAudio }) {
+function mixHTML(mix, tracks, p, { S, esc, emptyState, skeleton, artistOf, MIX_PAGE, MIX_MODES, labelsShownNow, BetterfyAudio }) {
   if (mix.pending) return MIX_PAGE.err
     ? emptyState('The mix couldn’t load', esc(MIX_PAGE.err), { compact: true })
-    : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true });
+    : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true }) + (skeleton ? skeleton('rows', 4) : '');
   const st = mix.stats, nv = mix.naive, bpmOn = BetterfyAudio?.bpmShown ? BetterfyAudio.bpmShown() : true;
   const row = (t, i) => {
     const heard = i < mix.mixed, step = i > 0 && i < mix.mixed ? mix.steps[i - 1] : null;
     const bpm = heard && bpmOn ? mixBpmOf(mix.index, t.id) : null;
     const jump = step && !step.rel;
-    return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}">
+    return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}" data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
       <span class="a">${esc(artistOf(t))}</span>${bpm ? `<span class="mx-bpm"${step?.rel && step.rel !== 'same' ? ` title="${step.rel === 'half' ? 'double' : 'half'} time"` : ''}>${bpm}</span>` : ''}${jump ? '<span class="mx-tag">tempo change</span>' : ''}</div>`;
@@ -4946,7 +5104,7 @@ function view(ctx) {
     </div>
     <p class="lede" style="margin:-10px 0 20px; font-size:14px">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
     <h2>Order</h2>
-    <div class="order">${order.slice(0,40).map((t,i) => `<div>
+    <div class="order">${order.slice(0,40).map((t,i) => `<div data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
       <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;
@@ -5383,6 +5541,7 @@ Object.assign(globalThis, __mod["credits.mjs"]);
 Object.assign(globalThis, __mod["profile.mjs"]);
 Object.assign(globalThis, __mod["core/playlists/axes.mjs"]);
 Object.assign(globalThis, __mod["web/ui/sound.mjs"]);
+Object.assign(globalThis, __mod["web/app/patch.mjs"]);
 globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], tidy: __mod["web/screens/tidy.mjs"], lists: __mod["web/screens/lists.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"], new: __mod["web/screens/new.mjs"] };
 /* =============================================================== */
 
@@ -5777,7 +5936,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-1051';
+const BUILD = '2026-11-15-1054';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -6098,7 +6257,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-1051', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-1054', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -8853,6 +9012,8 @@ function skeleton(kind, n) {
 // File is the home tab: the `home` module composes the status strip, the File
 // deck (the `inbox` module) and Up next. Library is the `lists` module; New
 // playlists and Shuffle open from it and carry a way back (libBack, app/shell.js).
+/** The screen last drawn into #main, or null when the next draw must replace it whole. */
+let paintedView = null;
 const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
                 lists:screenView('lists'),
                 new:() => libBack('new') + screenView('new')(),
@@ -8874,7 +9035,14 @@ function render(dir) {
 
   const main = $('#main');
   main.dataset.view = view;
-  main.innerHTML = VIEWS[view]();
+  // The screen already showing, redrawn in place (a click, a store repaint):
+  // patch() keeps the focused input, its caret and scroll, and slides rows
+  // that moved (A5, UI-G). A screen change or a sync (stage() forgets what was
+  // painted) is a full replace.
+  const html = VIEWS[view]();
+  if (dir === undefined && paintedView === view && typeof patch === 'function') patch(main, html);
+  else main.innerHTML = html;
+  paintedView = view;
   for (const m of actScreens(view)) SCREEN_MODS[m]?.mount?.(screenCtx(m));
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
@@ -8968,13 +9136,17 @@ function morphArt(cover, id, update) {
 /** Drag the top inbox card: right files it into the best suggestion, left skips. */
 function bindSwipeCard() {
   const card = $('#swipeCard');
-  if (!card) return;
+  // patch() keeps this node across a re-render, so its listeners are bound once;
+  // they read the card's data-best and verdict children live.
+  if (!card || card._swipeBound) return;
+  card._swipeBound = true;
   const TH = 76;                       // travel, in px, before a swipe counts
   let x0 = 0, y0 = 0, dx = 0, mode = null, trail = [];
   const FLICK = 0.55, FLICK_MIN = 28;   // px/ms, and the least travel a flick may commit on
-  const vFile = card.querySelector('.verdict.file'), vSkip = card.querySelector('.verdict.skip');
+  const verdicts = () => [card.querySelector('.verdict.file'), card.querySelector('.verdict.skip')];
 
   const paint = () => {
+    const [vFile, vSkip] = verdicts();
     const t = Math.max(-1, Math.min(1, dx / 160));
     card.style.transform = `translate3d(${dx}px,0,0) rotate(${t * 6}deg)`;
     if (vFile) vFile.style.opacity = dx > 12 ? Math.min(1, (dx - 12) / 60) : 0;
@@ -8985,6 +9157,7 @@ function bindSwipeCard() {
   const reset = () => {
     card.classList.remove('drag', 'to-file', 'to-skip');
     card.style.transform = '';
+    const [vFile, vSkip] = verdicts();
     if (vFile) vFile.style.opacity = 0;
     if (vSkip) vSkip.style.opacity = 0;
   };
@@ -9250,7 +9423,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-1051';
+    s.src = 'engine.js?v=2026-11-15-1054';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -9272,7 +9445,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-1051');
+    const w = new Worker('engine-worker.js?v=2026-11-15-1054');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9747,7 +9920,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-1051';
+    s.src = 'audio.js?v=2026-11-15-1054';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -9783,7 +9956,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1051', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1054', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -10517,7 +10690,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1051', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1054', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -10796,6 +10969,7 @@ SCREEN_CTX.tidy = () => ({
   store, getListening, toast, render, saveTheme, recordKeep, recordMove, playlistIds, delTracks, addTracks,
   logAction, getLog, undoAction, newGroup, tidySoundOn, tidySoundRows, tidySoundCount, tidySoundWarm,
   get bandChip() { return typeof bandChip === 'function' ? bandChip : undefined; },
+  get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get LISTENING_CACHE() { return LISTENING_CACHE; },
   get LISTENING_PENDING() { return LISTENING_PENDING; },
 });
@@ -10831,6 +11005,7 @@ Object.assign(SCREEN_CTX, {
 // --- shuffle/discover ---
 SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, dedupe, spacedShuffle, shuffleStats, rnd, artistOf,
   mixHeardIn, shuffleMix, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
+  get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
   labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
 SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
@@ -11252,10 +11427,12 @@ const LOGO_HTML = `<svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
 </svg>Better<span>fy</span>`;
 
 function stage(msg, pct, extra = '') {
+  paintedView = null;
   $('#app').hidden = true; $('#land').hidden = false;
   $('#land').innerHTML = `<h1 class="logo">${LOGO_HTML}</h1>
     <p class="tagline">${esc(msg)}</p>
-    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>${extra}`;
+    <div class="prog" style="max-width:420px"><i style="width:${(pct*100).toFixed(1)}%"></i></div>${extra}
+    <div style="max-width:420px;margin:24px auto 0">${typeof skeleton === 'function' ? skeleton('card', 1) : ''}</div>`;
 }
 
 // A single 429 is ordinary. Several in a row on this page's default client ID

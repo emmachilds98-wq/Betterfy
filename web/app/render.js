@@ -1,6 +1,8 @@
 // File is the home tab: the `home` module composes the status strip, the File
 // deck (the `inbox` module) and Up next. Library is the `lists` module; New
 // playlists and Shuffle open from it and carry a way back (libBack, app/shell.js).
+/** The screen last drawn into #main, or null when the next draw must replace it whole. */
+let paintedView = null;
 const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
                 lists:screenView('lists'),
                 new:() => libBack('new') + screenView('new')(),
@@ -22,7 +24,14 @@ function render(dir) {
 
   const main = $('#main');
   main.dataset.view = view;
-  main.innerHTML = VIEWS[view]();
+  // The screen already showing, redrawn in place (a click, a store repaint):
+  // patch() keeps the focused input, its caret and scroll, and slides rows
+  // that moved (A5, UI-G). A screen change or a sync (stage() forgets what was
+  // painted) is a full replace.
+  const html = VIEWS[view]();
+  if (dir === undefined && paintedView === view && typeof patch === 'function') patch(main, html);
+  else main.innerHTML = html;
+  paintedView = view;
   for (const m of actScreens(view)) SCREEN_MODS[m]?.mount?.(screenCtx(m));
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
