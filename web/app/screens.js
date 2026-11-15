@@ -26,7 +26,7 @@ const SCREEN_CTX = {
 const screenCtx = name => SCREEN_CTX[name]();
 
 /** The VIEWS entry for a migrated screen. */
-const screenView = name => () => SCREEN_MODS[name].view(screenCtx(name));
+function screenView(name) { return () => SCREEN_MODS[name].view(screenCtx(name)); }
 
 /** Run the current screen module's action for the clicked `data-act` element.
  *  Returns true when it handled the event, so the caller can stop there; false
