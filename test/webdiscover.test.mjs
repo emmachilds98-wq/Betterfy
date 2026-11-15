@@ -89,16 +89,15 @@ test('without a Last.fm key Discover still runs, and a key is offered as an opti
   assert.doesNotMatch(html, /Discovery needs a free Last\.fm key/);
   assert.match(html, /No key needed/);
   assert.match(html, /<button class="b p" data-act="discRun" id="discRun" >/, 'the run button is not disabled');
-  assert.match(html, /id="lfmKeyDisc"/, 'a key can still be entered on this screen');
-  assert.match(html, /id="saveLfmDiscover"/);
+  assert.match(html, /data-lfmconnect/, 'a key can still be added: one Connect Last.fm button opens the shared sheet');
+  assert.doesNotMatch(html, /id="lfmKey/, 'no paste box on the screen itself');
   assert.match(html, /Nothing found yet/, 'the empty state is the same one a key gets');
   assert.doesNotMatch(html, /Add a key above to get started/);
 });
 
 test('with a key already saved, no inline form clutters the screen', () => {
   const html = load({ key: 'lfm-key' }).vDiscover();
-  assert.doesNotMatch(html, /id="lfmKeyDisc"/);
-  assert.doesNotMatch(html, /id="saveLfmDiscover"/);
+  assert.doesNotMatch(html, /data-lfmconnect/);
 });
 
 test('the card carries the cover, the track and a real position slider', () => {

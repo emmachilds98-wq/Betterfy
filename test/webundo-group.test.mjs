@@ -139,7 +139,7 @@ test('an ordinary row renders exactly as it did before groups existed', async ()
   app.S.history = [{ at: '2026-11-01T10:00:00.000Z', op: 'remove', playlistId: 'p', playlistName: 'P',
                      trackIds: ['t'], reason: 'duplicate' }];
   assert.equal(app.vHistory(), `<h1>History</h1>
-    <p class="lede">Every change Betterfy made to your Spotify library, newest first. Removals record their position, so undo puts a track back where it was rather than at the end.</p>
+    <p class="lede">Every change Betterfy made, newest first.</p>
     <div class="rows"><div class="row" data-flip data-key="h:2026-11-01T10:00:00.000Z:remove:p"><div class="main">
       <div class="ttl">remove <span class="sub">P</span></div>
       <div class="sub mono">2026-11-01 10:00:00 · 1 track(s) · duplicate</div>

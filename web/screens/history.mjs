@@ -5,7 +5,8 @@
  * already undone says so instead of offering Undo again — a second tap used
  * to re-add a duplicate.
  */
-export function view({ S, esc, isUndone, emptyState }) {
+export function view({ S, esc, isUndone, emptyState, infoBtn }) {
+  const ib = infoBtn ?? (() => '');
   const h = S.history ?? [];
   const byGroup = new Map();
   for (const x of h) if (x.group && x.op !== 'undo') (byGroup.get(x.group) ?? byGroup.set(x.group, []).get(x.group)).push(x);
@@ -34,7 +35,7 @@ export function view({ S, esc, isUndone, emptyState }) {
     </div><div class="acts">${g.every(x => isUndone(x, h)) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(oldest.at)}">Undo</button>`}</div></div>`;
   };
   return `<h1>History</h1>
-    <p class="lede">Every change Betterfy made to your Spotify library, newest first. Removals record their position, so undo puts a track back where it was rather than at the end.</p>
+    <p class="lede">Every change Betterfy made, newest first.${ib('history', 'History', '<p>Removals record their position, so undo puts a track back where it was rather than at the end.</p>')}</p>
     <div class="rows">${rows.map(r => r.group ? grouped(r.group) : one(r.one)).join('')
       || emptyState('Nothing changed yet', 'Every edit Betterfy makes lands here, and can be undone from it.')}</div>`;
 }

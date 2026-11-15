@@ -1,14 +1,5 @@
 <h1>Sources</h1>
-    <p class="lede">Where your genre data comes from, and how to fill the gaps.</p>
-    <details class="how"><summary>How this works</summary>
-      <p>Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set covering many
-        artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
-        Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
-        <b>Wrong tags?</b> under it on a Tidy or File row.</p>
-      <p>Of all the tag weight across your library, <b>90%</b> describes a
-        sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
-        evidence of genre.</p>
-    </details>
+    <p class="lede">Where your genre data comes from.</p>
     <p class="srccov"><b class="mono">9</b> of <span class="mono">10</span>
       artists have genre tags (90%).</p>
 
@@ -16,11 +7,7 @@
     <section class="srccard" id="src-lastfm" aria-labelledby="src-lastfm-h">
     <div class="srchead"><h2 id="src-lastfm-h">Last.fm</h2><span class="tag idle">No key</span></div>
     <p class="srcline">Crowd genre tags for the artists the shipped set doesn't cover. Needs a free API key.</p>
-    <div class="rowbtns">
-        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="" aria-label="Last.fm API key">
-        <button class="b" id="saveLfm" data-act="saveLfm">Save key</button>
-        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
-      </div>
+    <div class="rowbtns"><button class="b" type="button" data-lfmconnect>Connect Last.fm</button></div>
       <div class="rowbtns"><button class="b p" id="enrich" data-act="enrich" disabled>Fetch missing tags (1)</button></div>
   </section>
 

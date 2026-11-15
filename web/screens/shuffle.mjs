@@ -72,7 +72,7 @@ export function view(ctx) {
   S.shufOrder = mix && !mix.pending ? mix.order : mix ? [] : order;
   S.shufOrderMode = mix && !mix.pending ? S.shufMode : null;
   return `<h1>Shuffle</h1>
-    <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
+    <p class="lede">Spotify's shuffle clusters artists; this spaces them out.${ctx.infoBtn?.('shuffle', 'Shuffle', `<p>This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>`) ?? ''}</p>
     <p class="lede" style="margin-top:-8px">${allSongs
       ? `Shuffling from <b>${esc(allSongs.name)}</b> by default — everything in your library, kept in one place.`
       : `No single playlist has everything you own yet.`}
@@ -90,11 +90,11 @@ export function view(ctx) {
         <div class="d">${good.minGap === 1 ? 'slot' : 'slots'} minimum, ${good.within3 ? `${good.within3} ${good.within3 === 1 ? 'pair' : 'pairs'} within three` : 'nothing within three'}, average gap ${good.avgGap}</div></div>
     </div>
     <p class="lede" style="margin:-10px 0 20px; font-size:14px">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
-    <h2>Order</h2>
+    <details class="how orderprev"><summary>Preview the order</summary>
     <div class="order">${order.slice(0,40).map((t,i) => `<div data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
-      <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;
+      <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div></details>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;
 }
 
 

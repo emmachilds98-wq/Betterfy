@@ -12,22 +12,19 @@ function sourceCard(id, name, state, status, line, body) {
 /** Where genre data and (later) listening come from — moved out of Playlists,
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
-export function view({ LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML }) {
+export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
   const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
   return `<h1>Sources</h1>
-    <p class="lede">Where your genre data comes from, and how to fill the gaps.</p>
-    <details class="how"><summary>How this works</summary>
-      <p>Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set covering many
+    <p class="lede">Where your genre data comes from.${infoBtn('sources', 'Genre sources', `<p>Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set covering many
         artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
         Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
         <b>Wrong tags?</b> under it on a Tidy or File row.</p>
       ${genreShare === null ? '' : `<p>Of all the tag weight across your library, <b>${genreShare}%</b> describes a
         sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
-        evidence of genre.</p>`}
-    </details>
+        evidence of genre.</p>`}`)}</p>
     <p class="srccov"><b class="mono">${cov.have.toLocaleString()}</b> of <span class="mono">${cov.total.toLocaleString()}</span>
       artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
 
@@ -35,11 +32,7 @@ export function view({ LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHT
     ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
       'Crowd genre tags for the artists the shipped set doesn\'t cover. '
         + (!lfmOwn && lfm ? 'Using Betterfy\'s shared Last.fm key — add your own to raise limits.' : 'Needs a free API key.'),
-      `<div class="rowbtns">
-        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(lfmOwn)}" aria-label="Last.fm API key">
-        <button class="b" id="saveLfm" data-act="saveLfm">Save key</button>
-        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
-      </div>
+      `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : 'Connect Last.fm'}</button></div>
       <div class="rowbtns"><button class="b p" id="enrich" data-act="enrich" ${lfm ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button></div>`)}
 
     ${sourceCard('wikidata', 'Wikidata', 'ok', 'Free · no key',
@@ -59,12 +52,6 @@ export function view({ LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHT
 }
 
 export const actions = {
-  saveLfm(c) {
-    const v = c.$('#lfmKey').value.trim();
-    if (v) { c.LS.setItem('bf_lfm', v); c.toast('Key saved.'); }
-    else { c.LS.removeItem('bf_lfm'); c.toast('Key cleared.'); }
-    c.render();
-  },
   saveDiscogs(c) {
     const v = c.$('#discogsKey').value.trim();
     if (v) { c.LS.setItem('bf_discogs', v); c.toast('Token saved.'); }

@@ -127,11 +127,11 @@ export function proposalCard(c, p) {
 
 export function view(c) {
   const { R, esc, emptyState } = c;
+  const ib = c.infoBtn ?? (() => '');
   const head = `<h1>New playlists</h1>
-    <p class="lede">Playlists you could make from music you already have.</p>
-    <details class="how"><summary>How this works</summary><p>Genres you have music in but no playlist for,
+    <p class="lede">Playlists you could make from music you already have.${ib('new', 'New playlists', `<p>Genres you have music in but no playlist for,
       playlists that are really two genres, and groups in your backlog that fit nothing you have. Nothing moves:
-      creating makes a new private playlist holding a copy of the tracks.</p></details>`;
+      creating makes a new private playlist holding a copy of the tracks.</p>`)}</p>`;
   const g = gapsSections(c);
   const clusterRows = R.clusters.map((x,i)=>`<div class="row"><div class="main">
       <div class="ttl">${x.size} tracks · ${esc(x.tags.slice(0,4).join(', '))}</div>
