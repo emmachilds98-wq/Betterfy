@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { soundLibrary } from './fixtures/sound-library.mjs';
+import { assertSameHTML } from './golden.mjs';
 
 /*
  * The New playlists screen's proposals by sound (docs/AUDIO-BUILD-PLAN.md
@@ -76,7 +77,7 @@ async function ready(s) { vm.runInContext('vNew()', s); await settle(s); return 
 
 test('with no audio records the screen is byte-identical to the one before sound proposals', async () => {
   const html = await ready(screen());
-  assert.equal(html, NO_AUDIO);
+  assertSameHTML(html, NO_AUDIO);
 });
 
 function soundScreen(kinds) {
@@ -137,5 +138,5 @@ test('creating a hybrid makes one private playlist with exactly its tracks', asy
 test('records that cannot be read leave the screen as it was', async () => {
   const s = screen();
   s.engineAudio = async () => { throw new Error('no store'); };
-  assert.equal(await ready(s), NO_AUDIO);
+  assertSameHTML(await ready(s), NO_AUDIO);
 });

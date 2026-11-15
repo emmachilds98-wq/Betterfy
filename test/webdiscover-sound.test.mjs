@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { GOLDEN, DISCOVER, renderDiscover } from './ui4-cards.mjs';
+import { assertSameHTML } from './golden.mjs';
 
 // UI-4: the Discover card's sound slots, same rule as the File card.
 
@@ -16,8 +17,8 @@ const golden = n => readFileSync(new URL(`discover-${n}.html`, GOLDEN), 'utf8');
 
 for (const [name, t] of Object.entries(DISCOVER)) {
   test(`Discover card "${name}" with no sound data matches the pre-slot golden`, () => {
-    assert.equal(renderDiscover(t, { renderers: stubs }), golden(name));
-    assert.equal(renderDiscover(t, { renderers: fake }), golden(name));
+    assertSameHTML(renderDiscover(t, { renderers: stubs }), golden(name));
+    assertSameHTML(renderDiscover(t, { renderers: fake }), golden(name));
   });
 }
 
