@@ -78,18 +78,29 @@ async function shoot(b, FORM, THEME) {
   // touch-only controls. Turned back on after each shot.
   const cdp = FORM === 'phone' ? await ctx.newCDPSession(pg) : null;
   const touchBack = () => cdp?.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-  const views = ['home','inbox','tidy','discover','shuffle','new','lists','sources','engine','history'];
+  // The four tabs, then Library's two sub-screens.
+  const views = ['inbox','tidy','discover','lists','new','shuffle'];
   for (const v of views) {
     await pg.evaluate(v => { try { go(v); } catch (e) { console.log(e); } }, v);
-    await pg.waitForTimeout(v === 'engine' ? 2500 : 700);
+    await pg.waitForTimeout(700);
     await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-${v}.png`), fullPage: true });
     await touchBack();
   }
-  // Home again with a ListenVM fixture (UI-5): the fifth "Heard" card and the
-  // listening indicator in the chrome. Until UI-2's listenPill() ships (it
+  // The Settings sheet, closed to open: its sections one at a time (UI-D).
+  await pg.evaluate(() => go('inbox'));
+  for (const sec of [null, 'sources', 'engine', 'history']) {
+    await pg.evaluate(s => { try { S.uhOpen = s; openUnderHood(s); } catch (e) { console.log(e); } }, sec);
+    await pg.waitForTimeout(sec === 'engine' ? 2500 : 900);
+    await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-settings${sec ? '-' + sec : ''}.png`) });
+    await pg.evaluate(() => openSettings(false));
+    await pg.waitForTimeout(400);
+    await touchBack();
+  }
+  // File again with a ListenVM fixture (UI-5): the status line's listening part
+  // and the listening indicator in the chrome. Until UI-2's listenPill() ships (it
   // returns '' on main) the slot gets a stand-in pill so its placement shows.
   await pg.evaluate(() => {
-    go('home');
+    go('inbox');
     setListen({ state: 'running', done: 37, total: 412, missed: {}, heard: 1284 });
     const slot = document.getElementById('listenSlot');
     if (slot && !slot.innerHTML) slot.innerHTML = '<span class="ui5-standin" style="display:inline-flex;align-items:center;gap:8px;'
@@ -97,7 +108,7 @@ async function shoot(b, FORM, THEME) {
       + 'font:600 12.5px var(--mono);white-space:nowrap">▮▮▮▯▯ Listening · 37 / 412</span>';
   });
   await pg.waitForTimeout(700);
-  await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-home-listening.png`), fullPage: FORM !== 'phone' });
+  await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-file-listening.png`), fullPage: FORM !== 'phone' });
   await pg.evaluate(() => setListen(null));
   await ctx.close();
   // The landing page: same server, no token.

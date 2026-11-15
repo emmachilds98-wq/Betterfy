@@ -85,29 +85,6 @@
   .compact .row{padding:6px 12px 6px 15px}
   .compact .rows{gap:4px}
 
-  /* ---- the "More" sheet: the screens that don't fit the tab bar ---- */
-  .sheet{position:fixed; left:0; right:0; bottom:0; z-index:30; background:var(--surface);
-         border-top:1px solid var(--line); border-radius:20px 20px 0 0; box-shadow:0 -12px 34px rgba(0,0,0,.22);
-         transform:translateY(101%); visibility:hidden; transition:transform var(--dur-3) var(--ease-out);
-         padding-bottom:calc(var(--sab) + 12px); max-height:88dvh; display:flex; flex-direction:column}
-  .sheet.open{transform:translateY(0); visibility:visible}
-  /* On a wide screen a full-bleed drawer reads as a mistake. Same sheet,
-     narrowed and centred, so it is clearly a panel over the page. */
-  @media (min-width:821px){
-    .sheet{left:50%; right:auto; width:420px; transform:translate(-50%,101%);
-           border-radius:20px; border:1px solid var(--line); bottom:18px; padding-bottom:12px}
-    .sheet.open{transform:translate(-50%,0)}
-  }
-  .sheet h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0; padding:2px 20px 12px}
-  .sheetlist{overflow-y:auto; overscroll-behavior:contain; padding:0 12px 6px}
-  .sheet .nav{border:0; border-radius:14px; padding:12px 14px; font-size:14.5px; font-weight:600;
-        justify-content:flex-start; width:100%; white-space:normal}
-  .sheet .nav .ic{display:grid}
-  .sheet .nav .lbl{flex:1; text-align:left}
-  .sheet .nav[aria-current="true"]{background:var(--surface-2); color:var(--vc)}
-  .sheet .nav[aria-current="true"] .c{background:var(--surface-3); color:var(--ink-2)}
-  .sheet .nav .ic{width:22px; height:22px} .sheet .nav .ic svg{width:19px; height:19px}
-  .sheetfoot{display:flex; gap:8px; padding:12px 20px 0; border-top:1px solid var(--line); flex-wrap:wrap}
 
   /* ---- swiping between screens ---- */
   /* Screen change is a View Transition (web/app/motion.js): <main> is the only

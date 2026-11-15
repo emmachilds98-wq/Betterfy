@@ -204,7 +204,7 @@ function openSettings(open) {
   const panel = $('#settingsPanel'), scrim = $('#scrim'), trigger = $('#btnSettings');
   panel.classList.toggle('open', open); scrim.classList.toggle('open', open);
   panel.setAttribute('aria-hidden', String(!open)); trigger.setAttribute('aria-expanded', String(open));
-  if (open) $('#closeSettings').focus(); else trigger.focus();
+  if (open) { $('#closeSettings').focus(); underHoodOpen(); } else trigger.focus();
   routeNote();
 }
 
@@ -234,11 +234,10 @@ function initSettingsPanel() {
   const panel = $('#settingsPanel'), scrim = $('#scrim'), trigger = $('#btnSettings');
   trigger.onclick = () => openSettings(!panel.classList.contains('open'));
   $('#closeSettings').onclick = () => openSettings(false);
-  scrim.onclick = () => { openSettings(false); openSheet(false); };
+  scrim.onclick = () => openSettings(false);
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     if (panel.classList.contains('open')) openSettings(false);
-    closeSheet();
   });
 
   // On System, the accent has to swap to its other twin when the phone does.

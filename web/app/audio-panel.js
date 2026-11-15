@@ -2,7 +2,7 @@
 let AUDIO_DRAW = 0;
 function audioRedraw() {
   setListen(AUDIO.vm);
-  if (view !== 'sources') return;
+  if (!settingsOpen() || S.uhOpen !== 'sources') return;
   if (AUDIO_DRAW) return;
   AUDIO_DRAW = requestAnimationFrame(() => {
     AUDIO_DRAW = 0;

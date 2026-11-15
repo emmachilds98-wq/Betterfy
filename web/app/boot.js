@@ -280,6 +280,8 @@ async function start(force) {
     $('#who').textContent = whoName;
     $('#sheetWho').textContent = whoName;
     view = ROUTER.start(); S.inboxAt = 0; render();
+    // An old link such as #/sources opens the Settings sheet on that section.
+    const landed = ROUTER.section; if (landed) openUnderHood(landed);
     window.scrollTo(0, 0);
     // Background, after the first paint — never delays it, and only redraws
     // again if another device actually had feedback this one did not, rather

@@ -1,0 +1,55 @@
+  /* ================= the shell (UI-D) =================
+     The File tab's status line and Up next strip, Library's segmented switch,
+     and the Settings sheet's "Under the hood" sections. */
+
+  /* One line: "42 to file · 1 to tidy · listening 37/412". */
+  .status{display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; margin:0 0 14px;
+          font-size:14px; color:var(--ink-2)}
+  .status b{font-family:var(--mono); font-weight:600; color:var(--ink)}
+  .status .dot{color:var(--ink-3)}
+  .status button{appearance:none; border:0; background:none; font:inherit; color:inherit; padding:0; cursor:pointer;
+          text-decoration:underline; text-decoration-color:var(--line-2); text-underline-offset:3px}
+  .status button:hover{color:var(--ink); text-decoration-color:var(--accent)}
+  .status .st-listen{color:var(--m2-ink, var(--ink-2))}
+
+  /* Up next: a strip you scroll sideways, under the deck. */
+  .upnext.strip{display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x proximity; padding:2px 2px 12px;
+          scrollbar-width:thin; -webkit-overflow-scrolling:touch}
+  .upnext.strip .u{flex:0 0 150px; scroll-snap-align:start; text-align:left; font:inherit; color:inherit; cursor:pointer}
+  .upnext.strip .u .cov{font-size:34px}
+  .upnext.strip .u .bd{padding:10px 12px 12px}
+  .upnext.strip .u .t{font-size:14px}
+  .upnext.strip .u .a{font-size:12.5px}
+  .upnext.strip .u .h{margin-top:7px; font-size:11px}
+  .libbar{margin-top:18px}
+
+  /* Library's way into New playlists and Shuffle. */
+  .libnav{display:flex; gap:4px; margin:0 0 16px; padding:4px; border-radius:999px; background:var(--surface-2);
+          width:max-content; max-width:100%; overflow-x:auto; scrollbar-width:none}
+  .libnav::-webkit-scrollbar{display:none}
+  .libnav .seg{appearance:none; border:0; background:none; font:inherit; font-size:13.5px; font-weight:600;
+          color:var(--ink-2); padding:7px 14px; border-radius:999px; cursor:pointer; white-space:nowrap;
+          transition:background var(--dur-1) ease, color var(--dur-1) ease}
+  .libnav .seg:hover{color:var(--ink)}
+  .libnav .seg[aria-selected="true"]{background:var(--surface); color:var(--ink); box-shadow:inset 0 0 0 1px var(--line-2)}
+  .libnav .c{display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 5px; margin-left:5px;
+          border-radius:9px; background:var(--m2); color:var(--m2-ink, #fff); font-size:10.5px; font-weight:700}
+
+  /* Settings: Under the hood. */
+  .settings-body #underHood{gap:0}
+  .uh{border:1px solid var(--line); border-radius:var(--r-2); margin:0 0 8px; background:var(--surface)}
+  .uh.open{background:var(--surface-2)}
+  .uhhead{appearance:none; border:0; background:none; font:inherit; color:inherit; cursor:pointer; width:100%;
+          display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; text-align:left}
+  .settings-body .uhhead{align-self:stretch}
+  .uht{display:flex; flex-direction:column; gap:2px; min-width:0}
+  .uht b{font-size:14.5px}
+  .uhs{font-size:12px; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .uhhead .chev{flex:none; width:8px; height:8px; border-right:2px solid var(--ink-3); border-bottom:2px solid var(--ink-3);
+          transform:rotate(45deg); transition:transform var(--dur-2) var(--ease-out)}
+  .uh.open .chev{transform:rotate(-135deg)}
+  .uhbody{padding:2px 14px 16px; overflow-x:auto}
+  /* The modules were written as whole screens: keep them inside a 390px sheet. */
+  .uhbody h2{font-size:15px; margin-top:18px}
+  .uhbody .card,.uhbody .panel{padding:14px; border-radius:var(--r-2)}
+  .uhbody table{max-width:100%}

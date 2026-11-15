@@ -17,7 +17,6 @@ document.addEventListener('keydown', guard(async e => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   const next = VORDER[VORDER.indexOf(view) + (e.key === 'ArrowRight' ? 1 : -1)];
   if (!next) return;
-  if (next === 'history') S.history = await getLog();
   go(next);
 }));
 

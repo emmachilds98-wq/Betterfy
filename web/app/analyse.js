@@ -82,7 +82,7 @@ function analyseDeps() {
       if (el) { el.hidden = !st.running; el.querySelector('.txt').textContent = analyseStatus(st); }
       const b = document.getElementById('analyseGo'); if (b) b.disabled = !!st.running;
     },
-    go: v => { if (view === 'home') go(v); },
+    go: v => { if (view === 'inbox') go(v); },
   };
 }
 

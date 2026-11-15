@@ -1,6 +1,11 @@
-const VIEWS = { home:screenView('home'), inbox:screenView('inbox'), tidy:vTidy,
-                new:vNew, discover:screenView('discover'), shuffle:screenView('shuffle'), lists:vLists,
-                engine:screenView('engine'), history:screenView('history'), sources:screenView('sources') };
+// File is the home tab: the `home` module composes the status strip, the File
+// deck (the `inbox` module) and Up next. Library is, for now, Playlists with
+// New playlists and Shuffle one tap away (libNav, app/shell.js); the screens
+// themselves are untouched.
+const VIEWS = { inbox:screenView('home'), tidy:vTidy, discover:screenView('discover'),
+                lists:() => libNav('lists') + vLists(),
+                new:() => libNav('new') + vNew(),
+                shuffle:() => libNav('shuffle') + screenView('shuffle')() };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -19,11 +24,12 @@ function render(dir) {
   const main = $('#main');
   main.dataset.view = view;
   main.innerHTML = VIEWS[view]();
-  SCREEN_MODS[view]?.mount?.(screenCtx(view));
+  for (const m of actScreens(view)) SCREEN_MODS[m]?.mount?.(screenCtx(m));
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
-  document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
-  $('#tabMore').setAttribute('aria-current', String(SECONDARY.has(view)));
+  document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === tabOf(view))));
+  // The Settings sheet's sections repaint with the page they sit on.
+  underHoodRefresh();
 
   const counts = { inbox:R.backlog.length, tidy:R.within.length + R.misfiled.length,
                    new:R.clusters.length, lists:LIB.playlists.length };
@@ -32,11 +38,6 @@ function render(dir) {
     // On the tab bar this rides the icon, so it has to stay narrow.
     el.textContent = !n ? '' : n > 999 ? '999+' : String(n);
   });
-
-  const dots = $('#dots');
-  if (dots.childElementCount !== VORDER.length) dots.innerHTML = VORDER.map(() => '<i></i>').join('');
-  const at = VORDER.indexOf(view);
-  [...dots.children].forEach((d, i) => d.classList.toggle('on', i === at));
 
   bindSwipeCard();
 
@@ -50,6 +51,14 @@ function render(dir) {
 
 /** Move to another screen: animates in the direction of travel and starts at the top. */
 function go(v) {
+  // Screens that moved: Home became File; Sources, Engine and History became
+  // sections of the Settings sheet. Anything still asking for them lands there.
+  if (LEGACY_VIEWS[v]) {
+    const to = LEGACY_VIEWS[v];
+    return to.section ? openUnderHood(to.section) : go(to.view);
+  }
+  // A tap on a tab or card takes you out of the sheet.
+  if (settingsOpen()) openSettings(false);
   if (v === view) return render();
   const dir = VORDER.indexOf(v) >= VORDER.indexOf(view) ? 1 : -1;
   view = v;

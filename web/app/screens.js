@@ -39,16 +39,20 @@ async function dispatchAct(e) {
   const el = e.target.closest?.('[data-act]');
   if (!el) return false;
   if ((e.type === 'change') !== el.matches('select, input[type=checkbox], input[type=radio]')) return false;
-  const fn = SCREEN_MODS[view]?.actions?.[el.dataset.act];
-  if (!fn) return false;
-  await fn(screenCtx(view), el, e);
+  // A control inside a Settings section belongs to that section's module,
+  // whichever tab is showing behind the sheet.
+  const host = el.closest('[data-uh]')?.dataset.uh;
+  const owner = (host ? [host] : actScreens(view)).find(n => SCREEN_MODS[n]?.actions?.[el.dataset.act]);
+  if (!owner) return false;
+  await SCREEN_MODS[owner].actions[el.dataset.act](screenCtx(owner), el, e);
   return true;
 }
 
 // --- home/inbox ---
 Object.assign(SCREEN_CTX, {
-  home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenEverRan, listenHeard, listenTarget, tagCoverage,
-                 analyseHTML, analyseGo, VHUE, HEARD_HUE, hueOf, filePicks, go }),
+  // The File tab: the status line and Up next around the `inbox` module's deck.
+  home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks,
+                 render, openUnderHood, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
                   addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, recordSkip, recordReject,

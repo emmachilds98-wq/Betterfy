@@ -2,8 +2,6 @@ document.addEventListener('click', guard(async e => {
   if (await dispatchAct(e)) return;
   const nav = e.target.closest('.nav');
   if (nav) {
-    closeSheet();
-    if (nav.dataset.v === 'history') S.history = await getLog();
     return go(nav.dataset.v);
   }
 

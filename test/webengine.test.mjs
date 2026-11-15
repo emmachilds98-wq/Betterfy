@@ -281,15 +281,13 @@ test('an engine that cannot be fetched leaves a retry, not a dead screen', async
   assert.match(html, /data-act="go"/, 'and the retry must still be reachable');
 });
 
-test('the screen is reachable: it is in the view table, the order and the bar', () => {
+test('the screen is reachable: it is a section of the Settings sheet, and old links land there', () => {
   // A screen nothing routes to is a screen nobody can open, and that failure is
   // invisible to every test that calls the screen's view directly.
-  assert.match(PAGE, /engine:screenView\('engine'\)/, 'VIEWS must map the view');
-  assert.match(PAGE, /'lists','engine','history'/, 'VORDER must include it, for swipe and keys');
-  assert.match(PAGE, /engine:'Engine'/, 'VTITLE must name it');
-  assert.match(PAGE, /SECONDARY = new Set\(\[[^\]]*'engine'/, 'it belongs behind More, not on the bar');
-  assert.match(PAGE, /data-v="engine"/, 'and a nav button must exist');
-  assert.match(PAGE, /\[data-v="engine"\]\{--vc:/, 'with a screen colour, like every other view');
+  assert.match(PAGE, /\['engine', 'Engine', /, 'Under the hood must list it');
+  assert.match(PAGE, /engine:\s*\{ section: 'engine' \}/, 'and the old #/engine link and go(\'engine\') must map to it');
+  assert.ok(!/data-v="engine"/.test(PAGE), 'it is not on the tab bar');
+  assert.match(PAGE, /SCREEN_MODS\[name\]\.view\(screenCtx\(name\)\)/, 'the sheet paints the module as it always was');
 });
 
 
