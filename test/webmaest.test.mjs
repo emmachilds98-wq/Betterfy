@@ -14,7 +14,7 @@ function slice(from, to, what) {
   assert.ok(i > 0 && j > i, `${what} was not found — rebuild with npm run build:web`);
   return PAGE.slice(i, j);
 }
-const ENGINE_IN = slice('const engineAudioIn = audio =>', '/* ====', 'engineAudioIn');
+const ENGINE_IN = slice('const engineAudioBase = audio =>', '/* ====', 'engineAudioIn');
 const DEEP = slice('function deepPanelHTML()', 'function bridgeProgressText()', 'the Deep listen block');
 
 const rec = (id, maest) => {
