@@ -8,13 +8,48 @@ const isPhone = () => innerWidth <= 820;
 // Set while the inbox card owns the current gesture, so the screen-level
 // swipe below doesn't try to change screen out from under it.
 let gestureClaimed = false;
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** The File card leaving: a ghost copy flies off while the real deck redraws
+ *  underneath, so filing never waits on the animation (or on Spotify). dir is
+ *  +1 for filed (right), -1 for skipped. Reduced motion: a cut. */
+function flyCard(dir) {
+  const card = $('#swipeCard');
+  if (!card || calm()) return;
+  const from = card.style.transform;
+  card.style.transition = 'none'; card.style.transform = '';
+  const r = card.getBoundingClientRect();
+  const g = card.cloneNode(true);
+  g.removeAttribute('id'); g.removeAttribute('data-best'); g.setAttribute('aria-hidden', 'true');
+  g.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'));
+  g.querySelectorAll('[style*="view-transition-name"]').forEach(n => { n.style.viewTransitionName = 'none'; });
+  g.classList.remove('drag', 'to-file', 'to-skip', 'promote');
+  Object.assign(g.style, { position: 'fixed', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px',
+    height: r.height + 'px', margin: '0', zIndex: '60', pointerEvents: 'none', transition: 'none', transform: from });
+  document.body.appendChild(g);
+  g.getBoundingClientRect();
+  g.style.transition = 'transform var(--dur-3) var(--ease-in), opacity var(--dur-3) var(--ease-in)';
+  g.style.transform = `translate3d(${dir * 120}vw,40px,0) rotate(${dir * 14}deg)`;
+  g.style.opacity = '0';
+  setTimeout(() => g.remove(), 450);
+}
+
+/** Up-next cover -> File card art: name both ends the same, redraw inside a
+ *  View Transition. Anywhere without them (or with reduced motion) it is a plain redraw. */
+function morphArt(cover, id, update) {
+  if (!cover || !id || !document.startViewTransition || calm()) return update();
+  const name = 'art-' + String(id).replace(/[^\w-]/g, '');
+  cover.style.viewTransitionName = name;
+  document.startViewTransition(() => { update(); const a = document.querySelector('#swipeCard .artwrap'); if (a) a.style.viewTransitionName = name; });
+}
 
 /** Drag the top inbox card: right files it into the best suggestion, left skips. */
 function bindSwipeCard() {
   const card = $('#swipeCard');
   if (!card) return;
   const TH = 76;                       // travel, in px, before a swipe counts
-  let x0 = 0, y0 = 0, dx = 0, mode = null;
+  let x0 = 0, y0 = 0, dx = 0, mode = null, trail = [];
+  const FLICK = 0.55, FLICK_MIN = 28;   // px/ms, and the least travel a flick may commit on
   const vFile = card.querySelector('.verdict.file'), vSkip = card.querySelector('.verdict.skip');
 
   const paint = () => {
@@ -34,7 +69,7 @@ function bindSwipeCard() {
 
   card.addEventListener('touchstart', e => {
     if (e.touches.length !== 1) return;
-    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null; trail = [];
   }, { passive: true });
 
   card.addEventListener('touchmove', e => {
@@ -49,23 +84,26 @@ function bindSwipeCard() {
     }
     if (mode !== 'swipe') return;
     dx = nx; paint();
+    trail.push([e.timeStamp, nx]); if (trail.length > 8) trail.shift();
   }, { passive: true });
 
   const finish = () => {
     if (mode !== 'swipe') { gestureClaimed = false; mode = null; return; }
     mode = null; gestureClaimed = false;
     const best = card.dataset.best;
-    // A pending tap selection wins over the single best guess — swiping is
+    // Speed over the last ~100 ms: a quick flick commits below the distance threshold.
+    const [t1, x1] = trail[trail.length - 1] ?? [0, dx];
+    const [t0, x0v] = trail.find(([tt]) => t1 - tt <= 100) ?? [t1, x1];
+    const v = t1 > t0 ? (x1 - x0v) / (t1 - t0) : 0;
+    const flickR = v > FLICK && dx > FLICK_MIN, flickL = v < -FLICK && dx < -FLICK_MIN;
+    // A pending tap selection wins over the single best guess: swiping is
     // then "confirm what I picked", not "override it with something else".
-    if (dx > TH && (S.fileSel.size > 0 || best)) {
+    if ((dx > TH || flickR) && (S.fileSel.size > 0 || best)) {
       buzz(12);
-      card.classList.add('gone');
-      card.style.transform = 'translate3d(120vw,40px,0) rotate(14deg)';
-      fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : best));
-    } else if (dx < -TH) {
+      fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : best));   // flies the card out itself
+    } else if (dx < -TH || flickL) {
       buzz(8);
-      card.classList.add('gone');
-      card.style.transform = 'translate3d(-120vw,40px,0) rotate(-14deg)';
+      flyCard(-1);
       fire(inboxAct('skip'));
     } else reset();
   };

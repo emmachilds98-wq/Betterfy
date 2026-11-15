@@ -1,0 +1,49 @@
+/* ================= motion, part two (UI-G, docs/BUILD-5-PLAN.md §4.2) =================
+   Entrances via @starting-style, skeletons, the scroll-driven title.
+   Reduced motion turns every one of these off at the bottom. */
+
+/* ---- entrances: rows that appear, the listening pill, popovers ---- */
+.lpill, .lc-head .lpill{transition:opacity var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-spring)}
+@starting-style{ .lpill{opacity:0; transform:scale(.9)} }
+[data-flip]{transition:opacity var(--dur-3) var(--ease-out)}
+@starting-style{ [data-flip]{opacity:0} }
+[popover]{transition:opacity var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-spring),
+          overlay var(--dur-2) allow-discrete, display var(--dur-2) allow-discrete}
+[popover]:not(:popover-open){opacity:0; transform:translateY(6px) scale(.97)}
+@starting-style{ [popover]:popover-open{opacity:0; transform:translateY(6px) scale(.97)} }
+/* The settings sheet already slides on transform; let it also leave visibility
+   on the same clock so it is not cut at the end. */
+.settings{transition:transform var(--dur-3) var(--ease-out), visibility var(--dur-3) allow-discrete}
+
+/* ---- skeletons (motion.js skeleton()) ---- */
+.sk{display:block; border-radius:6px; background:var(--surface-2);
+    background-image:linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--ink) 7%, transparent) 50%, transparent 70%);
+    background-size:200% 100%; animation:skShimmer 1.4s linear infinite}
+@keyframes skShimmer{from{background-position:120% 0} to{background-position:-80% 0}}
+.sk-wrap{display:flex; flex-direction:column; gap:12px}
+.sk-row{display:flex; align-items:center; gap:12px; padding:8px 0}
+.sk-row > span{flex:1; display:flex; flex-direction:column; gap:8px; min-width:0}
+.sk-cov{width:44px; height:44px; flex:none; border-radius:var(--r-1, 8px)}
+.sk-l1{height:12px; width:62%}
+.sk-l2{height:10px; width:38%}
+.sk-card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-4); padding:22px;
+         display:flex; flex-direction:column; gap:12px}
+.sk-art{width:100%; aspect-ratio:1; max-height:260px; border-radius:var(--r-2)}
+
+/* ---- large title into the header title as the page scrolls ----
+   Opt-in markup: .lgtitle (the big one in the page) and .hdrtitle (the small
+   one in the bar, rendered hidden-by-opacity). Browsers without scroll-driven
+   animations just show the large title and no header title. */
+@supports (animation-timeline: scroll()) {
+  .hdrtitle{opacity:0; animation:hdrTitleIn linear both; animation-timeline:scroll(root block); animation-range:0 120px}
+  .lgtitle{animation:lgTitleOut linear both; animation-timeline:scroll(root block); animation-range:0 120px}
+  @keyframes hdrTitleIn{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
+  @keyframes lgTitleOut{from{opacity:1; transform:none} to{opacity:0; transform:translateY(-8px)}}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .sk{animation:none}
+  .hdrtitle{animation:none}
+  .lgtitle{animation:none}
+  @starting-style{ .lpill, [data-flip], .toast, [popover]:popover-open, .acts4 .act{opacity:1; transform:none} }
+}

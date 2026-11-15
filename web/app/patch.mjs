@@ -35,8 +35,11 @@ export function patch(el, html) {
   const tpl = doc.createElement('template');
   tpl.innerHTML = html;
   const saved = remember(el, doc);
+  // Rows that opt in with data-flip slide to their new place (motion.js).
+  const flip = typeof globalThis.flipRecord === 'function' ? globalThis.flipRecord(el) : null;
   morphChildren(el, tpl.content, saved.active);
   restore(saved, doc);
+  if (flip && flip.size) globalThis.flipPlay(el, flip);
   return el;
 }
 
