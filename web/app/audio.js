@@ -1,8 +1,8 @@
 /* ===========================================================================
  * "Listen to my music" (docs/AUDIO-BUILD-PLAN.md WP-B2)
  *
- * Off until the listener switches it on, and then it costs nothing else
- * until it does: docs/audio.js (~120 KB) is fetched on first use, the
+ * On by default (switching it off is saved and wins), and it costs nothing
+ * before listening starts: docs/audio.js (~120 KB) is fetched on first use, the
  * models (~22 MB, self-hosted under models/) and onnxruntime-web's WASM
  * (~15 MB, jsDelivr) only when listening actually starts, and only on Wi-Fi
  * unless told otherwise. Each track is looked up on Deezer by its ISRC, two
@@ -37,7 +37,7 @@ function audioLoad() {
 function audioSettings() {
   if (globalThis.BetterfyAudio) return BetterfyAudio.readAudioSettings(LS);
   let s = null; try { s = JSON.parse(LS.getItem('bf_audio') || 'null'); } catch { s = null; }
-  return { on: s?.on === true, wifiOnly: s?.wifiOnly !== false, scope: s?.scope === 'all' ? 'all' : 'playing+unfiled' };
+  return { on: s?.on !== false, wifiOnly: s?.wifiOnly !== false, scope: s?.scope === 'all' ? 'all' : 'playing+unfiled' };
 }
 
 const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;
