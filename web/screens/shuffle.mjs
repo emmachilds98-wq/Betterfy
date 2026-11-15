@@ -13,16 +13,16 @@ function mixEnergyHTML(energy, { labelsShownNow, esc }) {
   return `<div class="mx-arc" role="img" aria-label="Energy along the mix, calm to intense">${energy.map(e =>
     `<span style="height:${Math.max(8, Math.round(e * 100))}%"></span>`).join('')}</div>`;
 }
-function mixHTML(mix, tracks, p, { S, esc, emptyState, artistOf, MIX_PAGE, MIX_MODES, labelsShownNow, BetterfyAudio }) {
+function mixHTML(mix, tracks, p, { S, esc, emptyState, skeleton, artistOf, MIX_PAGE, MIX_MODES, labelsShownNow, BetterfyAudio }) {
   if (mix.pending) return MIX_PAGE.err
     ? emptyState('The mix couldn’t load', esc(MIX_PAGE.err), { compact: true })
-    : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true });
+    : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true }) + (skeleton ? skeleton('rows', 4) : '');
   const st = mix.stats, nv = mix.naive, bpmOn = BetterfyAudio?.bpmShown ? BetterfyAudio.bpmShown() : true;
   const row = (t, i) => {
     const heard = i < mix.mixed, step = i > 0 && i < mix.mixed ? mix.steps[i - 1] : null;
     const bpm = heard && bpmOn ? mixBpmOf(mix.index, t.id) : null;
     const jump = step && !step.rel;
-    return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}">
+    return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}" data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
       <span class="a">${esc(artistOf(t))}</span>${bpm ? `<span class="mx-bpm"${step?.rel && step.rel !== 'same' ? ` title="${step.rel === 'half' ? 'double' : 'half'} time"` : ''}>${bpm}</span>` : ''}${jump ? '<span class="mx-tag">tempo change</span>' : ''}</div>`;
@@ -91,7 +91,7 @@ export function view(ctx) {
     </div>
     <p class="lede" style="margin:-10px 0 20px; font-size:14px">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
     <h2>Order</h2>
-    <div class="order">${order.slice(0,40).map((t,i) => `<div>
+    <div class="order">${order.slice(0,40).map((t,i) => `<div data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
       <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;

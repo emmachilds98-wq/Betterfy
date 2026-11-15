@@ -16,7 +16,7 @@ export function view({ S, esc, isUndone, emptyState }) {
     else rows.push({ one:x });
   }
   const undone = `<span class="sub">Undone</span>`;
-  const one = x => `<div class="row"><div class="main">
+  const one = x => `<div class="row" data-flip data-key="${esc(`h:${x.at}:${x.op}:${x.playlistId ?? ''}`)}"><div class="main">
       <div class="ttl">${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span></div>
       <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))} · ${(x.trackIds??[]).length} track(s)${x.reason?' · '+esc(x.reason):''}</div>
     </div><div class="acts">${['remove','add','unlike'].includes(x.op) ? (isUndone(x, h) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(x.at)}">Undo</button>`) : ''}</div></div>`;
@@ -28,7 +28,7 @@ export function view({ S, esc, isUndone, emptyState }) {
       ? `Moved <span class="sub">${esc(mv?.fromName ?? rem?.playlistName ?? '')} → ${esc(mv?.toName ?? add?.playlistName ?? '')}</span>`
       : `${esc(newest.op)} <span class="sub">${esc(g.map(x => x.playlistName).filter(Boolean).join(', '))}</span>`;
     const n = new Set(g.flatMap(x => x.trackIds ?? [])).size;
-    return `<div class="row"><div class="main">
+    return `<div class="row" data-flip data-key="${esc(`hg:${oldest.at}:${newest.at}`)}"><div class="main">
       <div class="ttl">${title}</div>
       <div class="sub mono">${esc(oldest.at.replace('T',' ').slice(0,19))} · ${n} track(s)</div>
     </div><div class="acts">${g.every(x => isUndone(x, h)) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(oldest.at)}">Undo</button>`}</div></div>`;

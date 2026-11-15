@@ -2,6 +2,8 @@
 // deck (the `inbox` module) and Up next. Library is, for now, Playlists with
 // New playlists and Shuffle one tap away (libNav, app/shell.js); the screens
 // themselves are untouched.
+/** The screen last drawn into #main, or null when the next draw must replace it whole. */
+let paintedView = null;
 const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
                 lists:() => libNav('lists') + screenView('lists')(),
                 new:() => libNav('new') + screenView('new')(),
@@ -23,7 +25,14 @@ function render(dir) {
 
   const main = $('#main');
   main.dataset.view = view;
-  main.innerHTML = VIEWS[view]();
+  // The screen already showing, redrawn in place (a click, a store repaint):
+  // patch() keeps the focused input, its caret and scroll, and slides rows
+  // that moved (A5, UI-G). A screen change or a sync (stage() forgets what was
+  // painted) is a full replace.
+  const html = VIEWS[view]();
+  if (dir === undefined && paintedView === view && typeof patch === 'function') patch(main, html);
+  else main.innerHTML = html;
+  paintedView = view;
   for (const m of actScreens(view)) SCREEN_MODS[m]?.mount?.(screenCtx(m));
 
   $('#mtitle').textContent = VTITLE[view] ?? '';

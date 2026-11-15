@@ -97,7 +97,7 @@ const AXES_MODULES = ['core/playlists/axes.mjs'];
  * globals like v1, because every screen calls them; with no audio data each one
  * returns '' so they cost a listener who never turns listening on nothing but
  * their few hundred bytes. */
-const UI_MODULES = ['web/ui/sound.mjs'];
+const UI_MODULES = ['web/ui/sound.mjs', 'web/app/patch.mjs'];
 
 /* Screen modules (docs/BUILD-5-PLAN.md A4): web/screens/<name>.mjs, each opting
  * in with `// @bundle screens <name> <order>` (see bundler.mjs discoverBundles;
