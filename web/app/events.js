@@ -449,7 +449,7 @@ document.addEventListener('change', guard(async e => {
     toast('Updated — suggestions recomputed.');
     render();
     // Shared with linked devices straight away, not only at the next load.
-    syncAxes().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+    syncAxes().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
   }
 }));
 

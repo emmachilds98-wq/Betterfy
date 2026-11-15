@@ -9,7 +9,7 @@ merge so a fresh session can pick up where the last one stopped.
 - Wave 2: A2 classifier (#107), A5 patcher + A8 goldens (#103), §5.1 feedback (#110), key step 1 (#106)
 
 ## In flight
-- PR #112 (`claude/kind-thompson-swvghc`): A6 router ✅, A7 build conventions ✅, A3 store (agent running)
+- PR #112 (`claude/kind-thompson-swvghc`): A6 router ✅, A7 build conventions ✅, A3 store ✅
 - UI-B motion tokens + View Transitions (agent running, joins #112 or follow-up)
 - Default Last.fm key (`LASTFM_PUBLIC_KEY`, baked at build) + one-tap "Analyse my library" (agent running)
 

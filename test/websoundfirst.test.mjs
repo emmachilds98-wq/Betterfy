@@ -76,6 +76,7 @@ function page({ on = true, heardNew = true, fb = {}, nudge = null, bpm = false }
   };
   s.fire = p => { s.pending.push(Promise.resolve(p)); };
   s.render = () => { s.renders++; };
+  s.store = { get() {}, on() {}, set() { s.render(); }, touch() { s.render(); } };
   s.audioSettings = () => ({ on, wifiOnly: true, scope: 'playing+unfiled' });
   s.engineTargets = () => [...TARGETS].sort();
   s.engineLoad = async () => true;
