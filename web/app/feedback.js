@@ -14,11 +14,24 @@
  * "Keep here": the track stays in that playlist and neither Tidy tier offers it
  * as wrong there again. Both appear only once used, so a store that never used
  * them is the same object it always was.
+ *
+ * `rejectedAt` / `acceptedAt` ({ [playlistId]: epoch ms }) say when each
+ * verdict was given, so the tag engine's memory of a rejection can fade
+ * (profile.mjs `rejectFactors`, BUILD-5-PLAN §5.1). They also appear only once
+ * used; a store written before them reads as verdicts of unknown time. A time
+ * only counts while its playlist is still in `rejected` / `accepted`.
  */
 let FB = {};
 const loadFeedback = async () => { FB = (await idb.get('feedback')) ?? {}; };
 const saveFeedback = () => idb.set('feedback', FB);
 const fbFor = id => (FB[id] ??= { skips: 0, lastSkip: null, rejected: [] });
+/** Stamp `ids` in f[key] (rejectedAt / acceptedAt) with now; fbUnstamp() drops them, and the map once empty. */
+const fbStamp = (f, key, ids) => { const now = Date.now(); for (const p of ids) (f[key] ??= {})[p] = now; };
+const fbUnstamp = (f, key, ids) => {
+  if (!f?.[key]) return;
+  for (const p of ids) delete f[key][p];
+  if (!Object.keys(f[key]).length) delete f[key];
+};
 
 async function recordSkip(trackId) {
   const f = fbFor(trackId);
@@ -30,6 +43,7 @@ async function recordSkip(trackId) {
 async function recordReject(trackId, playlistId) {
   const f = fbFor(trackId);
   if (!f.rejected.includes(playlistId)) f.rejected.push(playlistId);
+  fbStamp(f, 'rejectedAt', [playlistId]);
   await saveFeedback();
 }
 
@@ -39,6 +53,7 @@ async function recordAccept(trackId, playlistIds) {
   const f = fbFor(trackId), ids = [].concat(playlistIds).filter(Boolean);
   f.accepted = [...new Set([...(f.accepted ?? []), ...ids])];
   f.rejected = f.rejected.filter(p => !ids.includes(p));
+  fbStamp(f, 'acceptedAt', ids); fbUnstamp(f, 'rejectedAt', ids);
   await saveFeedback();
 }
 
@@ -48,6 +63,7 @@ async function forgetAccept(trackId, playlistIds) {
   if (!f?.accepted) return;
   f.accepted = f.accepted.filter(p => !ids.includes(p));
   if (!f.accepted.length) delete f.accepted;
+  fbUnstamp(f, 'acceptedAt', ids);
   await saveFeedback();
 }
 
@@ -57,7 +73,9 @@ async function forgetAccept(trackId, playlistIds) {
 async function recordKeep(trackId, here, away = []) {
   const f = fbFor(trackId);
   if (here && !(f.kept ??= []).includes(here)) f.kept.push(here);
-  for (const p of [].concat(away).filter(Boolean)) if (!f.rejected.includes(p)) f.rejected.push(p);
+  const no = [].concat(away).filter(Boolean);
+  for (const p of no) if (!f.rejected.includes(p)) f.rejected.push(p);
+  fbStamp(f, 'rejectedAt', no);
   await saveFeedback();
 }
 
@@ -74,6 +92,9 @@ async function recordMove(trackId, fromId, toId) {
   if (fromId && fromId !== toId && !f.rejected.includes(fromId)) f.rejected.push(fromId);
   f.accepted = (f.accepted ?? []).filter(p => p !== fromId);
   if (toId && !f.accepted.includes(toId)) f.accepted.push(toId);
+  fbUnstamp(f, 'rejectedAt', [toId]); fbUnstamp(f, 'acceptedAt', [fromId]);
+  if (fromId && fromId !== toId) fbStamp(f, 'rejectedAt', [fromId]);
+  if (toId) fbStamp(f, 'acceptedAt', [toId]);
   await saveFeedback();
 }
 
@@ -82,6 +103,7 @@ async function unrecordMove(trackId, fromId, toId) {
   const f = FB[trackId]; if (!f) return;
   if (f.accepted) f.accepted = f.accepted.filter(p => p !== toId);
   if (f.rejected) f.rejected = f.rejected.filter(p => p !== fromId);
+  fbUnstamp(f, 'acceptedAt', [toId]); fbUnstamp(f, 'rejectedAt', [fromId]);
   await saveFeedback();
 }
 

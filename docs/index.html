@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0358">
+<meta name="bf-build" content="2026-11-15-0405">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1465,7 +1465,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0358</span>
+    <span class="mono">build 2026-11-15-0405</span>
   </p>
 
   <div class="feat">
@@ -1569,7 +1569,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0358</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0405</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1610,7 +1610,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0358</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0405</span>
   </div>
 </div>
 
@@ -2250,6 +2250,115 @@ function artistHistory(track, lib, targets) {
   return [{ id: topId, name: home?.name ?? topId, score: share, count: topCount, total }];
 }
 
+/* ---------- rejections teach the tag engine (BUILD-5-PLAN §5.1) ----------
+ * Tags are per artist, so every track by one artist ranks the same, and a
+ * "not that playlist" on one of them used to teach nothing about the rest: the
+ * very next track by the same artist came up with the same wrong pick. Here a
+ * rejection of playlist P for artist X's track lowers P for X's other tracks —
+ * lowered, never removed, because an artist can belong in two playlists — and
+ * the lowering fades with time and with each later accept of X into P (or
+ * "Keep here" of X's track in P), so one early mistake cannot bury a playlist
+ * for an artist the listener has since filed there.
+ *
+ * Plain arithmetic over this account's own feedback state (the page's `FB`,
+ * shape in web/app/feedback.js); nothing leaves the account. With no
+ * rejection nothing changes: `rejectFactors` is null and `downweightRejected`
+ * returns the very array it was given. */
+const REJECT_MEMORY = {
+  /** One fresh rejection multiplies the playlist's score for the artist's other tracks by 1 − strength. */
+  strength: 0.5,
+  /** A rejection's pull halves every this many days. */
+  halfLifeDays: 90,
+  /** Each later accept of the artist into the playlist multiplies what is left of a rejection's pull by this. */
+  acceptDecay: 0.5,
+  /** However many rejections pile up, a playlist keeps at least this share of its score. */
+  floor: 0.2,
+};
+
+const timeOf = v => (typeof v === 'number' ? v : typeof v === 'string' ? (Date.parse(v) || null) : null);
+
+/**
+ * Who rejected what, by artist: first-billed artist id → playlist id →
+ * { rejects: [{ trackId, at }], accepts: [{ trackId, at }] }. `at` is epoch ms
+ * from `rejectedAt` / `acceptedAt` when the store has them, else null (stores
+ * written before they existed). Only artists with a rejection are kept, and
+ * accepts and keeps are read for those only. Artists come from the library's
+ * liked songs and playlists.
+ *
+ * @param {object|null} fb   { [trackId]: { rejected, rejectedAt?, accepted?, acceptedAt?, kept? } }
+ * @param {object} lib       { liked?, playlists? }
+ * @returns {Map<string, Map<string, {rejects: object[], accepts: object[]}>>}
+ */
+function artistRejectMemory(fb, lib) {
+  const mem = new Map();
+  const ids = Object.keys(fb ?? {}).filter(id => fb[id]?.rejected?.length).sort();
+  if (!ids.length) return mem;
+  const artistOf = new Map();
+  const note = t => { const a = t?.artists?.[0]?.id; if (t?.id && a && !artistOf.has(t.id)) artistOf.set(t.id, a); };
+  for (const t of lib?.liked ?? []) note(t);
+  for (const p of lib?.playlists ?? []) for (const t of p.tracks ?? []) note(t);
+  for (const id of ids) {
+    const a = artistOf.get(id), f = fb[id];
+    if (!a) continue;
+    const m = mem.get(a) ?? mem.set(a, new Map()).get(a);
+    for (const p of f.rejected) {
+      const s = m.get(p) ?? m.set(p, { rejects: [], accepts: [] }).get(p);
+      s.rejects.push({ trackId: id, at: timeOf(f.rejectedAt?.[p]) });
+    }
+  }
+  if (!mem.size) return mem;
+  for (const id of Object.keys(fb).sort()) {
+    const m = mem.get(artistOf.get(id)), f = fb[id];
+    if (!m) continue;
+    for (const p of Array.isArray(f?.accepted) ? f.accepted : []) m.get(p)?.accepts.push({ trackId: id, at: timeOf(f.acceptedAt?.[p]) });
+    for (const p of Array.isArray(f?.kept) ? f.kept : []) m.get(p)?.accepts.push({ trackId: id, at: null });
+  }
+  return mem;
+}
+
+/**
+ * How much each playlist is lowered for this track: playlist id → factor in
+ * [floor, 1), or null when nothing applies. Each rejection of P for another
+ * track by the same first-billed artist contributes 1 − strength · w, where w
+ * halves every `halfLifeDays` and with each accept of the artist into P made
+ * after it (an accept or rejection with no time counts as later, so an old
+ * store can only see a penalty lifted, never kept). The track's own
+ * rejections are not counted: those already remove P from its picks outright.
+ *
+ * @param {object} track
+ * @param {Map} memory  from `artistRejectMemory`
+ * @param {{ now?: number }} [opts]  plus any REJECT_MEMORY override
+ * @returns {Map<string, number>|null}
+ */
+function rejectFactors(track, memory, { now = Date.now(), ...o } = {}) {
+  const m = memory?.size ? memory.get(track?.artists?.[0]?.id) : null;
+  if (!m) return null;
+  const { strength, halfLifeDays, acceptDecay, floor } = { ...REJECT_MEMORY, ...o };
+  const out = new Map();
+  for (const [p, { rejects, accepts }] of m) {
+    let f = 1;
+    for (const r of rejects) {
+      if (r.trackId === track.id) continue;
+      let w = r.at != null && now != null ? 0.5 ** (Math.max(0, now - r.at) / (halfLifeDays * 864e5)) : 1;
+      for (const x of accepts) if (x.trackId !== track.id && (x.at == null || r.at == null || x.at >= r.at)) w *= acceptDecay;
+      f *= 1 - strength * w;
+    }
+    if (f < 1) out.set(p, Math.max(floor, f));
+  }
+  return out.size ? out : null;
+}
+
+/**
+ * `ranked` ({ id, score } picks, best first) with each lowered playlist's
+ * score multiplied by its factor and re-sorted (stable: ties keep their
+ * order). The very same array when there is nothing to lower.
+ */
+function downweightRejected(ranked, factors) {
+  if (!factors?.size || !ranked?.some(b => factors.has(b.id))) return ranked;
+  return ranked.map(b => (factors.has(b.id) ? { ...b, score: b.score * factors.get(b.id) } : b))
+    .sort((a, b) => b.score - a.score);
+}
+
 /** The strongest tags on a track, for explaining a suggestion. */
 function topTags(track, tags, idf, n = 5) {
   const v = applyIdf(trackVec(track, tags), idf);
@@ -2408,7 +2517,7 @@ function findDrift(lib, tags, targets, idf) {
   drift.sort((a, b) => a.similarity - b.similarity);
   return drift;
 }
-return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, topTags, findMisfiled, listeningWeights, byListening, findDrift };
+return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, findMisfiled, listeningWeights, byListening, findDrift };
 })();
 /* ---- core/playlists/axes.mjs ---- */
 __mod["core/playlists/axes.mjs"] = (function () {
@@ -3323,7 +3432,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0358';
+const BUILD = '2026-11-15-0405';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3644,7 +3753,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0358', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0405', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -3814,11 +3923,24 @@ const idb = (() => {
  * "Keep here": the track stays in that playlist and neither Tidy tier offers it
  * as wrong there again. Both appear only once used, so a store that never used
  * them is the same object it always was.
+ *
+ * `rejectedAt` / `acceptedAt` ({ [playlistId]: epoch ms }) say when each
+ * verdict was given, so the tag engine's memory of a rejection can fade
+ * (profile.mjs `rejectFactors`, BUILD-5-PLAN §5.1). They also appear only once
+ * used; a store written before them reads as verdicts of unknown time. A time
+ * only counts while its playlist is still in `rejected` / `accepted`.
  */
 let FB = {};
 const loadFeedback = async () => { FB = (await idb.get('feedback')) ?? {}; };
 const saveFeedback = () => idb.set('feedback', FB);
 const fbFor = id => (FB[id] ??= { skips: 0, lastSkip: null, rejected: [] });
+/** Stamp `ids` in f[key] (rejectedAt / acceptedAt) with now; fbUnstamp() drops them, and the map once empty. */
+const fbStamp = (f, key, ids) => { const now = Date.now(); for (const p of ids) (f[key] ??= {})[p] = now; };
+const fbUnstamp = (f, key, ids) => {
+  if (!f?.[key]) return;
+  for (const p of ids) delete f[key][p];
+  if (!Object.keys(f[key]).length) delete f[key];
+};
 
 async function recordSkip(trackId) {
   const f = fbFor(trackId);
@@ -3830,6 +3952,7 @@ async function recordSkip(trackId) {
 async function recordReject(trackId, playlistId) {
   const f = fbFor(trackId);
   if (!f.rejected.includes(playlistId)) f.rejected.push(playlistId);
+  fbStamp(f, 'rejectedAt', [playlistId]);
   await saveFeedback();
 }
 
@@ -3839,6 +3962,7 @@ async function recordAccept(trackId, playlistIds) {
   const f = fbFor(trackId), ids = [].concat(playlistIds).filter(Boolean);
   f.accepted = [...new Set([...(f.accepted ?? []), ...ids])];
   f.rejected = f.rejected.filter(p => !ids.includes(p));
+  fbStamp(f, 'acceptedAt', ids); fbUnstamp(f, 'rejectedAt', ids);
   await saveFeedback();
 }
 
@@ -3848,6 +3972,7 @@ async function forgetAccept(trackId, playlistIds) {
   if (!f?.accepted) return;
   f.accepted = f.accepted.filter(p => !ids.includes(p));
   if (!f.accepted.length) delete f.accepted;
+  fbUnstamp(f, 'acceptedAt', ids);
   await saveFeedback();
 }
 
@@ -3857,7 +3982,9 @@ async function forgetAccept(trackId, playlistIds) {
 async function recordKeep(trackId, here, away = []) {
   const f = fbFor(trackId);
   if (here && !(f.kept ??= []).includes(here)) f.kept.push(here);
-  for (const p of [].concat(away).filter(Boolean)) if (!f.rejected.includes(p)) f.rejected.push(p);
+  const no = [].concat(away).filter(Boolean);
+  for (const p of no) if (!f.rejected.includes(p)) f.rejected.push(p);
+  fbStamp(f, 'rejectedAt', no);
   await saveFeedback();
 }
 
@@ -3874,6 +4001,9 @@ async function recordMove(trackId, fromId, toId) {
   if (fromId && fromId !== toId && !f.rejected.includes(fromId)) f.rejected.push(fromId);
   f.accepted = (f.accepted ?? []).filter(p => p !== fromId);
   if (toId && !f.accepted.includes(toId)) f.accepted.push(toId);
+  fbUnstamp(f, 'rejectedAt', [toId]); fbUnstamp(f, 'acceptedAt', [fromId]);
+  if (fromId && fromId !== toId) fbStamp(f, 'rejectedAt', [fromId]);
+  if (toId) fbStamp(f, 'acceptedAt', [toId]);
   await saveFeedback();
 }
 
@@ -3882,6 +4012,7 @@ async function unrecordMove(trackId, fromId, toId) {
   const f = FB[trackId]; if (!f) return;
   if (f.accepted) f.accepted = f.accepted.filter(p => p !== toId);
   if (f.rejected) f.rejected = f.rejected.filter(p => p !== fromId);
+  fbUnstamp(f, 'acceptedAt', [toId]); fbUnstamp(f, 'rejectedAt', [fromId]);
   await saveFeedback();
 }
 
@@ -4146,9 +4277,11 @@ function buildReports(lib, cfg, tags) {
       if (t.isrc) filedIsrc.add(t.isrc); if (t.name) filedKey.add(trackKey(t)); } }
   const isFiled = t => filed.has(t.id) || (!!t.isrc && filedIsrc.has(t.isrc)) || (!!t.name && filedKey.has(trackKey(t)));
   const unfiled = lib.liked.filter(t => t?.id && !isFiled(t));
+  // Rejections by artist, read once for the whole queue (backlogSuggest).
+  const rejected = artistRejectMemory(FB, lib);
   const backlog = unfiled.map(t => {
     const fb = FB[t.id];
-    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets);
+    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets, rejected);
     return { id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
       album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
       tags: topTags(t, tags, idf),
@@ -4206,15 +4339,21 @@ function keptHere(trackId, playlistId) { return !!FB[trackId]?.kept?.includes(pl
  * and rejecting a pick re-ranks the card through it too, so the slot a
  * rejection frees fills exactly the way the card was first filled — the
  * filing-history fallback and the `via` label included. `tags` are the gated
- * tags buildReports scores with.
+ * tags buildReports scores with. `rejected` is profile.mjs artistRejectMemory
+ * over FB, passed in by buildReports so a queue of thousands reads FB once.
  */
 function backlogSuggest(t, lib, cfg, tags, profiles, idf,
-                        targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id))) {
+                        targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id)),
+                        rejected = artistRejectMemory(FB, lib)) {
   const fb = FB[t.id];
+  // A playlist rejected for this artist's other tracks is lowered here, fading
+  // with time and later accepts (profile.mjs rejectFactors, BUILD-5-PLAN §5.1).
+  // Null with no such rejection, and then the picks are exactly what they were.
+  const down = rejectFactors(t, rejected);
   // Ask for more than three, then drop the playlists already rejected for
   // this track, so a rejection promotes the next real candidate instead of
   // leaving a gap where the rejected one was.
-  const ranked = rank(t, tags, profiles, idf, { top: 8 })
+  const ranked = downweightRejected(rank(t, tags, profiles, idf, { top: 8 }), down)
     .filter(b => !fb?.rejected?.includes(b.id))
     .slice(0, 3)
     .map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null, via: 'tags' }));
@@ -4222,7 +4361,7 @@ function backlogSuggest(t, lib, cfg, tags, profiles, idf,
   // filing history only ever steps in when it hasn't — no fetch, no third
   // party, just where the user already put this artist's other tracks.
   return (ranked.length && ranked[0].score >= 0.30) ? ranked
-    : artistHistory(t, lib, targets)
+    : downweightRejected(artistHistory(t, lib, targets), down)
         .filter(h => !fb?.rejected?.includes(h.id))
         .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
 }
@@ -6883,11 +7022,19 @@ function mergeFeedback(local, remote) {
     const l = merged[id];
     // Accepts and keeps union the same way; each only appears once either side has one.
     const union = k => [...new Set([...(l[k] ?? []), ...(r[k] ?? [])])];
+    // When each verdict was given: per playlist, the later of the two times.
+    const latest = k => {
+      const out = { ...(l[k] ?? {}) };
+      for (const [p, t] of Object.entries(r[k] ?? {})) if (!(out[p] >= t)) out[p] = t;
+      return out;
+    };
     merged[id] = !l ? r : {
       skips: Math.max(l.skips ?? 0, r.skips ?? 0),
       lastSkip: [l.lastSkip, r.lastSkip].filter(Boolean).sort().at(-1) ?? null,
       rejected: union('rejected'),
+      ...(l.rejectedAt || r.rejectedAt ? { rejectedAt: latest('rejectedAt') } : {}),
       ...(l.accepted || r.accepted ? { accepted: union('accepted') } : {}),
+      ...(l.acceptedAt || r.acceptedAt ? { acceptedAt: latest('acceptedAt') } : {}),
       ...(l.kept || r.kept ? { kept: union('kept') } : {}),
     };
   }
@@ -7556,7 +7703,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0358';
+    s.src = 'engine.js?v=2026-11-15-0405';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -7578,7 +7725,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0358');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0405');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -7903,7 +8050,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0358';
+    s.src = 'audio.js?v=2026-11-15-0405';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -7939,7 +8086,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0358', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0405', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -8767,7 +8914,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0358`,
+    `Betterfy engine score — build 2026-11-15-0405`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -9199,8 +9346,19 @@ document.addEventListener('click', guard(async e => {
     // that made the card, so the filing-history fallback and `via` survive.
     const raw = LIB.liked.find(x => x.id === t.id);
     t.suggest = raw ? backlogSuggest(raw, LIB, CFG, gateTags(TAGS, tagGate(TAGS)), R.profiles, R.idf) : [];
+    // The artist's other cards re-rank too: the rejection lowers this playlist
+    // for them (backlogSuggest reads it through rejectFactors).
+    const lead = t.artists?.[0]?.id;
+    if (lead) {
+      const gated = gateTags(TAGS, tagGate(TAGS)), mem = artistRejectMemory(FB, LIB);
+      for (const b of R.backlog) {
+        if (b.id === t.id || b.artists?.[0]?.id !== lead) continue;
+        const rb = LIB.liked.find(x => x.id === b.id);
+        if (rb) b.suggest = backlogSuggest(rb, LIB, CFG, gated, R.profiles, R.idf, undefined, mem);
+      }
+    }
     toast(`Won't suggest ${pname} for this track again.`, async () => {
-      const f = FB[t.id]; if (f) f.rejected = f.rejected.filter(x => x !== pid);
+      const f = FB[t.id]; if (f) { f.rejected = f.rejected.filter(x => x !== pid); fbUnstamp(f, 'rejectedAt', [pid]); }
       await saveFeedback(); R = buildReports(LIB, CFG, TAGS); render();
     });
     return render();
