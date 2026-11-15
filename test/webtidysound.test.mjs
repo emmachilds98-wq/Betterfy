@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { installTidy } from './tidyctx.mjs';
 
 // Tidy › By sound, run out of the built page. Without heard tracks Tidy must
 // draw exactly the three sections it always had; with them, a fourth lists
@@ -30,8 +31,7 @@ function tidy({ audio = false, rows = [], fb = {} } = {}) {
     audioSettings: () => ({ on: true }), fire: () => {},
   });
   vm.createContext(sandbox);
-  vm.runInContext(slice('const S = {', '// Bar order', 'Tidy state')
-    + slice('const TIDY_SECTIONS', '/* ======================= gaps', 'Tidy sections'), sandbox);
+  installTidy(sandbox, slice);
   if (audio) {
     sandbox.__rows = rows;
     vm.runInContext(`Object.assign(TSOUND, { status: 'ready', res: { rows: __rows, accuracy: { scored: 400, caught: 0.82, flagged: 0.9,
@@ -80,7 +80,7 @@ test('a remembered By sound section falls back to Wrong place once there is no s
 
 // BUILD-5-PLAN §4.1 / UI-A: Tidy opens on the first section with work in it,
 // not on "Wrong place 0" while another section has rows.
-const pressed = html => html.match(/aria-pressed="true" data-tidy="(\w+)"/)?.[1];
+const pressed = html => html.match(/aria-pressed="true" data-act="section" data-tidy="(\w+)"/)?.[1];
 const REPEAT = { verdict: 'same-recording', title: 'Twice', artist: 'Someone', playlist: 'House', playlistId: 'pl-house', why: 'same ISRC',
   options: [{ id: 'a', dur: '3:00' }, { id: 'b', dur: '3:00' }] };
 

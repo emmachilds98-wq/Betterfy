@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as SOURCES from '../web/screens/sources.mjs';
+import * as LISTS from '../web/screens/lists.mjs';
 
 // UI-3 (docs/UI-BUILD-PLAN.md §6): Playlists is the axes table, the data
 // sources live on their own Sources screen, and the sound layer shows up on
@@ -14,7 +15,7 @@ function slice(from, to, what) {
   assert.ok(i > 0 && j > i, `${what} not found — rebuild with node build-web.mjs`);
   return BUNDLE.slice(i, j);
 }
-const CODE = slice('const AXES = ', 'function tagCoverage()', 'Playlists/Sources block');
+const CODE = slice('/* ---------- Playlists: mixes, sound profiles, splits', 'function tagCoverage()', 'Playlists/Sources block');
 
 const tr = (id, n) => Array.from({ length: n }, (_, i) => ({ id: id + i, artists: [{ id: 'a' + i }] }));
 const LIB = { captured_at: 't0', liked: [], playlists: [
@@ -40,7 +41,8 @@ function load({ records = null, profileRow = () => '', panel = '<div id="audioPa
     profileRow, audioPanelHTML: () => panel, labelCheckHTML: () => '',
   };
   vm.createContext(sb);
-  vm.runInContext(CODE + ';globalThis.vLists = vLists;', sb);
+  const jobs = vm.runInContext(CODE + ';({ playlistMixes, listsSplits, LPROF, LISTS_SOUND })', sb);
+  Object.assign(sb, jobs, { vLists: () => LISTS.view({ ...sb, store: { touch() {} }, fire() {} }) });
   return sb;
 }
 
@@ -61,7 +63,7 @@ test('Playlists with audio: a profile row and its expander under each playlist',
 
 test('Playlists keeps every control id and handler hook it had, and leaves the sources and listening to Sources', () => {
   const html = load().vLists();
-  assert.match(html, /<select data-ax="P1"/);
+  assert.match(html, /<select data-act="axis" data-ax="P1"/);
   assert.match(html, /data-tg="P1" checked/);
   assert.match(html, /data-tg="P2"[^>]*disabled/);
   assert.match(html, /<h2>Needs your input<\/h2>/);

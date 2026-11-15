@@ -73,7 +73,7 @@ by screen in A4.
 ## Screen modules (A4)
 
 A screen moves from classic script to ES module one at a time (History,
-Sources and Engine are done; copy them). The convention:
+Sources, Engine, Tidy, Playlists and New playlists are done; copy them). The convention:
 
 - **File**: `web/screens/<name>.mjs`, first line `// @bundle screens <name> <order>`.
   That header is the whole registration: `build-web.mjs` finds it

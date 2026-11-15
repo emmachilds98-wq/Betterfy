@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as TIDY from '../web/screens/tidy.mjs';
 
 // The Tidy lists used to stop dead — 60 repeats, 80 cross-filed, 80 misfiles —
 // with no way to reach the rest, so on a big library most of what the tool
@@ -18,8 +19,11 @@ function slice(from, to, what) {
 function tidy({ exact = 0, clash = 0, cross = 0 } = {}) {
   const dupe = (i, verdict) => ({ title: 'T' + i, artist: 'A', playlist: 'P', playlistId: 'p', why: '',
     verdict, options: [{ id: 'o' + i, dur: '3:00' }, { id: 'q' + i, dur: '3:01' }] });
-  const sandbox = {
-    esc: s => String(s ?? ''), thumbHTML: () => '', cmpTable: () => '',
+  const sandbox = { esc: s => String(s ?? ''), S: { shown: {}, crossMin: 2 } };
+  vm.createContext(sandbox);
+  // The real paging helpers (app/ui.js), with the screen's ctx built around them.
+  const { shownOf, moreButton } = vm.runInContext(slice('const TIDY_PAGE', '// Bar order', 'paging') + ';({ shownOf, moreButton })', sandbox);
+  return { S: sandbox.S, esc: sandbox.esc, thumbHTML: () => '', cmpTable: () => '', shownOf, moreButton, emptyState: t => t,
     R: {
       within: [...Array(exact)].map((_, i) => dupe(i, 'same-recording'))
         .concat([...Array(clash)].map((_, i) => dupe(i, 'different-cut'))),
@@ -27,51 +31,48 @@ function tidy({ exact = 0, clash = 0, cross = 0 } = {}) {
         placements: [1, 2, 3].map(n => ({ playlistId: 'p' + n, trackId: 't' + i, playlist: 'P' + n, axis: 'genre' })) })),
     },
   };
-  vm.createContext(sandbox);
-  vm.runInContext(slice('const S = {', '// Bar order', 'Tidy state') + slice('function secDupes()', 'function secMisfile()', 'Tidy sections'), sandbox);
-  return sandbox;
 }
 const rows = html => html.split('<div class="row">').length - 1;
-const more = key => `S.shown[${JSON.stringify(key)}] = shownOf(${JSON.stringify(key)}) + TIDY_PAGE`;
+const more = (c, key) => { c.S.shown[key] = c.shownOf(key) + 60; };
 
 test('a long repeats list shows a page, then the rest a page at a time', () => {
   const s = tidy({ exact: 150 });
-  let html = vm.runInContext('secDupes()', s);
+  let html = TIDY.secDupes(s);
   assert.equal(rows(html), 60);
   assert.match(html, /data-more="dupes-exact">Show 60 more/);
   assert.match(html, /60 of 150/);
 
-  vm.runInContext(more('dupes-exact'), s);
-  html = vm.runInContext('secDupes()', s);
+  more(s, 'dupes-exact');
+  html = TIDY.secDupes(s);
   assert.equal(rows(html), 120);
   assert.match(html, /Show 30 more/, 'the last page offers only what is left');
 
-  vm.runInContext(more('dupes-exact'), s);
-  html = vm.runInContext('secDupes()', s);
+  more(s, 'dupes-exact');
+  html = TIDY.secDupes(s);
   assert.equal(rows(html), 150, 'everything the tool found is now reachable');
   assert.ok(!/data-more=/.test(html), 'and there is nothing left to offer');
 });
 
 test('a short list draws no button at all', () => {
-  const html = vm.runInContext('secDupes()', tidy({ exact: 12, clash: 3 }));
+  const html = TIDY.secDupes(tidy({ exact: 12, clash: 3 }));
   assert.equal(rows(html), 15);
   assert.ok(!/data-more=/.test(html));
 });
 
 test('the two repeats sections page independently', () => {
   const s = tidy({ exact: 70, clash: 70 });
-  vm.runInContext(more('dupes-exact'), s);
-  const html = vm.runInContext('secDupes()', s);
+  more(s, 'dupes-exact');
+  const html = TIDY.secDupes(s);
   assert.equal(rows(html), 70 + 60, 'opening one section must not open the other');
   assert.match(html, /data-more="dupes-clash"/);
 });
 
 test('cross-filed pages per threshold, so changing the filter starts from the top', () => {
   const s = tidy({ cross: 200 });
-  vm.runInContext('S.crossMin = 3;' + more('cross-3'), s);
-  assert.equal(rows(vm.runInContext('secCross()', s)), 120);
-  vm.runInContext('S.crossMin = 2', s);
-  const html = vm.runInContext('secCross()', s);
+  s.S.crossMin = 3; more(s, 'cross-3');
+  assert.equal(rows(TIDY.secCross(s)), 120);
+  s.S.crossMin = 2;
+  const html = TIDY.secCross(s);
   assert.equal(rows(html), 60);
   assert.match(html, /data-more="cross-2"/);
 });

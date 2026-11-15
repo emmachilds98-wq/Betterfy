@@ -2,9 +2,9 @@
 // deck (the `inbox` module) and Up next. Library is, for now, Playlists with
 // New playlists and Shuffle one tap away (libNav, app/shell.js); the screens
 // themselves are untouched.
-const VIEWS = { inbox:screenView('home'), tidy:vTidy, discover:screenView('discover'),
-                lists:() => libNav('lists') + vLists(),
-                new:() => libNav('new') + vNew(),
+const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
+                lists:() => libNav('lists') + screenView('lists')(),
+                new:() => libNav('new') + screenView('new')(),
                 shuffle:() => libNav('shuffle') + screenView('shuffle')() };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:

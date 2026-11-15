@@ -21,6 +21,8 @@ const SCREEN_CTX = {
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
                    blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
                    maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,
+                   getLog: () => (typeof getLog === 'function' ? getLog() : Promise.resolve(null)),
+                   measureLines: log => globalThis.BetterfyMeasure ? BetterfyMeasure.measureLines(BetterfyMeasure.measureHistory(log)) : [],
                    get navigator() { return globalThis.navigator; }, prompt: (...a) => prompt(...a) }),
 };
 
@@ -48,6 +50,27 @@ async function dispatchAct(e) {
   return true;
 }
 
+// --- tidy/lists/new ---
+SCREEN_CTX.tidy = () => ({
+  S, R, FB, LIB, CFG, T, TSOUND, esc, thumbHTML, cmpTable, emptyState, moreButton, shownOf, tagChips, tagEditorHTML,
+  store, getListening, toast, render, saveTheme, recordKeep, recordMove, playlistIds, delTracks, addTracks,
+  logAction, getLog, undoAction, newGroup, tidySoundOn, tidySoundRows, tidySoundCount, tidySoundWarm,
+  get bandChip() { return typeof bandChip === 'function' ? bandChip : undefined; },
+  get LISTENING_CACHE() { return LISTENING_CACHE; },
+  get LISTENING_PENDING() { return LISTENING_PENDING; },
+});
+SCREEN_CTX.lists = () => ({
+  CFG, LIB, LS, R, LPROF, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
+  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render,
+  rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
+  get BetterfyPlProfile() { return globalThis.BetterfyPlProfile; },
+  get document() { return globalThis.document; },
+});
+SCREEN_CTX.new = () => ({
+  R, GAPS, esc, $, emptyState, fire, gapsCompute, gapsCreate, gapsFile, toast, render, sp, addTracks,
+  get BetterfyGaps() { return globalThis.BetterfyGaps; },
+  get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
+});
 // --- home/inbox ---
 Object.assign(SCREEN_CTX, {
   // The File tab: the status line and Up next around the `inbox` module's deck.

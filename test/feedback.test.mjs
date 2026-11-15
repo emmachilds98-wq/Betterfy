@@ -117,7 +117,7 @@ test('clearFeedback forgets one track and leaves the rest alone', async () => {
 /* ---- how buildReports and the queue use it ---- */
 
 test('buildReports drops rejected playlists from a track\'s suggestions', () => {
-  const body = slice('function buildReports(lib, cfg, tags)', 'function secDupes', 'buildReports');
+  const body = slice('function buildReports(lib, cfg, tags)', 'function emptyState(', 'buildReports');
   assert.match(body, /rank\(t, tags, profiles, idf, \{ top: 8 \}\)[\s\S]*?filter\(b => !fb\?\.rejected\?\.includes\(b\.id\)\)/,
     'suggestions must exclude what was rejected for this track');
   assert.match(body, /\.slice\(0, 3\)/,
@@ -125,7 +125,7 @@ test('buildReports drops rejected playlists from a track\'s suggestions', () => 
 });
 
 test('skipped tracks sink below everything not yet seen', () => {
-  const body = slice('function buildReports(lib, cfg, tags)', 'function secDupes', 'buildReports');
+  const body = slice('function buildReports(lib, cfg, tags)', 'function emptyState(', 'buildReports');
   assert.match(body, /\.sort\(\(a,b\) => \(a\.skips - b\.skips\) \|\| \(b\.added\?\?''\)\.localeCompare\(a\.added\?\?''\)\)/,
     'the queue must move on from a skip, while still preferring newest first among unseen tracks');
 });

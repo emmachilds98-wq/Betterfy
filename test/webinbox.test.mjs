@@ -42,7 +42,7 @@ function load({ backlog = [], inboxAt = 0, sel = new Set(), fb = {} } = {}) {
     console,
   };
   vm.createContext(sandbox);
-  vm.runInContext(between('function artHTML(t', 'function vTidy()', 'vInbox'), sandbox);
+  vm.runInContext(between('function artHTML(t', 'function emptyState(', 'vInbox'), sandbox);
   withInbox(sandbox);
   return Object.assign(sandbox, { calls });
 }
