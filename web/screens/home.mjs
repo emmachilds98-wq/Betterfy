@@ -87,8 +87,9 @@ export const actions = {
   // A card under "Up next" opens the queue on that track, not at the top.
   // Its index is an absolute position in the queue, not an offset from wherever
   // the queue was left.
-  goinbox({ S, R, render }, el) {
+  goinbox({ S, R, render, morphArt }, el) {
     S.inboxAt = Math.min(+el.dataset.goinbox || 0, Math.max(R.backlog.length - 1, 0));
-    return render();
+    // The cover grows into the File card's art where View Transitions exist.
+    return morphArt ? morphArt(el.querySelector?.('.cov'), R.backlog[S.inboxAt]?.id, render) : render();
   },
 };

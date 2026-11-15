@@ -174,6 +174,7 @@ test('the last track in the queue can actually be filed', async () => {
   await app.fileCurrent('p1');
   assert.deepEqual(app.R.backlog.map(t => t.id), ['t1']);
   // The index now points past the end. Filing again must still work.
+  app.S.fileLockUntil = 0;   // past the card's flight, as a real second filing would be
   await app.fileCurrent('p1');
   assert.deepEqual(app.calls.add, [['p1', 't2'], ['p1', 't1']]);
   assert.equal(app.R.backlog.length, 0, 'the queue empties rather than jamming on its last row');

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-1029">
+<meta name="bf-build" content="2026-11-15-1036">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -781,6 +781,10 @@
   .swipecard{position:relative; z-index:1; touch-action:pan-y; will-change:transform;
              transition:transform var(--dur-3) var(--ease-out), box-shadow var(--dur-2) ease}
   .swipecard.drag{transition:none}
+  /* The card that was the peek: springs up from the peek's scale when the one above it leaves. */
+  .swipecard.promote{animation:promoteUp var(--dur-4) var(--ease-spring) both}
+  @keyframes promoteUp{from{transform:scale(.955) translateY(14px)}to{transform:none}}
+  @media (prefers-reduced-motion:reduce){.swipecard.promote{animation:none}}
   .swipecard.gone{transition:transform var(--dur-3) ease-out, opacity var(--dur-3) ease-out; opacity:0}
   .verdicts{position:absolute; inset:0; pointer-events:none; z-index:3; border-radius:var(--r-4); overflow:hidden}
   .verdict{position:absolute; top:16px; display:flex; align-items:center; gap:7px; padding:8px 15px; border-radius:999px;
@@ -1502,7 +1506,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-1029</span>
+    <span class="mono">build 2026-11-15-1036</span>
   </p>
 
   <div class="feat">
@@ -1594,7 +1598,7 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1029</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1036</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1711,7 +1715,7 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-15-1029. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-15-1036. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3202,9 +3206,10 @@ const actions = {
   // A card under "Up next" opens the queue on that track, not at the top.
   // Its index is an absolute position in the queue, not an offset from wherever
   // the queue was left.
-  goinbox({ S, R, render }, el) {
+  goinbox({ S, R, render, morphArt }, el) {
     S.inboxAt = Math.min(+el.dataset.goinbox || 0, Math.max(R.backlog.length - 1, 0));
-    return render();
+    // The cover grows into the File card's art where View Transitions exist.
+    return morphArt ? morphArt(el.querySelector?.('.cov'), R.backlog[S.inboxAt]?.id, render) : render();
   },
 };
 return { statusParts, statusHTML, libraryBarHTML, upNextHTML, view, actions };
@@ -3269,6 +3274,8 @@ __mod["web/screens/inbox.mjs"] = (function () {
  * and untick, never a silent bulk move. Tracks already turned down for that
  * playlist are left out: a rejection is an answer. */
 const ROLL_MAX = 40;
+/** How long after a filing another one is ignored: the card's flight, about. */
+const FLIGHT_MS = 300;
 
 /** Other backlog tracks by `track`'s first-billed artist that could follow it into `playlistIds`. */
 function rollForwardFor(track, backlog, playlistIds, fb = {}) {
@@ -3342,6 +3349,7 @@ function view(ctx) {
   // whichever track is on screen, so it clears the moment that changes.
   if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; }
   if (typeof soundWarm === 'function') soundWarm();
+  const promote = !!S.promote; S.promote = false;   // the peek card springing up, once
   const picks = filePicks(t);
   const opts = Object.entries(CFG).filter(([, v]) => v.target).map(([id, v]) => ({ id, ...v }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -3363,7 +3371,7 @@ function view(ctx) {
     </div>
     <div class="deck">
       ${rows[i + 1] ? '<div class="peek" aria-hidden="true"></div>' : ''}
-      <div class="card swipecard" id="swipeCard" ${canFile ? `data-best="${esc(best?.id ?? '')}"` : ''}>
+      <div class="card swipecard${promote ? ' promote' : ''}" id="swipeCard" ${canFile ? `data-best="${esc(best?.id ?? '')}"` : ''}>
         <div class="verdicts" aria-hidden="true">
           <span class="verdict file">${S.fileSel.size ? `${S.fileSel.size} playlist${S.fileSel.size>1?'s':''}` : best ? esc(best.name) : 'No pick'}</span>
           <span class="verdict skip">Skip</span>
@@ -3442,17 +3450,30 @@ async function fileCurrent(ctx, playlistIds) {
   const { S, R, CFG, FB, addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, toast, render } = ctx;
   const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
   if (!ids.length) return;
+  // Optimistic (docs/BUILD-5-PLAN.md §4.2): the card leaves now and the writes
+  // happen behind it. The flight lock is what keeps a double tap, or a swipe
+  // that lands on top of a tap, from filing the *next* card by accident,
+  // since by the time the second one arrives the queue has already advanced.
+  const now = Date.now();
+  if (S.filing || now < (S.fileLockUntil ?? 0)) return;
   const at = inboxIndex(ctx), t = R.backlog[at]; if (!t) return;
+  S.fileLockUntil = now + FLIGHT_MS; S.filing = true;
   const names = ids.map(id => CFG[id]?.name ?? id);
   // Logged with each filing so the Score summary can measure itself (§7):
   // where in the queue it was filed from, and the band File showed for it.
   let picks = [];
   try { picks = ctx.filePicks?.(t) ?? []; } catch { /* no band, still filed */ }
   const bandOf = id => picks.find(p => p.id === id)?.band;
+  const picked = new Set(S.fileSel);
+  try { ctx.flyCard?.(1); } catch { /* the animation is a bonus */ }
+  S.fileSel = new Set();
+  R.backlog.splice(at, 1); S.inboxAt = inboxIndex(ctx);
+  S.promote = true;
+  render();
+  // One log entry per playlist, so History and its per-row undo stay exact;
+  // the toast just chains all of them for the common "undo the lot" case.
+  const ats = [];
   try {
-    // One log entry per playlist, so History and its per-row undo stay exact —
-    // the toast just chains all of them for the common "undo the lot" case.
-    const ats = [];
     for (const id of ids) {
       await addTracks(id, [t.id]);
       await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, band:bandOf(id) });
@@ -3461,16 +3482,26 @@ async function fileCurrent(ctx, playlistIds) {
     // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so
     // the sound learner hears "yes, there" before the next sync shows it.
     await recordAccept(t.id, ids);
-    const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
-                                  await forgetAccept(t.id, ids); };
-    toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
-    S.fileSel = new Set();
-    R.backlog.splice(at, 1); S.inboxAt = inboxIndex(ctx);
-    const more = rollForwardFor(t, R.backlog, ids, FB);
-    S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
-                             rows: more.map(b => ({ id: b.id, title: b.title })), off: new Set() } : null;
+  } catch (e) {
+    // Put the card back where it was, with its selection, and say why.
+    for (const a of [...ats].reverse()) { try { if (a) await undoAction(a); } catch { /* best effort */ } }
+    S.fileLockUntil = 0; S.filing = false;
+    if (!R.backlog.some(b => b.id === t.id)) R.backlog.splice(Math.min(at, R.backlog.length), 0, t);
+    S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === t.id));
+    S.fileSelFor = t.id; S.fileSel = picked.size ? picked : new Set(ids);
+    S.roll = null;
+    toast('Failed: ' + e.message);
     render();
-  } catch (e) { toast('Failed: '+e.message); }
+    return;
+  }
+  S.filing = false;
+  const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
+                                await forgetAccept(t.id, ids); };
+  toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
+  const more = rollForwardFor(t, R.backlog, ids, FB);
+  S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
+                           rows: more.map(b => ({ id: b.id, title: b.title })), off: new Set() } : null;
+  render();
 }
 async function inboxAct(ctx, a) {
   const { S, R, recordSkip, libraryCall, logAction, getLog, undoAction, playTrack, toast, render } = ctx;
@@ -3761,7 +3792,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-1029`,
+    `Betterfy engine score — build 2026-11-15-1036`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5618,7 +5649,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-1029';
+const BUILD = '2026-11-15-1036';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -5939,7 +5970,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-1029', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-1036', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -8722,13 +8753,48 @@ const isPhone = () => innerWidth <= 820;
 // Set while the inbox card owns the current gesture, so the screen-level
 // swipe below doesn't try to change screen out from under it.
 let gestureClaimed = false;
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** The File card leaving: a ghost copy flies off while the real deck redraws
+ *  underneath, so filing never waits on the animation (or on Spotify). dir is
+ *  +1 for filed (right), -1 for skipped. Reduced motion: a cut. */
+function flyCard(dir) {
+  const card = $('#swipeCard');
+  if (!card || calm()) return;
+  const from = card.style.transform;
+  card.style.transition = 'none'; card.style.transform = '';
+  const r = card.getBoundingClientRect();
+  const g = card.cloneNode(true);
+  g.removeAttribute('id'); g.removeAttribute('data-best'); g.setAttribute('aria-hidden', 'true');
+  g.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'));
+  g.querySelectorAll('[style*="view-transition-name"]').forEach(n => { n.style.viewTransitionName = 'none'; });
+  g.classList.remove('drag', 'to-file', 'to-skip', 'promote');
+  Object.assign(g.style, { position: 'fixed', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px',
+    height: r.height + 'px', margin: '0', zIndex: '60', pointerEvents: 'none', transition: 'none', transform: from });
+  document.body.appendChild(g);
+  g.getBoundingClientRect();
+  g.style.transition = 'transform var(--dur-3) var(--ease-in), opacity var(--dur-3) var(--ease-in)';
+  g.style.transform = `translate3d(${dir * 120}vw,40px,0) rotate(${dir * 14}deg)`;
+  g.style.opacity = '0';
+  setTimeout(() => g.remove(), 450);
+}
+
+/** Up-next cover -> File card art: name both ends the same, redraw inside a
+ *  View Transition. Anywhere without them (or with reduced motion) it is a plain redraw. */
+function morphArt(cover, id, update) {
+  if (!cover || !id || !document.startViewTransition || calm()) return update();
+  const name = 'art-' + String(id).replace(/[^\w-]/g, '');
+  cover.style.viewTransitionName = name;
+  document.startViewTransition(() => { update(); const a = document.querySelector('#swipeCard .artwrap'); if (a) a.style.viewTransitionName = name; });
+}
 
 /** Drag the top inbox card: right files it into the best suggestion, left skips. */
 function bindSwipeCard() {
   const card = $('#swipeCard');
   if (!card) return;
   const TH = 76;                       // travel, in px, before a swipe counts
-  let x0 = 0, y0 = 0, dx = 0, mode = null;
+  let x0 = 0, y0 = 0, dx = 0, mode = null, trail = [];
+  const FLICK = 0.55, FLICK_MIN = 28;   // px/ms, and the least travel a flick may commit on
   const vFile = card.querySelector('.verdict.file'), vSkip = card.querySelector('.verdict.skip');
 
   const paint = () => {
@@ -8748,7 +8814,7 @@ function bindSwipeCard() {
 
   card.addEventListener('touchstart', e => {
     if (e.touches.length !== 1) return;
-    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null; trail = [];
   }, { passive: true });
 
   card.addEventListener('touchmove', e => {
@@ -8763,23 +8829,26 @@ function bindSwipeCard() {
     }
     if (mode !== 'swipe') return;
     dx = nx; paint();
+    trail.push([e.timeStamp, nx]); if (trail.length > 8) trail.shift();
   }, { passive: true });
 
   const finish = () => {
     if (mode !== 'swipe') { gestureClaimed = false; mode = null; return; }
     mode = null; gestureClaimed = false;
     const best = card.dataset.best;
-    // A pending tap selection wins over the single best guess — swiping is
+    // Speed over the last ~100 ms: a quick flick commits below the distance threshold.
+    const [t1, x1] = trail[trail.length - 1] ?? [0, dx];
+    const [t0, x0v] = trail.find(([tt]) => t1 - tt <= 100) ?? [t1, x1];
+    const v = t1 > t0 ? (x1 - x0v) / (t1 - t0) : 0;
+    const flickR = v > FLICK && dx > FLICK_MIN, flickL = v < -FLICK && dx < -FLICK_MIN;
+    // A pending tap selection wins over the single best guess: swiping is
     // then "confirm what I picked", not "override it with something else".
-    if (dx > TH && (S.fileSel.size > 0 || best)) {
+    if ((dx > TH || flickR) && (S.fileSel.size > 0 || best)) {
       buzz(12);
-      card.classList.add('gone');
-      card.style.transform = 'translate3d(120vw,40px,0) rotate(14deg)';
-      fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : best));
-    } else if (dx < -TH) {
+      fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : best));   // flies the card out itself
+    } else if (dx < -TH || flickL) {
       buzz(8);
-      card.classList.add('gone');
-      card.style.transform = 'translate3d(-120vw,40px,0) rotate(-14deg)';
+      flyCard(-1);
       fire(inboxAct('skip'));
     } else reset();
   };
@@ -9000,7 +9069,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-1029';
+    s.src = 'engine.js?v=2026-11-15-1036';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -9022,7 +9091,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-1029');
+    const w = new Worker('engine-worker.js?v=2026-11-15-1036');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9497,7 +9566,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-1029';
+    s.src = 'audio.js?v=2026-11-15-1036';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -9533,7 +9602,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1029', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1036', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -10267,7 +10336,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1029', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1036', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -10565,12 +10634,12 @@ SCREEN_CTX.new = () => ({
 Object.assign(SCREEN_CTX, {
   // The File tab: the status line and Up next around the `inbox` module's deck.
   home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks,
-                 render, openUnderHood, deck: screenView('inbox') }),
+                 render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
                   addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, recordSkip, recordReject,
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
-                  saveFeedback, toast, render,
+                  saveFeedback, toast, render, flyCard,
                   rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
                   matchMedia: q => globalThis.matchMedia(q) }),
 });

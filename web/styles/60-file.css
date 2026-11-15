@@ -7,6 +7,10 @@
   .swipecard{position:relative; z-index:1; touch-action:pan-y; will-change:transform;
              transition:transform var(--dur-3) var(--ease-out), box-shadow var(--dur-2) ease}
   .swipecard.drag{transition:none}
+  /* The card that was the peek: springs up from the peek's scale when the one above it leaves. */
+  .swipecard.promote{animation:promoteUp var(--dur-4) var(--ease-spring) both}
+  @keyframes promoteUp{from{transform:scale(.955) translateY(14px)}to{transform:none}}
+  @media (prefers-reduced-motion:reduce){.swipecard.promote{animation:none}}
   .swipecard.gone{transition:transform var(--dur-3) ease-out, opacity var(--dur-3) ease-out; opacity:0}
   .verdicts{position:absolute; inset:0; pointer-events:none; z-index:3; border-radius:var(--r-4); overflow:hidden}
   .verdict{position:absolute; top:16px; display:flex; align-items:center; gap:7px; padding:8px 15px; border-radius:999px;
