@@ -47,6 +47,7 @@ function load({ tags = {}, rawTags = {}, key = 'lfm-key', fetchTags = null, seed
     syncStamped: async (doc, local) => { synced.push([doc, JSON.parse(JSON.stringify(local))]); return false; },
     render: () => {},
     LS: { getItem: k => (k === 'bf_lfm' ? key : null) },
+    lfmKey: () => ({ getItem: k => (k === 'bf_lfm' ? key : null) }).getItem('bf_lfm'),
     // Refetching offers the fresh tags to the shared table on its way past.
     contributeTags: (...a) => shared.push(a),
     fetch: async () => ({ json: async () => fetchTags ?? { toptags: { tag: [] } } }),
@@ -191,7 +192,7 @@ test('buildReports computes drift alongside misfiled, from the same idf table', 
 });
 
 test('enrichMissing covers what you actually listen to first', () => {
-  const from = BUNDLE.indexOf('async function enrichMissing()');
+  const from = BUNDLE.indexOf('async function enrichMissing(');
   const to = BUNDLE.indexOf("/* ---------- correcting one artist's tags", from);
   const body = BUNDLE.slice(from, to);
   assert.ok(from > 0 && to > from, 'enrichMissing not found — rebuild with npm run build:web');

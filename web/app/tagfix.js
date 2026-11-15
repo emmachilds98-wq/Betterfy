@@ -99,7 +99,7 @@ async function resetArtistTags(id) {
 /** Ask Last.fm again for one artist, ignoring whatever it is shipped with —
  *  for the case where autocorrect or the crowd tags have since improved. */
 async function refetchArtist(id, name) {
-  const key = LS.getItem('bf_lfm');
+  const key = lfmKey();
   if (!key) return toast('Add a Last.fm key on the Sources screen first.');
   try {
     const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
@@ -122,7 +122,7 @@ function tagEditorHTML(id, name) {
       <input id="newTagVal" placeholder="Add a tag" size="16">
       <button class="b sm" data-addtag="${esc(id)}">Add</button>
       <button class="b sm" data-refetchtags="${esc(id)}" data-artistname="${esc(name)}"
-        ${LS.getItem('bf_lfm') ? '' : 'disabled title="Add a Last.fm key on the Sources screen first"'}>Refetch from Last.fm</button>
+        ${lfmKey() ? '' : 'disabled title="Add a Last.fm key on the Sources screen first"'}>Refetch from Last.fm</button>
       <button class="b sm" data-resettags="${esc(id)}">Reset to shipped</button>
       <button class="b sm" data-closetagedit="1">Done</button>
     </div>

@@ -37,6 +37,7 @@ function load({ artists = [], answers = {}, cache = {}, discogs = null } = {}) {
     CFG: {},
     TAGS: Object.fromEntries(Object.entries(cache).map(([k, v]) => [k, v])),
     LS: { getItem: k => (k === 'bf_lfm' ? 'lfm-key' : k === 'bf_discogs' ? discogs : null) },
+    lfmKey: () => ({ getItem: k => (k === 'bf_lfm' ? 'lfm-key' : k === 'bf_discogs' ? discogs : null) }).getItem('bf_lfm'),
     idb: { get: async k => JSON.parse(JSON.stringify(store[k] ?? null)),
            set: async (k, v) => { store[k] = JSON.parse(JSON.stringify(v)); } },
     fetch: async url => {

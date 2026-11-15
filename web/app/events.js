@@ -246,6 +246,7 @@ document.addEventListener('click', guard(async e => {
     return;
   }
   if (e.target.id === 'enrich') return enrichMissing();
+  if (e.target.id === 'analyseGo') return analyseGo();
   if (e.target.id === 'fillWikidata') return fillFromWikidata();
   if (e.target.id === 'audioGo') return audioStart();
   const lchk = e.target.closest('[data-lchk]');

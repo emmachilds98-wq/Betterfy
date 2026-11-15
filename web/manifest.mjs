@@ -49,6 +49,7 @@ export const APP_FILES = [
   'app/soundfirst.js',
   'app/clap.js',
   'app/audio-panel.js',
+  'app/analyse.js',
   'screens/engine.js',
   'app/events.js',
   'screens/inbox-actions.js',

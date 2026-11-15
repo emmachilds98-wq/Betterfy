@@ -87,3 +87,8 @@
   .acts4 .act:nth-child(3){animation-delay:.08s}
   .acts4 .act:nth-child(4){animation-delay:.12s}
   .acts4 .act:nth-child(5){animation-delay:.16s}
+
+/* One-tap analysis: the button and its single progress strip. */
+.analyse { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; }
+.analyse .d { color: var(--ink-3); font-size: 13px; flex: 1 1 240px; }
+.analyse[role="status"] { padding: 10px 14px; border-radius: 12px; background: var(--card, rgba(127,127,127,.1)); font-variant-numeric: tabular-nums; }

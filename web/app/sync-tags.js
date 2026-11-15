@@ -78,9 +78,9 @@ const REASK_AFTER_MS = 1000 * 60 * 60 * 24 * 180; // ~6 months
 const worthReasking = e => !e || (e.tags?.length ?? 0) < REASK_TAG_FLOOR && (Date.now() - (e.checkedAt ?? 0)) > REASK_AFTER_MS;
 
 /** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
-async function enrichMissing() {
-  const key = LS.getItem('bf_lfm');
-  if (!key) return toast('Add a Last.fm key first.');
+async function enrichMissing({ quiet = false, onProgress = null } = {}) {
+  const key = lfmKey();
+  if (!key) return quiet ? 0 : toast('Add a Last.fm key first.');
   const discogsToken = LS.getItem('bf_discogs');
   // "Missing" means thin, not just "no entry at all" — fewer tags than
   // REASK_TAG_FLOOR is treated the same as zero, so a gap Last.fm barely
@@ -92,7 +92,7 @@ async function enrichMissing() {
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
   let todo = [...names];
-  if (!todo.length) return toast('Nothing missing.');
+  if (!todo.length) return quiet ? 0 : toast('Nothing missing.');
 
   // Hundreds of gaps can take a while — cover what you actually listen to
   // first, so leaving the screen partway through still improves the
@@ -101,7 +101,9 @@ async function enrichMissing() {
 
   const cached = (await idb.get('tags_extra')) ?? {};
   let done = 0, viaDiscogs = 0, failed = 0, blank = 0;
+  let seen = 0;
   for (const [id, name] of todo) {
+    onProgress?.(seen++, todo.length);
     // Already asked about, and not stale-thin enough to be worth asking
     // again yet. A real, well-tagged answer is never re-asked — there's no
     // upside — and a thin or empty one only gets a second look after
@@ -146,10 +148,12 @@ async function enrichMissing() {
   await idb.set('tags_extra', cached);
   R = buildReports(LIB, CFG, TAGS);
   $('#land').hidden = true; $('#app').hidden = false;
-  toast(`Tags filled for ${done} of ${todo.length} artists.`
+  onProgress?.(todo.length, todo.length);
+  if (!quiet) toast(`Tags filled for ${done} of ${todo.length} artists.`
     + (viaDiscogs ? ` ${viaDiscogs} from Discogs, where Last.fm had nothing.` : '')
     + (blank ? ` ${blank} have no tags anywhere.` : '')
     + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : ''));
-  render();
+  if (!quiet) render();
+  return done;
 }
 

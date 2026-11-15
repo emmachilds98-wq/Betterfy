@@ -33,7 +33,7 @@ function load({ records = null, profileRow = () => '', panel = '<div id="audioPa
     isMirrorPlaylist: () => false,
     tagCoverage: () => ({ total: 10, have: 9, missing: 1, pct: 90 }),
     esc: s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]),
-    LS: { getItem: () => '' },
+    LS: { getItem: () => '' }, lfmKey: () => null,
     AUDIO: { records, labels: null },
     BetterfyAudio: records ? { profileVM: p => ({ heard: 3, members: p.tracks.length }) } : undefined,
     profileRow, audioPanelHTML: () => panel, labelCheckHTML: () => '',
