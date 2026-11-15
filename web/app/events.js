@@ -248,6 +248,8 @@ document.addEventListener('click', guard(async e => {
   if (e.target.id === 'enrich') return enrichMissing();
   if (e.target.id === 'fillWikidata') return fillFromWikidata();
   if (e.target.id === 'audioGo') return audioStart();
+  if (e.target.id === 'maestGo') return maestStart();
+  if (e.target.id === 'maestStop') { AUDIO.maest?.stop(); return; }
   const lchk = e.target.closest('[data-lchk]');
   if (lchk && globalThis.BetterfyAudio) return labelVerdict(lchk);
   if (e.target.id === 'labelCheckMore') { LABELS.seed++; LABELS.sample = null; return labelCheckRedraw(); }
@@ -391,6 +393,11 @@ document.addEventListener('change', guard(async e => {
     else LS.setItem('bf_audio_deep', JSON.stringify({ ...deepSettings(), ...change }));
     // Ticking CLAP describes the tracks already heard; the next run picks it up, so start one now.
     if (change.clap && audioSettings().on && !AUDIO.ctrl?.running) audioStart({ quiet: true });
+    // The second ear: off stops the run in flight; on (or the memory override) starts one.
+    if (e.target.id !== 'deepClap') {
+      if (!deepSettings().maest) await AUDIO.maest?.stop();
+      else maestStart();
+    }
     return audioRedraw();
   }
   if (e.target.id === 'audioOn' || e.target.id === 'audioWifi' || e.target.id === 'audioScope') {

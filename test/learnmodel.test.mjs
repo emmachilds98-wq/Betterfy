@@ -115,7 +115,8 @@ test('every place the page builds a sound space or scores one goes through engin
   for (const m of PAGE.matchAll(/BetterfyIntrinsic\.(?:buildSpace|withAudioLayer)\([^\n]*\n?[^\n]*/g))
     if (/audio/.test(m[0])) assert.match(m[0], /engineAudioIn\(audio\)/, m[0]);
   assert.match(slice('const common = { folds: 5, limit: VALIDATE_N', 'const mine = BetterfyValidate.placementAccuracy(LIB, common)'),
-    /audio: engineAudioIn\(audio\)/);
+    // engineAudioScore is engineAudioIn's records and model plus WP-C1's second-ear arms.
+    /audio: engineAudio(?:In|Score)\(audio\)/);
 });
 
 function worker() {

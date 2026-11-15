@@ -26,9 +26,22 @@
 // emit one in), so importing `MIN_DEFINITION_TRACKS` from there would make the
 // wiring unbuildable. The value is restated as `MIN_AUDIO_MEMBERS` and a test
 // pins the two equal, so they cannot drift apart silently.
-import { validRecord, isCurrent, unpackEmbedding, EMB_DIM } from '../audio/record.mjs';
+import { validRecord, isCurrent, unpackEmbedding, earCurrent, EMB_DIM, MAEST_DIM } from '../audio/record.mjs';
 
-export const AUDIO_COMPONENT_VERSION = '1.0.0';
+// 1.1.0 (WP-C1): `audioIndex(records, { ear })` can read the second ear.
+// Without `ear` it is exactly 1.0.0.
+export const AUDIO_COMPONENT_VERSION = '1.1.0';
+
+/**
+ * Which ear an index hears with (WP-C1). 'effnet' is the first ear and the
+ * default. 'maest' is the second ear's embedding alone. 'both' joins the two
+ * unit embeddings (each half weighted equally, then renormalised), so a
+ * cosine on it is the mean of the two ears' cosines. An index never mixes
+ * spaces: a 'maest' or 'both' index holds only tracks that have a current
+ * `maest` field.
+ */
+export const EARS = Object.freeze(['effnet', 'maest', 'both']);
+const EAR_DIM = { effnet: EMB_DIM, maest: MAEST_DIM, both: EMB_DIM + MAEST_DIM };
 
 /**
  * A playlist needs this many *analysed* members before its sound is a
@@ -78,23 +91,38 @@ function recordsOf(records) {
  * Two records for one id: the newer (`at`) wins.
  *
  * @param {Iterable<object>|Record<string, object>|null} records
- * @param {{ mel?: string }} [opts]  pass the page's MEL_VERSION to also drop
- *        records computed with another front end
+ * @param {{ mel?: string, ear?: 'effnet'|'maest'|'both' }} [opts]  `mel`: pass the
+ *        page's MEL_VERSION to also drop records computed with another front
+ *        end. `ear`: see EARS; default 'effnet'.
  * @returns {Map<string, { emb: Float32Array, styles: Array<[number, number]>, rec: object }>}
  */
-export function audioIndex(records, { mel = undefined } = {}) {
+export function audioIndex(records, { mel = undefined, ear = 'effnet' } = {}) {
+  if (!EARS.includes(ear)) throw new Error(`unknown ear: ${ear}`);
   const index = new Map();
   for (const rec of recordsOf(records)) {
     if (!validRecord(rec) || rec.miss) continue;
     if (!isCurrent(rec, { mel })) continue;
+    if (ear !== 'effnet' && !earCurrent(rec, 'maest')) continue;
     const prev = index.get(rec.id);
     if (prev && !((rec.at ?? 0) > (prev.rec.at ?? 0))) continue;
     let emb;
-    try { emb = unit(unpackEmbedding(rec.emb)); } catch { emb = null; }
-    if (!emb || emb.length !== EMB_DIM) continue;
-    index.set(rec.id, { emb, styles: rec.styles, rec });
+    try { emb = embeddingOf(rec, ear); } catch { emb = null; }
+    if (!emb || emb.length !== EAR_DIM[ear]) continue;
+    index.set(rec.id, { emb, styles: ear === 'maest' ? rec.maest.styles : rec.styles, rec });
   }
   return index;
+}
+
+/** One record's unit embedding as `ear` hears it, or null. */
+function embeddingOf(rec, ear) {
+  if (ear === 'effnet') return unit(unpackEmbedding(rec.emb));
+  const m = unit(unpackEmbedding(rec.maest.emb));
+  if (ear === 'maest') return m;
+  const e = unit(unpackEmbedding(rec.emb));
+  if (!e || !m) return null;
+  const both = new Float32Array(e.length + m.length);
+  both.set(e, 0); both.set(m, e.length);
+  return unit(both);
 }
 
 /**

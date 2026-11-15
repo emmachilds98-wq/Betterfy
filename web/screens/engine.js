@@ -69,7 +69,7 @@ const engineValidate = guard(async () => {
     let done = null;
     // Scored the way the app files: the genre-only artist graph, and heard tracks
     // with sound leading (soundFirst), so the number is the engine you use.
-    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioIn(audio),
+    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioScore(audio),
                                                     opts: { folds: 5, limit: VALIDATE_N, collect: true,
                                                             genreGraph: true, soundFirst: true } }); }
     catch { done = null; }
@@ -81,7 +81,7 @@ const engineValidate = guard(async () => {
       await engineLoad();
       await yieldToPaint();
       const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
-                       audio: engineAudioIn(audio), collect: true,
+                       audio: engineAudioScore(audio), collect: true,
                        genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
@@ -252,6 +252,7 @@ function audioCard(v, p) {
         ? (g.pass === true ? 'Helps.' : g.pass === false ? 'Not ahead of tags yet on your filing; sound still leads, by your call.' : 'Undecided; sound still leads, by your call.')
         : (g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.')}</b>
       ${esc(g.text ?? '')}</p>
+    ${w.arms?.maest && globalThis.BetterfyAudio?.maestScoreText ? `<p class="why" id="maestScore" style="margin-top:8px">${esc(BetterfyAudio.maestScoreText(w))}</p>` : ''}
     ${identifyHTML(v.identify, p)}
   </div>`;
 }
@@ -349,6 +350,7 @@ function audioLines(v, pc) {
     `Sound coverage: ${w.heard} of ${v.mine.scored} scored tracks heard (${w.heardNeverFiled} never-filed), `
       + `${w.analysed} analysed in all; had a say on ${w.judged}, changed ${w.changed} top answers`,
     `Audio gate: ${g.pass === true ? 'PASS' : g.pass === false ? 'not yet' : 'undecided'} (${g.reason ?? '—'}) — ${g.text ?? ''}`,
+    ...(w.arms?.maest && globalThis.BetterfyAudio?.maestScoreText ? [BetterfyAudio.maestScoreText(w, pc)] : []),
     ...(v.identify?.scored ? [
       `Naming genres by sound (${v.identify.scored} filed tracks): genre ${pc(v.identify.genre)}, sub-genre ${pc(v.identify.specific)}; `
         + `model alone ${pc(v.identify.modelOnly.genre)} / ${pc(v.identify.modelOnly.specific)}; `

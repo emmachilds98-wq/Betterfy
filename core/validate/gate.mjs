@@ -96,3 +96,55 @@ export function audioCalibration(acc, opts = {}) {
   const withAudio = acc?.withAudio?.rows?.length ? calibrationReport(acc.withAudio.rows, opts) : null;
   return { without, withAudio };
 }
+
+/**
+ * WP-C1: which ear may place tracks, read from one Score run that also scored
+ * the other ears (`placementAccuracy(lib, { audio: { records, arms: ['maest', 'both'] } })`).
+ *
+ * The first ear (EffNet, Option B) is the default and stays it unless another
+ * arm, on the same run, both
+ *   1. passes the same gate against no sound at all (`audioGate`), and
+ *   2. beats the first ear: at least `minLiftOverFirst` more top-1 on
+ *      never-filed artists, and no loss overall, against the first ear's arm.
+ * The second bar is set before any of the owner's numbers exist, like the
+ * first: a second ear that only ties is a 90 MB download for nothing. Among
+ * arms that clear both, the larger never-filed top-1 wins, then 'maest' (one
+ * model) over 'both' on a tie.
+ *
+ * Returns `{ ear, gate, reason, text, vsFirst }`: `gate` is the verdict for the
+ * chosen ear, so `useAudio: audioInUse(choice.gate)` is the same question as
+ * before. Without arms it is `{ ear: 'effnet', gate: withAudio.gate }`, exactly
+ * what the page used until now.
+ */
+export const EAR_GATE = Object.freeze({ minLiftOverFirst: 0.02 });
+
+export function earChoice(acc, opts = {}) {
+  const bar = { ...EAR_GATE, ...opts };
+  const w = acc?.withAudio ?? null;
+  const first = w?.gate ?? (w ? audioGate(acc) : null);
+  const keep = (reason, text, vsFirst = {}) => ({ ear: 'effnet', gate: first, reason, text, vsFirst, bar });
+  const arms = w?.arms ? Object.entries(w.arms) : [];
+  if (!arms.length) return keep('NO_ARMS', 'Only the first ear was scored.');
+
+  const vsFirst = {};
+  let best = null;
+  for (const [ear, a] of arms) {
+    const lift = (a.neverFiled?.top1 ?? 0) - (w.neverFiled?.top1 ?? 0);
+    const overall = (a.top1 ?? 0) - (w.top1 ?? 0);
+    const beats = a.gate?.pass === true && lift + EPS >= bar.minLiftOverFirst && overall >= -EPS;
+    vsFirst[ear] = { lift: +lift.toFixed(4), overall: +overall.toFixed(4), passes: a.gate?.pass ?? null, beats };
+    if (!beats) continue;
+    const score = a.neverFiled?.top1 ?? 0;
+    if (!best || score > best.score + EPS || (Math.abs(score - best.score) <= EPS && ear === 'maest'))
+      best = { ear, score, gate: a.gate };
+  }
+  if (!best) {
+    const undecided = arms.some(([, a]) => a.gate?.pass == null);
+    return keep(undecided ? 'ARMS_UNDECIDED' : 'FIRST_EAR_KEPT',
+      undecided ? 'Too few tracks heard by the second ear to judge it yet, so the first ear stays.'
+        : 'The second ear did not beat the first on your library, so the first ear stays.', vsFirst);
+  }
+  const v = vsFirst[best.ear];
+  return { ear: best.ear, gate: best.gate, reason: 'SECOND_EAR', vsFirst, bar,
+           text: `${best.ear === 'maest' ? 'The second ear' : 'Both ears together'} ${pts(v.lift)} on never-filed artists over the first ear, ${pts(v.overall)} overall.` };
+}

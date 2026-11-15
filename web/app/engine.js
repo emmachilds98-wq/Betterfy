@@ -161,7 +161,7 @@ async function engineLoadCalibration() {
     if (c && c.stamp === calStamp() && c.fingerprint === BetterfyPersist.fingerprint(LIB)
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
       ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, audioGate: c.audioGate ?? null,
-                   at: c.at ?? null };
+                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
 }
 
@@ -172,16 +172,23 @@ async function engineCalibrate(v) {
   await engineLoad();
   const base = BetterfyCalibrate.calibrationReport(mine.rows);
   const bridge = mine.withBridge?.rows ? BetterfyCalibrate.calibrationReport(mine.withBridge.rows) : null;
-  const audio = mine.withAudio?.rows ? BetterfyCalibrate.calibrationReport(mine.withAudio.rows) : null;
+  // WP-C1: which ear this run chose. The first ear unless a second ear passed
+  // the gate and beat it; its calibration then comes from that ear's rows.
+  const choice = mine.withAudio?.choice ?? null;
+  const soundChoice = choice ? { ear: choice.ear, reason: choice.reason, gate: choice.gate ?? null } : null;
+  const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows : mine.withAudio?.rows;
+  const audio = soundRows ? BetterfyCalibrate.calibrationReport(soundRows) : null;
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
   if (mine.withAudio) delete mine.withAudio.rows;
-  ENG.calib = { base, bridge, audio, audioGate, at: Date.now() };
+  for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
+  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
-                             targets: engineTargets(), base, bridge, audio, audioGate, at: ENG.calib.at });
+                             targets: engineTargets(), base, bridge, audio, audioGate,
+                             ...(soundChoice ? { soundChoice } : {}), at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }
