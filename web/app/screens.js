@@ -21,6 +21,8 @@ const SCREEN_CTX = {
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
                    blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
                    maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,
+                   getLog: () => (typeof getLog === 'function' ? getLog() : Promise.resolve(null)),
+                   measureLines: log => globalThis.BetterfyMeasure ? BetterfyMeasure.measureLines(BetterfyMeasure.measureHistory(log)) : [],
                    get navigator() { return globalThis.navigator; }, prompt: (...a) => prompt(...a) }),
 };
 

@@ -186,7 +186,7 @@ document.addEventListener('click', guard(async e => {
   const mv = e.target.closest('[data-mvto]');
   if (mv) {
     mv.disabled = true;
-    const { mvto:to, mvfrom:from, mvtr:tr } = mv.dataset;
+    const { mvto:to, mvfrom:from, mvtr:tr, mvtier:tier } = mv.dataset;
     const toName = CFG[to]?.name ?? to, fromName = CFG[from]?.name ?? from;
     try {
       // Add first: if the removal then fails the track is still filed somewhere
@@ -200,7 +200,7 @@ document.addEventListener('click', guard(async e => {
       const positions = {}; before.forEach((id,i) => { if (id === tr) (positions[id] ??= []).push(i); });
       await delTracks(from, [tr]);
       await logAction({ op:'remove', playlistId:from, playlistName:fromName, trackIds:[tr], positions, reason:`moved to ${toName}`, group,
-                        move:{ trackId:tr, from, to, fromName, toName } });
+                        move:{ trackId:tr, from, to, fromName, toName, ...(tier ? { tier } : {}) } });
       toast(`Moved to ${toName}.`, () => undoAction(at));
       // What the sound learner reads as a move: yes to `to`, no to `from`.
       await recordMove(tr, from, to).catch(() => {});
