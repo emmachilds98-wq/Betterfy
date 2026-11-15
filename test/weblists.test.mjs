@@ -34,7 +34,7 @@ function load({ records = null, profileRow = () => '', panel = '<div id="audioPa
     isMirrorPlaylist: () => false,
     tagCoverage: () => ({ total: 10, have: 9, missing: 1, pct: 90 }),
     esc: s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]),
-    LS: { getItem: () => '' },
+    LS: { getItem: () => '' }, lfmKey: () => null,
     AUDIO: { records, labels: null },
     BetterfyAudio: records ? { profileVM: p => ({ heard: 3, members: p.tracks.length }) } : undefined,
     profileRow, audioPanelHTML: () => panel, labelCheckHTML: () => '',
@@ -71,7 +71,7 @@ test('Playlists keeps every control id and handler hook it had, and leaves the s
 
 test('Sources holds the three genre sources and the Listening card', () => {
   const sb = load();
-  const html = SOURCES.view({ ...sb, playlistMixes: vm.runInContext('playlistMixes', sb) });
+  const html = SOURCES.view({ lfmKey: () => '', ...sb, playlistMixes: vm.runInContext('playlistMixes', sb) });
   for (const id of ['lfmKey', 'saveLfm', 'enrich', 'fillWikidata', 'discogsKey', 'saveDiscogs']) assert.ok(html.includes(`id="${id}"`), id);
   assert.match(html, /<button class="b p" id="enrich" data-act="enrich" disabled>/); // no key yet
   assert.match(html, /<section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h"><div id="audioPanel">panel<\/div><\/section>/);

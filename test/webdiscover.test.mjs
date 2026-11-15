@@ -35,6 +35,7 @@ function load({ discover = [], discAt = 0, key = 'lfm-key' } = {}) {
            p3: { name: 'Tiny', axis: 'genre', target: false } },
     S: { discover, discAt, discoverFrom: 'Jungle & Breaks' },
     LS: { getItem: k => (k === 'bf_lfm' ? key : null) },
+    lfmKey: () => ({ getItem: k => (k === 'bf_lfm' ? key : null) }).getItem('bf_lfm'),
     hueOf: () => 200,
     ICON_PLAY: '<svg id="playicon"></svg>',
     toast: () => {},

@@ -18,10 +18,8 @@ function render(dir) {
 
   const main = $('#main');
   main.dataset.view = view;
-  main.classList.remove('in-l', 'in-r');
   main.innerHTML = VIEWS[view]();
   SCREEN_MODS[view]?.mount?.(screenCtx(view));
-  if (dir) { void main.offsetWidth; main.classList.add(dir > 0 ? 'in-l' : 'in-r'); }
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
@@ -55,8 +53,8 @@ function go(v) {
   if (v === view) return render();
   const dir = VORDER.indexOf(v) >= VORDER.indexOf(view) ? 1 : -1;
   view = v;
-  render(dir);
-  window.scrollTo(0, 0);
+  // The redraw runs inside a View Transition where there is one (motion.js).
+  swapScreen(dir, () => { render(dir); window.scrollTo(0, 0); });
   routeNote();
 }
 

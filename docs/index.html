@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0543">
+<meta name="bf-build" content="2026-11-15-0548">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -164,6 +164,9 @@
      moving things gets the same app, still. */
   @media (prefers-reduced-motion:reduce){
     *,*::before,*::after{animation-duration:.001ms!important; animation-iteration-count:1!important; transition-duration:.001ms!important}
+    /* Screen changes are a cut: the View Transition's own pseudo-elements sit
+       outside the selector above. */
+    ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
   }
 
   /* ---------- landing ---------- */
@@ -183,7 +186,7 @@
      light enough that a hard edge at 70vh was the most visible thing on the
      screen. Masked, it just stops. */
   .aurora{position:fixed; inset:0 0 auto; height:78vh; z-index:-2; overflow:hidden; pointer-events:none;
-    opacity:0; transition:opacity .5s ease;
+    opacity:0; transition:opacity var(--dur-4) ease;
     -webkit-mask-image:linear-gradient(#000 42%, transparent); mask-image:linear-gradient(#000 42%, transparent)}
   body:has(#land:not([hidden])) .aurora{opacity:1}
   .aurora i{position:absolute; display:block; border-radius:50%; filter:blur(80px); opacity:.26}
@@ -218,7 +221,7 @@
   @media (max-width:560px){ .feat{grid-template-columns:1fr} }
   .feat div{position:relative; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3);
     padding:18px 20px 18px 24px; overflow:hidden; box-shadow:var(--shadow);
-    transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease}
+    transition:transform var(--dur-1) ease, border-color var(--dur-1) ease, box-shadow var(--dur-1) ease}
   /* One card per hue: the landing page is the first thing anyone sees, and a
      four-up grid of identical grey boxes was selling it short. */
   /* A rounded rule inset from the corner, not a stripe down the edge: at a
@@ -262,7 +265,7 @@
   .nav{appearance:none; border:1px solid var(--line); background:transparent; font:inherit; cursor:pointer;
        padding:9px 16px; color:var(--ink-2); display:flex; align-items:center; gap:8px;
        border-radius:999px; font-size:13.5px; font-weight:600; white-space:nowrap; flex:none;
-       position:relative; transition:background .14s ease, color .14s ease, border-color .14s ease}
+       position:relative; transition:background var(--dur-1) ease, color var(--dur-1) ease, border-color var(--dur-1) ease}
   .nav .lbl{min-width:0}
   /* Each screen owns a hue (--vc, set per button below) so the pills, the tab
      bar and the screen you land on all agree on a colour. */
@@ -370,7 +373,7 @@
        font:inherit; display:flex; flex-direction:column; gap:6px;
        background:color-mix(in srgb, var(--ac) 15%, var(--surface));
        border:1px solid color-mix(in srgb, var(--ac) 32%, transparent);
-       transition:transform var(--dur-1) ease, box-shadow .14s ease}
+       transition:transform var(--dur-1) ease, box-shadow var(--dur-1) ease}
   .act:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
   .act:active{transform:scale(.99)}
   .act .ic{width:40px; height:40px; border-radius:14px; background:var(--ac); color:var(--ac-ink);
@@ -388,7 +391,7 @@
   .panel .ph h2{margin:0; font-size:19px}
   .panel .ph .mono{font-size:12px; color:var(--ink-3)}
   .bar{display:flex; height:22px; border-radius:11px; overflow:hidden; background:var(--surface-3)}
-  .bar i{display:block; transition:width .4s var(--ease-out)}
+  .bar i{display:block; transition:width var(--dur-4) var(--ease-out)}
   .key{display:flex; gap:22px; margin-top:14px; flex-wrap:wrap; font-size:13.5px; color:var(--ink-2)}
   .key span{display:flex; align-items:center; gap:8px}
   .key i{width:10px; height:10px; border-radius:3px; display:block}
@@ -404,7 +407,7 @@
   .upnext{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px}
   .upnext .u{border-radius:var(--r-3); overflow:hidden; background:var(--surface); border:1px solid var(--line);
         text-align:left; font:inherit; color:var(--ink); cursor:pointer; padding:0;
-        transition:transform var(--dur-1) ease, box-shadow .14s ease;
+        transition:transform var(--dur-1) ease, box-shadow var(--dur-1) ease;
         display:flex; flex-direction:column; min-width:0}
   .upnext .u:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
   .upnext .u .cov{aspect-ratio:1; width:100%; display:grid; place-items:center; object-fit:cover;
@@ -423,14 +426,19 @@
 
   /* The card animation, kept: the action cards on Home use it. */
   @keyframes tileIn{from{opacity:0; transform:translateY(9px)}}
-  .acts4 .act{animation:tileIn .34s var(--ease-out) backwards}
+  .acts4 .act{animation:tileIn var(--dur-3) var(--ease-out) backwards}
   .acts4 .act:nth-child(2){animation-delay:.04s}
   .acts4 .act:nth-child(3){animation-delay:.08s}
   .acts4 .act:nth-child(4){animation-delay:.12s}
   .acts4 .act:nth-child(5){animation-delay:.16s}
+
+/* One-tap analysis: the button and its single progress strip. */
+.analyse { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; }
+.analyse .d { color: var(--ink-3); font-size: 13px; flex: 1 1 240px; }
+.analyse[role="status"] { padding: 10px 14px; border-radius: 12px; background: var(--card, rgba(127,127,127,.1)); font-variant-numeric: tabular-nums; }
   .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-4); padding:26px 28px 28px; box-shadow:var(--shadow-2)}
   .prog{height:5px; background:var(--surface-3); border-radius:3px; overflow:hidden; margin-bottom:18px}
-  .prog i{display:block; height:100%; border-radius:3px; transition:width .35s var(--ease-out);
+  .prog i{display:block; height:100%; border-radius:3px; transition:width var(--dur-3) var(--ease-out);
           background:linear-gradient(90deg, var(--progress-accent), color-mix(in srgb, var(--view) 70%, var(--progress-accent)))}
   .now{display:flex; gap:14px; align-items:flex-start}
   .now .txt{min-width:0; flex:1}
@@ -487,7 +495,7 @@
   .picks{display:flex; flex-direction:column; gap:9px; margin-top:24px}
   .pick{display:flex; align-items:center; gap:14px; border:1px solid var(--line); border-radius:18px; background:var(--surface-2);
         padding:16px 18px; cursor:pointer; font:inherit; font-size:15px; color:var(--ink); text-align:left; width:100%;
-        transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform .08s ease}
+        transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform var(--dur-1) ease}
   .pick:hover{border-color:var(--hover-accent)}
   .pick:active{transform:scale(.99)}
   /* The suggestion you get by swiping right is the one flagged here — and it
@@ -525,7 +533,7 @@
   .player{display:flex; align-items:center; gap:12px; margin-top:16px}
   .tbtn{width:44px; height:44px; flex:none; border-radius:50%; border:1px solid var(--btn-accent); background:var(--btn-accent);
         color:var(--btn-ink); display:grid; place-items:center; cursor:pointer; box-shadow:var(--shadow);
-        transition:transform .08s ease, filter var(--dur-1) ease}
+        transition:transform var(--dur-1) ease, filter var(--dur-1) ease}
   .tbtn:hover{filter:brightness(1.06)}
   .tbtn:active{transform:scale(.96)}
   .tbtn:disabled{opacity:.5; cursor:default}
@@ -599,7 +607,7 @@
        width:40px; height:24px; border-radius:999px; vertical-align:middle; border:0;
        background:radial-gradient(circle at 12px 50%, var(--surface) 0 8px, transparent 8.6px), var(--line-2);
        box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent);
-       transition:background-color .16s ease}
+       transition:background-color var(--dur-1) ease}
   input[type=checkbox].tgl:checked{background:radial-gradient(circle at 28px 50%, var(--btn-ink) 0 8px, transparent 8.6px), var(--btn-accent)}
   input[type=checkbox].tgl:disabled{opacity:.45; cursor:default}
   input[type=checkbox].tgl:focus-visible{outline:2px solid var(--hover-accent); outline-offset:2px}
@@ -711,7 +719,7 @@
        color:var(--ink-3); font-weight:600; border-radius:6px}
   details.how>summary::-webkit-details-marker{display:none}
   details.how>summary::before{content:""; width:6px; height:6px; border-right:1.5px solid currentColor;
-       border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform .15s ease; margin-right:2px}
+       border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform var(--dur-1) ease; margin-right:2px}
   details.how[open]>summary::before{transform:rotate(45deg)}
   details.how>summary:hover{color:var(--ink)}
   details.how>div, details.how>p{margin:10px 0 0; padding:12px 14px; border-radius:var(--r);
@@ -729,7 +737,7 @@
   .peek{position:absolute; inset:14px 0 auto; height:120px; border-radius:var(--r-4); background:var(--surface);
         border:1px solid var(--line); transform:scale(.955); opacity:.75; z-index:0}
   .swipecard{position:relative; z-index:1; touch-action:pan-y; will-change:transform;
-             transition:transform .28s var(--ease-out), box-shadow var(--dur-2) ease}
+             transition:transform var(--dur-3) var(--ease-out), box-shadow var(--dur-2) ease}
   .swipecard.drag{transition:none}
   .swipecard.gone{transition:transform var(--dur-3) ease-out, opacity var(--dur-3) ease-out; opacity:0}
   .verdicts{position:absolute; inset:0; pointer-events:none; z-index:3; border-radius:var(--r-4); overflow:hidden}
@@ -758,7 +766,7 @@
 
   button.b, a.b{appearance:none; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:6px; font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
            background:var(--surface); color:var(--ink); border-radius:var(--r); padding:9px 15px;
-           transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform .08s ease, box-shadow var(--dur-1) ease}
+           transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform var(--dur-1) ease, box-shadow var(--dur-1) ease}
   button.b:hover, a.b:hover{border-color:var(--ink-3)}
   button.b:active, a.b:active{transform:scale(.97)}
   button.b.p{background:var(--btn-accent); border-color:var(--btn-accent); color:var(--btn-ink); box-shadow:var(--shadow)}
@@ -810,7 +818,7 @@
   table.cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:0 10px 3px 0}
   table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
   table.cmp .differs{color:var(--accent); font-weight:600}
-  .chip{font-size:12.5px; border:1px solid var(--line); border-radius:999px; padding:7px 14px; background:var(--surface-2); color:var(--ink-2); cursor:pointer; font-family:inherit; transition:border-color var(--dur-1) ease, transform .08s ease}
+  .chip{font-size:12.5px; border:1px solid var(--line); border-radius:999px; padding:7px 14px; background:var(--surface-2); color:var(--ink-2); cursor:pointer; font-family:inherit; transition:border-color var(--dur-1) ease, transform var(--dur-1) ease}
   .chip:hover{border-color:var(--hover-accent); color:var(--ink)}
   .chip:active{transform:scale(.96)}
   .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
@@ -826,7 +834,7 @@
   .toast{position:fixed; right:calc(18px + var(--sar)); bottom:calc(18px + var(--sab));
          background:var(--surface-2); color:var(--ink); border:1px solid var(--line);
          padding:13px 18px; border-radius:var(--r-2); font-size:13.5px; display:flex; gap:16px; align-items:center;
-         z-index:28; max-width:420px; box-shadow:var(--shadow-2); animation:toastIn .22s var(--ease-out)}
+         z-index:28; max-width:420px; box-shadow:var(--shadow-2); animation:toastIn var(--dur-2) var(--ease-out)}
   @keyframes toastIn{from{opacity:0; transform:translateY(10px)}}
   .toast button{appearance:none; border:0; background:none; color:var(--accent); font:inherit; font-weight:700; cursor:pointer; padding:0}
 
@@ -834,7 +842,7 @@
   .fabBar{position:fixed; top:calc(14px + var(--sat)); right:calc(16px + var(--sar)); z-index:25; display:flex; gap:8px}
   .fab{appearance:none; position:relative; border:1px solid var(--line); background:var(--surface); color:var(--ink-2);
     border-radius:13px; width:38px; height:38px; font-size:16px; cursor:pointer; display:flex;
-    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color var(--dur-1) ease, color var(--dur-1) ease, transform .08s ease}
+    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color var(--dur-1) ease, color var(--dur-1) ease, transform var(--dur-1) ease}
   .fab:active{transform:scale(.94)}
   .fab:hover{border-color:var(--hover-accent); color:var(--ink)}
   .fab[aria-expanded="true"]{background:var(--surface-2); color:var(--ink)}
@@ -892,7 +900,7 @@
   .axexp{appearance:none; border:0; background:none; cursor:pointer; width:22px; height:22px; margin:0 6px 0 -4px;
     border-radius:6px; color:var(--ink-3); vertical-align:-5px; position:relative}
   .axexp::before{content:""; position:absolute; left:8px; top:6px; border:5px solid transparent; border-left:6px solid currentColor;
-    transition:transform .15s}
+    transition:transform var(--dur-1)}
   .axexp[aria-expanded="true"]::before{transform:rotate(90deg) translate(1px, 1px)}
   .axexp:hover{background:var(--surface-3); color:var(--ink)}
   .axprof > td{background:var(--surface-2); padding:12px 14px 14px 44px}
@@ -1065,12 +1073,12 @@
   .updatebar .b{white-space:nowrap}
   /* Narrow: sit under the corner buttons rather than behind them. */
   @media (max-width:820px){ .updatebar{top:calc(62px + var(--sat)); left:calc(12px + var(--sal)); right:calc(12px + var(--sar)); transform:none; max-width:none} }
-  .scrim{position:fixed; inset:0; background:rgba(8,10,14,.4); z-index:29; opacity:0; pointer-events:none; transition:opacity .18s ease}
+  .scrim{position:fixed; inset:0; background:rgba(8,10,14,.4); z-index:29; opacity:0; pointer-events:none; transition:opacity var(--dur-2) ease}
   .scrim.open{opacity:1; pointer-events:auto}
   .settings{position:fixed; top:0; right:0; height:100vh; height:100dvh; width:390px; max-width:92vw; background:var(--surface);
             border-left:1px solid var(--line); z-index:30; display:flex; flex-direction:column;
             box-shadow:-14px 0 32px rgba(0,0,0,.18); transform:translateX(100%); visibility:hidden;
-            transition:transform .18s ease}
+            transition:transform var(--dur-2) ease}
   .settings.open{transform:translateX(0); visibility:visible}
   .settings-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); flex:none}
   .settings-head h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0}
@@ -1132,7 +1140,7 @@
   /* ---- the "More" sheet: the screens that don't fit the tab bar ---- */
   .sheet{position:fixed; left:0; right:0; bottom:0; z-index:30; background:var(--surface);
          border-top:1px solid var(--line); border-radius:20px 20px 0 0; box-shadow:0 -12px 34px rgba(0,0,0,.22);
-         transform:translateY(101%); visibility:hidden; transition:transform .24s var(--ease-out);
+         transform:translateY(101%); visibility:hidden; transition:transform var(--dur-3) var(--ease-out);
          padding-bottom:calc(var(--sab) + 12px); max-height:88dvh; display:flex; flex-direction:column}
   .sheet.open{transform:translateY(0); visibility:visible}
   /* On a wide screen a full-bleed drawer reads as a mistake. Same sheet,
@@ -1154,10 +1162,27 @@
   .sheetfoot{display:flex; gap:8px; padding:12px 20px 0; border-top:1px solid var(--line); flex-wrap:wrap}
 
   /* ---- swiping between screens ---- */
-  @keyframes slideL{from{opacity:0; transform:translateX(22px)}}
-  @keyframes slideR{from{opacity:0; transform:translateX(-22px)}}
-  main.in-l{animation:slideL .26s var(--ease-out)}
-  main.in-r{animation:slideR .26s var(--ease-out)}
+  /* Screen change is a View Transition (web/app/motion.js): <main> is the only
+     thing that moves; the top bar, tab bar and rail keep their own names so
+     they stay still, and the active tab pill is named so it glides between
+     tabs. <html data-dir> is "forward" or "back" for the length of a change
+     (motion.js also passes the matching transition type). */
+  #main{view-transition-name:vt-main}
+  .mtop{view-transition-name:vt-top}
+  aside{view-transition-name:vt-tabs}
+  aside .nav[aria-current="true"]{view-transition-name:vt-pill}
+  ::view-transition-group(root){animation:none}
+  ::view-transition-group(vt-top), ::view-transition-group(vt-tabs){animation:none}
+  ::view-transition-group(vt-pill){animation-duration:var(--dur-3); animation-timing-function:var(--ease-spring)}
+  ::view-transition-group(vt-main){animation:none}
+  ::view-transition-old(vt-main){animation:vtOut var(--dur-2) var(--ease-in) both}
+  ::view-transition-new(vt-main){animation:vtIn var(--dur-3) var(--ease-out) both}
+  :root[data-dir="back"]::view-transition-old(vt-main){animation-name:vtOutBack}
+  :root[data-dir="back"]::view-transition-new(vt-main){animation-name:vtInBack}
+  @keyframes vtOut{to{opacity:0; transform:translateX(calc(var(--slide) * -.5))}}
+  @keyframes vtIn{from{opacity:0; transform:translateX(var(--slide))}}
+  @keyframes vtOutBack{to{opacity:0; transform:translateX(calc(var(--slide) * .5))}}
+  @keyframes vtInBack{from{opacity:0; transform:translateX(calc(var(--slide) * -1))}}
 
   /* ---------- Shuffle: DJ order (core/audio/order.mjs) ----------
      Drawn only once listening has heard enough of the playlist and a DJ order
@@ -1238,9 +1263,10 @@
     aside .nav .ic, .tabmore .ic{display:grid}
     aside .nav .lbl, .tabmore .lbl{flex:none; font-size:10px; letter-spacing:-.01em; font-weight:600; line-height:1;
           max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-    aside .nav .ic, .tabmore .ic{width:24px; height:24px; border-radius:9px; transition:background .16s ease, color .16s ease}
+    aside .nav .ic, .tabmore .ic{width:24px; height:24px; border-radius:9px; transition:background var(--dur-1) ease, color var(--dur-1) ease}
     aside .nav .ic svg, .tabmore .ic svg{width:19px; height:19px}
-    aside .nav[aria-current="true"]{background:none; color:var(--vc)}
+    aside .nav[aria-current="true"]{background:none; color:var(--vc); view-transition-name:none}
+    aside .nav[aria-current="true"] .ic{view-transition-name:vt-pill}
     aside .nav[aria-current="true"] .ic{background:color-mix(in srgb, var(--vc) 16%, transparent); color:var(--vc)}
     .tabmore[aria-expanded="true"]{color:var(--ink); background:none}
     /* Lit whenever the open screen is one of the three behind it. */
@@ -1312,7 +1338,7 @@
     .settings{top:auto; bottom:0; left:0; right:0; width:auto; max-width:none; height:auto; max-height:88dvh;
               border-left:0; border-top:1px solid var(--line); border-radius:20px 20px 0 0;
               transform:translateY(101%); box-shadow:0 -12px 34px rgba(0,0,0,.22);
-              transition:transform .24s var(--ease-out)}
+              transition:transform var(--dur-3) var(--ease-out)}
     .settings.open{transform:translateY(0)}
     .grabber{display:block}
     .settings-head{padding:10px 18px 14px; border-bottom:0}
@@ -1465,7 +1491,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0543</span>
+    <span class="mono">build 2026-11-15-0548</span>
   </p>
 
   <div class="feat">
@@ -1569,7 +1595,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0543</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0548</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1610,7 +1636,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0543</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0548</span>
   </div>
 </div>
 
@@ -3347,7 +3373,7 @@ function summary({ ENG, LIB }) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0543`,
+    `Betterfy engine score — build 2026-11-15-0548`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -3670,11 +3696,11 @@ function sourceCard(id, name, state, status, line, body) {
 /** Where genre data and (later) listening come from — moved out of Playlists,
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
-function view({ LS, esc, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML }) {
+function view({ LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
-  const lfm = LS.getItem('bf_lfm') || '', discogs = LS.getItem('bf_discogs') || '';
+  const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
   return `<h1>Sources</h1>
     <p class="lede">Where your genre data comes from, and how to fill the gaps.</p>
     <details class="how"><summary>How this works</summary>
@@ -3690,10 +3716,11 @@ function view({ LS, esc, tagCoverage, playlistMixes, audioPanelHTML, labelCheckH
       artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
 
     <div class="srcgrid">
-    ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfm ? 'Key saved' : 'No key',
-      'Crowd genre tags for the artists the shipped set doesn\'t cover. Needs a free API key.',
+    ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
+      'Crowd genre tags for the artists the shipped set doesn\'t cover. '
+        + (!lfmOwn && lfm ? 'Using Betterfy\'s shared Last.fm key — add your own to raise limits.' : 'Needs a free API key.'),
       `<div class="rowbtns">
-        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(lfm)}" aria-label="Last.fm API key">
+        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(lfmOwn)}" aria-label="Last.fm API key">
         <button class="b" id="saveLfm" data-act="saveLfm">Save key</button>
         <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
       </div>
@@ -3783,6 +3810,12 @@ const LS = (() => {
     removeItem(k) { mem.delete(k); try { real?.removeItem(k); } catch {} },
   };
 })();
+/* The Last.fm key the page uses: the viewer's own if they saved one, else the
+ * shared default baked in at build time, else none. The default is public by
+ * design (read-only methods need only the API key) and '' when the build had
+ * none, in which case this behaves exactly as it did before the default. */
+const DEFAULT_LFM_KEY = '';
+const lfmKey = () => LS.getItem('bf_lfm') || DEFAULT_LFM_KEY || null;
 const mmss = ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`;
 
 /* The store (docs/BUILD-5-PLAN.md A3). Background jobs (engine, listening,
@@ -4124,7 +4157,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0543';
+const BUILD = '2026-11-15-0548';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -4445,7 +4478,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0543', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0548', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -5438,6 +5471,8 @@ function vHome() {
         </div>
       </div>
     </div>
+
+    ${analyseHTML()}
 
     <div class="acts4${acts.length > 4 ? ' five' : ''}">${acts.map(([v, n, label, desc]) => `
       <button class="act" data-go="${v === 'heard' ? listenTarget() : v}"${v === 'heard' ? ' data-heard' : ''} style="--ac:var(--${VHUE[v] ?? HEARD_HUE}); --ac-ink:var(--${VHUE[v] ?? HEARD_HUE}-ink)">
@@ -6731,7 +6766,7 @@ async function runDiscovery(seedPlaylistId) {
   // No key is not a dead end any more (CLAUDE.md: every account, Spotify
   // library alone): without one, the candidates come from Deezer's and
   // ListenBrainz's "fans also like" for the artists you play.
-  const key = LS.getItem('bf_lfm');
+  const key = lfmKey();
 
   const ownedArtist = new Set(), ownedTrack = new Set();
   const own = t => { for (const a of t?.artists ?? []) ownedArtist.add(norm(a.name));
@@ -7033,7 +7068,7 @@ function discFitHTML(t) {
 function vDiscover() {
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
-  const hasKey = !!LS.getItem('bf_lfm');
+  const hasKey = !!lfmKey();
   const head = `<h1>Discover</h1>
     <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
       <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
@@ -7752,9 +7787,9 @@ const REASK_AFTER_MS = 1000 * 60 * 60 * 24 * 180; // ~6 months
 const worthReasking = e => !e || (e.tags?.length ?? 0) < REASK_TAG_FLOOR && (Date.now() - (e.checkedAt ?? 0)) > REASK_AFTER_MS;
 
 /** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
-async function enrichMissing() {
-  const key = LS.getItem('bf_lfm');
-  if (!key) return toast('Add a Last.fm key first.');
+async function enrichMissing({ quiet = false, onProgress = null } = {}) {
+  const key = lfmKey();
+  if (!key) return quiet ? 0 : toast('Add a Last.fm key first.');
   const discogsToken = LS.getItem('bf_discogs');
   // "Missing" means thin, not just "no entry at all" — fewer tags than
   // REASK_TAG_FLOOR is treated the same as zero, so a gap Last.fm barely
@@ -7766,7 +7801,7 @@ async function enrichMissing() {
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
   let todo = [...names];
-  if (!todo.length) return toast('Nothing missing.');
+  if (!todo.length) return quiet ? 0 : toast('Nothing missing.');
 
   // Hundreds of gaps can take a while — cover what you actually listen to
   // first, so leaving the screen partway through still improves the
@@ -7775,7 +7810,9 @@ async function enrichMissing() {
 
   const cached = (await idb.get('tags_extra')) ?? {};
   let done = 0, viaDiscogs = 0, failed = 0, blank = 0;
+  let seen = 0;
   for (const [id, name] of todo) {
+    onProgress?.(seen++, todo.length);
     // Already asked about, and not stale-thin enough to be worth asking
     // again yet. A real, well-tagged answer is never re-asked — there's no
     // upside — and a thin or empty one only gets a second look after
@@ -7820,11 +7857,13 @@ async function enrichMissing() {
   await idb.set('tags_extra', cached);
   R = buildReports(LIB, CFG, TAGS);
   $('#land').hidden = true; $('#app').hidden = false;
-  toast(`Tags filled for ${done} of ${todo.length} artists.`
+  onProgress?.(todo.length, todo.length);
+  if (!quiet) toast(`Tags filled for ${done} of ${todo.length} artists.`
     + (viaDiscogs ? ` ${viaDiscogs} from Discogs, where Last.fm had nothing.` : '')
     + (blank ? ` ${blank} have no tags anywhere.` : '')
     + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : ''));
   store.touch('reports');
+  return done;
 }
 
 /* ---------- genres with no key at all: docs/SMARTER-GENRES-PLAN.md §4.1(c) ----------
@@ -7981,7 +8020,7 @@ async function resetArtistTags(id) {
 /** Ask Last.fm again for one artist, ignoring whatever it is shipped with —
  *  for the case where autocorrect or the crowd tags have since improved. */
 async function refetchArtist(id, name) {
-  const key = LS.getItem('bf_lfm');
+  const key = lfmKey();
   if (!key) return toast('Add a Last.fm key on the Sources screen first.');
   try {
     const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
@@ -8004,13 +8043,40 @@ function tagEditorHTML(id, name) {
       <input id="newTagVal" placeholder="Add a tag" size="16">
       <button class="b sm" data-addtag="${esc(id)}">Add</button>
       <button class="b sm" data-refetchtags="${esc(id)}" data-artistname="${esc(name)}"
-        ${LS.getItem('bf_lfm') ? '' : 'disabled title="Add a Last.fm key on the Sources screen first"'}>Refetch from Last.fm</button>
+        ${lfmKey() ? '' : 'disabled title="Add a Last.fm key on the Sources screen first"'}>Refetch from Last.fm</button>
       <button class="b sm" data-resettags="${esc(id)}">Reset to shipped</button>
       <button class="b sm" data-closetagedit="1">Done</button>
     </div>
   </div>`;
 }
 
+/* Screen-change motion (docs/BUILD-5-PLAN.md §4.2, UI-B).
+ * swapScreen(dir, update) runs `update` (which redraws the screen) inside a
+ * same-document View Transition when the browser has one, with a forward/back
+ * type; elsewhere it just runs `update`. Either way <html data-dir> says which
+ * way we are travelling, so the CSS has one hook that works in every browser.
+ * Reduced motion is a cut. The top bar and tab bar carry their own
+ * view-transition-names in the stylesheet, so they stay put. */
+let popping = false;
+if (typeof addEventListener === 'function') {
+  // Registered before the router's own popstate listener: a browser back/forward
+  // step is "back" for the animation, whatever the screen order says.
+  addEventListener('popstate', () => { popping = true; setTimeout(() => { popping = false; }); });
+}
+
+/** +1 forward, -1 back: the router's popstate wins over the screens' order. */
+function navDir(dir) { return popping ? -1 : dir; }
+
+function swapScreen(dir, update) {
+  const d = navDir(dir), root = document.documentElement;
+  const still = !document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const type = d > 0 ? 'forward' : 'back';
+  root.dataset.dir = type;
+  if (still) { update(); return; }
+  const typed = typeof ViewTransition !== 'undefined' && 'types' in ViewTransition.prototype;
+  const t = typed ? document.startViewTransition({ update, types: [type] }) : document.startViewTransition(update);
+  t.finished.finally(() => { delete root.dataset.dir; });
+}
 const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
                 new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
                 engine:screenView('engine'), history:screenView('history'), sources:screenView('sources') };
@@ -8031,10 +8097,8 @@ function render(dir) {
 
   const main = $('#main');
   main.dataset.view = view;
-  main.classList.remove('in-l', 'in-r');
   main.innerHTML = VIEWS[view]();
   SCREEN_MODS[view]?.mount?.(screenCtx(view));
-  if (dir) { void main.offsetWidth; main.classList.add(dir > 0 ? 'in-l' : 'in-r'); }
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
@@ -8068,8 +8132,8 @@ function go(v) {
   if (v === view) return render();
   const dir = VORDER.indexOf(v) >= VORDER.indexOf(view) ? 1 : -1;
   view = v;
-  render(dir);
-  window.scrollTo(0, 0);
+  // The redraw runs inside a View Transition where there is one (motion.js).
+  swapScreen(dir, () => { render(dir); window.scrollTo(0, 0); });
   routeNote();
 }
 
@@ -8374,7 +8438,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0543';
+    s.src = 'engine.js?v=2026-11-15-0548';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -8396,7 +8460,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0543');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0548');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -8824,7 +8888,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0543';
+    s.src = 'audio.js?v=2026-11-15-0548';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -8860,7 +8924,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0543', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0548', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -9387,6 +9451,113 @@ function clapStatusHTML(d) {
   return `<p class="sub" style="margin:4px 0">Described ${done.toLocaleString()} of ${heard.length.toLocaleString()} heard track${heard.length === 1 ? '' : 's'}${
     done < heard.length ? `, ${BetterfyAudio.CLAP_FILL_PER_RUN} more each time it listens` : ''}. The model is about 77 MB, downloaded once.</p>`;
 }
+/* ===========================================================================
+ * "Analyse my library" — one tap (docs/BUILD-5-PLAN.md, owner's ask).
+ *
+ * One button runs the two things that make File's suggestions good, in the
+ * background and under one status line: the tag gaps are filled (enrichMissing
+ * already goes in listening order) and listening to the liked songs is started
+ * (audioStart, on by default). When the tags are in, it opens File, where the
+ * playlist and genre/mood/BPM suggestions already live. Nothing here writes to
+ * Spotify, and nothing is asked of anyone without a key or without data: with
+ * no Last.fm key it only listens, and with nothing to do it only routes.
+ *
+ * analyseRun() takes its collaborators as `d` so it can be tested with stubs;
+ * analyseGo()/analyseAuto() wire the real ones.
+ * ======================================================================== */
+const ANALYSE = { running: false, tags: [0, 0], listen: null, timer: null };
+
+/** Artists whose tags are thin — the same gap enrichMissing() fills. */
+function analyseGapCount() {
+  if (typeof LIB === 'undefined' || !LIB) return 0;
+  const ids = new Set();
+  const gap = id => (TAGS[id]?.tags?.length ?? 0) < REASK_TAG_FLOOR || TAGS[id]?.source === 'wikidata';
+  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && gap(a.id)) ids.add(a.id);
+  for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && gap(a.id)) ids.add(a.id);
+  return ids.size;
+}
+
+/** "Reading tags 120/400 · listening 37/412", from whatever has started. */
+function analyseStatus(st) {
+  const parts = [];
+  const [td, tt] = st.tags ?? [0, 0];
+  if (tt) parts.push(`Reading tags ${td.toLocaleString()}/${tt.toLocaleString()}`);
+  const l = st.listen;
+  if (l && l.total) parts.push(`listening ${Math.min(l.done ?? 0, l.total).toLocaleString()}/${l.total.toLocaleString()}`);
+  else if (l?.state === 'paused') parts.push('listening waits for Wi-Fi');
+  return parts.length ? parts.join(' · ') : 'Starting…';
+}
+
+/** Is there something worth offering? Gaps to fill, or listening that has not run. */
+function analyseWanted(d = {}) {
+  const gaps = (d.gaps ?? analyseGapCount)();
+  const ran = (d.listenRan ?? (() => typeof listenEverRan === 'function' && listenEverRan()))();
+  const canListen = (d.canListen ?? (() => audioSettings().on))();
+  return { gaps, listen: canListen && !ran, any: (!!(d.key ?? lfmKey)() && gaps > 0) || (canListen && !ran) };
+}
+
+/**
+ * Run it. Resolves with what was done; never throws (a failed half just stops).
+ * `d`: key(), gaps(), enrich({quiet,onProgress}), listen(), listenVM(), status(st), go(view).
+ */
+async function analyseRun(d, { route = true } = {}) {
+  if (ANALYSE.running) return { skipped: true };
+  ANALYSE.running = true; ANALYSE.tags = [0, 0]; ANALYSE.listen = null;
+  const push = () => d.status?.({ tags: ANALYSE.tags, listen: ANALYSE.listen, running: true });
+  const out = { tags: false, listen: false };
+  try {
+    // Listening first: it runs by itself while the tags are read.
+    try { await d.listen(); out.listen = true; } catch { /* its own error shows on Sources */ }
+    const poll = () => { ANALYSE.listen = d.listenVM?.() ?? null; push(); };
+    ANALYSE.timer = setInterval(poll, 600); poll();
+    if (d.key() && d.gaps() > 0) {
+      await d.enrich({ quiet: true, onProgress: (n, t) => { ANALYSE.tags = [n, t]; push(); } });
+      out.tags = true;
+    }
+    poll();
+  } catch { /* leave whatever finished */ }
+  finally {
+    clearInterval(ANALYSE.timer); ANALYSE.timer = null; ANALYSE.running = false;
+    d.status?.({ tags: ANALYSE.tags, listen: ANALYSE.listen, running: false });
+  }
+  if (route) d.go('inbox');
+  return out;
+}
+
+function analyseDeps() {
+  return {
+    key: lfmKey, gaps: analyseGapCount,
+    enrich: o => enrichMissing(o),
+    listen: () => audioStart({ quiet: true }),
+    listenVM: () => AUDIO.vm,
+    status: st => {
+      const el = document.getElementById('analyseStrip');
+      if (el) { el.hidden = !st.running; el.querySelector('.txt').textContent = analyseStatus(st); }
+      const b = document.getElementById('analyseGo'); if (b) b.disabled = !!st.running;
+    },
+    go: v => { if (view === 'home') go(v); },
+  };
+}
+
+/** The button. */
+function analyseGo() { LS.setItem('bf_analysed', '1'); return analyseRun(analyseDeps()); }
+
+/** Once, after the first load with a key: the same run, without taking the screen away. */
+function analyseAuto() {
+  if (LS.getItem('bf_analysed') || !lfmKey() || ANALYSE.running) return;
+  if (!analyseWanted().any) return;
+  LS.setItem('bf_analysed', '1');
+  analyseRun(analyseDeps(), { route: false });
+}
+
+/** Home's button and its progress strip. Empty when there is nothing to offer. */
+function analyseHTML() {
+  if (ANALYSE.running) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen }))}</span></div>`;
+  if (!analyseWanted().any) return '';
+  return `<div class="analyse"><button class="b p" id="analyseGo">Analyse my library</button>
+    <span class="d">Reads tags and listens to your liked songs, then suggests where each one goes. Nothing is written to Spotify until you tap.</span></div>
+    <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
+}
 /* ---------- screen modules (docs/BUILD-5-PLAN.md A4) ----------
  * A migrated screen is web/screens/<name>.mjs: an ES module that build-web.mjs
  * bundles (its `// @bundle screens <name> <order>` header is the whole
@@ -9403,7 +9574,7 @@ const SCREEN_MODS = globalThis.BetterfyScreens ?? {};
 
 const SCREEN_CTX = {
   history: () => ({ S, esc, isUndone, emptyState, undoAction, getLog, toast, render }),
-  sources: () => ({ LS, esc, $, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
+  sources: () => ({ LS, esc, lfmKey, $, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
                     toast, render, enrichMissing, fillFromWikidata }),
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
@@ -9654,6 +9825,7 @@ document.addEventListener('click', guard(async e => {
   }
   const dfile = e.target.closest('[data-dfile]'); if (dfile) return discAdd(dfile.dataset.dfile);
 
+  if (e.target.id === 'analyseGo') return analyseGo();
   if (e.target.id === 'audioGo') return audioStart();
   const lchk = e.target.closest('[data-lchk]');
   if (lchk && globalThis.BetterfyAudio) return labelVerdict(lchk);
@@ -10251,6 +10423,8 @@ async function start(force) {
     if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});
     // Listening resumes by itself where it left off, if it was switched on — after the first paint.
     if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
+    // One-tap analysis runs once by itself when a Last.fm key (shared or own) is there.
+    setTimeout(() => { try { analyseAuto(); } catch { /* optional */ } }, 4000);
   } catch (e) {
     if (retryable(e)) {
       const streak = e.status === 429 ? noteRateLimited() : 0;

@@ -57,6 +57,12 @@ const TAGS_PROJECT = arg('tags-project') ?? readEnv('TAGS_PROJECT')
 const TAGS_KEY = arg('tags-key') ?? readEnv('TAGS_KEY')
   ?? built(/TAGS_KEY = '([A-Za-z0-9_-]{20,})'/) ?? '';
 
+// Last.fm's read-only methods need only the API key, never the shared secret,
+// so a key meant for the page is public by design. Blank = no default key and
+// the page behaves exactly as before.
+const LASTFM_PUBLIC_KEY = arg('lastfm-key') ?? readEnv('LASTFM_PUBLIC_KEY')
+  ?? built(/DEFAULT_LFM_KEY = '([A-Za-z0-9]{16,})'/) ?? '';
+
 // Same optional, same read order: blank means the "Request access" mailto
 // link is never shown, so nobody who forks this repo ships a stranger's inbox.
 const CONTACT_EMAIL = arg('contact-email') ?? readEnv('CONTACT_EMAIL')
@@ -309,6 +315,7 @@ const html = assembledTemplate()
   .replace('__CLIENT_ID__', CLIENT_ID)
   .replace('__TAGS_PROJECT__', TAGS_PROJECT)
   .replace('__TAGS_KEY__', TAGS_KEY)
+  .replace('__LASTFM_PUBLIC_KEY__', LASTFM_PUBLIC_KEY)
   .replace('__CONTACT_EMAIL__', CONTACT_EMAIL)
   .replace('__APPCHECK_SITE_KEY__', APPCHECK_SITE_KEY)
   .replace('__APPCHECK_APP_ID__', APPCHECK_APP_ID)
@@ -327,7 +334,7 @@ const html = assembledTemplate()
  * key are public by design — they name a thing, they do not authorise anything,
  * and the whole PKCE-and-rules design depends on being able to ship them. */
 const PUBLIC_BY_DESIGN = new Set(['SPOTIFY_CLIENT_ID', 'SPOTIFY_REDIRECT_URI',
-  'TAGS_PROJECT', 'TAGS_KEY', 'CONTACT_EMAIL', 'APPCHECK_SITE_KEY', 'APPCHECK_APP_ID']);
+  'TAGS_PROJECT', 'TAGS_KEY', 'LASTFM_PUBLIC_KEY', 'CONTACT_EMAIL', 'APPCHECK_SITE_KEY', 'APPCHECK_APP_ID']);
 
 /** @returns {string|null} the name of the first .env value found in `out`. */
 function leakedSecret(out) {
@@ -338,6 +345,8 @@ function leakedSecret(out) {
     if (!m) continue;
     const [, name, value] = m;
     if (PUBLIC_BY_DESIGN.has(name)) continue;
+    // The owner may reuse the same key as the shipped public one.
+    if (name === 'LASTFM_API_KEY' && LASTFM_PUBLIC_KEY && value === LASTFM_PUBLIC_KEY) continue;
     // Short values are placeholders, or too common to match on without crying
     // wolf over every "true" and "1" someone leaves in a config.
     if (value.length >= 8 && out.includes(value)) return name;

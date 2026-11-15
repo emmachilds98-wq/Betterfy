@@ -12,11 +12,11 @@ function sourceCard(id, name, state, status, line, body) {
 /** Where genre data and (later) listening come from — moved out of Playlists,
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
-export function view({ LS, esc, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML }) {
+export function view({ LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
-  const lfm = LS.getItem('bf_lfm') || '', discogs = LS.getItem('bf_discogs') || '';
+  const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
   return `<h1>Sources</h1>
     <p class="lede">Where your genre data comes from, and how to fill the gaps.</p>
     <details class="how"><summary>How this works</summary>
@@ -32,10 +32,11 @@ export function view({ LS, esc, tagCoverage, playlistMixes, audioPanelHTML, labe
       artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
 
     <div class="srcgrid">
-    ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfm ? 'Key saved' : 'No key',
-      'Crowd genre tags for the artists the shipped set doesn\'t cover. Needs a free API key.',
+    ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
+      'Crowd genre tags for the artists the shipped set doesn\'t cover. '
+        + (!lfmOwn && lfm ? 'Using Betterfy\'s shared Last.fm key — add your own to raise limits.' : 'Needs a free API key.'),
       `<div class="rowbtns">
-        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(lfm)}" aria-label="Last.fm API key">
+        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(lfmOwn)}" aria-label="Last.fm API key">
         <button class="b" id="saveLfm" data-act="saveLfm">Save key</button>
         <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
       </div>

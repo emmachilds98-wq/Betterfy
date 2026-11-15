@@ -35,6 +35,7 @@ export function cards({ S = {}, R = {}, renderers = {} } = {}) {
       { id: 'p2', name: 'Late Night <Deep>', tracks: Array(20).fill({ id: 'y' }) },
     ] },
     LS: { getItem: k => (k === 'bf_lfm' ? 'lfm-key' : null) },
+    lfmKey: () => ({ getItem: k => (k === 'bf_lfm' ? 'lfm-key' : null) }).getItem('bf_lfm'),
     matchMedia: () => ({ matches: false }),
     hueOf: () => 200,
     ICON_PLAY: '<svg id="playicon"></svg>',

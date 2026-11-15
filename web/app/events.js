@@ -221,6 +221,7 @@ document.addEventListener('click', guard(async e => {
   }
   const dfile = e.target.closest('[data-dfile]'); if (dfile) return discAdd(dfile.dataset.dfile);
 
+  if (e.target.id === 'analyseGo') return analyseGo();
   if (e.target.id === 'audioGo') return audioStart();
   const lchk = e.target.closest('[data-lchk]');
   if (lchk && globalThis.BetterfyAudio) return labelVerdict(lchk);
