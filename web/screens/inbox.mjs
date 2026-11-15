@@ -5,6 +5,8 @@
  * and untick, never a silent bulk move. Tracks already turned down for that
  * playlist are left out: a rejection is an answer. */
 const ROLL_MAX = 40;
+/** How long after a filing another one is ignored: the card's flight, about. */
+const FLIGHT_MS = 300;
 
 /** Other backlog tracks by `track`'s first-billed artist that could follow it into `playlistIds`. */
 export function rollForwardFor(track, backlog, playlistIds, fb = {}) {
@@ -78,6 +80,7 @@ export function view(ctx) {
   // whichever track is on screen, so it clears the moment that changes.
   if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; }
   if (typeof soundWarm === 'function') soundWarm();
+  const promote = !!S.promote; S.promote = false;   // the peek card springing up, once
   const picks = filePicks(t);
   const opts = Object.entries(CFG).filter(([, v]) => v.target).map(([id, v]) => ({ id, ...v }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -99,7 +102,7 @@ export function view(ctx) {
     </div>
     <div class="deck">
       ${rows[i + 1] ? '<div class="peek" aria-hidden="true"></div>' : ''}
-      <div class="card swipecard" id="swipeCard" ${canFile ? `data-best="${esc(best?.id ?? '')}"` : ''}>
+      <div class="card swipecard${promote ? ' promote' : ''}" id="swipeCard" ${canFile ? `data-best="${esc(best?.id ?? '')}"` : ''}>
         <div class="verdicts" aria-hidden="true">
           <span class="verdict file">${S.fileSel.size ? `${S.fileSel.size} playlist${S.fileSel.size>1?'s':''}` : best ? esc(best.name) : 'No pick'}</span>
           <span class="verdict skip">Skip</span>
@@ -178,17 +181,30 @@ export async function fileCurrent(ctx, playlistIds) {
   const { S, R, CFG, FB, addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, toast, render } = ctx;
   const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
   if (!ids.length) return;
+  // Optimistic (docs/BUILD-5-PLAN.md §4.2): the card leaves now and the writes
+  // happen behind it. The flight lock is what keeps a double tap, or a swipe
+  // that lands on top of a tap, from filing the *next* card by accident,
+  // since by the time the second one arrives the queue has already advanced.
+  const now = Date.now();
+  if (S.filing || now < (S.fileLockUntil ?? 0)) return;
   const at = inboxIndex(ctx), t = R.backlog[at]; if (!t) return;
+  S.fileLockUntil = now + FLIGHT_MS; S.filing = true;
   const names = ids.map(id => CFG[id]?.name ?? id);
   // Logged with each filing so the Score summary can measure itself (§7):
   // where in the queue it was filed from, and the band File showed for it.
   let picks = [];
   try { picks = ctx.filePicks?.(t) ?? []; } catch { /* no band, still filed */ }
   const bandOf = id => picks.find(p => p.id === id)?.band;
+  const picked = new Set(S.fileSel);
+  try { ctx.flyCard?.(1); } catch { /* the animation is a bonus */ }
+  S.fileSel = new Set();
+  R.backlog.splice(at, 1); S.inboxAt = inboxIndex(ctx);
+  S.promote = true;
+  render();
+  // One log entry per playlist, so History and its per-row undo stay exact;
+  // the toast just chains all of them for the common "undo the lot" case.
+  const ats = [];
   try {
-    // One log entry per playlist, so History and its per-row undo stay exact —
-    // the toast just chains all of them for the common "undo the lot" case.
-    const ats = [];
     for (const id of ids) {
       await addTracks(id, [t.id]);
       await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, band:bandOf(id) });
@@ -197,16 +213,26 @@ export async function fileCurrent(ctx, playlistIds) {
     // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so
     // the sound learner hears "yes, there" before the next sync shows it.
     await recordAccept(t.id, ids);
-    const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
-                                  await forgetAccept(t.id, ids); };
-    toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
-    S.fileSel = new Set();
-    R.backlog.splice(at, 1); S.inboxAt = inboxIndex(ctx);
-    const more = rollForwardFor(t, R.backlog, ids, FB);
-    S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
-                             rows: more.map(b => ({ id: b.id, title: b.title })), off: new Set() } : null;
+  } catch (e) {
+    // Put the card back where it was, with its selection, and say why.
+    for (const a of [...ats].reverse()) { try { if (a) await undoAction(a); } catch { /* best effort */ } }
+    S.fileLockUntil = 0; S.filing = false;
+    if (!R.backlog.some(b => b.id === t.id)) R.backlog.splice(Math.min(at, R.backlog.length), 0, t);
+    S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === t.id));
+    S.fileSelFor = t.id; S.fileSel = picked.size ? picked : new Set(ids);
+    S.roll = null;
+    toast('Failed: ' + e.message);
     render();
-  } catch (e) { toast('Failed: '+e.message); }
+    return;
+  }
+  S.filing = false;
+  const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
+                                await forgetAccept(t.id, ids); };
+  toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
+  const more = rollForwardFor(t, R.backlog, ids, FB);
+  S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
+                           rows: more.map(b => ({ id: b.id, title: b.title })), off: new Set() } : null;
+  render();
 }
 export async function inboxAct(ctx, a) {
   const { S, R, recordSkip, libraryCall, logAction, getLog, undoAction, playTrack, toast, render } = ctx;

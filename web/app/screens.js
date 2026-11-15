@@ -75,12 +75,12 @@ SCREEN_CTX.new = () => ({
 Object.assign(SCREEN_CTX, {
   // The File tab: the status line and Up next around the `inbox` module's deck.
   home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks,
-                 render, openUnderHood, deck: screenView('inbox') }),
+                 render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
                   addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, recordSkip, recordReject,
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
-                  saveFeedback, toast, render,
+                  saveFeedback, toast, render, flyCard,
                   rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
                   matchMedia: q => globalThis.matchMedia(q) }),
 });
