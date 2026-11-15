@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { installTidy } from './tidyctx.mjs';
+import { installNew } from './newctx.mjs';
 import * as ENGINE from '../web/screens/engine.mjs';
 
 // UI-6 (docs/UI-BUILD-PLAN.md): Tidy's band filter in Sure/Likely/Unsure, real
@@ -21,7 +23,7 @@ function tidy(R, extra = {}) {
     LISTENING_CACHE: { recentlyActive: new Set() }, LISTENING_PENDING: true, getListening: async () => null,
     render: () => {}, R, ...extra };
   vm.createContext(s);
-  vm.runInContext(slice('const S = {', '// Bar order') + slice('function secDupes()', '/* ======================= gaps:'), s);
+  installTidy(s, slice);
   return s;
 }
 const mf = (i, confidence) => ({ id: 't' + i, title: 'T' + i, artist: 'A', current: 'P', currentPlaylistId: 'p',
@@ -33,7 +35,7 @@ test('the misfile filter speaks Sure / Likely / Unsure, keeping high/medium/low 
   assert.match(html, /data-mfb="high"><span class="band band-sure">Sure<\/span> <span class="n">1</);
   assert.match(html, /data-mfb="medium"><span class="band band-likely">Likely<\/span> <span class="n">2</);
   assert.match(html, /data-mfb="low"><span class="band band-unsure">Unsure<\/span> <span class="n">1</);
-  assert.match(html, /aria-pressed="true" data-mfb="high"/);
+  assert.match(html, /aria-pressed="true" data-act="mfb" data-mfb="high"/);
   assert.ok(!/>high \(/.test(html), 'the old words are gone');
 });
 
@@ -75,8 +77,7 @@ test('cross-filed: nothing at all versus nothing at this threshold', () => {
 function newScreen({ gaps = [], splits = [], clusters = [], status = 'ready' } = {}) {
   const s = { esc, Set, Map, R: { clusters }, fire: () => {}, render: () => {}, BetterfyGaps: { MIN_GAP: 8 } };
   vm.createContext(s);
-  vm.runInContext(slice('function emptyState(', '/* The misfile confidence tiers'), s);
-  vm.runInContext(slice('/* ======================= gaps: docs/SMARTER-GENRES-PLAN.md, phase 3', '/* ---------- shuffle: spacing'), s);
+  installNew(s, slice);
   vm.runInContext('(o) => Object.assign(GAPS, o)', s)({ status, gaps, splits, untagged: 0, homeless: 0, for: s.R });
   return s;
 }
@@ -99,7 +100,7 @@ test('some empty: the full sections draw, the empty ones fold into one compact l
   assert.ok(!/<h2 class="newsec">Groups in your backlog/.test(html));
 });
 
-const card = (s, p) => vm.runInContext('proposalCard', s)(p);
+const card = (s, p) => s.proposalCard(p);
 
 test('one proposal card shape for all three kinds, with the attributes the handler reads', () => {
   const s = newScreen();
@@ -120,7 +121,7 @@ test('one proposal card shape for all three kinds, with the attributes the handl
 
   const p = card(s, { kind: 'pick', i: 0, size: 4, between, artists: [] });
   assert.match(p, /Drum &amp; Bass or Bass\? <span class="tag snd">by sound<\/span> <span class="tag">4 tracks/);
-  assert.match(p, /data-sndp="0:0">Add to Drum &amp; Bass<\/button> <button class="b sm" data-sndp="0:1">Add to Bass</);
+  assert.match(p, /data-sndp="0:0">Add to Drum &amp; Bass<\/button> <button class="b sm" data-act="sndp" data-sndp="0:1">Add to Bass</);
   assert.match(card(s, { kind: 'pick', i: 0, size: 4, between, filedTo: ['Bass'] }), /<span class="tag ok">added to Bass<\/span>/);
   assert.match(card(s, { kind: 'hybrid', i: 0, name: 'N', size: 1, between, done: true }), /<span class="tag ok">created<\/span>/);
 });

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadPage, slice, own } from './fixtures/page-spotify.mjs';
 import * as HISTORY from '../web/screens/history.mjs';
+import * as TIDY from '../web/screens/tidy.mjs';
 import { feedbackExamples } from '../core/intrinsic/audio-feedback.mjs';
 
 // A move in Tidy is two writes to Spotify — add to the new playlist, remove
@@ -16,16 +17,18 @@ import { feedbackExamples } from '../core/intrinsic/audio-feedback.mjs';
 //   B7  A move was never written to feedback, so the sound learner never
 //       heard "yes, there; no, not there".
 
-const MOVE = slice("const mv = e.target.closest('[data-mvto]');", "const dp = e.target.closest('[data-dplay]');", 'the move handler');
-
 function page(playlists) {
   const app = loadPage({ playlists });
   app.run(slice('const esc = s =>', '\n', 'esc'));
-  app.run(`async function doMove(e) {\n${MOVE}\n}`);
   app.CFG = { from: { name: 'Jungle' }, to: { name: 'Drum & Bass' } };
   app.S.moved = new Set();
   app.toasts = [];
   app.toast = (msg, fn) => app.toasts.push({ msg, fn });
+  // What the Tidy screen's move action is given (web/app/screens.js builds the same from the page).
+  const live = n => (...a) => app.run(n)(...a);
+  app.tidyCtx = { S: app.S, CFG: app.CFG, toast: app.toast, render() {}, newGroup: live('newGroup'), addTracks: live('addTracks'),
+    logAction: live('logAction'), playlistIds: live('playlistIds'), delTracks: live('delTracks'), undoAction: live('undoAction'),
+    recordMove: live('recordMove'), getLog: live('getLog') };
   // What the History screen is given (web/app/screens.js builds the same from the page).
   app.ctx = { S: app.S, esc: app.run('esc'), isUndone: app.run('isUndone'),
               emptyState: (t, b) => `<empty ${t}>`, undoAction: app.undoAction, toast: app.toast, render() {},
@@ -39,7 +42,7 @@ async function move(app, tr, from = 'from', to = 'to') {
   const row = { classList: { add() {} } };
   const btn = { disabled: false, dataset: { mvto: to, mvfrom: from, mvtr: tr },
                 closest: () => row, classList: { remove() {} }, textContent: 'Move' };
-  await app.doMove({ target: { closest: sel => (sel === '[data-mvto]' ? btn : null) } });
+  await TIDY.actions.move(app.tidyCtx, btn);
   return app.toasts.at(-1);
 }
 

@@ -1,3 +1,8 @@
+// @bundle screens tidy 40
+/* The Tidy screen (docs/BUILD-5-PLAN.md A4): an ES module. It touches nothing outside `ctx`
+ * (web/README.md, "Screen modules"); SCREEN_CTX.tidy in app/screens.js builds it. The sound
+ * misfit state and jobs, and emptyState, stay classic in app/screenjobs.js. */
+
 /* ---------- Tidy: three screens' worth of the same question ----------
  *
  * Duplicates, Misfiles and Cross-filed were three destinations all asking "is
@@ -7,7 +12,8 @@
  */
 const TIDY_SECTIONS = [['misfile', 'Wrong place'], ['dupes', 'Repeats'], ['cross', 'Cross-filed']];
 
-function secDupes() {
+export function secDupes(c) {
+  const { R, esc, thumbHTML, cmpTable, shownOf, emptyState, moreButton } = c;
   const exact = R.within.filter(x => x.verdict === 'same-recording');
   const clash = R.within.filter(x => x.verdict !== 'same-recording');
   const sec = (title, list, note, key) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
@@ -16,7 +22,7 @@ function secDupes() {
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       <div class="sub mono">${esc(c.playlist)}</div><div class="why">${esc(c.why)}</div>${cmpTable(c.options)}
     </div><div class="acts">${c.options.map(o =>
-      `<button class="b sm" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z => z.id !== o.id).map(z => z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
+      `<button class="b sm" data-act="keep" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z => z.id !== o.id).map(z => z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
     </div></div>`).join('') || emptyState('None found', 'Nothing in your library matches this.', { compact: true })}</div>
     ${moreButton(key, list.length)}`;
   const lede = `<p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>`;
@@ -28,28 +34,22 @@ function secDupes() {
     ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash')}`;
 }
 
-function secCross() {
+export function secCross(c) {
+  const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton } = c;
   const a = R.across.filter(x => x.placements.length >= S.crossMin);
   return `<p class="lede">Tracks in several playlists. Usually deliberate — nothing is preselected. Tap a playlist to remove the track from just that one.</p>
     <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
-      `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
+      `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-act="cmin" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
     <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
-        `<button class="chip" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
+        `<button class="chip" data-act="xpl" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
     </div></div>`).join('')
       || (R.across.length
         ? emptyState(`Nothing at ${S.crossMin}+ playlists`, 'Lower the threshold to see tracks filed in fewer places.', { compact: true })
         : emptyState('Nothing cross-filed', 'Every track you have filed sits in one playlist only.'))}</div>
     ${moreButton('cross-' + S.crossMin, a.length)}`;
-}
-
-/** UI-1's empty state: the mark's five bars at rest, a title, one line, and
- *  optionally what to do about it. `compact` sits inside a list or a card. */
-function emptyState(title, body, { compact = false, acts = '' } = {}) {
-  return `<div class="empty-state${compact ? ' compact' : ''}"><span class="es-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><div class="es-body"><b>${esc(title)}</b><p>${body}</p></div>${
-    acts ? `<div class="es-acts">${acts}</div>` : ''}</div>`;
 }
 
 /* The misfile confidence tiers, in calibrate's words (UI-BUILD-PLAN R5): the
@@ -59,77 +59,22 @@ const MF_BANDS = [['high', 'HIGH', 'sure', 'Sure'], ['medium', 'LIKELY', 'likely
 const MF_TIER = { high: 'sure', medium: 'likely', low: 'unsure' };
 const mfBandWord = b => (MF_BANDS.find(x => x[0] === b) ?? MF_BANDS[0])[3];
 /** UI-2's bandChip when it draws one, else the same chip in UI-1's classes. */
-function mfBandChip(b) {
+function mfBandChip(c, b) {
   const [, vm, cls, word] = MF_BANDS.find(x => x[0] === b) ?? MF_BANDS[0];
-  return (typeof bandChip === 'function' && bandChip(vm)) || `<span class="band band-${cls}">${word}</span>`;
+  return (typeof c.bandChip === 'function' && c.bandChip(vm)) || `<span class="band band-${cls}">${word}</span>`;
 }
 
-/* ---------- Tidy by sound: core/audio/misfit.mjs ----------
- * Filed tracks whose sound strongly disagrees with their playlist ("sounds
- * like Jungle, sits in House"): the heard tracks each one sounds most like sit
- * mostly in another of your genre playlists, and its sound ID doesn't place it
- * where it is. Worked out in the engine worker from the heard records, and
- * measured there on tracks you filed yourself (planted in the wrong playlist,
- * held out). The section only exists once listening has heard something;
- * without it Tidy draws exactly what it always did. Moves use the same Move
- * button, History entry and undo as "Wrong place"; "Keep here" (recordKeep, in
- * both tiers) is a "not that playlist" verdict plus "it belongs here", so the
- * track is offered as wrong there by neither tier again. */
-const TSOUND = { status: 'idle', key: '', res: null, err: null };
-const tidySoundKey = () => `${soundHeard()}|${engineTargets().join()}|${Object.values(FB).reduce((n, f) => n + (f.rejected?.length ?? 0), 0)}|${LIB?.playlists?.length ?? 0}`;
-// Guarded: the page tests run Tidy in a sandbox without the audio or engine parts.
-const tidySoundReady = () => typeof AUDIO !== 'undefined' && typeof soundHeard === 'function' && typeof engineTargets === 'function';
-const tidySoundOn = () => tidySoundReady() && !!LIB && soundHeard() > 0;
-function tidySections() {
-  return tidySoundOn() ? [...TIDY_SECTIONS, ['sound', 'By sound']] : TIDY_SECTIONS;
+function tidySections(c) {
+  return c.tidySoundOn() ? [...TIDY_SECTIONS, ['sound', 'By sound']] : TIDY_SECTIONS;
 }
-function tidySoundRows() {
-  // Not a move you turned down, and not a track you said to keep where it is
-  // (Keep here in either tier: FB.kept).
-  return (TSOUND.res?.rows ?? []).filter(x => !(FB[x.id]?.rejected ?? []).includes(x.to) && !(FB[x.id]?.kept ?? []).includes(x.from));
-}
-const tidySoundCount = () => tidySoundRows().length;
-/** Load the heard records if listening is on, and work the moves out when they've changed. Cheap when nothing is due. */
-function tidySoundWarm() {
-  if (!tidySoundReady() || !LIB || TSOUND.status === 'working') return;
-  if (!AUDIO.records) { if (audioSettings().on && TSOUND.status === 'idle') { TSOUND.status = 'working'; fire(tidySoundLoad()); } return; }
-  if (!tidySoundOn()) return;
-  const key = tidySoundKey();
-  if (TSOUND.key === key && (TSOUND.status === 'ready' || TSOUND.status === 'error')) return;
-  TSOUND.status = 'working';
-  fire(tidySoundBuild(key));
-}
-async function tidySoundLoad() {
-  try { await engineAudio(); } catch { /* no records: Tidy stays as it was */ }
-  TSOUND.status = 'idle';
-  if (tidySoundOn()) store.touch('ui.tidy');
-}
-async function tidySoundBuild(key) {
-  try {
-    await engineLoad();
-    const audio = await engineAudio();
-    let res = null;
-    if (audio) {
-      try { res = (await inEngineWorker('misfits', { lib: LIB, audio: engineAudioIn(audio) }))?.result ?? null; }
-      catch { res = null; }
-      if (!res) {
-        await yieldToPaint();
-        res = BetterfyMisfit.soundMisfitsFor(LIB, engineAudioIn(audio), { targets: engineTargets(), isMirror: isMirrorPlaylist });
-      }
-    }
-    Object.assign(TSOUND, { status: 'ready', key, res, err: null });
-  } catch (e) {
-    Object.assign(TSOUND, { status: 'error', key, err: e?.message ?? String(e) });
-  }
-  store.touch('ui.tidy');
-}
-function tidySoundTrack(id) {
+function tidySoundTrack(LIB, id) {
   for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id === id)
     return { id, title: t.name ?? '', artist: (t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '), art: t.art ?? null, dur: t.duration_ms ?? 0 };
   return { id, title: id, artist: '', art: null, dur: 0 };
 }
 const TS_BANDS = [['sure', 'HIGH'], ['likely', 'LIKELY']];
-function secSound() {
+export function secSound(c) {
+  const { S, esc, thumbHTML, shownOf, emptyState, moreButton, TSOUND, LIB, tidySoundRows } = c;
   const rows = tidySoundRows();
   const band = S.tsBand ?? 'sure';
   const counts = { sure: 0, likely: 0 };
@@ -144,9 +89,9 @@ function secSound() {
   const m = rows.filter(x => x.band === band);
   return `${lede}${checked}
     ${rows.length ? `<div class="seg mfbands tsbands" role="group" aria-label="How sure">${TS_BANDS.map(([b, vm]) =>
-      `<button type="button" aria-pressed="${band === b}" data-tsb="${b}">${mfBandChip(vm === 'HIGH' ? 'high' : 'medium')} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
+      `<button type="button" aria-pressed="${band === b}" data-act="tsb" data-tsb="${b}">${mfBandChip(c, vm === 'HIGH' ? 'high' : 'medium')} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
     <div class="rows">${m.slice(0, shownOf('tsound-' + band)).map(x => {
-      const t = tidySoundTrack(x.id), done = S.moved.has(x.id);
+      const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
       return `<div class="row tsrow ${done ? 'done' : ''}">${thumbHTML(t)}<div class="main">
         <div class="ttl">${esc(t.title)} <span class="sub">— ${esc(t.artist)}</span></div>
         <div class="tssound">${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
@@ -154,8 +99,8 @@ function secSound() {
           <span class="mono" style="color:var(--ink-3)">${x.near.from} → ${x.near.to} of ${x.near.k} sound-alikes</span></div>
         <div class="why">${esc(x.why.join('; '))}.</div>
       </div><div class="acts">
-        <button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtier="${esc(x.band)}" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.from)}" data-mvto="${esc(x.to)}">${done ? 'Moved' : 'Move'}</button>
-        ${done ? '' : `<button class="b sm" data-tsfrom="${esc(x.from)}" data-tskeep="${esc(x.id)}" data-tsto="${esc(x.to)}">Keep here</button>`}
+        <button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtier="${esc(x.band)}" data-act="move" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.from)}" data-mvto="${esc(x.to)}">${done ? 'Moved' : 'Move'}</button>
+        ${done ? '' : `<button class="b sm" data-act="tskeep" data-tsfrom="${esc(x.from)}" data-tskeep="${esc(x.id)}" data-tsto="${esc(x.to)}">Keep here</button>`}
         <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${t.dur}">Play</button></div></div>`;
     }).join('')
       || (rows.length
@@ -164,7 +109,9 @@ function secSound() {
     ${moreButton('tsound-' + band, m.length)}`;
 }
 
-function secMisfile() {
+export function secMisfile(c) {
+  const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton, tagChips, tagEditorHTML, store, getListening } = c;
+  const LISTENING_CACHE = c.LISTENING_CACHE, LISTENING_PENDING = c.LISTENING_PENDING;
   const counts = { high: 0, medium: 0, low: 0 };
   for (const x of R.misfiled) counts[x.confidence]++;
   const m = R.misfiled.filter(x => x.confidence === S.mfBand);
@@ -180,7 +127,7 @@ function secMisfile() {
   let editorDrawn = false;
   return `<p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Each row is a move, not a score — and every one of them lands in History.</p>
     ${R.misfiled.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
-      `<button type="button" aria-pressed="${S.mfBand === b}" data-mfb="${b}">${mfBandChip(b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
+      `<button type="button" aria-pressed="${S.mfBand === b}" data-act="mfb" data-mfb="${b}">${mfBandChip(c, b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
     <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
@@ -192,10 +139,10 @@ function secMisfile() {
         : `<div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore * 100).toFixed(0)}% fit</span></div>`}
         ${playedALot ? `<div class="sub" style="color:var(--accent)">You play this a lot right now — might be deliberate.</div>` : ''}
       </div><div class="acts">
-        ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}" data-mvtier="${MF_TIER[S.mfBand] ?? ""}">${done ? 'Moved' : 'Move'}</button>` : ''}
+        ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-act="move" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}" data-mvtier="${MF_TIER[S.mfBand] ?? ""}">${done ? 'Moved' : 'Move'}</button>` : ''}
         ${x.suggest.filter(sg => sg.id).slice(1, 2).map(sg =>
-          `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(sg.id)}" data-mvtier="${MF_TIER[S.mfBand] ?? ""}">→ ${esc(sg.name)}</button>`).join('')}
-        ${done ? '' : `<button class="b sm" data-mfkeep="${esc(x.id)}" data-mffrom="${esc(x.currentPlaylistId)}" data-mfaway="${esc(x.suggest.filter(sg => sg.id).slice(0, 2).map(sg => sg.id).join(','))}">Keep here</button>`}
+          `<button class="b sm" data-act="move" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(sg.id)}" data-mvtier="${MF_TIER[S.mfBand] ?? ""}">→ ${esc(sg.name)}</button>`).join('')}
+        ${done ? '' : `<button class="b sm" data-act="mfkeep" data-mfkeep="${esc(x.id)}" data-mffrom="${esc(x.currentPlaylistId)}" data-mfaway="${esc(x.suggest.filter(sg => sg.id).slice(0, 2).map(sg => sg.id).join(','))}">Keep here</button>`}
         <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${x.dur ?? 0}">Play</button></div>
       ${x.tags?.length ? `<div style="flex-basis:100%; margin-top:6px">
         ${tagChips(x.tags, x.thinData)}
@@ -212,10 +159,11 @@ function secMisfile() {
     ${moreButton('misfile-' + S.mfBand, m.length)}`;
 }
 
-function vTidy() {
-  tidySoundWarm();
-  const n = { misfile: R.misfiled.length, dupes: R.within.length, cross: R.across.length, sound: tidySoundCount() };
-  const secs = tidySections();
+export function view(c) {
+  const { S, R, esc } = c;
+  c.tidySoundWarm();
+  const n = { misfile: R.misfiled.length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount() };
+  const secs = tidySections(c);
   // Opens on the first section with something in it rather than on "Wrong
   // place 0" while Repeats has work. A section the listener picked (S.tidySec,
   // set only by a tap) is kept; one that has gone away falls back the same way.
@@ -225,7 +173,100 @@ function vTidy() {
   const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound }[sec];
   return `<h1>Tidy</h1>
     <div class="seg tidysecs" role="group" aria-label="Section">${secs.map(([id, label]) =>
-      `<button type="button" aria-pressed="${sec === id}" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
-    ${body()}`;
+      `<button type="button" aria-pressed="${sec === id}" data-act="section" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
+    ${body(c)}`;
 }
 
+
+export const actions = {
+  section(c, el) { c.S.tidySec = el.dataset.tidy; c.render(); },
+
+  cmin(c, el) {
+    const { S, T } = c;
+    S.crossMin = +el.dataset.cmin;
+    if (T.rememberFilters) { T.crossMin = S.crossMin; c.saveTheme(); }
+    c.render();
+  },
+
+  tsb(c, el) { c.S.tsBand = el.dataset.tsb; c.render(); },
+
+  async tskeep(c, el) {
+    await c.recordKeep(el.dataset.tskeep, el.dataset.tsfrom, [el.dataset.tsto]);
+    c.toast('Kept where it is. It won’t be offered there again.');
+    c.render();
+  },
+
+  // Wrong place's Keep here: the same record as By sound's, and the row leaves both tiers.
+  async mfkeep(c, el) {
+    const id = el.dataset.mfkeep, from = el.dataset.mffrom;
+    await c.recordKeep(id, from, el.dataset.mfaway.split(',').filter(Boolean));
+    c.R.misfiled = c.R.misfiled.filter(m => !(m.id === id && m.currentPlaylistId === from));
+    c.toast('Kept where it is. It won’t be offered as wrong there again.');
+    c.render();
+  },
+
+  mfb(c, el) {
+    const { S, T } = c;
+    S.mfBand = el.dataset.mfb;
+    if (T.rememberFilters) { T.mfBand = S.mfBand; c.saveTheme(); }
+    c.render();
+  },
+
+  /** Keep one copy of a within-playlist duplicate, drop the others. */
+  async keep(c, el) {
+    const { R, CFG } = c;
+    const drop = el.dataset.drop.split(',').filter(Boolean), pl = el.dataset.pl;
+    const plName = CFG[pl]?.name ?? pl;
+    try {
+      const before = await c.playlistIds(pl);
+      const positions = {};
+      before.forEach((id, i) => { if (drop.includes(id)) (positions[id] ??= []).push(i); });
+      await c.delTracks(pl, drop);
+      await c.logAction({ op:'remove', playlistId:pl, playlistName:plName, trackIds:drop, positions, reason:'duplicate' });
+      const at = (await c.getLog())[0]?.at;
+      c.toast(`Removed ${drop.length} from ${plName}.`, () => c.undoAction(at));
+      R.within = R.within.filter(x => !(x.playlistId === pl && x.options.some(o => drop.includes(o.id)))); c.render();
+    } catch (err) { c.toast('Failed: ' + err.message); }
+  },
+
+  /** Cross-filed: take the track out of just this playlist. */
+  async xpl(c, el) {
+    const pl = el.dataset.xpl, tr = el.dataset.xtr, plName = c.CFG[pl]?.name ?? pl;
+    try {
+      const before = await c.playlistIds(pl);
+      const positions = {}; before.forEach((id, i) => { if (id === tr) (positions[id] ??= []).push(i); });
+      await c.delTracks(pl, [tr]);
+      await c.logAction({ op:'remove', playlistId:pl, playlistName:plName, trackIds:[tr], positions, reason:'cross-file trim' });
+      const at = (await c.getLog())[0]?.at;
+      el.classList.add('cut');
+      c.toast(`Removed from ${plName}.`, () => c.undoAction(at));
+    } catch (err) { c.toast('Failed: ' + err.message); }
+  },
+
+  async move(c, el) {
+    el.disabled = true;
+    const { mvto:to, mvfrom:from, mvtr:tr, mvtier:tier } = el.dataset;
+    const { CFG } = c;
+    const toName = CFG[to]?.name ?? to, fromName = CFG[from]?.name ?? from;
+    try {
+      // Add first: if the removal then fails the track is still filed somewhere
+      // rather than lost between playlists. Both steps share a group, so one
+      // Undo (toast or History) reverses the pair: back where it was, at its
+      // position, and out of the playlist it was moved to.
+      const group = c.newGroup();
+      await c.addTracks(to, [tr]);
+      const at = await c.logAction({ op:'add', playlistId:to, playlistName:toName, trackIds:[tr], reason:`moved from ${fromName}`, group });
+      const before = await c.playlistIds(from);
+      const positions = {}; before.forEach((id, i) => { if (id === tr) (positions[id] ??= []).push(i); });
+      await c.delTracks(from, [tr]);
+      await c.logAction({ op:'remove', playlistId:from, playlistName:fromName, trackIds:[tr], positions, reason:`moved to ${toName}`, group,
+                          move:{ trackId:tr, from, to, fromName, toName, ...(tier ? { tier } : {}) } });
+      c.toast(`Moved to ${toName}.`, () => c.undoAction(at));
+      // What the sound learner reads as a move: yes to `to`, no to `from`.
+      await c.recordMove(tr, from, to).catch(() => {});
+      c.S.moved.add(tr);
+      el.closest('.row').classList.add('done');
+      el.classList.remove('go'); el.textContent = 'Moved';
+    } catch (err) { c.toast('Failed: ' + err.message); el.disabled = false; }
+  },
+};

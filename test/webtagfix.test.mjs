@@ -135,10 +135,7 @@ test('an artist with no tags at all still renders an editor, not a blank', () =>
 });
 
 test('secMisfile offers "Wrong tags?" per artist on a track, and shows the editor inline', () => {
-  const from = BUNDLE.indexOf('function secMisfile()');
-  const to = BUNDLE.indexOf('function vTidy()');
-  assert.ok(from > 0 && to > from, 'secMisfile not found — rebuild with npm run build:web');
-  const body = BUNDLE.slice(from, to);
+  const body = readFileSync(new URL('../web/screens/tidy.mjs', import.meta.url), 'utf8');
   assert.match(body, /data-editartist="\$\{esc\(a\.id\)\}"/);
   assert.match(body, /tagEditorHTML\(S\.editingArtist/);
   // Only ever one editor drawn per render, even if the same artist has several
@@ -148,7 +145,7 @@ test('secMisfile offers "Wrong tags?" per artist on a track, and shows the edito
 
 test('buildReports carries artist ids through to misfiled and backlog rows, not just a display name', () => {
   const from = BUNDLE.indexOf('function buildReports(lib, cfg, tags)');
-  const to = BUNDLE.indexOf('function secDupes');
+  const to = BUNDLE.indexOf('function emptyState(');
   const body = from > 0 ? BUNDLE.slice(from, to > from ? to : undefined) : '';
   assert.ok(from > 0, 'buildReports not found — rebuild with npm run build:web');
   assert.match(body, /findMisfiled\(lib, tags, targets, profiles, idf, axisOf\)\.map\(m => \(\{[\s\S]*?artists: \(m\.track\.artists \?\? \[\]\)\.filter\(a => a\.id\)/,
@@ -159,25 +156,19 @@ test('buildReports carries artist ids through to misfiled and backlog rows, not 
 });
 
 test('choosing an axis by hand marks it "set by you" immediately, not just after the next sync', () => {
-  const from = BUNDLE.indexOf("const ax = e.target.closest('[data-ax]')");
-  const to = from + 2500;
-  const body = BUNDLE.slice(from, to);
+  const body = readFileSync(new URL('../web/screens/lists.mjs', import.meta.url), 'utf8');
   assert.match(body, /CFG\[id\]\.axis = ax\.value;\s*\n\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*CFG\[id\]\.why = 'set by you';/,
     'so a playlist just fixed drops out of "Needs your input" without a reload');
 });
 
-test('vLists surfaces playlists classify() defaulted with no real signal, and only those', () => {
-  const from = BUNDLE.indexOf('function vLists()');
-  const to = BUNDLE.indexOf('function tagCoverage()');
-  const body = BUNDLE.slice(from, to);
+test('the Playlists view surfaces playlists classify() defaulted with no real signal, and only those', () => {
+  const body = readFileSync(new URL('../web/screens/lists.mjs', import.meta.url), 'utf8');
   assert.match(body, /Needs your input/);
   assert.match(body, /undecided = rows\.filter\(p => p\.why === NO_SIGNAL\)/);
 });
 
-test('vLists shows drifting playlists only when findDrift actually found some', () => {
-  const from = BUNDLE.indexOf('function vLists()');
-  const to = BUNDLE.indexOf('function tagCoverage()');
-  const body = BUNDLE.slice(from, to);
+test('the Playlists view shows drifting playlists only when findDrift actually found some', () => {
+  const body = readFileSync(new URL('../web/screens/lists.mjs', import.meta.url), 'utf8');
   assert.match(body, /\(R\.drift \?\? \[\]\)\.length \?/, 'gated on there being anything to show');
   assert.match(body, /Recently drifting/);
   assert.match(body, /d\.recentTags\.map\(esc\)\.join/, 'shows what the newest additions actually look like');
@@ -185,7 +176,7 @@ test('vLists shows drifting playlists only when findDrift actually found some', 
 
 test('buildReports computes drift alongside misfiled, from the same idf table', () => {
   const from = BUNDLE.indexOf('function buildReports(lib, cfg, tags)');
-  const to = BUNDLE.indexOf('function secDupes');
+  const to = BUNDLE.indexOf('function emptyState(');
   const body = BUNDLE.slice(from, to);
   assert.match(body, /const drift = findDrift\(lib, tags, targets, idf\);/);
   assert.match(body, /return \{ within, across, misfiled, backlog, clusters, drift, profiles, idf \};/);
@@ -200,9 +191,7 @@ test('enrichMissing covers what you actually listen to first', () => {
 });
 
 test('secMisfile notes when a "misfiled" track is one you actually play a lot, without touching its confidence', () => {
-  const from = BUNDLE.indexOf('function secMisfile()');
-  const to = BUNDLE.indexOf('function vTidy()');
-  const body = BUNDLE.slice(from, to);
+  const body = readFileSync(new URL('../web/screens/tidy.mjs', import.meta.url), 'utf8');
   assert.match(body, /recentlyActive\?\.has\(x\.artist\)/);
   assert.match(body, /You play this a lot right now/);
   // The fetch is lazy and must not block the row rendering that's already there.
