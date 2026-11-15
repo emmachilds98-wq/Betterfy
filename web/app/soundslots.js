@@ -39,6 +39,23 @@ function filePicks(t) {
   }
   return out;
 }
+/* The band the File card shows for its leading pick: the Engine's calibrated
+ * verdict on this track when it has judged it, else the pick's own band. */
+const fileBand = (t, picks) => typeof cardBand === 'function' && typeof engineDecisionOf === 'function' ? cardBand(picks, engineDecisionOf(t?.id)) : picks?.[0]?.band ?? null;
+/* The cards that are sure, with where each goes: "File the N sure ones". */
+const fileSure = () => typeof sureOnes !== 'function' ? [] : sureOnes(R.backlog, { picksOf: filePicks, bandOf: (t, picks) => fileBand(t, picks) });
+/* The sound ID's most specific genre for a track, only when it is a sure reading
+ * (the same 0.7 the band uses), else null. File's roll-forward matches on it. */
+function fileRollSound(t) {
+  const id = typeof soundIdOf === 'function' ? soundIdOf(t)?.id : null;
+  return id?.genre && id.genre.conf >= 0.7 ? id.path?.at?.(-1)?.name ?? null : null;
+}
+let LIKED_ISRC = null, LIKED_ISRC_FOR = null;
+/** A liked track's ISRC by id (backlog rows do not carry it). */
+function likedIsrc(id) {
+  if (LIKED_ISRC_FOR !== LIB) { LIKED_ISRC = new Map((LIB.liked ?? []).map(x => [x.id, x.isrc])); LIKED_ISRC_FOR = LIB; }
+  return LIKED_ISRC.get(id);
+}
 /* What the track sounds like: "Drum & Bass › Jungle · 172 BPM", with why, the
  * filed tracks it sounds most like and the heard tracks it mixes with behind a
  * tap. Nothing at all until it has been heard and the sound space is ready. */

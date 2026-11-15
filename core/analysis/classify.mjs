@@ -20,12 +20,8 @@ import { evidenceWeight, agreementFactor, CONTRADICTION_PENALTY, LINEAGE_LIFT, L
 export const CLASSIFIER_VERSION = '3.0.0';
 
 /** §27: calibrated bands, not a similarity score dressed up as a probability. */
-export const CONFIDENCE = {
-  HIGH: 'HIGH',
-  LIKELY: 'LIKELY',
-  AMBIGUOUS: 'AMBIGUOUS',
-  INSUFFICIENT_DATA: 'INSUFFICIENT_DATA',
-};
+import { CONFIDENCE } from './confidence.mjs';
+export { CONFIDENCE };
 
 /* The thresholds. Every one of these is a starting point to be re-fitted
  * against the benchmark (§26) — they are gathered here, named, and read from

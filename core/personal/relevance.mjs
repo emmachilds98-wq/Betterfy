@@ -13,7 +13,7 @@
 // so that expensive work goes to tracks that are both played a lot and badly
 // understood, rather than to whichever came first in playlist order.
 import { listeningWeights } from '../../profile.mjs';
-import { CONFIDENCE } from '../analysis/classify.mjs';
+import { CONFIDENCE } from '../analysis/confidence.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
 
 export const RELEVANCE_VERSION = '3.0.0';

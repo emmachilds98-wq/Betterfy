@@ -5,16 +5,40 @@
  * and untick, never a silent bulk move. Tracks already turned down for that
  * playlist are left out: a rejection is an answer. */
 const ROLL_MAX = 40;
+const BAND_LOG = { HIGH: 'sure', LIKELY: 'likely', AMBIGUOUS: 'unsure' };
 /** How long after a filing another one is ignored: the card's flight, about. */
 const FLIGHT_MS = 300;
 
-/** Other backlog tracks by `track`'s first-billed artist that could follow it into `playlistIds`. */
-export function rollForwardFor(track, backlog, playlistIds, fb = {}) {
-  const lead = track?.artists?.[0]?.id;
-  if (!lead || !playlistIds?.length) return [];
-  return (backlog ?? []).filter(b => b.id !== track.id && b.artists?.[0]?.id === lead
-      && !playlistIds.some(pid => fb?.[b.id]?.rejected?.includes(pid)))
-    .slice(0, ROLL_MAX);
+/** How many other cards are looked at for a matching sound ID (each is a lookup). */
+const SOUND_SCAN = 200;
+
+/**
+ * Other backlog tracks that could follow `track` into `playlistIds`, each with
+ * why (`how`): by the same first-billed artist; by the same sure sound ID (its
+ * most specific genre, when both have been heard); or from the same label (ISRC
+ * registrant) when the engine's own top pick for it is one of these playlists,
+ * since a label alone says too little. `by.sound(t)` and `by.registrant(t)` come
+ * from the page; without them it is the artist roll-forward it always was.
+ * Tracks already turned down for that playlist are left out.
+ */
+export function rollForwardFor(track, backlog, playlistIds, fb = {}, by = {}) {
+  if (!playlistIds?.length || !track) return [];
+  const lead = track.artists?.[0]?.id;
+  const open = b => b.id !== track.id && !playlistIds.some(pid => fb?.[b.id]?.rejected?.includes(pid));
+  const out = [], seen = new Set();
+  const add = (b, how) => { if (!seen.has(b.id)) { seen.add(b.id); out.push({ ...b, how }); } };
+  if (lead) for (const b of backlog ?? []) if (open(b) && b.artists?.[0]?.id === lead) add(b, 'artist');
+  const leaf = by.sound ? by.sound(track) : null, reg = by.registrant ? by.registrant(track) : null;
+  if (leaf || reg) {
+    let scanned = 0;
+    for (const b of backlog ?? []) {
+      if (out.length >= ROLL_MAX) break;
+      if (!open(b) || seen.has(b.id)) continue;
+      if (leaf && scanned++ < SOUND_SCAN && by.sound(b) === leaf) add(b, 'sound');
+      else if (reg && by.registrant(b) === reg && playlistIds.includes(b.suggest?.[0]?.id)) add(b, 'label');
+    }
+  }
+  return out.slice(0, ROLL_MAX);
 }
 
 export function rollForwardHTML({ S, esc }) {
@@ -22,12 +46,16 @@ export function rollForwardHTML({ S, esc }) {
   if (!rf?.rows?.length) return '';
   const on = rf.rows.filter(r => !rf.off.has(r.id)).length;
   const where = rf.names.length > 1 ? `those ${rf.names.length} playlists` : esc(rf.names[0]);
+  const alike = rf.rows.filter(r => r.how === 'sound' || r.how === 'label').length;
+  const head = alike ? `<b>${rf.rows.length} more</b> waiting, by ${esc(rf.artist)} or sounding or released alike`
+    : `<b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed`;
+  const note = r => r.how === 'sound' ? ' <span class="sub">sounds alike</span>' : r.how === 'label' ? ' <span class="sub">same label</span>' : '';
   return `<div class="card" id="rollCard" style="margin:0 0 16px">
-    <p style="margin:0 0 8px"><b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed. Put ${
+    <p style="margin:0 0 8px">${head}. Put ${
       rf.rows.length === 1 ? 'it' : 'them'} in ${where} too?</p>
     <div class="rows" style="max-height:220px; overflow:auto">${rf.rows.map(r => `
       <label class="check-row"><input type="checkbox" data-act="rollpick" data-rollpick="${esc(r.id)}" ${rf.off.has(r.id) ? '' : 'checked'}>
-        ${esc(r.title)}</label>`).join('')}</div>
+        ${esc(r.title)}${note(r)}</label>`).join('')}</div>
     <div class="rowbtns" style="margin-top:10px">
       <button class="b sm p" data-act="roll" data-roll="go" ${on ? '' : 'disabled'}>File ${on} into ${where}</button>
       <button class="b sm" data-act="roll" data-roll="no">Not now</button>
@@ -59,6 +87,70 @@ export async function rollForwardGo(ctx) {
   render();
 }
 
+/* ---------- "File the N sure ones": docs/BUILD-5-PLAN.md §5.2 ----------
+ * The cards whose leading pick is calibrated sure, filed in one go: one History
+ * group (a step per playlist), one undo. Only among the first cards of the queue. */
+const sureList = ctx => { try { return ctx.fileSure?.() ?? []; } catch { return []; } };
+
+export function sureBatchHTML(ctx) {
+  const { S, esc } = ctx;
+  if (S.roll) return '';
+  const n = sureList(ctx).length;
+  if (n < 2) return '';
+  return `<div class="card surebatch" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
+    <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
+    <button class="b sm p" data-act="filesure">File the ${esc(String(n))} sure ones</button>
+  </div>`;
+}
+
+/**
+ * File every sure card into its playlist: one add per playlist, all logged under
+ * one group with `band:'sure'` (Score's §7 reads it), so History shows one row
+ * and one undo takes the whole batch back.
+ */
+export async function fileSureOnes(ctx) {
+  const { S, R, CFG, addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, toast, render } = ctx;
+  const now = Date.now();
+  if (S.filing || now < (S.fileLockUntil ?? 0)) return;
+  const batch = sureList(ctx);
+  if (!batch.length) return;
+  S.filing = true;
+  const byPl = new Map();
+  batch.forEach(({ row, playlistId }) => {
+    const at = R.backlog.findIndex(b => b.id === row.id);
+    (byPl.get(playlistId) ?? byPl.set(playlistId, []).get(playlistId)).push({ id: row.id, at });
+  });
+  const group = newGroup(), ats = [], done = [];
+  try {
+    for (const [pid, rows] of byPl) {
+      const ids = rows.map(r => r.id);
+      await addTracks(pid, ids);
+      await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
+                        reason:'filed the sure ones', band:'sure', queuePos:Math.min(...rows.map(r => r.at)), group });
+      ats.push((await getLog())[0]?.at);
+      done.push([pid, ids]);
+    }
+    for (const [pid, ids] of done) for (const id of ids) await recordAccept(id, [pid]);
+  } catch (e) {
+    // Whatever was written comes back out, and the queue is untouched.
+    if (ats.length) { try { await undoAction(ats[0]); } catch { /* best effort */ } }
+    S.filing = false;
+    toast('Failed: ' + e.message);
+    return render();
+  }
+  S.filing = false;
+  const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(done.flatMap(([, ids]) => ids));
+  for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
+  S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+  S.roll = null; S.fileSel = new Set();
+  const n = gone.size;
+  toast(`Filed ${n} sure ${n === 1 ? 'one' : 'ones'}.`, async () => {
+    if (ats[0]) await undoAction(ats[0]);
+    for (const [pid, ids] of done) for (const id of ids) await forgetAccept(id, [pid]);
+  });
+  render();
+}
+
 export function view(ctx) {
   const { S, R, CFG, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip, tagChips, trackStrip,
           soundIdHTML, soundNote, pickEvidence, pickBand, matchMedia } = ctx;
@@ -86,6 +178,9 @@ export function view(ctx) {
     .sort((a, b) => a.name.localeCompare(b.name));
   const nameOf = id => opts.find(o => o.id === id)?.name ?? picks.find(s => s.id === id)?.name ?? id;
   const best = picks[0];
+  // The calibrated band for the leading pick on every card, not only the sound ones.
+  const topBand = ctx.fileBand?.(t, picks) ?? best?.band ?? null;
+  ctx.fileOrderKick?.();
   const canFile = S.fileSel.size > 0 || !!best;
   const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
     : S.fileSel.size === 1 ? `File in ${esc(nameOf([...S.fileSel][0]))}`
@@ -96,7 +191,7 @@ export function view(ctx) {
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
     : '';
 
-  return `${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+  return `${sureBatchHTML(ctx)}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
@@ -129,7 +224,7 @@ export function view(ctx) {
               : sg.via === 'blend' ? (sg.untagged ? 'where you file this artist and ones like them'
                 : sg.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record')
               : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
-            <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
+            <span class="rt">${pickBand(n === 0 && topBand ? { ...sg, band: topBand } : sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
             <span class="nope" data-act="reject" data-reject="${esc(sg.id)}" role="button" tabindex="0"
               title="Never suggest ${esc(sg.name)} for this track">✕</span>
@@ -196,7 +291,10 @@ export async function fileCurrent(ctx, playlistIds) {
   // where in the queue it was filed from, and the band File showed for it.
   let picks = [];
   try { picks = ctx.filePicks?.(t) ?? []; } catch { /* no band, still filed */ }
-  const bandOf = id => picks.find(p => p.id === id)?.band;
+  // 'sure' / 'likely' / 'unsure': the words core/measure/history.mjs counts.
+  const lead = ctx.fileBand?.(t, picks) ?? picks[0]?.band;
+  const bandOf = id => { const b = id === picks[0]?.id ? lead : picks.find(p => p.id === id)?.band;
+                         return BAND_LOG[b]; };
   const picked = new Set(S.fileSel);
   try { ctx.flyCard?.(1); } catch { /* the animation is a bonus */ }
   S.fileSel = new Set();
@@ -231,9 +329,9 @@ export async function fileCurrent(ctx, playlistIds) {
   const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
                                 await forgetAccept(t.id, ids); };
   toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
-  const more = rollForwardFor(t, R.backlog, ids, FB);
+  const more = rollForwardFor(t, R.backlog, ids, FB, { sound: ctx.rollSound, registrant: ctx.rollRegistrant });
   S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
-                           rows: more.map(b => ({ id: b.id, title: b.title })), off: new Set() } : null;
+                           rows: more.map(b => ({ id: b.id, title: b.title, how: b.how })), off: new Set() } : null;
   render();
 }
 export async function inboxAct(ctx, a) {
@@ -270,6 +368,7 @@ export async function inboxAct(ctx, a) {
 export const actions = {
   selfile: (ctx, el) => toggleFileSel(ctx, el.dataset.selfile),
   anyPl: (ctx, el) => { if (el.value) toggleFileSel(ctx, el.value); },
+  filesure: (ctx) => fileSureOnes(ctx),
   filesel: (ctx) => fileCurrent(ctx, ctx.S.fileSel.size ? [...ctx.S.fileSel] : ctx.filePicks(inboxTrack(ctx))[0]?.id),
   play: (ctx) => inboxAct(ctx, 'play'),
   skip: (ctx) => inboxAct(ctx, 'skip'),

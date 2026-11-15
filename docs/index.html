@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-1111">
+<meta name="bf-build" content="2026-11-15-1124">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1616,7 +1616,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-1111</span>
+    <span class="mono">build 2026-11-15-1124</span>
   </p>
 
   <div class="feat">
@@ -1708,7 +1708,7 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1111</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1124</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1825,7 +1825,7 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-15-1111. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-15-1124. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -2911,6 +2911,319 @@ function classifyAxes(lib, { tags = null, now = Date.now(), genreWords = null,
 }
 return { NAME_RULES, MIN_FOR_TARGET, NO_SIGNAL, genreInName, addedShape, nameAxis, classifyAxes };
 })();
+/* ---- core/analysis/confidence.mjs ---- */
+__mod["core/analysis/confidence.mjs"] = (function () {
+// The four confidence labels, on their own so a module that only needs the
+// names (core/personal/relevance.mjs, bundled into the page) does not pull the
+// whole classifier and ontology in with them. classify.mjs re-exports it.
+const CONFIDENCE = {
+  HIGH: 'HIGH',
+  LIKELY: 'LIKELY',
+  AMBIGUOUS: 'AMBIGUOUS',
+  INSUFFICIENT_DATA: 'INSUFFICIENT_DATA',
+};
+return { CONFIDENCE };
+})();
+/* ---- core/playlists/mirror.mjs ---- */
+__mod["core/playlists/mirror.mjs"] = (function () {
+// Playlists that are a record of everything, not a filing decision.
+//
+// A playlist holding (nearly) your whole library is not a place you filed
+// anything — it is a copy of the library wearing a playlist's clothes.
+// Betterfy makes one itself ("All Songs"), and listeners make their own:
+// "Remember Everything", "Archive", "The Lot". Left in, one does four kinds
+// of damage at once, all of them silent:
+//
+//   1. every track reads as FILED, so nothing is ever offered a home
+//   2. every track's blast radius gains one, so the review queue thinks a
+//      wrong answer spreads further than it does
+//   3. it is a superset of every other playlist, so it buries every real
+//      relationship under "contains"
+//   4. it is a centroid of everything you own, so it wins every filing
+//      comparison it is allowed into
+//
+// The whole engine's plumbing already accepts an `isMirror` predicate — and
+// nothing ever passed one, so the default `() => false` meant all four were
+// happening on any real library.
+//
+// Detected by SHAPE, not by name. v1's browser build matches the exact string
+// "All Songs — Betterfy", which catches the one Betterfy makes and misses
+// every one a listener made themselves — the same failure as axes.mjs's venue
+// regex, one layer down. A playlist that holds nearly everything you own
+// cannot be telling you where anything belongs, whatever it is called and
+// whatever language it is called it in.
+const MIRROR_VERSION = '3.0.0';
+
+/* Declared priors, not fitted — there is no benchmark for this yet, and this
+ * comment is the honest label on them.
+ *
+ * COVERAGE is deliberately high. The cost of a false positive is a real
+ * bucket silently stopping taking suggestions; the cost of a false negative
+ * is the four failures above. At 0.9 a playlist has to hold nine of every ten
+ * distinct tracks you own, which no genre bucket does in a library with more
+ * than one genre in it — and in a library with only one, a playlist holding
+ * 90% of everything still cannot discriminate between anywhere. */
+const MIRROR_COVERAGE = 0.9;
+/* Below this, "holds 90% of the library" is an accident of a small library
+ * rather than a fact about the playlist. */
+const MIRROR_MIN_LIBRARY = 50;
+
+/** Every distinct track id in the library — playlists and liked songs. */
+function libraryTrackIds(lib) {
+  const ids = new Set();
+  for (const p of lib?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id) ids.add(t.id);
+  for (const t of lib?.liked ?? []) if (t?.id) ids.add(t.id);
+  return ids;
+}
+
+/**
+ * Which playlists are records of everything.
+ *
+ * @param {object} lib
+ * @param {{coverage?: number, minLibrary?: number, also?: (p: object) => boolean}} [opts]
+ *        `also` marks extra playlists a caller already knows are mirrors — the
+ *        app remembers its own All Songs by id, which is better evidence than
+ *        any threshold and should not have to clear one.
+ * @returns {{ids: Set<string>, rows: {id, name, covers, share}[], library: number}}
+ */
+function mirrorsOf(lib, { coverage = MIRROR_COVERAGE, minLibrary = MIRROR_MIN_LIBRARY,
+                                 also = null } = {}) {
+  const all = libraryTrackIds(lib);
+  const rows = [], ids = new Set();
+
+  for (const p of lib?.playlists ?? []) {
+    if (!p?.id) continue;
+    const own = new Set();
+    for (const t of p.tracks ?? []) if (t?.id) own.add(t.id);
+    const share = all.size ? own.size / all.size : 0;
+    const known = !!also?.(p);
+    // A caller's own knowledge is not subject to the size floor: an app that
+    // built the playlist knows what it is even in a library of twelve tracks.
+    if (!known && (all.size < minLibrary || share < coverage)) continue;
+    ids.add(p.id);
+    rows.push({ id: p.id, name: p.name ?? '', covers: own.size,
+                share: +share.toFixed(4), by: known ? 'caller' : 'coverage' });
+  }
+
+  rows.sort((a, b) => b.share - a.share);
+  return { ids, rows, library: all.size, version: MIRROR_VERSION };
+}
+
+/**
+ * A predicate for the `isMirror` hook the rest of the engine already takes.
+ *
+ * Matches on id, which is the only stable handle — two playlists can share a
+ * name and a renamed playlist is still the same playlist.
+ */
+function mirrorPredicate(lib, opts = {}) {
+  const { ids } = mirrorsOf(lib, opts);
+  return p => !!p?.id && ids.has(p.id);
+}
+return { MIRROR_VERSION, MIRROR_COVERAGE, MIRROR_MIN_LIBRARY, libraryTrackIds, mirrorsOf, mirrorPredicate };
+})();
+/* ---- core/personal/relevance.mjs ---- */
+__mod["core/personal/relevance.mjs"] = (function () {
+const { listeningWeights } = __mod["profile.mjs"];
+const { CONFIDENCE } = __mod["core/analysis/confidence.mjs"];
+const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
+// Listening behaviour as a *priority* signal — §22.
+//
+// "It must NOT automatically determine objective genre." That sentence is why
+// this module is here rather than in core/analysis, and why nothing in the
+// classifier imports it. Two questions that look similar and are not:
+//
+//     What is this track?          -> evidence. Listening says nothing.
+//     Is it worth my attention?    -> listening, almost entirely.
+//
+// v1 already fetches the raw numbers (listening.mjs) and combines them
+// (listeningWeights in profile.mjs). Both are reused verbatim — this adds the
+// second half §28 asks for, which is combining relevance with *uncertainty*
+// so that expensive work goes to tracks that are both played a lot and badly
+// understood, rather than to whichever came first in playlist order.
+
+
+
+
+const RELEVANCE_VERSION = '3.0.0';
+
+
+/**
+ * How little the engine knows about a track, 0 (certain) to 1 (nothing).
+ *
+ * Deliberately steep between AMBIGUOUS and LIKELY. A LIKELY answer is usually
+ * right and re-asking about it is close to wasted; an AMBIGUOUS one is a
+ * coin-flip the listener will eventually be shown, and every one of those
+ * resolved is a misfile that never happens.
+ */
+const UNCERTAINTY = {
+  [CONFIDENCE.INSUFFICIENT_DATA]: 1.0,
+  [CONFIDENCE.AMBIGUOUS]: 0.9,
+  [CONFIDENCE.LIKELY]: 0.45,
+  [CONFIDENCE.HIGH]: 0.05,
+};
+
+const uncertaintyOf = profile => UNCERTAINTY[profile?.genre?.confidence] ?? 0.5;
+
+/**
+ * How much this listener actually plays a track, as a multiplier on a floor
+ * of 1 rather than a term added to a 0-1 uncertainty.
+ *
+ * Listening weights are unbounded and relative (see listeningWeights), so
+ * adding them would let one heavily-played artist swamp the uncertainty
+ * signal entirely and turn the whole queue into "your top artist, forty
+ * times".
+ */
+function relevanceOf(track, weights) {
+  const w = weights?.get?.(track?.artists?.[0]?.name) ?? 0;
+  return 1 + w;
+}
+
+/**
+ * How many playlists a track sits in — its blast radius.
+ *
+ * §35 ranks "tracks affecting many playlists" highly, and rightly: getting
+ * one wrong about a track filed in six places is six wrong answers, and it
+ * also drags six centroids.
+ */
+function playlistReach(lib, { isMirror = null } = {}) {
+  const mirror = isMirror ?? mirrorPredicate(lib);
+  const reach = new Map();
+  for (const p of lib?.playlists ?? []) {
+    // A record-of-everything playlist adds one to every track alike, which is
+    // not blast radius — it is a constant, and it pushed the whole library
+    // over the queue's MANY_PLAYLISTS threshold at once.
+    if (mirror(p)) continue;
+    // Distinct playlists, not placements. A playlist that contains the same
+    // track twice is a duplicate — which this project has a whole report
+    // about — and counting it twice inflated the blast radius of exactly the
+    // tracks most likely to be duplicated.
+    const seen = new Set();
+    for (const t of p.tracks ?? []) {
+      if (!t?.id || seen.has(t.id)) continue;
+      seen.add(t.id);
+      reach.set(t.id, (reach.get(t.id) ?? 0) + 1);
+    }
+  }
+  return reach;
+}
+
+/**
+ * §28's priority: high-use and uncertain first, rare and already-confident
+ * last. The number expensive analysis is spent in order of.
+ *
+ * @param {{profile: object}} entry
+ * @param {{weights?: Map, reach?: Map, track: object}} ctx
+ */
+function analysisPriority({ profile }, { weights = null, reach = null, track } = {}) {
+  const uncertainty = uncertaintyOf(profile);
+  const played = relevanceOf(track, weights);
+  // Reach is capped: a track in twelve playlists is not twelve times more
+  // important than one in six, and without a cap the mirror playlist's
+  // contents would sort to the top of everything.
+  const spread = 1 + Math.min(3, (reach?.get?.(track?.id) ?? 1) - 1) * 0.25;
+  return +(uncertainty * played * spread).toFixed(4);
+}
+return { RELEVANCE_VERSION, UNCERTAINTY, uncertaintyOf, relevanceOf, playlistReach, analysisPriority, listeningWeights };
+})();
+/* ---- core/review/filequeue.mjs ---- */
+__mod["core/review/filequeue.mjs"] = (function () {
+const { relevanceOf, UNCERTAINTY } = __mod["core/personal/relevance.mjs"];
+// The File queue's order and its sure batch (docs/BUILD-5-PLAN.md §5.2).
+//
+// Pure counts over what Spotify already gives every account: the three
+// top-artist windows, recently played and /me/top/tracks. Nothing here is
+// trained, fetched or pooled. Bundled into the page and exposed as globals.
+//
+// Order = how much you play it x how little the engine knows it, the same two
+// halves core/personal/relevance.mjs names (relevanceOf, UNCERTAINTY). Listening
+// only decides what to ask about first, never what a track is.
+
+
+const FILEQUEUE_VERSION = '1.0.0';
+
+/** What the card's band is called in the History log, which Score reads (core/measure/history.mjs). */
+const BAND_LOG = { HIGH: 'sure', LIKELY: 'likely', AMBIGUOUS: 'unsure' };
+
+/** The Engine's calibrated decide() kinds, as the bands the chip draws. */
+const DECISION_BAND = { confident: 'HIGH', choose: 'LIKELY', unsure: 'AMBIGUOUS' };
+
+/** The band for a card: the calibrated verdict when the Engine has judged this
+ *  track, else the leading pick's own band, else none. */
+function cardBand(picks, decision = null) {
+  return DECISION_BAND[decision?.kind] ?? picks?.[0]?.band ?? null;
+}
+
+/**
+ * Track-level listening, as a count: a place in each /me/top/tracks window
+ * (weighted like the artist windows) plus how often it turns up in recently
+ * played. Map of track id -> weight.
+ */
+function trackWeights({ topTracks = [], recentTracks = [] } = {}) {
+  const w = new Map();
+  const bump = (id, x) => { if (id) w.set(id, (w.get(id) ?? 0) + x); };
+  for (const { items, weight } of topTracks) (items ?? []).forEach((id, i) => bump(id, weight * (1 - i / 60)));
+  for (const id of recentTracks) bump(id, 0.6);
+  return w;
+}
+
+/**
+ * How little is known about where a row goes, 0..1. The band when there is one
+ * (relevance.mjs's UNCERTAINTY), else the top pick's own score, else nothing.
+ */
+function rowUncertainty(row, band = null) {
+  if (band && band in UNCERTAINTY) return UNCERTAINTY[band];
+  const s = row?.suggest?.[0]?.score;
+  return Number.isFinite(s) ? Math.max(0.05, 1 - Math.min(1, s)) : 1;
+}
+
+/** Listening weight x uncertainty, for one backlog row. */
+function valueOf(row, { weights = null, tracks = null, bandOf = null } = {}) {
+  const played = relevanceOf(row, weights) + (tracks?.get?.(row?.id) ?? 0);
+  return +(played * rowUncertainty(row, bandOf?.(row) ?? null)).toFixed(4);
+}
+
+/**
+ * The queue in order of value. Skipped tracks stay below everything unseen
+ * (the old rule); within a skip count, most valuable first, ties newest-liked
+ * first. Without any listening data every weight is the same 1, so this is the
+ * uncertainty order alone, and with neither it is the old newest-first order.
+ * Returns a new array.
+ */
+function orderBacklog(rows, ctx = {}) {
+  const v = new Map((rows ?? []).map(r => [r.id, valueOf(r, ctx)]));
+  return [...(rows ?? [])].sort((a, b) => ((a.skips ?? 0) - (b.skips ?? 0))
+    || (v.get(b.id) - v.get(a.id)) || (b.added ?? '').localeCompare(a.added ?? ''));
+}
+
+/**
+ * The cards that are sure, each with where it goes: a calibrated HIGH band and
+ * a leading pick, not skipped, not rejected for that playlist. In queue order.
+ * `picksOf(row)` and `bandOf(row, picks)` come from the page.
+ * @returns {{row: object, playlistId: string, name: string}[]}
+ */
+function sureOnes(rows, { picksOf, bandOf, limit = 300 } = {}) {
+  const out = [];
+  for (const row of (rows ?? []).slice(0, limit)) {
+    if ((row.skips ?? 0) > 0) continue;
+    const picks = picksOf(row) ?? [];
+    const top = picks[0];
+    if (!top?.id || bandOf(row, picks) !== 'HIGH') continue;
+    out.push({ row, playlistId: top.id, name: top.name });
+  }
+  return out;
+}
+
+/**
+ * The label code in an ISRC: country + registrant, its first five characters
+ * (the same reading core/intrinsic/features.mjs registrantOf makes, kept here
+ * so File does not need the lazy Engine bundle). Null when malformed.
+ */
+function registrantOfIsrc(isrc) {
+  const raw = String(isrc ?? '').replace(/-/g, '').toUpperCase();
+  return /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(raw) ? raw.slice(0, 5) : null;
+}
+return { FILEQUEUE_VERSION, BAND_LOG, DECISION_BAND, cardBand, trackWeights, rowUncertainty, valueOf, orderBacklog, sureOnes, registrantOfIsrc };
+})();
 /* ---- web/ui/sound.mjs ---- */
 __mod["web/ui/sound.mjs"] = (function () {
 // The sound layer's renderers — the contract docs/UI-BUILD-PLAN.md §5 freezes.
@@ -3547,16 +3860,40 @@ __mod["web/screens/inbox.mjs"] = (function () {
  * and untick, never a silent bulk move. Tracks already turned down for that
  * playlist are left out: a rejection is an answer. */
 const ROLL_MAX = 40;
+const BAND_LOG = { HIGH: 'sure', LIKELY: 'likely', AMBIGUOUS: 'unsure' };
 /** How long after a filing another one is ignored: the card's flight, about. */
 const FLIGHT_MS = 300;
 
-/** Other backlog tracks by `track`'s first-billed artist that could follow it into `playlistIds`. */
-function rollForwardFor(track, backlog, playlistIds, fb = {}) {
-  const lead = track?.artists?.[0]?.id;
-  if (!lead || !playlistIds?.length) return [];
-  return (backlog ?? []).filter(b => b.id !== track.id && b.artists?.[0]?.id === lead
-      && !playlistIds.some(pid => fb?.[b.id]?.rejected?.includes(pid)))
-    .slice(0, ROLL_MAX);
+/** How many other cards are looked at for a matching sound ID (each is a lookup). */
+const SOUND_SCAN = 200;
+
+/**
+ * Other backlog tracks that could follow `track` into `playlistIds`, each with
+ * why (`how`): by the same first-billed artist; by the same sure sound ID (its
+ * most specific genre, when both have been heard); or from the same label (ISRC
+ * registrant) when the engine's own top pick for it is one of these playlists,
+ * since a label alone says too little. `by.sound(t)` and `by.registrant(t)` come
+ * from the page; without them it is the artist roll-forward it always was.
+ * Tracks already turned down for that playlist are left out.
+ */
+function rollForwardFor(track, backlog, playlistIds, fb = {}, by = {}) {
+  if (!playlistIds?.length || !track) return [];
+  const lead = track.artists?.[0]?.id;
+  const open = b => b.id !== track.id && !playlistIds.some(pid => fb?.[b.id]?.rejected?.includes(pid));
+  const out = [], seen = new Set();
+  const add = (b, how) => { if (!seen.has(b.id)) { seen.add(b.id); out.push({ ...b, how }); } };
+  if (lead) for (const b of backlog ?? []) if (open(b) && b.artists?.[0]?.id === lead) add(b, 'artist');
+  const leaf = by.sound ? by.sound(track) : null, reg = by.registrant ? by.registrant(track) : null;
+  if (leaf || reg) {
+    let scanned = 0;
+    for (const b of backlog ?? []) {
+      if (out.length >= ROLL_MAX) break;
+      if (!open(b) || seen.has(b.id)) continue;
+      if (leaf && scanned++ < SOUND_SCAN && by.sound(b) === leaf) add(b, 'sound');
+      else if (reg && by.registrant(b) === reg && playlistIds.includes(b.suggest?.[0]?.id)) add(b, 'label');
+    }
+  }
+  return out.slice(0, ROLL_MAX);
 }
 
 function rollForwardHTML({ S, esc }) {
@@ -3564,12 +3901,16 @@ function rollForwardHTML({ S, esc }) {
   if (!rf?.rows?.length) return '';
   const on = rf.rows.filter(r => !rf.off.has(r.id)).length;
   const where = rf.names.length > 1 ? `those ${rf.names.length} playlists` : esc(rf.names[0]);
+  const alike = rf.rows.filter(r => r.how === 'sound' || r.how === 'label').length;
+  const head = alike ? `<b>${rf.rows.length} more</b> waiting, by ${esc(rf.artist)} or sounding or released alike`
+    : `<b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed`;
+  const note = r => r.how === 'sound' ? ' <span class="sub">sounds alike</span>' : r.how === 'label' ? ' <span class="sub">same label</span>' : '';
   return `<div class="card" id="rollCard" style="margin:0 0 16px">
-    <p style="margin:0 0 8px"><b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed. Put ${
+    <p style="margin:0 0 8px">${head}. Put ${
       rf.rows.length === 1 ? 'it' : 'them'} in ${where} too?</p>
     <div class="rows" style="max-height:220px; overflow:auto">${rf.rows.map(r => `
       <label class="check-row"><input type="checkbox" data-act="rollpick" data-rollpick="${esc(r.id)}" ${rf.off.has(r.id) ? '' : 'checked'}>
-        ${esc(r.title)}</label>`).join('')}</div>
+        ${esc(r.title)}${note(r)}</label>`).join('')}</div>
     <div class="rowbtns" style="margin-top:10px">
       <button class="b sm p" data-act="roll" data-roll="go" ${on ? '' : 'disabled'}>File ${on} into ${where}</button>
       <button class="b sm" data-act="roll" data-roll="no">Not now</button>
@@ -3601,6 +3942,70 @@ async function rollForwardGo(ctx) {
   render();
 }
 
+/* ---------- "File the N sure ones": docs/BUILD-5-PLAN.md §5.2 ----------
+ * The cards whose leading pick is calibrated sure, filed in one go: one History
+ * group (a step per playlist), one undo. Only among the first cards of the queue. */
+const sureList = ctx => { try { return ctx.fileSure?.() ?? []; } catch { return []; } };
+
+function sureBatchHTML(ctx) {
+  const { S, esc } = ctx;
+  if (S.roll) return '';
+  const n = sureList(ctx).length;
+  if (n < 2) return '';
+  return `<div class="card surebatch" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
+    <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
+    <button class="b sm p" data-act="filesure">File the ${esc(String(n))} sure ones</button>
+  </div>`;
+}
+
+/**
+ * File every sure card into its playlist: one add per playlist, all logged under
+ * one group with `band:'sure'` (Score's §7 reads it), so History shows one row
+ * and one undo takes the whole batch back.
+ */
+async function fileSureOnes(ctx) {
+  const { S, R, CFG, addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, toast, render } = ctx;
+  const now = Date.now();
+  if (S.filing || now < (S.fileLockUntil ?? 0)) return;
+  const batch = sureList(ctx);
+  if (!batch.length) return;
+  S.filing = true;
+  const byPl = new Map();
+  batch.forEach(({ row, playlistId }) => {
+    const at = R.backlog.findIndex(b => b.id === row.id);
+    (byPl.get(playlistId) ?? byPl.set(playlistId, []).get(playlistId)).push({ id: row.id, at });
+  });
+  const group = newGroup(), ats = [], done = [];
+  try {
+    for (const [pid, rows] of byPl) {
+      const ids = rows.map(r => r.id);
+      await addTracks(pid, ids);
+      await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
+                        reason:'filed the sure ones', band:'sure', queuePos:Math.min(...rows.map(r => r.at)), group });
+      ats.push((await getLog())[0]?.at);
+      done.push([pid, ids]);
+    }
+    for (const [pid, ids] of done) for (const id of ids) await recordAccept(id, [pid]);
+  } catch (e) {
+    // Whatever was written comes back out, and the queue is untouched.
+    if (ats.length) { try { await undoAction(ats[0]); } catch { /* best effort */ } }
+    S.filing = false;
+    toast('Failed: ' + e.message);
+    return render();
+  }
+  S.filing = false;
+  const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(done.flatMap(([, ids]) => ids));
+  for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
+  S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+  S.roll = null; S.fileSel = new Set();
+  const n = gone.size;
+  toast(`Filed ${n} sure ${n === 1 ? 'one' : 'ones'}.`, async () => {
+    if (ats[0]) await undoAction(ats[0]);
+    for (const [pid, ids] of done) for (const id of ids) await forgetAccept(id, [pid]);
+  });
+  render();
+}
+
 function view(ctx) {
   const { S, R, CFG, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip, tagChips, trackStrip,
           soundIdHTML, soundNote, pickEvidence, pickBand, matchMedia } = ctx;
@@ -3628,6 +4033,9 @@ function view(ctx) {
     .sort((a, b) => a.name.localeCompare(b.name));
   const nameOf = id => opts.find(o => o.id === id)?.name ?? picks.find(s => s.id === id)?.name ?? id;
   const best = picks[0];
+  // The calibrated band for the leading pick on every card, not only the sound ones.
+  const topBand = ctx.fileBand?.(t, picks) ?? best?.band ?? null;
+  ctx.fileOrderKick?.();
   const canFile = S.fileSel.size > 0 || !!best;
   const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
     : S.fileSel.size === 1 ? `File in ${esc(nameOf([...S.fileSel][0]))}`
@@ -3638,7 +4046,7 @@ function view(ctx) {
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
     : '';
 
-  return `${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+  return `${sureBatchHTML(ctx)}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
@@ -3671,7 +4079,7 @@ function view(ctx) {
               : sg.via === 'blend' ? (sg.untagged ? 'where you file this artist and ones like them'
                 : sg.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record')
               : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
-            <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
+            <span class="rt">${pickBand(n === 0 && topBand ? { ...sg, band: topBand } : sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
             <span class="nope" data-act="reject" data-reject="${esc(sg.id)}" role="button" tabindex="0"
               title="Never suggest ${esc(sg.name)} for this track">✕</span>
@@ -3738,7 +4146,10 @@ async function fileCurrent(ctx, playlistIds) {
   // where in the queue it was filed from, and the band File showed for it.
   let picks = [];
   try { picks = ctx.filePicks?.(t) ?? []; } catch { /* no band, still filed */ }
-  const bandOf = id => picks.find(p => p.id === id)?.band;
+  // 'sure' / 'likely' / 'unsure': the words core/measure/history.mjs counts.
+  const lead = ctx.fileBand?.(t, picks) ?? picks[0]?.band;
+  const bandOf = id => { const b = id === picks[0]?.id ? lead : picks.find(p => p.id === id)?.band;
+                         return BAND_LOG[b]; };
   const picked = new Set(S.fileSel);
   try { ctx.flyCard?.(1); } catch { /* the animation is a bonus */ }
   S.fileSel = new Set();
@@ -3773,9 +4184,9 @@ async function fileCurrent(ctx, playlistIds) {
   const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
                                 await forgetAccept(t.id, ids); };
   toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
-  const more = rollForwardFor(t, R.backlog, ids, FB);
+  const more = rollForwardFor(t, R.backlog, ids, FB, { sound: ctx.rollSound, registrant: ctx.rollRegistrant });
   S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
-                           rows: more.map(b => ({ id: b.id, title: b.title })), off: new Set() } : null;
+                           rows: more.map(b => ({ id: b.id, title: b.title, how: b.how })), off: new Set() } : null;
   render();
 }
 async function inboxAct(ctx, a) {
@@ -3812,6 +4223,7 @@ async function inboxAct(ctx, a) {
 const actions = {
   selfile: (ctx, el) => toggleFileSel(ctx, el.dataset.selfile),
   anyPl: (ctx, el) => { if (el.value) toggleFileSel(ctx, el.value); },
+  filesure: (ctx) => fileSureOnes(ctx),
   filesel: (ctx) => fileCurrent(ctx, ctx.S.fileSel.size ? [...ctx.S.fileSel] : ctx.filePicks(inboxTrack(ctx))[0]?.id),
   play: (ctx) => inboxAct(ctx, 'play'),
   skip: (ctx) => inboxAct(ctx, 'skip'),
@@ -3858,7 +4270,7 @@ const actions = {
     render();
   },
 };
-return { rollForwardFor, rollForwardHTML, rollForwardGo, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions };
+return { rollForwardFor, rollForwardHTML, rollForwardGo, sureBatchHTML, fileSureOnes, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions };
 })();
 /* ---- web/screens/engine.mjs ---- */
 __mod["web/screens/engine.mjs"] = (function () {
@@ -4067,7 +4479,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-1111`,
+    `Betterfy engine score — build 2026-11-15-1124`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5542,6 +5954,8 @@ Object.assign(globalThis, __mod["norm.mjs"]);
 Object.assign(globalThis, __mod["credits.mjs"]);
 Object.assign(globalThis, __mod["profile.mjs"]);
 Object.assign(globalThis, __mod["core/playlists/axes.mjs"]);
+Object.assign(globalThis, __mod["core/personal/relevance.mjs"]);
+Object.assign(globalThis, __mod["core/review/filequeue.mjs"]);
 Object.assign(globalThis, __mod["web/ui/sound.mjs"]);
 Object.assign(globalThis, __mod["web/app/patch.mjs"]);
 globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], tidy: __mod["web/screens/tidy.mjs"], lists: __mod["web/screens/lists.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"], new: __mod["web/screens/new.mjs"] };
@@ -5938,7 +6352,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-1111';
+const BUILD = '2026-11-15-1124';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -6259,7 +6673,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-1111', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-1124', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -6801,6 +7215,9 @@ function buildReports(lib, cfg, tags) {
     // same track you passed on last time.
     .sort((a,b) => (a.skips - b.skips) || (b.added??'').localeCompare(a.added??''));
 
+  // Listening x uncertainty, once listening has landed (fileOrderCtx below).
+  { const oc = fileOrderCtx(); if (oc) backlog.splice(0, backlog.length, ...orderBacklog(backlog, oc)); }
+
   // clusters with no home
   const homeless = backlog.filter(b => !b.suggest.length || b.suggest[0].score < 0.30);
   // Indexed rather than searched: unfiled.find() inside a map over the homeless
@@ -6833,6 +7250,41 @@ function buildReports(lib, cfg, tags) {
   // library at all, and must score them against the same centroids the inbox
   // uses rather than a second, subtly different model.
   return { within, across, misfiled, backlog, clusters, drift, profiles, idf };
+}
+
+/* ---------- File's queue order (BUILD-5-PLAN §5.2) ----------
+ * How much you play it x how little the engine knows it, from the listening
+ * fetch every account already has (top artists, top tracks, recently played).
+ * Until that has landed the queue keeps its newest-first order; fileOrderKick()
+ * asks for it once and re-sorts in place, keeping the card on screen where it is. */
+const engineDecisions = new WeakMap();
+/** The Engine's calibrated verdict for one liked track, when it has judged it. */
+function engineDecisionOf(id) {
+  const sh = typeof ENG !== 'undefined' ? ENG.shadow : null;
+  if (!sh?.rows) return null;
+  let m = engineDecisions.get(sh);
+  if (!m) { m = new Map(sh.rows.map(r => [r.id, r.decision])); engineDecisions.set(sh, m); }
+  return m.get(id) ?? null;
+}
+function fileOrderCtx() {
+  const L = typeof LISTENING_CACHE !== 'undefined' ? LISTENING_CACHE : null;
+  if (!L?.weights) return null;
+  return { weights: L.weights, tracks: L.tracks ?? null,
+           bandOf: row => DECISION_BAND[engineDecisionOf(row.id)?.kind] ?? null };
+}
+function fileReorder() {
+  const oc = fileOrderCtx();
+  if (!oc || !R?.backlog?.length) return false;
+  const keep = R.backlog[Math.min(S.inboxAt | 0, R.backlog.length - 1)]?.id;
+  R.backlog = orderBacklog(R.backlog, oc);
+  S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+  return true;
+}
+/** Once per library load: fetch listening if it is not here yet, then re-sort and repaint. */
+function fileOrderKick() {
+  if (!R || R.ordered || typeof getListening !== 'function') return;
+  R.ordered = true;
+  getListening().then(() => { if (fileReorder()) store.touch('ui.inbox'); }).catch(() => { /* ordered newest-first, as before */ });
 }
 
 /** "Keep here" was said for this track in this playlist (recordKeep). */
@@ -7296,6 +7748,23 @@ function filePicks(t) {
     if (!out.some(o => o.id === sg.id)) out.push(sg);
   }
   return out;
+}
+/* The band the File card shows for its leading pick: the Engine's calibrated
+ * verdict on this track when it has judged it, else the pick's own band. */
+const fileBand = (t, picks) => typeof cardBand === 'function' && typeof engineDecisionOf === 'function' ? cardBand(picks, engineDecisionOf(t?.id)) : picks?.[0]?.band ?? null;
+/* The cards that are sure, with where each goes: "File the N sure ones". */
+const fileSure = () => typeof sureOnes !== 'function' ? [] : sureOnes(R.backlog, { picksOf: filePicks, bandOf: (t, picks) => fileBand(t, picks) });
+/* The sound ID's most specific genre for a track, only when it is a sure reading
+ * (the same 0.7 the band uses), else null. File's roll-forward matches on it. */
+function fileRollSound(t) {
+  const id = typeof soundIdOf === 'function' ? soundIdOf(t)?.id : null;
+  return id?.genre && id.genre.conf >= 0.7 ? id.path?.at?.(-1)?.name ?? null : null;
+}
+let LIKED_ISRC = null, LIKED_ISRC_FOR = null;
+/** A liked track's ISRC by id (backlog rows do not carry it). */
+function likedIsrc(id) {
+  if (LIKED_ISRC_FOR !== LIB) { LIKED_ISRC = new Map((LIB.liked ?? []).map(x => [x.id, x.isrc])); LIKED_ISRC_FOR = LIB; }
+  return LIKED_ISRC.get(id);
 }
 /* What the track sounds like: "Drum & Bass › Jungle · 172 BPM", with why, the
  * filed tracks it sounds most like and the heard tracks it mixes with behind a
@@ -7909,7 +8378,7 @@ function shuffleMix(sel, tracks, mode) {
  * instead gives you that playlist's radio.
  */
 async function listeningSeeds() {
-  const { topWindows, recentArtists } = await fetchListeningRaw();
+  const { topWindows, recentArtists, topTracks = [], recentTracks = [] } = await fetchListeningRaw();
   // The library as a floor, scaled by the biggest count so that one enormous
   // playlist cannot outvote a month of actually playing something.
   const libraryArtists = [];
@@ -7924,7 +8393,10 @@ async function listeningSeeds() {
   // Stashed for getListening() — Discovery, the tag-gap fetch and the Tidy
   // screen's "you play this a lot" note all read the same one fetch.
   const shortTerm = topWindows.find(w => w.range === 'short_term')?.items ?? [];
-  LISTENING_CACHE = { weights, recentlyActive: new Set([...shortTerm, ...recentArtists]) };
+  // Track-level listening too (File's queue order): plays of the song itself,
+  // not only of its artist. Counts from /me/top/tracks and recently-played.
+  LISTENING_CACHE = { weights, recentlyActive: new Set([...shortTerm, ...recentArtists]),
+                      tracks: trackWeights({ topTracks, recentTracks }) };
   return weights;
 }
 
@@ -7937,7 +8409,8 @@ async function listeningSeeds() {
 // LISTENING_CACHE above only saves the second and third caller *within one
 // page session* — every fresh load spent all four again, even one minute
 // later, for a signal that barely moves within a few hours. Cached in
-// IndexedDB with a TTL for exactly that reason.
+// IndexedDB with a TTL for exactly that reason. /me/top/tracks (three windows)
+// rides on the same cache; an entry cached before it existed simply has none.
 const LISTENING_TTL = 4 * 60 * 60 * 1000;
 async function fetchListeningRaw() {
   const cached = await idb.get('listening_raw');
@@ -7951,13 +8424,23 @@ async function fetchListeningRaw() {
       topWindows.push({ range, weight, items: (r?.items ?? []).map(a => a.name) });
     } catch { anyFailure = true; }
   }
-  let recentArtists = [];
+  // Same windows and weights as the artists. Its own failure is not fatal and
+  // not cached as empty: File just orders by artist until it answers.
+  const topTracks = [];
+  for (const [range, weight] of [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]]) {
+    try {
+      const r = await sp(`/me/top/tracks?limit=50&time_range=${range}`);
+      topTracks.push({ range, weight, items: (r?.items ?? []).map(t => t.id).filter(Boolean) });
+    } catch { anyFailure = true; }
+  }
+  let recentArtists = [], recentTracks = [];
   try {
     const r = await sp('/me/player/recently-played?limit=50');
     recentArtists = (r?.items ?? []).flatMap(p => (p.track?.artists ?? []).map(a => a.name));
+    recentTracks = (r?.items ?? []).map(p => p.track?.id).filter(Boolean);
   } catch { anyFailure = true; }
 
-  const data = { topWindows, recentArtists };
+  const data = { topWindows, recentArtists, topTracks, recentTracks };
   // A genuine failure keeps no cache, so the next call asks Spotify again
   // rather than freezing a partial or empty answer for the whole TTL — the
   // same principle syncLibrary already applies to a playlist Spotify refused.
@@ -9486,7 +9969,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-1111';
+    s.src = 'engine.js?v=2026-11-15-1124';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -9508,7 +9991,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-1111');
+    const w = new Worker('engine-worker.js?v=2026-11-15-1124');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9983,7 +10466,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-1111';
+    s.src = 'audio.js?v=2026-11-15-1124';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -10019,7 +10502,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1111', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1124', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -10753,7 +11236,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1111', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1124', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -11052,7 +11535,9 @@ Object.assign(SCREEN_CTX, {
                  render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
-                  addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, recordSkip, recordReject,
+                  addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
+                  fileBand, fileSure, fileOrderKick,
+                  rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
                   saveFeedback, toast, render, flyCard,
                   rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },

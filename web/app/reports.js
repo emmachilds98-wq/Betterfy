@@ -134,6 +134,9 @@ function buildReports(lib, cfg, tags) {
     // same track you passed on last time.
     .sort((a,b) => (a.skips - b.skips) || (b.added??'').localeCompare(a.added??''));
 
+  // Listening x uncertainty, once listening has landed (fileOrderCtx below).
+  { const oc = fileOrderCtx(); if (oc) backlog.splice(0, backlog.length, ...orderBacklog(backlog, oc)); }
+
   // clusters with no home
   const homeless = backlog.filter(b => !b.suggest.length || b.suggest[0].score < 0.30);
   // Indexed rather than searched: unfiled.find() inside a map over the homeless
@@ -166,6 +169,41 @@ function buildReports(lib, cfg, tags) {
   // library at all, and must score them against the same centroids the inbox
   // uses rather than a second, subtly different model.
   return { within, across, misfiled, backlog, clusters, drift, profiles, idf };
+}
+
+/* ---------- File's queue order (BUILD-5-PLAN §5.2) ----------
+ * How much you play it x how little the engine knows it, from the listening
+ * fetch every account already has (top artists, top tracks, recently played).
+ * Until that has landed the queue keeps its newest-first order; fileOrderKick()
+ * asks for it once and re-sorts in place, keeping the card on screen where it is. */
+const engineDecisions = new WeakMap();
+/** The Engine's calibrated verdict for one liked track, when it has judged it. */
+function engineDecisionOf(id) {
+  const sh = typeof ENG !== 'undefined' ? ENG.shadow : null;
+  if (!sh?.rows) return null;
+  let m = engineDecisions.get(sh);
+  if (!m) { m = new Map(sh.rows.map(r => [r.id, r.decision])); engineDecisions.set(sh, m); }
+  return m.get(id) ?? null;
+}
+function fileOrderCtx() {
+  const L = typeof LISTENING_CACHE !== 'undefined' ? LISTENING_CACHE : null;
+  if (!L?.weights) return null;
+  return { weights: L.weights, tracks: L.tracks ?? null,
+           bandOf: row => DECISION_BAND[engineDecisionOf(row.id)?.kind] ?? null };
+}
+function fileReorder() {
+  const oc = fileOrderCtx();
+  if (!oc || !R?.backlog?.length) return false;
+  const keep = R.backlog[Math.min(S.inboxAt | 0, R.backlog.length - 1)]?.id;
+  R.backlog = orderBacklog(R.backlog, oc);
+  S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+  return true;
+}
+/** Once per library load: fetch listening if it is not here yet, then re-sort and repaint. */
+function fileOrderKick() {
+  if (!R || R.ordered || typeof getListening !== 'function') return;
+  R.ordered = true;
+  getListening().then(() => { if (fileReorder()) store.touch('ui.inbox'); }).catch(() => { /* ordered newest-first, as before */ });
 }
 
 /** "Keep here" was said for this track in this playlist (recordKeep). */

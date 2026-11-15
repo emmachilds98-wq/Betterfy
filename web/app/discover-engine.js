@@ -8,7 +8,7 @@
  * instead gives you that playlist's radio.
  */
 async function listeningSeeds() {
-  const { topWindows, recentArtists } = await fetchListeningRaw();
+  const { topWindows, recentArtists, topTracks = [], recentTracks = [] } = await fetchListeningRaw();
   // The library as a floor, scaled by the biggest count so that one enormous
   // playlist cannot outvote a month of actually playing something.
   const libraryArtists = [];
@@ -23,7 +23,10 @@ async function listeningSeeds() {
   // Stashed for getListening() — Discovery, the tag-gap fetch and the Tidy
   // screen's "you play this a lot" note all read the same one fetch.
   const shortTerm = topWindows.find(w => w.range === 'short_term')?.items ?? [];
-  LISTENING_CACHE = { weights, recentlyActive: new Set([...shortTerm, ...recentArtists]) };
+  // Track-level listening too (File's queue order): plays of the song itself,
+  // not only of its artist. Counts from /me/top/tracks and recently-played.
+  LISTENING_CACHE = { weights, recentlyActive: new Set([...shortTerm, ...recentArtists]),
+                      tracks: trackWeights({ topTracks, recentTracks }) };
   return weights;
 }
 
@@ -36,7 +39,8 @@ async function listeningSeeds() {
 // LISTENING_CACHE above only saves the second and third caller *within one
 // page session* — every fresh load spent all four again, even one minute
 // later, for a signal that barely moves within a few hours. Cached in
-// IndexedDB with a TTL for exactly that reason.
+// IndexedDB with a TTL for exactly that reason. /me/top/tracks (three windows)
+// rides on the same cache; an entry cached before it existed simply has none.
 const LISTENING_TTL = 4 * 60 * 60 * 1000;
 async function fetchListeningRaw() {
   const cached = await idb.get('listening_raw');
@@ -50,13 +54,23 @@ async function fetchListeningRaw() {
       topWindows.push({ range, weight, items: (r?.items ?? []).map(a => a.name) });
     } catch { anyFailure = true; }
   }
-  let recentArtists = [];
+  // Same windows and weights as the artists. Its own failure is not fatal and
+  // not cached as empty: File just orders by artist until it answers.
+  const topTracks = [];
+  for (const [range, weight] of [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]]) {
+    try {
+      const r = await sp(`/me/top/tracks?limit=50&time_range=${range}`);
+      topTracks.push({ range, weight, items: (r?.items ?? []).map(t => t.id).filter(Boolean) });
+    } catch { anyFailure = true; }
+  }
+  let recentArtists = [], recentTracks = [];
   try {
     const r = await sp('/me/player/recently-played?limit=50');
     recentArtists = (r?.items ?? []).flatMap(p => (p.track?.artists ?? []).map(a => a.name));
+    recentTracks = (r?.items ?? []).map(p => p.track?.id).filter(Boolean);
   } catch { anyFailure = true; }
 
-  const data = { topWindows, recentArtists };
+  const data = { topWindows, recentArtists, topTracks, recentTracks };
   // A genuine failure keeps no cache, so the next call asks Spotify again
   // rather than freezing a partial or empty answer for the whole TTL — the
   // same principle syncLibrary already applies to a playlist Spotify refused.
