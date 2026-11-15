@@ -1,8 +1,11 @@
 // "Listen to my music" settings (WP-B2), and the two questions they answer:
 // may it download right now, and which tracks is it allowed to hear.
 //
-// Defaults are the owner-proposed ones (docs/AUDIO-BUILD-PLAN.md §5): off
-// until switched on, Wi-Fi only, and the scope "what I'm playing + unfiled".
+// Defaults: on (the owner's call, 2026-11-15: the engine files better once it
+// has heard your tracks, so nobody should have to find the switch first), Wi-Fi
+// only, and the scope "what I'm playing + unfiled". Switching it off is saved
+// and always wins. Nothing downloads until after the first paint, and only on
+// Wi-Fi unless the listener says otherwise.
 // That scope also takes up to 20 examples from each genre playlist, because
 // an unfiled track can only be placed by sound against playlists that have a
 // sound fingerprint; without them the default would hear tracks and have
@@ -15,7 +18,7 @@ export const SCOPES = Object.freeze({
   all: 'My whole library',
 });
 
-export const DEFAULT_AUDIO_SETTINGS = Object.freeze({ on: false, wifiOnly: true, scope: 'playing+unfiled' });
+export const DEFAULT_AUDIO_SETTINGS = Object.freeze({ on: true, wifiOnly: true, scope: 'playing+unfiled' });
 
 /** Settings from a localStorage-like store, each field checked; anything odd falls back to its default. */
 export function readAudioSettings(ls) {

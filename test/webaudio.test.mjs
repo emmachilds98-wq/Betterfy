@@ -116,14 +116,22 @@ test('with no usable IndexedDB the store works in memory for the session', async
 
 /* ------------------------------------------------------------ settings */
 
-test('listening is off by default, Wi-Fi only, scoped to what I play + unfiled', () => {
-  assert.deepEqual(DEFAULT_AUDIO_SETTINGS, { on: false, wifiOnly: true, scope: 'playing+unfiled' });
+test('listening is on by default, Wi-Fi only, scoped to what I play + unfiled', () => {
+  assert.deepEqual(DEFAULT_AUDIO_SETTINGS, { on: true, wifiOnly: true, scope: 'playing+unfiled' });
   assert.deepEqual(readAudioSettings(memLS()), DEFAULT_AUDIO_SETTINGS);
   assert.deepEqual(readAudioSettings(null), DEFAULT_AUDIO_SETTINGS);
   const ls = memLS(); ls.setItem(AUDIO_SETTINGS_KEY, '{not json');
   assert.deepEqual(readAudioSettings(ls), DEFAULT_AUDIO_SETTINGS);
   ls.setItem(AUDIO_SETTINGS_KEY, JSON.stringify({ on: 'yes', wifiOnly: 0, scope: 'everything!' }));
   assert.deepEqual(readAudioSettings(ls), DEFAULT_AUDIO_SETTINGS, 'each odd field falls back on its own');
+});
+
+test('switching listening off is saved and beats the on-by-default', () => {
+  const ls = memLS();
+  assert.equal(readAudioSettings(ls).on, true);
+  writeAudioSettings(ls, { on: false });
+  assert.equal(readAudioSettings(ls).on, false);
+  assert.equal(JSON.parse(ls.getItem(AUDIO_SETTINGS_KEY)).on, false);
 });
 
 test('settings changes merge and persist', () => {
@@ -147,6 +155,8 @@ test('the page template falls back to the same defaults before audio.js has load
   assert.deepEqual({ ...sb.audioSettings() }, DEFAULT_AUDIO_SETTINGS);
   ls.setItem('bf_audio', JSON.stringify({ on: true, wifiOnly: false, scope: 'all' }));
   assert.deepEqual({ ...sb.audioSettings() }, { on: true, wifiOnly: false, scope: 'all' });
+  ls.setItem('bf_audio', JSON.stringify({ on: false }));
+  assert.equal(sb.audioSettings().on, false, 'a saved off wins before audio.js loads too');
 });
 
 test('Wi-Fi only waits on cellular and Data Saver, and asks when the browser will not say', () => {

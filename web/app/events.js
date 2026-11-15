@@ -241,7 +241,7 @@ document.addEventListener('click', guard(async e => {
   if (lchk && globalThis.BetterfyAudio) return labelVerdict(lchk);
   if (e.target.id === 'labelCheckMore') { LABELS.seed++; LABELS.sample = null; return labelCheckRedraw(); }
   if (e.target.id === 'audioStop') { AUDIO.ctrl?.stop(); return; }
-  if (e.target.id === 'audioWifiYes') { AUDIO.wifiOk = true; return audioStart(); }
+  if (e.target.id === 'audioWifiYes') { AUDIO.wifiOk = true; try { LS.setItem('bf_audio_wifi_ok', '1'); } catch { /* memory only */ } return audioStart(); }
 
   const ea = e.target.closest('[data-editartist]');
   if (ea) { S.editingArtist = S.editingArtist === ea.dataset.editartist ? null : ea.dataset.editartist; render(); return; }
