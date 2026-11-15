@@ -5,8 +5,7 @@
 // Only the public client ID is embedded — the client secret is never read here.
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { bundleModules } from './bundler.mjs';
-import { GENRES } from './core/ontology/genres.mjs';
-import { canonTag } from './profile.mjs';
+import { genreWords } from './core/playlists/genre-words.mjs';
 import { assembledTemplate } from './web/manifest.mjs';
 
 // argv, then .env, then whatever the last build baked into docs/index.html.
@@ -81,14 +80,21 @@ const APPCHECK_APP_ID = arg('appcheck-app-id') ?? readEnv('APPCHECK_APP_ID')
  * These are inlined because the page cannot draw a single screen without them. */
 const V1_MODULES = ['norm.mjs', 'credits.mjs', 'profile.mjs'];
 
+/* Which axis each playlist is on (docs/BUILD-5-PLAN.md A2): the one copy that
+ * both the page's classify() and the Node CLI axes.mjs use, so the two cannot
+ * drift apart again (B10). Exposed as globals like v1 (`classifyAxes`,
+ * `MIN_FOR_TARGET`, `NO_SIGNAL`, ...), because web/app/classify.js and the
+ * Playlists screen use them as bare identifiers. */
+const AXES_MODULES = ['core/playlists/axes.mjs'];
+
 /* The sound layer's renderers (docs/UI-BUILD-PLAN.md §5). Inlined and exposed as
  * globals like v1, because every screen calls them; with no audio data each one
  * returns '' so they cost a listener who never turns listening on nothing but
  * their few hundred bytes. */
 const UI_MODULES = ['web/ui/sound.mjs'];
 
-const { code: core, files: bundled } = bundleModules([...V1_MODULES, ...UI_MODULES],
-  { expose: [...V1_MODULES, ...UI_MODULES] });
+const { code: core, files: bundled } = bundleModules([...V1_MODULES, ...AXES_MODULES, ...UI_MODULES],
+  { expose: [...V1_MODULES, ...AXES_MODULES, ...UI_MODULES] });
 
 /* The stylesheet, kept as partials in web/styles/ so packages that restyle
  * different screens own different files (docs/UI-BUILD-PLAN.md §3). Inlined in
@@ -327,20 +333,12 @@ self.onmessage = async function (e) {
 };
 `;
 
-/* Every name the ontology knows a genre by, in the one spelling profile.mjs
- * counts tags under, baked into the page so classify() can tell a genre
- * playlist ("Donk", "D&B Rollers", "Tech House") from one that only happens to
- * have no other signal in its name. ~4 KB, and it means one vocabulary for the
- * whole app rather than a second list to keep in step with the ontology.
- *
- * A few single words are left out because, alone as a playlist name, they are
- * as likely to be a place or an ordinary word as a genre ("Goa", "Detroit",
- * "Lounge"). Their longer forms still count: "detroit techno", "liquid dnb". */
-const NOT_ALONE = new Set(['goa', 'detroit', 'lounge', 'niche', 'liquid', 'neuro', 'score', 'fusion', 'wonky']);
-const GENRE_WORDS = [...new Set(Object.entries(GENRES)
-  .flatMap(([slug, g]) => [slug.replace(/-/g, ' '), ...(g.aliases ?? [])])
-  .map(canonTag)
-  .filter(w => w && !NOT_ALONE.has(w)))].sort();
+/* Every name the ontology knows a genre by, baked into the page so classify()
+ * can tell a genre playlist ("Donk", "D&B Rollers", "Tech House") from one that
+ * only happens to have no other signal in its name. ~4 KB. Built by
+ * core/playlists/genre-words.mjs, which axes.mjs reads too, so the CLI and the
+ * page share one vocabulary. */
+const GENRE_WORDS = genreWords();
 
 /* The page's own script lives in web/app/ and web/screens/ (docs/BUILD-5-PLAN.md
  * A1), listed in load order in web/manifest.mjs, and goes back in where the

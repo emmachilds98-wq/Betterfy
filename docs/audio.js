@@ -1579,10 +1579,21 @@ const { SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
 // scripts share it. Written from scratch; the clean key library is AGPL
 // (essentia.js), which the page can't ship (AUDIO-ANALYSIS-PLAN.md §2, §9).
 //
-// Status: the synthetic tests (test/audiokey.test.mjs) pass. Accuracy on
-// real music is NOT measured yet. scripts/audio-dsp/key-vs-rekordbox.mjs
-// measures it against the owner's Rekordbox keys, and per the build plan's
-// §0 rule 7 this ships into records or the UI (WP-D4) only with that number.
+// Status (v2, 2026-11-14): measured on the Beatport EDM Key Dataset
+// (Faraldo et al., Zenodo 1101082, CC BY-SA 4.0), on the two 10 s windows a
+// record gets, split by a hash of the track id into a dev half (tuned on) and
+// a held-out half (looked at once, at the end):
+//
+//                       dev (n=622)          held-out (n=653)
+//   v1 (KK+Temperley)   28.1% exact          24.8% exact, MIREX 39.3%
+//   v2 (this file)      51.8% exact          47.2% exact, MIREX 58.3%
+//   v2, confidence ≥0.6 67.8% of 174         69.4% of 170
+//
+// v1 read 69%-minor music as minor only 25% of the time; most of its errors
+// were the right tonic in the wrong mode. Still short of tempo (86% at the
+// shown confidence), so key stays hidden and out of "mixes with"; see the
+// PR for the bar. scripts/audio-dsp/key-fit.mjs reproduces the split, the
+// profile fit and both numbers.
 //
 // Pipeline:
 //   1. STFT with a long frame (8192 at 16 kHz ≈ 0.5 s, 1.95 Hz per bin), so
@@ -1590,30 +1601,37 @@ const { SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
 //      frame is far too short for pitch (31 Hz per bin).
 //   2. Spectral peaks only: a local maximum that stands TONAL_SNR above the
 //      local mean magnitude and within 60 dB of the frame's loudest bin (so
-//      window sidelobes don't count). This is the whitening step: broadband drums and
-//      noise rarely make a peak, and the bass doesn't drown the treble
-//      because each peak is weighted by how far it stands above its own
-//      neighbourhood (log ratio), not by raw energy.
+//      window sidelobes don't count). Broadband drums and noise rarely make
+//      a peak. Each peak is weighted by the square root of its magnitude
+//      relative to the frame's loudest peak: loud notes count for more, but
+//      compressed (v1 used the log of the peak's height over its
+//      neighbourhood, which let faint partials vote almost as much as the
+//      bass line and lead).
 //   3. Tuning: the weighted circular mean of every peak's offset from the
 //      A440 grid. Records tuned off 440 (or pitched by a DJ) still map
 //      cleanly. After correcting, a peak more than TUNING_TOLERANCE semitones
 //      from a note is dropped (inharmonic partials, glides, noise).
 //   4. Chroma: each surviving peak adds to its pitch class, cos²-tapered by
 //      its distance from the note centre. Summed over all frames.
-//   5. Profiles: Pearson correlation of the chroma with the Krumhansl–Kessler
-//      and Temperley major/minor profiles rotated to all 12 tonics; the two
-//      correlations are averaged per key.
-//   6. Confidence: a heuristic, not a probability. It is the product of how
-//      tonal the excerpt is ("gridness": how tightly the peaks sit on one
-//      semitone grid, the length of step 3's circular mean, ~0.75 for
-//      harmonic tones and ~0.03 for noise, whose peaks land anywhere), how
-//      well the best key fits, and how far it leads the runner-up. Silence -> 0 and
-//      key null; noise -> a guess with near-zero confidence. Its calibration
-//      against real keys is what the comparison script reports by band.
+//   5. Profiles: Pearson correlation of the chroma with a major/minor
+//      profile rotated to all 12 tonics. The default is PROFILES.edm, the
+//      mean tonic-aligned chroma of the dev half's tracks per mode (24
+//      numbers, fitted once by key-fit.mjs and written in below). It weights
+//      the tonic and fifth far above the classic probe-tone profiles, which
+//      suits dance music, where the bass sits on the tonic and the third is
+//      often thin. The classic profiles stay selectable via opts.profiles.
+//   6. Confidence: P(exact) from a logistic fit on the dev half's windows
+//      (how well the best key fits, and the square root of its lead over the
+//      runner-up), times a tonality gate: "gridness", how tightly the peaks
+//      sit on one semitone grid (step 3's circular-mean length, ~0.2–0.75 for
+//      music, ~0.03 for noise, whose peaks land anywhere). On the held-out
+//      half the 0.6–0.8 band was 65% exact, as predicted; below that it
+//      reads about 6 points high. Silence -> 0 and key null; noise -> a guess
+//      with near-zero confidence.
 
 
 
-const KEY_VERSION = '1.0.0';
+const KEY_VERSION = '2.0.0';
 
 // ---------- names, Camelot, Open Key ----------
 
@@ -1704,10 +1722,19 @@ const KK_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.
 const TP_MAJOR = [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0];
 const TP_MINOR = [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0];
 
+// Fitted on the Beatport EDM Key Dataset's dev half (196 major, 426 minor
+// tracks; see the header and scripts/audio-dsp/key-fit.mjs): the mean
+// tonic-aligned chroma per mode, index 0 = tonic. Statistics of a CC BY-SA
+// dataset (Faraldo, Jordà, Herrera, 2017), credited here.
+const EDM_MAJOR = [0.1938, 0.0336, 0.1034, 0.0333, 0.1260, 0.0619, 0.0424, 0.1696, 0.0322, 0.0805, 0.0463, 0.0770];
+const EDM_MINOR = [0.2017, 0.0448, 0.0882, 0.0764, 0.0746, 0.0760, 0.0345, 0.1702, 0.0434, 0.0474, 0.0892, 0.0535];
+
 const PROFILES = Object.freeze({
+  edm: { major: EDM_MAJOR, minor: EDM_MINOR },
   krumhansl: { major: KK_MAJOR, minor: KK_MINOR },
   temperley: { major: TP_MAJOR, minor: TP_MINOR },
 });
+const DEFAULT_PROFILES = Object.freeze(['edm']);
 
 // ---------- analysis settings ----------
 
@@ -1722,11 +1749,11 @@ const TUNING_TOLERANCE = 0.4;    // semitones from the nearest note, after tunin
 const SILENCE = 1e-4;            // RMS below this (−80 dBFS) is silence
 const A4 = 440;
 
-// Confidence shaping (see the header; uncalibrated until measured).
+// Confidence (see the header). Logistic weights fitted on the dev half's
+// 1,244 windows: P(exact) = σ(B0 + B_FIT·score + B_LEAD·√lead).
+const CONF_B0 = -3.569, CONF_B_FIT = 3.69, CONF_B_LEAD = 2.164;
 const GRID_NONE = 0.08;          // gridness at or below which the excerpt counts as atonal (noise measures ~0.03)
-const GRID_FULL = 0.33;          // gridness at which it counts as fully tonal (synthetic chords ~0.75)
-const FIT_LOW = 0.2, FIT_HIGH = 0.75;
-const MARGIN_FULL = 0.12;
+const GRID_FULL = 0.15;          // gridness from which it counts as fully tonal (90% of real windows measure ≥ 0.19)
 
 // ---------- FFT ----------
 
@@ -1772,9 +1799,13 @@ function magnitudeSpectrum(re, im, n, { rev, cos, sin }, mag) {
 /**
  * Tuning-corrected 12-bin chroma (index 0 = C) plus what confidence needs.
  * Exported for tests and the comparison script; key() is the public entry.
+ * `weighting: 'height'` is v1's peak weight (log of the peak's height over
+ * its neighbourhood); only scripts/audio-dsp/key-fit.mjs uses it, because
+ * PROFILES.edm was fitted from that chroma (it fitted sharper and measured
+ * better on both halves than a profile fitted from the default weighting).
  * @returns {{ chroma: Float64Array, tuningCents: number, seconds: number, tonalWeight: number, gridness: number, frames: number }}
  */
-function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
+function chromagram(samples, { sampleRate = SAMPLE_RATE, weighting = 'magnitude' } = {}) {
   const n = samples?.length ?? 0;
   const N = 2 ** Math.round(Math.log2(sampleRate * FRAME_SECONDS));
   const hop = Math.max(1, Math.round(N * HOP_FRACTION));
@@ -1792,7 +1823,7 @@ function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
   const prefix = new Float64Array(N / 2 + 2);
 
   // Pass 1: peaks (semitones above A4, weight) from every non-silent frame.
-  const semis = [], weights = [];
+  const semis = [], peakMag = [], peakFrameTop = [];   // peakFrameTop: the frame's top bin ('height': the peak's local mean)
   const frames = n <= N ? 1 : Math.ceil((n - N) / hop) + 1;
   for (let f = 0; f < frames; f++) {
     const s = f * hop;
@@ -1820,10 +1851,12 @@ function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
       const p = den < 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den)) : 0;
       const hz = (k + p) * binHz;
       semis.push(12 * Math.log2(hz / A4));
-      weights.push(Math.log(m / floor));   // ≥ log(TONAL_SNR) > 0
+      peakMag.push(m); peakFrameTop.push(weighting === 'height' ? floor : top);
     }
   }
   if (!semis.length) return { ...empty, frames };
+  // Weight: √(magnitude / the frame's loudest bin), in (0, 1]. ('height': log(m / local mean), ≥ log TONAL_SNR.)
+  const weights = peakMag.map(weighting === 'height' ? (m, i) => Math.log(m / peakFrameTop[i]) : (m, i) => Math.sqrt(m / peakFrameTop[i]));
 
   // Tuning: weighted circular mean of each peak's offset from the A440 grid.
   let cs = 0, sn = 0;
@@ -1868,10 +1901,10 @@ function pearson(x, y, rot) {
 /**
  * Score all 24 keys against a chroma vector. Sorted best first.
  * @param {ArrayLike<number>} chroma 12 bins, index 0 = C
- * @param {{ profiles?: string[] }} [opts] which of PROFILES to average (default both)
+ * @param {{ profiles?: string[] }} [opts] which of PROFILES to average (default ['edm'])
  * @returns {{ camelot: string, score: number }[]}
  */
-function scoreKeys(chroma, { profiles = ['krumhansl', 'temperley'] } = {}) {
+function scoreKeys(chroma, { profiles = DEFAULT_PROFILES } = {}) {
   const out = [];
   for (const mode of ['major', 'minor']) {
     for (let pc = 0; pc < 12; pc++) {
@@ -1914,11 +1947,9 @@ function key(samples, { sampleRate = SAMPLE_RATE, profiles } = {}) {
   const k = CAMELOT[best.camelot];
 
   const tonality = clamp01((gridness - GRID_NONE) / (GRID_FULL - GRID_NONE));
-  const fit = clamp01((best.score - FIT_LOW) / (FIT_HIGH - FIT_LOW));
-  const lead = clamp01((best.score - second.score) / MARGIN_FULL);
-  // The lead counts for half: a close relative or fifth is the usual runner-up
-  // even when the answer is right, so a small lead mustn't zero the confidence.
-  const confidence = round3(tonality * fit * (0.5 + 0.5 * lead));
+  const lead = Math.max(0, best.score - second.score);
+  const p = 1 / (1 + Math.exp(-(CONF_B0 + CONF_B_FIT * best.score + CONF_B_LEAD * Math.sqrt(lead))));
+  const confidence = round3(tonality * p);
 
   return {
     key: k.key, tonic: k.tonic, mode: k.mode, camelot: k.camelot, openKey: k.openKey,
@@ -1932,7 +1963,7 @@ function key(samples, { sampleRate = SAMPLE_RATE, profiles } = {}) {
     version: KEY_VERSION,
   };
 }
-return { KEY_VERSION, pitchClass, toCamelot, toOpenKey, CAMELOT, relation, PROFILES, chromagram, scoreKeys, key };
+return { KEY_VERSION, pitchClass, toCamelot, toOpenKey, CAMELOT, relation, PROFILES, DEFAULT_PROFILES, chromagram, scoreKeys, key };
 })();
 /* ---- core/audio/dsp/loudness.mjs ---- */
 __mod["core/audio/dsp/loudness.mjs"] = (function () {
