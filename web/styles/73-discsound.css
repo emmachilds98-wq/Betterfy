@@ -1,0 +1,11 @@
+  /* ---------- Discover by sound (core/audio/discover.mjs) ----------
+     Drawn only once a pick has been heard with listening on; without that the
+     Discover card is laid out exactly as before. */
+  .discsnd{margin:-4px 0 14px; font-size:13px}
+  .discsnd .tag.snd, .discfit .tag.snd{font-size:11px; padding:2px 8px; margin-right:4px; vertical-align:1px}
+  .discfit{margin-top:10px; font-size:13px; color:var(--ink-2); line-height:1.45}
+  .discfit .sub{display:block; margin-top:2px; font-size:12px; color:var(--ink-3); overflow-wrap:anywhere}
+  .discfit.hi{color:var(--ink); font-weight:600}
+  .discfit.out{color:var(--ink-3)}
+  .discfit.hi .sub, .discfit.out .sub{font-weight:400}
+  .discnokey input{flex:1 1 220px; min-width:0}

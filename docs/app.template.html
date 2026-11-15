@@ -175,13 +175,14 @@ __STYLES__</style>
       <button class="nav" data-v="history" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 12a8.4 8.4 0 1 0 2.6-6"/><path d="M3.4 3.6v4.2h4.2"/><path d="M12 7.8V12l3 1.8"/></svg></span><span class="lbl">History</span></button>
       <button class="nav" data-v="sources" data-sec><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="2.8"/><path d="M4.5 6v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6"/><path d="M4.5 12v6c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-6"/></svg></span><span class="lbl">Sources</span></button>
     </div>
+    <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): on a desktop it
+         sits just before More, so More stays put when it appears (B8); on a
+         phone it moves up into the header beside the corner buttons. Empty —
+         and so invisible — until something calls setListen() with a ListenVM. -->
+    <div class="listenslot" id="listenSlot"></div>
     <!-- The screens that don't sit on the bar, on a phone and on a desktop. -->
     <button class="tabmore" id="tabMore" aria-expanded="false" aria-controls="moreSheet">
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
-    <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): end of the top bar
-         on a desktop, floating above the tab bar on a phone. Empty — and so
-         invisible — until something calls setListen() with a ListenVM. -->
-    <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
       <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build __BUILD__</span>
@@ -1141,7 +1142,15 @@ const idb = (() => {
  * in-memory index — so the same wrong suggestion came back every session, for
  * the same track, forever. This keeps the negative half.
  *
- *   { [trackId]: { skips, lastSkip, rejected: [playlistId, ...] } }
+ *   { [trackId]: { skips, lastSkip, rejected: [playlistId, ...],
+ *                  accepted?: [playlistId, ...], kept?: [playlistId, ...] } }
+ *
+ * `accepted` is where you filed it from the File screen: the sound learner
+ * (core/intrinsic/audio-feedback.mjs) reads it as "yes, it belongs there"
+ * before the next sync shows the track in that playlist. `kept` is Tidy's
+ * "Keep here": the track stays in that playlist and neither Tidy tier offers it
+ * as wrong there again. Both appear only once used, so a store that never used
+ * them is the same object it always was.
  */
 let FB = {};
 const loadFeedback = async () => { FB = (await idb.get('feedback')) ?? {}; };
@@ -1161,9 +1170,62 @@ async function recordReject(trackId, playlistId) {
   await saveFeedback();
 }
 
+/** Filed from the File screen into these playlists: "yes, there". The latest
+ *  word on a pair wins, so it also lifts an earlier "not that playlist". */
+async function recordAccept(trackId, playlistIds) {
+  const f = fbFor(trackId), ids = [].concat(playlistIds).filter(Boolean);
+  f.accepted = [...new Set([...(f.accepted ?? []), ...ids])];
+  f.rejected = f.rejected.filter(p => !ids.includes(p));
+  await saveFeedback();
+}
+
+/** The filing was undone: take back the "yes, there". */
+async function forgetAccept(trackId, playlistIds) {
+  const f = FB[trackId], ids = [].concat(playlistIds);
+  if (!f?.accepted) return;
+  f.accepted = f.accepted.filter(p => !ids.includes(p));
+  if (!f.accepted.length) delete f.accepted;
+  await saveFeedback();
+}
+
+/** Tidy's "Keep here": the track belongs in `here`, and each playlist in `away`
+ *  that a Tidy tier wanted to move it to is a "not that playlist" — the same
+ *  verdict the sound tier's Keep here has always recorded. */
+async function recordKeep(trackId, here, away = []) {
+  const f = fbFor(trackId);
+  if (here && !(f.kept ??= []).includes(here)) f.kept.push(here);
+  for (const p of [].concat(away).filter(Boolean)) if (!f.rejected.includes(p)) f.rejected.push(p);
+  await saveFeedback();
+}
+
+/**
+ * A move from Tidy is two verdicts at once: yes to where it went, no to where
+ * it was. Written the way core/intrinsic/audio-feedback.mjs reads FB — the
+ * destination in `accepted`, the source in `rejected` — and with the other
+ * half of each pair cleared, since within FB a pair that is both counts as
+ * rejected.
+ */
+async function recordMove(trackId, fromId, toId) {
+  const f = fbFor(trackId);
+  f.rejected = (f.rejected ?? []).filter(p => p !== toId);
+  if (fromId && fromId !== toId && !f.rejected.includes(fromId)) f.rejected.push(fromId);
+  f.accepted = (f.accepted ?? []).filter(p => p !== fromId);
+  if (toId && !f.accepted.includes(toId)) f.accepted.push(toId);
+  await saveFeedback();
+}
+
+/** Undoing a move takes its two verdicts back. */
+async function unrecordMove(trackId, fromId, toId) {
+  const f = FB[trackId]; if (!f) return;
+  if (f.accepted) f.accepted = f.accepted.filter(p => p !== toId);
+  if (f.rejected) f.rejected = f.rejected.filter(p => p !== fromId);
+  await saveFeedback();
+}
+
 async function clearFeedback(trackId) { delete FB[trackId]; await saveFeedback(); }
 
-const FIELDS = 'next,items(added_at,item(id,name,popularity,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type,images),artists(id,name)))';
+// No `popularity`: Spotify removed it from track objects in February 2026.
+const FIELDS = 'next,items(added_at,item(id,name,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type,images),artists(id,name)))';
 // One artwork URL per track — the ~300px size, which is what the inbox card
 // shows. Libraries synced before this existed simply have none, and the card
 // falls back to a coloured tile until the next re-sync.
@@ -1174,7 +1236,7 @@ const artOf = t => {
 const shapeTrack = t => t && ({
   id:t.id, name:t.name, artists:(t.artists??[]).map(a=>({id:a.id,name:a.name})),
   album:t.album?.name, albumType:t.album?.album_type, released:t.album?.release_date,
-  art:artOf(t), duration_ms:t.duration_ms, isrc:t.external_ids?.isrc, popularity:t.popularity,
+  art:artOf(t), duration_ms:t.duration_ms, isrc:t.external_ids?.isrc,
 });
 
 /* Reading a whole library takes hundreds of calls and several minutes on a
@@ -1538,8 +1600,15 @@ function buildReports(lib, cfg, tags) {
   // mid-session (a fetch, a correction) without cfg being rebuilt.
   tags = gateTags(tags, tagGate(tags));
   const shape = t => ({ id:t.id, album:t.album, albumType:t.albumType, released:t.released, art:t.art,
-                        duration_ms:t.duration_ms, dur:mmss(t.duration_ms), isrc:t.isrc, popularity:t.popularity, name:t.name });
+                        duration_ms:t.duration_ms, dur:mmss(t.duration_ms), isrc:t.isrc, name:t.name });
   const within = [], where = new Map(), meta = new Map();
+  // Which copy of a repeat to keep. "The most popular" stopped meaning
+  // anything when Spotify removed `popularity` (February 2026), so: the release
+  // you filed in more playlists, then the one added first, then playlist order.
+  const plCount = new Map();
+  for (const p of lib.playlists) { if (isMirrorPlaylist(p)) continue;
+    for (const id of new Set((p.tracks ?? []).map(t => t?.id).filter(Boolean))) plCount.set(id, (plCount.get(id) ?? 0) + 1); }
+  const addedAt = t => { const x = Date.parse(t?.added_at); return Number.isFinite(x) ? x : Infinity; };
   for (const p of lib.playlists) {
     if (isMirrorPlaylist(p)) continue;
     const groups = new Map();
@@ -1556,7 +1625,9 @@ function buildReports(lib, cfg, tags) {
       if (rows.length < 2) continue;
       const shaped = rows.map(shape);
       const d = describe(shaped);
-      const keep = [...shaped].sort((a,b) => (b.popularity??0)-(a.popularity??0))[0];
+      const order = rows.map((t, i) => ({ i, n: plCount.get(t.id) ?? 0, at: addedAt(t) }))
+        .sort((a, b) => (b.n - a.n) || (a.at - b.at) || (a.i - b.i));
+      const keep = shaped[order[0].i];
       within.push({ playlist:p.name, playlistId:p.id, artist:rows[0].artists?.[0]?.name, title:rows[0].name, art:rows[0].art,
         verdict:d.verdict, why:d.why, keep, options:shaped, drop:shaped.filter(r => r.id !== keep.id) });
     }
@@ -1584,28 +1655,23 @@ function buildReports(lib, cfg, tags) {
     // A real suggestion, just built on very little Last.fm data — worth
     // knowing before trusting or dismissing the move.
     thinData: isThinSignal(m.track, tags),
-    artists: (m.track.artists ?? []).filter(a => a.id).map(a => ({ id: a.id, name: a.name })) }));
+    artists: (m.track.artists ?? []).filter(a => a.id).map(a => ({ id: a.id, name: a.name })) }))
+    // A track you said to keep where it is ("Keep here", either Tidy tier) is
+    // not offered as wrong there again.
+    .filter(m => !keptHere(m.id, m.currentPlaylistId));
 
-  const filed = new Set();
+  // Filed means filed as any release of it: a liked single whose album copy
+  // (same ISRC, or the same trackKey — artist, title and version) already sits
+  // in a playlist is not waiting to be filed, whatever its Spotify id.
+  const filed = new Set(), filedIsrc = new Set(), filedKey = new Set();
   for (const p of lib.playlists) { if (isMirrorPlaylist(p)) continue;
-    for (const t of p.tracks) filed.add(t.id); }
-  const unfiled = lib.liked.filter(t => t?.id && !filed.has(t.id));
+    for (const t of p.tracks) { if (!t) continue; filed.add(t.id);
+      if (t.isrc) filedIsrc.add(t.isrc); if (t.name) filedKey.add(trackKey(t)); } }
+  const isFiled = t => filed.has(t.id) || (!!t.isrc && filedIsrc.has(t.isrc)) || (!!t.name && filedKey.has(trackKey(t)));
+  const unfiled = lib.liked.filter(t => t?.id && !isFiled(t));
   const backlog = unfiled.map(t => {
     const fb = FB[t.id];
-    // Ask for more than three, then drop the playlists already rejected for
-    // this track, so a rejection promotes the next real candidate instead of
-    // leaving a gap where the rejected one was.
-    const ranked = rank(t, tags, profiles, idf, { top: 8 })
-      .filter(b => !fb?.rejected?.includes(b.id))
-      .slice(0, 3)
-      .map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null, via: 'tags' }));
-    // Tag-based fit already found something worth trusting; the artist's own
-    // filing history only ever steps in when it hasn't — no fetch, no third
-    // party, just where the user already put this artist's other tracks.
-    const suggest = (ranked.length && ranked[0].score >= 0.30) ? ranked
-      : artistHistory(t, lib, targets)
-          .filter(h => !fb?.rejected?.includes(h.id))
-          .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
+    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets);
     return { id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
       album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
       tags: topTags(t, tags, idf),
@@ -1653,6 +1719,37 @@ function buildReports(lib, cfg, tags) {
   return { within, across, misfiled, backlog, clusters, drift, profiles, idf };
 }
 
+/** "Keep here" was said for this track in this playlist (recordKeep). */
+function keptHere(trackId, playlistId) { return !!FB[trackId]?.kept?.includes(playlistId); }
+
+/**
+ * The File queue's picks for one unfiled track: the tag engine's best three,
+ * or, when none of them fits well enough to trust, where the artist's other
+ * tracks are already filed. buildReports() makes every card's picks with this,
+ * and rejecting a pick re-ranks the card through it too, so the slot a
+ * rejection frees fills exactly the way the card was first filled — the
+ * filing-history fallback and the `via` label included. `tags` are the gated
+ * tags buildReports scores with.
+ */
+function backlogSuggest(t, lib, cfg, tags, profiles, idf,
+                        targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id))) {
+  const fb = FB[t.id];
+  // Ask for more than three, then drop the playlists already rejected for
+  // this track, so a rejection promotes the next real candidate instead of
+  // leaving a gap where the rejected one was.
+  const ranked = rank(t, tags, profiles, idf, { top: 8 })
+    .filter(b => !fb?.rejected?.includes(b.id))
+    .slice(0, 3)
+    .map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null, via: 'tags' }));
+  // Tag-based fit already found something worth trusting; the artist's own
+  // filing history only ever steps in when it hasn't — no fetch, no third
+  // party, just where the user already put this artist's other tracks.
+  return (ranked.length && ranked[0].score >= 0.30) ? ranked
+    : artistHistory(t, lib, targets)
+        .filter(h => !fb?.rejected?.includes(h.id))
+        .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
+}
+
 /* ===================== UI ===================== */
 let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'home';
 const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null,
@@ -1696,17 +1793,60 @@ function toast(msg, undoFn) {
 }
 
 /* ---------- action log: every library change, reversible ---------- */
+// Entries are found again by `at`, so two written in the same millisecond (a
+// move's two steps on a fast connection) must not share one: a clash is
+// nudged a millisecond past the newest entry. Returns the entry's `at`.
+//
+// `group` ties entries that are one action to the user — a move is an add
+// and a remove — so undoAction() reverses them together and History shows
+// them as one row.
 async function logAction(entry) {
   const log = (await idb.get('actions')) ?? [];
-  log.push({ at: new Date().toISOString(), ...entry });
+  let at = new Date().toISOString();
+  const last = log.at(-1)?.at;
+  if (last && at <= last) at = new Date(Date.parse(last) + 1).toISOString();
+  log.push({ at, ...entry });
   await idb.set('actions', log.slice(-500));
+  return at;
 }
 const getLog = async () => ((await idb.get('actions')) ?? []).slice().reverse();
+const newGroup = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
+/** True once an entry has been undone: `undoneAt` on the entry, or (for a log
+ *  written before that existed) an `undo` entry pointing at it. */
+const isUndone = (x, log) => !!x.undoneAt || log.some(u => u.op === 'undo' && u.of === x.at);
+
+/**
+ * Undo the entry logged at `at` — and, when it belongs to a group, every step
+ * of that group, newest first, so a move comes back out whole: the remove is
+ * reversed (the track goes back where it was, at its position), then the add
+ * (it leaves the playlist it was moved to). Each step is marked `undoneAt` as
+ * it succeeds, so a half-finished undo can be finished later and a finished
+ * one is never offered or run again.
+ */
 async function undoAction(at) {
   const log = (await idb.get('actions')) ?? [];
   const e = log.find(x => x.at === at);
   if (!e) throw new Error('Not in the log any more');
+  const steps = e.group ? log.filter(x => x.group === e.group && x.op !== 'undo') : [e];
+  const todo = steps.filter(x => !isUndone(x, log));
+  if (!todo.length) throw new Error('Already undone');
+  for (const s of [...todo].reverse()) {
+    await undoStep(s);
+    const now = (await idb.get('actions')) ?? [];
+    const hit = now.find(x => x.at === s.at);
+    if (hit) { hit.undoneAt = new Date().toISOString(); await idb.set('actions', now); }
+  }
+  // A move also told the sound learner "here, not there"; undoing it takes that back.
+  const mv = steps.find(x => x.move)?.move;
+  if (mv && typeof unrecordMove === 'function') await unrecordMove(mv.trackId, mv.from, mv.to).catch(() => {});
+  await logAction({ op:'undo', of:at, ...(e.group ? { ofGroup:e.group } : {}), playlistId:e.playlistId,
+                    ...(mv ? { playlistName:`${mv.fromName ?? mv.from} → ${mv.toName ?? mv.to}` } : {}),
+                    trackIds:e.trackIds });
+}
+
+/** Reverse one logged step against Spotify. */
+async function undoStep(e) {
   if (e.op === 'remove') {
     await addTracks(e.playlistId, e.trackIds);
     // put each track back at the index it came from, rather than at the end
@@ -1723,19 +1863,20 @@ async function undoAction(at) {
   } else if (e.op === 'unlike') {
     await libraryCall('PUT', e.trackIds);
   } else throw new Error(`Cannot undo "${e.op}"`);
-  await logAction({ op:'undo', of:at, playlistId:e.playlistId, trackIds:e.trackIds });
 }
 
 /**
- * Every slot in a playlist, in order: `{ id, from, pos }`, where `from` is the
- * id you originally added when Spotify has handed back a different one.
+ * Every slot in a playlist, in order: `{ id, isrc, pos }`.
  *
  * Both extras matter and neither is cosmetic. **Relinking**: Spotify swaps a
  * track for whichever pressing is playable in your market, so the id you POST
- * is often not the id you read back — the original comes home under
- * `linked_from`. Matching on the visible id alone meant a relinked track
- * looked missing on every single refresh and was added again each time, which
- * is exactly the "it keeps re-adding what I already have" complaint.
+ * is often not the id you read back. The original used to come home under
+ * `linked_from`, which Spotify removed from track objects in February 2026, so
+ * a relinked track is now recognised by its ISRC — the recording's own id,
+ * the same under either pressing (`external_ids`, restored in March 2026).
+ * Matching on the visible id alone meant a relinked track looked missing on
+ * every single refresh and was added again each time, which is exactly the
+ * "it keeps re-adding what I already have" complaint.
  * **Positions**: a local file or a track pulled from Spotify entirely has no
  * id at all, and it still occupies a slot — so unusable items are kept as
  * blanks rather than skipped, otherwise every position after one of them is
@@ -1743,11 +1884,11 @@ async function undoAction(at) {
  */
 async function playlistEntries(id) {
   const out = [];
-  let page = await sp(`/playlists/${id}/items?limit=100&fields=next,items(item(id,linked_from(id)))`);
+  let page = await sp(`/playlists/${id}/items?limit=100&fields=next,items(item(id,external_ids(isrc)))`);
   while (page) {
     for (const i of page.items ?? []) {
       const it = i.item ?? i.track;
-      out.push({ id: it?.id ?? null, from: it?.linked_from?.id ?? null, pos: out.length });
+      out.push({ id: it?.id ?? null, isrc: it?.external_ids?.isrc ?? null, pos: out.length });
     }
     if (!page.next) break;
     page = await sp(page.next);
@@ -1767,7 +1908,23 @@ async function plCall(id, method, body) {
   }
 }
 const addTracks = (id, ids) => Promise.all(chunk(ids,100).map(c => plCall(id,'POST',{ uris:c.map(x=>'spotify:track:'+x) })));
-const delTracks = (id, ids) => plCall(id,'DELETE',{ tracks: ids.map(x=>({ uri:'spotify:track:'+x })) });
+/**
+ * DELETE /playlists/{id}/items, for up to 100 `{ uri }` objects at a time.
+ * Spotify's reference now documents the body as `{ items: [{ uri }] }`, max
+ * 100; the old `{ tracks: [...] }` body is sent only if that one is refused
+ * with a 400, for an endpoint that still wants the legacy form. Sent one
+ * chunk after another, never in parallel, so no request races another's
+ * snapshot.
+ */
+async function plDelete(id, objs) {
+  let out = null;
+  for (const part of chunk(objs, 100)) {
+    try { out = await plCall(id, 'DELETE', { items: part }); }
+    catch (e) { if (e.status !== 400 && !/^400/.test(e.message)) throw e; out = await plCall(id, 'DELETE', { tracks: part }); }
+  }
+  return out;
+}
+const delTracks = (id, ids) => plDelete(id, ids.map(x => ({ uri:'spotify:track:'+x })));
 
 /** Spotify replaced PUT/DELETE /me/tracks?ids= with /me/library?uris= for a
  *  client ID created after Feb 2026; this page's own grandfathered id still
@@ -2265,7 +2422,7 @@ function vInbox() {
 
   return `${rollForwardHTML()}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
-      <span>${how}</span>
+      <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
     <div class="deck">
       ${rows[i + 1] ? '<div class="peek" aria-hidden="true"></div>' : ''}
@@ -2393,6 +2550,106 @@ function mfBandChip(b) {
   return (typeof bandChip === 'function' && bandChip(vm)) || `<span class="band band-${cls}">${word}</span>`;
 }
 
+/* ---------- Tidy by sound: core/audio/misfit.mjs ----------
+ * Filed tracks whose sound strongly disagrees with their playlist ("sounds
+ * like Jungle, sits in House"): the heard tracks each one sounds most like sit
+ * mostly in another of your genre playlists, and its sound ID doesn't place it
+ * where it is. Worked out in the engine worker from the heard records, and
+ * measured there on tracks you filed yourself (planted in the wrong playlist,
+ * held out). The section only exists once listening has heard something;
+ * without it Tidy draws exactly what it always did. Moves use the same Move
+ * button, History entry and undo as "Wrong place"; "Keep here" (recordKeep, in
+ * both tiers) is a "not that playlist" verdict plus "it belongs here", so the
+ * track is offered as wrong there by neither tier again. */
+const TSOUND = { status: 'idle', key: '', res: null, err: null };
+const tidySoundKey = () => `${soundHeard()}|${engineTargets().join()}|${Object.values(FB).reduce((n, f) => n + (f.rejected?.length ?? 0), 0)}|${LIB?.playlists?.length ?? 0}`;
+// Guarded: the page tests run Tidy in a sandbox without the audio or engine parts.
+const tidySoundReady = () => typeof AUDIO !== 'undefined' && typeof soundHeard === 'function' && typeof engineTargets === 'function';
+const tidySoundOn = () => tidySoundReady() && !!LIB && soundHeard() > 0;
+function tidySections() {
+  return tidySoundOn() ? [...TIDY_SECTIONS, ['sound', 'By sound']] : TIDY_SECTIONS;
+}
+function tidySoundRows() {
+  // Not a move you turned down, and not a track you said to keep where it is
+  // (Keep here in either tier: FB.kept).
+  return (TSOUND.res?.rows ?? []).filter(x => !(FB[x.id]?.rejected ?? []).includes(x.to) && !(FB[x.id]?.kept ?? []).includes(x.from));
+}
+const tidySoundCount = () => tidySoundRows().length;
+/** Load the heard records if listening is on, and work the moves out when they've changed. Cheap when nothing is due. */
+function tidySoundWarm() {
+  if (!tidySoundReady() || !LIB || TSOUND.status === 'working') return;
+  if (!AUDIO.records) { if (audioSettings().on && TSOUND.status === 'idle') { TSOUND.status = 'working'; fire(tidySoundLoad()); } return; }
+  if (!tidySoundOn()) return;
+  const key = tidySoundKey();
+  if (TSOUND.key === key && (TSOUND.status === 'ready' || TSOUND.status === 'error')) return;
+  TSOUND.status = 'working';
+  fire(tidySoundBuild(key));
+}
+async function tidySoundLoad() {
+  try { await engineAudio(); } catch { /* no records: Tidy stays as it was */ }
+  TSOUND.status = 'idle';
+  if (view === 'tidy' && tidySoundOn()) render();
+}
+async function tidySoundBuild(key) {
+  try {
+    await engineLoad();
+    const audio = await engineAudio();
+    let res = null;
+    if (audio) {
+      try { res = (await inEngineWorker('misfits', { lib: LIB, audio: engineAudioIn(audio) }))?.result ?? null; }
+      catch { res = null; }
+      if (!res) {
+        await yieldToPaint();
+        res = BetterfyMisfit.soundMisfitsFor(LIB, engineAudioIn(audio), { targets: engineTargets(), isMirror: isMirrorPlaylist });
+      }
+    }
+    Object.assign(TSOUND, { status: 'ready', key, res, err: null });
+  } catch (e) {
+    Object.assign(TSOUND, { status: 'error', key, err: e?.message ?? String(e) });
+  }
+  if (view === 'tidy') render();
+}
+function tidySoundTrack(id) {
+  for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id === id)
+    return { id, title: t.name ?? '', artist: (t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '), art: t.art ?? null, dur: t.duration_ms ?? 0 };
+  return { id, title: id, artist: '', art: null, dur: 0 };
+}
+const TS_BANDS = [['sure', 'HIGH'], ['likely', 'LIKELY']];
+function secSound() {
+  const rows = tidySoundRows();
+  const band = S.tsBand ?? 'sure';
+  const counts = { sure: 0, likely: 0 };
+  for (const x of rows) counts[x.band]++;
+  const acc = TSOUND.res?.accuracy;
+  const pct = v => `${Math.round(v * 100)}%`;
+  const checked = acc?.scored ? `<p class="sub tsacc">Checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
+    acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>` : '';
+  const lede = `<p class="lede">Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn't place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>`;
+  if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true });
+  if (TSOUND.status === 'error' && !TSOUND.res) return lede + emptyState('Couldn’t compare by sound', esc(TSOUND.err ?? ''), { compact: true });
+  const m = rows.filter(x => x.band === band);
+  return `${lede}${checked}
+    ${rows.length ? `<div class="seg mfbands tsbands" role="group" aria-label="How sure">${TS_BANDS.map(([b, vm]) =>
+      `<button type="button" aria-pressed="${band === b}" data-tsb="${b}">${mfBandChip(vm === 'HIGH' ? 'high' : 'medium')} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
+    <div class="rows">${m.slice(0, shownOf('tsound-' + band)).map(x => {
+      const t = tidySoundTrack(x.id), done = S.moved.has(x.id);
+      return `<div class="row tsrow ${done ? 'done' : ''}">${thumbHTML(t)}<div class="main">
+        <div class="ttl">${esc(t.title)} <span class="sub">— ${esc(t.artist)}</span></div>
+        <div class="tssound">${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
+        <div class="swap"><span class="from">${esc(x.fromName)}</span><span class="arw">→</span><span class="to">${esc(x.toName)}</span>
+          <span class="mono" style="color:var(--ink-3)">${x.near.from} → ${x.near.to} of ${x.near.k} sound-alikes</span></div>
+        <div class="why">${esc(x.why.join('; '))}.</div>
+      </div><div class="acts">
+        <button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.from)}" data-mvto="${esc(x.to)}">${done ? 'Moved' : 'Move'}</button>
+        ${done ? '' : `<button class="b sm" data-tsfrom="${esc(x.from)}" data-tskeep="${esc(x.id)}" data-tsto="${esc(x.to)}">Keep here</button>`}
+        <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${t.dur}">Play</button></div></div>`;
+    }).join('')
+      || (rows.length
+        ? emptyState(`Nothing ${band === 'sure' ? 'sure' : 'likely'}`, band === 'sure' ? 'Likely has the more speculative ones.' : 'Try Sure.', { compact: true })
+        : emptyState('Everything sounds where it is', 'No heard track sits in a genre playlist its sound-alikes avoid. More show up as listening hears more of your library.'))}</div>
+    ${moreButton('tsound-' + band, m.length)}`;
+}
+
 function secMisfile() {
   const counts = { high: 0, medium: 0, low: 0 };
   for (const x of R.misfiled) counts[x.confidence]++;
@@ -2424,6 +2681,7 @@ function secMisfile() {
         ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}">${done ? 'Moved' : 'Move'}</button>` : ''}
         ${x.suggest.filter(sg => sg.id).slice(1, 2).map(sg =>
           `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(sg.id)}">→ ${esc(sg.name)}</button>`).join('')}
+        ${done ? '' : `<button class="b sm" data-mfkeep="${esc(x.id)}" data-mffrom="${esc(x.currentPlaylistId)}" data-mfaway="${esc(x.suggest.filter(sg => sg.id).slice(0, 2).map(sg => sg.id).join(','))}">Keep here</button>`}
         <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${x.dur ?? 0}">Play</button></div>
       ${x.tags?.length ? `<div style="flex-basis:100%; margin-top:6px">
         ${tagChips(x.tags, x.thinData)}
@@ -2441,11 +2699,19 @@ function secMisfile() {
 }
 
 function vTidy() {
-  const n = { misfile: R.misfiled.length, dupes: R.within.length, cross: R.across.length };
-  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross }[S.tidySec ?? 'misfile'];
+  tidySoundWarm();
+  const n = { misfile: R.misfiled.length, dupes: R.within.length, cross: R.across.length, sound: tidySoundCount() };
+  const secs = tidySections();
+  // Opens on the first section with something in it rather than on "Wrong
+  // place 0" while Repeats has work. A section the listener picked (S.tidySec,
+  // set only by a tap) is kept; one that has gone away falls back the same way.
+  const first = (secs.find(([id]) => n[id] > 0) ?? secs[0])[0];
+  if (S.tidySec != null && !secs.some(([id]) => id === S.tidySec)) S.tidySec = first;
+  const sec = S.tidySec ?? first;
+  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound }[sec];
   return `<h1>Tidy</h1>
-    <div class="seg tidysecs" role="group" aria-label="Section">${TIDY_SECTIONS.map(([id, label]) =>
-      `<button type="button" aria-pressed="${(S.tidySec ?? 'misfile') === id}" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
+    <div class="seg tidysecs" role="group" aria-label="Section">${secs.map(([id, label]) =>
+      `<button type="button" aria-pressed="${sec === id}" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
     ${body()}`;
 }
 
@@ -2812,17 +3078,24 @@ const PLAYLIST_MAX = 10000;
  * devices refreshing at the same time, or from a duplicate dragged in by hand.
  * Nothing is ever removed that isn't a repeat of something staying put.
  *
+ * A repeat is the same visible id twice. Not the same ISRC: two releases of
+ * one recording are two tracks, and an earlier refresh may have put both in
+ * on purpose — only an exact repeat is damage. (Relinked copies of one track
+ * read back under one visible id, so they are still caught.)
+ *
  * Deleted by position, highest first: removing a track at position 900 cannot
  * move anything at position 40, so one read is enough and the indices stay
  * valid across every request. (Deleting by uri alone would take out *all*
- * copies, including the one that should stay.)
+ * copies, including the one that should stay.) Spotify's current reference
+ * documents only `{ uri }` items, with no `positions`; they are still sent,
+ * and if the endpoint ignores them and takes every copy, the read-back in
+ * syncAllSongsPlaylist() sees the keeper missing and adds it again.
  */
 async function pruneMirrorDuplicates(id, entries) {
   const seen = new Set(), extra = [];
   for (const e of entries) {
     if (!e.id) continue;                  // a local file — never touched
-    const key = e.from ?? e.id;           // the same recording under either id
-    if (seen.has(key)) extra.push(e); else seen.add(key);
+    if (seen.has(e.id)) extra.push(e); else seen.add(e.id);
   }
   if (!extra.length) return 0;
   extra.sort((a, b) => b.pos - a.pos);
@@ -2833,7 +3106,7 @@ async function pruneMirrorDuplicates(id, entries) {
       if (!byUri.has(uri)) byUri.set(uri, []);
       byUri.get(uri).push(e.pos);
     }
-    await plCall(id, 'DELETE', { tracks: [...byUri].map(([uri, positions]) => ({ uri, positions })) });
+    await plDelete(id, [...byUri].map(([uri, positions]) => ({ uri, positions })));
   }
   await logAction({ op:'prune', playlistId:id, playlistName:ALL_SONGS_NAME,
     trackIds:extra.map(e => e.id), reason:'duplicate copies in the All Songs mirror' });
@@ -2871,10 +3144,12 @@ async function syncAllSongsPlaylist() {
   if (pruned) entries = await playlistEntries(pl.id);
 
   // A relinked track counts as present under either id — the one Spotify shows
-  // and the one you actually added. Without this half every relinked track in
-  // the library was re-added on every single refresh.
-  const have = new Set();
-  for (const e of entries) { if (e.id) have.add(e.id); if (e.from) have.add(e.from); }
+  // and the one you actually added, matched by ISRC now that linked_from is
+  // gone. Without this half every relinked track in the library was re-added
+  // on every single refresh.
+  const have = new Set(), haveIsrc = new Set();
+  for (const e of entries) { if (e.id) have.add(e.id); if (e.isrc) haveIsrc.add(e.isrc); }
+  for (const t of all) if (t.isrc && haveIsrc.has(t.isrc)) have.add(t.id);
 
   const missing = all.filter(t => !have.has(t.id));
   const room = PLAYLIST_MAX - entries.length;
@@ -2916,6 +3191,85 @@ async function syncAllSongsPlaylist() {
   render();
 }
 
+/* ---------- DJ order: Shuffle by tempo and sound (core/audio/order.mjs) ----------
+ * Once listening has heard enough of a playlist, Shuffle can order it like a DJ
+ * set instead: each next track a tempo you can beatmatch (half and double time
+ * count) and close in sound, the same artist never twice running, and if asked
+ * along an energy arc. Tracks not heard yet follow in the spaced shuffle. A
+ * lookup over this account's own heard tracks; nothing is shown, and the screen
+ * is exactly as before, until at least MIN_MIX of the playlist has been heard. */
+const MIX_MODES = { flat: 'DJ order', build: 'DJ order, building up', peak: 'DJ order, warm-up → peak → cool-down' };
+const MIX_PAGE = { recs: null, n: 0, index: null, err: null };
+/** Heard tracks in this list with a tempo sure enough to mix on (match.mjs MIX_MIN_CONF). */
+function mixHeardIn(tracks) {
+  if (!AUDIO.records?.size) return 0;
+  const min = globalThis.BetterfyMatch?.MIX_MIN_CONF ?? 0.3;
+  let n = 0;
+  for (const t of tracks) { const d = AUDIO.records.get(t.id); const p = d && !d.miss ? d.dsp : null;
+    if (p && p.bpm > 0 && (p.bpmConf ?? 0) >= min) n++; }
+  return n;
+}
+function mixIndexNow() {
+  if (MIX_PAGE.recs !== AUDIO.records || MIX_PAGE.n !== AUDIO.records.size)
+    Object.assign(MIX_PAGE, { recs: AUDIO.records, n: AUDIO.records.size, index: BetterfyOrder.mixIndex(AUDIO.records) });
+  return MIX_PAGE.index;
+}
+/** The DJ order for this source, cached beside the spaced one (re-rolled with it), or
+ *  { pending } while engine.js loads. */
+function shuffleMix(sel, tracks, mode) {
+  if (!globalThis.BetterfyOrder) {
+    if (!MIX_PAGE.err) fire(engineLoad().then(() => { if (view === 'shuffle') render(); },
+      e => { MIX_PAGE.err = e?.message ?? String(e); if (view === 'shuffle') render(); }));
+    return { pending: true };
+  }
+  const index = mixIndexNow();
+  const key = `${sel}|${tracks.length}|${mode}|${index.size}`;
+  if (S.shufMix?.key === key && S.shufMix.base === S.shufCache) return S.shufMix.v;
+  const m = BetterfyOrder.mixOrder(tracks, index, { arc: mode, seed: 1 + Math.floor(Math.random() * 2147483646), artistOf });
+  const rest = m.rest.length ? spacedShuffle(m.rest) : [];
+  const v = { order: [...m.order, ...rest], mixed: m.order.length, rest: rest.length, steps: m.steps,
+              stats: BetterfyOrder.mixStats(m.order, index), naive: BetterfyOrder.mixStats(rnd([...m.order]), index), index };
+  S.shufMix = { key, base: S.shufCache, v };
+  return v;
+}
+const mixPct = x => `${Math.round(x * 100)}%`;
+function mixBpmOf(index, id) {
+  const d = index.get(id)?.rec?.dsp;
+  return d?.bpm > 0 ? Math.round(d.bpm) : null;
+}
+/** The energy along the mix as a row of bars; only once energy labels have been checked. */
+function mixEnergyHTML(energy) {
+  const shown = typeof labelsShownNow === 'function' ? labelsShownNow() : null;
+  if (!shown?.energy || !(energy?.length >= 2)) return '';
+  return `<div class="mx-arc" role="img" aria-label="Energy along the mix, calm to intense">${energy.map(e =>
+    `<span style="height:${Math.max(8, Math.round(e * 100))}%"></span>`).join('')}</div>`;
+}
+function mixHTML(mix, tracks, p) {
+  if (mix.pending) return MIX_PAGE.err
+    ? emptyState('The mix couldn’t load', esc(MIX_PAGE.err), { compact: true })
+    : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true });
+  const st = mix.stats, nv = mix.naive, bpmOn = globalThis.BetterfyAudio?.bpmShown ? BetterfyAudio.bpmShown() : true;
+  const row = (t, i) => {
+    const heard = i < mix.mixed, step = i > 0 && i < mix.mixed ? mix.steps[i - 1] : null;
+    const bpm = heard && bpmOn ? mixBpmOf(mix.index, t.id) : null;
+    const jump = step && !step.rel;
+    return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}">
+      <span class="i">${String(i+1).padStart(3,'0')}</span>
+      <span class="t">${esc(t.name)}</span>
+      <span class="a">${esc(artistOf(t))}</span>${bpm ? `<span class="mx-bpm"${step?.rel && step.rel !== 'same' ? ` title="${step.rel === 'half' ? 'double' : 'half'} time"` : ''}>${bpm}</span>` : ''}${jump ? '<span class="mx-tag">tempo change</span>' : ''}</div>`;
+  };
+  return `<div class="vs">
+      <div class="bad"><div class="l">Shuffled</div><div class="n">${nv.share === null ? '—' : mixPct(nv.share)}</div>
+        <div class="d">of track changes can be beatmatched</div></div>
+      <div class="good"><div class="l">${esc(MIX_MODES[S.shufMode])}</div><div class="n">${st.share === null ? '—' : mixPct(st.share)}</div>
+        <div class="d">can be beatmatched${st.shift !== null ? `, ${(st.shift * 100).toFixed(1)}% pitch change on average` : ''}</div></div>
+    </div>
+    ${mixEnergyHTML(st.energy)}
+    <p class="lede mx-sum">${mix.mixed} heard tracks in the mix${bpmOn && st.bpm ? ` · ${Math.round(st.bpm[0])}–${Math.round(st.bpm[1])} BPM` : ''}${mix.rest ? ` · ${mix.rest} not heard yet follow in the spaced shuffle` : ''}${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
+    <h2>Order</h2>
+    <div class="order mx-order">${mix.order.slice(0,40).map(row).join('')}</div>`;
+}
+
 function vShuffle() {
   const pls = LIB.playlists.filter(p => p.tracks.length >= 8).sort((a,b) => b.tracks.length - a.tracks.length);
   // Once it exists, everything you own beats any single bucket as a shuffle
@@ -2938,7 +3292,14 @@ function vShuffle() {
   }
   const order = S.shufCache.order, naive = S.shufCache.naive;
   const good = order.length ? shuffleStats(order) : null;
-  S.shufOrder = order;
+  // DJ order: offered only once enough of this list has been heard; otherwise nothing changes.
+  const canMix = order.length && mixHeardIn(tracks) >= (globalThis.BetterfyOrder?.MIN_MIX ?? 8);
+  if (S.shufMode === undefined) { try { S.shufMode = LS.getItem('bf_shuf_mode') || ''; } catch { S.shufMode = ''; } }
+  const mix = canMix && MIX_MODES[S.shufMode] ? shuffleMix(sel, tracks, S.shufMode) : null;
+  const mixPick = canMix ? ` <select id="shufMode" aria-label="Order">${[['', 'Spaced shuffle'], ...Object.entries(MIX_MODES)].map(([v, l]) =>
+    `<option value="${v}" ${v === (mix ? S.shufMode : '') ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
+  S.shufOrder = mix && !mix.pending ? mix.order : mix ? [] : order;
+  S.shufOrderMode = mix && !mix.pending ? S.shufMode : null;
   return `<h1>Shuffle</h1>
     <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
     <p class="lede" style="margin-top:-8px">${allSongs
@@ -2947,11 +3308,11 @@ function vShuffle() {
       <button class="b sm" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Build it'}</button></p>
     <div class="rowbtns" style="margin-bottom:22px">
       <select id="shufPl">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
-      <button class="b p" id="shufApply" ${order.length?'':'disabled'}>Create shuffled playlist</button>
-      <button class="b" id="shufPlay" ${order.length?'':'disabled'}>Create and play</button>
-      <button class="b sm" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>
+      <button class="b p" id="shufApply" ${S.shufOrder.length?'':'disabled'}>Create shuffled playlist</button>
+      <button class="b" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
+      <button class="b sm" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
     </div>
-    ${good ? `<div class="vs">
+    ${mix ? mixHTML(mix, tracks, p) : good ? `<div class="vs">
       <div class="bad"><div class="l">Spotify's shuffle</div><div class="n">${naive.minGap}</div>
         <div class="d">${naive.minGap === 1 ? 'slot' : 'slots'} between the same artist, ${naive.within3} ${naive.within3 === 1 ? 'pair' : 'pairs'} within three</div></div>
       <div class="good"><div class="l">Betterfy</div><div class="n">${good.minGap}</div>
@@ -2962,7 +3323,7 @@ function vShuffle() {
     <div class="order">${order.slice(0,40).map((t,i) => `<div>
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
-      <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : '<div class="empty"><b>Pick a playlist</b>Anything with eight tracks or more can be re-spaced.</div>'}`;
+      <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;
 }
 
 /* ---------- discovery: new by construction ----------
@@ -3059,9 +3420,10 @@ function rankSeeds(weights, n = 40) {
 }
 
 async function runDiscovery(seedPlaylistId) {
+  // No key is not a dead end any more (CLAUDE.md: every account, Spotify
+  // library alone): without one, the candidates come from Deezer's and
+  // ListenBrainz's "fans also like" for the artists you play.
   const key = LS.getItem('bf_lfm');
-  if (!key) { toast('Discovery needs a Last.fm key — paste one above to get started.'); return; }
-  const lfm = p => fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({ ...p, api_key:key, format:'json' })).then(r => r.json());
 
   const ownedArtist = new Set(), ownedTrack = new Set();
   const own = t => { for (const a of t?.artists ?? []) ownedArtist.add(norm(a.name));
@@ -3071,9 +3433,61 @@ async function runDiscovery(seedPlaylistId) {
 
   const src = seedPlaylistId ? LIB.playlists.find(p => p.id === seedPlaylistId) : null;
   if (!src) stage('Reading what you have been playing…', 0.02);
-  const seeds = rankSeeds(src ? playlistSeeds(src) : await listeningSeeds());
+  const weights = src ? playlistSeeds(src) : await listeningSeeds();
+  const seeds = rankSeeds(weights);
   if (!seeds.length) { toast('Nothing to seed from.'); return; }
 
+  let out;
+  try {
+    out = key ? await discoverLastfm(key, seeds, ownedArtist, ownedTrack)
+              : await discoverKeyless(src, weights, ownedArtist, ownedTrack);
+  } catch (e) {
+    $('#land').hidden = true; $('#app').hidden = false;
+    toast('Couldn’t find new music: ' + (e?.message ?? e));
+    return go('discover');
+  }
+
+  stage('Finding them on Spotify…', 0.95);
+  for (const o of out) {
+    try {
+      // The keyless path found its track on Spotify already.
+      const hit = o.hit ?? (await sp(`/search?q=${encodeURIComponent(`artist:${o.artist} track:${o.track}`)}&type=track&limit=1`)).tracks?.items?.[0];
+      delete o.hit;
+      if (hit) {
+        o.id = hit.id; o.album = hit.album?.name; o.released = hit.album?.release_date;
+        o.art = artOf(hit); o.dur = hit.duration_ms;
+        o.artists = (hit.artists ?? []).map(a => ({ id:a.id, name:a.name }));
+        // What a pick is heard by: the same ISRC route as every library track.
+        o.isrc = hit.external_ids?.isrc ?? null;
+        const lead = o.artists[0];
+        if (lead && o.lfmTags?.length && !TAGS[lead.id]) TAGS[lead.id] = { tags:o.lfmTags };
+      }
+    } catch {}
+  }
+  // Score against the same gate-passed tags R.profiles/R.idf were built from
+  // — a track's own vector carrying a tag the model doesn't trust would only
+  // dilute its own magnitude against every centroid, never help it.
+  const discTags = gateTags(TAGS, tagGate(TAGS));
+  for (const o of out) {
+    if (!o.id) continue;
+    o.suggest = rank(o, discTags, R.profiles, R.idf, { top:3 }).map(b => ({ ...b, axis:CFG[b.id]?.axis ?? null }));
+    o.tags = topTags(o, discTags, R.idf);
+    o.thinData = isThinSignal(o, discTags);
+  }
+  S.discover = out.filter(o => o.id);
+  S.discAt = 0;
+  S.discoverFrom = src?.name ?? 'everything you listen to';
+  S.discSound = null;
+  $('#land').hidden = true; $('#app').hidden = false;
+  go('discover');
+  // Then listen to the picks, if listening is on, and re-rank the cards still
+  // to come by how they sound. Nothing at all happens here otherwise.
+  fire(discListen(src, weights));
+}
+
+/** Candidates from Last.fm's similar artists and their top tracks: the path a key buys. */
+async function discoverLastfm(key, seeds, ownedArtist, ownedTrack) {
+  const lfm = p => fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({ ...p, api_key:key, format:'json' })).then(r => r.json());
   const cand = new Map();
   for (const [i, s] of seeds.entries()) {
     stage(`Finding artists like ${s.name}…`, i / (seeds.length + 8));
@@ -3112,42 +3526,200 @@ async function runDiscovery(seedPlaylistId) {
       out.push({ artist:c.name, track:t.name, via:c.via, lfmTags }); break;
     }
   }
+  return out;
+}
 
-  stage('Finding them on Spotify…', 0.95);
-  for (const o of out) {
-    try {
-      const r = await sp(`/search?q=${encodeURIComponent(`artist:${o.artist} track:${o.track}`)}&type=track&limit=1`);
-      const hit = r.tracks?.items?.[0];
-      if (hit) {
-        o.id = hit.id; o.album = hit.album?.name; o.released = hit.album?.release_date;
-        o.art = artOf(hit); o.dur = hit.duration_ms;
-        o.artists = (hit.artists ?? []).map(a => ({ id:a.id, name:a.name }));
-        const lead = o.artists[0];
-        if (lead && o.lfmTags?.length && !TAGS[lead.id]) TAGS[lead.id] = { tags:o.lfmTags };
+/* ---------- Discover without a key (core/audio/discover.mjs) ----------
+ * Deezer's "fans also like" and ListenBrainz's listening-session neighbours
+ * for the artists you play most (or the seed playlist's), reached through the
+ * ISRC and Wikidata exactly as the Engine screen's neighbour bridge is, and
+ * cached under the same key, so either screen's lookups save the other's.
+ * The neighbours you don't own are the candidates; Spotify search finds one
+ * track by each. Keyless, and nothing to install. */
+const discTracks = () => [...(LIB.liked ?? []),
+  ...LIB.playlists.filter(p => !isMirrorPlaylist(p)).flatMap(p => p.tracks ?? [])];
+const discWeightOf = weights => t => Math.max(0, ...(t?.artists ?? []).map(a => weights.get(a?.name) ?? 0));
+
+async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
+  stage('Getting ready to ask who sits near your artists…', 0.03);
+  await engineLoad();
+  const D = BetterfyDiscover;
+  const { artists, seeds } = D.seedArtists(src ? src.tracks : discTracks(), { weightOf: discWeightOf(weights), limit: 25 });
+  if (!seeds.length) return [];
+  let cache = null;
+  try { cache = (await idb.get(BRIDGE_KEY))?.raw ?? null; } catch { /* no cache: ask everything */ }
+  let last = 0;
+  const { raw } = await BetterfyBridgeFetch.gatherBridge(artists, {
+    deezer: deezerJsonp, json: corsJson, cache,
+    onProgress: p => {
+      const now = performance.now();
+      if (now - last < 300) return;
+      last = now;
+      const name = { deezer: 'Deezer', listenbrainz: 'ListenBrainz', wikidata: 'Wikidata' }[p.stage] ?? p.stage;
+      stage(`Asking ${name} who sits near your artists… ${Math.min(p.done, p.total)} of ${p.total}`,
+            0.05 + 0.6 * (p.total ? p.done / p.total : 1));
+    },
+  });
+  try { await idb.set(BRIDGE_KEY, { at: Date.now(), raw }); } catch { /* the next run asks again */ }
+
+  const cands = D.bridgeCandidates(raw, seeds, { isOwned: n => ownsAnyOf(n, ownedArtist), limit: 60 });
+  const out = [];
+  for (const c of cands) {
+    if (out.length >= 30) break;
+    stage(`Finding ${c.name} on Spotify…`, 0.7 + out.length / 120);
+    let r;
+    try { r = await sp(`/search?q=${encodeURIComponent(`artist:${c.name}`)}&type=track&limit=10`); } catch { continue; }
+    const hit = D.pickTrack(r?.tracks?.items ?? [], c.name,
+      { isOwnedTrack: h => ownedTrack.has(norm(h.artists?.[0]?.name ?? '') + '|' + norm(h.name)) });
+    if (hit) out.push({ artist: c.name, track: hit.name, via: c.via, hit });
+  }
+  return out;
+}
+
+/* ---------- Discover by sound (core/audio/discover.mjs) ----------
+ * With listening on, the picks are heard like library tracks (ISRC → Deezer
+ * preview → the model) and the cards still to come are re-ranked by how close
+ * each sounds to the seed: the seed playlist's heard tracks, or the heard
+ * tracks of the artists you play. A heard pick also gets sound-led playlist
+ * picks (the filed tracks it sounds like vote), so a pick with no tags can
+ * still be offered somewhere.
+ *
+ * Picks' records stay in memory, never in the library's store: they are not
+ * your tracks, and the File screen's "mixes with" must not offer them. The
+ * library queue pauses while picks are heard (one model, one Worker) and
+ * carries on afterwards. Off, or nothing heard to compare against, and
+ * Discover is exactly what it was. */
+const DISC = { run: 0, ctrl: null, store: null, seed: null, index: null, memb: null, done: 0, missed: 0, busy: false, again: false };
+
+async function discListen(src, weights) {
+  const run = ++DISC.run;
+  if (DISC.ctrl?.running) await DISC.ctrl.stop('a new run');
+  if (typeof audioSettings !== 'function' || !audioSettings().on) return;
+  const picks = (S.discover ?? []).filter(o => o.isrc);
+  if (!picks.length) return;
+  const ahead = (S.discover ?? []).slice(S.discAt ?? 0).filter(o => o.isrc);
+  try { await audioInit(); await engineLoad(); } catch { return; }
+  if (run !== DISC.run || audioConnection() !== 'ok') return;
+  await audioRefresh();
+  const A = BetterfyAudio, D = BetterfyDiscover;
+  const index = SOUND.space?.audio?.index ?? D.candidateIndex(AUDIO.records);
+  const name = src?.name ?? 'what you play';
+  const seed = D.seedSound(src ? src.tracks : D.weightedSeedIds(discTracks(), discWeightOf(weights), index), index);
+  if (!seed.ok) {
+    S.discSound = { state: 'thin', n: seed.n, need: D.DISCOVER_SOUND.minSeed, name };
+    return discSoundRedraw();
+  }
+  Object.assign(DISC, { seed, index, memb: soundMembership() });
+
+  DISC.store ??= A.openAudioStore({ indexedDB: null });
+  DISC.ctrl ??= A.createAudioController({
+    store: DISC.store,
+    lookup: (isrc, o) => A.lookup(isrc, { jsonp: deezerJsonp, ...o }),
+    fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
+    decode: buf => A.decodeTo16k(buf),
+    loadEar: audioEars,
+    dspFillPerRun: 0,
+    onChange: vm => { if (vm.done > DISC.done) { DISC.done = vm.done; fire(discApply()); } },
+  });
+  const have = await DISC.store.getAll();
+  const todo = ahead.filter(o => !have.has(o.id))
+    .map(o => ({ id: o.id, isrc: o.isrc, durationMs: o.dur }));
+  S.discSound = { state: 'listening', heard: 0, total: picks.length, name, n: seed.n };
+  DISC.done = 0;
+  await discApply();
+
+  const resume = !!AUDIO.ctrl?.running;
+  if (resume) await AUDIO.ctrl.stop('hearing Discover picks');
+  try { if (todo.length) await DISC.ctrl.start(todo); }
+  finally {
+    if (resume && audioSettings().on) fire(audioStart({ quiet: true }));
+  }
+  if (run !== DISC.run) return;
+  await discApply();
+  if (S.discSound) S.discSound.state = 'done';
+  discSoundRedraw();
+}
+
+/** Score what has been heard so far, and re-rank the cards after this one. */
+async function discApply() {
+  if (DISC.busy) { DISC.again = true; return; }
+  DISC.busy = true;
+  try {
+    do {
+      DISC.again = false;
+      const D = BetterfyDiscover, recs = await DISC.store.getAll();
+      const cand = D.candidateIndex(recs);
+      const fits = D.soundFits(cand, DISC.seed);
+      let heard = 0, missed = 0;
+      for (const o of S.discover ?? []) {
+        if (!o.isrc) continue;
+        const rec = recs.get(o.id);
+        if (rec?.miss) { missed++; continue; }
+        const row = cand.get(o.id);
+        if (!row) continue;
+        heard++;
+        o.fit = fits.get(o.id) ?? null;
+        o.tagSuggest ??= o.suggest ?? [];
+        o.suggest = discPicks(D.soundPlace(row.emb, DISC.index, DISC.memb), o.tagSuggest);
+        if (globalThis.BetterfyAudio?.dspSoundVM) o.sound = audioSoundVM(rec) ?? undefined;
       }
-    } catch {}
+      S.discover = D.rerank(S.discover ?? [], fits, { from: (S.discAt ?? 0) + 1 });
+      if (S.discSound) Object.assign(S.discSound, { heard, missed });
+    } while (DISC.again);
+  } finally { DISC.busy = false; }
+  discSoundRedraw();
+}
+
+/** Sound picks lead and the tag engine's best stays one key away, as on the File card. */
+function discPicks(sound, tags) {
+  if (!sound.length) return tags;
+  const out = sound.slice(0, 2).map(sg => ({ ...sg, axis: CFG[sg.id]?.axis ?? null, evidence: { sound: sg.score } }));
+  for (const sg of [...tags, ...sound.slice(2)]) {
+    if (out.length >= 3) break;
+    if (!out.some(o => o.id === sg.id)) out.push(sg);
   }
-  // Score against the same gate-passed tags R.profiles/R.idf were built from
-  // — a track's own vector carrying a tag the model doesn't trust would only
-  // dilute its own magnitude against every centroid, never help it.
-  const discTags = gateTags(TAGS, tagGate(TAGS));
-  for (const o of out) {
-    if (!o.id) continue;
-    o.suggest = rank(o, discTags, R.profiles, R.idf, { top:3 }).map(b => ({ ...b, axis:CFG[b.id]?.axis ?? null }));
-    o.tags = topTags(o, discTags, R.idf);
-    o.thinData = isThinSignal(o, discTags);
-  }
-  S.discover = out.filter(o => o.id);
-  S.discAt = 0;
-  S.discoverFrom = src?.name ?? 'everything you listen to';
-  $('#land').hidden = true; $('#app').hidden = false;
-  go('discover');
+  return out;
+}
+
+/** Redraw the "by sound" line in place: the card under it may be playing. */
+function discSoundRedraw() {
+  if (view !== 'discover') return;
+  const el = document.getElementById('discSnd');
+  if (el) el.outerHTML = discSoundLine();
+  else render();
 }
 
 /** The discovery currently on the card. */
 function discAt() {
   const d = S.discover ?? [];
   return d.length ? d[Math.min(S.discAt ?? 0, d.length - 1)] : null;
+}
+
+/* The "by sound" pieces of the Discover screen. Each draws nothing at all
+ * without sound data, so the card is byte for byte what it was before
+ * (test/fixtures/ui4/discover-*.html). */
+const discListenOn = () => typeof audioSettings === 'function' && audioSettings().on === true;
+function discSoundLine() {
+  const s = S.discSound;
+  if (!s) return '';
+  const name = esc(s.name);
+  if (s.state === 'thin') return `<p class="why discsnd" id="discSnd">Not ranked by sound yet: ${s.n} of ${name}’s tracks ${s.n === 1 ? 'has' : 'have'} been heard, and it takes ${s.need} to compare against. Listening carries on in the background.</p>`;
+  const missed = s.missed ? ` ${s.missed} had no preview to hear.` : '';
+  if (s.state === 'listening') return `<p class="why discsnd" id="discSnd"><span class="tag snd">by sound</span> Listening to the picks: ${s.heard} of ${s.total} heard so far.${missed} The cards after this one move up or down by how close they sound to ${name}.</p>`;
+  return `<p class="why discsnd" id="discSnd"><span class="tag snd">by sound</span> Ranked by how close they sound to ${name}: ${s.heard} of ${s.total} picks heard.${missed}</p>`;
+}
+/** How close the pick on the card sounds to the seed, in words. '' until it has been heard. */
+function discFitHTML(t) {
+  const f = t?.fit?.fit;
+  if (!Number.isFinite(f)) return '';
+  const name = esc(S.discSound?.name ?? S.discoverFrom ?? 'the seed');
+  const [cls, say] = f >= 0.75 ? ['hi', `Sounds right at home in ${name}`]
+    : f >= 0.45 ? ['mid', `Close to ${name}’s sound`]
+    : f >= 0.2 ? ['lo', `On the edge of ${name}’s sound`]
+    : ['out', `Doesn’t sound much like ${name}`];
+  const near = (t.fit.near ?? []).slice(0, 2).map(id => typeof soundTrackName === 'function' ? soundTrackName(id) : null)
+    .filter(x => x?.title).map(x => `${esc(x.title)} — ${esc(x.artist)}`);
+  return `<div class="discfit ${cls}" title="${(f * 100).toFixed(0)}% — 100% is as close as ${name}’s own tracks are to each other"><span class="tag snd">by sound</span> ${say}${near.length ? `<span class="sub">closest: ${near.join('; ')}</span>` : ''}</div>`;
 }
 
 function vDiscover() {
@@ -3157,12 +3729,12 @@ function vDiscover() {
   const head = `<h1>Discover</h1>
     <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
       <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
-    ${hasKey ? '' : `<div class="note">
-      <b>Discovery needs a free Last.fm key</b> — it supplies the genre data Spotify no longer will.
-      Paste one below; it's saved on this device and discovery starts right away, no extra screen.
+    ${hasKey ? '' : `<div class="note discnokey">
+      <b>No key needed.</b> Picks come from Deezer's and ListenBrainz's “fans also like” for the artists you play${discListenOn() ? ', then ranked by how they sound' : ''}.
+      A free Last.fm key adds its own similar artists and genre tags; it's saved on this device.
       <div class="rowbtns" style="margin-top:8px">
-        <input id="lfmKeyDisc" placeholder="Last.fm API key" size="34">
-        <button class="b p" id="saveLfmDiscover">Save &amp; find new music</button>
+        <input id="lfmKeyDisc" placeholder="Last.fm API key (optional)" size="34">
+        <button class="b" id="saveLfmDiscover">Save key &amp; find new music</button>
         <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
       </div>
     </div>`}
@@ -3173,14 +3745,12 @@ function vDiscover() {
           ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
         </optgroup>
       </select>
-      <button class="b p" id="discRun" ${hasKey?'':'disabled'}>Find new music</button>
+      <button class="b p" id="discRun" >Find new music</button>
     </div>`;
 
   // WP-C3: "find tracks that sound like ___". '' without CLAP records.
   const sounds = typeof soundSearchHTML === 'function' ? soundSearchHTML() : '';
-  if (!d.length) return head + sounds + (hasKey
-    ? '<div class="empty"><b>Nothing found yet</b>Pick what to seed from above, then hit Find new music. A run takes a minute or two.</div>'
-    : '<div class="empty"><b>Add a key above to get started</b>It only takes a few seconds, and finding new music begins the moment you save it.</div>');
+  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'Pick what to seed from above, then hit Find new music. A run takes a minute or two.');
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
   const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
@@ -3188,7 +3758,7 @@ function vDiscover() {
                       `data-dplay="${esc(t.id)}" data-ddur="${t.dur ?? 0}"`);
 
   const best = (t.suggest ?? [])[0];
-  return head + sounds + `<div class="counter" style="margin:0 0 14px">
+  return head + sounds + discSoundLine() + `<div class="counter" style="margin:0 0 14px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
       <span>from ${esc(S.discoverFrom)}</span>
     </div>
@@ -3199,7 +3769,7 @@ function vDiscover() {
           <div class="artwrap">${art}</div>
           <div class="txt">
             <p class="t">${esc(t.track)}</p><p class="a">${esc(t.artist)}</p>
-            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}
+            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}${discFitHTML(t)}
           </div>
         </div>${trackStrip(t)}
 
@@ -3214,7 +3784,7 @@ function vDiscover() {
         ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
         ${best ? `<button class="fitcall" data-dfile="${esc(best.id)}">
             <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
-              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ranked by the same model the file queue uses</span>${pickEvidence(best)}</span>
+              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ${best.via === 'sound' ? 'by how it sounds next to what you filed there' : 'ranked by the same model the file queue uses'}</span>${pickEvidence(best)}</span>
             ${pickBand(best)}<span class="sc">${(best.score*100).toFixed(0)}% fit</span>
           </button>` : ''}
         ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
@@ -3222,7 +3792,7 @@ function vDiscover() {
            <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span>${pickEvidence(sg)}</span>
            <span class="rt">${pickBand(sg)}<span class="sc">${(sg.score*100).toFixed(0)}%</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
-        ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — Last.fm has no tags for this artist, or it fits nothing you have. Pick a playlist below.</p>`}
+        ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
 
         <div class="rowbtns" style="margin-top:20px">
           ${best ? `<button class="b big go grow" data-dfile="${esc(best.id)}">Add to ${esc(best.name)}</button>` : ''}
@@ -3254,15 +3824,44 @@ async function discAdd(playlistId) {
   } catch (e) { toast('Failed: ' + e.message); }
 }
 
+/**
+ * One History row per thing you did: the steps of a group (a move's add and
+ * remove) fold into one "Moved A → B" row with one Undo for both, and a row
+ * already undone says so instead of offering Undo again — a second tap used
+ * to re-add a duplicate.
+ */
 function vHistory() {
   const h = S.history ?? [];
-  return `<h1>History</h1>
-    <p class="lede">Every change Betterfy made to your Spotify library, newest first. Removals record their position, so undo puts a track back where it was rather than at the end.</p>
-    <div class="rows">${h.map(x => `<div class="row"><div class="main">
+  const byGroup = new Map();
+  for (const x of h) if (x.group && x.op !== 'undo') (byGroup.get(x.group) ?? byGroup.set(x.group, []).get(x.group)).push(x);
+  const seen = new Set(), rows = [];
+  for (const x of h) {
+    const g = x.group && x.op !== 'undo' ? byGroup.get(x.group) : null;
+    if (g && g.length > 1) { if (!seen.has(x.group)) { seen.add(x.group); rows.push({ group:g }); } }
+    else rows.push({ one:x });
+  }
+  const undone = `<span class="sub">Undone</span>`;
+  const one = x => `<div class="row"><div class="main">
       <div class="ttl">${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span></div>
       <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))} · ${(x.trackIds??[]).length} track(s)${x.reason?' · '+esc(x.reason):''}</div>
-    </div><div class="acts">${['remove','add','unlike'].includes(x.op) ? `<button class="b sm" data-undo="${esc(x.at)}">Undo</button>` : ''}</div></div>`).join('')
-      || '<div class="empty"><b>Nothing changed yet</b>Every edit Betterfy makes lands here, and can be undone from it.</div>'}</div>`;
+    </div><div class="acts">${['remove','add','unlike'].includes(x.op) ? (isUndone(x, h) ? undone : `<button class="b sm" data-undo="${esc(x.at)}">Undo</button>`) : ''}</div></div>`;
+  const grouped = g => {
+    const newest = g[0], oldest = g[g.length - 1];
+    const mv = g.find(x => x.move)?.move;
+    const add = g.find(x => x.op === 'add'), rem = g.find(x => x.op === 'remove');
+    const title = mv || (add && rem)
+      ? `Moved <span class="sub">${esc(mv?.fromName ?? rem?.playlistName ?? '')} → ${esc(mv?.toName ?? add?.playlistName ?? '')}</span>`
+      : `${esc(newest.op)} <span class="sub">${esc(g.map(x => x.playlistName).filter(Boolean).join(', '))}</span>`;
+    const n = new Set(g.flatMap(x => x.trackIds ?? [])).size;
+    return `<div class="row"><div class="main">
+      <div class="ttl">${title}</div>
+      <div class="sub mono">${esc(oldest.at.replace('T',' ').slice(0,19))} · ${n} track(s)</div>
+    </div><div class="acts">${g.every(x => isUndone(x, h)) ? undone : `<button class="b sm" data-undo="${esc(oldest.at)}">Undo</button>`}</div></div>`;
+  };
+  return `<h1>History</h1>
+    <p class="lede">Every change Betterfy made to your Spotify library, newest first. Removals record their position, so undo puts a track back where it was rather than at the end.</p>
+    <div class="rows">${rows.map(r => r.group ? grouped(r.group) : one(r.one)).join('')
+      || emptyState('Nothing changed yet', 'Every edit Betterfy makes lands here, and can be undone from it.')}</div>`;
 }
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
@@ -3307,11 +3906,114 @@ function mixLabel(mix) {
 const LISTS_SOUND = {
   profile: id => {
     if (!AUDIO.records || !globalThis.BetterfyAudio) return null;
-    const p = LIB.playlists.find(x => x.id === id), vm = BetterfyAudio.profileVM(p, AUDIO.records, AUDIO.labels);
+    const p = LIB.playlists.find(x => x.id === id);
+    let vm = BetterfyAudio.profileVM(p, AUDIO.records, AUDIO.labels);
+    // What its heard members are, by genre, and the tempo they settle on
+    // (core/audio/plprofile.mjs). Until that is worked out, the model's styles.
+    const pp = listsProfiles()?.get(id);
+    if (vm && pp) vm = { ...vm, ...(pp.mix.length ? { styles: pp.mix.slice(0, 3).map(m => [m.name, m.share]) } : {}),
+                         ...(pp.bpm ? { bpm: pp.bpm } : {}) };
     return BetterfyAudio.withProfileEnergy && typeof labelsShownNow === 'function'
       ? BetterfyAudio.withProfileEnergy(vm, p, AUDIO.records, labelsShownNow()) : vm;
   },
 };
+
+/* ---------- playlist sound profiles and "two genres?" ----------
+ * Each playlist's heard members, named by genre the way the File card names a
+ * track, but with the playlist's own tracks left out of their library votes,
+ * so a House playlist that is a third jungle can't vouch for itself. Worked
+ * out a few tracks at a time between frames, once per change in what has been
+ * heard; the screen redraws when it is done. Lookups on this account's own
+ * heard tracks only. No records, no engine: nothing here runs or shows. */
+const LPROF = { key: null, pr: null, out: null, busy: false, made: new Set(), loading: false };
+/** Milliseconds of work per slice, so the screen stays responsive. */
+const LPROF_SLICE_MS = 12;
+
+function listsProfiles() {
+  if (!AUDIO.records?.size || !LIB) return null;
+  if (!globalThis.BetterfyPlProfile) {
+    // The engine bundle is fetched on demand; fetch it and draw again.
+    if (!LPROF.loading && typeof engineLoad === 'function') {
+      LPROF.loading = true;
+      fire(Promise.resolve(engineLoad()).then(() => { if (view === 'lists') render(); }, () => {}));
+    }
+    return null;
+  }
+  const targets = typeof engineTargets === 'function' ? engineTargets() : null;
+  const key = `${AUDIO.records.size}|${LIB.captured_at}|${LIB.playlists.length}|${(targets ?? []).join()}`;
+  if (LPROF.key !== key) {
+    LPROF.key = key;
+    LPROF.out = null;
+    const genreOf = a => globalThis.BetterfyGaps?.artistGenre ? BetterfyGaps.artistGenre(TAGS?.[a?.id]?.tags) : null;
+    LPROF.pr = BetterfyPlProfile.createProfiler(LIB, AUDIO.records, {
+      targets, isMirror: isMirrorPlaylist,
+      tagsOf: t => (t?.artists ?? []).map(genreOf).filter(Boolean),
+      playlists: LIB.playlists.filter(p => !isMirrorPlaylist(p)).map(p => p.id),
+    });
+    listsProfileRun(key);
+  }
+  return LPROF.out;
+}
+
+function listsProfileRun(key) {
+  if (LPROF.busy) return;
+  LPROF.busy = true;
+  const slice = () => {
+    if (LPROF.key !== key) { LPROF.busy = false; if (LPROF.pr) listsProfileRun(LPROF.key); return; }
+    const t0 = Date.now();
+    let done = false;
+    try { while (!(done = LPROF.pr.step(4)) && Date.now() - t0 < LPROF_SLICE_MS); }
+    catch { done = true; }
+    if (!done) return void setTimeout(slice, 0);
+    LPROF.busy = false;
+    try { LPROF.out = LPROF.pr.result(); } catch { LPROF.out = null; }
+    if (view === 'lists') render();
+  };
+  setTimeout(slice, 0);
+}
+
+/** Genre playlists that sound like two genres, with the half that would move. */
+function listsSplits() {
+  const out = listsProfiles();
+  if (!out) return [];
+  return LIB.playlists.filter(p => CFG[p.id]?.axis === 'genre' && out.get(p.id)?.split)
+    .map(p => ({ p, split: out.get(p.id).split }));
+}
+
+function listsSplitHTML(splits) {
+  if (!splits.length) return '';
+  const byId = new Map(LIB.playlists.flatMap(p => p.tracks ?? []).map(t => [t.id, t]));
+  const card = ({ p, split }) => {
+    const { keep, move } = split, name = BetterfyPlProfile.splitName(p.name, split);
+    const made = LPROF.made.has(p.id);
+    const eg = move.ids.slice(0, 3).map(id => byId.get(id)).filter(Boolean)
+      .map(t => `<li>${esc(t.name ?? '')}<span class="sub"> · ${esc((t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '))}</span></li>`).join('');
+    return `<div class="row lsplit${made ? ' done' : ''}"><div class="main">
+      <div class="ttl">${esc(p.name)}</div>
+      <div class="lsplit-bar" aria-hidden="true"><i style="flex:${keep.n}"></i><i class="mv" style="flex:${move.n}"></i></div>
+      <div class="sub"><b>${keep.n}</b> sound like ${esc(keep.name)} · <b>${move.n}</b> sound like ${esc(move.name)}</div>
+      ${eg ? `<ul class="lsplit-eg">${eg}</ul>` : ''}
+    </div><div class="acts">${made ? '<span class="tag ok">Made</span>'
+      : `<button class="b sm" data-lsplit="${esc(p.id)}">Make “${esc(name)}”</button>`}</div></div>`;
+  };
+  return `<h2>Two genres by sound</h2>
+    <p class="lede">${splits.length === 1 ? 'This playlist’s' : 'These playlists’'} heard tracks fall into two groups that
+      sound apart and name different genres. Making the new playlist copies the second group into it; nothing is taken
+      out of the original until you do that yourself.</p>
+    <div class="rows">${splits.map(card).join('')}</div>`;
+}
+
+/** Make the playlist a split proposes, holding the half that sounds like the other genre. */
+async function listsSplitMake(id) {
+  const p = LIB.playlists.find(x => x.id === id), split = listsProfiles()?.get(id)?.split;
+  if (!p || !split || LPROF.made.has(id)) return;
+  const name = BetterfyPlProfile.splitName(p.name, split);
+  const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
+  await addTracks(pl.id, split.move.ids);
+  LPROF.made.add(id);
+  toast(`Created “${name}” with ${split.move.ids.length} tracks. Nothing was taken out of “${p.name}”.`);
+  render();
+}
 
 /** One row of the axes table, plus a hidden sound-profile row under it when
  *  there is a profile to show. No profile, no toggle and no hidden row. */
@@ -3350,6 +4052,7 @@ function vLists() {
   // playlists — the silent "treat it as genre" default used to be exactly what
   // turned "Sunday" or "Favourites" into a wrong suggestion.
   const undecided = rows.filter(p => p.why === NO_SIGNAL);
+  const splits = listsSplits();
   return `<h1>Playlists</h1>
     <p class="lede">How each playlist is treated, and which ones Betterfy files tracks into.</p>
     <details class="how"><summary>How this works</summary>
@@ -3379,7 +4082,7 @@ function vLists() {
           &nbsp;·&nbsp; the other ${d.olderCount}: <b>${d.olderTags.map(esc).join(', ') || '—'}</b>
           &nbsp;·&nbsp; ${Math.round(d.similarity*100)}% alike</div></div>
     </div>`).join('')}</div>` : ''}
-
+${listsSplitHTML(splits)}
     <h2>Axes</h2>
     ${axisTableHTML(rows, mixes)}`;
 }
@@ -3701,10 +4404,14 @@ function mergeFeedback(local, remote) {
   const merged = { ...local };
   for (const [id, r] of Object.entries(remote ?? {})) {
     const l = merged[id];
+    // Accepts and keeps union the same way; each only appears once either side has one.
+    const union = k => [...new Set([...(l[k] ?? []), ...(r[k] ?? [])])];
     merged[id] = !l ? r : {
       skips: Math.max(l.skips ?? 0, r.skips ?? 0),
       lastSkip: [l.lastSkip, r.lastSkip].filter(Boolean).sort().at(-1) ?? null,
-      rejected: [...new Set([...(l.rejected ?? []), ...(r.rejected ?? [])])],
+      rejected: union('rejected'),
+      ...(l.accepted || r.accepted ? { accepted: union('accepted') } : {}),
+      ...(l.kept || r.kept ? { kept: union('kept') } : {}),
     };
   }
   return merged;
@@ -4573,6 +5280,7 @@ const engineAnalyse = guard(async () => {
     await engineLoad();
     const { space, from, ms, pairs } = await engineSpace();
     Object.assign(ENG, { space, from, ms });
+    soundAdopt(space);
     ENG.rung = BetterfyColdStart.rungOf(LIB, space);
 
     const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
@@ -4747,12 +5455,20 @@ function deepAllowed(ear) {
     deviceMemory: navigator.deviceMemory, confirmed: AUDIO.wifiOk });
 }
 
-/** The audio Worker and its proxy, made once, whichever ear asks first. */
-function audioWorkerEar(A) {
-  if (AUDIO.wear) return AUDIO.wear;
-  AUDIO.worker = new Worker('audio-worker.js?v=__BUILD__', { type: 'module' });
-  return AUDIO.wear = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
-    headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
+/** The models, loaded once into one Worker and shared by everything that
+ *  listens (the library queue, and Discover's picks). Null again on failure,
+ *  so a retry actually retries. */
+let AUDIO_EARS = null;
+function audioEars() {
+  return AUDIO_EARS ??= (async () => {
+    const A = BetterfyAudio;
+    AUDIO.worker = new Worker('audio-worker.js?v=__BUILD__', { type: 'module' });
+    const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
+      headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
+    AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
+    const r = await w.ready;
+    return { ear: w.ear, heads: r?.heads?.length ? w.heads : undefined, summariseHeads: A.summariseHeads };
+  })().catch(e => { AUDIO_EARS = null; throw e; });
 }
 
 /** Load the bundle, open the store, build the controller. Once. */
@@ -4766,25 +5482,41 @@ async function audioInit() {
     lookup: (isrc, o) => A.lookup(isrc, { jsonp: deezerJsonp, ...o }),
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
-    loadEar: async () => {
-      const w = audioWorkerEar(A);
-      const r = await w.ready;
-      return { ear: w.ear, heads: r?.heads?.length ? w.heads : undefined, summariseHeads: A.summariseHeads };
-    },
+    loadEar: audioEars,
     // CLAP (WP-C2): only while "Search by description" is ticked and Wi-Fi allows it.
     // Its encoder (~77 MB) loads in the same Worker on the first such run.
     clapOn: () => deepAllowed('clap') === 'ok',
     loadClap: async () => {
-      const c = await audioWorkerEar(A).loadClap(audioModelUrl(A.CLAP_MODEL_FILE));
+      await audioEars();
+      const c = await AUDIO.wear.loadClap(audioModelUrl(A.CLAP_MODEL_FILE));
       return { decode: buf => A.decodeTo48k(buf), embed: c.embed };
     },
-    onChange: vm => { AUDIO.vm = vm; audioRedraw(); },
+    onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); },
   });
   await audioRefresh();
   // The style names, for ProfileVM. Optional: a playlist row without them still says how much was heard.
   fetch(audioModelUrl('discogs-effnet-bsdynamic-1.json')).then(r => r.ok ? r.json() : null)
     .then(j => { AUDIO.labels = j?.classes ?? null; }).catch(() => {});
   return AUDIO.ctrl;
+}
+
+/* While listening runs, re-read the heard records every so often (not only at
+ * the start and end of a run), so the File card can name and file newly heard
+ * tracks, and Tidy can judge them, without waiting for the run to finish.
+ * refresh() itself emits a change, hence the flag. */
+const AUDIO_MIDRUN = { every: 25, minMs: 30000 };
+let AUDIO_MIDRUN_AT = { heard: 0, t: 0, busy: false };
+function audioMidRun(vm) {
+  if (vm?.state !== 'running' || AUDIO_MIDRUN_AT.busy) return;
+  const now = Date.now();
+  if ((vm.heard ?? 0) - AUDIO_MIDRUN_AT.heard < AUDIO_MIDRUN.every || now - AUDIO_MIDRUN_AT.t < AUDIO_MIDRUN.minMs) return;
+  AUDIO_MIDRUN_AT = { heard: vm.heard ?? 0, t: now, busy: true };
+  fire((async () => {
+    try { await audioRefresh(); } finally { AUDIO_MIDRUN_AT.busy = false; }
+    // The File card picks new tracks up through soundHear; a rebuild is due only once enough more was heard.
+    if (view === 'inbox' || view === 'home') { soundWarm(); render(); }
+    else if (view === 'tidy') render();
+  })());
 }
 
 async function audioRefresh() {
@@ -4832,9 +5564,13 @@ async function engineAudio() {
 }
 /** The records as the engine takes them, plus what you told it (WP-L2): a
  *  rejection teaches the sound learner "not there", and the Score run drops the
- *  verdicts on whichever tracks it is holding out. No feedback, the records
- *  alone, exactly as before. */
-const engineAudioIn = audio => (audio && Object.keys(FB).length ? { records: audio, feedback: FB } : audio);
+ *  verdicts on whichever tracks it is holding out. The learner is always the
+ *  prototype one (BUILD-5-PLAN §2.3, option b): each playlist's sound is the
+ *  average of your own heard tracks in it, and nothing is fitted to playlist
+ *  membership — the logistic model stays for offline measurement only. The
+ *  worker holds itself to the same (build-web.mjs). */
+const ENGINE_LEARN_MODEL = 'prototype';
+const engineAudioIn = audio => (audio ? { records: audio, model: ENGINE_LEARN_MODEL, ...(Object.keys(FB).length ? { feedback: FB } : {}) } : audio);
 /** Audio changes a suggestion only once WP-E2's gate has passed on this library. */
 const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?.gate ?? null);
 
@@ -4843,8 +5579,8 @@ const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?
  *
  * What a track sounds like decides where the File screen suggests it goes.
  * For a track listening has heard, the picks come from the engine with sound
- * leading (placements' `soundFirst`): a learner trained on each genre
- * playlist's own heard tracks, the nearest playlist by sound, and an artist
+ * leading (placements' `soundFirst`): each genre playlist's sound prototype
+ * (the average of its own heard tracks), the nearest playlist by sound, and an artist
  * graph built from genre playlists only, so a mood or event playlist ("Sunday",
  * "Fabric 14 Sept") cannot vote on genre. An unheard track keeps the tag
  * engine's picks, unchanged.
@@ -4884,13 +5620,32 @@ async function soundBuild(targets) {
   try {
     await engineLoad();
     await yieldToPaint();
-    const { space } = await engineSpace();
+    // One space for both screens: the Engine screen's, when it was learned for
+    // these genre playlists and has heard nearly as much, else build (or revive) it.
+    const shared = soundShareable(typeof ENG !== 'undefined' ? ENG.space : null, targets);
+    const space = shared ?? (await engineSpace()).space;
     Object.assign(SOUND, { space: space?.audio ? space : null, n: soundHeard(), targets,
                            status: 'ready', err: null, memo: null, idMemo: null });
   } catch (e) {
     Object.assign(SOUND, { status: 'error', err: e?.message ?? String(e), n: soundHeard(), targets, memo: null });
   }
   if (view === 'inbox' || view === 'home') render();
+}
+
+/** A space learned elsewhere that the File screen can use as it is: built for
+ *  these genre playlists, with a sound layer, and short of fewer heard tracks
+ *  than would trigger a rebuild. Tracks heard since are added by `soundHear`. */
+function soundShareable(space, targets) {
+  // The same test engineSpace() puts a cached space to.
+  if (!space?.audio || targets !== engineTargets().join() || JSON.stringify(space.targets ?? null) !== JSON.stringify(engineTargets())) return null;
+  const n = soundHeard();
+  return n - space.audio.index.size < SOUND_REBUILD(space.audio.index.size) ? space : null;
+}
+/** The Engine screen learned a space: let the File screen use it rather than build its own. */
+function soundAdopt(space) {
+  const targets = engineTargets().join();
+  if (SOUND.status === 'working' || !soundShareable(space, targets)) return;
+  Object.assign(SOUND, { space, n: soundHeard(), targets, status: 'ready', err: null, memo: null, idMemo: null });
 }
 
 /** Heard since the space was built: let it be scored and matched now. */
@@ -5847,24 +6602,27 @@ document.addEventListener('click', guard(async e => {
     const order = S.shufOrder ?? [];
     if (!order.length) return;
     btn.disabled = true; btn.textContent = 'Working…';
+    const dj = S.shufOrderMode ? MIX_MODES[S.shufOrderMode] : null;
     try {
-      const name = `🔀 ${src.name}`;
+      const name = dj ? `🎧 ${src.name}` : `🔀 ${src.name}`;
       // Remembered by id, like the All Songs mirror and for the same reason:
       // found by name alone, renaming the shuffled playlist (or its source)
       // made the next shuffle build a second one beside it instead of
       // replacing what was already there.
-      const key = 'bf_shuf_' + src.id;
+      const key = (dj ? 'bf_mix_' : 'bf_shuf_') + src.id;
       const pinned = LS.getItem(key);
       const mine = await paged('/me/playlists?limit=50');
       const ours = p => p?.owner?.id === LIB.user.id;
       let pl = mine.find(p => p.id === pinned && ours(p)) ?? mine.find(p => p.name === name && ours(p));
       if (!pl) pl = await sp('/me/playlists', { method:'POST',
-        body:JSON.stringify({ name, public:false, description:`Spaced shuffle of "${src.name}". Play with Spotify shuffle OFF.` }) });
+        body:JSON.stringify({ name, public:false, description: dj
+          ? `${dj} of "${src.name}": each next track beatmatches the last. Play with Spotify shuffle OFF.`
+          : `Spaced shuffle of "${src.name}". Play with Spotify shuffle OFF.` }) });
       LS.setItem(key, pl.id);
       // PUT replaces wholesale, so re-shuffling the same playlist doesn't pile up
       await plCall(pl.id, 'PUT', { uris: order.slice(0,100).map(t => 'spotify:track:'+t.id) });
       for (const part of chunk(order.slice(100), 100)) await plCall(pl.id, 'POST', { uris: part.map(t => 'spotify:track:'+t.id) });
-      await logAction({ op:'shuffle', playlistId:pl.id, playlistName:pl.name ?? name, trackIds:order.map(t=>t.id), reason:`from ${src.name}` });
+      await logAction({ op:'shuffle', playlistId:pl.id, playlistName:pl.name ?? name, trackIds:order.map(t=>t.id), reason:`${dj ? dj.toLowerCase() + ' ' : ''}from ${src.name}` });
       if (playIt) {
         const d = await sp('/me/player/devices');
         const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
@@ -5926,6 +6684,19 @@ document.addEventListener('click', guard(async e => {
   if (more) { S.shown[more.dataset.more] = shownOf(more.dataset.more) + TIDY_PAGE; return render(); }
   const cmin = e.target.closest('[data-cmin]');
   if (cmin) { S.crossMin = +cmin.dataset.cmin; if (T.rememberFilters) { T.crossMin = S.crossMin; saveTheme(); } return render(); }
+  const tsb = e.target.closest('[data-tsb]');
+  if (tsb) { S.tsBand = tsb.dataset.tsb; return render(); }
+  const tsk = e.target.closest('[data-tskeep]');
+  if (tsk) { await recordKeep(tsk.dataset.tskeep, tsk.dataset.tsfrom, [tsk.dataset.tsto]); toast('Kept where it is. It won’t be offered there again.'); return render(); }
+  // Wrong place's Keep here: the same record as By sound's, and the row leaves both tiers.
+  const mfk = e.target.closest('[data-mfkeep]');
+  if (mfk) {
+    const id = mfk.dataset.mfkeep, from = mfk.dataset.mffrom;
+    await recordKeep(id, from, mfk.dataset.mfaway.split(',').filter(Boolean));
+    R.misfiled = R.misfiled.filter(m => !(m.id === id && m.currentPlaylistId === from));
+    toast('Kept where it is. It won’t be offered as wrong there again.');
+    return render();
+  }
   const mfb = e.target.closest('[data-mfb]');
   if (mfb) { S.mfBand = mfb.dataset.mfb; if (T.rememberFilters) { T.mfBand = S.mfBand; saveTheme(); } return render(); }
 
@@ -5939,12 +6710,10 @@ document.addEventListener('click', guard(async e => {
     await recordReject(t.id, pid);
     S.fileSel.delete(pid);
     // Re-rank this one track now, so the slot fills with the next real
-    // candidate instead of leaving a gap.
+    // candidate instead of leaving a gap — through the same backlogSuggest()
+    // that made the card, so the filing-history fallback and `via` survive.
     const raw = LIB.liked.find(x => x.id === t.id);
-    t.suggest = (raw ? rank(raw, TAGS, R.profiles, R.idf, { top: 8 }) : [])
-      .filter(b => !FB[t.id]?.rejected?.includes(b.id))
-      .slice(0, 3)
-      .map(b => ({ ...b, axis: CFG[b.id]?.axis ?? null }));
+    t.suggest = raw ? backlogSuggest(raw, LIB, CFG, gateTags(TAGS, tagGate(TAGS)), R.profiles, R.idf) : [];
     toast(`Won't suggest ${pname} for this track again.`, async () => {
       const f = FB[t.id]; if (f) f.rejected = f.rejected.filter(x => x !== pid);
       await saveFeedback(); R = buildReports(LIB, CFG, TAGS); render();
@@ -6003,15 +6772,20 @@ document.addEventListener('click', guard(async e => {
     const toName = CFG[to]?.name ?? to, fromName = CFG[from]?.name ?? from;
     try {
       // Add first: if the removal then fails the track is still filed somewhere
-      // rather than lost between playlists.
+      // rather than lost between playlists. Both steps share a group, so one
+      // Undo (toast or History) reverses the pair: back where it was, at its
+      // position, and out of the playlist it was moved to.
+      const group = newGroup();
       await addTracks(to, [tr]);
-      await logAction({ op:'add', playlistId:to, playlistName:toName, trackIds:[tr], reason:`moved from ${fromName}` });
+      const at = await logAction({ op:'add', playlistId:to, playlistName:toName, trackIds:[tr], reason:`moved from ${fromName}`, group });
       const before = await playlistIds(from);
       const positions = {}; before.forEach((id,i) => { if (id === tr) (positions[id] ??= []).push(i); });
       await delTracks(from, [tr]);
-      await logAction({ op:'remove', playlistId:from, playlistName:fromName, trackIds:[tr], positions, reason:`moved to ${toName}` });
-      const at = (await getLog())[0]?.at;
+      await logAction({ op:'remove', playlistId:from, playlistName:fromName, trackIds:[tr], positions, reason:`moved to ${toName}`, group,
+                        move:{ trackId:tr, from, to, fromName, toName } });
       toast(`Moved to ${toName}.`, () => undoAction(at));
+      // What the sound learner reads as a move: yes to `to`, no to `from`.
+      await recordMove(tr, from, to).catch(() => {});
       S.moved.add(tr);
       const row = mv.closest('.row');
       row.classList.add('done');
@@ -6172,6 +6946,7 @@ document.addEventListener('click', guard(async e => {
 document.addEventListener('change', guard(async e => {
   if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
   if (e.target.id === 'shufPl') { S.shufPl = e.target.value; S.shufCache = null; return render(); }
+  if (e.target.id === 'shufMode') { S.shufMode = e.target.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} return render(); }
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
   if (e.target.id === 'bridgeToggle') {
     if (e.target.checked) LS.removeItem('bf_bridge_off'); else LS.setItem('bf_bridge_off', '1');
@@ -6209,6 +6984,14 @@ document.addEventListener('change', guard(async e => {
     axexp.setAttribute('aria-expanded', String(open));
     const pr = document.getElementById(axexp.getAttribute('aria-controls'));
     if (pr) pr.hidden = !open;
+    return;
+  }
+
+  // "Two genres by sound": make the playlist for the half that sounds apart.
+  const lsp = e.target.closest('[data-lsplit]');
+  if (lsp) {
+    lsp.disabled = true;
+    try { await listsSplitMake(lsp.dataset.lsplit); } catch (err) { lsp.disabled = false; toast('Failed: ' + err.message); }
     return;
   }
 
@@ -6277,7 +7060,11 @@ async function fileCurrent(playlistIds) {
       await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox' });
       ats.push((await getLog())[0]?.at);
     }
-    const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
+    // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so
+    // the sound learner hears "yes, there" before the next sync shows it.
+    await recordAccept(t.id, ids);
+    const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
+                                  await forgetAccept(t.id, ids); };
     toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
     S.fileSel = new Set();
     R.backlog.splice(at, 1); S.inboxAt = inboxIndex();

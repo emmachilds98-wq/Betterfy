@@ -88,7 +88,7 @@
   /* ---- the "More" sheet: the screens that don't fit the tab bar ---- */
   .sheet{position:fixed; left:0; right:0; bottom:0; z-index:30; background:var(--surface);
          border-top:1px solid var(--line); border-radius:20px 20px 0 0; box-shadow:0 -12px 34px rgba(0,0,0,.22);
-         transform:translateY(101%); visibility:hidden; transition:transform .24s cubic-bezier(.2,.7,.3,1);
+         transform:translateY(101%); visibility:hidden; transition:transform .24s var(--ease-out);
          padding-bottom:calc(var(--sab) + 12px); max-height:88dvh; display:flex; flex-direction:column}
   .sheet.open{transform:translateY(0); visibility:visible}
   /* On a wide screen a full-bleed drawer reads as a mistake. Same sheet,
@@ -112,5 +112,5 @@
   /* ---- swiping between screens ---- */
   @keyframes slideL{from{opacity:0; transform:translateX(22px)}}
   @keyframes slideR{from{opacity:0; transform:translateX(-22px)}}
-  main.in-l{animation:slideL .26s cubic-bezier(.2,.7,.3,1)}
-  main.in-r{animation:slideR .26s cubic-bezier(.2,.7,.3,1)}
+  main.in-l{animation:slideL .26s var(--ease-out)}
+  main.in-r{animation:slideR .26s var(--ease-out)}

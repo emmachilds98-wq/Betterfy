@@ -139,6 +139,15 @@ const ENGINE_ENTRIES = [
   // mixes with, from the account's own heard tracks.
   'core/audio/match.mjs',
   'core/audio/identify.mjs',
+  // Tidy by sound: filed tracks whose sound disagrees with their playlist.
+  'core/audio/misfit.mjs',
+  // Each playlist's genre mix, BPM range and "two genres?" from its heard members.
+  'core/audio/plprofile.mjs',
+  // Shuffle's DJ order: heard tracks sequenced so each next one beatmatches.
+  'core/audio/order.mjs',
+  // Discover by sound: re-rank picks by fit to the seed, and the keyless
+  // candidate path over the neighbour bridge's cached lookups.
+  'core/audio/discover.mjs',
 ];
 
 const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
@@ -159,6 +168,10 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyWikidata: 'core/sources/wikidata.mjs',
     BetterfyMatch: 'core/audio/match.mjs',
     BetterfyIdentify: 'core/audio/identify.mjs',
+    BetterfyMisfit: 'core/audio/misfit.mjs',
+    BetterfyPlProfile: 'core/audio/plprofile.mjs',
+    BetterfyOrder: 'core/audio/order.mjs',
+    BetterfyDiscover: 'core/audio/discover.mjs',
   },
 });
 
@@ -179,6 +192,13 @@ self.onmessage = function (e) {
   var m = e.data || {};
   var mirrors = new Set(m.mirrorIds || []);
   var isMirror = function (p) { return !!p && mirrors.has(p.id); };
+  // The hosted app fits nothing to playlist membership: its sound learner is
+  // prototypes only (docs/BUILD-5-PLAN.md §2.3, option b), whatever arrives.
+  var prototypesOnly = function (a) {
+    if (!a) return null;
+    var o = (typeof a === 'object' && !Array.isArray(a) && ('records' in a || 'index' in a)) ? a : { records: a };
+    return Object.assign({}, o, { model: 'prototype' });
+  };
   var t0 = performance.now();
   try {
     var result;
@@ -188,7 +208,7 @@ self.onmessage = function (e) {
       // genreGraph: the artist graph learns from genre playlists only, so
       // mood and event playlists stop teaching genre (sound-first filing).
       var space = BetterfyIntrinsic.buildSpace(m.lib, { isMirror: isMirror, targets: m.targets || null,
-                                                        audio: m.audio || null, genreGraph: m.genreGraph === true });
+                                                        audio: prototypesOnly(m.audio), genreGraph: m.genreGraph === true });
       result = BetterfyPersist.serialiseSpace(space, m.lib);
       // The "can't tell apart" report costs more than the build on a big
       // library (2.9s for 250 playlists) and needs nothing but the space, so it
@@ -198,7 +218,7 @@ self.onmessage = function (e) {
     } else if (m.op === 'validate') {
       var common = Object.assign({}, m.opts, { isMirror: isMirror,
                                                 targets: m.targets ? new Set(m.targets) : null,
-                                                bridge: m.bridge || null, audio: m.audio || null,
+                                                bridge: m.bridge || null, audio: prototypesOnly(m.audio),
                                                 // The sound variant is scored the way the File screen
                                                 // files a heard track: sound leading.
                                                 soundWeights: m.opts && m.opts.soundFirst
@@ -209,6 +229,11 @@ self.onmessage = function (e) {
       try { result.identify = m.audio ? BetterfyIdentify.identifyAccuracyFor(m.lib, m.audio,
               { targets: m.targets || null, isMirror: isMirror }) : null; }
       catch (e) { result.identify = null; }
+    } else if (m.op === 'misfits') {
+      // Tidy by sound: an all-pairs nearest-neighbour pass over the heard
+      // tracks, too long for the page's thread on a big library.
+      result = BetterfyMisfit.soundMisfitsFor(m.lib, m.audio || null,
+        { targets: m.targets || null, isMirror: isMirror, measure: m.measure !== false });
     } else {
       throw new Error('unknown engine op: ' + m.op);
     }
@@ -228,7 +253,7 @@ const listMjs = dir => { try { return readdirSync(dir).filter(f => /\.(mjs|js)$/
 const AUDIO_INTRINSIC = readdirSync('core/intrinsic').filter(f => /^audio.*\.mjs$/.test(f)).sort().map(f => `core/intrinsic/${f}`);
 // Engine-side lookups over the sound space (sound ID, sound-alikes, mixes):
 // they ship in engine.js, and would only add the genre ontology (~100 KB) here.
-const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs']);
+const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs', 'core/audio/misfit.mjs', 'core/audio/plprofile.mjs', 'core/audio/order.mjs', 'core/audio/discover.mjs']);
 const AUDIO_ENTRIES = ['web/audio/index.mjs', ...listMjs('core/audio').filter(f => !ENGINE_SIDE.has(f)),
                        ...listMjs('core/audio/dsp'), ...AUDIO_INTRINSIC];
 const camel = f => f.replace(/^.*\//, '').replace(/\.m?js$/, '').split(/[-_]/).map(w => w[0].toUpperCase() + w.slice(1)).join('');

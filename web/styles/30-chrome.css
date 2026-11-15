@@ -63,11 +63,12 @@
   .tabmore .ic{display:none}
   .tabmore:hover{background:var(--surface-2); color:var(--ink); border-color:var(--line-2)}
   .tabmore[aria-expanded="true"],.tabmore[aria-current="true"]{background:var(--surface-2); color:var(--ink)}
-  /* The listening indicator: the end of the top bar on a desktop (the
-     phone rule in 80-responsive floats it above the tab bar). It holds
+  /* The listening indicator: on a desktop it sits just before More, so the
+     nav row (flex:1) gives up the room and More stays where it was (B8); the
+     phone rule in 80-responsive moves it into the header. It holds
      listenPill()'s markup and nothing else, so with no ListenVM it is empty
      and takes no room at all. */
-  .listenslot{flex:none; display:flex; align-items:center; min-width:0; margin-left:4px;
+  .listenslot{flex:none; display:flex; align-items:center; min-width:0; margin:0 4px;
         border-radius:999px; cursor:pointer}
   .listenslot:empty{display:none}
   .listenslot:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
@@ -84,7 +85,7 @@
         padding:calc(var(--sat) + 11px) calc(var(--sar) + 150px) 11px calc(var(--sal) + 14px);
         background:color-mix(in srgb, var(--ground) 82%, transparent);
         -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
-        border-bottom:1px solid transparent; transition:border-color .2s ease}
+        border-bottom:1px solid transparent; transition:border-color var(--dur-2) ease}
   .mtop.stuck{border-bottom-color:var(--line)}
   .mtop .mark{width:26px; height:26px; flex:none}
   .mtop .title{font-family:var(--display); font-weight:800; font-size:19px; letter-spacing:-.03em;
