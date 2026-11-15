@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { soundLibrary } from './fixtures/sound-library.mjs';
 import { table, clapField, resetSeed } from './fixtures/clap-fixture.mjs';
 import { DISCOVER, renderDiscover, GOLDEN } from './ui4-cards.mjs';
+import { assertSameHTML } from './golden.mjs';
 
 /*
  * WP-C3 in the real built page: suggested names on New playlists' "new
@@ -89,7 +90,7 @@ test('no CLAP records: the Discover card matches its pre-slot golden with the se
   for (const [name, t] of Object.entries(DISCOVER)) {
     const golden = readFileSync(new URL(`discover-${name}.html`, GOLDEN), 'utf8');
     const html = renderDiscover(t, { renderers: { soundSearchHTML: () => '' } });
-    assert.equal(html, golden);
+    assertSameHTML(html, golden);
   }
 });
 

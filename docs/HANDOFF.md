@@ -115,7 +115,7 @@ Other `claude/*` branches whose PRs are merged are history only.
   sound is the average of the account's own heard tracks in it, moved by accepts and rejects. No
   regression is fitted to playlist membership in the hosted app. Logistic regression stays in
   `audio-learn.mjs` (default `model: 'auto'`) for offline scripts and tests only.
-- **Byte-identical when absent.** A card with no sound data must render exactly as before; the UI-4 goldens in `test/webinbox-sound.test.mjs` check this. Put any new slot on the same line as the existing one; a newline breaks the goldens.
+- **Byte-identical when absent.** A card with no sound data must render exactly as before; the UI-4 goldens in `test/webinbox-sound.test.mjs` check this. The goldens compare through `test/golden.mjs` (`assertSameHTML`), which ignores line-broken formatting whitespace next to tags (BUILD-5-PLAN A8), so a new slot no longer has to sit on the same line as the existing one. Words, tags, attributes and single spaces between inline tags still have to match.
 - **Frozen contracts.** `core/audio/mel.mjs` and `record.mjs` are frozen. A change goes in its own PR, with a line in `docs/AUDIO-BUILD-PLAN.md` §7.
 - **Generated files.** `docs/index.html`, `docs/engine.js`, `docs/engine-worker.js` and `docs/audio.js` come from `node build-web.mjs`. On a merge conflict, rebuild them; never hand-merge.
 - **Gate overridden.** Sound now leads filing ahead of the WP-E2 gate, by the owner's decision (AUDIO-BUILD-PLAN §5, 2026-11-14). The gate is still measured and shown.

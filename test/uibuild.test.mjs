@@ -2,13 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import * as sound from '../web/ui/sound.mjs';
+import { assembledTemplate } from '../web/manifest.mjs';
 
 // UI-0 of docs/UI-BUILD-PLAN.md: the stylesheet lives in web/styles/ partials so
 // packages restyling different screens own different files, and the sound
 // layer's renderers exist under fixed names before anything calls them.
 
 const read = p => readFileSync(new URL('../' + p, import.meta.url), 'utf8');
-const TEMPLATE = read('docs/app.template.html');
+// The template with its script put back (web/manifest.mjs): the page's script
+// lives in web/app/ and web/screens/ since A1.
+const TEMPLATE = assembledTemplate();
 const BUNDLE = read('docs/index.html');
 const PARTIALS = readdirSync(new URL('../web/styles/', import.meta.url))
   .filter(f => f.endsWith('.css')).sort();
