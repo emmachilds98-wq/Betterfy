@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { facetMix } from './profile.mjs';
 const lib = JSON.parse(readFileSync('library.json', 'utf8'));
 
-/* The name rules, kept in step with classify() in docs/app.template.html —
+/* The name rules, kept in step with classify() in web/app/classify.js —
  * the browser build is the one most people actually use, so treat that copy as
  * the reference and mirror changes here. */
 const INBOX = /\bshazam\b|^discover weekly|^release radar|^on repeat$|^repeat rewind$|^daily mix|^your top songs|^liked (songs )?from radio|^new music friday|^you may have missed|^time capsule|^inbox$|^to (sort|file|listen)\b/i;

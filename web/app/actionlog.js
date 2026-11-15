@@ -1,0 +1,144 @@
+/* ---------- action log: every library change, reversible ---------- */
+// Entries are found again by `at`, so two written in the same millisecond (a
+// move's two steps on a fast connection) must not share one: a clash is
+// nudged a millisecond past the newest entry. Returns the entry's `at`.
+//
+// `group` ties entries that are one action to the user — a move is an add
+// and a remove — so undoAction() reverses them together and History shows
+// them as one row.
+async function logAction(entry) {
+  const log = (await idb.get('actions')) ?? [];
+  let at = new Date().toISOString();
+  const last = log.at(-1)?.at;
+  if (last && at <= last) at = new Date(Date.parse(last) + 1).toISOString();
+  log.push({ at, ...entry });
+  await idb.set('actions', log.slice(-500));
+  return at;
+}
+const getLog = async () => ((await idb.get('actions')) ?? []).slice().reverse();
+const newGroup = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+/** True once an entry has been undone: `undoneAt` on the entry, or (for a log
+ *  written before that existed) an `undo` entry pointing at it. */
+const isUndone = (x, log) => !!x.undoneAt || log.some(u => u.op === 'undo' && u.of === x.at);
+
+/**
+ * Undo the entry logged at `at` — and, when it belongs to a group, every step
+ * of that group, newest first, so a move comes back out whole: the remove is
+ * reversed (the track goes back where it was, at its position), then the add
+ * (it leaves the playlist it was moved to). Each step is marked `undoneAt` as
+ * it succeeds, so a half-finished undo can be finished later and a finished
+ * one is never offered or run again.
+ */
+async function undoAction(at) {
+  const log = (await idb.get('actions')) ?? [];
+  const e = log.find(x => x.at === at);
+  if (!e) throw new Error('Not in the log any more');
+  const steps = e.group ? log.filter(x => x.group === e.group && x.op !== 'undo') : [e];
+  const todo = steps.filter(x => !isUndone(x, log));
+  if (!todo.length) throw new Error('Already undone');
+  for (const s of [...todo].reverse()) {
+    await undoStep(s);
+    const now = (await idb.get('actions')) ?? [];
+    const hit = now.find(x => x.at === s.at);
+    if (hit) { hit.undoneAt = new Date().toISOString(); await idb.set('actions', now); }
+  }
+  // A move also told the sound learner "here, not there"; undoing it takes that back.
+  const mv = steps.find(x => x.move)?.move;
+  if (mv && typeof unrecordMove === 'function') await unrecordMove(mv.trackId, mv.from, mv.to).catch(() => {});
+  await logAction({ op:'undo', of:at, ...(e.group ? { ofGroup:e.group } : {}), playlistId:e.playlistId,
+                    ...(mv ? { playlistName:`${mv.fromName ?? mv.from} → ${mv.toName ?? mv.to}` } : {}),
+                    trackIds:e.trackIds });
+}
+
+/** Reverse one logged step against Spotify. */
+async function undoStep(e) {
+  if (e.op === 'remove') {
+    await addTracks(e.playlistId, e.trackIds);
+    // put each track back at the index it came from, rather than at the end
+    for (const [id, idxs] of Object.entries(e.positions ?? {})) {
+      for (const target of idxs) {
+        const now = await playlistIds(e.playlistId);
+        const from = now.indexOf(id);
+        if (from >= 0 && from !== target)
+          await plCall(e.playlistId, 'PUT', { range_start:from, insert_before:target, range_length:1 });
+      }
+    }
+  } else if (e.op === 'add') {
+    await delTracks(e.playlistId, e.trackIds);
+  } else if (e.op === 'unlike') {
+    await libraryCall('PUT', e.trackIds);
+  } else throw new Error(`Cannot undo "${e.op}"`);
+}
+
+/**
+ * Every slot in a playlist, in order: `{ id, isrc, pos }`.
+ *
+ * Both extras matter and neither is cosmetic. **Relinking**: Spotify swaps a
+ * track for whichever pressing is playable in your market, so the id you POST
+ * is often not the id you read back. The original used to come home under
+ * `linked_from`, which Spotify removed from track objects in February 2026, so
+ * a relinked track is now recognised by its ISRC — the recording's own id,
+ * the same under either pressing (`external_ids`, restored in March 2026).
+ * Matching on the visible id alone meant a relinked track looked missing on
+ * every single refresh and was added again each time, which is exactly the
+ * "it keeps re-adding what I already have" complaint.
+ * **Positions**: a local file or a track pulled from Spotify entirely has no
+ * id at all, and it still occupies a slot — so unusable items are kept as
+ * blanks rather than skipped, otherwise every position after one of them is
+ * off by one and a delete-by-position removes the wrong track.
+ */
+async function playlistEntries(id) {
+  const out = [];
+  let page = await sp(`/playlists/${id}/items?limit=100&fields=next,items(item(id,external_ids(isrc)))`);
+  while (page) {
+    for (const i of page.items ?? []) {
+      const it = i.item ?? i.track;
+      out.push({ id: it?.id ?? null, isrc: it?.external_ids?.isrc ?? null, pos: out.length });
+    }
+    if (!page.next) break;
+    page = await sp(page.next);
+  }
+  return out;
+}
+
+async function playlistIds(id) {
+  return (await playlistEntries(id)).map(e => e.id).filter(Boolean);
+}
+
+const chunk = (a,n) => Array.from({length:Math.ceil(a.length/n)},(_,i)=>a.slice(i*n,i*n+n));
+async function plCall(id, method, body) {
+  for (const seg of ['items','tracks']) {
+    try { return await sp(`/playlists/${id}/${seg}`, { method, body:JSON.stringify(body) }); }
+    catch (e) { if (!/^40[34]/.test(e.message) || seg === 'tracks') throw e; }
+  }
+}
+const addTracks = (id, ids) => Promise.all(chunk(ids,100).map(c => plCall(id,'POST',{ uris:c.map(x=>'spotify:track:'+x) })));
+/**
+ * DELETE /playlists/{id}/items, for up to 100 `{ uri }` objects at a time.
+ * Spotify's reference now documents the body as `{ items: [{ uri }] }`, max
+ * 100; the old `{ tracks: [...] }` body is sent only if that one is refused
+ * with a 400, for an endpoint that still wants the legacy form. Sent one
+ * chunk after another, never in parallel, so no request races another's
+ * snapshot.
+ */
+async function plDelete(id, objs) {
+  let out = null;
+  for (const part of chunk(objs, 100)) {
+    try { out = await plCall(id, 'DELETE', { items: part }); }
+    catch (e) { if (e.status !== 400 && !/^400/.test(e.message)) throw e; out = await plCall(id, 'DELETE', { tracks: part }); }
+  }
+  return out;
+}
+const delTracks = (id, ids) => plDelete(id, ids.map(x => ({ uri:'spotify:track:'+x })));
+
+/** Spotify replaced PUT/DELETE /me/tracks?ids= with /me/library?uris= for a
+ *  client ID created after Feb 2026; this page's own grandfathered id still
+ *  serves the old form, so try the new path first and fall back like plCall
+ *  does above for playlists. */
+async function libraryCall(method, ids) {
+  const uris = ids.map(x => 'spotify:track:' + x).join(',');
+  try { return await sp('/me/library?uris=' + uris, { method }); }
+  catch (e) { if (!/^40[34]/.test(e.message)) throw e; return await sp('/me/tracks?ids=' + ids.join(','), { method }); }
+}
+

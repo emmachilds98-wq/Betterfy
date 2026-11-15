@@ -7,6 +7,7 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { bundleModules } from './bundler.mjs';
 import { GENRES } from './core/ontology/genres.mjs';
 import { canonTag } from './profile.mjs';
+import { assembledTemplate } from './web/manifest.mjs';
 
 // argv, then .env, then whatever the last build baked into docs/index.html.
 // That last fallback is the important one: .env is gitignored, so a rebuild in
@@ -334,7 +335,10 @@ const GENRE_WORDS = [...new Set(Object.entries(GENRES)
   .map(canonTag)
   .filter(w => w && !NOT_ALONE.has(w)))].sort();
 
-const html = readFileSync('docs/app.template.html', 'utf8')
+/* The page's own script lives in web/app/ and web/screens/ (docs/BUILD-5-PLAN.md
+ * A1), listed in load order in web/manifest.mjs, and goes back in where the
+ * template says __APP__ before any other placeholder is filled. */
+const html = assembledTemplate()
   // A function, not a string: CSS is free to contain `$&` and friends.
   .replace('__STYLES__', () => STYLES)
   .replace("'__GENRE_WORDS__'", JSON.stringify(GENRE_WORDS))
