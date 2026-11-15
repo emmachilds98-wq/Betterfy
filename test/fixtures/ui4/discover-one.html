@@ -3,13 +3,13 @@
       <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
     
     <div class="rowbtns" style="margin-bottom:16px">
-      <select id="discPl">
+      <select data-act="discPl" id="discPl">
         <option value="">Everything I listen to</option>
         <optgroup label="Playlist radio">
           <option value="p1" >Jungle &amp; Breaks</option><option value="p2" >Late Night &lt;Deep&gt;</option>
         </optgroup>
       </select>
-      <button class="b p" id="discRun" >Find new music</button>
+      <button class="b p" data-act="discRun" id="discRun" >Find new music</button>
     </div><div class="counter" style="margin:0 0 14px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">via Tim Reaper · 1 of 2</span>
       <span>from Jungle &amp; Breaks</span>
@@ -34,7 +34,7 @@
         <p class="pdev" id="pDev"></p>
 
         
-        <button class="fitcall" data-dfile="p1">
+        <button class="fitcall" data-act="dfile" data-dfile="p1">
             <span class="mid"><span class="nm">Would sit well in Jungle &amp; Breaks</span>
               <span class="ax"><b>genre</b> playlist · ranked by the same model the file queue uses</span></span>
             <span class="sc">50% fit</span>
@@ -43,14 +43,14 @@
         
 
         <div class="rowbtns" style="margin-top:20px">
-          <button class="b big go grow" data-dfile="p1">Add to Jungle &amp; Breaks</button>
-          <button class="b big" data-dnav="1" >Next →</button>
+          <button class="b big go grow" data-act="dfile" data-dfile="p1">Add to Jungle &amp; Breaks</button>
+          <button class="b big" data-act="dnav" data-dnav="1" >Next →</button>
         </div>
         <div class="rowbtns" style="margin-top:10px">
-          <button class="b sm" data-dnav="-1" disabled>← Back</button>
-          <button class="b sm" data-like="d2">Like</button>
+          <button class="b sm" data-act="dnav" data-dnav="-1" disabled>← Back</button>
+          <button class="b sm" data-act="like" data-like="d2">Like</button>
           <a class="b sm" href="https://open.spotify.com/track/d2" target="_blank" rel="noopener">Open</a>
-          <select id="discAnyPl"><option value="">Add to another playlist…</option><option value="p1">Jungle &amp; Breaks</option><option value="p2">Late Night &lt;Deep&gt;</option><option value="p3">Rollers</option></select>
+          <select data-act="discAnyPl" id="discAnyPl"><option value="">Add to another playlist…</option><option value="p1">Jungle &amp; Breaks</option><option value="p2">Late Night &lt;Deep&gt;</option><option value="p3">Rollers</option></select>
         </div>
       </div>
     </div>

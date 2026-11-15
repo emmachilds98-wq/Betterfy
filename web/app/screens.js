@@ -44,3 +44,27 @@ async function dispatchAct(e) {
   await fn(screenCtx(view), el, e);
   return true;
 }
+
+// --- home/inbox ---
+Object.assign(SCREEN_CTX, {
+  home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenEverRan, listenHeard, listenTarget, tagCoverage,
+                 analyseHTML, analyseGo, VHUE, HEARD_HUE, hueOf, filePicks, go }),
+  inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
+                  tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
+                  addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, recordSkip, recordReject,
+                  libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
+                  saveFeedback, toast, render,
+                  rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
+                  matchMedia: q => globalThis.matchMedia(q) }),
+});
+// --- /home/inbox ---
+// --- shuffle/discover ---
+SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, dedupe, spacedShuffle, shuffleStats, rnd, artistOf,
+  mixHeardIn, shuffleMix, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
+  get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
+  labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
+SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
+  soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
+  artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
+  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall });
+// --- end shuffle/discover ---
