@@ -279,7 +279,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
         arms.forEach((a, i) => {
           const sp = armSpaces[i];
-          const res = sp.audio ? placements(track, sp, { limit: limit3, weights: base, useAudio: true }) : out;
+          const res = sp.audio ? placements(track, sp, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
           const ra = res.results ?? [];
           if (a.t.rows) a.t.rows.push({ id, scores: scoresOf(ra), truth: [...want].sort() });
           const a1 = ra[0] && want.has(ra[0].playlistId);

@@ -4481,94 +4481,6 @@ function confirmName(names, ids, name, { at = Date.now(), keepIds = CLAP_SEARCH.
 }
 return { CLAP_SEARCH_VERSION, CLAP_SEARCH, normPrompt, readTable, clapOf, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmedName, groupKey, confirmName };
 })();
-/* ---- web/audio/index.mjs ---- */
-__mod["web/audio/index.mjs"] = (function () {
-const { openAudioStore, AUDIO_DB, AUDIO_STORE } = __mod["web/audio/store.mjs"];
-const { readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY } = __mod["web/audio/settings.mjs"];
-const { createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN } = __mod["web/audio/controller.mjs"];
-const { audioQueue } = __mod["core/audio/queue.mjs"];
-const { lookup, fetchPreview } = __mod["core/audio/fetch.mjs"];
-const { decodeTo16k } = __mod["core/audio/decode.mjs"];
-const { analyseOne } = __mod["core/audio/worker.js"];
-const { MISS, validRecord, isCurrent, RECORD_VERSION, MODEL } = __mod["core/audio/record.mjs"];
-const { MEL_VERSION } = __mod["core/audio/mel.mjs"];
-const { HEADS, summariseHeads } = __mod["core/audio/heads.mjs"];
-const { dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, DSP_UI_KEY } = __mod["web/audio/dsp-view.mjs"];
-const { measureWindows, needsDsp, DSP_VERSION } = __mod["core/audio/dsp/combine.mjs"];
-const { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf } = __mod["web/audio/labels-view.mjs"];
-const { readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB } = __mod["web/audio/deep-settings.mjs"];
-const { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } = __mod["core/audio/clap-search.mjs"];
-// What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
-// One namespace so the template reaches core/audio through a single name.
-return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION };
-})();
-/* ---- core/audio/infer.mjs ---- */
-__mod["core/audio/infer.mjs"] = (function () {
-const { PATCH_FRAMES, N_BANDS } = __mod["core/audio/mel.mjs"];
-const { N_STYLES, EMB_DIM } = __mod["core/audio/record.mjs"];
-// The ear: Discogs-EffNet inference over mel patches (WP-A3).
-//
-// `ort` is injected — onnxruntime-web in the page, onnxruntime-node in
-// scripts — so this file has no runtime of its own and CI never needs the
-// model. Tests pass a fake session.
-//
-// Patches are run at most MAX_BATCH at a time. A patch is 128 frames (~2 s)
-// with a ~1 s hop, so a 30 s preview is ~29 patches and two 10 s windows are
-// 19 (measured in WP-B1); a single run usually splits into two batches; it is the cap that keeps a phone's
-// memory flat if a caller hands it something long.
-//
-// Outputs are told apart by width (400 styles, 1280 embedding), not by name:
-// phase 0 read them positionally (`SESS.run(None, …)`), and a re-export that
-// renames them should not silently swap the two.
-
-
-
-const INFER_VERSION = '1.0.0';
-const MAX_BATCH = 16;
-const INPUT_NAME = 'melspectrogram';
-
-/**
- * @param {{ ort: { InferenceSession: { create(url: string|Uint8Array, opts?: object): Promise<any> }, Tensor: any },
- *           modelUrl: string|Uint8Array, sessionOptions?: object }} deps
- * @returns {Promise<{ run(patchData: Float32Array, patches: number): Promise<{ activations: Float32Array, embeddings: Float32Array }>, release(): Promise<void> }>}
- */
-async function createEar({ ort, modelUrl, sessionOptions }) {
-  const session = await ort.InferenceSession.create(modelUrl, sessionOptions ?? { executionProviders: ['wasm'] });
-  const input = session.inputNames?.includes(INPUT_NAME) ? INPUT_NAME : (session.inputNames?.[0] ?? INPUT_NAME);
-  const size = PATCH_FRAMES * N_BANDS;
-
-  async function run(patchData, patches) {
-    if (!(patches > 0)) throw new Error('no patches to run');
-    if (patchData.length !== patches * size) throw new Error(`expected ${patches}×${PATCH_FRAMES}×${N_BANDS} floats, got ${patchData.length}`);
-    const activations = new Float32Array(patches * N_STYLES);
-    const embeddings = new Float32Array(patches * EMB_DIM);
-    for (let p0 = 0; p0 < patches; p0 += MAX_BATCH) {
-      const n = Math.min(MAX_BATCH, patches - p0);
-      const x = new ort.Tensor('float32', patchData.subarray(p0 * size, (p0 + n) * size), [n, PATCH_FRAMES, N_BANDS]);
-      const out = await session.run({ [input]: x });
-      const { act, emb } = pickOutputs(out, n);
-      activations.set(act, p0 * N_STYLES);
-      embeddings.set(emb, p0 * EMB_DIM);
-    }
-    return { activations, embeddings };
-  }
-  return { run, release: async () => { await session.release?.(); } };
-}
-
-/** Find the 400-wide and 1280-wide outputs among whatever the session returned. */
-function pickOutputs(out, n) {
-  let act = null, emb = null;
-  for (const t of Object.values(out)) {
-    const data = t?.data ?? t;
-    if (!data?.length) continue;
-    if (data.length === n * N_STYLES && !act) act = data;
-    else if (data.length === n * EMB_DIM && !emb) emb = data;
-  }
-  if (!act || !emb) throw new Error('model outputs are not [n×400] activations and [n×1280] embeddings');
-  return { act: Float32Array.from(act), emb: Float32Array.from(emb) };
-}
-return { INFER_VERSION, MAX_BATCH, INPUT_NAME, createEar, pickOutputs };
-})();
 /* ---- core/audio/maest.mjs ---- */
 __mod["core/audio/maest.mjs"] = (function () {
 const { melFrames, N_BANDS } = __mod["core/audio/mel.mjs"];
@@ -4761,6 +4673,279 @@ async function fillMaest(deps, record, track = {}) {
   return { record: withEar(record, 'maest', field) };
 }
 return { MAEST_VERSION, MAEST_FILE, MAEST_LABELS_FILE, MAEST_PATCH_FRAMES, MAEST_PATCH_HOP, MAEST_MIN_FRAMES, MAEST_MEAN, MAEST_STD, INPUT_NAME, ACT_OUTPUT, EMB_OUTPUT, maestPatches, createMaestEar, pickMaestOutputs, hearMaest, needsMaest, fillMaest };
+})();
+/* ---- web/audio/maest-run.mjs ---- */
+__mod["web/audio/maest-run.mjs"] = (function () {
+const { fillMaest, needsMaest } = __mod["core/audio/maest.mjs"];
+const { earCurrent } = __mod["core/audio/record.mjs"];
+// The laptop "second ear" run (WP-C1): give heard tracks a MAEST answer.
+//
+// It never hears a new track by itself. It walks the records "Listen to my
+// music" already stored, oldest first, and tops up those without a current
+// `maest` field, MAEST_PER_RUN per start(). Each one is looked up and
+// downloaded again (the preview URL is never kept, so there is nothing to
+// reuse), decoded, and run through MAEST; core/audio/maest.mjs fillMaest()
+// holds the rules. A track whose ISRC now finds another recording, or nothing,
+// is left alone for the session.
+//
+// The page decides *whether* it may run (web/audio/deep-settings.mjs:
+// switched on, Wi-Fi, deviceMemory >= 8 or the override). This only runs,
+// stops cooperatively after the track in flight, and reports progress.
+//
+// Inference sits in its own Worker (docs/maest-worker.js) so the ~90 MB model
+// can be dropped with `release()` when the run is done, without touching the
+// first ear's worker.
+
+
+
+const MAEST_PER_RUN = 50;
+
+/**
+ * Proxy MAEST to a Worker speaking { id, op, ... } → { id, ok, result|error }.
+ * @param {{ postMessage: Function, addEventListener: Function, terminate?: Function }} worker
+ * @param {{ modelUrl: string, ortBase?: string }} init
+ */
+function createWorkerMaest(worker, init) {
+  let seq = 0;
+  const wait = new Map();
+  worker.addEventListener('message', e => {
+    const m = e.data || {};
+    const w = wait.get(m.id);
+    if (!w) return;
+    wait.delete(m.id);
+    m.ok ? w.ok(m.result) : w.bad(new Error(m.error || 'MAEST worker failed'));
+  });
+  worker.addEventListener('error', e => {
+    const err = new Error(e?.message || 'MAEST worker crashed');
+    for (const w of wait.values()) w.bad(err);
+    wait.clear();
+  });
+  const call = (op, body = {}, transfer = []) => new Promise((ok, bad) => {
+    const id = ++seq;
+    wait.set(id, { ok, bad });
+    worker.postMessage({ id, op, ...body }, transfer);
+  });
+  const ready = call('init', init);
+  return {
+    ready,
+    run: async (data, patches) => { await ready; return call('maest', { data, patches }, [data.buffer]); },
+    release: () => { try { worker.terminate?.(); } catch { /* already gone */ } },
+  };
+}
+
+/**
+ * @param {object} deps
+ * @param {{ getAll(): Promise<Map>, put(rec): Promise<boolean> }} deps.store
+ * @param {Function} deps.lookup         fetch.mjs lookup with jsonp bound
+ * @param {Function} deps.fetchPreview   fetch.mjs fetchPreview with fetch bound
+ * @param {Function} deps.decode         decode.mjs decodeTo16k
+ * @param {() => Promise<{ run: Function, release?: Function }>} deps.loadMaest  loads the model, once per start
+ * @param {(vm: object) => void} [deps.onChange]
+ * @param {number} [deps.perRun]
+ */
+function createMaestRunner(deps) {
+  const perRun = deps.perRun ?? MAEST_PER_RUN;
+  const st = { state: 'off', done: 0, total: 0, heard: 0, waiting: 0, failed: 0, reason: null };
+  const skip = new Set();
+  let abort = null, running = null;
+  const vm = () => ({ ...st });
+  const emit = () => { try { deps.onChange?.(vm()); } catch { /* a render bug must not stop the run */ } };
+
+  /** How many stored records have, and still need, a second ear. */
+  async function refresh() {
+    const all = await deps.store.getAll();
+    let heard = 0, waiting = 0;
+    for (const r of all.values()) {
+      if (r.miss) continue;
+      if (needsMaest(r)) { if (!skip.has(r.id)) waiting++; } else heard++;
+    }
+    Object.assign(st, { heard, waiting });
+    emit();
+    return all;
+  }
+
+  async function start() {
+    if (running) return running;
+    abort = new AbortController();
+    const signal = abort.signal;
+    running = (async () => {
+      let ear = null;
+      try {
+        const all = await refresh();
+        const due = [...all.values()].filter(r => needsMaest(r) && !skip.has(r.id))
+          .sort((a, b) => (a.at ?? 0) - (b.at ?? 0) || (a.id < b.id ? -1 : 1)).slice(0, perRun);
+        Object.assign(st, { state: 'running', done: 0, total: due.length, reason: null });
+        emit();
+        if (!due.length) { st.state = 'done'; return { done: 0, stopped: false }; }
+        st.reason = 'loading the second ear'; emit();
+        try { ear = await deps.loadMaest(); }
+        catch (e) { st.state = 'paused'; st.reason = `couldn’t load the second ear: ${e?.message ?? e}`; return { done: 0, stopped: true }; }
+        st.reason = null; emit();
+        const fill = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, maest: ear };
+        for (const rec of due) {
+          if (signal.aborted) break;
+          let r;
+          try { r = await fillMaest(fill, rec); } catch (e) { r = { failed: { id: rec.id, stage: 'unknown', detail: String(e?.message ?? e) } }; }
+          if (r.record) { await deps.store.put(r.record); st.heard++; st.waiting = Math.max(0, st.waiting - 1); }
+          else if (r.skip) { skip.add(rec.id); st.waiting = Math.max(0, st.waiting - 1); }
+          else st.failed++; // tried again on a later run
+          st.done++;
+          emit();
+        }
+        st.state = signal.aborted ? 'paused' : 'done';
+        return { done: st.done, stopped: signal.aborted };
+      } finally {
+        try { await ear?.release?.(); } catch { /* nothing to free */ }
+        running = null; abort = null;
+        emit();
+      }
+    })();
+    return running;
+  }
+
+  function stop(reason = 'stopped') {
+    if (!abort) return Promise.resolve(null);
+    st.reason = reason;
+    abort.abort();
+    emit();
+    return running;
+  }
+
+  return { start, stop, refresh, vm, get running() { return !!running; } };
+}
+
+/** One line for the Deep listen block. */
+function maestStatusText(v) {
+  if (!v) return '';
+  const n = x => x.toLocaleString('en-GB');
+  if (v.state === 'running') return v.reason ? `Second ear: ${v.reason}…` : `Second ear: listening… ${n(v.done)} of ${n(v.total)} this run.`;
+  const tail = `${n(v.heard)} track${v.heard === 1 ? '' : 's'} heard by the second ear${v.waiting ? `, ${n(v.waiting)} still to go` : ''}.`;
+  if (v.state === 'paused') return `Second ear stopped${v.reason && v.reason !== 'stopped' ? `: ${v.reason}` : ''}. ${tail}`;
+  return tail;
+}
+
+/**
+ * The ear the page should place with, from the stored Score verdict
+ * (core/validate/gate.mjs earChoice) and the records it has. 'effnet' unless
+ * that Score run chose a second ear, its gate passed, and records with a
+ * current MAEST answer exist. So switching Deep listen on, or hearing tracks
+ * with it, changes no suggestion by itself: only a Score run can.
+ */
+function chosenEar(choice, records) {
+  const ear = choice?.ear;
+  if (ear !== 'maest' && ear !== 'both') return 'effnet';
+  if (choice.gate?.pass !== true) return 'effnet';
+  for (const r of records?.values?.() ?? records ?? []) if (earCurrent(r, 'maest')) return ear;
+  return 'effnet';
+}
+
+/** Records the Score run should also score with the second ear: only when some have one. */
+function scoreArms(records) {
+  for (const r of records?.values?.() ?? records ?? []) if (earCurrent(r, 'maest')) return ['maest', 'both'];
+  return null;
+}
+
+/** The Score card's line for the second ear, or '' without arms. Counts and rates only. */
+function maestScoreText(w, pc = x => (x == null ? '—' : `${Math.round(x * 1000) / 10}%`)) {
+  const m = w?.arms?.maest;
+  if (!m) return '';
+  const b = w.arms.both, c = w.choice ?? {};
+  return `Second ear (MAEST): top-1 ${pc(m.top1)}, never-filed ${pc(m.neverFiled?.top1)}, ${m.heard} heard`
+    + (b ? `; both ears: top-1 ${pc(b.top1)}, never-filed ${pc(b.neverFiled?.top1)}` : '')
+    + `; first ear: top-1 ${pc(w.top1)}, never-filed ${pc(w.neverFiled?.top1)}. `
+    + `Placing with: ${c.ear === 'maest' ? 'the second ear' : c.ear === 'both' ? 'both ears' : 'the first ear'} (${c.reason ?? '—'})`;
+}
+return { MAEST_PER_RUN, createWorkerMaest, createMaestRunner, maestStatusText, chosenEar, scoreArms, maestScoreText };
+})();
+/* ---- web/audio/index.mjs ---- */
+__mod["web/audio/index.mjs"] = (function () {
+const { openAudioStore, AUDIO_DB, AUDIO_STORE } = __mod["web/audio/store.mjs"];
+const { readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY } = __mod["web/audio/settings.mjs"];
+const { createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN } = __mod["web/audio/controller.mjs"];
+const { audioQueue } = __mod["core/audio/queue.mjs"];
+const { lookup, fetchPreview } = __mod["core/audio/fetch.mjs"];
+const { decodeTo16k } = __mod["core/audio/decode.mjs"];
+const { analyseOne } = __mod["core/audio/worker.js"];
+const { MISS, validRecord, isCurrent, RECORD_VERSION, MODEL } = __mod["core/audio/record.mjs"];
+const { MEL_VERSION } = __mod["core/audio/mel.mjs"];
+const { HEADS, summariseHeads } = __mod["core/audio/heads.mjs"];
+const { dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, DSP_UI_KEY } = __mod["web/audio/dsp-view.mjs"];
+const { measureWindows, needsDsp, DSP_VERSION } = __mod["core/audio/dsp/combine.mjs"];
+const { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf } = __mod["web/audio/labels-view.mjs"];
+const { readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB } = __mod["web/audio/deep-settings.mjs"];
+const { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } = __mod["core/audio/clap-search.mjs"];
+const { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN } = __mod["web/audio/maest-run.mjs"];
+const { MAEST_FILE, MAEST_LABELS_FILE, needsMaest } = __mod["core/audio/maest.mjs"];
+// What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
+// One namespace so the template reaches core/audio through a single name.
+return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, MAEST_FILE, MAEST_LABELS_FILE, needsMaest };
+})();
+/* ---- core/audio/infer.mjs ---- */
+__mod["core/audio/infer.mjs"] = (function () {
+const { PATCH_FRAMES, N_BANDS } = __mod["core/audio/mel.mjs"];
+const { N_STYLES, EMB_DIM } = __mod["core/audio/record.mjs"];
+// The ear: Discogs-EffNet inference over mel patches (WP-A3).
+//
+// `ort` is injected — onnxruntime-web in the page, onnxruntime-node in
+// scripts — so this file has no runtime of its own and CI never needs the
+// model. Tests pass a fake session.
+//
+// Patches are run at most MAX_BATCH at a time. A patch is 128 frames (~2 s)
+// with a ~1 s hop, so a 30 s preview is ~29 patches and two 10 s windows are
+// 19 (measured in WP-B1); a single run usually splits into two batches; it is the cap that keeps a phone's
+// memory flat if a caller hands it something long.
+//
+// Outputs are told apart by width (400 styles, 1280 embedding), not by name:
+// phase 0 read them positionally (`SESS.run(None, …)`), and a re-export that
+// renames them should not silently swap the two.
+
+
+
+const INFER_VERSION = '1.0.0';
+const MAX_BATCH = 16;
+const INPUT_NAME = 'melspectrogram';
+
+/**
+ * @param {{ ort: { InferenceSession: { create(url: string|Uint8Array, opts?: object): Promise<any> }, Tensor: any },
+ *           modelUrl: string|Uint8Array, sessionOptions?: object }} deps
+ * @returns {Promise<{ run(patchData: Float32Array, patches: number): Promise<{ activations: Float32Array, embeddings: Float32Array }>, release(): Promise<void> }>}
+ */
+async function createEar({ ort, modelUrl, sessionOptions }) {
+  const session = await ort.InferenceSession.create(modelUrl, sessionOptions ?? { executionProviders: ['wasm'] });
+  const input = session.inputNames?.includes(INPUT_NAME) ? INPUT_NAME : (session.inputNames?.[0] ?? INPUT_NAME);
+  const size = PATCH_FRAMES * N_BANDS;
+
+  async function run(patchData, patches) {
+    if (!(patches > 0)) throw new Error('no patches to run');
+    if (patchData.length !== patches * size) throw new Error(`expected ${patches}×${PATCH_FRAMES}×${N_BANDS} floats, got ${patchData.length}`);
+    const activations = new Float32Array(patches * N_STYLES);
+    const embeddings = new Float32Array(patches * EMB_DIM);
+    for (let p0 = 0; p0 < patches; p0 += MAX_BATCH) {
+      const n = Math.min(MAX_BATCH, patches - p0);
+      const x = new ort.Tensor('float32', patchData.subarray(p0 * size, (p0 + n) * size), [n, PATCH_FRAMES, N_BANDS]);
+      const out = await session.run({ [input]: x });
+      const { act, emb } = pickOutputs(out, n);
+      activations.set(act, p0 * N_STYLES);
+      embeddings.set(emb, p0 * EMB_DIM);
+    }
+    return { activations, embeddings };
+  }
+  return { run, release: async () => { await session.release?.(); } };
+}
+
+/** Find the 400-wide and 1280-wide outputs among whatever the session returned. */
+function pickOutputs(out, n) {
+  let act = null, emb = null;
+  for (const t of Object.values(out)) {
+    const data = t?.data ?? t;
+    if (!data?.length) continue;
+    if (data.length === n * N_STYLES && !act) act = data;
+    else if (data.length === n * EMB_DIM && !emb) emb = data;
+  }
+  if (!act || !emb) throw new Error('model outputs are not [n×400] activations and [n×1280] embeddings');
+  return { act: Float32Array.from(act), emb: Float32Array.from(emb) };
+}
+return { INFER_VERSION, MAX_BATCH, INPUT_NAME, createEar, pickOutputs };
 })();
 /* ---- core/audio/sections.mjs ---- */
 __mod["core/audio/sections.mjs"] = (function () {

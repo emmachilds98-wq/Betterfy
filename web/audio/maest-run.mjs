@@ -16,6 +16,7 @@
 // can be dropped with `release()` when the run is done, without touching the
 // first ear's worker.
 import { fillMaest, needsMaest } from '../../core/audio/maest.mjs';
+import { earCurrent } from '../../core/audio/record.mjs';
 
 export const MAEST_PER_RUN = 50;
 
@@ -141,4 +142,36 @@ export function maestStatusText(v) {
   const tail = `${n(v.heard)} track${v.heard === 1 ? '' : 's'} heard by the second ear${v.waiting ? `, ${n(v.waiting)} still to go` : ''}.`;
   if (v.state === 'paused') return `Second ear stopped${v.reason && v.reason !== 'stopped' ? `: ${v.reason}` : ''}. ${tail}`;
   return tail;
+}
+
+/**
+ * The ear the page should place with, from the stored Score verdict
+ * (core/validate/gate.mjs earChoice) and the records it has. 'effnet' unless
+ * that Score run chose a second ear, its gate passed, and records with a
+ * current MAEST answer exist. So switching Deep listen on, or hearing tracks
+ * with it, changes no suggestion by itself: only a Score run can.
+ */
+export function chosenEar(choice, records) {
+  const ear = choice?.ear;
+  if (ear !== 'maest' && ear !== 'both') return 'effnet';
+  if (choice.gate?.pass !== true) return 'effnet';
+  for (const r of records?.values?.() ?? records ?? []) if (earCurrent(r, 'maest')) return ear;
+  return 'effnet';
+}
+
+/** Records the Score run should also score with the second ear: only when some have one. */
+export function scoreArms(records) {
+  for (const r of records?.values?.() ?? records ?? []) if (earCurrent(r, 'maest')) return ['maest', 'both'];
+  return null;
+}
+
+/** The Score card's line for the second ear, or '' without arms. Counts and rates only. */
+export function maestScoreText(w, pc = x => (x == null ? '—' : `${Math.round(x * 1000) / 10}%`)) {
+  const m = w?.arms?.maest;
+  if (!m) return '';
+  const b = w.arms.both, c = w.choice ?? {};
+  return `Second ear (MAEST): top-1 ${pc(m.top1)}, never-filed ${pc(m.neverFiled?.top1)}, ${m.heard} heard`
+    + (b ? `; both ears: top-1 ${pc(b.top1)}, never-filed ${pc(b.neverFiled?.top1)}` : '')
+    + `; first ear: top-1 ${pc(w.top1)}, never-filed ${pc(w.neverFiled?.top1)}. `
+    + `Placing with: ${c.ear === 'maest' ? 'the second ear' : c.ear === 'both' ? 'both ears' : 'the first ear'} (${c.reason ?? '—'})`;
 }

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0051">
+<meta name="bf-build" content="2026-11-15-0100">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1363,7 +1363,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0051</span>
+    <span class="mono">build 2026-11-15-0100</span>
   </p>
 
   <div class="feat">
@@ -1466,7 +1466,7 @@
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0051</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0100</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1507,7 +1507,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0051</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0100</span>
   </div>
 </div>
 
@@ -2968,7 +2968,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0051';
+const BUILD = '2026-11-15-0100';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3289,7 +3289,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0051', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0100', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -6681,7 +6681,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0051';
+    s.src = 'engine.js?v=2026-11-15-0100';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -6703,7 +6703,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0051');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0100');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -6825,7 +6825,7 @@ async function engineLoadCalibration() {
     if (c && c.stamp === calStamp() && c.fingerprint === BetterfyPersist.fingerprint(LIB)
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
       ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, audioGate: c.audioGate ?? null,
-                   at: c.at ?? null };
+                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
 }
 
@@ -6836,16 +6836,23 @@ async function engineCalibrate(v) {
   await engineLoad();
   const base = BetterfyCalibrate.calibrationReport(mine.rows);
   const bridge = mine.withBridge?.rows ? BetterfyCalibrate.calibrationReport(mine.withBridge.rows) : null;
-  const audio = mine.withAudio?.rows ? BetterfyCalibrate.calibrationReport(mine.withAudio.rows) : null;
+  // WP-C1: which ear this run chose. The first ear unless a second ear passed
+  // the gate and beat it; its calibration then comes from that ear's rows.
+  const choice = mine.withAudio?.choice ?? null;
+  const soundChoice = choice ? { ear: choice.ear, reason: choice.reason, gate: choice.gate ?? null } : null;
+  const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows : mine.withAudio?.rows;
+  const audio = soundRows ? BetterfyCalibrate.calibrationReport(soundRows) : null;
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
   if (mine.withAudio) delete mine.withAudio.rows;
-  ENG.calib = { base, bridge, audio, audioGate, at: Date.now() };
+  for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
+  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
-                             targets: engineTargets(), base, bridge, audio, audioGate, at: ENG.calib.at });
+                             targets: engineTargets(), base, bridge, audio, audioGate,
+                             ...(soundChoice ? { soundChoice } : {}), at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }
@@ -7020,14 +7027,15 @@ const AUDIO_MODEL_FILE = 'discogs-effnet-bsdynamic-1.onnx';
 const AUDIO_HEAD_FILES = { mtg_jamendo_moodtheme: 'mtg_jamendo_moodtheme-discogs-effnet-1.onnx',
   voice_instrumental: 'voice_instrumental-discogs-effnet-1.onnx', danceability: 'danceability-discogs-effnet-1.onnx' };
 
-const AUDIO = { ctrl: null, store: null, vm: null, records: null, labels: null, wifiOk: false, err: null, worker: null };
+const AUDIO = { ctrl: null, store: null, vm: null, records: null, labels: null, wifiOk: false, err: null, worker: null,
+                maest: null, maestVm: null };
 
 let AUDIO_JS = null;
 function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0051';
+    s.src = 'audio.js?v=2026-11-15-0100';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -7068,7 +7076,7 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: async () => {
-      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0051', { type: 'module' });
+      AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0100', { type: 'module' });
       const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
         headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
       const r = await w.ready;
@@ -7130,7 +7138,21 @@ async function engineAudio() {
  *  rejection teaches the sound learner "not there", and the Score run drops the
  *  verdicts on whichever tracks it is holding out. No feedback, the records
  *  alone, exactly as before. */
-const engineAudioIn = audio => (audio && Object.keys(FB).length ? { records: audio, feedback: FB } : audio);
+const engineAudioIn = audio => {
+  const base = audio && Object.keys(FB).length ? { records: audio, feedback: FB } : audio;
+  // WP-C1: the second ear places only once a Score run chose it (engineEar).
+  const ear = audio ? engineEar(audio) : 'effnet';
+  if (ear === 'effnet') return base;
+  return { ...(Array.isArray(base) ? { records: base } : base), ear };
+};
+/** Which ear places tracks: the first, unless a Score run chose a second ear. */
+const engineEar = audio => (globalThis.BetterfyAudio?.chosenEar ? BetterfyAudio.chosenEar(ENG.calib?.soundChoice ?? null, audio) : 'effnet');
+/** For the Score run: the records, plus the second-ear arms when some records have one. */
+const engineAudioScore = audio => {
+  const arms = audio && globalThis.BetterfyAudio?.scoreArms ? BetterfyAudio.scoreArms(audio) : null;
+  const base = audio && Object.keys(FB).length ? { records: audio, feedback: FB } : audio;
+  return arms ? { ...(Array.isArray(base) ? { records: base } : base), arms } : base;
+};
 /** Audio changes a suggestion only once WP-E2's gate has passed on this library. */
 const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?.gate ?? null);
 
@@ -7167,7 +7189,9 @@ function soundWarm() {
   if (SOUND.status === 'working' || !LIB) return;
   const on = audioSettings().on;
   if (!on && !AUDIO.records?.size) return;
-  const targets = engineTargets().join(), n = soundHeard();
+  // The ear is part of the key (WP-C1): a Score run that picks another ear rebuilds.
+  const ear = typeof engineEar === 'function' ? engineEar(AUDIO.records) : 'effnet';
+  const targets = engineTargets().join() + (ear === 'effnet' ? '' : '|' + ear), n = soundHeard();
   if (SOUND.status === 'ready' && SOUND.targets === targets
       && (!AUDIO.records || n - SOUND.n < SOUND_REBUILD(SOUND.n))) return;
   // Failed on this same input: don't retry in a loop on every render.
@@ -7431,6 +7455,36 @@ async function audioStart({ quiet = false } = {}) {
   await AUDIO.ctrl.start(tracks);
   await audioRefresh();
   audioRedraw();
+  maestStart({ quiet: true });
+}
+
+/* ---------- the second ear (WP-C1): MAEST on a laptop, behind Deep listen ----------
+ * Gives tracks listening already heard a MAEST answer (web/audio/maest-run.mjs),
+ * a few dozen per run after each listening run. It changes no suggestion by
+ * itself: the File screen places with it only once a Score run has chosen it
+ * (engineEar). The model is fetched once (about 90 MB) and freed after each run. */
+async function maestStart({ quiet = false } = {}) {
+  if (!deepSettings().maest || !LIB) return;
+  try { await audioInit(); } catch (e) { if (!quiet) toast('Couldn’t start the second ear: ' + e.message); return; }
+  const A = BetterfyAudio;
+  if (deepAllowed('maest') !== 'ok') return audioRedraw();
+  AUDIO.maest ??= A.createMaestRunner({
+    store: AUDIO.store,
+    lookup: (isrc, o) => A.lookup(isrc, { jsonp: deezerJsonp, ...o }),
+    fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
+    decode: buf => A.decodeTo16k(buf),
+    loadMaest: async () => {
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-0100', { type: 'module' }),
+        { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
+      try { await w.ready; } catch (e) { w.release(); throw e; }
+      return w;
+    },
+    onChange: vm => { AUDIO.maestVm = vm; audioRedraw(); },
+  });
+  if (AUDIO.maest.running) return;
+  await AUDIO.maest.start();
+  await audioRefresh();
+  audioRedraw();
 }
 
 // A phone that leaves Wi-Fi stops after the track in flight, and carries on when it is back.
@@ -7491,7 +7545,8 @@ function audioPanelHTML() {
     <p class="sub credit">Listening model: Discogs-EffNet and its mood, voice and
       danceability heads by the Music Technology Group, Universitat Pompeu Fabra
       (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
-      used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Previews from Deezer.</p>
+      used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Previews from Deezer.${
+      deepSettings().maest ? ' Second ear: MAEST (discogs-maest-10s-pw-2) by the same group, quantised to int8 for the page, same licence.' : ''}</p>
   </div>`;
 }
 
@@ -7509,8 +7564,18 @@ function deepPanelHTML() {
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP)</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has the memory (8 GB or more)</label>
     </div>
-    ${why('maest')}${why('clap')}
+    ${why('maest')}${d.maest ? maestLineHTML() : ''}${why('clap')}
   </div>`;
+}
+
+function maestLineHTML() {
+  const v = AUDIO.maestVm, run = v?.state === 'running';
+  const text = globalThis.BetterfyAudio?.maestStatusText ? BetterfyAudio.maestStatusText(v) : '';
+  const ok = deepAllowed('maest') === 'ok';
+  return `<p class="sub" id="maestStatus" style="margin:4px 0">${esc(text)}
+    ${run ? '<button class="b sm" id="maestStop">Stop</button>' : ok && audioSettings().on ? '<button class="b sm" id="maestGo">Listen with the second ear now</button>' : ''}
+    ${deepAllowed('maest') === 'unknown' ? '<button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button>' : ''}</p>
+    <p class="sub">It changes no suggestion until a Score run (More → Engine) shows it places your tracks better than the first ear.</p>`;
 }
 
 function bridgeProgressText() {
@@ -7584,7 +7649,7 @@ const engineValidate = guard(async () => {
     let done = null;
     // Scored the way the app files: the genre-only artist graph, and heard tracks
     // with sound leading (soundFirst), so the number is the engine you use.
-    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioIn(audio),
+    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioScore(audio),
                                                     opts: { folds: 5, limit: VALIDATE_N, collect: true,
                                                             genreGraph: true, soundFirst: true } }); }
     catch { done = null; }
@@ -7596,7 +7661,7 @@ const engineValidate = guard(async () => {
       await engineLoad();
       await yieldToPaint();
       const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
-                       audio: engineAudioIn(audio), collect: true,
+                       audio: engineAudioScore(audio), collect: true,
                        genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
@@ -7767,6 +7832,7 @@ function audioCard(v, p) {
         ? (g.pass === true ? 'Helps.' : g.pass === false ? 'Not ahead of tags yet on your filing; sound still leads, by your call.' : 'Undecided; sound still leads, by your call.')
         : (g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.')}</b>
       ${esc(g.text ?? '')}</p>
+    ${w.arms?.maest && globalThis.BetterfyAudio?.maestScoreText ? `<p class="why" id="maestScore" style="margin-top:8px">${esc(BetterfyAudio.maestScoreText(w))}</p>` : ''}
     ${identifyHTML(v.identify, p)}
   </div>`;
 }
@@ -7814,7 +7880,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0051`,
+    `Betterfy engine score — build 2026-11-15-0100`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7864,6 +7930,7 @@ function audioLines(v, pc) {
     `Sound coverage: ${w.heard} of ${v.mine.scored} scored tracks heard (${w.heardNeverFiled} never-filed), `
       + `${w.analysed} analysed in all; had a say on ${w.judged}, changed ${w.changed} top answers`,
     `Audio gate: ${g.pass === true ? 'PASS' : g.pass === false ? 'not yet' : 'undecided'} (${g.reason ?? '—'}) — ${g.text ?? ''}`,
+    ...(w.arms?.maest && globalThis.BetterfyAudio?.maestScoreText ? [BetterfyAudio.maestScoreText(w, pc)] : []),
     ...(v.identify?.scored ? [
       `Naming genres by sound (${v.identify.scored} filed tracks): genre ${pc(v.identify.genre)}, sub-genre ${pc(v.identify.specific)}; `
         + `model alone ${pc(v.identify.modelOnly.genre)} / ${pc(v.identify.modelOnly.specific)}; `
@@ -8331,6 +8398,8 @@ document.addEventListener('click', guard(async e => {
   if (e.target.id === 'enrich') return enrichMissing();
   if (e.target.id === 'fillWikidata') return fillFromWikidata();
   if (e.target.id === 'audioGo') return audioStart();
+  if (e.target.id === 'maestGo') return maestStart();
+  if (e.target.id === 'maestStop') { AUDIO.maest?.stop(); return; }
   const lchk = e.target.closest('[data-lchk]');
   if (lchk && globalThis.BetterfyAudio) return labelVerdict(lchk);
   if (e.target.id === 'labelCheckMore') { LABELS.seed++; LABELS.sample = null; return labelCheckRedraw(); }
@@ -8471,6 +8540,11 @@ document.addEventListener('change', guard(async e => {
       : e.target.id === 'deepClap' ? { clap: e.target.checked } : { memoryOverride: e.target.checked };
     if (globalThis.BetterfyAudio?.writeDeepSettings) BetterfyAudio.writeDeepSettings(LS, change);
     else LS.setItem('bf_audio_deep', JSON.stringify({ ...deepSettings(), ...change }));
+    // The second ear: off stops the run in flight; on (or the memory override) starts one.
+    if (e.target.id !== 'deepClap') {
+      if (!deepSettings().maest) await AUDIO.maest?.stop();
+      else maestStart();
+    }
     return audioRedraw();
   }
   if (e.target.id === 'audioOn' || e.target.id === 'audioWifi' || e.target.id === 'audioScope') {

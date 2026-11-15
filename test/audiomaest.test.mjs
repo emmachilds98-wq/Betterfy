@@ -394,3 +394,44 @@ test('status text', () => {
   assert.equal(maestStatusText({ state: 'done', heard: 1200, waiting: 3 }), '1,200 tracks heard by the second ear, 3 still to go.');
   assert.match(maestStatusText({ state: 'running', done: 2, total: 50 }), /2 of 50/);
 });
+
+/* ---------- what the page reads ---------- */
+
+const { chosenEar, scoreArms, maestScoreText } = await import('../web/audio/maest-run.mjs');
+const { hearMore } = await import('../core/intrinsic/space.mjs');
+
+test('chosenEar: only a passed Score verdict for a second ear, with records that have it', () => {
+  const recs = LIB.all.map(t => recordFor(t.id));
+  const none = recs.map(strip);
+  const pass = { ear: 'maest', gate: { pass: true } };
+  assert.equal(chosenEar(pass, recs), 'maest');
+  assert.equal(chosenEar({ ear: 'both', gate: { pass: true } }, new Map(recs.map(r => [r.id, r]))), 'both');
+  assert.equal(chosenEar(pass, none), 'effnet', 'no second-ear records, nothing to place with');
+  assert.equal(chosenEar({ ear: 'maest', gate: { pass: null } }, recs), 'effnet');
+  assert.equal(chosenEar({ ear: 'effnet', gate: { pass: true } }, recs), 'effnet');
+  assert.equal(chosenEar(null, recs), 'effnet', 'switching Deep listen on changes nothing by itself');
+  assert.deepEqual(scoreArms(recs), ['maest', 'both']);
+  assert.equal(scoreArms(none), null);
+  assert.equal(scoreArms(null), null);
+});
+
+test('a second-ear space hears more from the same ear, and a first-ear space is unchanged', () => {
+  const recs = LIB.all.map(t => recordFor(t.id));
+  const first = buildSpace(LIB, { audio: recs.slice(0, 40), targets: TARGETS });
+  assert.equal('ear' in first.audio, false, 'a first-ear layer has no new key');
+  hearMore(first, recs.slice(40));
+  assert.equal(first.audio.index.get(recs[45].id).emb.length, EMB_DIM);
+  const m = buildSpace(LIB, { audio: { records: recs.slice(0, 40), ear: 'maest' }, targets: TARGETS });
+  assert.equal(m.audio.ear, 'maest');
+  assert.ok(hearMore(m, recs.slice(40)) > 0);
+  assert.equal(m.audio.index.get(recs[45].id).emb.length, MAEST_DIM);
+  assert.equal(hearMore(m, recs.slice(40).map(strip)), 0, 'records without the second ear add nothing');
+});
+
+test('maestScoreText', () => {
+  assert.equal(maestScoreText(null), '');
+  assert.equal(maestScoreText({ top1: 0.5 }), '');
+  const w = { top1: 0.6, neverFiled: { top1: 0.3 }, arms: { maest: { top1: 0.62, neverFiled: { top1: 0.4 }, heard: 120 }, both: { top1: 0.63, neverFiled: { top1: 0.38 } } },
+              choice: { ear: 'maest', reason: 'SECOND_EAR' } };
+  assert.equal(maestScoreText(w), 'Second ear (MAEST): top-1 62%, never-filed 40%, 120 heard; both ears: top-1 63%, never-filed 38%; first ear: top-1 60%, never-filed 30%. Placing with: the second ear (SECOND_EAR)');
+});

@@ -273,6 +273,9 @@ function audioLayer(audio, destinations, skip) {
     : audioIndex(opts.records, { mel: opts.mel, ...(opts.ear ? { ear: opts.ear } : {}) });
   if (!index.size) return {};
   const layer = buildAudioProfiles(destinations, index, { skip });
+  // Which ear the index holds (WP-C1), so hearMore adds rows from the same
+  // ear. Only set for a second ear: a first-ear layer is key for key as before.
+  if (opts.ear && opts.ear !== 'effnet') layer.ear = opts.ear;
   const out = { audio: layer };
   const learn = opts.learn === undefined ? trainLearner : opts.learn;
   if (typeof learn === 'function' && layer.profiles.size) {
@@ -326,7 +329,9 @@ export function hearMore(space, records, { mel = undefined } = {}) {
   const index = space?.audio?.index;
   if (!(index instanceof Map) || !records) return 0;
   let n = 0;
-  for (const [id, row] of audioIndex(records, { mel })) {
+  // Same ear as the index (WP-C1): rows from another ear live in another space.
+  const ear = space.audio.ear;
+  for (const [id, row] of audioIndex(records, { mel, ...(ear ? { ear } : {}) })) {
     if (index.has(id)) continue;
     index.set(id, row);
     n++;

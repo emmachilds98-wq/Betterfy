@@ -276,9 +276,9 @@ The coordinator's review is at high effort whatever the package used.
 | Mood, voice and energy | Merged, #83: shown once checked on real previews |
 | UI-1 to UI-6 | Merged: #72, #80, #69, #71, #70, #81 (see `docs/UI-BUILD-PLAN.md`) |
 | WP-C3 naming and text search | Merged, #85. **Dormant until WP-C2 ships**: `docs/models/` has no `clap-text-table.json` and no record has a `clap` ear yet, so naming and "sounds like" search draw nothing (byte-identical, as its tests pin) |
-| Record v2 contract (C1 + C2) | **Open, #82.** `main` merged in on 2026-11-14; the CLAP test fixture moved to the contract's 512 dimensions, because record v2 rejects any other size |
-| Deep listen settings (C1 + C2) | **Open, draft, #84.** `main` merged in on 2026-11-14 |
-| WP-C1 MAEST | Not started. Waits for #82 and #84 |
+| Record v2 contract (C1 + C2) | Merged, #82 |
+| Deep listen settings (C1 + C2) | Merged, #84 |
+| WP-C1 MAEST | **Built; changes no suggestion yet.** `core/audio/maest.mjs` (int8 model in `docs/models/`, 88.6 MB), the laptop top-up run behind Deep listen (`web/audio/maest-run.mjs`, `docs/maest-worker.js`), `audioIndex(…, { ear })`, Score arms `maest` and `both` (`placementAccuracy`'s `audio.arms`) and `earChoice` in gate.mjs: a second ear places tracks only once a Score run shows it passes the gate and beats the first ear by 2 points on never-filed artists with no loss overall. Phase-0 style numbers in AUDIO-ANALYSIS-PLAN §0 |
 | WP-C2 CLAP text table | **Done (this PR).** `scripts/audio-clap/` builds `docs/models/clap-text-table.json`: 154 prompts (all 108 ontology genres plus 46 reviewed descriptions), 512-d, from `laion/larger_clap_music_and_speech` at a pinned revision. Its test guards against a collapsed text space |
 | WP-C2 CLAP audio encoder in the page | **Not started.** Port CLAP's feature extractor (48 kHz, 64 mel bins, 10 s) to plain JS with a parity test against `transformers`' `ClapFeatureExtractor`. Run `Xenova/larger_clap_music_and_speech` `onnx/audio_model_quantized.onnx` (78 MB) on the #84 opt-in, and store the ear with `withEar()`. That turns on C3 |
 | WP-E2's gate on the owner's library | **Waiting on the owner:** Score both engines → Copy results |
