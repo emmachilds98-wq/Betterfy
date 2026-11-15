@@ -1,3 +1,4 @@
+// @bundle screens sources 40
 /** One source card: name, a status pill, one line of what it is for, then its
  *  controls. `state` is ok (working), idle (optional, not set up) or warn. */
 function sourceCard(id, name, state, status, line, body) {
@@ -11,7 +12,7 @@ function sourceCard(id, name, state, status, line, body) {
 /** Where genre data and (later) listening come from — moved out of Playlists,
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
-function vSources() {
+export function view({ LS, esc, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
@@ -35,20 +36,20 @@ function vSources() {
       'Crowd genre tags for the artists the shipped set doesn\'t cover. Needs a free API key.',
       `<div class="rowbtns">
         <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(lfm)}" aria-label="Last.fm API key">
-        <button class="b" id="saveLfm">Save key</button>
+        <button class="b" id="saveLfm" data-act="saveLfm">Save key</button>
         <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
       </div>
-      <div class="rowbtns"><button class="b p" id="enrich" ${lfm ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button></div>`)}
+      <div class="rowbtns"><button class="b p" id="enrich" data-act="enrich" ${lfm ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button></div>`)}
 
     ${sourceCard('wikidata', 'Wikidata', 'ok', 'Free · no key',
       'Genres for about a third of artists, mostly established ones. Runs once by itself after the library loads.',
-      `<div class="rowbtns"><button class="b" id="fillWikidata">Fill missing genres free</button></div>`)}
+      `<div class="rowbtns"><button class="b" id="fillWikidata" data-act="fillWikidata">Fill missing genres free</button></div>`)}
 
     ${sourceCard('discogs', 'Discogs', discogs ? 'ok' : 'idle', discogs ? 'Token saved' : 'Optional',
       'Styles from an artist\'s own releases, finer than one flat tag. Only fills total gaps, as part of Fetch missing tags.',
       `<div class="rowbtns">
         <input id="discogsKey" placeholder="Discogs personal access token" size="34" value="${esc(discogs)}" aria-label="Discogs personal access token">
-        <button class="b" id="saveDiscogs">Save token</button>
+        <button class="b" id="saveDiscogs" data-act="saveDiscogs">Save token</button>
         <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
       </div>`)}
 
@@ -56,11 +57,19 @@ function vSources() {
     </div>`;
 }
 
-function tagCoverage() {
-  const ids = new Set();
-  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id) ids.add(a.id);
-  for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id) ids.add(a.id);
-  const have = [...ids].filter(id => TAGS[id]?.tags?.length).length;
-  return { total: ids.size, have, missing: ids.size - have, pct: ids.size ? Math.round(100*have/ids.size) : 0 };
-}
-
+export const actions = {
+  saveLfm(c) {
+    const v = c.$('#lfmKey').value.trim();
+    if (v) { c.LS.setItem('bf_lfm', v); c.toast('Key saved.'); }
+    else { c.LS.removeItem('bf_lfm'); c.toast('Key cleared.'); }
+    c.render();
+  },
+  saveDiscogs(c) {
+    const v = c.$('#discogsKey').value.trim();
+    if (v) { c.LS.setItem('bf_discogs', v); c.toast('Token saved.'); }
+    else { c.LS.removeItem('bf_discogs'); c.toast('Token cleared.'); }
+    c.render();
+  },
+  enrich: c => c.enrichMissing(),
+  fillWikidata: c => c.fillFromWikidata(),
+};

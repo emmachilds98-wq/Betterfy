@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as SOURCES from '../web/screens/sources.mjs';
 
 // UI-3 (docs/UI-BUILD-PLAN.md §6): Playlists is the axes table, the data
 // sources live on their own Sources screen, and the sound layer shows up on
@@ -39,7 +40,7 @@ function load({ records = null, profileRow = () => '', panel = '<div id="audioPa
     profileRow, audioPanelHTML: () => panel, labelCheckHTML: () => '',
   };
   vm.createContext(sb);
-  vm.runInContext(CODE + ';globalThis.vLists = vLists; globalThis.vSources = vSources;', sb);
+  vm.runInContext(CODE + ';globalThis.vLists = vLists;', sb);
   return sb;
 }
 
@@ -69,8 +70,27 @@ test('Playlists keeps every control id and handler hook it had, and leaves the s
 });
 
 test('Sources holds the three genre sources and the Listening card', () => {
-  const html = load().vSources();
+  const sb = load();
+  const html = SOURCES.view({ ...sb, playlistMixes: vm.runInContext('playlistMixes', sb) });
   for (const id of ['lfmKey', 'saveLfm', 'enrich', 'fillWikidata', 'discogsKey', 'saveDiscogs']) assert.ok(html.includes(`id="${id}"`), id);
-  assert.match(html, /<button class="b p" id="enrich" disabled>/); // no key yet
+  assert.match(html, /<button class="b p" id="enrich" data-act="enrich" disabled>/); // no key yet
   assert.match(html, /<section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h"><div id="audioPanel">panel<\/div><\/section>/);
+});
+
+test('Sources actions: saving a key stores it, clearing removes it, and both redraw', () => {
+  const kept = new Map(), said = [];
+  let drawn = 0;
+  const c = { LS: { setItem: (k, v) => kept.set(k, v), removeItem: k => kept.delete(k) },
+              $: sel => ({ value: sel === '#lfmKey' ? '  abc  ' : '' }),
+              toast: m => said.push(m), render: () => drawn++ };
+  SOURCES.actions.saveLfm(c);
+  assert.equal(kept.get('bf_lfm'), 'abc');
+  SOURCES.actions.saveDiscogs(c);
+  assert.ok(!kept.has('bf_discogs'));
+  assert.deepEqual(said, ['Key saved.', 'Token cleared.']);
+  assert.equal(drawn, 2);
+  const seen = [];
+  SOURCES.actions.enrich({ enrichMissing: () => seen.push('enrich') });
+  SOURCES.actions.fillWikidata({ fillFromWikidata: () => seen.push('wikidata') });
+  assert.deepEqual(seen, ['enrich', 'wikidata']);
 });

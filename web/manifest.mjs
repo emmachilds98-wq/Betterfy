@@ -6,6 +6,10 @@
 // concatenates them, verbatim and in this order, where the template says
 // __APP__. web/README.md says which file owns what.
 //
+// Screens migrated to ES modules (web/screens/*.mjs, A4) are not listed here:
+// their `// @bundle screens` header registers them, and app/screens.js is
+// their glue.
+//
 // To add a file, put it in this list where its code has to run. Nothing is
 // picked up from the folders on its own (A7 may replace this list with a
 // convention).
@@ -32,9 +36,7 @@ export const APP_FILES = [
   'screens/new.js',
   'screens/shuffle.js',
   'screens/discover.js',
-  'screens/history.js',
   'screens/lists.js',
-  'screens/sources.js',
   'app/tagshare.js',
   'app/sync.js',
   'app/sync-tags.js',
@@ -50,7 +52,7 @@ export const APP_FILES = [
   'app/soundfirst.js',
   'app/clap.js',
   'app/audio-panel.js',
-  'screens/engine.js',
+  'app/screens.js',
   'app/events.js',
   'screens/inbox-actions.js',
   'app/boot.js',

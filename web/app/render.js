@@ -1,6 +1,6 @@
 const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
                 new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
-                engine:vEngine, history:vHistory, sources:vSources };
+                engine:screenView('engine'), history:screenView('history'), sources:screenView('sources') };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -20,6 +20,7 @@ function render(dir) {
   main.dataset.view = view;
   main.classList.remove('in-l', 'in-r');
   main.innerHTML = VIEWS[view]();
+  SCREEN_MODS[view]?.mount?.(screenCtx(view));
   if (dir) { void main.offsetWidth; main.classList.add(dir > 0 ? 'in-l' : 'in-r'); }
 
   $('#mtitle').textContent = VTITLE[view] ?? '';

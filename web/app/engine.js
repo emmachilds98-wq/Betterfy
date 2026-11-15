@@ -336,3 +336,106 @@ async function corsJson(url, init) {
   return r.json();
 }
 
+/* ---- the jobs behind the Engine screen (its view and actions are web/screens/engine.mjs) ---- */
+function bridgeProgressText() {
+  const p = ENG.bridgeProgress ?? {};
+  const part = (label, x) => x ? `${label} ${Math.min(x.done, x.total).toLocaleString()} of ${x.total.toLocaleString()}` : null;
+  const bits = [part('Wikidata', p.wikidata), part('Deezer', p.deezer), part('ListenBrainz', p.listenbrainz)].filter(Boolean);
+  return `Looking up similar artists${bits.length ? ' — ' + bits.join(', ') : '…'}`;
+}
+
+/** Look up the neighbours of the artists about to be scored, remembering every
+ *  answer on this device so the next run only asks about what is new or stale. */
+async function engineBridge(tracks) {
+  const artists = BetterfyBridge.sourceArtists(tracks);
+  let cache = null;
+  try { cache = (await idb.get(BRIDGE_KEY))?.raw ?? null; } catch { /* no cache: ask everything */ }
+  let last = 0;
+  const { raw, stats } = await BetterfyBridgeFetch.gatherBridge(artists, {
+    deezer: deezerJsonp, json: corsJson, cache,
+    onProgress: p => {
+      ENG.bridgeProgress = { ...(ENG.bridgeProgress ?? {}), [p.stage]: p };
+      const now = performance.now();
+      if (now - last < 300) return;
+      last = now;
+      const el = document.getElementById('bridgeProgress');
+      if (el) el.textContent = bridgeProgressText();
+    },
+  });
+  try { await idb.set(BRIDGE_KEY, { at: Date.now(), raw }); }
+  catch { /* nowhere to remember it costs the next run time, nothing else */ }
+  return { bridge: BetterfyBridge.bridgeFrom(raw, LIB), stats };
+}
+
+/**
+ * The gate, run here rather than on somebody's laptop.
+ *
+ * This is the number that decides whether this engine should ever take over, and
+ * until now getting it meant exporting a `library.json` and running Node — which
+ * is exactly the "works for one desktop, not for an account" shape CLAUDE.md
+ * rules out. The browser already holds the library, so it can answer for itself.
+ *
+ * Both engines are scored over the same folds and the same capped track set. The
+ * tag engine is only scored when there are tags to score it with: handing it an
+ * empty table and reporting that it lost would be rigging the comparison.
+ */
+const engineValidate = guard(async () => {
+  ENG.valRunning = true; ENG.val = null; ENG.valStage = null; store.touch('eng');
+  try {
+    const tags = TAGS && Object.keys(TAGS).length ? TAGS : null;
+    const t0 = performance.now();
+
+    // The neighbour bridge, for exactly the tracks about to be scored. Any
+    // failure here costs the comparison, never the score: it carries on
+    // without, and says so.
+    let bridge = null, bridgeStats = null, bridgeErr = null;
+    const useBridge = bridgeOn();
+    if (useBridge) {
+      ENG.valStage = 'bridge'; ENG.bridgeProgress = {}; store.touch('eng');
+      try {
+        await engineLoad();
+        const tracks = BetterfyValidate.scoredTracks(LIB, { limit: VALIDATE_N, isMirror: isMirrorPlaylist,
+                                                           targets: new Set(engineTargets()) });
+        ({ bridge, stats: bridgeStats } = await engineBridge(tracks));
+      } catch (e) { bridge = null; bridgeErr = e?.message ?? String(e); }
+      ENG.valStage = 'score'; store.touch('eng');
+    }
+    const bridgeMs = useBridge ? Math.round(performance.now() - t0) : 0;
+    const t1 = performance.now();
+
+    // Heard tracks, so the score runs with and without sound on the same folds (WP-E2).
+    const audio = await engineAudio();
+    let done = null;
+    // Scored the way the app files: the genre-only artist graph, and heard tracks
+    // with sound leading (soundFirst), so the number is the engine you use.
+    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioIn(audio),
+                                                    opts: { folds: 5, limit: VALIDATE_N, collect: true,
+                                                            genreGraph: true, soundFirst: true } }); }
+    catch { done = null; }
+    const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
+    if (done?.result?.mine) {
+      ENG.val = { ...done.result, ...extra, ms: Math.round(performance.now() - t1), where: 'worker' };
+    } else {
+      // No worker, or it failed: the original main-thread path, same answer.
+      await engineLoad();
+      await yieldToPaint();
+      const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
+                       audio: engineAudioIn(audio), collect: true,
+                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS };
+      const mine = BetterfyValidate.placementAccuracy(LIB, common);
+      await yieldToPaint();
+      const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
+      let identify = null;
+      try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
+      catch { identify = null; }
+      ENG.val = { mine, base, identify, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+    }
+    await engineCalibrate(ENG.val);
+  } catch (e) {
+    ENG.val = { error: e?.message ?? String(e) };
+  }
+  ENG.valRunning = false; ENG.valStage = null; store.touch('eng');
+});
+
+/** Whether long engine work will run off the main thread. */
+const engineInBackground = () => typeof Worker === 'function' && ENGINE_WORKER !== false;

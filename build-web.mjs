@@ -93,8 +93,17 @@ const AXES_MODULES = ['core/playlists/axes.mjs'];
  * their few hundred bytes. */
 const UI_MODULES = ['web/ui/sound.mjs'];
 
-const { code: core, files: bundled } = bundleModules([...V1_MODULES, ...AXES_MODULES, ...UI_MODULES],
+/* Screen modules (docs/BUILD-5-PLAN.md A4): web/screens/<name>.mjs, each opting
+ * in with `// @bundle screens <name> <order>` (see bundler.mjs discoverBundles;
+ * the second field is the screen's name, not a global). They are bundled with
+ * the rest and collected on one global, `BetterfyScreens.<name>`, which
+ * web/app/screens.js reads. A screen module reaches nothing but its ctx. */
+const { entries: SCREEN_ENTRIES, namespace: SCREEN_NAMES } = discoverBundles('web/screens', 'screens');
+
+const { code: coreCode, files: bundled } = bundleModules([...V1_MODULES, ...AXES_MODULES, ...UI_MODULES, ...SCREEN_ENTRIES],
   { expose: [...V1_MODULES, ...AXES_MODULES, ...UI_MODULES] });
+const core = `${coreCode}\nglobalThis.BetterfyScreens = { ${Object.entries(SCREEN_NAMES)
+  .map(([name, path]) => `${name}: __mod[${JSON.stringify(path)}]`).join(', ')} };`;
 
 /* The stylesheet, kept as partials in web/styles/ so packages that restyle
  * different screens own different files (docs/UI-BUILD-PLAN.md §3). Inlined in

@@ -1,102 +1,9 @@
-function bridgeProgressText() {
-  const p = ENG.bridgeProgress ?? {};
-  const part = (label, x) => x ? `${label} ${Math.min(x.done, x.total).toLocaleString()} of ${x.total.toLocaleString()}` : null;
-  const bits = [part('Wikidata', p.wikidata), part('Deezer', p.deezer), part('ListenBrainz', p.listenbrainz)].filter(Boolean);
-  return `Looking up similar artists${bits.length ? ' — ' + bits.join(', ') : '…'}`;
-}
-
-/** Look up the neighbours of the artists about to be scored, remembering every
- *  answer on this device so the next run only asks about what is new or stale. */
-async function engineBridge(tracks) {
-  const artists = BetterfyBridge.sourceArtists(tracks);
-  let cache = null;
-  try { cache = (await idb.get(BRIDGE_KEY))?.raw ?? null; } catch { /* no cache: ask everything */ }
-  let last = 0;
-  const { raw, stats } = await BetterfyBridgeFetch.gatherBridge(artists, {
-    deezer: deezerJsonp, json: corsJson, cache,
-    onProgress: p => {
-      ENG.bridgeProgress = { ...(ENG.bridgeProgress ?? {}), [p.stage]: p };
-      const now = performance.now();
-      if (now - last < 300) return;
-      last = now;
-      const el = document.getElementById('bridgeProgress');
-      if (el) el.textContent = bridgeProgressText();
-    },
-  });
-  try { await idb.set(BRIDGE_KEY, { at: Date.now(), raw }); }
-  catch { /* nowhere to remember it costs the next run time, nothing else */ }
-  return { bridge: BetterfyBridge.bridgeFrom(raw, LIB), stats };
-}
-
-/**
- * The gate, run here rather than on somebody's laptop.
- *
- * This is the number that decides whether this engine should ever take over, and
- * until now getting it meant exporting a `library.json` and running Node — which
- * is exactly the "works for one desktop, not for an account" shape CLAUDE.md
- * rules out. The browser already holds the library, so it can answer for itself.
- *
- * Both engines are scored over the same folds and the same capped track set. The
- * tag engine is only scored when there are tags to score it with: handing it an
- * empty table and reporting that it lost would be rigging the comparison.
- */
-const engineValidate = guard(async () => {
-  ENG.valRunning = true; ENG.val = null; ENG.valStage = null; store.touch('eng');
-  try {
-    const tags = TAGS && Object.keys(TAGS).length ? TAGS : null;
-    const t0 = performance.now();
-
-    // The neighbour bridge, for exactly the tracks about to be scored. Any
-    // failure here costs the comparison, never the score: it carries on
-    // without, and says so.
-    let bridge = null, bridgeStats = null, bridgeErr = null;
-    const useBridge = bridgeOn();
-    if (useBridge) {
-      ENG.valStage = 'bridge'; ENG.bridgeProgress = {}; store.touch('eng');
-      try {
-        await engineLoad();
-        const tracks = BetterfyValidate.scoredTracks(LIB, { limit: VALIDATE_N, isMirror: isMirrorPlaylist,
-                                                           targets: new Set(engineTargets()) });
-        ({ bridge, stats: bridgeStats } = await engineBridge(tracks));
-      } catch (e) { bridge = null; bridgeErr = e?.message ?? String(e); }
-      ENG.valStage = 'score'; store.touch('eng');
-    }
-    const bridgeMs = useBridge ? Math.round(performance.now() - t0) : 0;
-    const t1 = performance.now();
-
-    // Heard tracks, so the score runs with and without sound on the same folds (WP-E2).
-    const audio = await engineAudio();
-    let done = null;
-    // Scored the way the app files: the genre-only artist graph, and heard tracks
-    // with sound leading (soundFirst), so the number is the engine you use.
-    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioIn(audio),
-                                                    opts: { folds: 5, limit: VALIDATE_N, collect: true,
-                                                            genreGraph: true, soundFirst: true } }); }
-    catch { done = null; }
-    const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
-    if (done?.result?.mine) {
-      ENG.val = { ...done.result, ...extra, ms: Math.round(performance.now() - t1), where: 'worker' };
-    } else {
-      // No worker, or it failed: the original main-thread path, same answer.
-      await engineLoad();
-      await yieldToPaint();
-      const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
-                       audio: engineAudioIn(audio), collect: true,
-                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS };
-      const mine = BetterfyValidate.placementAccuracy(LIB, common);
-      await yieldToPaint();
-      const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
-      let identify = null;
-      try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
-      catch { identify = null; }
-      ENG.val = { mine, base, identify, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
-    }
-    await engineCalibrate(ENG.val);
-  } catch (e) {
-    ENG.val = { error: e?.message ?? String(e) };
-  }
-  ENG.valRunning = false; ENG.valStage = null; store.touch('eng');
-});
+// @bundle screens engine 30
+/* The Engine screen (docs/BUILD-5-PLAN.md A4): an ES module, not a page script.
+ * It touches nothing outside `ctx` (see web/README.md, "Screen modules"); the
+ * ctx for it is built by SCREEN_CTX.engine in web/app/screens.js. The long
+ * jobs (learn, score, the similar-artist lookups) stay in web/app/engine.js,
+ * which this screen calls through ctx. */
 
 /**
  * Phase 0's question, answered from one run: does the bridge lift tracks by
@@ -104,7 +11,7 @@ const engineValidate = guard(async () => {
  * costing anything overall? The bar is the plan's (§7), set before anyone saw
  * a number. Null when there is nothing to judge.
  */
-function bridgeVerdict(v) {
+export function bridgeVerdict(v) {
   const w = v?.mine?.withBridge, nf = v?.mine?.neverFiled;
   if (!w || !nf) return null;
   const lift = (w.neverFiled.top1 ?? 0) - (nf.top1 ?? 0);
@@ -121,7 +28,7 @@ function bridgeVerdict(v) {
 }
 
 /** One track's checked answer, for the comparison's "this engine" column. */
-function decisionHtml(d) {
+export function decisionHtml(d, esc) {
   const names = d.playlists.map(x => `<b>${esc(x.name)}</b>`);
   if (d.kind === 'confident') return `${names[0]} <span class="tag ok">confident</span>`;
   if (d.kind === 'choose' && names.length === 1) return `${names[0]} <span class="tag">probably</span>`;
@@ -140,8 +47,8 @@ function calibLine(label, rep, pc) {
 }
 
 /** "How sure it is", checked on tracks the thresholds were not fitted on. */
-function calibCard(p) {
-  const c = ENG.calib;
+function calibCard(p, calib) {
+  const c = calib;
   if (!c?.base?.checked?.n) return '';
   const k = c.base.checked, earned = c.base.cal?.tau != null && k.confidentN > 0;
   const verdict = c.base.holds === true
@@ -167,7 +74,7 @@ function calibCard(p) {
 }
 
 /** The with/without comparison on the score card. Empty when there is none. */
-function bridgeCard(v, p) {
+function bridgeCard(v, p, esc) {
   if (!v || v.error) return '';
   if (v.bridgeOff) return '';
   const w = v.mine?.withBridge;
@@ -205,7 +112,7 @@ function bridgeCard(v, p) {
  * (UI-BUILD-PLAN §2.9). `line` draws the gate's bar on the with-sound track:
  * where with-sound has to reach for this metric to count as earning it.
  */
-function pairBars(label, without, withSound, p, line = null, names = ['without', 'with sound']) {
+function pairBars(esc, label, without, withSound, p, line = null, names = ['without', 'with sound']) {
   if (without == null || withSound == null) return '';
   const clamp = x => Math.max(0, Math.min(1, x));
   const d = Math.round((withSound - without) * 1000) / 10;
@@ -220,7 +127,7 @@ function pairBars(label, without, withSound, p, line = null, names = ['without',
   </div>`;
 }
 
-function audioCard(v, p) {
+export function audioCard(v, p, esc) {
   const w = v && !v.error ? v.mine?.withAudio : null;
   if (!w) return '';
   const nf = v.mine.neverFiled, g = w.gate ?? {};
@@ -232,9 +139,9 @@ function audioCard(v, p) {
     <p class="why">Each playlist's sound is learned from the tracks you filed there that have been listened to.
       A track never hears itself: same tracks, same folds as above.</p>
     <div class="pairs">
-      ${pairBars('Right first time, every scored track', v.mine.top1, w.top1, p,
+      ${pairBars(esc, 'Right first time, every scored track', v.mine.top1, w.top1, p,
         v.mine.top1 != null ? { at: v.mine.top1, label: 'no loss overall' } : null)}
-      ${pairBars('Right first time, artists not in any genre playlist yet',
+      ${pairBars(esc, 'Right first time, artists not in any genre playlist yet',
         nf.top1, w.neverFiled?.top1, p, nf.top1 != null ? { at: nf.top1 + lift, label: `+${liftPts} points` } : null)}
     </div>
     <p class="gateline"><s class="gate" aria-hidden="true"></s><span>The bar it has to clear: <b>+${liftPts} points</b> right first
@@ -252,19 +159,19 @@ function audioCard(v, p) {
         ? (g.pass === true ? 'Helps.' : g.pass === false ? 'Not ahead of tags yet on your filing; sound still leads, by your call.' : 'Undecided; sound still leads, by your call.')
         : (g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.')}</b>
       ${esc(g.text ?? '')}</p>
-    ${identifyHTML(v.identify, p)}
+    ${identifyHTML(v.identify, p, esc)}
   </div>`;
 }
 
 /** How well it names genres by sound, on tracks you've already filed (core/audio/identify.mjs). */
-function identifyHTML(a, p) {
+function identifyHTML(a, p, esc) {
   if (!a?.scored) return '';
   return `<h3 style="margin:18px 0 6px; font-size:16px">Naming genres by sound</h3>
     <p class="why">Each heard track in a genre playlist whose name says a genre, named from its sound with itself
       left out: the sound model's styles, the filed tracks it sounds most like, its artist's tags, and its tempo.</p>
     <div class="pairs">
-      ${pairBars('Genre right (Drum & Bass, House…)', a.modelOnly.genre, a.genre, p, null, ['model alone', 'with your library'])}
-      ${pairBars('Sub-genre right too (Jungle, Donk…)', a.modelOnly.specific, a.specific, p, null, ['model alone', 'with your library'])}
+      ${pairBars(esc, 'Genre right (Drum & Bass, House…)', a.modelOnly.genre, a.genre, p, null, ['model alone', 'with your library'])}
+      ${pairBars(esc, 'Sub-genre right too (Jungle, Donk…)', a.modelOnly.specific, a.specific, p, null, ['model alone', 'with your library'])}
     </div>
     <div class="facts" style="margin-top:10px">
       <div><span>Tracks scored</span><b class="mono">${a.scored.toLocaleString()}</b></div>
@@ -273,13 +180,10 @@ function identifyHTML(a, p) {
     </div>`;
 }
 
-/** Whether long engine work will run off the main thread. */
-const engineInBackground = () => typeof Worker === 'function' && ENGINE_WORKER !== false;
-
 /** The playlists the engine understands least: offered in its top three least
  *  often for tracks that really are in them. Five or more tracks, so one odd
  *  record cannot put a playlist on the list by itself. */
-function weakBuckets(v, n = 5) {
+export function weakBuckets(v, LIB, n = 5) {
   const names = new Map((LIB?.playlists ?? []).map(p => [p.id, p.name]));
   return (v?.mine?.playlists ?? [])
     .filter(b => b.n >= 5 && b.inTop3 != null)
@@ -294,7 +198,7 @@ function weakBuckets(v, n = 5) {
  * names of the user's own weakest playlists — so pasting it somewhere shares
  * how the engine did, not what the library holds beyond that.
  */
-function engineSummary() {
+export function summary({ ENG, LIB }) {
   const v = ENG.val, r = ENG.rung;
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
@@ -307,7 +211,7 @@ function engineSummary() {
     v.base ? `Today's engine: top-1 ${pc(v.base.top1)}, top-3 ${pc(v.base.top3)}${v.base.noAnswer ? `, no tags for ${v.base.noAnswer}` : ''}`
            : `Today's engine: not scored (no tag data loaded)`,
     v.mine.declined ? `Declined: ${v.mine.declined}, of which would have been right: ${v.mine.declinedWouldHaveBeenRight ?? 0}` : null,
-    weakBuckets(v).length ? `Weakest: ${weakBuckets(v).map(b => `${b.name} ${pc(b.inTop3)} of ${b.n}`).join('; ')}` : null,
+    weakBuckets(v, LIB).length ? `Weakest: ${weakBuckets(v, LIB).map(b => `${b.name} ${pc(b.inTop3)} of ${b.n}`).join('; ')}` : null,
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
     v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
     ...bridgeLines(v, pc),
@@ -358,29 +262,11 @@ function audioLines(v, pc) {
   ];
 }
 
-const engineCopy = guard(async () => {
-  const text = engineSummary();
-  if (!text) return;
-  try { await navigator.clipboard.writeText(text); return toast('Copied — paste it wherever you like.'); }
-  catch { /* no clipboard permission: offer the share sheet, then a manual copy */ }
-  try { if (navigator.share) { await navigator.share({ text }); return; } } catch { return; }
-  prompt('Copy this:', text);
-});
-
-/** Forget the learned space, so the next analysis rebuilds from the library. */
-const engineReset = guard(async () => {
-  try { await idb.del(SPACE_KEY); } catch {}
-  try { await idb.del(CAL_KEY); } catch {}
-  Object.assign(ENG, { status:'idle', space:null, rung:null, shadow:null,
-                       pairs:null, val:null, calib:null, ms:0, from:null });
-  toast('Cleared. The next analysis rebuilds from your library.');
-  render();
-});
-
 /** 0 nothing filed, 1 sparse, 2 working, 3 established. */
 const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 
-function vEngine() {
+export function view(c) {
+  const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText } = c;
   const head = `<h1>Engine</h1>
     <p class="lede">A second opinion that reads nothing but your own playlists. No key, no other website,
       no genre list written by somebody else — just who you file together, on which label, in what shape
@@ -393,7 +279,7 @@ function vEngine() {
       <p>Both engines only file into playlists marked <b>receives suggestions</b>, and none of yours are — none of
         their names say what genre they are. Mark the ones that are genre playlists on the Playlists screen, then
         come back.</p>
-      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-eng="lists">Open Playlists</button></div>
+      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Playlists</button></div>
     </div>`;
 
   if (ENG.status === 'idle') return `${head}
@@ -403,7 +289,7 @@ function vEngine() {
         Takes a few seconds, and is remembered afterwards so it is a one-off. It runs on this device —
         nothing is sent anywhere.</p>
       <div class="rowbtns" style="margin-top:18px">
-        <button class="b big go" data-eng="go">Learn my library</button>
+        <button class="b big go" data-act="go">Learn my library</button>
       </div>
     </div>`;
 
@@ -419,7 +305,7 @@ function vEngine() {
     <div class="card">
       <h2 style="margin:0 0 12px; font-size:19px">That didn't work</h2>
       <p class="why">${esc(ENG.err ?? 'Unknown error')}</p>
-      <div class="rowbtns" style="margin-top:16px"><button class="b" data-eng="go">Try again</button></div>
+      <div class="rowbtns" style="margin-top:16px"><button class="b" data-act="go">Try again</button></div>
     </div>`;
 
   const r = ENG.rung, sh = ENG.shadow;
@@ -480,7 +366,7 @@ function vEngine() {
             </div>
             <div class="cmp">
               <div><em>today</em>${row.theirs ? `<b>${esc(row.theirs.name)}</b>` : '<i>no suggestion</i>'}</div>
-              <div><em>this engine</em>${row.decision ? decisionHtml(row.decision)
+              <div><em>this engine</em>${row.decision ? decisionHtml(row.decision, esc)
                 : row.mine ? `<b>${esc(row.mine.name)}</b>` : '<i>won&rsquo;t guess</i>'}</div>
             </div>
           </summary>
@@ -539,21 +425,21 @@ function vEngine() {
       verdict === 'ahead' ? 'On your library, reading nothing but your own filing beats reading the tag table.'
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
       : 'There is nothing to choose between them on your library.'}</p>` : ''}
-    ${bridgeCard(v, p)}
-    ${audioCard(v, p)}
-    ${v && !v.error ? calibCard(p) : ''}
-    ${weakBuckets(v).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+    ${bridgeCard(v, p, esc)}
+    ${audioCard(v, p, esc)}
+    ${v && !v.error ? calibCard(p, ENG.calib) : ''}
+    ${weakBuckets(v, LIB).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
       <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
         Low here means the engine has no real idea what that playlist is for.</p>
-      <div class="facts" style="margin-top:10px">${weakBuckets(v).map(b =>
+      <div class="facts" style="margin-top:10px">${weakBuckets(v, LIB).map(b =>
         `<div><span>${esc(b.name)} <span class="sub">· ${b.n} tracks</span></span><b class="mono">${p(b.inTop3)}</b></div>`).join('')}
       </div>` : ''}` : ''}
-    <label class="check-row" style="margin-top:14px"><input type="checkbox" id="bridgeToggle" ${bridgeOn() ? 'checked' : ''}
+    <label class="check-row" style="margin-top:14px"><input type="checkbox" data-act="bridgeToggle" id="bridgeToggle" ${bridgeOn() ? 'checked' : ''}
       ${ENG.valRunning ? 'disabled' : ''}> Also try similar artists (asks Deezer, ListenBrainz and Wikidata about the artists being scored)</label>
     <div class="rowbtns" style="margin-top:10px">
-      <button class="b ${v ? '' : 'go'}" data-eng="validate" ${ENG.valRunning ? 'disabled' : ''}>${
+      <button class="b ${v ? '' : 'go'}" data-act="validate" ${ENG.valRunning ? 'disabled' : ''}>${
         ENG.valRunning ? 'Scoring…' : v ? 'Run it again' : 'Score both engines'}</button>
-      ${v && !v.error && !ENG.valRunning ? `<button class="b" data-eng="copy">Copy results</button>` : ''}
+      ${v && !v.error && !ENG.valRunning ? `<button class="b" data-act="copy">Copy results</button>` : ''}
     </div>
     ${ENG.valRunning && ENG.valStage === 'bridge' ? `<p class="why" style="margin-top:12px" id="bridgeProgress" aria-live="polite">${esc(bridgeProgressText())}</p>
       <p class="why">The first run asks about each artist being scored — a few hundred, a minute or two. Every answer is
@@ -592,7 +478,34 @@ function vEngine() {
     ${valCard}
     ${pairCard}
     <div class="rowbtns" style="margin:20px 0 0">
-      <button class="b sm" data-eng="reset">Forget and learn again</button>
+      <button class="b sm" data-act="reset">Forget and learn again</button>
     </div>`;
 }
 
+/** `data-act` -> handler(ctx, el, ev). Click, except the checkbox, which is `change`. */
+export const actions = {
+  go: c => c.engineAnalyse(),
+  validate: c => c.engineValidate(),
+  lists: c => c.go('lists'),
+  bridgeToggle: (c, el) => {
+    if (el.checked) c.LS.removeItem('bf_bridge_off'); else c.LS.setItem('bf_bridge_off', '1');
+  },
+  /** Copy the score as text; no clipboard permission offers the share sheet, then a manual copy. */
+  async copy(c) {
+    const text = summary(c);
+    if (!text) return;
+    try { await c.navigator.clipboard.writeText(text); return c.toast('Copied — paste it wherever you like.'); }
+    catch { /* fall through to share */ }
+    try { if (c.navigator.share) { await c.navigator.share({ text }); return; } } catch { return; }
+    c.prompt('Copy this:', text);
+  },
+  /** Forget the learned space, so the next analysis rebuilds from the library. */
+  async reset(c) {
+    try { await c.idb.del(c.SPACE_KEY); } catch {}
+    try { await c.idb.del(c.CAL_KEY); } catch {}
+    Object.assign(c.ENG, { status:'idle', space:null, rung:null, shadow:null,
+                           pairs:null, val:null, calib:null, ms:0, from:null });
+    c.toast('Cleared. The next analysis rebuilds from your library.');
+    c.render();
+  },
+};

@@ -221,3 +221,11 @@ ${listsSplitHTML(splits)}
     ${axisTableHTML(rows, mixes)}`;
 }
 
+/** Artists with genre tags, for Home, Playlists and the Sources screen's ctx. */
+function tagCoverage() {
+  const ids = new Set();
+  for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id) ids.add(a.id);
+  for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id) ids.add(a.id);
+  const have = [...ids].filter(id => TAGS[id]?.tags?.length).length;
+  return { total: ids.size, have, missing: ids.size - have, pct: ids.size ? Math.round(100*have/ids.size) : 0 };
+}
