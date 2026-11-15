@@ -233,6 +233,31 @@ test('deterministic: the same verdicts in any order train the same model, bit fo
   }
 });
 
+test('the hosted path: buildSpace with the page\'s prototype-only audio input learns from FB, and is unchanged without it', () => {
+  // What web/app/audio.js engineAudioIn hands the engine: { records, model: 'prototype', feedback: FB }.
+  // The prototype learner has no training loop: an accept is one more member
+  // in that playlist's average, a reject is subtracted from it (Rocchio, capped).
+  const LIB = fixture();
+  // Families that only lean apart, so no probability saturates at 0 or 1.
+  const recs = LIB.all.map(t => recordFor(t.id, 30));
+  const targets = FAMILIES.map(f => `p-${f}`);
+  const space = audio => buildSpace(LIB, { targets, audio });
+  const plain = space({ records: recs, model: 'prototype' });
+  const all = sp => JSON.stringify(LIB.all.map(t => placements(t, sp, { limit: Infinity })));
+  assert.equal(all(space({ records: recs, model: 'prototype', feedback: {} })), all(plain), 'an empty store changes nothing');
+  // "Not tech" for three tech tracks (with the page's rejectedAt stamps): they
+  // leave tech's average and are subtracted from it, so they hear less tech.
+  // (Neighbours of a rejected track: 'rejects push a borderline track away' above.)
+  const FB = Object.fromEntries([0, 1, 2].map(i => [`tech-t${i}`, { skips: 0, lastSkip: null, rejected: ['p-tech'], rejectedAt: { 'p-tech': 1e12 + i } }]));
+  const taught = space({ records: recs, model: 'prototype', feedback: FB });
+  const pTech = (sp, id) => sp.learned({ id }).get('p-tech');
+  for (const id of ['tech-t0', 'tech-t1', 'tech-t2']) assert.ok(pTech(taught, id) < pTech(plain, id), `${id}: ${pTech(plain, id)} → ${pTech(taught, id)}`);
+  // An accept pulls the other way: deep tracks accepted into tech join its average and hear more tech.
+  const accFB = Object.fromEntries([3, 4, 5].map(i => [`deep-t${i}`, { skips: 0, lastSkip: null, rejected: [], accepted: ['p-tech'], acceptedAt: { 'p-tech': 1e12 } }]));
+  const acc = space({ records: recs, model: 'prototype', feedback: accFB });
+  for (const id of ['deep-t3', 'deep-t4', 'deep-t5']) assert.ok(pTech(acc, id) > pTech(plain, id), `${id}: ${pTech(plain, id)} → ${pTech(acc, id)}`);
+});
+
 /* ---------- honesty ---------- */
 
 test('LEAKAGE: model choice never trains on a verdict about its own held-out fold', () => {
@@ -324,9 +349,9 @@ function record(id, emb) {
                       mel: '1.0.0', at: 1 });
 }
 /** E2's family-sound records: tracks of one family sound alike. */
-function recordFor(id) {
+function recordFor(id, noise = 0.6) {
   const fam = id.split('-')[0];
   const fr = rng(1 + FAMILIES.indexOf(fam) * 7919), dir = Float32Array.from({ length: EMB_DIM }, () => fr() - 0.5);
   const r = rng([...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7));
-  return record(id, Float32Array.from(dir, v => v + 0.6 * (r() - 0.5)));
+  return record(id, Float32Array.from(dir, v => v + noise * (r() - 0.5)));
 }

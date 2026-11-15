@@ -141,11 +141,19 @@ function mergeFeedback(local, remote) {
     const l = merged[id];
     // Accepts and keeps union the same way; each only appears once either side has one.
     const union = k => [...new Set([...(l[k] ?? []), ...(r[k] ?? [])])];
+    // When each verdict was given: per playlist, the later of the two times.
+    const latest = k => {
+      const out = { ...(l[k] ?? {}) };
+      for (const [p, t] of Object.entries(r[k] ?? {})) if (!(out[p] >= t)) out[p] = t;
+      return out;
+    };
     merged[id] = !l ? r : {
       skips: Math.max(l.skips ?? 0, r.skips ?? 0),
       lastSkip: [l.lastSkip, r.lastSkip].filter(Boolean).sort().at(-1) ?? null,
       rejected: union('rejected'),
+      ...(l.rejectedAt || r.rejectedAt ? { rejectedAt: latest('rejectedAt') } : {}),
       ...(l.accepted || r.accepted ? { accepted: union('accepted') } : {}),
+      ...(l.acceptedAt || r.acceptedAt ? { acceptedAt: latest('acceptedAt') } : {}),
       ...(l.kept || r.kept ? { kept: union('kept') } : {}),
     };
   }

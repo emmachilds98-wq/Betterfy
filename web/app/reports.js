@@ -116,9 +116,11 @@ function buildReports(lib, cfg, tags) {
       if (t.isrc) filedIsrc.add(t.isrc); if (t.name) filedKey.add(trackKey(t)); } }
   const isFiled = t => filed.has(t.id) || (!!t.isrc && filedIsrc.has(t.isrc)) || (!!t.name && filedKey.has(trackKey(t)));
   const unfiled = lib.liked.filter(t => t?.id && !isFiled(t));
+  // Rejections by artist, read once for the whole queue (backlogSuggest).
+  const rejected = artistRejectMemory(FB, lib);
   const backlog = unfiled.map(t => {
     const fb = FB[t.id];
-    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets);
+    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets, rejected);
     return { id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
       album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
       tags: topTags(t, tags, idf),
@@ -176,15 +178,21 @@ function keptHere(trackId, playlistId) { return !!FB[trackId]?.kept?.includes(pl
  * and rejecting a pick re-ranks the card through it too, so the slot a
  * rejection frees fills exactly the way the card was first filled — the
  * filing-history fallback and the `via` label included. `tags` are the gated
- * tags buildReports scores with.
+ * tags buildReports scores with. `rejected` is profile.mjs artistRejectMemory
+ * over FB, passed in by buildReports so a queue of thousands reads FB once.
  */
 function backlogSuggest(t, lib, cfg, tags, profiles, idf,
-                        targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id))) {
+                        targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id)),
+                        rejected = artistRejectMemory(FB, lib)) {
   const fb = FB[t.id];
+  // A playlist rejected for this artist's other tracks is lowered here, fading
+  // with time and later accepts (profile.mjs rejectFactors, BUILD-5-PLAN §5.1).
+  // Null with no such rejection, and then the picks are exactly what they were.
+  const down = rejectFactors(t, rejected);
   // Ask for more than three, then drop the playlists already rejected for
   // this track, so a rejection promotes the next real candidate instead of
   // leaving a gap where the rejected one was.
-  const ranked = rank(t, tags, profiles, idf, { top: 8 })
+  const ranked = downweightRejected(rank(t, tags, profiles, idf, { top: 8 }), down)
     .filter(b => !fb?.rejected?.includes(b.id))
     .slice(0, 3)
     .map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null, via: 'tags' }));
@@ -192,7 +200,7 @@ function backlogSuggest(t, lib, cfg, tags, profiles, idf,
   // filing history only ever steps in when it hasn't — no fetch, no third
   // party, just where the user already put this artist's other tracks.
   return (ranked.length && ranked[0].score >= 0.30) ? ranked
-    : artistHistory(t, lib, targets)
+    : downweightRejected(artistHistory(t, lib, targets), down)
         .filter(h => !fb?.rejected?.includes(h.id))
         .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
 }

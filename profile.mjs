@@ -478,6 +478,115 @@ export function artistHistory(track, lib, targets) {
   return [{ id: topId, name: home?.name ?? topId, score: share, count: topCount, total }];
 }
 
+/* ---------- rejections teach the tag engine (BUILD-5-PLAN §5.1) ----------
+ * Tags are per artist, so every track by one artist ranks the same, and a
+ * "not that playlist" on one of them used to teach nothing about the rest: the
+ * very next track by the same artist came up with the same wrong pick. Here a
+ * rejection of playlist P for artist X's track lowers P for X's other tracks —
+ * lowered, never removed, because an artist can belong in two playlists — and
+ * the lowering fades with time and with each later accept of X into P (or
+ * "Keep here" of X's track in P), so one early mistake cannot bury a playlist
+ * for an artist the listener has since filed there.
+ *
+ * Plain arithmetic over this account's own feedback state (the page's `FB`,
+ * shape in web/app/feedback.js); nothing leaves the account. With no
+ * rejection nothing changes: `rejectFactors` is null and `downweightRejected`
+ * returns the very array it was given. */
+export const REJECT_MEMORY = {
+  /** One fresh rejection multiplies the playlist's score for the artist's other tracks by 1 − strength. */
+  strength: 0.5,
+  /** A rejection's pull halves every this many days. */
+  halfLifeDays: 90,
+  /** Each later accept of the artist into the playlist multiplies what is left of a rejection's pull by this. */
+  acceptDecay: 0.5,
+  /** However many rejections pile up, a playlist keeps at least this share of its score. */
+  floor: 0.2,
+};
+
+const timeOf = v => (typeof v === 'number' ? v : typeof v === 'string' ? (Date.parse(v) || null) : null);
+
+/**
+ * Who rejected what, by artist: first-billed artist id → playlist id →
+ * { rejects: [{ trackId, at }], accepts: [{ trackId, at }] }. `at` is epoch ms
+ * from `rejectedAt` / `acceptedAt` when the store has them, else null (stores
+ * written before they existed). Only artists with a rejection are kept, and
+ * accepts and keeps are read for those only. Artists come from the library's
+ * liked songs and playlists.
+ *
+ * @param {object|null} fb   { [trackId]: { rejected, rejectedAt?, accepted?, acceptedAt?, kept? } }
+ * @param {object} lib       { liked?, playlists? }
+ * @returns {Map<string, Map<string, {rejects: object[], accepts: object[]}>>}
+ */
+export function artistRejectMemory(fb, lib) {
+  const mem = new Map();
+  const ids = Object.keys(fb ?? {}).filter(id => fb[id]?.rejected?.length).sort();
+  if (!ids.length) return mem;
+  const artistOf = new Map();
+  const note = t => { const a = t?.artists?.[0]?.id; if (t?.id && a && !artistOf.has(t.id)) artistOf.set(t.id, a); };
+  for (const t of lib?.liked ?? []) note(t);
+  for (const p of lib?.playlists ?? []) for (const t of p.tracks ?? []) note(t);
+  for (const id of ids) {
+    const a = artistOf.get(id), f = fb[id];
+    if (!a) continue;
+    const m = mem.get(a) ?? mem.set(a, new Map()).get(a);
+    for (const p of f.rejected) {
+      const s = m.get(p) ?? m.set(p, { rejects: [], accepts: [] }).get(p);
+      s.rejects.push({ trackId: id, at: timeOf(f.rejectedAt?.[p]) });
+    }
+  }
+  if (!mem.size) return mem;
+  for (const id of Object.keys(fb).sort()) {
+    const m = mem.get(artistOf.get(id)), f = fb[id];
+    if (!m) continue;
+    for (const p of Array.isArray(f?.accepted) ? f.accepted : []) m.get(p)?.accepts.push({ trackId: id, at: timeOf(f.acceptedAt?.[p]) });
+    for (const p of Array.isArray(f?.kept) ? f.kept : []) m.get(p)?.accepts.push({ trackId: id, at: null });
+  }
+  return mem;
+}
+
+/**
+ * How much each playlist is lowered for this track: playlist id → factor in
+ * [floor, 1), or null when nothing applies. Each rejection of P for another
+ * track by the same first-billed artist contributes 1 − strength · w, where w
+ * halves every `halfLifeDays` and with each accept of the artist into P made
+ * after it (an accept or rejection with no time counts as later, so an old
+ * store can only see a penalty lifted, never kept). The track's own
+ * rejections are not counted: those already remove P from its picks outright.
+ *
+ * @param {object} track
+ * @param {Map} memory  from `artistRejectMemory`
+ * @param {{ now?: number }} [opts]  plus any REJECT_MEMORY override
+ * @returns {Map<string, number>|null}
+ */
+export function rejectFactors(track, memory, { now = Date.now(), ...o } = {}) {
+  const m = memory?.size ? memory.get(track?.artists?.[0]?.id) : null;
+  if (!m) return null;
+  const { strength, halfLifeDays, acceptDecay, floor } = { ...REJECT_MEMORY, ...o };
+  const out = new Map();
+  for (const [p, { rejects, accepts }] of m) {
+    let f = 1;
+    for (const r of rejects) {
+      if (r.trackId === track.id) continue;
+      let w = r.at != null && now != null ? 0.5 ** (Math.max(0, now - r.at) / (halfLifeDays * 864e5)) : 1;
+      for (const x of accepts) if (x.trackId !== track.id && (x.at == null || r.at == null || x.at >= r.at)) w *= acceptDecay;
+      f *= 1 - strength * w;
+    }
+    if (f < 1) out.set(p, Math.max(floor, f));
+  }
+  return out.size ? out : null;
+}
+
+/**
+ * `ranked` ({ id, score } picks, best first) with each lowered playlist's
+ * score multiplied by its factor and re-sorted (stable: ties keep their
+ * order). The very same array when there is nothing to lower.
+ */
+export function downweightRejected(ranked, factors) {
+  if (!factors?.size || !ranked?.some(b => factors.has(b.id))) return ranked;
+  return ranked.map(b => (factors.has(b.id) ? { ...b, score: b.score * factors.get(b.id) } : b))
+    .sort((a, b) => b.score - a.score);
+}
+
 /** The strongest tags on a track, for explaining a suggestion. */
 export function topTags(track, tags, idf, n = 5) {
   const v = applyIdf(trackVec(track, tags), idf);
