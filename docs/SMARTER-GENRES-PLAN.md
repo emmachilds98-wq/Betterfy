@@ -20,23 +20,24 @@ owner's.
 
 ---
 
-## Where things stand (2026-11-14)
+## Where things stand (2026-11-15)
 
 | | State |
 |---|---|
-| Phase 0: similar-artist bridge, measured on the Score card | **Shipped** (#48). Waiting on the owner's run |
-| Phase 1: bridge in real placement | Gated on that run |
+| Phase 0: similar-artist bridge, measured on the Score card | **Shipped** (#48). **Passed** on the owner's library (+38.1 points on never-filed artists, +29.7 overall; §7) |
+| Phase 1: bridge in real placement, blended with tags | **Built** (this PR): the Score card's "Blended" line, and File's picks from the blend once that line beats tags (§7, "Phase 1 as built") |
 | Phase 2: calibrated "confident / short list / not sure" | **Shipped** (#49) |
 | Phase 3: New playlists proposes uncovered genres and splits | **Shipped** (#50) |
-| Phase 4: corrections and playlist types sync; artist roll-forward | **Shipped** (#51). Teach queue gated on phase 1 |
+| Phase 4: corrections and playlist types sync; artist roll-forward | **Shipped** (#51). Teach queue no longer gated (phase 1 is built), not started |
 | §4.1(c) keyless genres from Wikidata for untagged artists | **Shipped** (this PR) |
 | Phase 5: audio | Waiting on the owner's licence choice (§8, item 4) |
 | Phase 6: vocabulary pass for unplaced tags | Not started |
 
 The live filing engine is still today's tag engine, restricted to genre
-playlists since #46. The account-native engine, the bridge and calibration
-are all measured on the Engine screen but placed nothing on their own. That
-is deliberate, until a real library says they're better.
+playlists since #46, for every account whose own Score run hasn't shown the
+blend beating it. Where it has (and similar artists are on), File's picks come
+from tags blended with the account-native engine and the bridge, at a weight
+fitted on that account's held-out filing. Calibration is still measured only.
 
 ## 0. The short version
 
@@ -296,8 +297,8 @@ off.
 
 | Phase | What | Gate |
 |---|---|---|
-| **0** *(built 2026-11-14; waiting on the owner's run)* | Measurement only. Add the bridge (Deezer + ListenBrainz via Wikidata) as an optional component in `validate-placement` and the Engine screen's **Score**, reporting coverage and accuracy with and without it, overall and on **never-filed artists** | Top-1 placement on never-filed artists up by ≥5 points, overall not down. If it fails, stop and report |
-| **1** | Ship the bridge: `core/sources/deezer.mjs`, `listenbrainz.mjs`, `wikidata.mjs` (pure parse functions + thin fetch, fixture-tested like `discogs.mjs`); `core/intrinsic/bridge.mjs` as one more `combine()` component; per-artist cache; listening-ordered background fetch | Test proving that with no bridge cache the output is byte-identical to today |
+| **0** *(built 2026-11-14; **passed** on the owner's run 2026-11-15)* | Measurement only. Add the bridge (Deezer + ListenBrainz via Wikidata) as an optional component in `validate-placement` and the Engine screen's **Score**, reporting coverage and accuracy with and without it, overall and on **never-filed artists** | Top-1 placement on never-filed artists up by ≥5 points, overall not down. If it fails, stop and report |
+| **1** *(built 2026-11-15)* | Ship the bridge: `core/sources/deezer.mjs`, `listenbrainz.mjs`, `wikidata.mjs` (pure parse functions + thin fetch, fixture-tested like `discogs.mjs`); `core/intrinsic/bridge.mjs` as one more `combine()` component; per-artist cache; listening-ordered background fetch. As built: **blended with the tag engine** rather than replacing it, one weight per account fitted on held-out folds | Test proving that with no bridge cache the output is byte-identical to today (`test/webblend.test.mjs`) |
 | **2** *(built 2026-11-14)* | Calibration + prediction sets (`core/intrinsic/calibrate.mjs`); show "right N% of the time" on the Engine screen | The stated rate holds on a second held-out fold within ±3 points |
 | **3** *(first half built 2026-11-14)* | **Gaps** screen: uncovered genre → create, split, twins, nameless cluster | Each proposal type has a fixture test. Nothing is written to Spotify without a tap (`verify-untouched.mjs` pattern) |
 | **4** *(roll-forward and sync built 2026-11-14; teach queue waits on phase 1)* | Teach queue, artist roll-forward, corrections + axis-override sync | Score after 20 teach answers beats the score before them |
@@ -345,8 +346,89 @@ playlists were filed *by Last.fm genre*, and crowd genre correlates with
 "fans also like", so this flatters the bridge compared with a real person's
 filing. Only the owner's run answers the gate.
 
-The bridge is not on the File screen and changes no suggestion. Phase 1 waits
-on the gate.
+**The owner's run (2026-11-15, build 2026-11-15-0024).** 80 playlists, 1,311
+liked songs, 29 genre destinations, 600 scored tracks, 520 artists with a
+neighbourhood but only 18% of artists in two or more playlists:
+
+| | top-1 | top-3 |
+|---|---|---|
+| Account-native engine alone | 28% | 47% |
+| Today's tag engine (no tags for 26 tracks) | 54% | 77% |
+| Account-native **with similar artists** (weight 0.5) | **58%** | **79%** |
+| Never-filed artists (205 tracks), without → with | 11% → **49%** | |
+
+Deezer answered for 467 of 513 artists looked up and ListenBrainz for 201; 464
+had neighbours in the library, and the bridge had a say on 538 of the 600
+tracks. Lookups took 896 s on a first run. **Phase 0: PASS**, +38.1 points on
+never-filed artists and +29.7 overall, far past the +5 bar. Calibration earned
+no "confident" calls; with similar artists the short list covered 32% of
+tracks (2.1 playlists on average) and held the right one 91% of the time, and
+68% were "not sure". Weakest playlists: Dancehall 0 of 7, D&B/Jungle 13% of 8,
+Late Night House 14% of 7, Alt/Indie 19% of 54, Chill Rap/HipHop 25% of 51; six
+pairs it couldn't tell apart. That run had no sound lines, and a re-run was in
+progress, so treat the figures as provisional; the gate was cleared by a wide
+margin either way.
+
+**Phase 1 as built (2026-11-15).** Not a switch from one engine to the other: a
+**blend**, because the two are right about different tracks (tags about
+crowd-tagged artists you've never filed, the bridge about scene artists the
+crowd has never heard of).
+
+- **One score per (track, playlist).** `core/intrinsic/blend.mjs`: each engine
+  divided by its own best score for the track, then `w · tags + (1 − w) ·
+  engine`. A side with nothing to say drops out, so a track with no tags is
+  ranked by the engine and similar artists alone.
+- **One weight per account, fitted honestly.** `core/validate/blend.mjs` joins
+  the Score run's two rankings per track (the tag engine's, which
+  `baselineAccuracy(…, { collect: true })` now keeps, and the native engine's
+  with the bridge). For each fold the weight is chosen from an 11-step grid on
+  the other four folds and scored on this one; ties go to the weight nearest
+  tags. The File screen uses the weight fitted on all tracks. Nothing is
+  trained: it is one number from counts.
+- **The Score card** gets a "Today's engine and this one, together" section
+  and Copy results gets `Blended (…)`, `Never-filed artists blended` and
+  `Phase 1:` lines.
+- **The File screen uses it only when this account's own Score says so:** the
+  blend at least one point of top-1 ahead of tags on held-out tracks, top-3 no
+  more than a point behind, scored with similar artists on. The fit is kept in
+  IndexedDB (`engine-blend`) per set of genre playlists, not per library
+  fingerprint, so filing a track doesn't throw it away; a newer Score run
+  replaces it, and "Forget and learn again" clears it. It also needs similar
+  artists remembered on this device and the switch on (`bf_bridge_off` turns it
+  straight back to today's picks). Heard tracks still lead with sound; the
+  blend replaces the tag engine's picks beneath them. With no stored score, no
+  lookups remembered, or a score the blend didn't win, File is byte-identical
+  to today and the engine bundle isn't even fetched (`test/webblend.test.mjs`).
+- **Lookups in the background, by listening.** Once the blend is on, File
+  gathers similar artists for the tracks waiting to be filed, artists you
+  play most first (top artists over three windows plus recently played, the
+  same cached fetch Discover uses), 40 at a time into the same per-artist
+  cache the Score run fills, saving after each batch.
+
+**Why the account-native engine alone trails tags (28% against 54%).** Read
+from the code and the owner's numbers, and checked on a synthetic library:
+
+- *Most artists carry no graph evidence.* The co-occurrence graph only links
+  artists that share two or more playlists, and with the genre-only graph
+  that is 18% of this library's artists. Everyone else's track vector is just
+  the artist itself, so the graph can only say "same artist", never "same
+  scene". Never-filed artists (34% of scored tracks) get nothing at all from
+  it: 11% top-1, which is little better than always guessing the biggest playlists.
+- *Where it does have evidence, the record's shape out-votes it.* Even for
+  tracks whose artist *is* filed, the engine is right only about 37% of the
+  time ((0.28 × 600 − 0.11 × 205) ÷ 395). The graph is a cosine against the
+  playlist's centroid, which a wide playlist dilutes (one artist among 40 is
+  about 0.16), while the six shape components (label, era, length, release
+  type…) together weigh 1.5 against the graph's 1.0 and differ between
+  playlists by more than that. On a synthetic library shaped like this one
+  (uneven playlist sizes, 85% single-playlist artists), filed-artist top-1
+  went from 77% with today's weights to 90% with the graph weighted ×4. The
+  weights are still the priors from `space.mjs`; fitting them on the
+  account's held-out folds is the obvious next step, and the harness already
+  takes `weights`.
+- *Tags see the crowd's word for the artist even when you've filed nothing
+  by them*, which is exactly the case the graph can't answer, and exactly the
+  case the bridge fixed (11% → 49%).
 
 **Phase 2 as built (2026-11-14).** `core/intrinsic/calibrate.mjs`, fed by
 `placementAccuracy(…, { collect: true })`. Three changes from §4.2's sketch,

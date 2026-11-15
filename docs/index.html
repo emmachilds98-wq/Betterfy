@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0109">
+<meta name="bf-build" content="2026-11-15-0403">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1465,7 +1465,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0109</span>
+    <span class="mono">build 2026-11-15-0403</span>
   </p>
 
   <div class="feat">
@@ -1569,7 +1569,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0109</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0403</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1610,7 +1610,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0109</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0403</span>
   </div>
 </div>
 
@@ -3071,7 +3071,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0109';
+const BUILD = '2026-11-15-0403';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3392,7 +3392,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0109', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0403', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -4687,9 +4687,12 @@ const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
  * engine's sound-led picks lead (soundPicks, in the engine section) and the tag
  * engine's best stays one key away as a second opinion; not heard, the tag
  * engine's, exactly as before. Guarded, so the card still draws where the
- * engine section isn't present. */
+ * engine section isn't present. Where this account's Score says tags blended
+ * with the engine and similar artists beat tags alone, the blend stands in for
+ * the tag engine's picks (blendPicks, app/blend.js); anywhere else it returns
+ * them untouched. */
 function filePicks(t) {
-  const tags = t?.suggest ?? [];
+  const tags = typeof blendPicks === 'function' ? blendPicks(t, t?.suggest ?? []) : t?.suggest ?? [];
   const sound = typeof soundPicks === 'function' ? soundPicks(t) : [];
   if (!sound.length) return tags;
   const out = sound.slice(0, 2);
@@ -4861,6 +4864,8 @@ function vInbox() {
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
               ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
               : sg.via === 'sound' ? `sounds like this playlist${sg.tagsAgree ? ' · tags agree' : ''}`
+              : sg.via === 'blend' ? (sg.untagged ? 'where you file this artist and ones like them'
+                : sg.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record')
               : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
             <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
@@ -7477,10 +7482,12 @@ const fire = p => { Promise.resolve(p).catch(actionFailed); };
  * you file together, which label, what shape of record, what era — with no key,
  * no second website and no genre list written by somebody else.
  *
- * It is a shadow, by the owner's explicit choice: nothing here writes to Spotify
- * and nothing here changes what the File screen suggests. The point is to be able
- * to judge it before it is allowed near anybody's library. See
- * docs/THINKING-ENGINE-PLAN.md, phases 5 and 6.
+ * It is a shadow, by the owner's explicit choice: nothing here writes to Spotify,
+ * and the File screen only takes picks from it (blended with the tag engine,
+ * app/blend.js) once this account's own Score run shows the blend ahead. The
+ * point is to be able to judge it before it is allowed near anybody's library.
+ * See docs/THINKING-ENGINE-PLAN.md, phases 5 and 6, and
+ * docs/SMARTER-GENRES-PLAN.md phase 1.
  * ======================================================================== */
 
 /** Fetched on first use, so a listener who never opens this screen never pays
@@ -7490,7 +7497,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0109';
+    s.src = 'engine.js?v=2026-11-15-0403';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -7512,7 +7519,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0109');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0403');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -7837,7 +7844,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0109';
+    s.src = 'audio.js?v=2026-11-15-0403';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -7873,7 +7880,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0109', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0403', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -8138,6 +8145,191 @@ function soundPicks(t) {
   return picks;
 }
 
+/* ======================= tags and the engine, blended on File =======================
+ * docs/SMARTER-GENRES-PLAN.md phase 1. The Score run fits one weight between
+ * today's tag engine and the account-native engine with similar artists
+ * (core/validate/blend.mjs), on this account's own held-out filing. Only when
+ * that run says the blend beats the tag engine — by a point of top-1, with
+ * similar artists on — do the File screen's picks come from the blend.
+ * Otherwise nothing here does anything: no engine download, no lookups, and
+ * `blendPicks` hands back the very array it was given (test/webblend.test.mjs).
+ *
+ * Off, or never scored, or no similar artists remembered on this device, or
+ * `bf_bridge_off`: today's picks, byte for byte.
+ *
+ * While it is on, the similar-artist lookups for the tracks waiting to be filed
+ * are gathered in the background, artists you actually play first (Spotify's
+ * top artists over three windows and recently played, the same fetch Discover
+ * makes and caches), into the same per-artist cache the Score run fills.
+ * Heard tracks still lead with sound (soundPicks); the blend replaces the tag
+ * engine's picks underneath them. Nothing here writes to Spotify.
+ * ======================================================================== */
+const BLEND_KEY = 'engine-blend';
+const BLEND = { status: 'idle', rec: null, base: null, space: null, targets: '', memo: new Map(), ver: 0,
+                fetching: false, gated: null, gatedFor: null, liked: null, likedFor: null, err: null };
+/** Similar-artist lookups gathered per save: small enough that a closed tab loses little. */
+const BLEND_CHUNK = 40;
+
+/** What a stored fit is only valid for: this blend and this engine. */
+const blendStamp = () => `${BetterfyBlend.BLEND_VERSION}/${BetterfyPersist.ENGINE_STAMP}`;
+
+/** Keep the Score run's blend for the File screen, or forget the last one when
+ *  this run had none (no tags loaded): the newest score is the one that counts. */
+async function blendRemember(v) {
+  const b = v && !v.error ? v.blend : null;
+  try {
+    if (!b) await idb.del(BLEND_KEY);
+    else await idb.set(BLEND_KEY, { stamp: blendStamp(), targets: engineTargets(), at: Date.now(),
+      weight: b.weight, beatsTags: !!b.beatsTags, withBridge: !!b.withBridge, scored: b.scored,
+      top1: b.top1, top3: b.top3, tags: b.tags, neverFiled: b.neverFiled ?? null });
+  } catch { /* not remembered: File keeps today's picks, which is the safe side */ }
+  blendForget();
+}
+
+/** Start again from the stored record on the next File render. */
+function blendForget() {
+  Object.assign(BLEND, { status: 'idle', rec: null, base: null, space: null, err: null });
+  BLEND.memo.clear(); BLEND.ver++;
+}
+
+/** Whether File's picks come from the blend right now. */
+function blendActive() {
+  return BLEND.status === 'ready' && !!BLEND.space && !!BLEND.rec?.beatsTags && bridgeOn()
+    && BLEND.targets === engineTargets().join();
+}
+
+/** Cheap to call on every render: it only does work once, and only for an
+ *  account whose stored Score says the blend is ahead. */
+function blendWarm() {
+  if (BLEND.status !== 'idle' || !LIB) return;
+  BLEND.status = 'checking';
+  fire(blendStart());
+}
+
+async function blendStart() {
+  try {
+    const rec = await idb.get(BLEND_KEY);
+    const targets = engineTargets();
+    // The cheap checks first, so an account it doesn't apply to never fetches engine.js.
+    if (!rec?.beatsTags || !rec.withBridge || !bridgeOn()
+        || JSON.stringify(rec.targets ?? null) !== JSON.stringify(targets)) { BLEND.status = 'off'; return; }
+    const raw = (await idb.get(BRIDGE_KEY))?.raw ?? null;
+    await engineLoad();
+    if (rec.stamp !== blendStamp()) { BLEND.status = 'off'; return; }
+    const learned = typeof ENG !== 'undefined' && ENG.space
+      && JSON.stringify(ENG.space.targets ?? null) === JSON.stringify(targets) ? ENG.space : null;
+    const base = learned ?? (await engineSpace()).space;
+    if (!base) { BLEND.status = 'off'; return; }
+    Object.assign(BLEND, { rec, base, targets: targets.join(), status: 'ready', err: null });
+    blendSetBridge(raw);
+    if (view === 'inbox' || view === 'home') render();
+    fire(blendFetch());
+  } catch (e) {
+    Object.assign(BLEND, { status: 'error', err: e?.message ?? String(e), space: null });
+  }
+}
+
+/** Let the remembered lookups into the space. No lookups remembered: no blend. */
+function blendSetBridge(raw) {
+  const has = !!raw && Object.keys(raw).length > 0;
+  BLEND.space = has && BLEND.base ? BetterfyBridge.withBridge(BLEND.base, BetterfyBridge.bridgeFrom(raw, LIB)) : null;
+  BLEND.memo.clear(); BLEND.ver++;
+}
+
+/** Artist name → how much you play them: top artists over three windows,
+ *  weighted as Discover weights them, and recently played. Empty on failure. */
+async function blendListening() {
+  const w = new Map();
+  try {
+    const d = typeof fetchListeningRaw === 'function' ? await fetchListeningRaw() : null;
+    for (const win of d?.topWindows ?? []) (win.items ?? []).forEach((name, i, all) => {
+      const k = String(name ?? '').toLowerCase();
+      if (k) w.set(k, (w.get(k) ?? 0) + (win.weight ?? 1) * (1 - i / all.length));
+    });
+    for (const name of d?.recentArtists ?? []) {
+      const k = String(name ?? '').toLowerCase();
+      if (k) w.set(k, (w.get(k) ?? 0) + 1);
+    }
+  } catch { /* no listening: the queue's own order */ }
+  return w;
+}
+
+/** Gather similar artists for the tracks waiting to be filed, in the background,
+ *  most-played artists first, saving after every chunk so nothing is asked twice. */
+async function blendFetch() {
+  if (BLEND.fetching || !bridgeOn() || !R?.backlog?.length) return;
+  BLEND.fetching = true;
+  try {
+    const listen = await blendListening();
+    const liked = new Map((LIB.liked ?? []).map(t => [t.id, t]));
+    const playOf = t => Math.max(0, ...(t.artists ?? []).map(a => listen.get(String(a?.name ?? '').toLowerCase()) ?? 0));
+    const tracks = R.backlog.map(b => liked.get(b.id)).filter(Boolean)
+      .map((t, i) => ({ t, i, w: playOf(t) })).sort((a, b) => b.w - a.w || a.i - b.i).map(x => x.t);
+    const artists = BetterfyBridge.sourceArtists(tracks);
+    let raw = (await idb.get(BRIDGE_KEY))?.raw ?? {};
+    const ttl = BetterfyBridgeFetch.TTL_MS, now = Date.now();
+    const fresh = at => Number.isFinite(at) && now - at < ttl;
+    const todo = [...artists].filter(([sid, a]) => (a.isrc && !fresh(raw[sid]?.deezerAt)) || !fresh(raw[sid]?.mbidAt));
+    for (let i = 0; i < todo.length; i += BLEND_CHUNK) {
+      // Switched off, or a Score run is filling the same cache: stop, and pick
+      // up from what was saved next time.
+      if (!bridgeOn() || (typeof ENG !== 'undefined' && ENG.valRunning) || BLEND.status !== 'ready') break;
+      const { raw: next, stats } = await BetterfyBridgeFetch.gatherBridge(new Map(todo.slice(i, i + BLEND_CHUNK)),
+        { deezer: deezerJsonp, json: corsJson, cache: raw });
+      raw = next;
+      try { await idb.set(BRIDGE_KEY, { at: Date.now(), raw }); } catch { /* still used this session */ }
+      blendSetBridge(raw);
+      if (view === 'inbox') render();
+      if (stats.quota) break;
+    }
+  } catch { /* a lookup run that fails costs the lookups, never the picks */ }
+  BLEND.fetching = false;
+}
+
+/** The gated tags buildReports scores with, worked out once per tag table. */
+function blendTags() {
+  if (BLEND.gatedFor !== TAGS) { BLEND.gated = gateTags(TAGS, tagGate(TAGS)); BLEND.gatedFor = TAGS; }
+  return BLEND.gated;
+}
+
+/**
+ * The File screen's picks for one track, given today's (`tagPicks`, the
+ * backlogSuggest output). Blend off: `tagPicks` itself, untouched. On: the
+ * blended ranking's best three, minus anything rejected for this track. A
+ * track with no tags at all is ranked by the engine and similar artists alone.
+ */
+function blendPicks(t, tagPicks) {
+  blendWarm();
+  if (!t?.id || !blendActive()) return tagPicks;
+  const rejected = FB[t.id]?.rejected ?? [];
+  const key = `${t.id}|${rejected.join()}|${BLEND.ver}`;
+  if (BLEND.memo.has(key)) return BLEND.memo.get(key);
+  if (BLEND.likedFor !== LIB) { BLEND.liked = new Map((LIB.liked ?? []).map(x => [x.id, x])); BLEND.likedFor = LIB; }
+  const raw = BLEND.liked.get(t.id);
+  let picks = tagPicks;
+  if (raw) {
+    const tagRanked = R?.profiles && TAGS ? rank(raw, blendTags(), R.profiles, R.idf, { top: Infinity }) : [];
+    const nat = BetterfyIntrinsic.placements(raw, BLEND.space, { limit: Infinity }).results ?? [];
+    const w = BLEND.rec.weight;
+    const ranked = BetterfyBlend.blendScores(tagRanked, nat, w)
+      .filter(([id]) => CFG[id]?.target && !rejected.includes(id));
+    if (ranked.length) {
+      const tagRaw = new Map(tagRanked.map(b => [b.id, b.score]));
+      const natRow = new Map(nat.map(r => [r.playlistId, r]));
+      // The weight actually used: a side with nothing to say drops out.
+      const wt = !tagRaw.size ? 0 : !natRow.size ? 1 : w;
+      picks = ranked.slice(0, 3).map(([id]) => ({
+        id, name: CFG[id]?.name ?? natRow.get(id)?.name ?? id, axis: CFG[id]?.axis ?? null, via: 'blend',
+        // Shown as a fit, so it is the mix of the two raw scores, not the
+        // rescaled one the order comes from (whose leader is always near 100%).
+        score: +(wt * (tagRaw.get(id) ?? 0) + (1 - wt) * (natRow.get(id)?.score ?? 0)).toFixed(4),
+        untagged: !tagRaw.size,
+        similar: (natRow.get(id)?.parts?.bridge ?? 0) > 0 }));
+    }
+  }
+  BLEND.memo.set(key, picks);
+  return picks;
+}
 /* ---------- CLAP: names for "new genre?" groups, and "sounds like" search ----------
  * docs/AUDIO-BUILD-PLAN.md WP-C3, over core/audio/clap-search.mjs. Both read
  * the records' optional `clap` field (WP-C2's audio encoder, opt-in) and the
@@ -8479,12 +8671,20 @@ const engineValidate = guard(async () => {
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
+      // The two blended per track, as the worker does (plan phase 1).
+      let blend = null;
+      try { blend = base ? BetterfyBlendScore.blendFromRun(LIB, { base, mine, folds: common.folds,
+              targets: common.targets, isMirror: isMirrorPlaylist }) : null; }
+      catch { blend = null; }
+      if (base) delete base.rows;
       let identify = null;
       try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
       catch { identify = null; }
-      ENG.val = { mine, base, identify, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      ENG.val = { mine, base, blend, identify, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     await engineCalibrate(ENG.val);
+    // Kept for the File screen, which uses the blend only if this says it is ahead.
+    await blendRemember(ENG.val);
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }
@@ -8692,7 +8892,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0109`,
+    `Betterfy engine score — build 2026-11-15-0403`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -8704,6 +8904,7 @@ function engineSummary() {
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
     v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
     ...bridgeLines(v, pc),
+    ...blendLines(v, pc),
     ...audioLines(v, pc),
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
@@ -8729,6 +8930,51 @@ function bridgeLines(v, pc) {
     `Lookups took ${((v.bridgeMs ?? 0) / 1000).toFixed(1)}s${st.fromCache ? `, ${st.fromCache} remembered from before` : ''}`,
     verdict ? `Phase 0: ${verdict.pass === true ? 'PASS' : verdict.pass === false ? 'not yet' : 'undecided'} — ${verdict.text}` : null,
   ].filter(Boolean);
+}
+
+/** The blend's part of the pasteable summary (plan phase 1). Counts and rates only. */
+function blendLines(v, pc) {
+  const b = v.blend;
+  if (!b) return v.base ? [] : ['Blended: not scored (no tag data loaded)'];
+  const nf = b.neverFiled;
+  const folds = Object.values(b.foldWeights ?? {}).join(', ');
+  return [
+    `Blended (tags ${b.weight} + this engine${b.withBridge ? ' with similar artists' : ''}): top-1 ${pc(b.top1)}, top-3 ${pc(b.top3)}; `
+      + `today's ${pc(b.tags.top1)} / ${pc(b.tags.top3)}, this engine ${pc(b.native.top1)} / ${pc(b.native.top3)} on the same ${b.scored} tracks`
+      + (folds ? ` (weight per fold ${folds})` : ''),
+    nf?.scored ? `Never-filed artists blended: top-1 ${pc(nf.top1)}, top-3 ${pc(nf.top3)} (today's ${pc(nf.tags.top1)}, `
+      + `this engine ${pc(nf.native.top1)}; ${nf.scored} tracks)` : null,
+    `Phase 1: ${blendVerdict(b).short}`,
+  ].filter(Boolean);
+}
+
+/** What the blend's score means for the File screen. */
+function blendVerdict(b) {
+  if (b.beatsTags && b.withBridge) return { on: true, short: 'blend beats tags — File uses it',
+    text: 'The File screen now takes its picks from the blend. Tracks it has heard still lead with sound, and switching off similar artists below goes back to today’s picks.' };
+  if (b.beatsTags) return { on: false, short: 'ahead without similar artists — File unchanged (needs them on)',
+    text: 'Ahead, but this run had no similar artists, and the File screen only uses the blend with them. Switch them on and score again.' };
+  return { on: false, short: 'blend not a point ahead of tags — File unchanged',
+    text: 'Not at least a point ahead of today’s engine on tracks it wasn’t tuned on, so the File screen keeps today’s picks.' };
+}
+
+/** The blended line on the score card. Empty without one. */
+function blendCard(v, p) {
+  const b = v && !v.error ? v.blend : null;
+  if (!b) return '';
+  const nf = b.neverFiled, verdict = blendVerdict(b), names = ['today’s', 'blended'];
+  return `<h3 style="margin:18px 0 6px; font-size:16px">Today’s engine and this one, together</h3>
+    <p class="why">Each playlist gets a score from both engines${b.withBridge ? ' (this one with similar artists)' : ''},
+      each scaled so its best pick is 100%, then mixed: ${Math.round(b.weight * 100)}% tags. The mix is chosen on four
+      folds and scored on the fifth, five times over, so these are tracks it wasn’t tuned on. A track with no tags
+      is placed by this engine alone.</p>
+    <div class="pairs">
+      ${pairBars('Right first time', b.tags.top1, b.top1, p, null, names)}
+      ${pairBars('In the top three', b.tags.top3, b.top3, p, null, names)}
+      ${nf?.scored ? pairBars('Right first time, artists not in any genre playlist yet', nf.tags.top1, nf.top1, p, null, names) : ''}
+    </div>
+    <p class="why gateverdict" style="margin-top:12px"><span class="tag ${verdict.on ? 'ok' : 'idle'}">${verdict.on ? 'used on File' : 'not used'}</span>
+      ${esc(verdict.text)}</p>`;
 }
 
 /** Sound's part of the pasteable summary. Counts and rates only. */
@@ -8764,6 +9010,9 @@ const engineCopy = guard(async () => {
 const engineReset = guard(async () => {
   try { await idb.del(SPACE_KEY); } catch {}
   try { await idb.del(CAL_KEY); } catch {}
+  // And the blend the File screen was using: it was fitted on what is being forgotten.
+  try { await idb.del(BLEND_KEY); } catch {}
+  blendForget();
   Object.assign(ENG, { status:'idle', space:null, rung:null, shadow:null,
                        pairs:null, val:null, calib:null, ms:0, from:null });
   toast('Cleared. The next analysis rebuilds from your library.');
@@ -8777,7 +9026,9 @@ function vEngine() {
   const head = `<h1>Engine</h1>
     <p class="lede">A second opinion that reads nothing but your own playlists. No key, no other website,
       no genre list written by somebody else — just who you file together, on which label, in what shape
-      of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do.</p>`;
+      of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do — until the
+      score below shows it, blended with today's engine, beating today's engine on your own filing. Then the File
+      screen's picks come from the blend.</p>`;
 
   // Nothing to file into is a setting, not a result: say where it is fixed.
   if (!engineTargets().length) return `${head}
@@ -8933,6 +9184,7 @@ function vEngine() {
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
       : 'There is nothing to choose between them on your library.'}</p>` : ''}
     ${bridgeCard(v, p)}
+    ${blendCard(v, p)}
     ${audioCard(v, p)}
     ${v && !v.error ? calibCard(p) : ''}
     ${weakBuckets(v).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
@@ -9360,6 +9612,8 @@ document.addEventListener('change', guard(async e => {
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
   if (e.target.id === 'bridgeToggle') {
     if (e.target.checked) LS.removeItem('bf_bridge_off'); else LS.setItem('bf_bridge_off', '1');
+    // File's blend reads the switch on every pick; this lets it re-check from the start.
+    if (typeof blendForget === 'function') blendForget();
     return;
   }
   if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);

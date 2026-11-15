@@ -249,7 +249,8 @@ account's own library and heard tracks (rule R3). Ranked by value for effort.
   one undo.
 - **Unheard tracks with thin tags** get the account-native engine's
   placements (artist graph, ISRC registrant, bridge), gated per account by
-  the Score result.
+  the Score result. *Built 2026-11-15 as a blend with the tag engine
+  (SMARTER-GENRES-PLAN phase 1, "Phase 1 as built").*
 - **Already filed elsewhere** (B4): a liked track whose ISRC or `trackKey` is
   already in a playlist counts as filed.
 - Roll-forward ("file the rest of this artist") by sound ID and registrant,

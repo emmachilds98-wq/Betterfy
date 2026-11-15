@@ -48,7 +48,7 @@ export function libraryWithout(lib, skip) {
  */
 export function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = null,
                                               axisOf = null, isMirror = null,
-                                              limit = null } = {}) {
+                                              limit = null, collect = false } = {}) {
   const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
   const truth = truthOf(lib, { isMirror });
 
@@ -79,6 +79,10 @@ export function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = n
   }
 
   let scored = 0, top1 = 0, top3 = 0, empty = 0;
+  // `collect`: keep each held-out track's whole ranking, the way
+  // placementAccuracy does, so the Score run can blend the two engines per
+  // track (core/validate/blend.mjs). Off, the result is key for key what it was.
+  const rows = collect ? [] : null;
   for (const [, members] of groups) {
     const skip = new Set(members);
     const held = libraryWithout(lib, skip);
@@ -89,7 +93,8 @@ export function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = n
       const want = all ? new Set([...all].filter(pid => allowed.has(pid))) : null;
       if (!want?.size) continue;
       scored++;
-      const ranked = rank(byId.get(id), tags, profiles, idf, { top: 3 });
+      const ranked = rank(byId.get(id), tags, profiles, idf, { top: rows ? Infinity : 3 });
+      if (rows) rows.push({ id, scores: ranked.map(r => [r.id, +r.score.toFixed(5)]), truth: [...want].sort() });
       // v1 returns nothing when a track has no usable tag at all. That is not a
       // decision to abstain — it has no mechanism for one — it is simply the
       // absence of an answer, and it is counted as a miss because a filing tool
@@ -107,6 +112,7 @@ export function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = n
     top1: rate(top1, scored),
     top3: rate(top3, scored),
     noAnswer: empty,
+    ...(rows ? { rows } : {}),
     version: BASELINE_VERSION,
   };
 }

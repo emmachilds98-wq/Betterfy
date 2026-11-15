@@ -119,6 +119,8 @@ function vInbox() {
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
               ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
               : sg.via === 'sound' ? `sounds like this playlist${sg.tagsAgree ? ' · tags agree' : ''}`
+              : sg.via === 'blend' ? (sg.untagged ? 'where you file this artist and ones like them'
+                : sg.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record')
               : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
             <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>

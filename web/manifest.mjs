@@ -46,6 +46,7 @@ export const APP_FILES = [
   'app/engine.js',
   'app/audio.js',
   'app/soundfirst.js',
+  'app/blend.js',
   'app/clap.js',
   'app/audio-panel.js',
   'screens/engine.js',

@@ -130,6 +130,10 @@ const ENGINE_ENTRIES = [
   'core/intrinsic/bridge-fetch.mjs',
   // How sure it may sound, fitted on held-out filing (plan phase 2).
   'core/intrinsic/calibrate.mjs',
+  // Tags and the account-native engine blended per (track, playlist), with one
+  // weight fitted on held-out filing (plan phase 1).
+  'core/intrinsic/blend.mjs',
+  'core/validate/blend.mjs',
   // Genres with no playlist, and playlists that are two genres (plan phase 3).
   // Brings the ontology with it, which is why it lives in the lazy bundle.
   'core/recommend/gaps.mjs',
@@ -164,6 +168,8 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyBridgeFetch: 'core/intrinsic/bridge-fetch.mjs',
     BetterfyDeezer: 'core/sources/deezer.mjs',
     BetterfyCalibrate: 'core/intrinsic/calibrate.mjs',
+    BetterfyBlend: 'core/intrinsic/blend.mjs',
+    BetterfyBlendScore: 'core/validate/blend.mjs',
     BetterfyGaps: 'core/recommend/gaps.mjs',
     BetterfyAudioGaps: 'core/recommend/audio-gaps.mjs',
     BetterfyWikidata: 'core/sources/wikidata.mjs',
@@ -226,6 +232,13 @@ self.onmessage = function (e) {
                                                   ? BetterfyIntrinsic.SOUND_FIRST_WEIGHTS : null });
       result = { mine: BetterfyValidate.placementAccuracy(m.lib, common),
                  base: m.tags ? BetterfyBaseline.baselineAccuracy(m.lib, m.tags, common) : null };
+      // Tags and this engine (with similar artists when there were any) blended
+      // per track, one weight fitted on held-out folds (plan phase 1). The tag
+      // rows are only for this, so they don't cross back to the page.
+      try { result.blend = BetterfyBlendScore.blendFromRun(m.lib, { base: result.base, mine: result.mine,
+              folds: common.folds, targets: common.targets, isMirror: isMirror }); }
+      catch (e) { result.blend = null; }
+      if (result.base) delete result.base.rows;
       // How well it names genres by sound, on the same filed tracks.
       try { result.identify = m.audio ? BetterfyIdentify.identifyAccuracyFor(m.lib, m.audio,
               { targets: m.targets || null, isMirror: isMirror }) : null; }
