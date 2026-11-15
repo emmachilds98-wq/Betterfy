@@ -65,6 +65,10 @@ over anything that needs a file most users won't have.
   review, the sound-layer view models (`web/ui/sound.mjs`), and who owns which
   stylesheet partial in `web/styles/`. CSS goes in a partial, never back into
   `docs/app.template.html`; `npm run shots` screenshots every screen offline.
+- `web/README.md` — since build 5's A1 the template is markup only: the
+  page's script lives in `web/app/*.js` and `web/screens/*.js`, classic
+  scripts joined in the order `web/manifest.mjs` lists. Script changes go
+  there, never back into the template.
 - `docs/SMARTER-GENRES-PLAN.md` — the current genre plan: free
   similar-artist bridges (Deezer, ListenBrainz via Wikidata, measured on the
   owner's library), calibrated confidence, the Gaps screen for proposing new
