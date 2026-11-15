@@ -9,6 +9,11 @@
 // everybody and can be re-run by anyone.
 //
 //   node scripts/audio-dsp/beatport-eval.mjs <mp3 dir> <meta dir> <keys dir> [--limit n] [--out file]
+//        [--beats <beat-this-small0.onnx> [--ort <onnxruntime-node dir>]]
+//
+// --beats also runs core/audio/dsp/beats.mjs (Beat This) on the same windows
+// and prints the tempo again with its half/double-time decision, both as
+// shipped (every record) and restricted to records D1 flagged.
 //
 // Download the dataset yourself (audio.zip, original_metadata.zip, keys.zip);
 // nothing from it is committed. Audio is decoded by ffmpeg (on PATH) to 16 kHz
@@ -22,12 +27,20 @@ import { join, basename, extname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { measureWindows } from '../../core/audio/dsp/combine.mjs';
 import { toCamelot, relation } from '../../core/audio/dsp/key.mjs';
+import { createBeatTracker, resolveOctave } from '../../core/audio/dsp/beats.mjs';
 
 const SR = 16000;
 const [mp3Dir, metaDir, keysDir] = process.argv.slice(2);
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
 const limit = Number(arg('--limit', Infinity));
 const out = arg('--out', null);
+const beatModel = arg('--beats', null);
+let tracker = null;
+if (beatModel) {
+  const ortDir = arg('--ort', null);
+  const ort = (await import(ortDir ? join(ortDir, 'node_modules', 'onnxruntime-node', 'dist', 'index.js') : 'onnxruntime-node')).default;
+  tracker = await createBeatTracker({ ort, modelUrl: beatModel, sessionOptions: {} });
+}
 if (!mp3Dir || !metaDir || !keysDir) { console.error('usage: beatport-eval.mjs <mp3 dir> <meta dir> <keys dir>'); process.exit(1); }
 
 const idOf = f => basename(f, extname(f)).split(' ')[0];
@@ -64,28 +77,35 @@ for (const f of files) {
   const t0 = Math.floor(samples.length / 2 - 15 * SR);
   const w1 = samples.slice(t0, t0 + 10 * SR), w2 = samples.slice(t0 + 10 * SR, t0 + 20 * SR);
   const dsp = measureWindows([w1, w2]);
+  const beat = tracker ? await tracker.measure([w1, w2]) : null;
   const refBpm = Number(meta?.bpm) || null;
   const refKey = keys.has(id) ? parseKey(readFileSync(keys.get(id), 'utf8').split('\n')[0]) : null;
   if (meta && !refBpm) skipped.noBpm++;
   if (!refKey) skipped.keyAmbiguous++;
-  rows.push({ id, refBpm, refCamelot: refKey ? toCamelot(refKey.tonic, refKey.mode) : null, dsp });
+  rows.push({ id, refBpm, refCamelot: refKey ? toCamelot(refKey.tonic, refKey.mode) : null, dsp,
+              ...(tracker ? { beat, beats: resolveOctave(dsp, beat), beatsAmb: resolveOctave(dsp, beat, { onlyAmbiguous: true }) } : {}) });
 }
 
 // --- tempo ---
-const tr = rows.filter(r => r.refBpm && r.dsp?.bpm);
 const ok = (a, b) => Math.abs(a - b) <= 1;
 const within4 = (a, b) => Math.abs(a - b) / b <= 0.04;
 const octave = (a, b) => [2, 0.5].some(k => within4(a, b * k));
-const t = { n: tr.length, noAnswer: rows.filter(r => r.refBpm && !r.dsp?.bpm).length, exact: 0, w4: 0, octave: 0, octaveFlagged: 0, altHit: 0 };
-const tByConf = new Map();
-for (const r of tr) {
-  const e = ok(r.dsp.bpm, r.refBpm), o = !within4(r.dsp.bpm, r.refBpm) && octave(r.dsp.bpm, r.refBpm);
-  if (e) t.exact++; if (within4(r.dsp.bpm, r.refBpm)) t.w4++;
-  if (o) { t.octave++; if (r.dsp.octaveAmbiguous) t.octaveFlagged++; }
-  if (!e && r.dsp.bpmAlt != null && ok(r.dsp.bpmAlt, r.refBpm)) t.altHit++;
-  const band = r.dsp.bpmConf >= 0.6 ? 'high' : r.dsp.bpmConf >= 0.3 ? 'mid' : 'low';
-  const b = tByConf.get(band) ?? { n: 0, exact: 0 }; b.n++; if (e) b.exact++; tByConf.set(band, b);
+function tempoStats(field) {
+  const tr = rows.filter(r => r.refBpm && r[field]?.bpm);
+  const t = { n: tr.length, noAnswer: rows.filter(r => r.refBpm && !r[field]?.bpm).length, exact: 0, w4: 0, octave: 0, octaveFlagged: 0, altHit: 0 };
+  const tByConf = new Map();
+  for (const r of tr) {
+    const d = r[field];
+    const e = ok(d.bpm, r.refBpm), o = !within4(d.bpm, r.refBpm) && octave(d.bpm, r.refBpm);
+    if (e) t.exact++; if (within4(d.bpm, r.refBpm)) t.w4++;
+    if (o) { t.octave++; if (d.octaveAmbiguous) t.octaveFlagged++; }
+    if (!e && d.bpmAlt != null && ok(d.bpmAlt, r.refBpm)) t.altHit++;
+    const band = d.bpmConf >= 0.6 ? 'high' : d.bpmConf >= 0.3 ? 'mid' : 'low';
+    const b = tByConf.get(band) ?? { n: 0, exact: 0 }; b.n++; if (e) b.exact++; tByConf.set(band, b);
+  }
+  return { t, tByConf };
 }
+const { t, tByConf } = tempoStats('dsp');
 
 // --- key ---
 const kr = rows.filter(r => r.refCamelot && r.dsp?.camelot);
@@ -107,6 +127,16 @@ const ci = (a, n) => { if (!n) return ''; const p = a / n, h = 1.96 * Math.sqrt(
 console.log(`Tracks: ${files.length} read, ${rows.length} measured. Skipped: ${JSON.stringify(skipped)}`);
 console.log(`TEMPO  n=${t.n}  within ±1 BPM ${pc(t.exact, t.n)}${ci(t.exact, t.n)}  within 4% ${pc(t.w4, t.n)}  octave errors ${t.octave} (${t.octaveFlagged} flagged)  right tempo as the alternate ${t.altHit}  no answer ${t.noAnswer}`);
 console.log(`       by confidence: ${[...tByConf].map(([b, v]) => `${b} ${pc(v.exact, v.n)} of ${v.n}`).join(', ')}`);
+if (tracker) {
+  for (const [field, label] of [['beats', 'BEATS  (every record)'], ['beatsAmb', 'BEATS  (flagged only)']]) {
+    const { t: b } = tempoStats(field);
+    const moved = rows.filter(r => r.refBpm && r[field]?.bpm !== r.dsp?.bpm);
+    const fixed = moved.filter(r => ok(r[field].bpm, r.refBpm)).length, broke = moved.filter(r => ok(r.dsp.bpm, r.refBpm)).length;
+    console.log(`${label} n=${b.n}  within ±1 BPM ${pc(b.exact, b.n)}${ci(b.exact, b.n)}  octave errors ${b.octave} (${b.octaveFlagged} still flagged)  moved ${moved.length}: fixed ${fixed}, broke ${broke}`);
+  }
+  const heard = rows.filter(r => r.refBpm && r.beat?.bpm);
+  console.log(`       Beat This alone: answered ${heard.length}, within 4% ${pc(heard.filter(r => within4(r.beat.bpm, r.refBpm)).length, heard.length)}, octave off ${heard.filter(r => !within4(r.beat.bpm, r.refBpm) && octave(r.beat.bpm, r.refBpm)).length}`);
+}
 console.log(`KEY    n=${k.n}  exact ${pc(k.exact, k.n)}${ci(k.exact, k.n)}  MIREX ${pc(k.mirex, k.n)}  fifth ${k.fifth}  relative ${k.relative}  parallel ${k.parallel}  other ${k.other}  no answer ${k.noAnswer}`);
 console.log(`       by confidence: ${[...kByConf].map(([b, v]) => `${b} ${pc(v.exact, v.n)} of ${v.n}`).join(', ')}`);
 if (out) writeFileSync(out, JSON.stringify(rows, null, 1));
