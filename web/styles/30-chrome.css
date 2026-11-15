@@ -21,7 +21,7 @@
   .nav{appearance:none; border:1px solid var(--line); background:transparent; font:inherit; cursor:pointer;
        padding:9px 16px; color:var(--ink-2); display:flex; align-items:center; gap:8px;
        border-radius:999px; font-size:13.5px; font-weight:600; white-space:nowrap; flex:none;
-       position:relative; transition:background .14s ease, color .14s ease, border-color .14s ease}
+       position:relative; transition:background var(--dur-1) ease, color var(--dur-1) ease, border-color var(--dur-1) ease}
   .nav .lbl{min-width:0}
   /* Each screen owns a hue (--vc, set per button below) so the pills, the tab
      bar and the screen you land on all agree on a colour. */

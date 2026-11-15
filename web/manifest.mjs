@@ -40,6 +40,7 @@ export const APP_FILES = [
   'app/sync-tags.js',
   'app/keyless.js',
   'app/tagfix.js',
+  'app/motion.js',
   'app/render.js',
   'app/gestures.js',
   'app/more.js',

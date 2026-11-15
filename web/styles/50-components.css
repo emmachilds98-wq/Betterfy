@@ -1,6 +1,6 @@
   .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-4); padding:26px 28px 28px; box-shadow:var(--shadow-2)}
   .prog{height:5px; background:var(--surface-3); border-radius:3px; overflow:hidden; margin-bottom:18px}
-  .prog i{display:block; height:100%; border-radius:3px; transition:width .35s var(--ease-out);
+  .prog i{display:block; height:100%; border-radius:3px; transition:width var(--dur-3) var(--ease-out);
           background:linear-gradient(90deg, var(--progress-accent), color-mix(in srgb, var(--view) 70%, var(--progress-accent)))}
   .now{display:flex; gap:14px; align-items:flex-start}
   .now .txt{min-width:0; flex:1}
@@ -57,7 +57,7 @@
   .picks{display:flex; flex-direction:column; gap:9px; margin-top:24px}
   .pick{display:flex; align-items:center; gap:14px; border:1px solid var(--line); border-radius:18px; background:var(--surface-2);
         padding:16px 18px; cursor:pointer; font:inherit; font-size:15px; color:var(--ink); text-align:left; width:100%;
-        transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform .08s ease}
+        transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform var(--dur-1) ease}
   .pick:hover{border-color:var(--hover-accent)}
   .pick:active{transform:scale(.99)}
   /* The suggestion you get by swiping right is the one flagged here — and it
@@ -95,7 +95,7 @@
   .player{display:flex; align-items:center; gap:12px; margin-top:16px}
   .tbtn{width:44px; height:44px; flex:none; border-radius:50%; border:1px solid var(--btn-accent); background:var(--btn-accent);
         color:var(--btn-ink); display:grid; place-items:center; cursor:pointer; box-shadow:var(--shadow);
-        transition:transform .08s ease, filter var(--dur-1) ease}
+        transition:transform var(--dur-1) ease, filter var(--dur-1) ease}
   .tbtn:hover{filter:brightness(1.06)}
   .tbtn:active{transform:scale(.96)}
   .tbtn:disabled{opacity:.5; cursor:default}
@@ -169,7 +169,7 @@
        width:40px; height:24px; border-radius:999px; vertical-align:middle; border:0;
        background:radial-gradient(circle at 12px 50%, var(--surface) 0 8px, transparent 8.6px), var(--line-2);
        box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent);
-       transition:background-color .16s ease}
+       transition:background-color var(--dur-1) ease}
   input[type=checkbox].tgl:checked{background:radial-gradient(circle at 28px 50%, var(--btn-ink) 0 8px, transparent 8.6px), var(--btn-accent)}
   input[type=checkbox].tgl:disabled{opacity:.45; cursor:default}
   input[type=checkbox].tgl:focus-visible{outline:2px solid var(--hover-accent); outline-offset:2px}
@@ -281,7 +281,7 @@
        color:var(--ink-3); font-weight:600; border-radius:6px}
   details.how>summary::-webkit-details-marker{display:none}
   details.how>summary::before{content:""; width:6px; height:6px; border-right:1.5px solid currentColor;
-       border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform .15s ease; margin-right:2px}
+       border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform var(--dur-1) ease; margin-right:2px}
   details.how[open]>summary::before{transform:rotate(45deg)}
   details.how>summary:hover{color:var(--ink)}
   details.how>div, details.how>p{margin:10px 0 0; padding:12px 14px; border-radius:var(--r);
