@@ -1,3 +1,4 @@
+// @bundle engine BetterfyBridgeFetch 90
 // Gather the raw material for the neighbour bridge, politely and resumably.
 //
 // The transports are injected, which is what lets one orchestrator serve both

@@ -940,11 +940,11 @@ membership, and nothing is shared.
 | `listening.mjs` | real listening behaviour (top artists, recent plays) as a weight per artist — best-effort, works with no Spotify auth available too |
 | `snapshot.mjs` | dumps the whole library to `library.json` |
 | `actions.mjs` | every library mutation, with the undo log |
-| `server.mjs` + `ui/` | the local app |
+| `legacy/server.mjs` + `ui/` | the local app |
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
 | `core/` | the v3 evidence engine — ontology, identity, evidence, providers, track classifier, playlist intelligence, recommendations, benchmarks. Not wired into the app; see `docs/ENGINE-V3-ARCHITECTURE.md` |
 | `enrich-lastfm-tracks.mjs` | track-level Last.fm tags, prioritised by what you play and what the engine is least sure about — optional, resumable |
-| `analyse-v3.mjs` | runs the v3 engine over your `library.json` and existing caches: bands, playlist types, relationships, and the review queue |
+| `legacy/analyse-v3.mjs` | runs the v3 engine over your `library.json` and existing caches: bands, playlist types, relationships, and the review queue |
 | `make-icons.mjs` | renders the logo to the PNG sizes browsers and phones ask for |
 
 `build-web.mjs` bundles `norm`, `credits` and `profile` verbatim into the page,

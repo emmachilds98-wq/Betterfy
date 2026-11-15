@@ -18,11 +18,11 @@
 //   node analyse-v3.mjs --json          machine-readable, for diffing runs
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { indexCaches, buildRegistry, profileLibrary, libraryReport,
-         analysePlaylists, nameVsMusic, recommend, ENGINE_VERSION } from './core/engine.mjs';
-import { reviewQueue } from './core/review/queue.mjs';
-import { CorrectionLog, fromV1Feedback } from './core/personal/corrections.mjs';
-import { ONTOLOGY_VERSION } from './core/ontology/index.mjs';
-import { CLASSIFIER_VERSION } from './core/analysis/classify.mjs';
+         analysePlaylists, nameVsMusic, recommend, ENGINE_VERSION } from '../core/engine.mjs';
+import { reviewQueue } from '../core/review/queue.mjs';
+import { CorrectionLog, fromV1Feedback } from '../core/personal/corrections.mjs';
+import { ONTOLOGY_VERSION } from '../core/ontology/index.mjs';
+import { CLASSIFIER_VERSION } from '../core/analysis/classify.mjs';
 
 const flag = f => process.argv.includes(f);
 const readIf = f => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
@@ -58,7 +58,7 @@ console.error(`corrections: ${corrections.entries.length}\n`);
 // with no Spotify auth is still a complete run (§22, §38).
 let weights = new Map(), recentlyActive = new Set();
 try {
-  const { fetchListening } = await import('./listening.mjs');
+  const { fetchListening } = await import('../listening.mjs');
   ({ weights, recentlyActive } = await fetchListening(lib));
 } catch { console.error('(no listening history available — the queue is ordered by uncertainty alone)\n'); }
 if (!recentlyActive.size) console.error('(no recent plays available — nothing will be flagged as heavily played)\n');
