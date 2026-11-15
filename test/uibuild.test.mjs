@@ -11,7 +11,8 @@ import { assembledTemplate } from '../web/manifest.mjs';
 const read = p => readFileSync(new URL('../' + p, import.meta.url), 'utf8');
 // The template with its script put back (web/manifest.mjs): the page's script
 // lives in web/app/ and web/screens/ since A1.
-const TEMPLATE = assembledTemplate();
+// The page's markup and its script, plus the screen modules the manifest does not list.
+const TEMPLATE = assembledTemplate() + readdirSync(new URL('../web/screens/', import.meta.url)).filter(f => f.endsWith('.mjs')).map(f => read('web/screens/' + f)).join('\n');
 const BUNDLE = read('docs/index.html');
 const PARTIALS = readdirSync(new URL('../web/styles/', import.meta.url))
   .filter(f => f.endsWith('.css')).sort();

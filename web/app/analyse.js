@@ -101,7 +101,7 @@ function analyseAuto() {
 function analyseHTML() {
   if (ANALYSE.running) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen }))}</span></div>`;
   if (!analyseWanted().any) return '';
-  return `<div class="analyse"><button class="b p" id="analyseGo">Analyse my library</button>
+  return `<div class="analyse"><button class="b p" id="analyseGo" data-act="analyseGo">Analyse my library</button>
     <span class="d">Reads tags and listens to your liked songs, then suggests where each one goes. Nothing is written to Spotify until you tap.</span></div>
     <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
 }

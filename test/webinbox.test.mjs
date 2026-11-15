@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as HOME from '../web/screens/home.mjs';
+import { withInbox } from './screenctx.mjs';
 
 // The File screen used to write to Spotify the instant you tapped a playlist
 // name — one misclick and a track was filed somewhere wrong, with only a
@@ -41,7 +43,7 @@ function load({ backlog = [], inboxAt = 0, sel = new Set(), fb = {} } = {}) {
   };
   vm.createContext(sandbox);
   vm.runInContext(between('function artHTML(t', 'function vTidy()', 'vInbox'), sandbox);
-  vm.runInContext(between('function toggleFileSel(id)', '// Keyboard parity', 'toggleFileSel/fileCurrent/inboxAct'), sandbox);
+  withInbox(sandbox);
   return Object.assign(sandbox, { calls });
 }
 
@@ -206,11 +208,13 @@ test('"Next up to file" opens the track that was tapped', () => {
   // The cards under it show the head of the queue, so their index is an
   // absolute position in it. Adding it to wherever the queue had been left
   // instead opened a different track than the one under the finger.
-  const i = BUNDLE.indexOf("const gi = e.target.closest('[data-goinbox]')");
-  assert.ok(i > 0, 'the Next-up handler is missing — rebuild with npm run build:web');
-  const body = BUNDLE.slice(i, i + 400);
-  assert.match(body, /S\.inboxAt = Math\.min\(\+gi\.dataset\.goinbox \|\| 0,/);
-  assert.doesNotMatch(body, /S\.inboxAt \+ \(\+gi\.dataset\.goinbox/);
+  const go = [];
+  const ctx = { S: { inboxAt: 5 }, R: { backlog: [1, 2, 3, 4] }, go: v => go.push(v) };
+  HOME.actions.goinbox(ctx, { dataset: { goinbox: '2' } });
+  assert.equal(ctx.S.inboxAt, 2);
+  HOME.actions.goinbox(ctx, { dataset: { goinbox: '9' } });
+  assert.equal(ctx.S.inboxAt, 3, 'clamped to the end of the queue');
+  assert.deepEqual(go, ['inbox', 'inbox']);
   assert.match(BUNDLE, /const upNext = R\.backlog\.slice\(0, 4\);/,
     'which is only an absolute position because the cards come off the head of the queue');
 });

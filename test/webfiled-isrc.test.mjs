@@ -138,7 +138,7 @@ test('re-ranking after a reject keeps the filing-history fallback and its via la
 });
 
 test('the reject handler re-ranks through backlogSuggest, not bare rank()', () => {
-  const body = slice("const reject = e.target.closest('[data-reject]')", "if (e.target.closest('[data-soundon]'))", 'reject handler');
+  const body = slice('async reject(ctx, el, e) {', 'rebuildReports(); render();', 'reject handler');
   assert.match(body, /t\.suggest = raw \? backlogSuggest\(raw, LIB, CFG, gateTags\(TAGS, tagGate\(TAGS\)\), R\.profiles, R\.idf\) : \[\]/);
   assert.doesNotMatch(body, /rank\(raw/);
 });
