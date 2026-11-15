@@ -1,5 +1,5 @@
 const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
-                new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
+                new:vNew, discover:screenView('discover'), shuffle:screenView('shuffle'), lists:vLists,
                 engine:screenView('engine'), history:screenView('history'), sources:screenView('sources') };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:

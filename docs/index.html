@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0940">
+<meta name="bf-build" content="2026-11-15-0956">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1491,7 +1491,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0940</span>
+    <span class="mono">build 2026-11-15-0956</span>
   </p>
 
   <div class="feat">
@@ -1595,7 +1595,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0940</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0956</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1636,7 +1636,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0940</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0956</span>
   </div>
 </div>
 
@@ -3374,7 +3374,7 @@ function summary({ ENG, LIB, maestScoreText }) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0940`,
+    `Betterfy engine score — build 2026-11-15-0956`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -3865,12 +3865,306 @@ const actions = {
 };
 return { view, actions };
 })();
+/* ---- web/screens/shuffle.mjs ---- */
+__mod["web/screens/shuffle.mjs"] = (function () {
+/* The Shuffle screen (docs/BUILD-5-PLAN.md A4): view and actions only. The spacing, DJ-order and
+ * All Songs mirror code stays classic in web/app/shuffle-engine.js; ctx comes from SCREEN_CTX.shuffle. */
+const mixPct = x => `${Math.round(x * 100)}%`;
+function mixBpmOf(index, id) {
+  const d = index.get(id)?.rec?.dsp;
+  return d?.bpm > 0 ? Math.round(d.bpm) : null;
+}
+/** The energy along the mix as a row of bars; only once energy labels have been checked. */
+function mixEnergyHTML(energy, { labelsShownNow, esc }) {
+  const shown = labelsShownNow();
+  if (!shown?.energy || !(energy?.length >= 2)) return '';
+  return `<div class="mx-arc" role="img" aria-label="Energy along the mix, calm to intense">${energy.map(e =>
+    `<span style="height:${Math.max(8, Math.round(e * 100))}%"></span>`).join('')}</div>`;
+}
+function mixHTML(mix, tracks, p, { S, esc, emptyState, artistOf, MIX_PAGE, MIX_MODES, labelsShownNow, BetterfyAudio }) {
+  if (mix.pending) return MIX_PAGE.err
+    ? emptyState('The mix couldn’t load', esc(MIX_PAGE.err), { compact: true })
+    : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true });
+  const st = mix.stats, nv = mix.naive, bpmOn = BetterfyAudio?.bpmShown ? BetterfyAudio.bpmShown() : true;
+  const row = (t, i) => {
+    const heard = i < mix.mixed, step = i > 0 && i < mix.mixed ? mix.steps[i - 1] : null;
+    const bpm = heard && bpmOn ? mixBpmOf(mix.index, t.id) : null;
+    const jump = step && !step.rel;
+    return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}">
+      <span class="i">${String(i+1).padStart(3,'0')}</span>
+      <span class="t">${esc(t.name)}</span>
+      <span class="a">${esc(artistOf(t))}</span>${bpm ? `<span class="mx-bpm"${step?.rel && step.rel !== 'same' ? ` title="${step.rel === 'half' ? 'double' : 'half'} time"` : ''}>${bpm}</span>` : ''}${jump ? '<span class="mx-tag">tempo change</span>' : ''}</div>`;
+  };
+  return `<div class="vs">
+      <div class="bad"><div class="l">Shuffled</div><div class="n">${nv.share === null ? '—' : mixPct(nv.share)}</div>
+        <div class="d">of track changes can be beatmatched</div></div>
+      <div class="good"><div class="l">${esc(MIX_MODES[S.shufMode])}</div><div class="n">${st.share === null ? '—' : mixPct(st.share)}</div>
+        <div class="d">can be beatmatched${st.shift !== null ? `, ${(st.shift * 100).toFixed(1)}% pitch change on average` : ''}</div></div>
+    </div>
+    ${mixEnergyHTML(st.energy, { labelsShownNow, esc })}
+    <p class="lede mx-sum">${mix.mixed} heard tracks in the mix${bpmOn && st.bpm ? ` · ${Math.round(st.bpm[0])}–${Math.round(st.bpm[1])} BPM` : ''}${mix.rest ? ` · ${mix.rest} not heard yet follow in the spaced shuffle` : ''}${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
+    <h2>Order</h2>
+    <div class="order mx-order">${mix.order.slice(0,40).map(row).join('')}</div>`;
+}
+
+function view(ctx) {
+  const { S, LIB, LS, esc, emptyState, isMirrorPlaylist, dedupe, spacedShuffle, shuffleStats, rnd, artistOf,
+          mixHeardIn, shuffleMix, MIX_MODES } = ctx;
+  const pls = LIB.playlists.filter(p => p.tracks.length >= 8).sort((a,b) => b.tracks.length - a.tracks.length);
+  // Once it exists, everything you own beats any single bucket as a shuffle
+  // source — that default only loses to a playlist you have since chosen.
+  const allSongs = LIB.playlists.find(isMirrorPlaylist);
+  // Persisted immediately, not just used locally — otherwise "Create shuffled
+  // playlist" (which reads S.shufPl on its own) can act on a different
+  // playlist than whichever one the dropdown is actually showing as selected.
+  const sel = S.shufPl = S.shufPl ?? allSongs?.id ?? pls[0]?.id;
+  const p = LIB.playlists.find(x => x.id === sel);
+  const tracks = p ? dedupe(p.tracks) : [];
+  // Cached against the source it was built from. Shuffling used to run again on
+  // every single redraw of this screen — including the redraw after an
+  // unrelated toast — and it is by some distance the most expensive thing the
+  // app computes. "Shuffle again" below is how you deliberately re-roll it.
+  if (S.shufCache?.id !== sel || S.shufCache?.n !== tracks.length) {
+    S.shufCache = { id: sel, n: tracks.length,
+      order: tracks.length ? spacedShuffle(tracks) : [],
+      naive: tracks.length ? shuffleStats(rnd([...tracks])) : null };
+  }
+  const order = S.shufCache.order, naive = S.shufCache.naive;
+  const good = order.length ? shuffleStats(order) : null;
+  // DJ order: offered only once enough of this list has been heard; otherwise nothing changes.
+  const canMix = order.length && mixHeardIn(tracks) >= (ctx.BetterfyOrder?.MIN_MIX ?? 8);
+  if (S.shufMode === undefined) { try { S.shufMode = LS.getItem('bf_shuf_mode') || ''; } catch { S.shufMode = ''; } }
+  const mix = canMix && MIX_MODES[S.shufMode] ? shuffleMix(sel, tracks, S.shufMode) : null;
+  const mixPick = canMix ? ` <select id="shufMode" data-act="shufMode" aria-label="Order">${[['', 'Spaced shuffle'], ...Object.entries(MIX_MODES)].map(([v, l]) =>
+    `<option value="${v}" ${v === (mix ? S.shufMode : '') ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
+  S.shufOrder = mix && !mix.pending ? mix.order : mix ? [] : order;
+  S.shufOrderMode = mix && !mix.pending ? S.shufMode : null;
+  return `<h1>Shuffle</h1>
+    <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
+    <p class="lede" style="margin-top:-8px">${allSongs
+      ? `Shuffling from <b>${esc(allSongs.name)}</b> by default — everything in your library, kept in one place.`
+      : `No single playlist has everything you own yet.`}
+      <button class="b sm" data-act="syncAllSongs" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Build it'}</button></p>
+    <div class="rowbtns" style="margin-bottom:22px">
+      <select id="shufPl" data-act="shufPl">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
+      <button class="b p" id="shufApply" ${S.shufOrder.length?'':'disabled'} data-act="shufApply">Create shuffled playlist</button>
+      <button class="b" data-act="shufPlay" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
+      <button class="b sm" data-act="shufAgain" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
+    </div>
+    ${mix ? mixHTML(mix, tracks, p, ctx) : good ? `<div class="vs">
+      <div class="bad"><div class="l">Spotify's shuffle</div><div class="n">${naive.minGap}</div>
+        <div class="d">${naive.minGap === 1 ? 'slot' : 'slots'} between the same artist, ${naive.within3} ${naive.within3 === 1 ? 'pair' : 'pairs'} within three</div></div>
+      <div class="good"><div class="l">Betterfy</div><div class="n">${good.minGap}</div>
+        <div class="d">${good.minGap === 1 ? 'slot' : 'slots'} minimum, ${good.within3 ? `${good.within3} ${good.within3 === 1 ? 'pair' : 'pairs'} within three` : 'nothing within three'}, average gap ${good.avgGap}</div></div>
+    </div>
+    <p class="lede" style="margin:-10px 0 20px; font-size:14px">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
+    <h2>Order</h2>
+    <div class="order">${order.slice(0,40).map((t,i) => `<div>
+      <span class="i">${String(i+1).padStart(3,'0')}</span>
+      <span class="t">${esc(t.name)}</span>
+      <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;
+}
+
+
+const actions = {
+  async syncAllSongs({ syncAllSongsPlaylist, toast, render }, btn) {
+    btn.disabled = true; btn.textContent = 'Working…';
+    try { await syncAllSongsPlaylist(); }
+    catch (err) { toast('Failed: ' + err.message); render(); }
+  },
+  shufPl({ S, render }, el) { S.shufPl = el.value; S.shufCache = null; render(); },
+  shufMode({ S, LS, render }, el) { S.shufMode = el.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} render(); },
+  shufAgain({ S, render }) { S.shufCache = null; render(); },
+  shufApply(ctx, btn) { return build(ctx, btn, false); },
+  shufPlay(ctx, btn) { return build(ctx, btn, true); },
+};
+
+async function build({ S, LIB, LS, MIX_MODES, paged, sp, plCall, chunk, logAction, toast, render }, btn, playIt) {
+  // vShuffle() always sets S.shufPl to whatever it last showed as selected
+  // by the time this button is reachable, so this and the screen agree.
+  const src = LIB.playlists.find(p => p.id === S.shufPl);
+  const order = S.shufOrder ?? [];
+  if (!order.length) return;
+  btn.disabled = true; btn.textContent = 'Working…';
+  const dj = S.shufOrderMode ? MIX_MODES[S.shufOrderMode] : null;
+  try {
+    const name = dj ? `🎧 ${src.name}` : `🔀 ${src.name}`;
+    // Remembered by id, like the All Songs mirror and for the same reason:
+    // found by name alone, renaming the shuffled playlist (or its source)
+    // made the next shuffle build a second one beside it instead of
+    // replacing what was already there.
+    const key = (dj ? 'bf_mix_' : 'bf_shuf_') + src.id;
+    const pinned = LS.getItem(key);
+    const mine = await paged('/me/playlists?limit=50');
+    const ours = p => p?.owner?.id === LIB.user.id;
+    let pl = mine.find(p => p.id === pinned && ours(p)) ?? mine.find(p => p.name === name && ours(p));
+    if (!pl) pl = await sp('/me/playlists', { method:'POST',
+      body:JSON.stringify({ name, public:false, description: dj
+        ? `${dj} of "${src.name}": each next track beatmatches the last. Play with Spotify shuffle OFF.`
+        : `Spaced shuffle of "${src.name}". Play with Spotify shuffle OFF.` }) });
+    LS.setItem(key, pl.id);
+    // PUT replaces wholesale, so re-shuffling the same playlist doesn't pile up
+    await plCall(pl.id, 'PUT', { uris: order.slice(0,100).map(t => 'spotify:track:'+t.id) });
+    for (const part of chunk(order.slice(100), 100)) await plCall(pl.id, 'POST', { uris: part.map(t => 'spotify:track:'+t.id) });
+    await logAction({ op:'shuffle', playlistId:pl.id, playlistName:pl.name ?? name, trackIds:order.map(t=>t.id), reason:`${dj ? dj.toLowerCase() + ' ' : ''}from ${src.name}` });
+    if (playIt) {
+      const d = await sp('/me/player/devices');
+      const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
+      if (!dev) toast(`"${pl.name ?? name}" is ready — no open Spotify device to play it on.`);
+      else {
+        await sp(`/me/player/shuffle?state=false&device_id=${dev.id}`, { method:'PUT' });
+        await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body:JSON.stringify({ context_uri:`spotify:playlist:${pl.id}` }) });
+        toast(`Playing "${pl.name ?? name}" on ${dev.name}, Spotify shuffle off.`);
+      }
+    } else toast(`"${pl.name ?? name}" — ${order.length} tracks, ready. Play it with Spotify shuffle OFF.`);
+  } catch (err) { toast('Failed: ' + err.message); }
+  render();
+}
+return { mixBpmOf, view, actions };
+})();
+/* ---- web/screens/discover.mjs ---- */
+__mod["web/screens/discover.mjs"] = (function () {
+/* The Discover screen (docs/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
+ * ranking stay classic in web/app/discover-engine.js; ctx comes from SCREEN_CTX.discover. */
+function view(ctx) {
+  const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
+          artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
+  const d = S.discover ?? [];
+  const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
+  const hasKey = !!lfmKey();
+  const head = `<h1>Discover</h1>
+    <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
+      <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
+    ${hasKey ? '' : `<div class="note discnokey">
+      <b>No key needed.</b> Picks come from Deezer's and ListenBrainz's “fans also like” for the artists you play${discListenOn() ? ', then ranked by how they sound' : ''}.
+      A free Last.fm key adds its own similar artists and genre tags; it's saved on this device.
+      <div class="rowbtns" style="margin-top:8px">
+        <input id="lfmKeyDisc" placeholder="Last.fm API key (optional)" size="34">
+        <button class="b" data-act="saveLfmDiscover" id="saveLfmDiscover">Save key &amp; find new music</button>
+        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
+      </div>
+    </div>`}
+    <div class="rowbtns" style="margin-bottom:16px">
+      <select data-act="discPl" id="discPl">
+        <option value="">Everything I listen to</option>
+        <optgroup label="Playlist radio">
+          ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
+        </optgroup>
+      </select>
+      <button class="b p" data-act="discRun" id="discRun" >Find new music</button>
+    </div>`;
+
+  // WP-C3: "find tracks that sound like ___". '' without CLAP records.
+  const sounds = soundSearchHTML();
+  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'Pick what to seed from above, then hit Find new music. A run takes a minute or two.');
+
+  const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
+  const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
+  const art = artHTML({ art:t.art, id:t.id, title:t.track },
+                      `data-dplay="${esc(t.id)}" data-ddur="${t.dur ?? 0}"`);
+
+  const best = (t.suggest ?? [])[0];
+  return head + sounds + discSoundLine() + `<div class="counter" style="margin:0 0 14px">
+      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
+      <span>from ${esc(S.discoverFrom)}</span>
+    </div>
+    <div class="deck">
+      <div class="card disc">
+        <div class="prog"><i style="width:${((i+1)/d.length*100).toFixed(2)}%"></i></div>
+        <div class="now">
+          <div class="artwrap">${art}</div>
+          <div class="txt">
+            <p class="t">${esc(t.track)}</p><p class="a">${esc(t.artist)}</p>
+            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}${discFitHTML(t)}
+          </div>
+        </div>${trackStrip(t)}
+
+        <div class="player">
+          <button class="tbtn" id="pToggle" aria-label="Play">${ICON_PLAY}</button>
+          <input class="seek" id="seek" type="range" min="0" max="${t.dur ?? 0}" step="1000" value="0"
+                 aria-label="Playing position" disabled>
+          <span class="tm"><span id="pTime">0:00</span> / <span id="pDur">${mmss(t.dur)}</span></span>
+        </div>
+        <p class="pdev" id="pDev"></p>
+
+        ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
+        ${best ? `<button class="fitcall" data-act="dfile" data-dfile="${esc(best.id)}">
+            <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
+              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ${best.via === 'sound' ? 'by how it sounds next to what you filed there' : 'ranked by the same model the file queue uses'}</span>${pickEvidence(best)}</span>
+            ${pickBand(best)}<span class="sc">${(best.score*100).toFixed(0)}% fit</span>
+          </button>` : ''}
+        ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
+          `<button class="pick" data-act="dfile" data-dfile="${esc(sg.id)}"><span class="k">${n+2}</span>
+           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span>${pickEvidence(sg)}</span>
+           <span class="rt">${pickBand(sg)}<span class="sc">${(sg.score*100).toFixed(0)}%</span>
+             <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
+        ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
+
+        <div class="rowbtns" style="margin-top:20px">
+          ${best ? `<button class="b big go grow" data-act="dfile" data-dfile="${esc(best.id)}">Add to ${esc(best.name)}</button>` : ''}
+          <button class="b big" data-act="dnav" data-dnav="1" ${i>=d.length-1?'disabled':''}>Next →</button>
+        </div>
+        <div class="rowbtns" style="margin-top:10px">
+          <button class="b sm" data-act="dnav" data-dnav="-1" ${i===0?'disabled':''}>← Back</button>
+          <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
+          <a class="b sm" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
+          <select data-act="discAnyPl" id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+        </div>
+      </div>
+    </div>`;
+}
+
+
+const actions = {
+  discRun: ({ S, runDiscovery }) => runDiscovery(S.discSeed || null),
+  // Saving the key and finding new music are one action: a first-time listener
+  // never has to go looking for the key.
+  saveLfmDiscover({ S, LS, $, toast, runDiscovery }) {
+    const v = $('#lfmKeyDisc')?.value.trim();
+    if (!v) return toast('Paste a Last.fm key first.');
+    LS.setItem('bf_lfm', v);
+    toast('Key saved — finding new music…');
+    return runDiscovery(S.discSeed || null);
+  },
+  discPl({ S }, el) { S.discSeed = el.value; },
+  discAnyPl(ctx, el) { if (el.value) return discAdd(ctx, el.value); },
+  dfile(ctx, el) { return discAdd(ctx, el.dataset.dfile); },
+  dnav({ S, render }, el) {
+    const d = S.discover ?? [];
+    S.discAt = Math.max(0, Math.min((S.discAt ?? 0) + (+el.dataset.dnav), d.length - 1));
+    render();
+  },
+  async like({ libraryCall, logAction, toast }, el) {
+    try { await libraryCall('PUT', [el.dataset.like]);
+      await logAction({ op:'add-liked', trackIds:[el.dataset.like], reason:'from discovery' });
+      el.textContent = 'Liked'; el.disabled = true; toast('Added to your Liked Songs.'); }
+    catch (err) { toast('Failed: '+err.message); }
+  },
+};
+
+/** Add the track on the card to a playlist, and take it off the pile. */
+async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render }, playlistId) {
+  const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
+  if (!t) return;
+  const name = CFG[playlistId]?.name ?? playlistId;
+  try {
+    await addTracks(playlistId, [t.id]);
+    await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'added from discovery' });
+    const when = (await getLog())[0]?.at;
+    toast(`Added “${t.track}” to ${name}.`, () => undoAction(when));
+    d.splice(at, 1);
+    S.discAt = Math.max(0, Math.min(at, d.length - 1));
+    render();
+  } catch (e) { toast('Failed: ' + e.message); }
+}
+return { view, actions };
+})();
 Object.assign(globalThis, __mod["norm.mjs"]);
 Object.assign(globalThis, __mod["credits.mjs"]);
 Object.assign(globalThis, __mod["profile.mjs"]);
 Object.assign(globalThis, __mod["core/playlists/axes.mjs"]);
 Object.assign(globalThis, __mod["web/ui/sound.mjs"]);
-globalThis.BetterfyScreens = { history: __mod["web/screens/history.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"] };
+globalThis.BetterfyScreens = { history: __mod["web/screens/history.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"] };
 /* =============================================================== */
 
 const $ = s => document.querySelector(s);
@@ -4262,7 +4556,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0940';
+const BUILD = '2026-11-15-0956';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -4583,7 +4877,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0940', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0956', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -6685,100 +6979,6 @@ function shuffleMix(sel, tracks, mode) {
   S.shufMix = { key, base: S.shufCache, v };
   return v;
 }
-const mixPct = x => `${Math.round(x * 100)}%`;
-function mixBpmOf(index, id) {
-  const d = index.get(id)?.rec?.dsp;
-  return d?.bpm > 0 ? Math.round(d.bpm) : null;
-}
-/** The energy along the mix as a row of bars; only once energy labels have been checked. */
-function mixEnergyHTML(energy) {
-  const shown = typeof labelsShownNow === 'function' ? labelsShownNow() : null;
-  if (!shown?.energy || !(energy?.length >= 2)) return '';
-  return `<div class="mx-arc" role="img" aria-label="Energy along the mix, calm to intense">${energy.map(e =>
-    `<span style="height:${Math.max(8, Math.round(e * 100))}%"></span>`).join('')}</div>`;
-}
-function mixHTML(mix, tracks, p) {
-  if (mix.pending) return MIX_PAGE.err
-    ? emptyState('The mix couldn’t load', esc(MIX_PAGE.err), { compact: true })
-    : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true });
-  const st = mix.stats, nv = mix.naive, bpmOn = globalThis.BetterfyAudio?.bpmShown ? BetterfyAudio.bpmShown() : true;
-  const row = (t, i) => {
-    const heard = i < mix.mixed, step = i > 0 && i < mix.mixed ? mix.steps[i - 1] : null;
-    const bpm = heard && bpmOn ? mixBpmOf(mix.index, t.id) : null;
-    const jump = step && !step.rel;
-    return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}">
-      <span class="i">${String(i+1).padStart(3,'0')}</span>
-      <span class="t">${esc(t.name)}</span>
-      <span class="a">${esc(artistOf(t))}</span>${bpm ? `<span class="mx-bpm"${step?.rel && step.rel !== 'same' ? ` title="${step.rel === 'half' ? 'double' : 'half'} time"` : ''}>${bpm}</span>` : ''}${jump ? '<span class="mx-tag">tempo change</span>' : ''}</div>`;
-  };
-  return `<div class="vs">
-      <div class="bad"><div class="l">Shuffled</div><div class="n">${nv.share === null ? '—' : mixPct(nv.share)}</div>
-        <div class="d">of track changes can be beatmatched</div></div>
-      <div class="good"><div class="l">${esc(MIX_MODES[S.shufMode])}</div><div class="n">${st.share === null ? '—' : mixPct(st.share)}</div>
-        <div class="d">can be beatmatched${st.shift !== null ? `, ${(st.shift * 100).toFixed(1)}% pitch change on average` : ''}</div></div>
-    </div>
-    ${mixEnergyHTML(st.energy)}
-    <p class="lede mx-sum">${mix.mixed} heard tracks in the mix${bpmOn && st.bpm ? ` · ${Math.round(st.bpm[0])}–${Math.round(st.bpm[1])} BPM` : ''}${mix.rest ? ` · ${mix.rest} not heard yet follow in the spaced shuffle` : ''}${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
-    <h2>Order</h2>
-    <div class="order mx-order">${mix.order.slice(0,40).map(row).join('')}</div>`;
-}
-
-function vShuffle() {
-  const pls = LIB.playlists.filter(p => p.tracks.length >= 8).sort((a,b) => b.tracks.length - a.tracks.length);
-  // Once it exists, everything you own beats any single bucket as a shuffle
-  // source — that default only loses to a playlist you have since chosen.
-  const allSongs = LIB.playlists.find(isMirrorPlaylist);
-  // Persisted immediately, not just used locally — otherwise "Create shuffled
-  // playlist" (which reads S.shufPl on its own) can act on a different
-  // playlist than whichever one the dropdown is actually showing as selected.
-  const sel = S.shufPl = S.shufPl ?? allSongs?.id ?? pls[0]?.id;
-  const p = LIB.playlists.find(x => x.id === sel);
-  const tracks = p ? dedupe(p.tracks) : [];
-  // Cached against the source it was built from. Shuffling used to run again on
-  // every single redraw of this screen — including the redraw after an
-  // unrelated toast — and it is by some distance the most expensive thing the
-  // app computes. "Shuffle again" below is how you deliberately re-roll it.
-  if (S.shufCache?.id !== sel || S.shufCache?.n !== tracks.length) {
-    S.shufCache = { id: sel, n: tracks.length,
-      order: tracks.length ? spacedShuffle(tracks) : [],
-      naive: tracks.length ? shuffleStats(rnd([...tracks])) : null };
-  }
-  const order = S.shufCache.order, naive = S.shufCache.naive;
-  const good = order.length ? shuffleStats(order) : null;
-  // DJ order: offered only once enough of this list has been heard; otherwise nothing changes.
-  const canMix = order.length && mixHeardIn(tracks) >= (globalThis.BetterfyOrder?.MIN_MIX ?? 8);
-  if (S.shufMode === undefined) { try { S.shufMode = LS.getItem('bf_shuf_mode') || ''; } catch { S.shufMode = ''; } }
-  const mix = canMix && MIX_MODES[S.shufMode] ? shuffleMix(sel, tracks, S.shufMode) : null;
-  const mixPick = canMix ? ` <select id="shufMode" aria-label="Order">${[['', 'Spaced shuffle'], ...Object.entries(MIX_MODES)].map(([v, l]) =>
-    `<option value="${v}" ${v === (mix ? S.shufMode : '') ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
-  S.shufOrder = mix && !mix.pending ? mix.order : mix ? [] : order;
-  S.shufOrderMode = mix && !mix.pending ? S.shufMode : null;
-  return `<h1>Shuffle</h1>
-    <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
-    <p class="lede" style="margin-top:-8px">${allSongs
-      ? `Shuffling from <b>${esc(allSongs.name)}</b> by default — everything in your library, kept in one place.`
-      : `No single playlist has everything you own yet.`}
-      <button class="b sm" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Build it'}</button></p>
-    <div class="rowbtns" style="margin-bottom:22px">
-      <select id="shufPl">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
-      <button class="b p" id="shufApply" ${S.shufOrder.length?'':'disabled'}>Create shuffled playlist</button>
-      <button class="b" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
-      <button class="b sm" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
-    </div>
-    ${mix ? mixHTML(mix, tracks, p) : good ? `<div class="vs">
-      <div class="bad"><div class="l">Spotify's shuffle</div><div class="n">${naive.minGap}</div>
-        <div class="d">${naive.minGap === 1 ? 'slot' : 'slots'} between the same artist, ${naive.within3} ${naive.within3 === 1 ? 'pair' : 'pairs'} within three</div></div>
-      <div class="good"><div class="l">Betterfy</div><div class="n">${good.minGap}</div>
-        <div class="d">${good.minGap === 1 ? 'slot' : 'slots'} minimum, ${good.within3 ? `${good.within3} ${good.within3 === 1 ? 'pair' : 'pairs'} within three` : 'nothing within three'}, average gap ${good.avgGap}</div></div>
-    </div>
-    <p class="lede" style="margin:-10px 0 20px; font-size:14px">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
-    <h2>Order</h2>
-    <div class="order">${order.slice(0,40).map((t,i) => `<div>
-      <span class="i">${String(i+1).padStart(3,'0')}</span>
-      <span class="t">${esc(t.name)}</span>
-      <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;
-}
-
 /* ---------- discovery: new by construction ----------
  *
  * What you listen to is not the same as what you own. A playlist filed two
@@ -7174,109 +7374,6 @@ function discFitHTML(t) {
     .filter(x => x?.title).map(x => `${esc(x.title)} — ${esc(x.artist)}`);
   return `<div class="discfit ${cls}" title="${(f * 100).toFixed(0)}% — 100% is as close as ${name}’s own tracks are to each other"><span class="tag snd">by sound</span> ${say}${near.length ? `<span class="sub">closest: ${near.join('; ')}</span>` : ''}</div>`;
 }
-
-function vDiscover() {
-  const d = S.discover ?? [];
-  const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
-  const hasKey = !!lfmKey();
-  const head = `<h1>Discover</h1>
-    <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
-      <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
-    ${hasKey ? '' : `<div class="note discnokey">
-      <b>No key needed.</b> Picks come from Deezer's and ListenBrainz's “fans also like” for the artists you play${discListenOn() ? ', then ranked by how they sound' : ''}.
-      A free Last.fm key adds its own similar artists and genre tags; it's saved on this device.
-      <div class="rowbtns" style="margin-top:8px">
-        <input id="lfmKeyDisc" placeholder="Last.fm API key (optional)" size="34">
-        <button class="b" id="saveLfmDiscover">Save key &amp; find new music</button>
-        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
-      </div>
-    </div>`}
-    <div class="rowbtns" style="margin-bottom:16px">
-      <select id="discPl">
-        <option value="">Everything I listen to</option>
-        <optgroup label="Playlist radio">
-          ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
-        </optgroup>
-      </select>
-      <button class="b p" id="discRun" >Find new music</button>
-    </div>`;
-
-  // WP-C3: "find tracks that sound like ___". '' without CLAP records.
-  const sounds = typeof soundSearchHTML === 'function' ? soundSearchHTML() : '';
-  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'Pick what to seed from above, then hit Find new music. A run takes a minute or two.');
-
-  const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
-  const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
-  const art = artHTML({ art:t.art, id:t.id, title:t.track },
-                      `data-dplay="${esc(t.id)}" data-ddur="${t.dur ?? 0}"`);
-
-  const best = (t.suggest ?? [])[0];
-  return head + sounds + discSoundLine() + `<div class="counter" style="margin:0 0 14px">
-      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
-      <span>from ${esc(S.discoverFrom)}</span>
-    </div>
-    <div class="deck">
-      <div class="card disc">
-        <div class="prog"><i style="width:${((i+1)/d.length*100).toFixed(2)}%"></i></div>
-        <div class="now">
-          <div class="artwrap">${art}</div>
-          <div class="txt">
-            <p class="t">${esc(t.track)}</p><p class="a">${esc(t.artist)}</p>
-            <div class="m"><span>${esc(t.album??'')}</span><span>${esc((t.released??'').slice(0,4))}</span><span>${mmss(t.dur)}</span></div>${trackChip(t)}${discFitHTML(t)}
-          </div>
-        </div>${trackStrip(t)}
-
-        <div class="player">
-          <button class="tbtn" id="pToggle" aria-label="Play">${ICON_PLAY}</button>
-          <input class="seek" id="seek" type="range" min="0" max="${t.dur ?? 0}" step="1000" value="0"
-                 aria-label="Playing position" disabled>
-          <span class="tm"><span id="pTime">0:00</span> / <span id="pDur">${mmss(t.dur)}</span></span>
-        </div>
-        <p class="pdev" id="pDev"></p>
-
-        ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
-        ${best ? `<button class="fitcall" data-dfile="${esc(best.id)}">
-            <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
-              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ${best.via === 'sound' ? 'by how it sounds next to what you filed there' : 'ranked by the same model the file queue uses'}</span>${pickEvidence(best)}</span>
-            ${pickBand(best)}<span class="sc">${(best.score*100).toFixed(0)}% fit</span>
-          </button>` : ''}
-        ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
-          `<button class="pick" data-dfile="${esc(sg.id)}"><span class="k">${n+2}</span>
-           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span>${pickEvidence(sg)}</span>
-           <span class="rt">${pickBand(sg)}<span class="sc">${(sg.score*100).toFixed(0)}%</span>
-             <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
-        ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
-
-        <div class="rowbtns" style="margin-top:20px">
-          ${best ? `<button class="b big go grow" data-dfile="${esc(best.id)}">Add to ${esc(best.name)}</button>` : ''}
-          <button class="b big" data-dnav="1" ${i>=d.length-1?'disabled':''}>Next →</button>
-        </div>
-        <div class="rowbtns" style="margin-top:10px">
-          <button class="b sm" data-dnav="-1" ${i===0?'disabled':''}>← Back</button>
-          <button class="b sm" data-like="${esc(t.id)}">Like</button>
-          <a class="b sm" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
-          <select id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
-        </div>
-      </div>
-    </div>`;
-}
-
-/** Add the track on the card to a playlist, and take it off the pile. */
-async function discAdd(playlistId) {
-  const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
-  if (!t) return;
-  const name = CFG[playlistId]?.name ?? playlistId;
-  try {
-    await addTracks(playlistId, [t.id]);
-    await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'added from discovery' });
-    const when = (await getLog())[0]?.at;
-    toast(`Added “${t.track}” to ${name}.`, () => undoAction(when));
-    d.splice(at, 1);
-    S.discAt = Math.max(0, Math.min(at, d.length - 1));
-    render();
-  } catch (e) { toast('Failed: ' + e.message); }
-}
-
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
 // The exact fallback classify() writes when a playlist's name gives it no clue
 // at all — a silent guess, not a real signal, and the one worth confirming.
@@ -8188,7 +8285,7 @@ function swapScreen(dir, update) {
   t.finished.finally(() => { delete root.dataset.dir; });
 }
 const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
-                new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
+                new:vNew, discover:screenView('discover'), shuffle:screenView('shuffle'), lists:vLists,
                 engine:screenView('engine'), history:screenView('history'), sources:screenView('sources') };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
@@ -8550,7 +8647,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0940';
+    s.src = 'engine.js?v=2026-11-15-0956';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -8572,7 +8669,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0940');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0956');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9047,7 +9144,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0940';
+    s.src = 'audio.js?v=2026-11-15-0956';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -9083,7 +9180,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0940', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0956', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -9817,7 +9914,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-0940', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-0956', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -10084,6 +10181,17 @@ async function dispatchAct(e) {
   await fn(screenCtx(view), el, e);
   return true;
 }
+
+// --- shuffle/discover ---
+SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, dedupe, spacedShuffle, shuffleStats, rnd, artistOf,
+  mixHeardIn, shuffleMix, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
+  get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
+  labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
+SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
+  soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
+  artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
+  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall });
+// --- end shuffle/discover ---
 document.addEventListener('click', guard(async e => {
   if (await dispatchAct(e)) return;
   const nav = e.target.closest('.nav');
@@ -10092,78 +10200,6 @@ document.addEventListener('click', guard(async e => {
     if (nav.dataset.v === 'history') S.history = await getLog();
     return go(nav.dataset.v);
   }
-
-  if (e.target.id === 'syncAllSongs') {
-    const btn = e.target; btn.disabled = true; btn.textContent = 'Working…';
-    try { await syncAllSongsPlaylist(); }
-    catch (err) { toast('Failed: ' + err.message); render(); }
-    return;
-  }
-
-  if (e.target.id === 'shufApply' || e.target.id === 'shufPlay') {
-    const btn = e.target, playIt = btn.id === 'shufPlay';
-    // vShuffle() always sets S.shufPl to whatever it last showed as selected
-    // by the time this button is reachable, so this and the screen agree.
-    const src = LIB.playlists.find(p => p.id === S.shufPl);
-    const order = S.shufOrder ?? [];
-    if (!order.length) return;
-    btn.disabled = true; btn.textContent = 'Working…';
-    const dj = S.shufOrderMode ? MIX_MODES[S.shufOrderMode] : null;
-    try {
-      const name = dj ? `🎧 ${src.name}` : `🔀 ${src.name}`;
-      // Remembered by id, like the All Songs mirror and for the same reason:
-      // found by name alone, renaming the shuffled playlist (or its source)
-      // made the next shuffle build a second one beside it instead of
-      // replacing what was already there.
-      const key = (dj ? 'bf_mix_' : 'bf_shuf_') + src.id;
-      const pinned = LS.getItem(key);
-      const mine = await paged('/me/playlists?limit=50');
-      const ours = p => p?.owner?.id === LIB.user.id;
-      let pl = mine.find(p => p.id === pinned && ours(p)) ?? mine.find(p => p.name === name && ours(p));
-      if (!pl) pl = await sp('/me/playlists', { method:'POST',
-        body:JSON.stringify({ name, public:false, description: dj
-          ? `${dj} of "${src.name}": each next track beatmatches the last. Play with Spotify shuffle OFF.`
-          : `Spaced shuffle of "${src.name}". Play with Spotify shuffle OFF.` }) });
-      LS.setItem(key, pl.id);
-      // PUT replaces wholesale, so re-shuffling the same playlist doesn't pile up
-      await plCall(pl.id, 'PUT', { uris: order.slice(0,100).map(t => 'spotify:track:'+t.id) });
-      for (const part of chunk(order.slice(100), 100)) await plCall(pl.id, 'POST', { uris: part.map(t => 'spotify:track:'+t.id) });
-      await logAction({ op:'shuffle', playlistId:pl.id, playlistName:pl.name ?? name, trackIds:order.map(t=>t.id), reason:`${dj ? dj.toLowerCase() + ' ' : ''}from ${src.name}` });
-      if (playIt) {
-        const d = await sp('/me/player/devices');
-        const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
-        if (!dev) toast(`"${pl.name ?? name}" is ready — no open Spotify device to play it on.`);
-        else {
-          await sp(`/me/player/shuffle?state=false&device_id=${dev.id}`, { method:'PUT' });
-          await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body:JSON.stringify({ context_uri:`spotify:playlist:${pl.id}` }) });
-          toast(`Playing "${pl.name ?? name}" on ${dev.name}, Spotify shuffle off.`);
-        }
-      } else toast(`"${pl.name ?? name}" — ${order.length} tracks, ready. Play it with Spotify shuffle OFF.`);
-    } catch (err) { toast('Failed: ' + err.message); }
-    render(); return;
-  }
-
-  if (e.target.id === 'shufAgain') { S.shufCache = null; return render(); }
-
-  if (e.target.id === 'discRun') return runDiscovery(S.discSeed || null);
-
-  // Saving the key and finding new music used to be two screens and two
-  // clicks — go to Playlists, paste it, come back, hit Find new music. Doing
-  // it right here removes the trip: the key is saved and discovery starts in
-  // the same action, so a first-time listener never has to go looking for it.
-  if (e.target.id === 'saveLfmDiscover') {
-    const v = $('#lfmKeyDisc')?.value.trim();
-    if (!v) return toast('Paste a Last.fm key first.');
-    LS.setItem('bf_lfm', v);
-    toast('Key saved — finding new music…');
-    return runDiscovery(S.discSeed || null);
-  }
-
-  const like = e.target.closest('[data-like]');
-  if (like) { try { await libraryCall('PUT', [like.dataset.like]);
-      await logAction({ op:'add-liked', trackIds:[like.dataset.like], reason:'from discovery' });
-      like.textContent = 'Liked'; like.disabled = true; toast('Added to your Liked Songs.'); }
-    catch (err) { toast('Failed: '+err.message); } return; }
 
   const gto = e.target.closest('[data-go]'); if (gto) return go(gto.dataset.go);
   const ti = e.target.closest('[data-tidy]'); if (ti) { S.tidySec = ti.dataset.tidy; return render(); }
@@ -10299,14 +10335,6 @@ document.addEventListener('click', guard(async e => {
   const dp = e.target.closest('[data-dplay]');
   if (dp) return playFrom(dp.dataset.dplay, +dp.dataset.ddur || 0);
   if (e.target.closest('#pToggle')) return playerToggle();
-  const dnav = e.target.closest('[data-dnav]');
-  if (dnav) {
-    const d = S.discover ?? [];
-    S.discAt = Math.max(0, Math.min((S.discAt ?? 0) + (+dnav.dataset.dnav), d.length - 1));
-    return render();
-  }
-  const dfile = e.target.closest('[data-dfile]'); if (dfile) return discAdd(dfile.dataset.dfile);
-
   if (e.target.id === 'analyseGo') return analyseGo();
   if (e.target.id === 'audioGo') return audioStart();
   if (e.target.id === 'maestGo') return maestStart();
@@ -10439,10 +10467,6 @@ document.addEventListener('click', guard(async e => {
 document.addEventListener('change', guard(async e => {
   if (await dispatchAct(e)) return;
   if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
-  if (e.target.id === 'shufPl') { S.shufPl = e.target.value; S.shufCache = null; return render(); }
-  if (e.target.id === 'shufMode') { S.shufMode = e.target.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} return render(); }
-  if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
-  if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
   if (e.target.id === 'deepMaest' || e.target.id === 'deepClap' || e.target.id === 'deepMemory') {
     await audioLoad().catch(() => {});
     const change = e.target.id === 'deepMaest' ? { maest: e.target.checked }

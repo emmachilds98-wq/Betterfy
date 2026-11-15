@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { bindDiscover, discoverCtx, Discover } from './screenctx.mjs';
 
 // The Discover card is built as a string, so it can be built here and read
 // back. These run the shipped vDiscover against a small fake library and check
@@ -56,7 +57,7 @@ function load({ discover = [], discAt = 0, key = 'lfm-key' } = {}) {
   vm.runInContext(between('function artHTML(t', 'function vInbox()', 'artHTML'), sandbox);
   vm.runInContext(between('/** The discovery currently on the card. */', 'const AXES = ', 'the Discover view'), sandbox);
   vm.runInContext(between('function emptyState(', '/* The misfile confidence tiers', 'emptyState'), sandbox);
-  return Object.assign(sandbox, { added });
+  return bindDiscover(Object.assign(sandbox, { added }));
 }
 
 const FOUND = [
@@ -87,7 +88,7 @@ test('without a Last.fm key Discover still runs, and a key is offered as an opti
   const html = load({ key: null }).vDiscover();
   assert.doesNotMatch(html, /Discovery needs a free Last\.fm key/);
   assert.match(html, /No key needed/);
-  assert.match(html, /<button class="b p" id="discRun" >/, 'the run button is not disabled');
+  assert.match(html, /<button class="b p" data-act="discRun" id="discRun" >/, 'the run button is not disabled');
   assert.match(html, /id="lfmKeyDisc"/, 'a key can still be entered on this screen');
   assert.match(html, /id="saveLfmDiscover"/);
   assert.match(html, /Nothing found yet/, 'the empty state is the same one a key gets');
@@ -124,7 +125,7 @@ test('the suggested playlists are ranked, with the best one marked', () => {
   // The top pick is lifted out of the ranked list into its own callout — it is
   // the recommendation, not one option among three — but it still files in one
   // tap, and the runners-up stay behind it in order.
-  assert.match(html, /class="fitcall" data-dfile="p1"/, 'the top pick leads');
+  assert.match(html, /class="fitcall" data-act="dfile" data-dfile="p1"/, 'the top pick leads');
   assert.match(html, /61% fit/);
   // The runners-up carry a score bar rather than the words, so the number is
   // all that is asserted here.
@@ -178,7 +179,7 @@ test('playlist and track names are escaped, not injected', () => {
 
 test('adding puts the track in the playlist and takes it off the pile', async () => {
   const app = load({ discover: [...FOUND] });
-  await app.discAdd('p1');
+  await Discover.actions.dfile(discoverCtx(app), { dataset: { dfile: 'p1' } });
   assert.deepEqual(app.added, [['p1', 't1']]);
   assert.equal(app.S.discover.length, 1);
   assert.equal(app.S.discover[0].id, 't2', 'the one you filed is gone, the rest stay');
@@ -186,7 +187,7 @@ test('adding puts the track in the playlist and takes it off the pile', async ()
 
 test('adding the last one leaves the position somewhere real', async () => {
   const app = load({ discover: [FOUND[0]], discAt: 0 });
-  await app.discAdd('p1');
+  await Discover.actions.dfile(discoverCtx(app), { dataset: { dfile: 'p1' } });
   assert.equal(app.S.discover.length, 0);
   assert.equal(app.S.discAt, 0);
 });

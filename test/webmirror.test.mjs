@@ -115,7 +115,7 @@ test('a stray id left in the mirror is dropped rather than reported as a nameles
 });
 
 test('syncAllSongsPlaylist keeps no bare id stubs in the library copy it writes back', () => {
-  const body = slice('async function syncAllSongsPlaylist()', 'function vShuffle()', 'All Songs block');
+  const body = slice('async function syncAllSongsPlaylist()', '/* ---------- discovery: new by construction', 'All Songs block');
   assert.match(body, /const byId = new Map\(all\.map\(t => \[t\.id, t\]\)\)/,
     'the merge must index the library rather than scanning it once per track');
   assert.doesNotMatch(body, /\?\?\s*\{ id \}/,

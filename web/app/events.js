@@ -7,78 +7,6 @@ document.addEventListener('click', guard(async e => {
     return go(nav.dataset.v);
   }
 
-  if (e.target.id === 'syncAllSongs') {
-    const btn = e.target; btn.disabled = true; btn.textContent = 'Working…';
-    try { await syncAllSongsPlaylist(); }
-    catch (err) { toast('Failed: ' + err.message); render(); }
-    return;
-  }
-
-  if (e.target.id === 'shufApply' || e.target.id === 'shufPlay') {
-    const btn = e.target, playIt = btn.id === 'shufPlay';
-    // vShuffle() always sets S.shufPl to whatever it last showed as selected
-    // by the time this button is reachable, so this and the screen agree.
-    const src = LIB.playlists.find(p => p.id === S.shufPl);
-    const order = S.shufOrder ?? [];
-    if (!order.length) return;
-    btn.disabled = true; btn.textContent = 'Working…';
-    const dj = S.shufOrderMode ? MIX_MODES[S.shufOrderMode] : null;
-    try {
-      const name = dj ? `🎧 ${src.name}` : `🔀 ${src.name}`;
-      // Remembered by id, like the All Songs mirror and for the same reason:
-      // found by name alone, renaming the shuffled playlist (or its source)
-      // made the next shuffle build a second one beside it instead of
-      // replacing what was already there.
-      const key = (dj ? 'bf_mix_' : 'bf_shuf_') + src.id;
-      const pinned = LS.getItem(key);
-      const mine = await paged('/me/playlists?limit=50');
-      const ours = p => p?.owner?.id === LIB.user.id;
-      let pl = mine.find(p => p.id === pinned && ours(p)) ?? mine.find(p => p.name === name && ours(p));
-      if (!pl) pl = await sp('/me/playlists', { method:'POST',
-        body:JSON.stringify({ name, public:false, description: dj
-          ? `${dj} of "${src.name}": each next track beatmatches the last. Play with Spotify shuffle OFF.`
-          : `Spaced shuffle of "${src.name}". Play with Spotify shuffle OFF.` }) });
-      LS.setItem(key, pl.id);
-      // PUT replaces wholesale, so re-shuffling the same playlist doesn't pile up
-      await plCall(pl.id, 'PUT', { uris: order.slice(0,100).map(t => 'spotify:track:'+t.id) });
-      for (const part of chunk(order.slice(100), 100)) await plCall(pl.id, 'POST', { uris: part.map(t => 'spotify:track:'+t.id) });
-      await logAction({ op:'shuffle', playlistId:pl.id, playlistName:pl.name ?? name, trackIds:order.map(t=>t.id), reason:`${dj ? dj.toLowerCase() + ' ' : ''}from ${src.name}` });
-      if (playIt) {
-        const d = await sp('/me/player/devices');
-        const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
-        if (!dev) toast(`"${pl.name ?? name}" is ready — no open Spotify device to play it on.`);
-        else {
-          await sp(`/me/player/shuffle?state=false&device_id=${dev.id}`, { method:'PUT' });
-          await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body:JSON.stringify({ context_uri:`spotify:playlist:${pl.id}` }) });
-          toast(`Playing "${pl.name ?? name}" on ${dev.name}, Spotify shuffle off.`);
-        }
-      } else toast(`"${pl.name ?? name}" — ${order.length} tracks, ready. Play it with Spotify shuffle OFF.`);
-    } catch (err) { toast('Failed: ' + err.message); }
-    render(); return;
-  }
-
-  if (e.target.id === 'shufAgain') { S.shufCache = null; return render(); }
-
-  if (e.target.id === 'discRun') return runDiscovery(S.discSeed || null);
-
-  // Saving the key and finding new music used to be two screens and two
-  // clicks — go to Playlists, paste it, come back, hit Find new music. Doing
-  // it right here removes the trip: the key is saved and discovery starts in
-  // the same action, so a first-time listener never has to go looking for it.
-  if (e.target.id === 'saveLfmDiscover') {
-    const v = $('#lfmKeyDisc')?.value.trim();
-    if (!v) return toast('Paste a Last.fm key first.');
-    LS.setItem('bf_lfm', v);
-    toast('Key saved — finding new music…');
-    return runDiscovery(S.discSeed || null);
-  }
-
-  const like = e.target.closest('[data-like]');
-  if (like) { try { await libraryCall('PUT', [like.dataset.like]);
-      await logAction({ op:'add-liked', trackIds:[like.dataset.like], reason:'from discovery' });
-      like.textContent = 'Liked'; like.disabled = true; toast('Added to your Liked Songs.'); }
-    catch (err) { toast('Failed: '+err.message); } return; }
-
   const gto = e.target.closest('[data-go]'); if (gto) return go(gto.dataset.go);
   const ti = e.target.closest('[data-tidy]'); if (ti) { S.tidySec = ti.dataset.tidy; return render(); }
   // A card under "Next up to file" opens the queue on that track, not at the top.
@@ -213,14 +141,6 @@ document.addEventListener('click', guard(async e => {
   const dp = e.target.closest('[data-dplay]');
   if (dp) return playFrom(dp.dataset.dplay, +dp.dataset.ddur || 0);
   if (e.target.closest('#pToggle')) return playerToggle();
-  const dnav = e.target.closest('[data-dnav]');
-  if (dnav) {
-    const d = S.discover ?? [];
-    S.discAt = Math.max(0, Math.min((S.discAt ?? 0) + (+dnav.dataset.dnav), d.length - 1));
-    return render();
-  }
-  const dfile = e.target.closest('[data-dfile]'); if (dfile) return discAdd(dfile.dataset.dfile);
-
   if (e.target.id === 'analyseGo') return analyseGo();
   if (e.target.id === 'audioGo') return audioStart();
   if (e.target.id === 'maestGo') return maestStart();
@@ -353,10 +273,6 @@ document.addEventListener('click', guard(async e => {
 document.addEventListener('change', guard(async e => {
   if (await dispatchAct(e)) return;
   if (e.target.id === 'anyPl' && e.target.value) return toggleFileSel(e.target.value);
-  if (e.target.id === 'shufPl') { S.shufPl = e.target.value; S.shufCache = null; return render(); }
-  if (e.target.id === 'shufMode') { S.shufMode = e.target.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} return render(); }
-  if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
-  if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);
   if (e.target.id === 'deepMaest' || e.target.id === 'deepClap' || e.target.id === 'deepMemory') {
     await audioLoad().catch(() => {});
     const change = e.target.id === 'deepMaest' ? { maest: e.target.checked }
