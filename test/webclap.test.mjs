@@ -43,6 +43,7 @@ function screen({ lib, records, bare = false, tableJson = table() }) {
   };
   s.fire = p => { s.pending.push(Promise.resolve(p)); };
   s.render = () => { s.renders++; };
+  s.store = { get() {}, on() {}, set() { s.render(); }, touch() { s.render(); } };
   s.toast = m => s.toasts.push(m);
   s.engineLoad = async () => true;
   s.engineTargets = () => Object.keys(s.CFG).sort();

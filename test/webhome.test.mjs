@@ -31,6 +31,7 @@ function home({ views = {} } = {}) {
     VHUE: { home: 'accent', inbox: 'm0', tidy: 'm1', discover: 'm3', shuffle: 'm4' },
     VIEWS: views, view: 'home', go() {},
     render() { calls.render++; },
+    store: { get() {}, on() {}, set() { calls.render++; }, touch() { calls.render++; } },
     listenPill: vm => vm ? `<span class="pill">${vm.state}</span>` : '',
     document: { getElementById: id => id === 'listenSlot' ? slot : null },
     $: sel => sel === '#listenSlot' ? slot : sel === '#main' ? {} : sel === '#main .act[data-heard] .n' ? heardN : null,

@@ -69,7 +69,7 @@ function listsProfiles() {
     // The engine bundle is fetched on demand; fetch it and draw again.
     if (!LPROF.loading && typeof engineLoad === 'function') {
       LPROF.loading = true;
-      fire(Promise.resolve(engineLoad()).then(() => { if (view === 'lists') render(); }, () => {}));
+      fire(Promise.resolve(engineLoad()).then(() => { store.touch('ui.lists'); }, () => {}));
     }
     return null;
   }
@@ -101,7 +101,7 @@ function listsProfileRun(key) {
     if (!done) return void setTimeout(slice, 0);
     LPROF.busy = false;
     try { LPROF.out = LPROF.pr.result(); } catch { LPROF.out = null; }
-    if (view === 'lists') render();
+    store.touch('ui.lists');
   };
   setTimeout(slice, 0);
 }

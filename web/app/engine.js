@@ -213,7 +213,7 @@ function engineDecorate() {
 /** Learn the account, then show what this engine would do with the same tracks
  *  the File screen is currently offering the tag engine's answer for. */
 const engineAnalyse = guard(async () => {
-  ENG.status = 'working'; ENG.err = null; render();
+  ENG.status = 'working'; ENG.err = null; store.touch('eng');
   try {
     await engineLoad();
     const { space, from, ms, pairs } = await engineSpace();
@@ -261,7 +261,7 @@ const engineAnalyse = guard(async () => {
   } catch (e) {
     ENG.status = 'error'; ENG.err = e?.message ?? String(e);
   }
-  render();
+  store.touch('eng');
 });
 
 /* ---------- the neighbour bridge: docs/SMARTER-GENRES-PLAN.md, phase 0 ----------

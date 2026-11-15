@@ -44,7 +44,7 @@ function fakeDom() {
 
 test('openSettings is reachable from outside the panel that defines the rest of it', () => {
   const dom = fakeDom();
-  const sandbox = { $: dom.$, console };
+  const sandbox = { $: dom.$, console, routeNote() {} };
   vm.createContext(sandbox);
   vm.runInContext(slice('function openSettings(open)', 'function initSettingsPanel()', 'openSettings'), sandbox);
 

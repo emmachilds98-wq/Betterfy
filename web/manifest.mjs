@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 
 export const APP_FILES = [
   'app/storage.js',
+  'app/store.js',
   'app/theme.js',
   'app/version.js',
   'app/auth.js',
@@ -42,6 +43,7 @@ export const APP_FILES = [
   'app/render.js',
   'app/gestures.js',
   'app/more.js',
+  'app/router.js',
   'app/errors.js',
   'app/engine.js',
   'app/audio.js',

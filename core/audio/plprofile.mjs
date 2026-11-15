@@ -1,3 +1,4 @@
+// @bundle engine BetterfyPlProfile 160
 // A playlist's sound profile, from the members listening has heard: its genre
 // mix, BPM range, and whether it is really two genres that could be split.
 //
