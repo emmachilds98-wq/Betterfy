@@ -1,20 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { key, chromagram, toCamelot, toOpenKey, relation, scoreKeys, CAMELOT, KEY_VERSION } from '../core/audio/dsp/key.mjs';
+import { key, chromagram, toCamelot, toOpenKey, relation, scoreKeys, CAMELOT, KEY_VERSION, PROFILES, DEFAULT_PROFILES } from '../core/audio/dsp/key.mjs';
 import { SAMPLE_RATE } from '../core/audio/mel.mjs';
 import { compare, summarise, wilson, twoWindows, analyseTrack } from '../scripts/audio-dsp/key-vs-rekordbox.mjs';
 
 // WP-D2. These are SYNTHETIC checks: harmonic tones (8 partials at 1/h) in
 // known keys. They prove the maths, the Camelot bookkeeping and the failure
 // modes. They do not prove accuracy on real records; that number comes from
-// scripts/audio-dsp/key-vs-rekordbox.mjs on the owner's library, and key()
-// doesn't feed records or the UI (WP-D4) until it exists.
+// scripts/audio-dsp/key-fit.mjs on the Beatport EDM Key Dataset (47% exact
+// held out for v2; see key.mjs's header), and key stays hidden in the UI.
 //
 // Policy, asserted below: on every synthetic case the answer must be the
-// exact key, not merely its relative. The relative major/minor or a fifth
-// neighbour is expected as the top ALTERNATE (minor material shares its pitch
-// classes with the relative major, so that is the honest runner-up), and the
-// alternate must be flagged with its Camelot relation.
+// exact key, not merely its relative. A near key (relative, either fifth, or
+// the parallel major/minor) is expected as the top ALTERNATE, flagged with its
+// Camelot relation. v2's EDM profile weights the tonic and fifth heavily, so
+// the parallel key (same tonic) is now often the runner-up where v1's
+// probe-tone profiles put the relative.
 
 const SR = SAMPLE_RATE;
 const NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
@@ -145,8 +146,7 @@ for (const [tonic, mode, midi] of NAMED) {
     assert.equal(r.tonic, CAMELOT[r.camelot].tonic);
     assert.equal(r.mode, mode);
     assert.ok(r.confidence >= 0.6, `confidence ${r.confidence}`);
-    assert.ok(r.alternates[0].compatible, `top alternate ${r.alternates[0].key} is a Camelot neighbour`);
-    if (mode === 'minor') assert.equal(r.alternates[0].relation, 'relative', 'the relative major is the minor key\'s runner-up');
+    assert.ok(r.alternates[0].relation != null, `top alternate ${r.alternates[0].key} is a near key`);
   });
 
   test(`${tonic} ${mode}: a bare scale over a tonic drone is read as that key`, () => {
@@ -242,6 +242,36 @@ test('shape: every field present, confidence in 0..1, three flagged alternates',
     assert.equal(a.compatible, ['relative', 'fifth-up', 'fifth-down'].includes(a.relation));
   }
   assert.ok(r.alternates.every((a, i) => i === 0 || a.score <= r.alternates[i - 1].score), 'best first');
+});
+
+test('profiles: EDM is the default; the classic probe-tone profiles stay selectable and agree on clean material', () => {
+  assert.deepEqual([...DEFAULT_PROFILES], ['edm']);
+  for (const P of Object.values(PROFILES)) for (const m of ['major', 'minor']) {
+    assert.equal(P[m].length, 12);
+    assert.equal(P[m].indexOf(Math.max(...P[m])), 0, 'every profile peaks on the tonic');
+  }
+  for (const [tonic, mode, midi] of NAMED.slice(0, 4)) {
+    const x = progression(midi, mode);
+    for (const profiles of [['krumhansl', 'temperley'], ['krumhansl'], ['edm']])
+      assert.equal(key(x, { profiles }).camelot, toCamelot(tonic, mode), `${tonic} ${mode} with ${profiles}`);
+  }
+});
+
+test('weighting: faint off-key partials do not outvote the loud harmony', () => {
+  // A minor at full level, plus an F# major scale 30 dB down, every partial
+  // still a clean spectral peak. Peaks are weighted by √(magnitude), so the
+  // faint line is a small vote, not an equal one.
+  const x = progression(57, 'minor');
+  const steps = [0, 2, 4, 5, 7, 9, 11, 12], d = 10 / steps.length;
+  const faint = render(steps.map((s, i) => ({ notes: [78 + s], t0: i * d, dur: d, amp: 0.15 * 10 ** (-30 / 20) })), 10);
+  assert.equal(key(mix(x, faint)).camelot, '8A');
+});
+
+test('confidence: a probability-shaped score, high on clean harmony, near zero for noise', () => {
+  const clean = key(progression(57, 'minor'));
+  assert.ok(clean.confidence >= 0.6 && clean.confidence < 1, `clean ${clean.confidence}`);
+  const noisy = key(noise(SR * 10, 0.5, 11));
+  assert.ok(noisy.confidence < clean.confidence / 3, `noise ${noisy.confidence}`);
 });
 
 test('scoreKeys ranks all 24 keys, and a plain array input works', () => {

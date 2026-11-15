@@ -19,3 +19,4 @@ export { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike
   confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } from '../../core/audio/clap-search.mjs';
 export { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN } from './maest-run.mjs';
 export { MAEST_FILE, MAEST_LABELS_FILE, needsMaest } from '../../core/audio/maest.mjs';
+export { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } from '../../core/audio/clap.mjs';

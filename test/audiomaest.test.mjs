@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { maestPatches, createMaestEar, hearMaest, fillMaest, needsMaest, pickMaestOutputs,
          MAEST_PATCH_FRAMES, MAEST_MEAN, MAEST_STD, MAEST_MIN_FRAMES, EMB_OUTPUT, ACT_OUTPUT, MAEST_FILE } from '../core/audio/maest.mjs';
 import { makeRecord, makeEar, withEar, earCurrent, validRecord, unpackEmbedding, packEmbedding,
-         N_STYLES, EMB_DIM, MAEST_DIM, MAEST_N_STYLES, MAEST_MODEL } from '../core/audio/record.mjs';
+         N_STYLES, EMB_DIM, MAEST_DIM, MAEST_N_STYLES, MAEST_MODEL, CLAP_DIM } from '../core/audio/record.mjs';
 import { N_BANDS, SAMPLE_RATE, HOP_SIZE } from '../core/audio/mel.mjs';
 import { audioIndex, EARS } from '../core/intrinsic/audio.mjs';
 import { buildSpace, placements, WEIGHTS } from '../core/intrinsic/space.mjs';
@@ -363,6 +363,33 @@ test('runner: stops after the track in flight; skips are not retried this sessio
   n = 10; await c2.start();
   assert.equal(c2.vm().heard, 4, 'the failed one is tried again, the different recording is not');
   assert.equal(c2.vm().waiting, 0);
+});
+
+test('runner: the answer goes on the record as stored now, so a CLAP or DSP top-up meanwhile is kept', async () => {
+  const recs = LIB.all.slice(0, 3).map((t, i) => ({ ...strip(recordFor(t.id, { maest: false })), at: i }));
+  const store = memStore(recs);
+  store.get = async id => store.m.get(id) ?? null;
+  const clap = makeEar('clap', { embedding: Float32Array.from({ length: CLAP_DIM }, (_, k) => Math.sin(k + 1)) });
+  const deps = fillDeps({ lookup: async isrc => {
+    // While the second ear works on a track, a listening run adds CLAP to the first
+    // record and hears the second as another recording.
+    const [a, b] = recs;
+    store.m.set(a.id, withEar(store.m.get(a.id), 'clap', clap));
+    store.m.set(b.id, { ...store.m.get(b.id), source: { ...b.source, deezerId: 2 } });
+    return { deezerId: 1, previewUrl: 'u' };
+  } });
+  const run = createMaestRunner({ ...deps, store, loadMaest: async () => deps.maest });
+  await run.start();
+  const [a, b, c] = recs.map(r => store.m.get(r.id));
+  assert.ok(earCurrent(a, 'maest') && earCurrent(a, 'clap'), 'both ears on the first record');
+  assert.ok(!earCurrent(b, 'maest'), 'a record re-heard as another recording is left alone');
+  assert.equal(b.source.deezerId, 2);
+  assert.ok(earCurrent(c, 'maest'));
+  assert.equal(run.vm().heard, 2); assert.equal(run.vm().failed, 0);
+  // A store without get() keeps the run's own copy, as before.
+  const plain = memStore([strip(recordFor('tech-t0', { maest: false }))]);
+  await createMaestRunner({ ...fillDeps(), store: plain, loadMaest: async () => fillDeps().maest }).start();
+  assert.ok(earCurrent(plain.m.get('tech-t0'), 'maest'));
 });
 
 test('runner: a model that will not load pauses with a reason and stores nothing', async () => {

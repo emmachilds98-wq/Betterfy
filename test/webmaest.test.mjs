@@ -81,3 +81,32 @@ test('page: the Deep listen block says the second ear changes nothing until a Sc
   const off = sandbox({ deep: { maest: false, clap: false, memoryOverride: false } }).deepPanelHTML();
   assert.doesNotMatch(off, /maestStatus/);
 });
+
+/* ---------- the page source (web/app, since build 5 A1) ---------- */
+const { assembledTemplate } = await import('../web/manifest.mjs');
+const SRC = assembledTemplate();
+const fn = name => {
+  const i = SRC.indexOf(`async function ${name}(`) >= 0 ? SRC.indexOf(`async function ${name}(`) : SRC.indexOf(`function ${name}(`);
+  assert.ok(i >= 0, `${name} not found`);
+  const j = SRC.indexOf('\n}\n', i);
+  return SRC.slice(i, j);
+};
+
+test('page source: the MAEST model and worker are reached only from maestStart, after the switch, Wi-Fi and memory gate', () => {
+  for (const needle of ['maest-worker.js', 'A.MAEST_FILE', 'createMaestRunner('])
+    assert.equal(SRC.split(needle).length - 1, 1, `${needle} appears once`);
+  const body = fn('maestStart');
+  const at = s => { const k = body.indexOf(s); assert.ok(k >= 0, s); return k; };
+  assert.ok(at('if (!deepSettings().maest || !LIB) return;') < at("if (deepAllowed('maest') !== 'ok') return"));
+  assert.ok(at("if (deepAllowed('maest') !== 'ok') return") < at('createMaestRunner('));
+  assert.ok(at('if (AUDIO.ctrl?.running) return;') < at('AUDIO.maest.start()'));
+  // The labels file is never fetched by the page: names come with the record.
+  assert.doesNotMatch(SRC, /MAEST_LABELS_FILE/);
+});
+
+test('page source: one writer at a time, listening stops the second ear first and starts it after', () => {
+  const body = fn('audioStart');
+  const stop = body.indexOf("AUDIO.maest?.stop('listening')"), go = body.indexOf('AUDIO.ctrl.start(tracks)'), again = body.indexOf('maestStart({ quiet: true })');
+  assert.ok(stop > 0 && stop < go && go < again, 'stop the second ear, listen, then the second ear again');
+  assert.match(SRC, /AUDIO\.maest\?\.running && deepAllowed\('maest'\) !== 'ok'\) AUDIO\.maest\.stop\('waiting for Wi-Fi'\)/);
+});

@@ -16,7 +16,7 @@
 // can be dropped with `release()` when the run is done, without touching the
 // first ear's worker.
 import { fillMaest, needsMaest } from '../../core/audio/maest.mjs';
-import { earCurrent } from '../../core/audio/record.mjs';
+import { earCurrent, withEar } from '../../core/audio/record.mjs';
 
 export const MAEST_PER_RUN = 50;
 
@@ -71,6 +71,16 @@ export function createMaestRunner(deps) {
   const vm = () => ({ ...st });
   const emit = () => { try { deps.onChange?.(vm()); } catch { /* a render bug must not stop the run */ } };
 
+  /** The stored record with this run's MAEST answer on it; the run's own copy if
+   *  the store can't say. Null if it was re-heard as another recording meanwhile. */
+  async function latest(was, heard) {
+    let now = null;
+    try { now = await deps.store.get?.(was.id); } catch { now = null; }
+    if (!now || now === was) return heard;
+    if (now.miss || now.source?.deezerId !== was.source?.deezerId) return null;
+    return withEar(now, 'maest', heard.maest);
+  }
+
   /** How many stored records have, and still need, a second ear. */
   async function refresh() {
     const all = await deps.store.getAll();
@@ -106,6 +116,9 @@ export function createMaestRunner(deps) {
           if (signal.aborted) break;
           let r;
           try { r = await fillMaest(fill, rec); } catch (e) { r = { failed: { id: rec.id, stage: 'unknown', detail: String(e?.message ?? e) } }; }
+          // Put the ear on the record as it is now, not as it was when the run began:
+          // a listening run may have added CLAP or DSP to it meanwhile (WP-C2).
+          if (r.record) { const now = await latest(rec, r.record); r = now ? { record: now } : { skip: 'different-recording' }; }
           if (r.record) { await deps.store.put(r.record); st.heard++; st.waiting = Math.max(0, st.waiting - 1); }
           else if (r.skip) { skip.add(rec.id); st.waiting = Math.max(0, st.waiting - 1); }
           else st.failed++; // tried again on a later run

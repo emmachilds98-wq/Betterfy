@@ -8,6 +8,7 @@ import { createAudioController, createWorkerEar, listenVM, profileVM, styleName 
 import { audioQueue } from '../core/audio/queue.mjs';
 import { makeRecord, makeMiss, MISS, N_STYLES, EMB_DIM, validRecord } from '../core/audio/record.mjs';
 import { MEL_VERSION, SAMPLE_RATE } from '../core/audio/mel.mjs';
+import { assembledTemplate } from '../web/manifest.mjs';
 
 // WP-B2: the page's store, settings and run loop. These are what
 // docs/audio.js exposes as BetterfyAudio; the template only renders them.
@@ -115,14 +116,22 @@ test('with no usable IndexedDB the store works in memory for the session', async
 
 /* ------------------------------------------------------------ settings */
 
-test('listening is off by default, Wi-Fi only, scoped to what I play + unfiled', () => {
-  assert.deepEqual(DEFAULT_AUDIO_SETTINGS, { on: false, wifiOnly: true, scope: 'playing+unfiled' });
+test('listening is on by default, Wi-Fi only, scoped to what I play + unfiled', () => {
+  assert.deepEqual(DEFAULT_AUDIO_SETTINGS, { on: true, wifiOnly: true, scope: 'playing+unfiled' });
   assert.deepEqual(readAudioSettings(memLS()), DEFAULT_AUDIO_SETTINGS);
   assert.deepEqual(readAudioSettings(null), DEFAULT_AUDIO_SETTINGS);
   const ls = memLS(); ls.setItem(AUDIO_SETTINGS_KEY, '{not json');
   assert.deepEqual(readAudioSettings(ls), DEFAULT_AUDIO_SETTINGS);
   ls.setItem(AUDIO_SETTINGS_KEY, JSON.stringify({ on: 'yes', wifiOnly: 0, scope: 'everything!' }));
   assert.deepEqual(readAudioSettings(ls), DEFAULT_AUDIO_SETTINGS, 'each odd field falls back on its own');
+});
+
+test('switching listening off is saved and beats the on-by-default', () => {
+  const ls = memLS();
+  assert.equal(readAudioSettings(ls).on, true);
+  writeAudioSettings(ls, { on: false });
+  assert.equal(readAudioSettings(ls).on, false);
+  assert.equal(JSON.parse(ls.getItem(AUDIO_SETTINGS_KEY)).on, false);
 });
 
 test('settings changes merge and persist', () => {
@@ -136,7 +145,7 @@ test('settings changes merge and persist', () => {
 });
 
 test('the page template falls back to the same defaults before audio.js has loaded', () => {
-  const tpl = readFileSync(new URL('../docs/app.template.html', import.meta.url), 'utf8');
+  const tpl = assembledTemplate(); // the template with web/app/ and web/screens/ put back
   const i = tpl.indexOf('function audioSettings()'), j = tpl.indexOf('const audioModelUrl');
   assert.ok(i > 0 && j > i, 'audioSettings() not found in the template');
   const ls = memLS();
@@ -146,6 +155,8 @@ test('the page template falls back to the same defaults before audio.js has load
   assert.deepEqual({ ...sb.audioSettings() }, DEFAULT_AUDIO_SETTINGS);
   ls.setItem('bf_audio', JSON.stringify({ on: true, wifiOnly: false, scope: 'all' }));
   assert.deepEqual({ ...sb.audioSettings() }, { on: true, wifiOnly: false, scope: 'all' });
+  ls.setItem('bf_audio', JSON.stringify({ on: false }));
+  assert.equal(sb.audioSettings().on, false, 'a saved off wins before audio.js loads too');
 });
 
 test('Wi-Fi only waits on cellular and Data Saver, and asks when the browser will not say', () => {

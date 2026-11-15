@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { GOLDEN, INBOX, renderInbox } from './ui4-cards.mjs';
+import { assertSameHTML } from './golden.mjs';
 
 // UI-4: the File card's sound slots draw nothing without sound data, so the
 // card is byte for byte what it was before the slots existed.
@@ -17,13 +18,13 @@ const golden = n => readFileSync(new URL(`inbox-${n}.html`, GOLDEN), 'utf8');
 
 for (const [name, t] of Object.entries(INBOX)) {
   test(`File card "${name}" with no sound data matches the pre-slot golden`, () => {
-    assert.equal(renderInbox(t, { renderers: stubs }), golden(name));
+    assertSameHTML(renderInbox(t, { renderers: stubs }), golden(name));
     // Real renderers are never even asked when nothing carries sound.
-    assert.equal(renderInbox(t, { renderers: fake }), golden(name));
+    assertSameHTML(renderInbox(t, { renderers: fake }), golden(name));
   });
   test(`File card "${name}" with the pick selected matches its golden`, () => {
     const S = { fileSel: new Set(['p2']), fileSelFor: t.id };
-    assert.equal(renderInbox(t, { S, renderers: fake }), golden(`${name}-sel`));
+    assertSameHTML(renderInbox(t, { S, renderers: fake }), golden(`${name}-sel`));
   });
 }
 
@@ -31,7 +32,7 @@ test('empty renderers leave no wrapper even when the track has sound', () => {
   const t = { ...INBOX.tags, sound: { bpm: 174, sections: [['jungle']] } };
   const html = renderInbox(t, { renderers: stubs });
   assert.ok(!html.includes('sndchip') && !html.includes('sndstrip'));
-  assert.equal(html, golden('tags'));
+  assertSameHTML(html, golden('tags'));
 });
 
 test('sound chip sits after the meta line, the strip under the artwork row', () => {
