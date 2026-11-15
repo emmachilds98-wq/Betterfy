@@ -18,7 +18,7 @@ export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlis
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
   const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
   return `<h1>Sources</h1>
-    <p class="lede">Where your genre data comes from.${infoBtn('sources', 'Genre sources', `<p>Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set covering many
+    <p class="lede">Where your genre data comes from.${infoBtn('sources', 'Genre sources', `<p>Spotify provides no genre data, so tags come from Last.fm and Wikidata, and, once Listening is on, from how your tracks sound. This page ships a prebuilt set covering many
         artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
         Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
         <b>Wrong tags?</b> under it on a Tidy or File row.</p>

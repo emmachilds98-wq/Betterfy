@@ -3320,6 +3320,18 @@ const MISFILE_FLOOR = 0.25;
  * doesn't take suggestions at all, is never treated as a home to be misfiled
  * from or a destination to be misfiled to.
  */
+/** A home centroid with one member's (already weighted) vector taken back out. */
+function withoutTrack(home, v) {
+  const n = home.n ?? 0;
+  if (n < 2) return home.vec;
+  const out = new Map();
+  for (const [k, x] of home.vec) {
+    const y = (x * n - (v.get(k) ?? 0)) / (n - 1);
+    if (y > 1e-9) out.set(k, y);
+  }
+  return out.size ? out : home.vec;
+}
+
 function findMisfiled(lib, tags, targets, profiles, idf, axisOf) {
   const misfiled = [];
   for (const p of lib.playlists) {
@@ -3334,7 +3346,11 @@ function findMisfiled(lib, tags, targets, profiles, idf, axisOf) {
       // would be comparing two differently-weighted numbers.
       const v = applyIdf(weighFacets(flat, home.axis), idf);
       if (!v.size) continue;
-      const own = cosine(v, home.vec);
+      // Left out of its own home: the centroid is the mean of every track in the
+      // playlist, this one included, so scored against it whole the track is
+      // flattered by its own copy (worst in a small playlist). Taking it out
+      // first is the fair comparison with the alternatives it is ranked against.
+      const own = cosine(v, withoutTrack(home, v));
       const best = rank(t, tags, profiles, idf, { exclude: p.id, top: 3, axis: axisOf(p.id) });
       if (!best.length) continue;
       if (best[0].score > own * MISFILE_MARGIN && best[0].score > MISFILE_FLOOR) {
@@ -3455,7 +3471,7 @@ function findDrift(lib, tags, targets, idf) {
   drift.sort((a, b) => a.similarity - b.similarity);
   return drift;
 }
-return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, findMisfiled, listeningWeights, byListening, findDrift };
+return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, withoutTrack, findMisfiled, listeningWeights, byListening, findDrift };
 })();
 /* ---- core/playlists/mirror.mjs ---- */
 __mod["core/playlists/mirror.mjs"] = (function () {

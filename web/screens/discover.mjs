@@ -1,6 +1,17 @@
 // @bundle screens discover 60
 /* The Discover screen (docs/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
  * ranking stay classic in web/app/discover-engine.js; ctx comes from SCREEN_CTX.discover. */
+/** A fit score in the same words as everywhere else, not a percentage. */
+export const fitWord = v => v >= 0.7 ? 'Sure' : v >= 0.45 ? 'Likely' : 'Unsure';
+
+/** "Because you listen to A and B": the pick's own neighbours in this account's listening. */
+export function whyLine(t, esc) {
+  const v = [...new Set((t.via ?? []).filter(Boolean))];
+  if (!v.length) return '';
+  const names = v.length > 1 ? `${v.slice(0, -1).map(esc).join(', ')} and ${esc(v[v.length - 1])}` : esc(v[0]);
+  return `<p class="why discwhy">Because you listen to <b>${names}</b>.</p>`;
+}
+
 export function view(ctx) {
   const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
@@ -59,16 +70,17 @@ export function view(ctx) {
         </div>
         <p class="pdev" id="pDev"></p>
 
+        ${whyLine(t, esc)}
         ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
         ${best ? `<button class="fitcall" data-act="dfile" data-dfile="${esc(best.id)}">
             <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
               <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ${best.via === 'sound' ? 'by how it sounds next to what you filed there' : 'ranked by the same model the file queue uses'}</span>${pickEvidence(best)}</span>
-            ${pickBand(best)}<span class="sc">${(best.score*100).toFixed(0)}% fit</span>
+            ${pickBand(best)}<span class="sc">${fitWord(best.score)}</span>
           </button>` : ''}
         ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
           `<button class="pick" data-act="dfile" data-dfile="${esc(sg.id)}"><span class="k">${n+2}</span>
            <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span>${pickEvidence(sg)}</span>
-           <span class="rt">${pickBand(sg)}<span class="sc">${(sg.score*100).toFixed(0)}%</span>
+           <span class="rt">${pickBand(sg)}<span class="sc">${fitWord(sg.score)}</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
         ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
 
@@ -78,6 +90,7 @@ export function view(ctx) {
         </div>
         <div class="rowbtns" style="margin-top:10px">
           <button class="b sm" data-act="dnav" data-dnav="-1" ${i===0?'disabled':''}>← Back</button>
+          <button class="b sm" data-act="dpass" data-dpass="${esc(t.id)}" title="Not for me: this artist won't be offered again">Not for me</button>
           <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
           <a class="b sm" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
           <select data-act="discAnyPl" id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
@@ -97,8 +110,20 @@ export const actions = {
     S.discAt = Math.max(0, Math.min((S.discAt ?? 0) + (+el.dataset.dnav), d.length - 1));
     render();
   },
-  async like({ libraryCall, logAction, toast }, el) {
+  /** Pass on this artist for good (kept on this device) and move to the next card. */
+  dpass({ S, render, toast, discRemember }) {
+    const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
+    if (!t) return;
+    discRemember('pass', t.artist ?? t.artists?.[0]?.name);
+    S.discover = d.filter(x => (x.artist ?? '') !== (t.artist ?? ''));
+    S.discAt = Math.max(0, Math.min(at, S.discover.length - 1));
+    toast(`Won’t offer ${t.artist ?? 'them'} again.`);
+    render();
+  },
+  async like({ S, libraryCall, logAction, toast, discRemember }, el) {
     try { await libraryCall('PUT', [el.dataset.like]);
+      const t = (S.discover ?? []).find(x => x.id === el.dataset.like);
+      if (t && discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
       await logAction({ op:'add-liked', trackIds:[el.dataset.like], reason:'from discovery' });
       el.textContent = 'Liked'; el.disabled = true; toast('Added to your Liked Songs.'); }
     catch (err) { toast('Failed: '+err.message); }
@@ -106,7 +131,7 @@ export const actions = {
 };
 
 /** Add the track on the card to a playlist, and take it off the pile. */
-async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render }, playlistId) {
+async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId) {
   const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
   if (!t) return;
   const name = CFG[playlistId]?.name ?? playlistId;
@@ -115,6 +140,7 @@ async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction
     await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'added from discovery' });
     const when = (await getLog())[0]?.at;
     toast(`Added “${t.track}” to ${name}.`, () => undoAction(when));
+    if (discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
     d.splice(at, 1);
     S.discAt = Math.max(0, Math.min(at, d.length - 1));
     render();
