@@ -88,7 +88,7 @@ function lab() {
 }
 
 const runCli = (dir, args = []) =>
-  execFileSync('node', [join(ROOT, 'analyse-v3.mjs'), ...args],
+  execFileSync('node', [join(ROOT, 'legacy', 'analyse-v3.mjs'), ...args],
     { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
 test('the CLI runs the whole engine over a real library shape and writes a report', t => {

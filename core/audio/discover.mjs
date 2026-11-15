@@ -1,3 +1,4 @@
+// @bundle engine BetterfyDiscover 180
 // Discover by sound (docs/SOUND-EVERYWHERE-PLAN.md, S4).
 //
 // Two things Discover could not do before:

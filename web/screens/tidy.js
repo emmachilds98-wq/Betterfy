@@ -101,7 +101,7 @@ function tidySoundWarm() {
 async function tidySoundLoad() {
   try { await engineAudio(); } catch { /* no records: Tidy stays as it was */ }
   TSOUND.status = 'idle';
-  if (view === 'tidy' && tidySoundOn()) render();
+  if (tidySoundOn()) store.touch('ui.tidy');
 }
 async function tidySoundBuild(key) {
   try {
@@ -120,7 +120,7 @@ async function tidySoundBuild(key) {
   } catch (e) {
     Object.assign(TSOUND, { status: 'error', key, err: e?.message ?? String(e) });
   }
-  if (view === 'tidy') render();
+  store.touch('ui.tidy');
 }
 function tidySoundTrack(id) {
   for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id === id)
@@ -173,7 +173,7 @@ function secMisfile() {
   // and the row renders immediately either way; the note appears once the
   // fetch resolves, without blocking anything on it.
   const recentlyActive = LISTENING_CACHE?.recentlyActive ?? null;
-  if (!recentlyActive && !LISTENING_PENDING) getListening().then(() => render());
+  if (!recentlyActive && !LISTENING_PENDING) getListening().then(() => store.touch('ui.tidy'));
   // Only draw the (stateful, id-bearing) editor once, even if the artist
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;

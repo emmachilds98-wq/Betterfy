@@ -52,19 +52,19 @@ function load({ artists = [], answers = {}, cache = {}, discogs = null } = {}) {
     buildReports: () => ({}),
     toast: m => { sandbox.told = m; },
     stage: () => {},
-    render: () => {},
+    render: () => {}, store: { get() {}, on() {}, set() {}, touch() {} },
     $: () => ({ hidden: false }),
     URLSearchParams, URL, setTimeout, console,
   };
   vm.createContext(sandbox);
   vm.runInContext(slice('async function discogsTags(', "/* ---------- correcting one artist's tags", 'enrich block'), sandbox);
-  return Object.assign(sandbox, { store: () => store.tags_extra, asked });
+  return Object.assign(sandbox, { cached: () => store.tags_extra, asked });
 }
 
 test('a real "no tags anywhere" answer is cached, so it costs nothing next time', async () => {
   const app = load({ artists: ['Nobody'], answers: { Nobody: lfmTags([]) } });
   await app.enrichMissing();
-  const stored = JSON.parse(JSON.stringify(app.store()['a-Nobody']));
+  const stored = JSON.parse(JSON.stringify(app.cached()['a-Nobody']));
   assert.deepEqual(stored.tags, []);
   // Stamped so a later run knows how long ago this was actually checked,
   // rather than re-asking Last.fm about it on every single run forever.
@@ -74,7 +74,7 @@ test('a real "no tags anywhere" answer is cached, so it costs nothing next time'
 test('a request that never landed is not cached as "this artist has no tags"', async () => {
   const app = load({ artists: ['Tim Reaper'], answers: { 'Tim Reaper': new TypeError('Load failed') } });
   await app.enrichMissing();
-  assert.equal(app.store()['a-Tim Reaper'], undefined,
+  assert.equal(app.cached()['a-Tim Reaper'], undefined,
     'nothing is written down, so the next run asks again rather than believing a dropped connection');
   assert.match(app.told, /could not be reached/);
 });
@@ -84,16 +84,16 @@ test('a Last.fm error body is a failure too, not an empty answer', async () => {
   // { error, message } body — which parses fine and has no tags in it.
   const app = load({ artists: ['Dwarde'], answers: { Dwarde: { error: 29, message: 'Rate limit exceeded' } } });
   await app.enrichMissing();
-  assert.equal(app.store()['a-Dwarde'], undefined);
+  assert.equal(app.cached()['a-Dwarde'], undefined);
 });
 
 test('a failed artist is picked up by a later run', async () => {
   const first = load({ artists: ['Blawan'], answers: { Blawan: new TypeError('Load failed') } });
   await first.enrichMissing();
   const again = load({ artists: ['Blawan'], answers: { Blawan: lfmTags(['techno']) },
-                       cache: first.store() });
+                       cache: first.cached() });
   await again.enrichMissing();
-  assert.deepEqual(JSON.parse(JSON.stringify(again.store()['a-Blawan'].tags)), [['techno', 90]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(again.cached()['a-Blawan'].tags)), [['techno', 90]]);
 });
 
 test('the count on the button and the run agree about what is missing', async () => {
@@ -114,7 +114,7 @@ test('a thin answer from long ago is asked about again, and a fresh one is not',
                        answers: { 'Old Gap': lfmTags(['jungle']) } });
   await stale.enrichMissing();
   assert.ok(stale.asked.includes('Old Gap'), 'stale and thin — worth a real request');
-  assert.deepEqual(stale.store()['a-Old Gap'].tags, [['jungle', 90]]);
+  assert.deepEqual(stale.cached()['a-Old Gap'].tags, [['jungle', 90]]);
 
   const fresh = load({ artists: ['Recent Gap'], cache: { 'a-Recent Gap': { tags: [], checkedAt: Date.now() } } });
   await fresh.enrichMissing();

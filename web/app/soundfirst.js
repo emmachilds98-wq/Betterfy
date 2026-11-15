@@ -55,7 +55,7 @@ async function soundBuild(targets) {
   } catch (e) {
     Object.assign(SOUND, { status: 'error', err: e?.message ?? String(e), n: soundHeard(), targets, memo: null });
   }
-  if (view === 'inbox' || view === 'home') render();
+  store.touch('sound');
 }
 
 /** A space learned elsewhere that the File screen can use as it is: built for

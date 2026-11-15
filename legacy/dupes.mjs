@@ -8,7 +8,7 @@
 // recording however differently the releases are labelled, and two with
 // different ISRCs are different recordings however identical the titles look.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { trackKey, versionOf } from './norm.mjs';
+import { trackKey, versionOf } from '../norm.mjs';
 
 const lib = JSON.parse(readFileSync('library.json', 'utf8'));
 

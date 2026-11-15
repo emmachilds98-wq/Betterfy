@@ -8,6 +8,22 @@ import {
 import { placementAccuracy } from '../core/validate/loo.mjs';
 import { buildSpace, placements } from '../core/intrinsic/space.mjs';
 
+test('discoverBundles reads @bundle headers, orders by number, and the header is not shipped', async () => {
+  const { discoverBundles } = await import('../bundler.mjs');
+  const files = {
+    'x/b.mjs': '// @bundle engine Two 20\nexport const b = 1;\n',
+    'x/a.mjs': '// @bundle engine One 10\nexport const a = 1;\n',
+    'x/g.mjs': '// @bundle engine-global Dep 15\nexport const g = 1;\n',
+    'x/s.mjs': '// @bundle engine - 5\nexport const s = 1;\n',
+    'x/n.mjs': 'export const n = 1;\n',
+  };
+  const list = () => Object.keys(files).map(p => ({ name: p.slice(2), isDirectory: () => false }));
+  const { entries, namespace } = discoverBundles('x', 'engine', { read: f => files[f], list });
+  assert.deepEqual(entries, ['x/s.mjs', 'x/a.mjs', 'x/b.mjs']);
+  assert.deepEqual(Object.entries(namespace), [['One', 'x/a.mjs'], ['Dep', 'x/g.mjs'], ['Two', 'x/b.mjs']]);
+  assert.ok(!stripModuleSyntax(files['x/a.mjs']).includes('@bundle'));
+});
+
 /** A graph that exists only in memory, so cycles and node: imports can be
  *  tested without committing a broken module to the repo. */
 const fakeGraph = files => path => {

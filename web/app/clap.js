@@ -31,7 +31,7 @@ async function clapNames() { return (CLAPS.names ??= (await idb.get(CLAP_NAMES_K
 async function clapConfirm(ids, name) {
   CLAPS.names = BetterfyAudio.confirmName(await clapNames(), ids, name);
   await idb.set(CLAP_NAMES_KEY, CLAPS.names);
-  syncClusterNames().then(changed => { if (changed) render(); });
+  syncClusterNames().then(changed => { if (changed) { store.touch('ui.new'); store.touch('ui.discover'); } });
 }
 
 /** Names given on the listener's other linked devices. */
@@ -62,9 +62,9 @@ async function clapNameOrphans(orphans, records) {
 /** Run a search for what is in the box. Prompts only: free text has no encoder in the page. */
 async function clapSearch(q) {
   CLAPS.q = String(q ?? '').trim();
-  if (!CLAPS.q) { CLAPS.res = null; return render(); }
+  if (!CLAPS.q) { CLAPS.res = null; return store.touch('ui.discover'); }
   const table = await clapTable();
-  if (!table) { CLAPS.res = null; return render(); }
+  if (!table) { CLAPS.res = null; return store.touch('ui.discover'); }
   const idx = BetterfyAudio.clapIndex(AUDIO.records, { dim: table.dim });
   const r = BetterfyAudio.soundsLike(CLAPS.q, idx, table);
   const ids = new Set(r.results.map(x => x.id));
@@ -74,7 +74,7 @@ async function clapSearch(q) {
   CLAPS.res = { q: CLAPS.q, prompt: r.prompt, heard: r.heard,
     results: r.results.map(x => ({ ...x, t: info.get(x.id) ?? null })).filter(x => x.t),
     near: r.prompt ? [] : BetterfyAudio.suggestPrompts(CLAPS.q, table, { limit: 6 }) };
-  render();
+  store.touch('ui.discover');
 }
 
 /** Discover's "sounds like" card. '' unless CLAP has heard something in this library. */
@@ -83,7 +83,7 @@ function soundSearchHTML() {
   const heard = BetterfyAudio.clapHeard(AUDIO.records);
   if (!heard) return '';
   const t = CLAPS.table;
-  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => render()));
+  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => store.touch('ui.discover')));
   const n = x => x.toLocaleString();
   const list = t ? `<datalist id="sndqList">${t.prompts.map(p => `<option value="${esc(p.label)}"></option>`).join('')}</datalist>` : '';
   const res = CLAPS.res;

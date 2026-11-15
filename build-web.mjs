@@ -4,7 +4,7 @@
 // web build and the local app score identically and cannot drift apart.
 // Only the public client ID is embedded — the client secret is never read here.
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { bundleModules } from './bundler.mjs';
+import { bundleModules, discoverBundles } from './bundler.mjs';
 import { genreWords } from './core/playlists/genre-words.mjs';
 import { assembledTemplate } from './web/manifest.mjs';
 
@@ -122,64 +122,13 @@ const STYLES = readdirSync('web/styles').filter(f => f.endsWith('.css')).sort()
  * `core/engine.mjs` — the provider/evidence path — is deliberately NOT here. It
  * is the part that needs Last.fm and Discogs keys, and the whole point of this
  * screen is what the account can do without them. */
-const ENGINE_ENTRIES = [
-  'core/intrinsic/space.mjs',
-  'core/intrinsic/coldstart.mjs',
-  'core/intrinsic/explain.mjs',
-  'core/intrinsic/reports.mjs',
-  'core/intrinsic/persist.mjs',
-  'core/validate/loo.mjs',
-  'core/validate/baseline.mjs',
-  // The neighbour bridge (docs/SMARTER-GENRES-PLAN.md phase 0). Pure, plus an
-  // orchestrator whose network calls are handed in by the page.
-  'core/intrinsic/bridge.mjs',
-  'core/intrinsic/bridge-fetch.mjs',
-  // How sure it may sound, fitted on held-out filing (plan phase 2).
-  'core/intrinsic/calibrate.mjs',
-  // Genres with no playlist, and playlists that are two genres (plan phase 3).
-  // Brings the ontology with it, which is why it lives in the lazy bundle.
-  'core/recommend/gaps.mjs',
-  // The same screen's proposals by sound (docs/AUDIO-BUILD-PLAN.md WP-H2).
-  // Empty without audio records; brings the style vocabulary with it.
-  'core/recommend/audio-gaps.mjs',
-  // What a heard track is (genre, sub-genre, tempo) and what it sounds like and
-  // mixes with, from the account's own heard tracks.
-  'core/audio/match.mjs',
-  'core/audio/identify.mjs',
-  // Tidy by sound: filed tracks whose sound disagrees with their playlist.
-  'core/audio/misfit.mjs',
-  // Each playlist's genre mix, BPM range and "two genres?" from its heard members.
-  'core/audio/plprofile.mjs',
-  // Shuffle's DJ order: heard tracks sequenced so each next one beatmatches.
-  'core/audio/order.mjs',
-  // Discover by sound: re-rank picks by fit to the seed, and the keyless
-  // candidate path over the neighbour bridge's cached lookups.
-  'core/audio/discover.mjs',
-];
+/* Which modules go in engine.js is declared by each module's own
+ * `// @bundle engine <Global> <order>` header (see bundler.mjs), found by
+ * scanning core/ — a new module opts in from its own file. */
+const { entries: ENGINE_ENTRIES, namespace: ENGINE_NAMESPACE } = discoverBundles('core', 'engine');
 
 const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
-  namespace: {
-    BetterfyIntrinsic: 'core/intrinsic/space.mjs',
-    BetterfyColdStart: 'core/intrinsic/coldstart.mjs',
-    BetterfyExplain: 'core/intrinsic/explain.mjs',
-    BetterfyReports: 'core/intrinsic/reports.mjs',
-    BetterfyPersist: 'core/intrinsic/persist.mjs',
-    BetterfyValidate: 'core/validate/loo.mjs',
-    BetterfyBaseline: 'core/validate/baseline.mjs',
-    BetterfyBridge: 'core/intrinsic/bridge.mjs',
-    BetterfyBridgeFetch: 'core/intrinsic/bridge-fetch.mjs',
-    BetterfyDeezer: 'core/sources/deezer.mjs',
-    BetterfyCalibrate: 'core/intrinsic/calibrate.mjs',
-    BetterfyGaps: 'core/recommend/gaps.mjs',
-    BetterfyAudioGaps: 'core/recommend/audio-gaps.mjs',
-    BetterfyWikidata: 'core/sources/wikidata.mjs',
-    BetterfyMatch: 'core/audio/match.mjs',
-    BetterfyIdentify: 'core/audio/identify.mjs',
-    BetterfyMisfit: 'core/audio/misfit.mjs',
-    BetterfyPlProfile: 'core/audio/plprofile.mjs',
-    BetterfyOrder: 'core/audio/order.mjs',
-    BetterfyDiscover: 'core/audio/discover.mjs',
-  },
+  namespace: ENGINE_NAMESPACE,
 });
 
 /* The worker that runs the engine off the page's main thread.
@@ -260,7 +209,7 @@ const listMjs = dir => { try { return readdirSync(dir).filter(f => /\.(mjs|js)$/
 const AUDIO_INTRINSIC = readdirSync('core/intrinsic').filter(f => /^audio.*\.mjs$/.test(f)).sort().map(f => `core/intrinsic/${f}`);
 // Engine-side lookups over the sound space (sound ID, sound-alikes, mixes):
 // they ship in engine.js, and would only add the genre ontology (~100 KB) here.
-const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs', 'core/audio/misfit.mjs', 'core/audio/plprofile.mjs', 'core/audio/order.mjs', 'core/audio/discover.mjs']);
+const ENGINE_SIDE = new Set(ENGINE_ENTRIES.filter(f => f.startsWith('core/audio/')));
 const AUDIO_ENTRIES = ['web/audio/index.mjs', ...listMjs('core/audio').filter(f => !ENGINE_SIDE.has(f)),
                        ...listMjs('core/audio/dsp'), ...AUDIO_INTRINSIC];
 const camel = f => f.replace(/^.*\//, '').replace(/\.m?js$/, '').split(/[-_]/).map(w => w[0].toUpperCase() + w.slice(1)).join('');

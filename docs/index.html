@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0442">
+<meta name="bf-build" content="2026-11-15-0554">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -164,6 +164,9 @@
      moving things gets the same app, still. */
   @media (prefers-reduced-motion:reduce){
     *,*::before,*::after{animation-duration:.001ms!important; animation-iteration-count:1!important; transition-duration:.001ms!important}
+    /* Screen changes are a cut: the View Transition's own pseudo-elements sit
+       outside the selector above. */
+    ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
   }
 
   /* ---------- landing ---------- */
@@ -183,7 +186,7 @@
      light enough that a hard edge at 70vh was the most visible thing on the
      screen. Masked, it just stops. */
   .aurora{position:fixed; inset:0 0 auto; height:78vh; z-index:-2; overflow:hidden; pointer-events:none;
-    opacity:0; transition:opacity .5s ease;
+    opacity:0; transition:opacity var(--dur-4) ease;
     -webkit-mask-image:linear-gradient(#000 42%, transparent); mask-image:linear-gradient(#000 42%, transparent)}
   body:has(#land:not([hidden])) .aurora{opacity:1}
   .aurora i{position:absolute; display:block; border-radius:50%; filter:blur(80px); opacity:.26}
@@ -218,7 +221,7 @@
   @media (max-width:560px){ .feat{grid-template-columns:1fr} }
   .feat div{position:relative; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3);
     padding:18px 20px 18px 24px; overflow:hidden; box-shadow:var(--shadow);
-    transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease}
+    transition:transform var(--dur-1) ease, border-color var(--dur-1) ease, box-shadow var(--dur-1) ease}
   /* One card per hue: the landing page is the first thing anyone sees, and a
      four-up grid of identical grey boxes was selling it short. */
   /* A rounded rule inset from the corner, not a stripe down the edge: at a
@@ -262,7 +265,7 @@
   .nav{appearance:none; border:1px solid var(--line); background:transparent; font:inherit; cursor:pointer;
        padding:9px 16px; color:var(--ink-2); display:flex; align-items:center; gap:8px;
        border-radius:999px; font-size:13.5px; font-weight:600; white-space:nowrap; flex:none;
-       position:relative; transition:background .14s ease, color .14s ease, border-color .14s ease}
+       position:relative; transition:background var(--dur-1) ease, color var(--dur-1) ease, border-color var(--dur-1) ease}
   .nav .lbl{min-width:0}
   /* Each screen owns a hue (--vc, set per button below) so the pills, the tab
      bar and the screen you land on all agree on a colour. */
@@ -370,7 +373,7 @@
        font:inherit; display:flex; flex-direction:column; gap:6px;
        background:color-mix(in srgb, var(--ac) 15%, var(--surface));
        border:1px solid color-mix(in srgb, var(--ac) 32%, transparent);
-       transition:transform var(--dur-1) ease, box-shadow .14s ease}
+       transition:transform var(--dur-1) ease, box-shadow var(--dur-1) ease}
   .act:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
   .act:active{transform:scale(.99)}
   .act .ic{width:40px; height:40px; border-radius:14px; background:var(--ac); color:var(--ac-ink);
@@ -388,7 +391,7 @@
   .panel .ph h2{margin:0; font-size:19px}
   .panel .ph .mono{font-size:12px; color:var(--ink-3)}
   .bar{display:flex; height:22px; border-radius:11px; overflow:hidden; background:var(--surface-3)}
-  .bar i{display:block; transition:width .4s var(--ease-out)}
+  .bar i{display:block; transition:width var(--dur-4) var(--ease-out)}
   .key{display:flex; gap:22px; margin-top:14px; flex-wrap:wrap; font-size:13.5px; color:var(--ink-2)}
   .key span{display:flex; align-items:center; gap:8px}
   .key i{width:10px; height:10px; border-radius:3px; display:block}
@@ -404,7 +407,7 @@
   .upnext{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px}
   .upnext .u{border-radius:var(--r-3); overflow:hidden; background:var(--surface); border:1px solid var(--line);
         text-align:left; font:inherit; color:var(--ink); cursor:pointer; padding:0;
-        transition:transform var(--dur-1) ease, box-shadow .14s ease;
+        transition:transform var(--dur-1) ease, box-shadow var(--dur-1) ease;
         display:flex; flex-direction:column; min-width:0}
   .upnext .u:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
   .upnext .u .cov{aspect-ratio:1; width:100%; display:grid; place-items:center; object-fit:cover;
@@ -423,14 +426,14 @@
 
   /* The card animation, kept: the action cards on Home use it. */
   @keyframes tileIn{from{opacity:0; transform:translateY(9px)}}
-  .acts4 .act{animation:tileIn .34s var(--ease-out) backwards}
+  .acts4 .act{animation:tileIn var(--dur-3) var(--ease-out) backwards}
   .acts4 .act:nth-child(2){animation-delay:.04s}
   .acts4 .act:nth-child(3){animation-delay:.08s}
   .acts4 .act:nth-child(4){animation-delay:.12s}
   .acts4 .act:nth-child(5){animation-delay:.16s}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-4); padding:26px 28px 28px; box-shadow:var(--shadow-2)}
   .prog{height:5px; background:var(--surface-3); border-radius:3px; overflow:hidden; margin-bottom:18px}
-  .prog i{display:block; height:100%; border-radius:3px; transition:width .35s var(--ease-out);
+  .prog i{display:block; height:100%; border-radius:3px; transition:width var(--dur-3) var(--ease-out);
           background:linear-gradient(90deg, var(--progress-accent), color-mix(in srgb, var(--view) 70%, var(--progress-accent)))}
   .now{display:flex; gap:14px; align-items:flex-start}
   .now .txt{min-width:0; flex:1}
@@ -487,7 +490,7 @@
   .picks{display:flex; flex-direction:column; gap:9px; margin-top:24px}
   .pick{display:flex; align-items:center; gap:14px; border:1px solid var(--line); border-radius:18px; background:var(--surface-2);
         padding:16px 18px; cursor:pointer; font:inherit; font-size:15px; color:var(--ink); text-align:left; width:100%;
-        transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform .08s ease}
+        transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform var(--dur-1) ease}
   .pick:hover{border-color:var(--hover-accent)}
   .pick:active{transform:scale(.99)}
   /* The suggestion you get by swiping right is the one flagged here — and it
@@ -525,7 +528,7 @@
   .player{display:flex; align-items:center; gap:12px; margin-top:16px}
   .tbtn{width:44px; height:44px; flex:none; border-radius:50%; border:1px solid var(--btn-accent); background:var(--btn-accent);
         color:var(--btn-ink); display:grid; place-items:center; cursor:pointer; box-shadow:var(--shadow);
-        transition:transform .08s ease, filter var(--dur-1) ease}
+        transition:transform var(--dur-1) ease, filter var(--dur-1) ease}
   .tbtn:hover{filter:brightness(1.06)}
   .tbtn:active{transform:scale(.96)}
   .tbtn:disabled{opacity:.5; cursor:default}
@@ -599,7 +602,7 @@
        width:40px; height:24px; border-radius:999px; vertical-align:middle; border:0;
        background:radial-gradient(circle at 12px 50%, var(--surface) 0 8px, transparent 8.6px), var(--line-2);
        box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent);
-       transition:background-color .16s ease}
+       transition:background-color var(--dur-1) ease}
   input[type=checkbox].tgl:checked{background:radial-gradient(circle at 28px 50%, var(--btn-ink) 0 8px, transparent 8.6px), var(--btn-accent)}
   input[type=checkbox].tgl:disabled{opacity:.45; cursor:default}
   input[type=checkbox].tgl:focus-visible{outline:2px solid var(--hover-accent); outline-offset:2px}
@@ -711,7 +714,7 @@
        color:var(--ink-3); font-weight:600; border-radius:6px}
   details.how>summary::-webkit-details-marker{display:none}
   details.how>summary::before{content:""; width:6px; height:6px; border-right:1.5px solid currentColor;
-       border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform .15s ease; margin-right:2px}
+       border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform var(--dur-1) ease; margin-right:2px}
   details.how[open]>summary::before{transform:rotate(45deg)}
   details.how>summary:hover{color:var(--ink)}
   details.how>div, details.how>p{margin:10px 0 0; padding:12px 14px; border-radius:var(--r);
@@ -729,7 +732,7 @@
   .peek{position:absolute; inset:14px 0 auto; height:120px; border-radius:var(--r-4); background:var(--surface);
         border:1px solid var(--line); transform:scale(.955); opacity:.75; z-index:0}
   .swipecard{position:relative; z-index:1; touch-action:pan-y; will-change:transform;
-             transition:transform .28s var(--ease-out), box-shadow var(--dur-2) ease}
+             transition:transform var(--dur-3) var(--ease-out), box-shadow var(--dur-2) ease}
   .swipecard.drag{transition:none}
   .swipecard.gone{transition:transform var(--dur-3) ease-out, opacity var(--dur-3) ease-out; opacity:0}
   .verdicts{position:absolute; inset:0; pointer-events:none; z-index:3; border-radius:var(--r-4); overflow:hidden}
@@ -758,7 +761,7 @@
 
   button.b, a.b{appearance:none; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:6px; font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
            background:var(--surface); color:var(--ink); border-radius:var(--r); padding:9px 15px;
-           transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform .08s ease, box-shadow var(--dur-1) ease}
+           transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform var(--dur-1) ease, box-shadow var(--dur-1) ease}
   button.b:hover, a.b:hover{border-color:var(--ink-3)}
   button.b:active, a.b:active{transform:scale(.97)}
   button.b.p{background:var(--btn-accent); border-color:var(--btn-accent); color:var(--btn-ink); box-shadow:var(--shadow)}
@@ -810,7 +813,7 @@
   table.cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:0 10px 3px 0}
   table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
   table.cmp .differs{color:var(--accent); font-weight:600}
-  .chip{font-size:12.5px; border:1px solid var(--line); border-radius:999px; padding:7px 14px; background:var(--surface-2); color:var(--ink-2); cursor:pointer; font-family:inherit; transition:border-color var(--dur-1) ease, transform .08s ease}
+  .chip{font-size:12.5px; border:1px solid var(--line); border-radius:999px; padding:7px 14px; background:var(--surface-2); color:var(--ink-2); cursor:pointer; font-family:inherit; transition:border-color var(--dur-1) ease, transform var(--dur-1) ease}
   .chip:hover{border-color:var(--hover-accent); color:var(--ink)}
   .chip:active{transform:scale(.96)}
   .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
@@ -826,7 +829,7 @@
   .toast{position:fixed; right:calc(18px + var(--sar)); bottom:calc(18px + var(--sab));
          background:var(--surface-2); color:var(--ink); border:1px solid var(--line);
          padding:13px 18px; border-radius:var(--r-2); font-size:13.5px; display:flex; gap:16px; align-items:center;
-         z-index:28; max-width:420px; box-shadow:var(--shadow-2); animation:toastIn .22s var(--ease-out)}
+         z-index:28; max-width:420px; box-shadow:var(--shadow-2); animation:toastIn var(--dur-2) var(--ease-out)}
   @keyframes toastIn{from{opacity:0; transform:translateY(10px)}}
   .toast button{appearance:none; border:0; background:none; color:var(--accent); font:inherit; font-weight:700; cursor:pointer; padding:0}
 
@@ -834,7 +837,7 @@
   .fabBar{position:fixed; top:calc(14px + var(--sat)); right:calc(16px + var(--sar)); z-index:25; display:flex; gap:8px}
   .fab{appearance:none; position:relative; border:1px solid var(--line); background:var(--surface); color:var(--ink-2);
     border-radius:13px; width:38px; height:38px; font-size:16px; cursor:pointer; display:flex;
-    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color var(--dur-1) ease, color var(--dur-1) ease, transform .08s ease}
+    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color var(--dur-1) ease, color var(--dur-1) ease, transform var(--dur-1) ease}
   .fab:active{transform:scale(.94)}
   .fab:hover{border-color:var(--hover-accent); color:var(--ink)}
   .fab[aria-expanded="true"]{background:var(--surface-2); color:var(--ink)}
@@ -892,7 +895,7 @@
   .axexp{appearance:none; border:0; background:none; cursor:pointer; width:22px; height:22px; margin:0 6px 0 -4px;
     border-radius:6px; color:var(--ink-3); vertical-align:-5px; position:relative}
   .axexp::before{content:""; position:absolute; left:8px; top:6px; border:5px solid transparent; border-left:6px solid currentColor;
-    transition:transform .15s}
+    transition:transform var(--dur-1)}
   .axexp[aria-expanded="true"]::before{transform:rotate(90deg) translate(1px, 1px)}
   .axexp:hover{background:var(--surface-3); color:var(--ink)}
   .axprof > td{background:var(--surface-2); padding:12px 14px 14px 44px}
@@ -1065,12 +1068,12 @@
   .updatebar .b{white-space:nowrap}
   /* Narrow: sit under the corner buttons rather than behind them. */
   @media (max-width:820px){ .updatebar{top:calc(62px + var(--sat)); left:calc(12px + var(--sal)); right:calc(12px + var(--sar)); transform:none; max-width:none} }
-  .scrim{position:fixed; inset:0; background:rgba(8,10,14,.4); z-index:29; opacity:0; pointer-events:none; transition:opacity .18s ease}
+  .scrim{position:fixed; inset:0; background:rgba(8,10,14,.4); z-index:29; opacity:0; pointer-events:none; transition:opacity var(--dur-2) ease}
   .scrim.open{opacity:1; pointer-events:auto}
   .settings{position:fixed; top:0; right:0; height:100vh; height:100dvh; width:390px; max-width:92vw; background:var(--surface);
             border-left:1px solid var(--line); z-index:30; display:flex; flex-direction:column;
             box-shadow:-14px 0 32px rgba(0,0,0,.18); transform:translateX(100%); visibility:hidden;
-            transition:transform .18s ease}
+            transition:transform var(--dur-2) ease}
   .settings.open{transform:translateX(0); visibility:visible}
   .settings-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); flex:none}
   .settings-head h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0}
@@ -1132,7 +1135,7 @@
   /* ---- the "More" sheet: the screens that don't fit the tab bar ---- */
   .sheet{position:fixed; left:0; right:0; bottom:0; z-index:30; background:var(--surface);
          border-top:1px solid var(--line); border-radius:20px 20px 0 0; box-shadow:0 -12px 34px rgba(0,0,0,.22);
-         transform:translateY(101%); visibility:hidden; transition:transform .24s var(--ease-out);
+         transform:translateY(101%); visibility:hidden; transition:transform var(--dur-3) var(--ease-out);
          padding-bottom:calc(var(--sab) + 12px); max-height:88dvh; display:flex; flex-direction:column}
   .sheet.open{transform:translateY(0); visibility:visible}
   /* On a wide screen a full-bleed drawer reads as a mistake. Same sheet,
@@ -1154,10 +1157,27 @@
   .sheetfoot{display:flex; gap:8px; padding:12px 20px 0; border-top:1px solid var(--line); flex-wrap:wrap}
 
   /* ---- swiping between screens ---- */
-  @keyframes slideL{from{opacity:0; transform:translateX(22px)}}
-  @keyframes slideR{from{opacity:0; transform:translateX(-22px)}}
-  main.in-l{animation:slideL .26s var(--ease-out)}
-  main.in-r{animation:slideR .26s var(--ease-out)}
+  /* Screen change is a View Transition (web/app/motion.js): <main> is the only
+     thing that moves; the top bar, tab bar and rail keep their own names so
+     they stay still, and the active tab pill is named so it glides between
+     tabs. <html data-dir> is "forward" or "back" for the length of a change
+     (motion.js also passes the matching transition type). */
+  #main{view-transition-name:vt-main}
+  .mtop{view-transition-name:vt-top}
+  aside{view-transition-name:vt-tabs}
+  aside .nav[aria-current="true"]{view-transition-name:vt-pill}
+  ::view-transition-group(root){animation:none}
+  ::view-transition-group(vt-top), ::view-transition-group(vt-tabs){animation:none}
+  ::view-transition-group(vt-pill){animation-duration:var(--dur-3); animation-timing-function:var(--ease-spring)}
+  ::view-transition-group(vt-main){animation:none}
+  ::view-transition-old(vt-main){animation:vtOut var(--dur-2) var(--ease-in) both}
+  ::view-transition-new(vt-main){animation:vtIn var(--dur-3) var(--ease-out) both}
+  :root[data-dir="back"]::view-transition-old(vt-main){animation-name:vtOutBack}
+  :root[data-dir="back"]::view-transition-new(vt-main){animation-name:vtInBack}
+  @keyframes vtOut{to{opacity:0; transform:translateX(calc(var(--slide) * -.5))}}
+  @keyframes vtIn{from{opacity:0; transform:translateX(var(--slide))}}
+  @keyframes vtOutBack{to{opacity:0; transform:translateX(calc(var(--slide) * .5))}}
+  @keyframes vtInBack{from{opacity:0; transform:translateX(calc(var(--slide) * -1))}}
 
   /* ---------- Shuffle: DJ order (core/audio/order.mjs) ----------
      Drawn only once listening has heard enough of the playlist and a DJ order
@@ -1238,9 +1258,10 @@
     aside .nav .ic, .tabmore .ic{display:grid}
     aside .nav .lbl, .tabmore .lbl{flex:none; font-size:10px; letter-spacing:-.01em; font-weight:600; line-height:1;
           max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-    aside .nav .ic, .tabmore .ic{width:24px; height:24px; border-radius:9px; transition:background .16s ease, color .16s ease}
+    aside .nav .ic, .tabmore .ic{width:24px; height:24px; border-radius:9px; transition:background var(--dur-1) ease, color var(--dur-1) ease}
     aside .nav .ic svg, .tabmore .ic svg{width:19px; height:19px}
-    aside .nav[aria-current="true"]{background:none; color:var(--vc)}
+    aside .nav[aria-current="true"]{background:none; color:var(--vc); view-transition-name:none}
+    aside .nav[aria-current="true"] .ic{view-transition-name:vt-pill}
     aside .nav[aria-current="true"] .ic{background:color-mix(in srgb, var(--vc) 16%, transparent); color:var(--vc)}
     .tabmore[aria-expanded="true"]{color:var(--ink); background:none}
     /* Lit whenever the open screen is one of the three behind it. */
@@ -1312,7 +1333,7 @@
     .settings{top:auto; bottom:0; left:0; right:0; width:auto; max-width:none; height:auto; max-height:88dvh;
               border-left:0; border-top:1px solid var(--line); border-radius:20px 20px 0 0;
               transform:translateY(101%); box-shadow:0 -12px 34px rgba(0,0,0,.22);
-              transition:transform .24s var(--ease-out)}
+              transition:transform var(--dur-3) var(--ease-out)}
     .settings.open{transform:translateY(0)}
     .grabber{display:block}
     .settings-head{padding:10px 18px 14px; border-bottom:0}
@@ -1465,7 +1486,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0442</span>
+    <span class="mono">build 2026-11-15-0554</span>
   </p>
 
   <div class="feat">
@@ -1569,7 +1590,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0442</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0554</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1610,7 +1631,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0442</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0554</span>
   </div>
 </div>
 
@@ -2250,6 +2271,115 @@ function artistHistory(track, lib, targets) {
   return [{ id: topId, name: home?.name ?? topId, score: share, count: topCount, total }];
 }
 
+/* ---------- rejections teach the tag engine (BUILD-5-PLAN §5.1) ----------
+ * Tags are per artist, so every track by one artist ranks the same, and a
+ * "not that playlist" on one of them used to teach nothing about the rest: the
+ * very next track by the same artist came up with the same wrong pick. Here a
+ * rejection of playlist P for artist X's track lowers P for X's other tracks —
+ * lowered, never removed, because an artist can belong in two playlists — and
+ * the lowering fades with time and with each later accept of X into P (or
+ * "Keep here" of X's track in P), so one early mistake cannot bury a playlist
+ * for an artist the listener has since filed there.
+ *
+ * Plain arithmetic over this account's own feedback state (the page's `FB`,
+ * shape in web/app/feedback.js); nothing leaves the account. With no
+ * rejection nothing changes: `rejectFactors` is null and `downweightRejected`
+ * returns the very array it was given. */
+const REJECT_MEMORY = {
+  /** One fresh rejection multiplies the playlist's score for the artist's other tracks by 1 − strength. */
+  strength: 0.5,
+  /** A rejection's pull halves every this many days. */
+  halfLifeDays: 90,
+  /** Each later accept of the artist into the playlist multiplies what is left of a rejection's pull by this. */
+  acceptDecay: 0.5,
+  /** However many rejections pile up, a playlist keeps at least this share of its score. */
+  floor: 0.2,
+};
+
+const timeOf = v => (typeof v === 'number' ? v : typeof v === 'string' ? (Date.parse(v) || null) : null);
+
+/**
+ * Who rejected what, by artist: first-billed artist id → playlist id →
+ * { rejects: [{ trackId, at }], accepts: [{ trackId, at }] }. `at` is epoch ms
+ * from `rejectedAt` / `acceptedAt` when the store has them, else null (stores
+ * written before they existed). Only artists with a rejection are kept, and
+ * accepts and keeps are read for those only. Artists come from the library's
+ * liked songs and playlists.
+ *
+ * @param {object|null} fb   { [trackId]: { rejected, rejectedAt?, accepted?, acceptedAt?, kept? } }
+ * @param {object} lib       { liked?, playlists? }
+ * @returns {Map<string, Map<string, {rejects: object[], accepts: object[]}>>}
+ */
+function artistRejectMemory(fb, lib) {
+  const mem = new Map();
+  const ids = Object.keys(fb ?? {}).filter(id => fb[id]?.rejected?.length).sort();
+  if (!ids.length) return mem;
+  const artistOf = new Map();
+  const note = t => { const a = t?.artists?.[0]?.id; if (t?.id && a && !artistOf.has(t.id)) artistOf.set(t.id, a); };
+  for (const t of lib?.liked ?? []) note(t);
+  for (const p of lib?.playlists ?? []) for (const t of p.tracks ?? []) note(t);
+  for (const id of ids) {
+    const a = artistOf.get(id), f = fb[id];
+    if (!a) continue;
+    const m = mem.get(a) ?? mem.set(a, new Map()).get(a);
+    for (const p of f.rejected) {
+      const s = m.get(p) ?? m.set(p, { rejects: [], accepts: [] }).get(p);
+      s.rejects.push({ trackId: id, at: timeOf(f.rejectedAt?.[p]) });
+    }
+  }
+  if (!mem.size) return mem;
+  for (const id of Object.keys(fb).sort()) {
+    const m = mem.get(artistOf.get(id)), f = fb[id];
+    if (!m) continue;
+    for (const p of Array.isArray(f?.accepted) ? f.accepted : []) m.get(p)?.accepts.push({ trackId: id, at: timeOf(f.acceptedAt?.[p]) });
+    for (const p of Array.isArray(f?.kept) ? f.kept : []) m.get(p)?.accepts.push({ trackId: id, at: null });
+  }
+  return mem;
+}
+
+/**
+ * How much each playlist is lowered for this track: playlist id → factor in
+ * [floor, 1), or null when nothing applies. Each rejection of P for another
+ * track by the same first-billed artist contributes 1 − strength · w, where w
+ * halves every `halfLifeDays` and with each accept of the artist into P made
+ * after it (an accept or rejection with no time counts as later, so an old
+ * store can only see a penalty lifted, never kept). The track's own
+ * rejections are not counted: those already remove P from its picks outright.
+ *
+ * @param {object} track
+ * @param {Map} memory  from `artistRejectMemory`
+ * @param {{ now?: number }} [opts]  plus any REJECT_MEMORY override
+ * @returns {Map<string, number>|null}
+ */
+function rejectFactors(track, memory, { now = Date.now(), ...o } = {}) {
+  const m = memory?.size ? memory.get(track?.artists?.[0]?.id) : null;
+  if (!m) return null;
+  const { strength, halfLifeDays, acceptDecay, floor } = { ...REJECT_MEMORY, ...o };
+  const out = new Map();
+  for (const [p, { rejects, accepts }] of m) {
+    let f = 1;
+    for (const r of rejects) {
+      if (r.trackId === track.id) continue;
+      let w = r.at != null && now != null ? 0.5 ** (Math.max(0, now - r.at) / (halfLifeDays * 864e5)) : 1;
+      for (const x of accepts) if (x.trackId !== track.id && (x.at == null || r.at == null || x.at >= r.at)) w *= acceptDecay;
+      f *= 1 - strength * w;
+    }
+    if (f < 1) out.set(p, Math.max(floor, f));
+  }
+  return out.size ? out : null;
+}
+
+/**
+ * `ranked` ({ id, score } picks, best first) with each lowered playlist's
+ * score multiplied by its factor and re-sorted (stable: ties keep their
+ * order). The very same array when there is nothing to lower.
+ */
+function downweightRejected(ranked, factors) {
+  if (!factors?.size || !ranked?.some(b => factors.has(b.id))) return ranked;
+  return ranked.map(b => (factors.has(b.id) ? { ...b, score: b.score * factors.get(b.id) } : b))
+    .sort((a, b) => b.score - a.score);
+}
+
 /** The strongest tags on a track, for explaining a suggestion. */
 function topTags(track, tags, idf, n = 5) {
   const v = applyIdf(trackVec(track, tags), idf);
@@ -2408,7 +2538,7 @@ function findDrift(lib, tags, targets, idf) {
   drift.sort((a, b) => a.similarity - b.similarity);
   return drift;
 }
-return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, topTags, findMisfiled, listeningWeights, byListening, findDrift };
+return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, findMisfiled, listeningWeights, byListening, findDrift };
 })();
 /* ---- core/playlists/axes.mjs ---- */
 __mod["core/playlists/axes.mjs"] = (function () {
@@ -3031,6 +3161,52 @@ const LS = (() => {
 })();
 const mmss = ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`;
 
+/* The store (docs/BUILD-5-PLAN.md A3). Background jobs (engine, listening,
+ * sync, tag fills, the Gaps and Tidy-by-sound builds) say WHAT changed by
+ * writing a slice, instead of calling render() blind. The slices are named in
+ * the plan: lib, reports, eng, sound, audio, gaps, player and ui.<screen>.
+ * Only the screen that is mounted AND watches that slice repaints; a job that
+ * finishes while another screen is open costs nothing. The live objects (LIB,
+ * R, ENG, ...) stay where they are: set() stores a reference and, like touch()
+ * for state mutated in place, notifies. test/webstore.test.mjs bans a bare
+ * render() in the background files. */
+const store = (() => {
+  const data = {}, subs = {};
+  const api = {
+    get: k => data[k],
+    /** Replace a slice and tell its subscribers. Same value is still a change: state is mutated in place. */
+    set(k, v) { data[k] = v; api.touch(k); return v; },
+    /** The slice changed in place. */
+    touch(k) { for (const fn of [...(subs[k] ?? [])]) { try { fn(data[k], k); } catch (e) { console.error(e); } } },
+    /** Subscribe; returns the unsubscribe function. */
+    on(k, fn) { (subs[k] ??= new Set()).add(fn); return () => subs[k].delete(fn); },
+  };
+  return api;
+})();
+
+/* Which slices repaint which screen. `ui.<screen>` always repaints that screen
+ * (and only it); the shared slices are listed here. A screen not listed for a
+ * slice ignores it. */
+const STORE_SCREENS = ['home', 'inbox', 'tidy', 'new', 'discover', 'shuffle', 'lists', 'engine', 'history', 'sources'];
+const STORE_WATCH = {
+  lib:     STORE_SCREENS,
+  reports: STORE_SCREENS,
+  eng:     ['engine'],
+  sound:   ['home', 'inbox'],
+  audio:   ['home', 'inbox', 'tidy'],
+  gaps:    ['new'],
+  player:  [],
+};
+for (const [slice, screens] of Object.entries(STORE_WATCH))
+  store.on(slice, () => storeRepaint(screens));
+for (const screen of STORE_SCREENS)
+  store.on('ui.' + screen, () => storeRepaint([screen]));
+
+/** Repaint the current screen if it is one of `screens` and the page is up. */
+function storeRepaint(screens) {
+  if (typeof view === 'undefined' || !screens.includes(view) || !document.getElementById('main')) return;
+  render();
+}
 /* ---------------- theme (colour, density, remembered filters) ----------------
  * Lives outside #land/#app so it works before Spotify is connected, not just
  * inside the synced app — the trigger button is a fixed element, not part of
@@ -3238,6 +3414,7 @@ function openSettings(open) {
   panel.classList.toggle('open', open); scrim.classList.toggle('open', open);
   panel.setAttribute('aria-hidden', String(!open)); trigger.setAttribute('aria-expanded', String(open));
   if (open) $('#closeSettings').focus(); else trigger.focus();
+  routeNote();
 }
 
 function initSettingsPanel() {
@@ -3323,7 +3500,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0442';
+const BUILD = '2026-11-15-0554';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3644,7 +3821,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0442', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0554', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -3814,11 +3991,24 @@ const idb = (() => {
  * "Keep here": the track stays in that playlist and neither Tidy tier offers it
  * as wrong there again. Both appear only once used, so a store that never used
  * them is the same object it always was.
+ *
+ * `rejectedAt` / `acceptedAt` ({ [playlistId]: epoch ms }) say when each
+ * verdict was given, so the tag engine's memory of a rejection can fade
+ * (profile.mjs `rejectFactors`, BUILD-5-PLAN §5.1). They also appear only once
+ * used; a store written before them reads as verdicts of unknown time. A time
+ * only counts while its playlist is still in `rejected` / `accepted`.
  */
 let FB = {};
 const loadFeedback = async () => { FB = (await idb.get('feedback')) ?? {}; };
 const saveFeedback = () => idb.set('feedback', FB);
 const fbFor = id => (FB[id] ??= { skips: 0, lastSkip: null, rejected: [] });
+/** Stamp `ids` in f[key] (rejectedAt / acceptedAt) with now; fbUnstamp() drops them, and the map once empty. */
+const fbStamp = (f, key, ids) => { const now = Date.now(); for (const p of ids) (f[key] ??= {})[p] = now; };
+const fbUnstamp = (f, key, ids) => {
+  if (!f?.[key]) return;
+  for (const p of ids) delete f[key][p];
+  if (!Object.keys(f[key]).length) delete f[key];
+};
 
 async function recordSkip(trackId) {
   const f = fbFor(trackId);
@@ -3830,6 +4020,7 @@ async function recordSkip(trackId) {
 async function recordReject(trackId, playlistId) {
   const f = fbFor(trackId);
   if (!f.rejected.includes(playlistId)) f.rejected.push(playlistId);
+  fbStamp(f, 'rejectedAt', [playlistId]);
   await saveFeedback();
 }
 
@@ -3839,6 +4030,7 @@ async function recordAccept(trackId, playlistIds) {
   const f = fbFor(trackId), ids = [].concat(playlistIds).filter(Boolean);
   f.accepted = [...new Set([...(f.accepted ?? []), ...ids])];
   f.rejected = f.rejected.filter(p => !ids.includes(p));
+  fbStamp(f, 'acceptedAt', ids); fbUnstamp(f, 'rejectedAt', ids);
   await saveFeedback();
 }
 
@@ -3848,6 +4040,7 @@ async function forgetAccept(trackId, playlistIds) {
   if (!f?.accepted) return;
   f.accepted = f.accepted.filter(p => !ids.includes(p));
   if (!f.accepted.length) delete f.accepted;
+  fbUnstamp(f, 'acceptedAt', ids);
   await saveFeedback();
 }
 
@@ -3857,7 +4050,9 @@ async function forgetAccept(trackId, playlistIds) {
 async function recordKeep(trackId, here, away = []) {
   const f = fbFor(trackId);
   if (here && !(f.kept ??= []).includes(here)) f.kept.push(here);
-  for (const p of [].concat(away).filter(Boolean)) if (!f.rejected.includes(p)) f.rejected.push(p);
+  const no = [].concat(away).filter(Boolean);
+  for (const p of no) if (!f.rejected.includes(p)) f.rejected.push(p);
+  fbStamp(f, 'rejectedAt', no);
   await saveFeedback();
 }
 
@@ -3874,6 +4069,9 @@ async function recordMove(trackId, fromId, toId) {
   if (fromId && fromId !== toId && !f.rejected.includes(fromId)) f.rejected.push(fromId);
   f.accepted = (f.accepted ?? []).filter(p => p !== fromId);
   if (toId && !f.accepted.includes(toId)) f.accepted.push(toId);
+  fbUnstamp(f, 'rejectedAt', [toId]); fbUnstamp(f, 'acceptedAt', [fromId]);
+  if (fromId && fromId !== toId) fbStamp(f, 'rejectedAt', [fromId]);
+  if (toId) fbStamp(f, 'acceptedAt', [toId]);
   await saveFeedback();
 }
 
@@ -3882,6 +4080,7 @@ async function unrecordMove(trackId, fromId, toId) {
   const f = FB[trackId]; if (!f) return;
   if (f.accepted) f.accepted = f.accepted.filter(p => p !== toId);
   if (f.rejected) f.rejected = f.rejected.filter(p => p !== fromId);
+  fbUnstamp(f, 'acceptedAt', [toId]); fbUnstamp(f, 'rejectedAt', [fromId]);
   await saveFeedback();
 }
 
@@ -4146,9 +4345,11 @@ function buildReports(lib, cfg, tags) {
       if (t.isrc) filedIsrc.add(t.isrc); if (t.name) filedKey.add(trackKey(t)); } }
   const isFiled = t => filed.has(t.id) || (!!t.isrc && filedIsrc.has(t.isrc)) || (!!t.name && filedKey.has(trackKey(t)));
   const unfiled = lib.liked.filter(t => t?.id && !isFiled(t));
+  // Rejections by artist, read once for the whole queue (backlogSuggest).
+  const rejected = artistRejectMemory(FB, lib);
   const backlog = unfiled.map(t => {
     const fb = FB[t.id];
-    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets);
+    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets, rejected);
     return { id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
       album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
       tags: topTags(t, tags, idf),
@@ -4206,15 +4407,21 @@ function keptHere(trackId, playlistId) { return !!FB[trackId]?.kept?.includes(pl
  * and rejecting a pick re-ranks the card through it too, so the slot a
  * rejection frees fills exactly the way the card was first filled — the
  * filing-history fallback and the `via` label included. `tags` are the gated
- * tags buildReports scores with.
+ * tags buildReports scores with. `rejected` is profile.mjs artistRejectMemory
+ * over FB, passed in by buildReports so a queue of thousands reads FB once.
  */
 function backlogSuggest(t, lib, cfg, tags, profiles, idf,
-                        targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id))) {
+                        targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id)),
+                        rejected = artistRejectMemory(FB, lib)) {
   const fb = FB[t.id];
+  // A playlist rejected for this artist's other tracks is lowered here, fading
+  // with time and later accepts (profile.mjs rejectFactors, BUILD-5-PLAN §5.1).
+  // Null with no such rejection, and then the picks are exactly what they were.
+  const down = rejectFactors(t, rejected);
   // Ask for more than three, then drop the playlists already rejected for
   // this track, so a rejection promotes the next real candidate instead of
   // leaving a gap where the rejected one was.
-  const ranked = rank(t, tags, profiles, idf, { top: 8 })
+  const ranked = downweightRejected(rank(t, tags, profiles, idf, { top: 8 }), down)
     .filter(b => !fb?.rejected?.includes(b.id))
     .slice(0, 3)
     .map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null, via: 'tags' }));
@@ -4222,7 +4429,7 @@ function backlogSuggest(t, lib, cfg, tags, profiles, idf,
   // filing history only ever steps in when it hasn't — no fetch, no third
   // party, just where the user already put this artist's other tracks.
   return (ranked.length && ranked[0].score >= 0.30) ? ranked
-    : artistHistory(t, lib, targets)
+    : downweightRejected(artistHistory(t, lib, targets), down)
         .filter(h => !fb?.rejected?.includes(h.id))
         .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
 }
@@ -4686,7 +4893,7 @@ function setListen(vm) {
   if (typeof view === 'undefined' || view !== 'home' || !$('#main')) return;
   // Only a card appearing or going re-draws Home; a count ticking up while
   // listening runs updates in place, so the cards don't replay their entrance.
-  if (had !== listenEverRan()) return render();
+  if (had !== listenEverRan()) return store.touch('ui.home');
   const n = $('#main .act[data-heard] .n');
   if (n) n.textContent = listenHeard().toLocaleString();
 }
@@ -5065,7 +5272,7 @@ function tidySoundWarm() {
 async function tidySoundLoad() {
   try { await engineAudio(); } catch { /* no records: Tidy stays as it was */ }
   TSOUND.status = 'idle';
-  if (view === 'tidy' && tidySoundOn()) render();
+  if (tidySoundOn()) store.touch('ui.tidy');
 }
 async function tidySoundBuild(key) {
   try {
@@ -5084,7 +5291,7 @@ async function tidySoundBuild(key) {
   } catch (e) {
     Object.assign(TSOUND, { status: 'error', key, err: e?.message ?? String(e) });
   }
-  if (view === 'tidy') render();
+  store.touch('ui.tidy');
 }
 function tidySoundTrack(id) {
   for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id === id)
@@ -5137,7 +5344,7 @@ function secMisfile() {
   // and the row renders immediately either way; the note appears once the
   // fetch resolves, without blocking anything on it.
   const recentlyActive = LISTENING_CACHE?.recentlyActive ?? null;
-  if (!recentlyActive && !LISTENING_PENDING) getListening().then(() => render());
+  if (!recentlyActive && !LISTENING_PENDING) getListening().then(() => store.touch('ui.tidy'));
   // Only draw the (stateful, id-bearing) editor once, even if the artist
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
@@ -5235,7 +5442,7 @@ async function gapsCompute() {
   } catch (e) {
     GAPS.status = 'error'; GAPS.err = e?.message ?? String(e);
   }
-  render();
+  store.touch('gaps');
 }
 
 /** Make a private playlist holding these tracks. Nothing else in the library changes. */
@@ -5244,7 +5451,7 @@ async function gapsCreate(name, ids) {
   await addTracks(pl.id, ids);
   GAPS.made.add(name.toLowerCase());
   toast(`Created “${name}” with ${ids.length} tracks. It becomes a place to file into after your next sync.`);
-  render();
+  store.touch('gaps');
 }
 
 /** Add these tracks to a playlist they already sound like. Nothing is taken out of anywhere. */
@@ -5252,7 +5459,7 @@ async function gapsFile(playlistId, name, ids, key) {
   await addTracks(playlistId, ids);
   GAPS.filed.add(key);
   toast(`Added ${ids.length} track${ids.length === 1 ? '' : 's'} to “${name}”.`);
-  render();
+  store.touch('gaps');
 }
 
 /** Proposals by sound: pick one of two, hybrid playlists, new genre? Nothing at all without audio.
@@ -5695,8 +5902,8 @@ function mixIndexNow() {
  *  { pending } while engine.js loads. */
 function shuffleMix(sel, tracks, mode) {
   if (!globalThis.BetterfyOrder) {
-    if (!MIX_PAGE.err) fire(engineLoad().then(() => { if (view === 'shuffle') render(); },
-      e => { MIX_PAGE.err = e?.message ?? String(e); if (view === 'shuffle') render(); }));
+    if (!MIX_PAGE.err) fire(engineLoad().then(() => { store.touch('ui.shuffle'); },
+      e => { MIX_PAGE.err = e?.message ?? String(e); store.touch('ui.shuffle'); }));
     return { pending: true };
   }
   const index = mixIndexNow();
@@ -6163,7 +6370,7 @@ function discSoundRedraw() {
   if (view !== 'discover') return;
   const el = document.getElementById('discSnd');
   if (el) el.outerHTML = discSoundLine();
-  else render();
+  else store.touch('ui.discover');
 }
 
 /** The discovery currently on the card. */
@@ -6412,7 +6619,7 @@ function listsProfiles() {
     // The engine bundle is fetched on demand; fetch it and draw again.
     if (!LPROF.loading && typeof engineLoad === 'function') {
       LPROF.loading = true;
-      fire(Promise.resolve(engineLoad()).then(() => { if (view === 'lists') render(); }, () => {}));
+      fire(Promise.resolve(engineLoad()).then(() => { store.touch('ui.lists'); }, () => {}));
     }
     return null;
   }
@@ -6444,7 +6651,7 @@ function listsProfileRun(key) {
     if (!done) return void setTimeout(slice, 0);
     LPROF.busy = false;
     try { LPROF.out = LPROF.pr.result(); } catch { LPROF.out = null; }
-    if (view === 'lists') render();
+    store.touch('ui.lists');
   };
   setTimeout(slice, 0);
 }
@@ -6883,11 +7090,19 @@ function mergeFeedback(local, remote) {
     const l = merged[id];
     // Accepts and keeps union the same way; each only appears once either side has one.
     const union = k => [...new Set([...(l[k] ?? []), ...(r[k] ?? [])])];
+    // When each verdict was given: per playlist, the later of the two times.
+    const latest = k => {
+      const out = { ...(l[k] ?? {}) };
+      for (const [p, t] of Object.entries(r[k] ?? {})) if (!(out[p] >= t)) out[p] = t;
+      return out;
+    };
     merged[id] = !l ? r : {
       skips: Math.max(l.skips ?? 0, r.skips ?? 0),
       lastSkip: [l.lastSkip, r.lastSkip].filter(Boolean).sort().at(-1) ?? null,
       rejected: union('rejected'),
+      ...(l.rejectedAt || r.rejectedAt ? { rejectedAt: latest('rejectedAt') } : {}),
       ...(l.accepted || r.accepted ? { accepted: union('accepted') } : {}),
+      ...(l.acceptedAt || r.acceptedAt ? { acceptedAt: latest('acceptedAt') } : {}),
       ...(l.kept || r.kept ? { kept: union('kept') } : {}),
     };
   }
@@ -7083,7 +7298,7 @@ async function enrichMissing() {
     + (viaDiscogs ? ` ${viaDiscogs} from Discogs, where Last.fm had nothing.` : '')
     + (blank ? ` ${blank} have no tags anywhere.` : '')
     + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : ''));
-  render();
+  store.touch('reports');
 }
 
 /* ---------- genres with no key at all: docs/SMARTER-GENRES-PLAN.md §4.1(c) ----------
@@ -7134,7 +7349,7 @@ async function fillFromWikidata({ quiet = false } = {}) {
     $('#land').hidden = true; $('#app').hidden = false;
     toast(`Wikidata had genres for ${found.toLocaleString()} of ${ids.length.toLocaleString()} untagged artists.`
       + (failed ? ` ${failed.toLocaleString()} could not be reached — try again later.` : ''));
-    render();
+    store.touch('reports');
   }
   return found;
 }
@@ -7176,7 +7391,7 @@ async function noteCorrection(id, tags) {
   const c = await loadCorrections();
   c[id] = { tags, at: Date.now() };
   await idb.set(CORR_KEY, c);
-  syncCorrections().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+  syncCorrections().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
 }
 
 /** Corrections from linked devices, applied exactly as if made here. */
@@ -7270,6 +7485,33 @@ function tagEditorHTML(id, name) {
   </div>`;
 }
 
+/* Screen-change motion (docs/BUILD-5-PLAN.md §4.2, UI-B).
+ * swapScreen(dir, update) runs `update` (which redraws the screen) inside a
+ * same-document View Transition when the browser has one, with a forward/back
+ * type; elsewhere it just runs `update`. Either way <html data-dir> says which
+ * way we are travelling, so the CSS has one hook that works in every browser.
+ * Reduced motion is a cut. The top bar and tab bar carry their own
+ * view-transition-names in the stylesheet, so they stay put. */
+let popping = false;
+if (typeof addEventListener === 'function') {
+  // Registered before the router's own popstate listener: a browser back/forward
+  // step is "back" for the animation, whatever the screen order says.
+  addEventListener('popstate', () => { popping = true; setTimeout(() => { popping = false; }); });
+}
+
+/** +1 forward, -1 back: the router's popstate wins over the screens' order. */
+function navDir(dir) { return popping ? -1 : dir; }
+
+function swapScreen(dir, update) {
+  const d = navDir(dir), root = document.documentElement;
+  const still = !document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const type = d > 0 ? 'forward' : 'back';
+  root.dataset.dir = type;
+  if (still) { update(); return; }
+  const typed = typeof ViewTransition !== 'undefined' && 'types' in ViewTransition.prototype;
+  const t = typed ? document.startViewTransition({ update, types: [type] }) : document.startViewTransition(update);
+  t.finished.finally(() => { delete root.dataset.dir; });
+}
 const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
                 new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
                 engine:vEngine, history:vHistory, sources:vSources };
@@ -7290,9 +7532,7 @@ function render(dir) {
 
   const main = $('#main');
   main.dataset.view = view;
-  main.classList.remove('in-l', 'in-r');
   main.innerHTML = VIEWS[view]();
-  if (dir) { void main.offsetWidth; main.classList.add(dir > 0 ? 'in-l' : 'in-r'); }
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
@@ -7326,8 +7566,9 @@ function go(v) {
   if (v === view) return render();
   const dir = VORDER.indexOf(v) >= VORDER.indexOf(view) ? 1 : -1;
   view = v;
-  render(dir);
-  window.scrollTo(0, 0);
+  // The redraw runs inside a View Transition where there is one (motion.js).
+  swapScreen(dir, () => { render(dir); window.scrollTo(0, 0); });
+  routeNote();
 }
 
 /* ======================= touch gestures =======================
@@ -7465,6 +7706,7 @@ function openSheet(open) {
   sheet.setAttribute('aria-hidden', String(!open));
   $('#scrim').classList.toggle('open', open);
   $('#tabMore').setAttribute('aria-expanded', String(open));
+  routeNote();
 }
 const closeSheet = () => { if ($('#moreSheet').classList.contains('open')) openSheet(false); };
 
@@ -7511,6 +7753,80 @@ addEventListener('scroll', () => {
   if (top) top.classList.toggle('stuck', scrollY > 4);
 }, { passive: true });
 
+/* ---------- router (docs/BUILD-5-PLAN.md A6, fixes B9) ----------
+ * One history entry per screen and per open sheet, so the browser's and
+ * Android's back button closes a sheet first and then walks back through the
+ * screens instead of leaving the app. The address is a hash (#/tidy,
+ * #/tidy/more, #/tidy/settings): it works on static hosting with no server
+ * rewrites, and it never touches the ?code= / ?error= query sign-in returns on.
+ *
+ * makeRouter() takes everything it touches, so the tests can run it against a
+ * fake history. go(), openSheet() and openSettings() call routeNote() after
+ * they change anything; boot calls ROUTER.start() once the app is showing. */
+function makeRouter(env) {
+  const { views, hist, loc, getView, setView, getSheet, setSheet } = env;
+  let active = false, applying = false, settling = false;
+
+  const parse = hash => {
+    const [v, s] = String(hash || '').replace(/^#\/?/, '').split('/');
+    return { view: views.includes(v) ? v : null, sheet: s === 'more' || s === 'settings' ? s : null };
+  };
+  const hashOf = (view, sheet) => '#/' + view + (sheet ? '/' + sheet : '');
+  const here = () => ({ view: getView(), sheet: getSheet() });
+  const same = (a, b) => !!a && a.view === b.view && (a.sheet ?? null) === (b.sheet ?? null);
+  const stamp = r => ({ view: r.view, sheet: r.sheet ?? null });
+
+  /** Make the screen match an entry (back/forward), without writing history. */
+  function apply(r) {
+    applying = true;
+    try {
+      if (getSheet() !== r.sheet) setSheet(r.sheet);
+      if (r.view && r.view !== getView()) setView(r.view);
+    } finally { applying = false; }
+  }
+
+  /** Called after the screen or a sheet changed by the app's own doing. */
+  function note() {
+    if (!active || applying) return;
+    // Changes made while a back step is still landing wait for it (see onPop).
+    if (settling) return;
+    const want = here(), at = hist.state;
+    if (same(at, want)) return;
+    // A sheet closed from its own buttons: take its entry off the stack by
+    // going back, so the next back press is not a no-op on the same screen.
+    if (!want.sheet && at?.sheet && at.view === want.view) { settling = true; hist.back(); return; }
+    hist.pushState(stamp(want), '', hashOf(want.view, want.sheet));
+  }
+
+  function onPop() {
+    if (!active) return;
+    if (settling) { settling = false; note(); return; }
+    const r = hist.state ?? parse(loc.hash);
+    if (!r.view) return;
+    apply(r);
+  }
+
+  /** The screen the URL asks for, falling back to home; claims the first entry. */
+  function start() {
+    const view = parse(loc.hash).view ?? 'home';
+    active = true;
+    hist.replaceState(stamp({ view, sheet: null }), '', hashOf(view, null));
+    return view;
+  }
+
+  return { parse, hashOf, start, note, onPop, get active() { return active; } };
+}
+
+const ROUTER = typeof document === 'undefined' ? null : makeRouter({
+  views: VORDER, hist: history, loc: location,
+  getView: () => view,
+  getSheet: () => $('#moreSheet').classList.contains('open') ? 'more'
+    : $('#settingsPanel').classList.contains('open') ? 'settings' : null,
+  setView: v => go(v),
+  setSheet: s => { openSettings(s === 'settings'); openSheet(s === 'more'); },
+});
+if (ROUTER) addEventListener('popstate', () => ROUTER.onPop());
+function routeNote() { ROUTER?.note(); }
 /* ---------- events ---------- */
 /* ---------- nothing fails in silence ----------
  * Every delegated handler below is async, and an async handler that rejects
@@ -7556,7 +7872,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0442';
+    s.src = 'engine.js?v=2026-11-15-0554';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -7578,7 +7894,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0442');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0554');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -7759,7 +8075,7 @@ function engineDecorate() {
 /** Learn the account, then show what this engine would do with the same tracks
  *  the File screen is currently offering the tag engine's answer for. */
 const engineAnalyse = guard(async () => {
-  ENG.status = 'working'; ENG.err = null; render();
+  ENG.status = 'working'; ENG.err = null; store.touch('eng');
   try {
     await engineLoad();
     const { space, from, ms, pairs } = await engineSpace();
@@ -7807,7 +8123,7 @@ const engineAnalyse = guard(async () => {
   } catch (e) {
     ENG.status = 'error'; ENG.err = e?.message ?? String(e);
   }
-  render();
+  store.touch('eng');
 });
 
 /* ---------- the neighbour bridge: docs/SMARTER-GENRES-PLAN.md, phase 0 ----------
@@ -7911,7 +8227,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0442';
+    s.src = 'audio.js?v=2026-11-15-0554';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -7947,7 +8263,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0442', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0554', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -7999,8 +8315,8 @@ function audioMidRun(vm) {
   fire((async () => {
     try { await audioRefresh(); } finally { AUDIO_MIDRUN_AT.busy = false; }
     // The File card picks new tracks up through soundHear; a rebuild is due only once enough more was heard.
-    if (view === 'inbox' || view === 'home') { soundWarm(); render(); }
-    else if (view === 'tidy') render();
+    if (view === 'inbox' || view === 'home') soundWarm();
+    store.touch('audio');
   })());
 }
 
@@ -8130,7 +8446,7 @@ async function soundBuild(targets) {
   } catch (e) {
     Object.assign(SOUND, { status: 'error', err: e?.message ?? String(e), n: soundHeard(), targets, memo: null });
   }
-  if (view === 'inbox' || view === 'home') render();
+  store.touch('sound');
 }
 
 /** A space learned elsewhere that the File screen can use as it is: built for
@@ -8261,7 +8577,7 @@ async function clapNames() { return (CLAPS.names ??= (await idb.get(CLAP_NAMES_K
 async function clapConfirm(ids, name) {
   CLAPS.names = BetterfyAudio.confirmName(await clapNames(), ids, name);
   await idb.set(CLAP_NAMES_KEY, CLAPS.names);
-  syncClusterNames().then(changed => { if (changed) render(); });
+  syncClusterNames().then(changed => { if (changed) { store.touch('ui.new'); store.touch('ui.discover'); } });
 }
 
 /** Names given on the listener's other linked devices. */
@@ -8292,9 +8608,9 @@ async function clapNameOrphans(orphans, records) {
 /** Run a search for what is in the box. Prompts only: free text has no encoder in the page. */
 async function clapSearch(q) {
   CLAPS.q = String(q ?? '').trim();
-  if (!CLAPS.q) { CLAPS.res = null; return render(); }
+  if (!CLAPS.q) { CLAPS.res = null; return store.touch('ui.discover'); }
   const table = await clapTable();
-  if (!table) { CLAPS.res = null; return render(); }
+  if (!table) { CLAPS.res = null; return store.touch('ui.discover'); }
   const idx = BetterfyAudio.clapIndex(AUDIO.records, { dim: table.dim });
   const r = BetterfyAudio.soundsLike(CLAPS.q, idx, table);
   const ids = new Set(r.results.map(x => x.id));
@@ -8304,7 +8620,7 @@ async function clapSearch(q) {
   CLAPS.res = { q: CLAPS.q, prompt: r.prompt, heard: r.heard,
     results: r.results.map(x => ({ ...x, t: info.get(x.id) ?? null })).filter(x => x.t),
     near: r.prompt ? [] : BetterfyAudio.suggestPrompts(CLAPS.q, table, { limit: 6 }) };
-  render();
+  store.touch('ui.discover');
 }
 
 /** Discover's "sounds like" card. '' unless CLAP has heard something in this library. */
@@ -8313,7 +8629,7 @@ function soundSearchHTML() {
   const heard = BetterfyAudio.clapHeard(AUDIO.records);
   if (!heard) return '';
   const t = CLAPS.table;
-  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => render()));
+  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => store.touch('ui.discover')));
   const n = x => x.toLocaleString();
   const list = t ? `<datalist id="sndqList">${t.prompts.map(p => `<option value="${esc(p.label)}"></option>`).join('')}</datalist>` : '';
   const res = CLAPS.res;
@@ -8424,7 +8740,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-0442', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-0554', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -8581,7 +8897,7 @@ async function engineBridge(tracks) {
  * empty table and reporting that it lost would be rigging the comparison.
  */
 const engineValidate = guard(async () => {
-  ENG.valRunning = true; ENG.val = null; ENG.valStage = null; render();
+  ENG.valRunning = true; ENG.val = null; ENG.valStage = null; store.touch('eng');
   try {
     const tags = TAGS && Object.keys(TAGS).length ? TAGS : null;
     const t0 = performance.now();
@@ -8592,14 +8908,14 @@ const engineValidate = guard(async () => {
     let bridge = null, bridgeStats = null, bridgeErr = null;
     const useBridge = bridgeOn();
     if (useBridge) {
-      ENG.valStage = 'bridge'; ENG.bridgeProgress = {}; render();
+      ENG.valStage = 'bridge'; ENG.bridgeProgress = {}; store.touch('eng');
       try {
         await engineLoad();
         const tracks = BetterfyValidate.scoredTracks(LIB, { limit: VALIDATE_N, isMirror: isMirrorPlaylist,
                                                            targets: new Set(engineTargets()) });
         ({ bridge, stats: bridgeStats } = await engineBridge(tracks));
       } catch (e) { bridge = null; bridgeErr = e?.message ?? String(e); }
-      ENG.valStage = 'score'; render();
+      ENG.valStage = 'score'; store.touch('eng');
     }
     const bridgeMs = useBridge ? Math.round(performance.now() - t0) : 0;
     const t1 = performance.now();
@@ -8635,7 +8951,7 @@ const engineValidate = guard(async () => {
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }
-  ENG.valRunning = false; ENG.valStage = null; render();
+  ENG.valRunning = false; ENG.valStage = null; store.touch('eng');
 });
 
 /**
@@ -8840,7 +9156,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0442`,
+    `Betterfy engine score — build 2026-11-15-0554`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -9273,8 +9589,19 @@ document.addEventListener('click', guard(async e => {
     // that made the card, so the filing-history fallback and `via` survive.
     const raw = LIB.liked.find(x => x.id === t.id);
     t.suggest = raw ? backlogSuggest(raw, LIB, CFG, gateTags(TAGS, tagGate(TAGS)), R.profiles, R.idf) : [];
+    // The artist's other cards re-rank too: the rejection lowers this playlist
+    // for them (backlogSuggest reads it through rejectFactors).
+    const lead = t.artists?.[0]?.id;
+    if (lead) {
+      const gated = gateTags(TAGS, tagGate(TAGS)), mem = artistRejectMemory(FB, LIB);
+      for (const b of R.backlog) {
+        if (b.id === t.id || b.artists?.[0]?.id !== lead) continue;
+        const rb = LIB.liked.find(x => x.id === b.id);
+        if (rb) b.suggest = backlogSuggest(rb, LIB, CFG, gated, R.profiles, R.idf, undefined, mem);
+      }
+    }
     toast(`Won't suggest ${pname} for this track again.`, async () => {
-      const f = FB[t.id]; if (f) f.rejected = f.rejected.filter(x => x !== pid);
+      const f = FB[t.id]; if (f) { f.rejected = f.rejected.filter(x => x !== pid); fbUnstamp(f, 'rejectedAt', [pid]); }
       await saveFeedback(); R = buildReports(LIB, CFG, TAGS); render();
     });
     return render();
@@ -9585,7 +9912,7 @@ document.addEventListener('change', guard(async e => {
     toast('Updated — suggestions recomputed.');
     render();
     // Shared with linked devices straight away, not only at the next load.
-    syncAxes().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+    syncAxes().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
   }
 }));
 
@@ -9796,7 +10123,7 @@ $('#syncRedeem').onclick = async () => {
     input.value = '';
     toast('Linked — pulling in what the other device knows…');
     const changed = await syncEverything();
-    if (changed) { R = buildReports(LIB, CFG, TAGS); render(); }
+    if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); }
   } catch (e) { toast('Could not link: ' + e.message); }
   finally { btn.disabled = false; }
 };
@@ -9972,12 +10299,12 @@ async function start(force) {
     const whoName = LIB.user?.name ?? LIB.user?.id ?? '';
     $('#who').textContent = whoName;
     $('#sheetWho').textContent = whoName;
-    view = 'home'; S.inboxAt = 0; render();
+    view = ROUTER.start(); S.inboxAt = 0; render();
     window.scrollTo(0, 0);
     // Background, after the first paint — never delays it, and only redraws
     // again if another device actually had feedback this one did not, rather
     // than resetting the screen on every load for nothing.
-    syncEverything().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+    syncEverything().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
     // Keyless genres for artists nothing has tagged. Cached per artist, so after
     // the first load this asks only about artists that are new or stale.
     if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});

@@ -1,3 +1,4 @@
+// @bundle engine BetterfyCalibrate 100
 // How sure the engine is allowed to be — measured on this account's own filing.
 //
 // docs/SMARTER-GENRES-PLAN.md §4.2. A score of 0.42 means nothing to anybody,

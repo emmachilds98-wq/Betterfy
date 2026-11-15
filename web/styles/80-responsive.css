@@ -48,9 +48,10 @@
     aside .nav .ic, .tabmore .ic{display:grid}
     aside .nav .lbl, .tabmore .lbl{flex:none; font-size:10px; letter-spacing:-.01em; font-weight:600; line-height:1;
           max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-    aside .nav .ic, .tabmore .ic{width:24px; height:24px; border-radius:9px; transition:background .16s ease, color .16s ease}
+    aside .nav .ic, .tabmore .ic{width:24px; height:24px; border-radius:9px; transition:background var(--dur-1) ease, color var(--dur-1) ease}
     aside .nav .ic svg, .tabmore .ic svg{width:19px; height:19px}
-    aside .nav[aria-current="true"]{background:none; color:var(--vc)}
+    aside .nav[aria-current="true"]{background:none; color:var(--vc); view-transition-name:none}
+    aside .nav[aria-current="true"] .ic{view-transition-name:vt-pill}
     aside .nav[aria-current="true"] .ic{background:color-mix(in srgb, var(--vc) 16%, transparent); color:var(--vc)}
     .tabmore[aria-expanded="true"]{color:var(--ink); background:none}
     /* Lit whenever the open screen is one of the three behind it. */
@@ -122,7 +123,7 @@
     .settings{top:auto; bottom:0; left:0; right:0; width:auto; max-width:none; height:auto; max-height:88dvh;
               border-left:0; border-top:1px solid var(--line); border-radius:20px 20px 0 0;
               transform:translateY(101%); box-shadow:0 -12px 34px rgba(0,0,0,.22);
-              transition:transform .24s var(--ease-out)}
+              transition:transform var(--dur-3) var(--ease-out)}
     .settings.open{transform:translateY(0)}
     .grabber{display:block}
     .settings-head{padding:10px 18px 14px; border-bottom:0}

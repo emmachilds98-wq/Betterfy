@@ -45,7 +45,7 @@ function load({ tags = {}, rawTags = {}, key = 'lfm-key', fetchTags = null, seed
     REASK_TAG_FLOOR: 3,
     canonJSON: JSON.stringify,
     syncStamped: async (doc, local) => { synced.push([doc, JSON.parse(JSON.stringify(local))]); return false; },
-    render: () => {},
+    render: () => {}, store: { get() {}, on() {}, set() {}, touch() {} },
     LS: { getItem: k => (k === 'bf_lfm' ? key : null) },
     // Refetching offers the fresh tags to the shared table on its way past.
     contributeTags: (...a) => shared.push(a),
@@ -205,7 +205,7 @@ test('secMisfile notes when a "misfiled" track is one you actually play a lot, w
   assert.match(body, /recentlyActive\?\.has\(x\.artist\)/);
   assert.match(body, /You play this a lot right now/);
   // The fetch is lazy and must not block the row rendering that's already there.
-  assert.match(body, /getListening\(\)\.then\(\(\) => render\(\)\)/);
+  assert.match(body, /getListening\(\)\.then\(\(\) => store\.touch\('ui\.tidy'\)\)/);
 });
 
 /* ---------- corrections are recorded for syncing (docs/SMARTER-GENRES-PLAN.md phase 4) ---------- */

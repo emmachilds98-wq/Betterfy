@@ -133,8 +133,19 @@ document.addEventListener('click', guard(async e => {
     // that made the card, so the filing-history fallback and `via` survive.
     const raw = LIB.liked.find(x => x.id === t.id);
     t.suggest = raw ? backlogSuggest(raw, LIB, CFG, gateTags(TAGS, tagGate(TAGS)), R.profiles, R.idf) : [];
+    // The artist's other cards re-rank too: the rejection lowers this playlist
+    // for them (backlogSuggest reads it through rejectFactors).
+    const lead = t.artists?.[0]?.id;
+    if (lead) {
+      const gated = gateTags(TAGS, tagGate(TAGS)), mem = artistRejectMemory(FB, LIB);
+      for (const b of R.backlog) {
+        if (b.id === t.id || b.artists?.[0]?.id !== lead) continue;
+        const rb = LIB.liked.find(x => x.id === b.id);
+        if (rb) b.suggest = backlogSuggest(rb, LIB, CFG, gated, R.profiles, R.idf, undefined, mem);
+      }
+    }
     toast(`Won't suggest ${pname} for this track again.`, async () => {
-      const f = FB[t.id]; if (f) f.rejected = f.rejected.filter(x => x !== pid);
+      const f = FB[t.id]; if (f) { f.rejected = f.rejected.filter(x => x !== pid); fbUnstamp(f, 'rejectedAt', [pid]); }
       await saveFeedback(); R = buildReports(LIB, CFG, TAGS); render();
     });
     return render();
@@ -445,7 +456,7 @@ document.addEventListener('change', guard(async e => {
     toast('Updated — suggestions recomputed.');
     render();
     // Shared with linked devices straight away, not only at the next load.
-    syncAxes().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+    syncAxes().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
   }
 }));
 
