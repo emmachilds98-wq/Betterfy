@@ -60,9 +60,12 @@ SCREEN_CTX.tidy = () => ({
   get LISTENING_PENDING() { return LISTENING_PENDING; },
 });
 SCREEN_CTX.lists = () => ({
-  CFG, LIB, LS, R, LPROF, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
+  CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render,
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
+  // Library's Suggested section reads the same gaps New playlists draws: start them the way that screen does.
+  gapsKick: () => { if (GAPS.status === 'idle' || (GAPS.status === 'ready' && GAPS.for !== R)) { GAPS.status = 'working'; fire(gapsCompute()); } },
+  get BetterfyOrder() { return globalThis.BetterfyOrder; },
   get BetterfyPlProfile() { return globalThis.BetterfyPlProfile; },
   get document() { return globalThis.document; },
 });

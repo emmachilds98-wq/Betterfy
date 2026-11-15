@@ -208,23 +208,25 @@ function page({ recs = records, withEngine = true } = {}) {
   };
   vm.createContext(sb);
   sb.jobs = vm.runInContext(SLICE + ';({ playlistMixes, listsSplits, listsSplitMake, LPROF, LISTS_SOUND })', sb);
-  Object.assign(sb, { LPROF: sb.jobs.LPROF, listsSplitMake: sb.jobs.listsSplitMake, vLists: () => LISTS.view({ ...sb, ...sb.jobs }) });
+  Object.assign(sb, { LPROF: sb.jobs.LPROF, listsSplitMake: sb.jobs.listsSplitMake, vLists: () => LISTS.view({ ...sb, ...sb.jobs }),
+    vSheet: id => LISTS.sheetHTML({ ...sb, ...sb.jobs, mixHeardIn: () => 0 }, id) });
   return { sb, calls, renders };
 }
 const settle = async sb => { for (let i = 0; i < 200 && (sb.LPROF.busy || !sb.LPROF.out); i++) await new Promise(r => setTimeout(r, 0)); };
 
 test('Playlists: once worked out, the profile shows the genre mix and BPM range, and House offers its split', async () => {
   const { sb, renders } = page();
-  const first = sb.vLists();
-  assert.ok(!first.includes('Two genres by sound'), 'nothing claimed before it is worked out');
+  const first = sb.vSheet('house');
+  assert.ok(!first.includes('Two genres?'), 'nothing claimed before it is worked out');
   await settle(sb);
   assert.ok(renders.length >= 1, 'the screen redraws when it is done');
-  const html = sb.vLists();
-  assert.match(html, /<h2>Two genres by sound<\/h2>/);
+  const html = sb.vSheet('house');
+  assert.match(html, /<h3>Two genres\?<\/h3>/);
   assert.match(html, /data-lsplit="house">Make “House — Drum &amp; Bass”/);
-  assert.match(html, /<b>12<\/b> sound like House · <b>8<\/b> sound like Drum &amp; Bass/);
-  assert.ok(!html.includes('data-lsplit="both"') && !html.includes('data-lsplit="techno"'));
-  assert.match(html, /<div class="prof">132-132\|Techno<\/div>/);
+  assert.match(html, /<b>12<\/b> sound like House, <b>8<\/b> like Drum &amp; Bass/);
+  assert.ok(!sb.vSheet('techno').includes('data-lsplit'));
+  assert.match(sb.vSheet('techno'), /<div class="prof">132-132\|Techno<\/div>/);
+  assert.match(sb.vLists(), /class="plspark"/, 'the row carries a sound strip once there is a profile');
 });
 
 test('Playlists: the split makes a private playlist of the half that moves, and takes nothing out', async () => {
@@ -236,15 +238,16 @@ test('Playlists: the split makes a private playlist of the half that moves, and 
   assert.equal(add[1], 'NEW');
   assert.deepEqual([...add[2]].sort(), Array.from({ length: 8 }, (_, i) => `hj${i}`).sort());
   assert.ok(!calls.some(c => c[0] === 'sp' && /tracks/.test(c[1]) ), 'nothing removed');
-  assert.match(sb.vLists(), /<span class="tag ok">Made<\/span>/);
+  assert.match(sb.vSheet('house'), /<span class="tag ok">Made<\/span>/);
   await sb.listsSplitMake('house');
   assert.equal(calls.filter(c => c[0] === 'sp').length, 1, 'only once');
 });
 
 test('Playlists without records: no sound at all; before the engine is loaded: the plain profile, no split', () => {
-  const off = page({ recs: null }).sb.vLists();
-  assert.ok(!off.includes('Two genres') && !off.includes('lsplit') && !off.includes('axprof'));
-  const loading = page({ withEngine: false }).sb.vLists();
-  assert.ok(!loading.includes('Two genres'));
-  assert.match(loading, /<div class="prof">\|<\/div>/, 'the profile as it was, nothing added');
+  const o = page({ recs: null }).sb;
+  const off = o.vLists() + o.vSheet('house');
+  assert.ok(!off.includes('Two genres') && !off.includes('lsplit') && !off.includes('plspark') && !off.includes('prof'));
+  const loading = page({ withEngine: false }).sb;
+  assert.ok(!loading.vSheet('house').includes('Two genres'));
+  assert.match(loading.vSheet('house'), /<div class="prof">\|<\/div>/, 'the profile as it was, nothing added');
 });

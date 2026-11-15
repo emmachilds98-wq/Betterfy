@@ -34,13 +34,54 @@ function listenStatus() {
   return heard ? `${heard.toLocaleString()} heard` : '';
 }
 
-/** The strip at the top of Library's screens: Playlists, New playlists, Shuffle. */
-function libNav(cur) {
-  const n = R.clusters.length;
-  const tabs = [['lists', 'Playlists', ''], ['new', 'New playlists', n ? ` <span class="c">${n > 999 ? '999+' : n}</span>` : ''],
-                ['shuffle', 'Shuffle', '']];
-  return `<div class="libnav" role="tablist" aria-label="Library">${tabs.map(([v, l, c]) =>
-    `<button class="seg" role="tab" data-go="${v}" aria-selected="${v === cur}">${l}${c}</button>`).join('')}</div>`;
+/** The strip at the top of Library's sub-screens, New playlists and Shuffle: the way back. */
+function libBack(cur) {
+  const n = cur === 'new' ? R.clusters.length : 0;
+  return `<div class="libnav"><button class="b sm" data-go="lists">\u2190 Library</button>${n ? `<span class="c">${n > 999 ? '999+' : n}</span>` : ''}</div>`;
+}
+
+/* ---------- the playlist sheet (UI-E) ----------
+ * Tapping a Library row opens #plSheet, built on the Settings sheet's own look and
+ * the same scrim. S.plSheet is the open playlist's id. The router gives it a
+ * history entry ("#/lists/pl:<id>") so back closes it; lists.mjs draws the body. */
+function plSheetEl() {
+  let el = $('#plSheet');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'plSheet'; el.className = 'settings plsheet';
+    el.setAttribute('role', 'dialog'); el.setAttribute('aria-hidden', 'true'); el.setAttribute('aria-label', 'Playlist');
+    document.body.appendChild(el);
+    // Wired once, when the sheet is first made.
+    addEventListener('click', e => {
+      if (e.target.closest?.('[data-plclose]') || (S.plSheet && e.target.id === 'scrim')) closePlSheet();
+    });
+    addEventListener('keydown', e => { if (e.key === 'Escape' && S.plSheet) closePlSheet(); });
+  }
+  return el;
+}
+function plSheetPaint() {
+  if (!S.plSheet) return;
+  const el = plSheetEl(), top = el.querySelector('.pls-body')?.scrollTop ?? 0;
+  el.innerHTML = '<div class="grabber"></div>' + (SCREEN_MODS.lists.sheetHTML(screenCtx('lists'), S.plSheet) || '');
+  const b = el.querySelector('.pls-body'); if (b) b.scrollTop = top;
+  if (!b) closePlSheet();
+}
+function openPlSheet(id) {
+  if (!id) return;
+  S.plSheet = id;
+  plSheetPaint();
+  plSheetEl().classList.add('open'); plSheetEl().setAttribute('aria-hidden', 'false');
+  $('#scrim').classList.add('open');
+  plSheetEl().querySelector('[data-plclose]')?.focus();
+  routeNote();
+}
+function closePlSheet() {
+  if (!S.plSheet) return;
+  S.plSheet = null;
+  const el = plSheetEl();
+  el.classList.remove('open'); el.setAttribute('aria-hidden', 'true');
+  if (!settingsOpen()) $('#scrim').classList.remove('open');
+  routeNote();
 }
 
 function underHoodHTML() {

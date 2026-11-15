@@ -1,0 +1,41 @@
+/* Library (UI-E, docs/BUILD-5-PLAN.md §4.1): compact playlist rows, the Suggested
+   section, the detail sheet, and the way back on New playlists / Shuffle. */
+  .libnav{background:none; padding:0; border-radius:0; width:auto; display:flex; align-items:center; gap:10px; overflow:visible}
+
+  .plrows{display:flex; flex-direction:column; background:var(--surface); border:1px solid var(--line);
+          border-radius:var(--r-3); overflow:hidden; margin-bottom:22px}
+  .plrow{appearance:none; border:0; border-bottom:1px solid var(--line); background:none; font:inherit; color:inherit; text-align:left;
+         display:flex; align-items:center; gap:14px; width:100%; padding:12px 14px; min-height:56px; cursor:pointer}
+  .plrow:last-child{border-bottom:0}
+  .plrow:hover{background:var(--surface-2)}
+  .plrow:focus-visible{outline:2px solid var(--vc, var(--accent)); outline-offset:-2px}
+  .plmain{display:flex; flex-direction:column; gap:3px; min-width:0; flex:1}
+  .plmain .ttl{font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .plmeta{display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12.5px; color:var(--ink-3); margin:0}
+  .plmeta .tag{padding:2px 9px; font-size:11.5px}
+  .plmeta .mono{color:var(--ink-2)}
+
+  /* The sound strip: top styles as a stacked bar, or the energy range as five cells. */
+  .plspark{display:flex; gap:2px; width:64px; height:8px; flex:none; border-radius:4px; overflow:hidden}
+  .plspark i{display:block; height:100%; min-width:3px; background:var(--line-2)}
+  .plspark i.sp0{background:var(--m0)} .plspark i.sp1{background:var(--m2)} .plspark i.sp2{background:var(--m3)}
+  .plspark-e{gap:3px} .plspark-e i{flex:1; border-radius:2px} .plspark-e i.on{background:var(--ink-2)}
+
+  .plsugg{margin:0 0 22px}
+  .plsugg-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px}
+  .plsugg-head h2{margin:0}
+  .plsugg .plrows{margin-bottom:0}
+  .plsg{border-left:3px solid var(--m2)}
+
+  /* The detail sheet. */
+  .plsheet .pls-head{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px 10px; flex:none}
+  .plsheet .pls-head h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0;
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .pls-body{padding:0 18px calc(24px + var(--sab, 0px)); overflow-y:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:18px; min-height:0}
+  .pls-sec h3{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:600; margin:0 0 6px}
+  .pls-sec .hint{margin:0 0 8px}
+  .pls-f{display:flex; align-items:center; gap:10px; margin:6px 0; font-size:14px}
+  .plhealth{display:flex; align-items:baseline; gap:8px; margin:0 0 6px; font-weight:600}
+  .plhealth .mono{font-size:26px}
+  .plh-ok .mono{color:var(--ok)} .plh-low .mono{color:var(--warn)}
+  .plnotes{margin:0; padding-left:18px; color:var(--ink-2); font-size:14px}
