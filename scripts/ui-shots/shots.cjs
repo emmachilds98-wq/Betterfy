@@ -86,6 +86,13 @@ async function shoot(b, FORM, THEME) {
     await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-${v}.png`), fullPage: true });
     await touchBack();
   }
+  // Library's playlist detail sheet (UI-E).
+  await pg.evaluate(() => { go('lists'); openPlSheet(Object.keys(CFG)[0]); });
+  await pg.waitForTimeout(900);
+  await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-lists-sheet.png`) });
+  await pg.evaluate(() => closePlSheet());
+  await pg.waitForTimeout(400);
+  await touchBack();
   // The Settings sheet, closed to open: its sections one at a time (UI-D).
   await pg.evaluate(() => go('inbox'));
   for (const sec of [null, 'sources', 'engine', 'history']) {

@@ -20,7 +20,7 @@ function makeRouter(env) {
     const [v, s] = String(hash || '').replace(/^#\/?/, '').split('/');
     const old = Object.hasOwn(moved, v) ? moved[v] : null;
     const r = { view: views.includes(v) ? v : old?.view ?? null,
-                sheet: s === 'settings' || old?.section ? 'settings' : null };
+                sheet: s === 'settings' || old?.section ? 'settings' : /^pl:./.test(s ?? '') ? s : null };
     if (old?.section) r.section = old.section;
     return r;
   };
@@ -76,9 +76,13 @@ function makeRouter(env) {
 const ROUTER = typeof document === 'undefined' ? null : makeRouter({
   views: VORDER, hist: history, loc: location, moved: LEGACY_VIEWS, fallback: 'inbox',
   getView: () => view,
-  getSheet: () => settingsOpen() ? 'settings' : null,
+  getSheet: () => settingsOpen() ? 'settings' : S.plSheet ? 'pl:' + S.plSheet : null,
   setView: v => go(v),
-  setSheet: s => openSettings(s === 'settings'),
+  setSheet: s => {
+    if (/^pl:/.test(s ?? '')) return openPlSheet(s.slice(3));
+    closePlSheet();
+    if (s === 'settings' || settingsOpen()) openSettings(s === 'settings');
+  },
 });
 if (ROUTER) addEventListener('popstate', () => ROUTER.onPop());
 function routeNote() { ROUTER?.note(); }

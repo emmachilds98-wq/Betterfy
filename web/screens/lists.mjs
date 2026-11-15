@@ -1,5 +1,5 @@
 // @bundle screens lists 50
-/* The Playlists screen (docs/BUILD-5-PLAN.md A4): an ES module. Reaches nothing but `ctx`;
+/* The Library tab (docs/BUILD-5-PLAN.md A4, UI-E): compact playlist rows, a Suggested playlists section, and a detail sheet per playlist. Was the Playlists screen: an ES module. Reaches nothing but `ctx`;
  * SCREEN_CTX.lists in app/screens.js builds it. playlistMixes, tagCoverage, the sound profiles
  * and the split job stay classic in app/screenjobs.js. */
 
@@ -16,113 +16,142 @@ function mixLabel(mix) {
   return parts.join(' · ');
 }
 
-function listsSplitHTML(c, splits) {
-  const { LIB, LPROF, esc, BetterfyPlProfile } = c;
-  if (!splits.length) return '';
-  const byId = new Map(LIB.playlists.flatMap(p => p.tracks ?? []).map(t => [t.id, t]));
-  const card = ({ p, split }) => {
-    const { keep, move } = split, name = BetterfyPlProfile.splitName(p.name, split);
-    const made = LPROF.made.has(p.id);
-    const eg = move.ids.slice(0, 3).map(id => byId.get(id)).filter(Boolean)
-      .map(t => `<li>${esc(t.name ?? '')}<span class="sub"> · ${esc((t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '))}</span></li>`).join('');
-    return `<div class="row lsplit${made ? ' done' : ''}"><div class="main">
-      <div class="ttl">${esc(p.name)}</div>
-      <div class="lsplit-bar" aria-hidden="true"><i style="flex:${keep.n}"></i><i class="mv" style="flex:${move.n}"></i></div>
-      <div class="sub"><b>${keep.n}</b> sound like ${esc(keep.name)} · <b>${move.n}</b> sound like ${esc(move.name)}</div>
-      ${eg ? `<ul class="lsplit-eg">${eg}</ul>` : ''}
-    </div><div class="acts">${made ? '<span class="tag ok">Made</span>'
-      : `<button class="b sm" data-act="lsplit" data-lsplit="${esc(p.id)}">Make “${esc(name)}”</button>`}</div></div>`;
-  };
-  return `<h2>Two genres by sound</h2>
-    <p class="lede">${splits.length === 1 ? 'This playlist’s' : 'These playlists’'} heard tracks fall into two groups that
-      sound apart and name different genres. Making the new playlist copies the second group into it; nothing is taken
-      out of the original until you do that yourself.</p>
-    <div class="rows">${splits.map(card).join('')}</div>`;
+/** The proposals worth a line at the top of Library: genres with no playlist, hybrids and new
+ *  genres by sound, backlog groups. Nothing until the gaps are worked out; nothing already made.
+ *  Same data the New playlists screen draws in full. */
+export function suggestionsOf(GAPS, R) {
+  if (!GAPS || GAPS.status !== 'ready') return [];
+  const made = n => GAPS.made?.has(String(n).toLowerCase());
+  const out = [];
+  for (const g of GAPS.gaps ?? []) if (!made(g.label)) out.push({ title: g.label, n: g.size, why: 'genre with no playlist' });
+  for (const [i, o] of (GAPS.sound?.orphans ?? []).entries())
+    if (!GAPS.filed?.has('o' + i)) out.push({ title: o.confirmed ?? o.suggest?.name ?? 'New genre?', n: o.size, why: 'new genre, by sound' });
+  for (const h of GAPS.sound?.hybrids ?? []) if (!made(h.name)) out.push({ title: h.name, n: h.size, why: 'sits between two of yours' });
+  for (const x of R?.clusters ?? []) out.push({ title: x.tags?.[0] ?? 'Unfiled group', n: x.size, why: 'unfiled tracks that sit together' });
+  return out;
 }
 
-/** One row of the axes table, plus a hidden sound-profile row under it when
- *  there is a profile to show. No profile, no toggle and no hidden row. */
-function axisRowHTML(c, p, mix) {
-  const { esc, profileRow, LISTS_SOUND, MIN_FOR_TARGET } = c;
-  const m = mixLabel(mix);
-  const prof = profileRow(LISTS_SOUND.profile(p.id));
+/** 0-100 and the reasons, from what Betterfy already knows about one playlist: misfiled tracks,
+ *  drift, a second genre, an axis nobody has settled. Null under eight tracks (too few to judge). */
+export function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false } = {}) {
+  if (tracks < 8) return null;
+  const notes = [];
+  let score = 100;
+  if (misfiled) { score -= Math.min(45, Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
+  if (drifting) { score -= 15; notes.push('newest additions read differently from the rest'); }
+  if (split) { score -= 20; notes.push('sounds like two genres'); }
+  if (undecided) { score -= 10; notes.push('no axis decided yet'); }
+  score = Math.max(0, score);
+  return { score, word: score >= 85 ? 'Healthy' : score >= 65 ? 'Fine' : 'Needs a look', notes };
+}
+
+/** A thin strip of how a playlist sounds: its top styles as a stacked bar, else its energy range. '' without a profile. */
+export function sparkHTML(vm) {
+  const styles = (Array.isArray(vm?.styles) ? vm.styles : []).filter(s => Array.isArray(s) && s[1] > 0).slice(0, 3);
+  if (styles.length) return `<span class="plspark" aria-hidden="true">${styles.map(([, p], i) =>
+    `<i class="sp${i}" style="flex:${Math.max(0.05, p)}"></i>`).join('')}</span>`;
+  const en = vm?.energy;
+  if (Array.isArray(en) && en.length === 2 && en.every(Number.isFinite)) {
+    const [lo, hi] = [Math.min(...en), Math.max(...en)];
+    return `<span class="plspark plspark-e" aria-hidden="true">${Array.from({ length: 5 }, (_, i) => {
+      const c = (i + .5) / 5; return `<i${c >= lo - .1 && c <= hi + .1 ? ' class="on"' : ''}></i>`; }).join('')}</span>`;
+  }
+  return '';
+}
+
+/** Everything the rows and the sheet need to know about one playlist, in one place. */
+function plInfo(c, p, splitIds, undecidedIds) {
+  const { R, LISTS_SOUND } = c;
+  const vm = LISTS_SOUND.profile(p.id);
+  const health = playlistHealth({ tracks: p.tracks,
+    misfiled: (R.misfiled ?? []).filter(m => m.playlistId === p.id).length,
+    drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
+    split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
+  return { vm, health };
+}
+
+const plRowHTML = (c, p, info, undecided) => {
+  const { esc } = c;
+  const spark = sparkHTML(info.vm), h = info.health;
+  return `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(p.id)}" aria-haspopup="dialog">
+    <span class="plmain"><span class="ttl">${esc(p.name)}</span>
+      <span class="plmeta"><span class="mono">${p.tracks}</span> tracks · <span class="tag">${esc(p.axis)}</span>${
+        undecided ? ' <span class="tag warn">pick an axis</span>' : p.target ? ' <span class="tag ok">files here</span>' : ''}${
+        h && h.score < 65 ? ' <span class="tag warn">needs a look</span>' : ''}</span></span>${spark}</button>`;
+};
+
+/** The playlist detail sheet's body (opened by plopen; shell.js draws it into #plSheet). */
+export function sheetHTML(c, id) {
+  const { CFG, LIB, esc, profileRow, MIN_FOR_TARGET, BetterfyPlProfile, LPROF } = c;
+  const p = CFG[id], pl = LIB.playlists.find(x => x.id === id);
+  if (!p || !pl) return '';
+  const split = c.listsSplits().find(x => x.p.id === id)?.split;
+  const undecided = p.why === c.NO_SIGNAL;
+  const info = plInfo(c, { id, ...p }, new Set(split ? [id] : []), new Set(undecided ? [id] : []));
+  const { health } = info;
+  const mix = mixLabel(c.playlistMixes().mix.get(id));
+  const prof = profileRow(info.vm);
   const few = p.tracks < MIN_FOR_TARGET;
-  return `<tr class="axrow" data-axrow="${esc(p.id)}">
-      <th scope="row" class="axname">${prof ? `<button class="axexp" data-act="axexp" data-axexp="${esc(p.id)}" aria-expanded="false"
-          aria-controls="axprof-${esc(p.id)}" aria-label="Sound profile of ${esc(p.name)}"></button>` : ''}<span class="ttl">${esc(p.name)}</span>
-        <span class="axwhy ${p.why === 'set by you' ? 'mine' : ''}">${esc(p.why ?? '')}</span></th>
-      <td class="axn mono">${p.tracks}</td>
-      <td class="axmix">${m ? `<span title="which kind of tag its tracks carry">${esc(m)}</span>` : ''}</td>
-      <td class="axsel"><select data-act="axis" data-ax="${esc(p.id)}" aria-label="Axis of ${esc(p.name)}">${AXES.map(a => `<option value="${a}" ${p.axis===a?'selected':''}>${a}</option>`).join('')}</select></td>
-      <td class="axtg"><label><input type="checkbox" data-act="target" data-tg="${esc(p.id)}" ${p.target?'checked':''} ${few ? 'disabled title="too few tracks to model"' : ''}>
-        <span class="axtglbl">receives suggestions</span></label></td>
-    </tr>${prof ? `
-    <tr class="axprof" id="axprof-${esc(p.id)}" hidden><td colspan="5">${prof}</td></tr>` : ''}`;
-}
-
-/** The axes table. Columns are labelled once at the top rather than on
- *  every row; on a phone each row folds into a two-line card (62-lists.css). */
-function axisTableHTML(c, list, mixes) {
-  return `<div class="axtable"><table class="axtbl">
-    <thead><tr><th scope="col">Playlist</th><th scope="col" class="axn">Tracks</th><th scope="col">Tagged as</th>
-      <th scope="col">Axis</th><th scope="col">Receives suggestions</th></tr></thead>
-    <tbody>${list.map(p => axisRowHTML(c, p, mixes.get(p.id))).join('')}</tbody></table></div>`;
+  const canMix = c.mixHeardIn(pl.tracks) >= (c.BetterfyOrder?.MIN_MIX ?? 8);
+  const made = LPROF?.made?.has(id);
+  const splitName = split ? BetterfyPlProfile.splitName(pl.name, split) : '';
+  return `<div class="pls-head"><h2>${esc(pl.name)}</h2><button class="iconbtn" type="button" data-plclose aria-label="Close">✕</button></div>
+    <div class="pls-body">
+    <p class="plmeta"><span class="mono">${p.tracks}</span> tracks${mix ? ` · ${esc(mix)}` : ''}</p>
+    ${health ? `<section class="pls-sec"><h3>Health</h3>
+      <p class="plhealth plh-${health.score >= 85 ? 'ok' : health.score >= 65 ? 'fine' : 'low'}"><b class="mono">${health.score}</b> ${esc(health.word)}</p>
+      ${health.notes.length ? `<ul class="plnotes">${health.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : '<p class="hint">Nothing out of place.</p>'}</section>` : ''}
+    <section class="pls-sec"><h3>How it is treated</h3>
+      <p class="hint">${esc(p.why ?? '')}</p>
+      <label class="pls-f">Axis <select data-act="axis" data-ax="${esc(id)}" aria-label="Axis of ${esc(pl.name)}">${AXES.map(a =>
+        `<option value="${a}" ${p.axis === a ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
+      <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to model"' : ''}>
+        receives suggestions</label></section>
+    ${prof ? `<section class="pls-sec"><h3>Sound</h3>${prof}</section>` : ''}
+    ${split ? `<section class="pls-sec"><h3>Two genres?</h3>
+      <p class="hint"><b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.
+        Making the new playlist copies the second group; nothing leaves this one.</p>
+      ${made ? '<span class="tag ok">Made</span>' : `<button class="b sm" data-act="lsplit" data-lsplit="${esc(id)}">Make “${esc(splitName)}”</button>`}</section>` : ''}
+    ${pl.tracks.length >= 8 ? `<section class="pls-sec"><h3>Shuffle</h3>
+      <p class="hint">Spaces out the same artist, then writes it as a playlist to play with Spotify’s shuffle off.</p>
+      <div class="rowbtns"><button class="b p" data-act="plshuffle" data-pl="${esc(id)}">Shuffle</button>${
+        canMix ? `<button class="b" data-act="pldj" data-pl="${esc(id)}">DJ order</button>` : ''}</div></section>` : ''}
+    </div>`;
 }
 
 export function view(c) {
-  const { CFG, R, esc, tagCoverage, playlistMixes, listsSplits, NO_SIGNAL } = c;
-  const rows = Object.entries(CFG).map(([id,v]) => ({ id, ...v })).sort((a,b) => b.tracks - a.tracks);
+  const { CFG, R, GAPS, esc, tagCoverage, NO_SIGNAL, listsSplits } = c;
+  c.gapsKick?.();
+  const rows = Object.entries(CFG).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.tracks - a.tracks);
   const cov = tagCoverage();
-  const { mix: mixes } = playlistMixes();
-  // Everything classify() could not read from the name or the dates. Nothing
-  // is filed into these until the listener says which ones are genre
-  // playlists — the silent "treat it as genre" default used to be exactly what
-  // turned "Sunday" or "Favourites" into a wrong suggestion.
-  const undecided = rows.filter(p => p.why === NO_SIGNAL);
-  const splits = listsSplits();
-  return `<h1>Playlists</h1>
-    <p class="lede">How each playlist is treated, and which ones Betterfy files tracks into.</p>
-    <details class="how"><summary>How this works</summary>
-      <p>Tracks are only filed into playlists marked <b>receives suggestions</b> — by default, the ones whose name says what
-        genre they are (“Donk”, “D&amp;B Rollers”, “Tech House”). Tick any other playlist to file into it too. A track
-        is only ever compared against playlists on its own axis, so a metal track in a mood playlist is not flagged as
-        misfiled. Each guess says what it was made from — the name, the dates the tracks were filed, or what kind of
-        tags they carry — and correcting one is remembered on this device.</p>
-      <p><b>Tagged as</b> is what a playlist's tracks are tagged with. Only the <b>genre</b> share tells a genre
-        playlist apart from another one; the mood, decade and occasion tags are what a <b>mood</b> or <b>context</b>
-        playlist is really held together by, and each axis weighs them accordingly.</p>
-    </details>
+  const splitIds = new Set(listsSplits().map(x => x.p.id));
+  const undecidedIds = new Set(rows.filter(p => p.why === NO_SIGNAL).map(p => p.id));
+  const sugg = suggestionsOf(GAPS, R);
+  const suggHTML = sugg.length ? `<section class="plsugg" aria-labelledby="plsugg-h">
+      <div class="plsugg-head"><h2 id="plsugg-h">Suggested playlists</h2>
+        <button class="b sm" data-go="new">See all ${sugg.length}</button></div>
+      <div class="plrows">${sugg.slice(0, 3).map(s => `<button class="plrow plsg" type="button" data-go="new">
+        <span class="plmain"><span class="ttl">${esc(s.title)}</span>
+          <span class="plmeta"><span class="mono">${s.n}</span> tracks · ${esc(s.why)}</span></span></button>`).join('')}</div>
+    </section>` : '';
+  return `<h1>Library</h1>
+    <p class="lede">Your playlists and how Betterfy treats each. Tap one for its axis, health and shuffle.</p>
+    ${suggHTML}
+    <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
-      <button class="b sm" data-go="sources">Genre sources</button></p>
-
-    ${undecided.length ? `<h2>Needs your input</h2>
-    <p class="lede">${undecided.length} playlist${undecided.length===1?' has':'s have'} no genre in ${undecided.length===1?'its':'their'} name,
-      nothing in the dates, and no strong lean in the tags either — so nothing is filed into ${undecided.length===1?'it':'them'} until you say so.
-      If one of these <i>is</i> a genre playlist, tick <b>receives suggestions</b> (or set it to genre); otherwise set what it really is.</p>
-    ${axisTableHTML(c, undecided, mixes)}` : ''}
-
-    ${(R.drift ?? []).length ? `<h2>Recently drifting</h2>
-    <p class="lede">${R.drift.length} playlist${R.drift.length===1?'':'s'} whose newest additions read differently from everything added before them — not necessarily wrong, just worth a look. This is a trend across many tracks, not a single misfile.</p>
-    <div class="rows">${R.drift.map(d => `<div class="row">
-      <div class="main"><div class="ttl">${esc(d.playlistName)}</div>
-        <div class="sub">newest ${d.recentCount}: <b>${d.recentTags.map(esc).join(', ') || '—'}</b>
-          &nbsp;·&nbsp; the other ${d.olderCount}: <b>${d.olderTags.map(esc).join(', ') || '—'}</b>
-          &nbsp;·&nbsp; ${Math.round(d.similarity*100)}% alike</div></div>
-    </div>`).join('')}</div>` : ''}
-${listsSplitHTML(c, splits)}
-    <h2>Axes</h2>
-    ${axisTableHTML(c, rows, mixes)}`;
+      <button class="b sm" data-go="sources">Genre sources</button>
+      <button class="b sm" data-go="shuffle">Shuffle everything</button></p>`;
 }
 
 
 export const actions = {
-  /** A playlist's sound profile row, shown under it on demand. */
-  axexp(c, el) {
-    const open = el.getAttribute('aria-expanded') !== 'true';
-    el.setAttribute('aria-expanded', String(open));
-    const pr = c.document.getElementById(el.getAttribute('aria-controls'));
-    if (pr) pr.hidden = !open;
-  },
+  /** Tap a playlist: its detail sheet. */
+  plopen(c, el) { c.openPlSheet(el.dataset.pl); },
+
+  /** The sheet's Shuffle: the Shuffle screen on this playlist, as a spaced shuffle. */
+  plshuffle(c, el) { return plShuffle(c, el.dataset.pl, ''); },
+  /** The sheet's DJ order: the same, in the first DJ-order mode. */
+  pldj(c, el) { return plShuffle(c, el.dataset.pl, Object.keys(c.MIX_MODES)[0]); },
 
   /** "Two genres by sound": make the playlist for the half that sounds apart. */
   async lsplit(c, el) {
@@ -159,4 +188,11 @@ function setAxis(c, id, ax, tg) {
   c.render();
   // Shared with linked devices straight away, not only at the next load.
   c.syncAxes().then(changed => { if (changed) c.store.set('reports', c.rebuildReports()); });
+}
+
+function plShuffle(c, id, mode) {
+  c.S.shufPl = id; c.S.shufCache = null; c.S.shufMode = mode;
+  try { c.LS.setItem('bf_shuf_mode', mode); } catch { /* private mode */ }
+  c.closePlSheet();
+  c.go('shuffle');
 }

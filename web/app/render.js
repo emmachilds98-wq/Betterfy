@@ -1,11 +1,10 @@
 // File is the home tab: the `home` module composes the status strip, the File
-// deck (the `inbox` module) and Up next. Library is, for now, Playlists with
-// New playlists and Shuffle one tap away (libNav, app/shell.js); the screens
-// themselves are untouched.
+// deck (the `inbox` module) and Up next. Library is the `lists` module; New
+// playlists and Shuffle open from it and carry a way back (libBack, app/shell.js).
 const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
-                lists:() => libNav('lists') + screenView('lists')(),
-                new:() => libNav('new') + screenView('new')(),
-                shuffle:() => libNav('shuffle') + screenView('shuffle')() };
+                lists:screenView('lists'),
+                new:() => libBack('new') + screenView('new')(),
+                shuffle:() => libBack('shuffle') + screenView('shuffle')() };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -30,6 +29,7 @@ function render(dir) {
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === tabOf(view))));
   // The Settings sheet's sections repaint with the page they sit on.
   underHoodRefresh();
+  plSheetPaint();
 
   const counts = { inbox:R.backlog.length, tidy:R.within.length + R.misfiled.length,
                    new:R.clusters.length, lists:LIB.playlists.length };
@@ -59,6 +59,7 @@ function go(v) {
   }
   // A tap on a tab or card takes you out of the sheet.
   if (settingsOpen()) openSettings(false);
+  closePlSheet();
   if (v === view) return render();
   const dir = VORDER.indexOf(v) >= VORDER.indexOf(view) ? 1 : -1;
   view = v;
