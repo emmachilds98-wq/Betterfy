@@ -1,3 +1,4 @@
+// @bundle engine BetterfyPersist 50
 // Build the space once, not once per page load.
 //
 // The measurement in docs/THINKING-ENGINE-PLAN.md §12 is what makes this a

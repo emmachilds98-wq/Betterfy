@@ -5,9 +5,9 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { spawn } from 'node:child_process';
-import { api } from './spotify.mjs';
-import { removeFrom, addTo, moveTrack, unlikeTrack, undoTxn, history, devices, playTrack, pause, log, snapshotPlaylist } from './actions.mjs';
-import { findOrCreate } from './write.mjs';
+import { api } from '../spotify.mjs';
+import { removeFrom, addTo, moveTrack, unlikeTrack, undoTxn, history, devices, playTrack, pause, log, snapshotPlaylist } from '../actions.mjs';
+import { findOrCreate } from '../write.mjs';
 
 const PORT = 8787;
 const readJson = f => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
@@ -208,7 +208,7 @@ const ROUTES = {
   },
   'POST /api/refresh':  async b => {
     // Re-run a pipeline step in a child process, then reload the reports.
-    const script = { snapshot:'snapshot.mjs', dupes:'dupes.mjs', misfile:'misfile.mjs' }[b.step];
+    const script = { snapshot:'snapshot.mjs', dupes:'legacy/dupes.mjs', misfile:'legacy/misfile.mjs' }[b.step];
     if (!script) throw new Error('Unknown step');
     await new Promise((ok, bad) => {
       const p = spawn(process.execPath, [script], { stdio: 'inherit' });
