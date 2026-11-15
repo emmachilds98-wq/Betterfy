@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-1054">
+<meta name="bf-build" content="2026-11-15-1109">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -753,6 +753,16 @@
   .empty-state.compact p{margin:0; max-width:none; font-size:var(--fs-small)}
   .empty-state.compact .es-acts{margin:0 0 0 auto; justify-content:flex-end}
 
+  /* ---------- ⓘ and its small sheet (UI-F) ---------- */
+  .info{appearance:none; border:0; background:none; color:var(--ink-3); font:inherit; font-size:17px; line-height:1;
+        cursor:pointer; padding:2px 6px; margin-left:4px; border-radius:50%; vertical-align:middle}
+  .info:hover, .info:focus-visible{color:var(--ink)}
+  dialog.infosheet{max-width:min(440px, calc(100vw - 32px)); background:var(--surface); color:var(--ink);
+       border:1px solid var(--line); border-radius:var(--r); padding:18px 20px; box-shadow:var(--shadow-2)}
+  dialog.infosheet::backdrop{background:rgba(0,0,0,.5)}
+  dialog.infosheet h2{margin:0 0 10px; font-size:18px}
+  .infobody{font-size:var(--fs-small); color:var(--ink-2); line-height:1.6; margin-bottom:14px}
+  .infobody p{margin:0 0 8px}
   /* ---------- "How this works" (UI-1) ----------
      A screen's lede is one sentence; the explanation it used to carry sits
      behind this, shut by default. */
@@ -795,9 +805,18 @@
   /* Tinted glow under the card, matching whichever way it is being pushed. */
   .swipecard.to-file{box-shadow:0 0 0 2px var(--ok), 0 12px 30px color-mix(in srgb, var(--ok) 30%, transparent)}
   .swipecard.to-skip{box-shadow:0 0 0 2px var(--line-2), var(--shadow-2)}
+  /* Keyboard hint: desktop with a fine pointer only, and only after `?` (UI-F). */
   .swipehint{display:none; gap:14px; justify-content:center; margin-top:14px; color:var(--ink-3); font-size:11.5px;
              letter-spacing:.02em; flex-wrap:wrap}
   .swipehint b{font-weight:600; color:var(--ink-2)}
+  @media (hover:hover) and (pointer:fine){ body.showkeys .swipehint{display:flex} }
+  /* The File card's quiet extras: Unlike and Add another playlist. */
+  details.cardmore{margin-top:10px; text-align:center}
+  details.cardmore>summary{display:inline-flex; list-style:none; cursor:pointer; padding:4px 14px; border-radius:var(--r);
+       color:var(--ink-3); font-size:20px; line-height:1; letter-spacing:.1em}
+  details.cardmore>summary::-webkit-details-marker{display:none}
+  details.cardmore>summary:hover, details.cardmore[open]>summary{color:var(--ink); background:var(--surface-2)}
+  details.cardmore .rowbtns{justify-content:center; margin-top:8px}
   .counter{display:flex; align-items:center; justify-content:space-between; gap:6px 12px; margin-top:14px;
            flex-wrap:wrap; font-family:var(--mono); font-size:11.5px; color:var(--ink-3)}
   /* ---- the sound layer's slots on the File and Discover cards (UI-4) ----
@@ -1334,7 +1353,6 @@
     .app{min-height:0}
     .mtop{display:flex}
     .fabBar{top:calc(6px + var(--sat)); right:calc(10px + var(--sar))}
-    .swipehint{display:flex}
 
     /* The rail becomes a bottom tab bar: thumb-reachable, and padded out of
        the home-indicator strip rather than sitting under it. */
@@ -1589,7 +1607,7 @@
     <button class="b big" id="landUpdate">Check for updates</button>
   </div>
   <p class="fineprint">
-    <span>Runs entirely in your browser — your library never leaves it.</span>
+    <span>Runs entirely in your browser — your library never leaves it. Nothing is written to Spotify until you tap, and every change can be undone.</span>
     <span class="dot">·</span>
     <!-- The quota Spotify enforces belongs to the app, not to the listener, so
          everyone signing in with this page's default app is spending the same
@@ -1598,7 +1616,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-1054</span>
+    <span class="mono">build 2026-11-15-1109</span>
   </p>
 
   <div class="feat">
@@ -1690,7 +1708,7 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1054</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1109</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1807,12 +1825,16 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-15-1054. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-15-1109. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
         release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
-        <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source and licences on GitHub</a>.</p>
+        <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.</p>
+      <p class="hint" id="licences">Licences: the listening model is Discogs-EffNet and its mood, voice and danceability heads by the
+        Music Technology Group, Universitat Pompeu Fabra
+        (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
+        used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>; the optional second ear (MAEST) is by the same group, quantised, same licence. Previews from Deezer.</p>
       <div class="rowbtns">
         <button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button>
         <button class="b" id="disconnect" type="button">Disconnect</button>
@@ -3472,7 +3494,8 @@ __mod["web/screens/history.mjs"] = (function () {
  * already undone says so instead of offering Undo again — a second tap used
  * to re-add a duplicate.
  */
-function view({ S, esc, isUndone, emptyState }) {
+function view({ S, esc, isUndone, emptyState, infoBtn }) {
+  const ib = infoBtn ?? (() => '');
   const h = S.history ?? [];
   const byGroup = new Map();
   for (const x of h) if (x.group && x.op !== 'undo') (byGroup.get(x.group) ?? byGroup.set(x.group, []).get(x.group)).push(x);
@@ -3501,7 +3524,7 @@ function view({ S, esc, isUndone, emptyState }) {
     </div><div class="acts">${g.every(x => isUndone(x, h)) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(oldest.at)}">Undo</button>`}</div></div>`;
   };
   return `<h1>History</h1>
-    <p class="lede">Every change Betterfy made to your Spotify library, newest first. Removals record their position, so undo puts a track back where it was rather than at the end.</p>
+    <p class="lede">Every change Betterfy made, newest first.${ib('history', 'History', '<p>Removals record their position, so undo puts a track back where it was rather than at the end.</p>')}</p>
     <div class="rows">${rows.map(r => r.group ? grouped(r.group) : one(r.one)).join('')
       || emptyState('Nothing changed yet', 'Every edit Betterfy makes lands here, and can be undone from it.')}</div>`;
 }
@@ -3613,7 +3636,7 @@ function view(ctx) {
   const touch = matchMedia('(hover:none) and (pointer:coarse)').matches;
   const how = touch
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
-    : `Keys: <b>1–3</b> pick, <b>Enter</b> file, <b>P</b> play, <b>S</b> skip, <b>U</b> unlike.`;
+    : '';
 
   return `${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
@@ -3662,15 +3685,17 @@ function view(ctx) {
           <button class="b big go grow" data-act="filesel" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
           <button class="b big" data-act="skip">Skip</button>
         </div>
-        <div class="rowbtns" style="margin-top:10px">
-          <button class="b sm" data-act="unlike">Unlike</button>
-          <select id="anyPl" data-act="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
-        </div>
-        <p style="margin:14px 0 0; font-size:13px; color:var(--ink-3); text-align:center">Nothing is written to Spotify until you tap File or swipe — and it can be undone after.</p>
+        <details class="cardmore"><summary aria-label="More: unlike, or add another playlist" title="More">\u22EF</summary>
+          <div class="rowbtns">
+            <button class="b sm" data-act="unlike">Unlike</button>
+            <select id="anyPl" data-act="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+          </div>
+        </details>
       </div>
     </div>
     <div class="prog" style="margin-top:16px"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
-    <div class="swipehint"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span></div>`;
+    ${touch ? '' : `<div class="swipehint" role="note"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span>
+      <span><b>1–3</b> pick · <b>Enter</b> file · <b>S</b> skip · <b>U</b> unlike</span></div>`}`;
 }
 
 /** Toggle one playlist in or out of the pending selection for the track on screen. */
@@ -4042,7 +4067,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-1054`,
+    `Betterfy engine score — build 2026-11-15-1109`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -4201,11 +4226,9 @@ const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 function view(c) {
   const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
   const head = `<h1>Engine</h1>
-    <p class="lede">A second opinion that reads nothing but your own playlists. No key, no other website,
-      no genre list written by somebody else — just who you file together, on which label, in what shape
-      of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do — until the
-      score below shows it, blended with today's engine, beating today's engine on your own filing. Then the File
-      screen's picks come from the blend.</p>`;
+    <p class="lede">A second opinion that reads only your own playlists. <b>It files nothing.</b>${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
+      of record, from when. Everything here is what it <i>would</i> do, until the score below shows it, blended with today's engine,
+      beating today's engine on your own filing. Then the File screen's picks come from the blend.</p>`) ?? ''}</p>`;
 
   // Nothing to file into is a setting, not a result: say where it is fixed.
   if (!engineTargets().length) return `${head}
@@ -4470,22 +4493,19 @@ function sourceCard(id, name, state, status, line, body) {
 /** Where genre data and (later) listening come from — moved out of Playlists,
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
-function view({ LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML }) {
+function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
   const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
   return `<h1>Sources</h1>
-    <p class="lede">Where your genre data comes from, and how to fill the gaps.</p>
-    <details class="how"><summary>How this works</summary>
-      <p>Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set covering many
+    <p class="lede">Where your genre data comes from.${infoBtn('sources', 'Genre sources', `<p>Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set covering many
         artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
         Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
         <b>Wrong tags?</b> under it on a Tidy or File row.</p>
       ${genreShare === null ? '' : `<p>Of all the tag weight across your library, <b>${genreShare}%</b> describes a
         sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
-        evidence of genre.</p>`}
-    </details>
+        evidence of genre.</p>`}`)}</p>
     <p class="srccov"><b class="mono">${cov.have.toLocaleString()}</b> of <span class="mono">${cov.total.toLocaleString()}</span>
       artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
 
@@ -4493,11 +4513,7 @@ function view({ LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, lab
     ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
       'Crowd genre tags for the artists the shipped set doesn\'t cover. '
         + (!lfmOwn && lfm ? 'Using Betterfy\'s shared Last.fm key — add your own to raise limits.' : 'Needs a free API key.'),
-      `<div class="rowbtns">
-        <input id="lfmKey" placeholder="Last.fm API key" size="34" value="${esc(lfmOwn)}" aria-label="Last.fm API key">
-        <button class="b" id="saveLfm" data-act="saveLfm">Save key</button>
-        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
-      </div>
+      `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : 'Connect Last.fm'}</button></div>
       <div class="rowbtns"><button class="b p" id="enrich" data-act="enrich" ${lfm ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button></div>`)}
 
     ${sourceCard('wikidata', 'Wikidata', 'ok', 'Free · no key',
@@ -4517,12 +4533,6 @@ function view({ LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, lab
 }
 
 const actions = {
-  saveLfm(c) {
-    const v = c.$('#lfmKey').value.trim();
-    if (v) { c.LS.setItem('bf_lfm', v); c.toast('Key saved.'); }
-    else { c.LS.removeItem('bf_lfm'); c.toast('Key cleared.'); }
-    c.render();
-  },
   saveDiscogs(c) {
     const v = c.$('#discogsKey').value.trim();
     if (v) { c.LS.setItem('bf_discogs', v); c.toast('Token saved.'); }
@@ -4550,6 +4560,7 @@ __mod["web/screens/tidy.mjs"] = (function () {
 const TIDY_SECTIONS = [['misfile', 'Wrong place'], ['dupes', 'Repeats'], ['cross', 'Cross-filed']];
 
 function secDupes(c) {
+  const ib = c.infoBtn ?? (() => '');
   const { R, esc, thumbHTML, cmpTable, shownOf, emptyState, moreButton } = c;
   const exact = R.within.filter(x => x.verdict === 'same-recording');
   const clash = R.within.filter(x => x.verdict !== 'same-recording');
@@ -4562,7 +4573,7 @@ function secDupes(c) {
       `<button class="b sm" data-act="keep" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z => z.id !== o.id).map(z => z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
     </div></div>`).join('') || emptyState('None found', 'Nothing in your library matches this.', { compact: true })}</div>
     ${moreButton(key, list.length)}`;
-  const lede = `<p class="lede">Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>`;
+  const lede = `<p class="lede">Same track twice in one playlist.${ib('tidy-dupes', 'Repeats', '<p>Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>')}</p>`;
   // Both lists empty is one answer, not two grey boxes under two headings.
   if (!exact.length && !clash.length) return `${lede}
     ${emptyState('No repeats', 'None of your playlists has the same track in it twice, as the same recording or as a different cut.')}`;
@@ -4572,9 +4583,10 @@ function secDupes(c) {
 }
 
 function secCross(c) {
+  const ib = c.infoBtn ?? (() => '');
   const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton } = c;
   const a = R.across.filter(x => x.placements.length >= S.crossMin);
-  return `<p class="lede">Tracks in several playlists. Usually deliberate — nothing is preselected. Tap a playlist to remove the track from just that one.</p>
+  return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is preselected.${ib('tidy-cross', 'Cross-filed', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
     <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
       `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-act="cmin" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
     <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
@@ -4611,6 +4623,7 @@ function tidySoundTrack(LIB, id) {
 }
 const TS_BANDS = [['sure', 'HIGH'], ['likely', 'LIKELY']];
 function secSound(c) {
+  const ib = c.infoBtn ?? (() => '');
   const { S, esc, thumbHTML, shownOf, emptyState, moreButton, TSOUND, LIB, tidySoundRows } = c;
   const rows = tidySoundRows();
   const band = S.tsBand ?? 'sure';
@@ -4620,7 +4633,7 @@ function secSound(c) {
   const pct = v => `${Math.round(v * 100)}%`;
   const checked = acc?.scored ? `<p class="sub tsacc">Checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
     acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>` : '';
-  const lede = `<p class="lede">Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn't place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>`;
+  const lede = `<p class="lede">Filed in one playlist, but it sounds like another.${ib('tidy-sound', 'Sounds wrong', '<p>Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn\'t place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>')}</p>`;
   if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true }) + (c.skeleton ? c.skeleton('rows', 3) : '');
   if (TSOUND.status === 'error' && !TSOUND.res) return lede + emptyState('Couldn’t compare by sound', esc(TSOUND.err ?? ''), { compact: true });
   const m = rows.filter(x => x.band === band);
@@ -4647,6 +4660,7 @@ function secSound(c) {
 }
 
 function secMisfile(c) {
+  const ib = c.infoBtn ?? (() => '');
   const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton, tagChips, tagEditorHTML, store, getListening } = c;
   const LISTENING_CACHE = c.LISTENING_CACHE, LISTENING_PENDING = c.LISTENING_PENDING;
   const counts = { high: 0, medium: 0, low: 0 };
@@ -4662,7 +4676,7 @@ function secMisfile(c) {
   // Only draw the (stateful, id-bearing) editor once, even if the artist
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
-  return `<p class="lede">Filed somewhere that fits far worse than another playlist <b>on the same axis</b>. Each row is a move, not a score — and every one of them lands in History.</p>
+  return `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p>')}</p>
     ${R.misfiled.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
       `<button type="button" aria-pressed="${S.mfBand === b}" data-act="mfb" data-mfb="${b}">${mfBandChip(c, b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
     <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
@@ -4947,7 +4961,7 @@ function view(c) {
           <span class="plmeta"><span class="mono">${s.n}</span> tracks · ${esc(s.why)}</span></span></button>`).join('')}</div>
     </section>` : '';
   return `<h1>Library</h1>
-    <p class="lede">Your playlists and how Betterfy treats each. Tap one for its axis, health and shuffle.</p>
+    <p class="lede">Tap a playlist for its axis, health and shuffle.</p>
     ${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
@@ -5085,7 +5099,7 @@ function view(ctx) {
   S.shufOrder = mix && !mix.pending ? mix.order : mix ? [] : order;
   S.shufOrderMode = mix && !mix.pending ? S.shufMode : null;
   return `<h1>Shuffle</h1>
-    <p class="lede">Spotify's shuffle clusters artists. This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>
+    <p class="lede">Spotify's shuffle clusters artists; this spaces them out.${ctx.infoBtn?.('shuffle', 'Shuffle', `<p>This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>`) ?? ''}</p>
     <p class="lede" style="margin-top:-8px">${allSongs
       ? `Shuffling from <b>${esc(allSongs.name)}</b> by default — everything in your library, kept in one place.`
       : `No single playlist has everything you own yet.`}
@@ -5103,11 +5117,11 @@ function view(ctx) {
         <div class="d">${good.minGap === 1 ? 'slot' : 'slots'} minimum, ${good.within3 ? `${good.within3} ${good.within3 === 1 ? 'pair' : 'pairs'} within three` : 'nothing within three'}, average gap ${good.avgGap}</div></div>
     </div>
     <p class="lede" style="margin:-10px 0 20px; font-size:14px">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
-    <h2>Order</h2>
+    <details class="how orderprev"><summary>Preview the order</summary>
     <div class="order">${order.slice(0,40).map((t,i) => `<div data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
-      <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;
+      <span class="a">${esc(artistOf(t))}</span></div>`).join('')}</div></details>` : emptyState('Pick a playlist', 'Anything with eight tracks or more can be re-spaced.')}`;
 }
 
 
@@ -5174,20 +5188,17 @@ __mod["web/screens/discover.mjs"] = (function () {
 function view(ctx) {
   const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
+  const ib = ctx.infoBtn ?? (() => '');
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
   const hasKey = !!lfmKey();
   const head = `<h1>Discover</h1>
-    <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
-      <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
+    <p class="lede">New music, with everything you already own taken out.${ib('discover', 'Discover', `<p>Every artist and track you already own is subtracted before ranking, including each artist named inside a collaboration, so nothing here recycles your library.</p>
+      <p><b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>`)}</p>
     ${hasKey ? '' : `<div class="note discnokey">
       <b>No key needed.</b> Picks come from Deezer's and ListenBrainz's “fans also like” for the artists you play${discListenOn() ? ', then ranked by how they sound' : ''}.
-      A free Last.fm key adds its own similar artists and genre tags; it's saved on this device.
-      <div class="rowbtns" style="margin-top:8px">
-        <input id="lfmKeyDisc" placeholder="Last.fm API key (optional)" size="34">
-        <button class="b" data-act="saveLfmDiscover" id="saveLfmDiscover">Save key &amp; find new music</button>
-        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
-      </div>
+      A free Last.fm key adds its own similar artists and genre tags.
+      <div class="rowbtns" style="margin-top:8px"><button class="b" type="button" data-lfmconnect>Connect Last.fm</button></div>
     </div>`}
     <div class="rowbtns" style="margin-bottom:16px">
       <select data-act="discPl" id="discPl">
@@ -5262,15 +5273,6 @@ function view(ctx) {
 
 const actions = {
   discRun: ({ S, runDiscovery }) => runDiscovery(S.discSeed || null),
-  // Saving the key and finding new music are one action: a first-time listener
-  // never has to go looking for the key.
-  saveLfmDiscover({ S, LS, $, toast, runDiscovery }) {
-    const v = $('#lfmKeyDisc')?.value.trim();
-    if (!v) return toast('Paste a Last.fm key first.');
-    LS.setItem('bf_lfm', v);
-    toast('Key saved — finding new music…');
-    return runDiscovery(S.discSeed || null);
-  },
   discPl({ S }, el) { S.discSeed = el.value; },
   discAnyPl(ctx, el) { if (el.value) return discAdd(ctx, el.value); },
   dfile(ctx, el) { return discAdd(ctx, el.dataset.dfile); },
@@ -5434,11 +5436,11 @@ function proposalCard(c, p) {
 
 function view(c) {
   const { R, esc, emptyState } = c;
+  const ib = c.infoBtn ?? (() => '');
   const head = `<h1>New playlists</h1>
-    <p class="lede">Playlists you could make from music you already have.</p>
-    <details class="how"><summary>How this works</summary><p>Genres you have music in but no playlist for,
+    <p class="lede">Playlists you could make from music you already have.${ib('new', 'New playlists', `<p>Genres you have music in but no playlist for,
       playlists that are really two genres, and groups in your backlog that fit nothing you have. Nothing moves:
-      creating makes a new private playlist holding a copy of the tracks.</p></details>`;
+      creating makes a new private playlist holding a copy of the tracks.</p>`)}</p>`;
   const g = gapsSections(c);
   const clusterRows = R.clusters.map((x,i)=>`<div class="row"><div class="main">
       <div class="ttl">${x.size} tracks · ${esc(x.tags.slice(0,4).join(', '))}</div>
@@ -5936,7 +5938,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-1054';
+const BUILD = '2026-11-15-1109';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -6257,7 +6259,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-1054', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-1109', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -6914,6 +6916,16 @@ const LEGACY_VIEWS = {
   engine:  { section: 'engine' },
   history: { section: 'history' },
 };
+/* ---------- ⓘ: "how this works" lives behind a button, not in the page ----------
+ * One shared helper (docs/BUILD-5-PLAN.md §4.1, UI-F). A screen puts infoBtn()
+ * next to its heading with the title and body; tapping it opens the small
+ * #infoSheet (web/app/sheet.js). The body is kept by id so the markup stays one
+ * short attribute. Screen modules receive it through screenCtx() as ctx.infoBtn. */
+const INFO = {};
+function infoBtn(id, title, html) {
+  INFO[id] = { title, html };
+  return `<button class="info" type="button" data-info="${esc(id)}" aria-label="${esc(title)}: how this works">\u24D8</button>`;
+}
 let toastT;
 function toast(msg, undoFn) {
   const el = $('#toast');
@@ -9288,6 +9300,57 @@ addEventListener('scroll', () => {
   const top = $('#mtop');
   if (top) top.classList.toggle('stuck', scrollY > 4);
 }, { passive: true });
+
+/* ---------- the small info sheet and the one Last.fm connect sheet (UI-F) ----------
+ * Both are a native <dialog>, made on first use: ⓘ opens "how this works" for
+ * the screen it sits on, and a [data-lfmconnect] button opens the single place
+ * a Last.fm key is pasted (Sources and Discover used to have a box each). */
+function infoDialog(title, html) {
+  let d = $('#infoSheet');
+  if (!d) {
+    d = document.createElement('dialog');
+    d.id = 'infoSheet'; d.className = 'infosheet';
+    d.addEventListener('click', e => { if (e.target === d || e.target.closest('[data-infoclose]')) d.close(); });
+    document.body.appendChild(d);
+  }
+  d.setAttribute('aria-label', title);
+  d.innerHTML = `<h2>${esc(title)}</h2><div class="infobody">${html}</div>
+    <div class="rowbtns"><button class="b sm" type="button" data-infoclose>Close</button></div>`;
+  if (!d.open) d.showModal();
+  return d;
+}
+
+/** Save (or clear) the Last.fm key from the connect sheet, then carry on where the person was. */
+function lfmSaveKey(v) {
+  v = (v ?? '').trim();
+  if (v) LS.setItem('bf_lfm', v); else LS.removeItem('bf_lfm');
+  $('#infoSheet')?.close();
+  if (v && view === 'discover') { toast('Key saved — finding new music…'); return runDiscovery(S.discSeed || null); }
+  toast(v ? 'Key saved.' : 'Key cleared.');
+  render(); if (typeof underHoodRefresh === 'function') underHoodRefresh();
+}
+function lfmConnect() {
+  const own = LS.getItem('bf_lfm') || '';
+  const d = infoDialog('Connect Last.fm', `<p>A free Last.fm key adds crowd genre tags and similar artists. It is saved on this device only${
+      !own && lfmKey() ? ', and replaces Betterfy’s shared key' : ''}.</p>
+    <div class="rowbtns"><input id="lfmKey" placeholder="Last.fm API key" size="30" value="${esc(own)}" aria-label="Last.fm API key" autocomplete="off">
+      <button class="b p" id="saveLfm" type="button">Save key</button>
+      <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a></div>`);
+  d.querySelector('#saveLfm').onclick = () => lfmSaveKey(d.querySelector('#lfmKey').value);
+  d.querySelector('#lfmKey').addEventListener('keydown', e => { if (e.key === 'Enter') lfmSaveKey(e.target.value); });
+}
+
+addEventListener('click', e => {
+  const i = e.target.closest?.('[data-info]');
+  if (i) { e.preventDefault(); e.stopPropagation(); const n = INFO[i.dataset.info]; if (n) infoDialog(n.title, n.html); return; }
+  if (e.target.closest?.('[data-lfmconnect]')) lfmConnect();
+}, true);
+
+/* `?` shows the keyboard hint on File, on a desktop with a real pointer only; it never exists on touch. */
+document.addEventListener('keydown', e => {
+  if (e.key !== '?' || e.target.matches?.('input,select,textarea') || !matchMedia('(hover:hover) and (pointer:fine)').matches) return;
+  document.body.classList.toggle('showkeys');
+});
 /* ---------- router (docs/BUILD-5-PLAN.md A6, fixes B9) ----------
  * One history entry per screen and per open sheet, so the browser's and
  * Android's back button closes a sheet first and then walks back through the
@@ -9423,7 +9486,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-1054';
+    s.src = 'engine.js?v=2026-11-15-1109';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -9445,7 +9508,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-1054');
+    const w = new Worker('engine-worker.js?v=2026-11-15-1109');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9920,7 +9983,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-1054';
+    s.src = 'audio.js?v=2026-11-15-1109';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -9956,7 +10019,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1054', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1109', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -10690,7 +10753,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1054', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1109', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -10736,12 +10799,11 @@ function audioPanelHTML() {
     <div class="srchead"><h2 id="src-listening-h">Listen to my music</h2><span class="tag ${!set.on ? 'idle' : running || vm.state === 'done' ? 'ok' : 'idle'}">${
       !set.on ? 'Off' : running ? 'Listening' : vm.state === 'done' ? 'Up to date' : 'Paused'}</span></div>
     <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. Off until you switch it on.</p>
-    <details class="how"><summary>How this works</summary>
-      <p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
+    ${infoBtn('listen', 'Listening', `<p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
       30-second preview, found by the track’s ISRC) and remembers what it sounds like. The audio is never stored, only a
       ~2.5 KB summary on this device. Switching it on downloads the listening model once (about 37 MB),
       then about 330 KB per track. “What I’m playing + unfiled” also hears up to 20 tracks from each genre
-      playlist, so there is something to compare the rest against.</p></details>
+      playlist, so there is something to compare the rest against.</p>`)}
     <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioOn" ${set.on ? 'checked' : ''}> Listen to my music</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioWifi" ${set.wifiOnly ? 'checked' : ''}> Wi-Fi only</label>
@@ -10760,11 +10822,6 @@ function audioPanelHTML() {
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
     ${AUDIO.err ? `<p class="sub">${esc(AUDIO.err)}</p>` : ''}
     ${set.on ? deepPanelHTML() : ''}
-    <p class="sub credit">Listening model: Discogs-EffNet and its mood, voice and
-      danceability heads by the Music Technology Group, Universitat Pompeu Fabra
-      (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
-      used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Previews from Deezer.${
-      deepSettings().maest ? ' Second ear: MAEST (discogs-maest-10s-pw-2) by the same group, quantised to int8 for the page, same licence.' : ''}</p>
   </div>`;
 }
 
@@ -10908,7 +10965,7 @@ function analyseHTML() {
   if (ANALYSE.running) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen }))}</span></div>`;
   if (!analyseWanted().any) return '';
   return `<div class="analyse"><button class="b p" id="analyseGo" data-act="analyseGo">Analyse my library</button>
-    <span class="d">Reads tags and listens to your liked songs, then suggests where each one goes. Nothing is written to Spotify until you tap.</span></div>
+    ${LS.getItem('bf_analysed') ? '' : `<span class="d">Reads tags and listens to your liked songs, then suggests where each goes.</span>`}</div>
     <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
 }
 /* ---------- screen modules (docs/BUILD-5-PLAN.md A4) ----------
@@ -10940,7 +10997,7 @@ const SCREEN_CTX = {
 };
 
 /** The ctx a screen module is given, built fresh each time so it never goes stale. */
-const screenCtx = name => SCREEN_CTX[name]();
+const screenCtx = name => Object.assign(SCREEN_CTX[name](), { infoBtn: typeof infoBtn === 'function' ? infoBtn : undefined });
 
 /** The VIEWS entry for a migrated screen. */
 function screenView(name) { return () => SCREEN_MODS[name].view(screenCtx(name)); }

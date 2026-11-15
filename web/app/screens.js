@@ -27,7 +27,7 @@ const SCREEN_CTX = {
 };
 
 /** The ctx a screen module is given, built fresh each time so it never goes stale. */
-const screenCtx = name => SCREEN_CTX[name]();
+const screenCtx = name => Object.assign(SCREEN_CTX[name](), { infoBtn: typeof infoBtn === 'function' ? infoBtn : undefined });
 
 /** The VIEWS entry for a migrated screen. */
 function screenView(name) { return () => SCREEN_MODS[name].view(screenCtx(name)); }

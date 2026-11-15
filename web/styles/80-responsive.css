@@ -4,7 +4,6 @@
     .app{min-height:0}
     .mtop{display:flex}
     .fabBar{top:calc(6px + var(--sat)); right:calc(10px + var(--sar))}
-    .swipehint{display:flex}
 
     /* The rail becomes a bottom tab bar: thumb-reachable, and padded out of
        the home-indicator strip rather than sitting under it. */

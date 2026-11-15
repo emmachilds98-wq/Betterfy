@@ -363,11 +363,9 @@ const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 export function view(c) {
   const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
   const head = `<h1>Engine</h1>
-    <p class="lede">A second opinion that reads nothing but your own playlists. No key, no other website,
-      no genre list written by somebody else — just who you file together, on which label, in what shape
-      of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do — until the
-      score below shows it, blended with today's engine, beating today's engine on your own filing. Then the File
-      screen's picks come from the blend.</p>`;
+    <p class="lede">A second opinion that reads only your own playlists. <b>It files nothing.</b>${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
+      of record, from when. Everything here is what it <i>would</i> do, until the score below shows it, blended with today's engine,
+      beating today's engine on your own filing. Then the File screen's picks come from the blend.</p>`) ?? ''}</p>`;
 
   // Nothing to file into is a setting, not a result: say where it is fixed.
   if (!engineTargets().length) return `${head}

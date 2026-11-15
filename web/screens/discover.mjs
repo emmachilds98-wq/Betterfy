@@ -4,20 +4,17 @@
 export function view(ctx) {
   const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
+  const ib = ctx.infoBtn ?? (() => '');
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
   const hasKey = !!lfmKey();
   const head = `<h1>Discover</h1>
-    <p class="lede">Every artist and track you already own is subtracted before ranking — including each artist named inside a collaboration — so nothing here recycles your library.
-      <b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>
+    <p class="lede">New music, with everything you already own taken out.${ib('discover', 'Discover', `<p>Every artist and track you already own is subtracted before ranking, including each artist named inside a collaboration, so nothing here recycles your library.</p>
+      <p><b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>`)}</p>
     ${hasKey ? '' : `<div class="note discnokey">
       <b>No key needed.</b> Picks come from Deezer's and ListenBrainz's “fans also like” for the artists you play${discListenOn() ? ', then ranked by how they sound' : ''}.
-      A free Last.fm key adds its own similar artists and genre tags; it's saved on this device.
-      <div class="rowbtns" style="margin-top:8px">
-        <input id="lfmKeyDisc" placeholder="Last.fm API key (optional)" size="34">
-        <button class="b" data-act="saveLfmDiscover" id="saveLfmDiscover">Save key &amp; find new music</button>
-        <a class="b sm" href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Get a key</a>
-      </div>
+      A free Last.fm key adds its own similar artists and genre tags.
+      <div class="rowbtns" style="margin-top:8px"><button class="b" type="button" data-lfmconnect>Connect Last.fm</button></div>
     </div>`}
     <div class="rowbtns" style="margin-bottom:16px">
       <select data-act="discPl" id="discPl">
@@ -92,15 +89,6 @@ export function view(ctx) {
 
 export const actions = {
   discRun: ({ S, runDiscovery }) => runDiscovery(S.discSeed || null),
-  // Saving the key and finding new music are one action: a first-time listener
-  // never has to go looking for the key.
-  saveLfmDiscover({ S, LS, $, toast, runDiscovery }) {
-    const v = $('#lfmKeyDisc')?.value.trim();
-    if (!v) return toast('Paste a Last.fm key first.');
-    LS.setItem('bf_lfm', v);
-    toast('Key saved — finding new music…');
-    return runDiscovery(S.discSeed || null);
-  },
   discPl({ S }, el) { S.discSeed = el.value; },
   discAnyPl(ctx, el) { if (el.value) return discAdd(ctx, el.value); },
   dfile(ctx, el) { return discAdd(ctx, el.dataset.dfile); },

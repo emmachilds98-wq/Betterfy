@@ -21,9 +21,18 @@
   /* Tinted glow under the card, matching whichever way it is being pushed. */
   .swipecard.to-file{box-shadow:0 0 0 2px var(--ok), 0 12px 30px color-mix(in srgb, var(--ok) 30%, transparent)}
   .swipecard.to-skip{box-shadow:0 0 0 2px var(--line-2), var(--shadow-2)}
+  /* Keyboard hint: desktop with a fine pointer only, and only after `?` (UI-F). */
   .swipehint{display:none; gap:14px; justify-content:center; margin-top:14px; color:var(--ink-3); font-size:11.5px;
              letter-spacing:.02em; flex-wrap:wrap}
   .swipehint b{font-weight:600; color:var(--ink-2)}
+  @media (hover:hover) and (pointer:fine){ body.showkeys .swipehint{display:flex} }
+  /* The File card's quiet extras: Unlike and Add another playlist. */
+  details.cardmore{margin-top:10px; text-align:center}
+  details.cardmore>summary{display:inline-flex; list-style:none; cursor:pointer; padding:4px 14px; border-radius:var(--r);
+       color:var(--ink-3); font-size:20px; line-height:1; letter-spacing:.1em}
+  details.cardmore>summary::-webkit-details-marker{display:none}
+  details.cardmore>summary:hover, details.cardmore[open]>summary{color:var(--ink); background:var(--surface-2)}
+  details.cardmore .rowbtns{justify-content:center; margin-top:8px}
   .counter{display:flex; align-items:center; justify-content:space-between; gap:6px 12px; margin-top:14px;
            flex-wrap:wrap; font-family:var(--mono); font-size:11.5px; color:var(--ink-3)}
   /* ---- the sound layer's slots on the File and Discover cards (UI-4) ----
