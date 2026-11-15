@@ -90,9 +90,10 @@ and can fill the gaps in your browser given a free
 [Last.fm key](https://www.last.fm/api/account/create) — paste the **API key**
 only; Betterfy only ever reads public tag data, so the shared secret that
 comes with a Last.fm app is not needed anywhere in this project. The
-**Discover** screen asks for the same key inline the first time you open it,
-so a first-time listener never has to go hunting for the Playlists screen
-just to get started. A free
+**Discover** screen works without it: with no key, its candidates come from
+Deezer's and ListenBrainz's "fans also like" for the artists you play (keyless,
+the same lookups the Engine screen's neighbour bridge makes, cached together),
+and a key only adds Last.fm's own similar artists and tags. A free
 [Discogs token](https://www.discogs.com/settings/developers), also on
 Playlists, is optional and only ever fills an artist Last.fm has nothing on
 at all — a real Last.fm tag always wins.
@@ -640,9 +641,13 @@ guess, and everything downstream reads the file, not the rules.
 
 With **Listen to my music** on (Sources, or the File screen's prompt), the File
 screen files a heard track by **how it sounds**, not by who made it. Its picks
-come from the account-native engine with sound leading: a small model trained
-on each genre playlist's own heard tracks, the playlist it sounds nearest, and
-only then the artist graph. That graph now learns from **genre playlists
+come from the account-native engine with sound leading: each genre playlist's
+sound prototype (the average of your own heard tracks in it, nudged toward a
+track you file there and away from one you turn down), the playlist it sounds
+nearest, and only then the artist graph. In the app the learner is prototypes
+only: no model is fitted to your playlist membership
+(`docs/BUILD-5-PLAN.md` §2 item 3). The logistic-regression variant in
+`core/intrinsic/audio-learn.mjs` is kept for offline measurement only. That graph now learns from **genre playlists
 only**, so a mood playlist or a one-night event playlist can't teach that a
 jungle artist and a house artist "go together". The tag engine's best pick
 stays on the card as the third choice. A track not heard yet (or with no
@@ -683,7 +688,9 @@ tracks a track could be beatmatched with (Rekordbox data wins where present).
 The Score run measures naming on tracks you've already filed ("Naming genres
 by sound": genre and sub-genre right, model alone vs with your library, and how
 often the tempo fits the playlist's genre). All of it is nearest-neighbour
-lookups and counts on your own heard tracks: nothing is trained or shared.
+lookups and counts on your own heard tracks, plus the per-playlist prototypes
+above (averages of your own heard tracks): no model is fitted to your playlist
+membership, and nothing is shared.
 
 ## Design decisions worth knowing
 
@@ -862,7 +869,12 @@ lookups and counts on your own heard tracks: nothing is trained or shared.
   track would fit — ranked by the same model the inbox files with, since
   discovery also pulls the new artist's Last.fm tags. Take the suggestion or
   overrule it from the dropdown; either way the track is added and the card
-  moves on.
+  moves on. With **Listen to my music** on, the picks are heard too (ISRC →
+  Deezer preview, kept in memory, never in your library's store) and the cards
+  still to come are re-ranked by how close each sounds to the seed — calibrated
+  so 100% means "as close as the seed's own tracks are to each other". A heard
+  pick also gets playlists by sound (the filed tracks it sounds like vote), so
+  a pick with no tags can still be offered somewhere (`core/audio/discover.mjs`).
 - **Shuffle spaces artists rather than randomising.** Uniform random clumps; the
   greedy max-spacing interleave takes the artist with the most tracks left,
   skipping any used within a cooldown window. Artists are indexed by how many

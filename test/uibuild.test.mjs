@@ -51,3 +51,34 @@ test('every sound renderer exists, is bundled as a global, and renders nothing w
   assert.match(BUNDLE, /Object\.assign\(globalThis, __mod\["web\/ui\/sound\.mjs"\]\)/);
   assert.equal(sound.SOUND_UI_VERSION, 1);
 });
+
+test('the motion tokens are defined once, with the values BUILD-5-PLAN §4.2 gives', () => {
+  const tokens = read('web/styles/00-tokens.css');
+  const want = {
+    '--dur-1': '120ms', '--dur-2': '200ms', '--dur-3': '300ms', '--dur-4': '450ms',
+    '--ease-out': 'cubic-bezier(.2,.7,.3,1)', '--ease-in': 'cubic-bezier(.4,0,1,1)', '--ease-std': 'cubic-bezier(.3,0,.2,1)',
+    '--ease-spring': 'linear(0,.106,.325,.556,.748,.886,.972,1.018,1.036,1.038,1.031,1.022,1.014,1.007,1.003,1)',
+    '--ease-bounce': 'linear(0,.166,.493,.802,1.011,1.109,1.124,1.095,1.053,1.016,.994,.985,.985,.989,.995,.999,1)',
+    '--slide': '24px',
+  };
+  for (const [name, value] of Object.entries(want)) {
+    const defs = [...tokens.matchAll(new RegExp(`${name}:([^;]+);`, 'g'))].map(m => m[1].trim());
+    assert.deepEqual(defs, [value], `${name} defined once as ${value}`);
+  }
+});
+
+test('transitions and animations use the motion tokens where the value is the same', () => {
+  // The named curve and the four durations are written once, in 00-tokens.css;
+  // a partial that types them out again has drifted from the system.
+  for (const f of PARTIALS.filter(f => f !== '00-tokens.css')) {
+    const css = read(`web/styles/${f}`);
+    assert.doesNotMatch(css, /cubic-bezier\(\.2,\s*\.7,\s*\.3,\s*1\)/, `${f}: use var(--ease-out)`);
+    for (const m of css.matchAll(/(?:transition|animation)(?:-duration)?:([^;}]*)/g))
+      assert.doesNotMatch(m[1], /(?:^|[\s,])(?:0?\.12s|0?\.2s|0?\.3s|0?\.45s|120ms|200ms|300ms|450ms)\b/,
+        `${f}: "${m[0].trim()}" has a duration that is a --dur-* token`);
+  }
+});
+
+test('the template has one empty-state style: only the File screen\'s "done" box is not .empty-state', () => {
+  assert.deepEqual(TEMPLATE.match(/class="empty[ "][^"]*"?/g), ['class="empty done"']);
+});

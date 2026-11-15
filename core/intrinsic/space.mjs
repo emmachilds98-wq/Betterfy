@@ -258,6 +258,14 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
  *                      the track, giving destination id → probability as a
  *                      Map, an object or [[id, p], …], or null when unheard.
  *
+ *   { model }          'prototype' | 'logistic' | 'auto': which model the
+ *                      trainer fits, handed to it as `{ model }` (its
+ *                      LEARN_DEFAULTS override). The hosted page and its
+ *                      worker always pass 'prototype' (BUILD-5-PLAN §2.3):
+ *                      per-playlist averages of the account's own heard
+ *                      tracks, no regression fitted. Unset, the trainer's
+ *                      own default, exactly as before.
+ *
  * `learn` defaults to WP-L1's `trainLearner` (core/intrinsic/audio-learn.mjs);
  * pass `learn: false` for the centroid alone.
  *
@@ -267,7 +275,7 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
 function audioLayer(audio, destinations, skip) {
   if (!audio) return {};
   const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
-    && ('records' in audio || 'index' in audio || 'learn' in audio || 'feedback' in audio) ? audio : { records: audio };
+    && ('records' in audio || 'index' in audio || 'learn' in audio || 'feedback' in audio || 'model' in audio) ? audio : { records: audio };
   // `ear` (WP-C1): which ear the index hears with; absent is the first ear, as before.
   const index = opts.index instanceof Map ? opts.index
     : audioIndex(opts.records, { mel: opts.mel, ...(opts.ear ? { ear: opts.ear } : {}) });
@@ -281,7 +289,8 @@ function audioLayer(audio, destinations, skip) {
   if (typeof learn === 'function' && layer.profiles.size) {
     // WP-L2: the listener's verdicts, and the fold they must not reach.
     const fb = opts.feedback ? { skip: skip ?? null, feedback: opts.feedback } : {};
-    const learner = learn({ index, profiles: layer.profiles, minMembers: layer.minMembers, ...fb });
+    const args = { index, profiles: layer.profiles, minMembers: layer.minMembers, ...fb };
+    const learner = opts.model ? learn(args, { model: opts.model }) : learn(args);
     const fn = typeof learner?.learnedScores === 'function' ? t => learner.learnedScores(t)
              : typeof learner === 'function' ? learner : null;
     if (fn) out.learned = fn;

@@ -28,23 +28,25 @@ function sandbox({ choice = null, fb = {}, deep = { maest: true, clap: false, me
   const ctx = vm.createContext({ atob, btoa, console, Float32Array, Uint8Array, Map, Set, JSON, Math, Object, Array, Number, String,
     LS: { getItem: k => ls.get(k) ?? null, setItem: (k, v) => ls.set(k, v) },
     navigator: { connection: { type: 'wifi' }, deviceMemory: mem },
-    esc: s => String(s), FB: fb, ENG: { calib: choice ? { soundChoice: choice } : null },
+    esc: s => String(s), FB: fb, ENGINE_LEARN_MODEL: 'prototype', ENG: { calib: choice ? { soundChoice: choice } : null },
     AUDIO: { wifiOk: false, maestVm },
     audioSettings: () => ({ on: true, wifiOnly: true, scope: 'playing+unfiled' }) });
   ctx.globalThis = ctx;
   vm.runInContext(AUDIO_JS, ctx);
   const deepSettingsFn = slice('function deepSettings()', '/** Load the bundle, open the store', 'deepSettings');
-  vm.runInContext(deepSettingsFn + DEEP + ENGINE_IN + ';globalThis.T = { engineAudioIn, engineAudioScore, engineEar, deepPanelHTML };', ctx);
+  vm.runInContext(deepSettingsFn + DEEP + ENGINE_IN.replace(/const ENGINE_LEARN_MODEL = [^;]+;/, '') + ';globalThis.T = { engineAudioIn, engineAudioScore, engineEar, deepPanelHTML };', ctx);
   return ctx.T;
 }
 
 test('page: no Score verdict, the engine hears with the first ear exactly as before', () => {
   const recs = [rec('a', true), rec('b', false)];
   const T = sandbox();
-  assert.equal(T.engineAudioIn(recs), recs, 'the very same array: nothing added');
+  const a = T.engineAudioIn(recs);
+  assert.deepEqual(Object.keys(a), ['records', 'model'], 'no ear key: exactly what main passed');
+  assert.equal(a.records, recs);
   assert.equal(T.engineEar(recs), 'effnet');
   const withFb = sandbox({ fb: { a: { rejected: ['p'] } } }).engineAudioIn(recs);
-  assert.deepEqual(Object.keys(withFb), ['records', 'feedback']);
+  assert.deepEqual(Object.keys(withFb), ['records', 'model', 'feedback']);
   assert.equal(T.engineAudioIn(null), null);
 });
 
@@ -54,14 +56,15 @@ test('page: a passed Score choice for the second ear hands the engine that ear',
   const a = T.engineAudioIn(recs);
   assert.equal(a.ear, 'maest');
   assert.equal(a.records, recs);
-  assert.equal(sandbox({ choice: { ear: 'maest', gate: { pass: false } } }).engineAudioIn(recs), recs);
+  assert.equal(sandbox({ choice: { ear: 'maest', gate: { pass: false } } }).engineAudioIn(recs).ear, undefined);
   assert.equal(T.engineAudioIn([rec('b', false)]).ear, undefined, 'no second-ear records: the first ear');
 });
 
 test('page: the Score run gets the arms only when some records have a second ear, and never an ear', () => {
   const T = sandbox({ choice: { ear: 'maest', gate: { pass: true } } });
   const plain = [rec('b', false)];
-  assert.equal(T.engineAudioScore(plain), plain);
+  assert.equal(T.engineAudioScore(plain).arms, undefined);
+  assert.deepEqual(T.engineAudioScore(plain), T.engineAudioIn(plain));
   const s = T.engineAudioScore([rec('a', true), rec('b', false)]);
   assert.deepEqual([...s.arms], ['maest', 'both']);
   assert.equal(s.ear, undefined, 'the Score run always scores the first ear as its first arm');

@@ -66,6 +66,20 @@
     --ev-tags:var(--m4); --ev-history:var(--m0); --ev-sound:var(--m2); --ev-learned:var(--m3);
     --tabh:60px;                       /* bottom tab bar, excluding the inset */
     --topbar:52px;                     /* mobile header, excluding the inset */
+    /* Motion (docs/BUILD-5-PLAN.md §4.2). Four durations and the curves that
+       go with them, so every transition in the app agrees on what "quick"
+       and "a screen change" mean. Same in both themes. Springs and the bounce
+       are for transform only, never opacity. */
+    --dur-1:120ms;  /* press, hover, colour */
+    --dur-2:200ms;  /* chips, toggles, toast, fades */
+    --dur-3:300ms;  /* screen change, sheet, row add/remove */
+    --dur-4:450ms;  /* shared element, deck promote */
+    --ease-out:cubic-bezier(.2,.7,.3,1);   /* the existing curve, named */
+    --ease-in:cubic-bezier(.4,0,1,1);      /* exits */
+    --ease-std:cubic-bezier(.3,0,.2,1);    /* moves on screen */
+    --ease-spring:linear(0,.106,.325,.556,.748,.886,.972,1.018,1.036,1.038,1.031,1.022,1.014,1.007,1.003,1);
+    --ease-bounce:linear(0,.166,.493,.802,1.011,1.109,1.124,1.095,1.053,1.016,.994,.985,.985,.989,.995,.999,1);
+    --slide:24px;
   }
   /* Nightshift. Warm near-black rather than the blue-black it was, so the
      amber end of the mark and the accent don't fight the ground. */

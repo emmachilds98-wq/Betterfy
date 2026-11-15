@@ -72,11 +72,18 @@ async function shoot(b, FORM, THEME) {
   await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
   await pg.waitForSelector('#app:not([hidden])', { timeout: 30000 });
   await pg.waitForTimeout(800);
+  // A full-page screenshot resizes the emulated screen and Chromium drops the
+  // touch emulation with it: every phone screen after the first then matched
+  // (hover:hover) and (pointer:fine), showing the keyboard hint and hiding the
+  // touch-only controls. Turned back on after each shot.
+  const cdp = FORM === 'phone' ? await ctx.newCDPSession(pg) : null;
+  const touchBack = () => cdp?.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   const views = ['home','inbox','tidy','discover','shuffle','new','lists','sources','engine','history'];
   for (const v of views) {
     await pg.evaluate(v => { try { go(v); } catch (e) { console.log(e); } }, v);
     await pg.waitForTimeout(v === 'engine' ? 2500 : 700);
     await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-${v}.png`), fullPage: true });
+    await touchBack();
   }
   // Home again with a ListenVM fixture (UI-5): the fifth "Heard" card and the
   // listening indicator in the chrome. Until UI-2's listenPill() ships (it
