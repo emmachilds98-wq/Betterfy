@@ -181,6 +181,13 @@ self.onmessage = function (e) {
                                                   ? BetterfyIntrinsic.SOUND_FIRST_WEIGHTS : null });
       result = { mine: BetterfyValidate.placementAccuracy(m.lib, common),
                  base: m.tags ? BetterfyBaseline.baselineAccuracy(m.lib, m.tags, common) : null };
+      // Tags and this engine (with similar artists when there were any) blended
+      // per track, one weight fitted on held-out folds (plan phase 1). The tag
+      // rows are only for this, so they don't cross back to the page.
+      try { result.blend = BetterfyBlendScore.blendFromRun(m.lib, { base: result.base, mine: result.mine,
+              folds: common.folds, targets: common.targets, isMirror: isMirror }); }
+      catch (e) { result.blend = null; }
+      if (result.base) delete result.base.rows;
       // How well it names genres by sound, on the same filed tracks.
       try { result.identify = m.audio ? BetterfyIdentify.identifyAccuracyFor(m.lib, m.audio,
               { targets: m.targets || null, isMirror: isMirror }) : null; }

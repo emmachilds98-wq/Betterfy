@@ -194,3 +194,18 @@ export function bridgeScores(track, space) {
   for (const [d, v] of votes) votes.set(d, v / mass);
   return votes;
 }
+
+/**
+ * A space with a bridge let in, without rebuilding it: the File screen's blend
+ * (docs/SMARTER-GENRES-PLAN.md phase 1) takes the space the engine already
+ * learned and cached, and adds the neighbours gathered since. The same two keys
+ * `buildSpace(…, { bridge })` adds, from the same functions, so the two cannot
+ * disagree. A copy: the space passed in is shared with the sound-first picks
+ * and the Engine screen, which must not start hearing the bridge by accident.
+ * With nothing in the bridge, the space comes back as it was.
+ */
+export function withBridge(space, bridge) {
+  const idx = bridge ? bridgeIndex(bridge) : null;
+  if (!space?.destinations || !idx?.size) return space;
+  return { ...space, bridge: idx, artistHomes: artistHomes(space.destinations) };
+}

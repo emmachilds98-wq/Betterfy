@@ -382,6 +382,8 @@ document.addEventListener('change', guard(async e => {
   if (e.target.id === 'discPl') { S.discSeed = e.target.value; return; }
   if (e.target.id === 'bridgeToggle') {
     if (e.target.checked) LS.removeItem('bf_bridge_off'); else LS.setItem('bf_bridge_off', '1');
+    // File's blend reads the switch on every pick; this lets it re-check from the start.
+    if (typeof blendForget === 'function') blendForget();
     return;
   }
   if (e.target.id === 'discAnyPl' && e.target.value) return discAdd(e.target.value);

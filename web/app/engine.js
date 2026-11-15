@@ -4,10 +4,12 @@
  * you file together, which label, what shape of record, what era — with no key,
  * no second website and no genre list written by somebody else.
  *
- * It is a shadow, by the owner's explicit choice: nothing here writes to Spotify
- * and nothing here changes what the File screen suggests. The point is to be able
- * to judge it before it is allowed near anybody's library. See
- * docs/THINKING-ENGINE-PLAN.md, phases 5 and 6.
+ * It is a shadow, by the owner's explicit choice: nothing here writes to Spotify,
+ * and the File screen only takes picks from it (blended with the tag engine,
+ * app/blend.js) once this account's own Score run shows the blend ahead. The
+ * point is to be able to judge it before it is allowed near anybody's library.
+ * See docs/THINKING-ENGINE-PLAN.md, phases 5 and 6, and
+ * docs/SMARTER-GENRES-PLAN.md phase 1.
  * ======================================================================== */
 
 /** Fetched on first use, so a listener who never opens this screen never pays

@@ -86,12 +86,20 @@ const engineValidate = guard(async () => {
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
+      // The two blended per track, as the worker does (plan phase 1).
+      let blend = null;
+      try { blend = base ? BetterfyBlendScore.blendFromRun(LIB, { base, mine, folds: common.folds,
+              targets: common.targets, isMirror: isMirrorPlaylist }) : null; }
+      catch { blend = null; }
+      if (base) delete base.rows;
       let identify = null;
       try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
       catch { identify = null; }
-      ENG.val = { mine, base, identify, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      ENG.val = { mine, base, blend, identify, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     await engineCalibrate(ENG.val);
+    // Kept for the File screen, which uses the blend only if this says it is ahead.
+    await blendRemember(ENG.val);
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }
@@ -312,6 +320,7 @@ function engineSummary() {
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
     v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
     ...bridgeLines(v, pc),
+    ...blendLines(v, pc),
     ...audioLines(v, pc),
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
@@ -337,6 +346,51 @@ function bridgeLines(v, pc) {
     `Lookups took ${((v.bridgeMs ?? 0) / 1000).toFixed(1)}s${st.fromCache ? `, ${st.fromCache} remembered from before` : ''}`,
     verdict ? `Phase 0: ${verdict.pass === true ? 'PASS' : verdict.pass === false ? 'not yet' : 'undecided'} — ${verdict.text}` : null,
   ].filter(Boolean);
+}
+
+/** The blend's part of the pasteable summary (plan phase 1). Counts and rates only. */
+function blendLines(v, pc) {
+  const b = v.blend;
+  if (!b) return v.base ? [] : ['Blended: not scored (no tag data loaded)'];
+  const nf = b.neverFiled;
+  const folds = Object.values(b.foldWeights ?? {}).join(', ');
+  return [
+    `Blended (tags ${b.weight} + this engine${b.withBridge ? ' with similar artists' : ''}): top-1 ${pc(b.top1)}, top-3 ${pc(b.top3)}; `
+      + `today's ${pc(b.tags.top1)} / ${pc(b.tags.top3)}, this engine ${pc(b.native.top1)} / ${pc(b.native.top3)} on the same ${b.scored} tracks`
+      + (folds ? ` (weight per fold ${folds})` : ''),
+    nf?.scored ? `Never-filed artists blended: top-1 ${pc(nf.top1)}, top-3 ${pc(nf.top3)} (today's ${pc(nf.tags.top1)}, `
+      + `this engine ${pc(nf.native.top1)}; ${nf.scored} tracks)` : null,
+    `Phase 1: ${blendVerdict(b).short}`,
+  ].filter(Boolean);
+}
+
+/** What the blend's score means for the File screen. */
+function blendVerdict(b) {
+  if (b.beatsTags && b.withBridge) return { on: true, short: 'blend beats tags — File uses it',
+    text: 'The File screen now takes its picks from the blend. Tracks it has heard still lead with sound, and switching off similar artists below goes back to today’s picks.' };
+  if (b.beatsTags) return { on: false, short: 'ahead without similar artists — File unchanged (needs them on)',
+    text: 'Ahead, but this run had no similar artists, and the File screen only uses the blend with them. Switch them on and score again.' };
+  return { on: false, short: 'blend not a point ahead of tags — File unchanged',
+    text: 'Not at least a point ahead of today’s engine on tracks it wasn’t tuned on, so the File screen keeps today’s picks.' };
+}
+
+/** The blended line on the score card. Empty without one. */
+function blendCard(v, p) {
+  const b = v && !v.error ? v.blend : null;
+  if (!b) return '';
+  const nf = b.neverFiled, verdict = blendVerdict(b), names = ['today’s', 'blended'];
+  return `<h3 style="margin:18px 0 6px; font-size:16px">Today’s engine and this one, together</h3>
+    <p class="why">Each playlist gets a score from both engines${b.withBridge ? ' (this one with similar artists)' : ''},
+      each scaled so its best pick is 100%, then mixed: ${Math.round(b.weight * 100)}% tags. The mix is chosen on four
+      folds and scored on the fifth, five times over, so these are tracks it wasn’t tuned on. A track with no tags
+      is placed by this engine alone.</p>
+    <div class="pairs">
+      ${pairBars('Right first time', b.tags.top1, b.top1, p, null, names)}
+      ${pairBars('In the top three', b.tags.top3, b.top3, p, null, names)}
+      ${nf?.scored ? pairBars('Right first time, artists not in any genre playlist yet', nf.tags.top1, nf.top1, p, null, names) : ''}
+    </div>
+    <p class="why gateverdict" style="margin-top:12px"><span class="tag ${verdict.on ? 'ok' : 'idle'}">${verdict.on ? 'used on File' : 'not used'}</span>
+      ${esc(verdict.text)}</p>`;
 }
 
 /** Sound's part of the pasteable summary. Counts and rates only. */
@@ -373,6 +427,9 @@ const engineCopy = guard(async () => {
 const engineReset = guard(async () => {
   try { await idb.del(SPACE_KEY); } catch {}
   try { await idb.del(CAL_KEY); } catch {}
+  // And the blend the File screen was using: it was fitted on what is being forgotten.
+  try { await idb.del(BLEND_KEY); } catch {}
+  blendForget();
   Object.assign(ENG, { status:'idle', space:null, rung:null, shadow:null,
                        pairs:null, val:null, calib:null, ms:0, from:null });
   toast('Cleared. The next analysis rebuilds from your library.');
@@ -386,7 +443,9 @@ function vEngine() {
   const head = `<h1>Engine</h1>
     <p class="lede">A second opinion that reads nothing but your own playlists. No key, no other website,
       no genre list written by somebody else — just who you file together, on which label, in what shape
-      of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do.</p>`;
+      of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do — until the
+      score below shows it, blended with today's engine, beating today's engine on your own filing. Then the File
+      screen's picks come from the blend.</p>`;
 
   // Nothing to file into is a setting, not a result: say where it is fixed.
   if (!engineTargets().length) return `${head}
@@ -542,6 +601,7 @@ function vEngine() {
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
       : 'There is nothing to choose between them on your library.'}</p>` : ''}
     ${bridgeCard(v, p)}
+    ${blendCard(v, p)}
     ${audioCard(v, p)}
     ${v && !v.error ? calibCard(p) : ''}
     ${weakBuckets(v).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>

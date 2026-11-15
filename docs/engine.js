@@ -2666,7 +2666,22 @@ function bridgeScores(track, space) {
   for (const [d, v] of votes) votes.set(d, v / mass);
   return votes;
 }
-return { BRIDGE_VERSION, sourceArtists, libraryNames, bridgeFrom, bridgeIndex, artistHomes, bridgeScores };
+
+/**
+ * A space with a bridge let in, without rebuilding it: the File screen's blend
+ * (docs/SMARTER-GENRES-PLAN.md phase 1) takes the space the engine already
+ * learned and cached, and adds the neighbours gathered since. The same two keys
+ * `buildSpace(…, { bridge })` adds, from the same functions, so the two cannot
+ * disagree. A copy: the space passed in is shared with the sound-first picks
+ * and the Engine screen, which must not start hearing the bridge by accident.
+ * With nothing in the bridge, the space comes back as it was.
+ */
+function withBridge(space, bridge) {
+  const idx = bridge ? bridgeIndex(bridge) : null;
+  if (!space?.destinations || !idx?.size) return space;
+  return { ...space, bridge: idx, artistHomes: artistHomes(space.destinations) };
+}
+return { BRIDGE_VERSION, sourceArtists, libraryNames, bridgeFrom, bridgeIndex, artistHomes, bridgeScores, withBridge };
 })();
 /* ---- core/audio/record.mjs ---- */
 __mod["core/audio/record.mjs"] = (function () {
@@ -6291,7 +6306,7 @@ function libraryWithout(lib, skip) {
  */
 function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = null,
                                               axisOf = null, isMirror = null,
-                                              limit = null } = {}) {
+                                              limit = null, collect = false } = {}) {
   const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
   const truth = truthOf(lib, { isMirror });
 
@@ -6322,6 +6337,10 @@ function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = null,
   }
 
   let scored = 0, top1 = 0, top3 = 0, empty = 0;
+  // `collect`: keep each held-out track's whole ranking, the way
+  // placementAccuracy does, so the Score run can blend the two engines per
+  // track (core/validate/blend.mjs). Off, the result is key for key what it was.
+  const rows = collect ? [] : null;
   for (const [, members] of groups) {
     const skip = new Set(members);
     const held = libraryWithout(lib, skip);
@@ -6332,7 +6351,8 @@ function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = null,
       const want = all ? new Set([...all].filter(pid => allowed.has(pid))) : null;
       if (!want?.size) continue;
       scored++;
-      const ranked = rank(byId.get(id), tags, profiles, idf, { top: 3 });
+      const ranked = rank(byId.get(id), tags, profiles, idf, { top: rows ? Infinity : 3 });
+      if (rows) rows.push({ id, scores: ranked.map(r => [r.id, +r.score.toFixed(5)]), truth: [...want].sort() });
       // v1 returns nothing when a track has no usable tag at all. That is not a
       // decision to abstain — it has no mechanism for one — it is simply the
       // absence of an answer, and it is counted as a miss because a filing tool
@@ -6350,6 +6370,7 @@ function baselineAccuracy(lib, tags, { folds = DEFAULT_FOLDS, targets = null,
     top1: rate(top1, scored),
     top3: rate(top3, scored),
     noAnswer: empty,
+    ...(rows ? { rows } : {}),
     version: BASELINE_VERSION,
   };
 }
@@ -6707,6 +6728,278 @@ async function gatherBridge(artists, { deezer, json, cache = null, onProgress = 
   return { raw, stats };
 }
 return { BRIDGE_FETCH_VERSION, TTL_MS, PACE, QUOTA_WAIT_MS, gatherBridge };
+})();
+/* ---- core/intrinsic/blend.mjs ---- */
+__mod["core/intrinsic/blend.mjs"] = (function () {
+// Blending today's tag engine with the account-native engine (and its
+// neighbour bridge) — docs/SMARTER-GENRES-PLAN.md §4.2(1), phase 1.
+//
+// The two engines are right about different tracks. Tags know what an artist
+// is called by the crowd, so they place a well-tagged artist you have never
+// filed; the account-native engine knows where *you* put that artist's
+// neighbours, so it places the scene artists Last.fm has three listeners for.
+// Rather than pick one, each (track, playlist) gets one score:
+//
+//   blended = w · tag/max(tag) + (1 − w) · native/max(native)
+//
+// Each engine is divided by its own best score for the track first, so the
+// two are on one scale (the leader of each is 1) whatever either's raw range
+// is. `w` is one number per account, fitted on the account's own held-out
+// filing (core/validate/blend.mjs), never a guess.
+//
+// A side with nothing to say for a track (no tags at all, or the engine
+// declined to score any playlist) drops out and the other carries the whole
+// score — the same renormalising rule `combine()` uses for components. So an
+// untagged track still gets the native engine's picks, which is half the point.
+//
+// Pure, and plain arrays in and out, so it runs the same in the worker, on the
+// page and in Node.
+
+const BLEND_VERSION = '1.0.0';
+
+/** The weights on the tag engine the fit tries: 0 (native only) … 1 (tags only). */
+const BLEND_GRID = Object.freeze([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]);
+
+/**
+ * One engine's scores for one track as a Map(playlist id → score ÷ best),
+ * keeping only positive scores. Takes `[[id, score]]` (calibrate's `scoresOf`
+ * shape), `[{id, score}]` (profile.mjs's `rank`), `[{playlistId, score}]`
+ * (space.mjs's `placements`) or a Map. Empty when nothing scored above zero.
+ */
+function normalise(scores) {
+  const pairs = [];
+  if (scores instanceof Map) for (const [id, s] of scores) pairs.push([id, s]);
+  else for (const r of scores ?? []) {
+    if (Array.isArray(r)) pairs.push([r[0], r[1]]);
+    else if (r) pairs.push([r.id ?? r.playlistId, r.score]);
+  }
+  let best = 0;
+  for (const [, s] of pairs) if (Number.isFinite(s) && s > best) best = s;
+  const out = new Map();
+  if (!(best > 0)) return out;
+  for (const [id, s] of pairs) if (id != null && Number.isFinite(s) && s > 0) out.set(String(id), s / best);
+  return out;
+}
+
+/**
+ * The blended ranking for one track: `[[playlist id, score]]`, best first,
+ * ties by id so two runs agree. `w` is the weight on the tag engine.
+ *
+ * A playlist only one engine scored gets 0 from the other. A track only one
+ * engine has anything to say about is ranked by that engine alone.
+ */
+function blendScores(tagScores, nativeScores, w) {
+  const tag = tagScores instanceof Map && isNormalised(tagScores) ? tagScores : normalise(tagScores);
+  const nat = nativeScores instanceof Map && isNormalised(nativeScores) ? nativeScores : normalise(nativeScores);
+  let wt = Number.isFinite(w) ? Math.min(1, Math.max(0, w)) : 0.5;
+  if (!tag.size && !nat.size) return [];
+  if (!tag.size) wt = 0;
+  else if (!nat.size) wt = 1;
+  const ids = new Set([...tag.keys(), ...nat.keys()]);
+  const out = [];
+  for (const id of ids) {
+    const s = wt * (tag.get(id) ?? 0) + (1 - wt) * (nat.get(id) ?? 0);
+    if (s > 0) out.push([id, +s.toFixed(5)]);
+  }
+  return out.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+}
+
+// A Map whose values already lie in (0, 1] with a 1 in it is taken as already
+// normalised, so callers that normalise once and blend at several weights (the
+// fit does, eleven times per track) don't pay for it again.
+const NORMALISED = new WeakSet();
+function isNormalised(m) { return NORMALISED.has(m); }
+
+/** `normalise`, marked so `blendScores` uses it as it is. */
+function normalised(scores) {
+  const m = normalise(scores);
+  NORMALISED.add(m);
+  return m;
+}
+return { BLEND_VERSION, BLEND_GRID, normalise, blendScores, normalised };
+})();
+/* ---- core/validate/blend.mjs ---- */
+__mod["core/validate/blend.mjs"] = (function () {
+const { foldOf, DEFAULT_FOLDS } = __mod["core/validate/loo.mjs"];
+const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
+const { normalised, blendScores, BLEND_GRID, BLEND_VERSION } = __mod["core/intrinsic/blend.mjs"];
+// Held-out accuracy for the blend of the two engines, and the one weight it
+// runs at — docs/SMARTER-GENRES-PLAN.md phase 1.
+//
+// The Score run already ranks every scored track twice over the same folds:
+// once by today's tag engine (`baselineAccuracy(…, { collect: true })`) and
+// once by the account-native engine with its neighbour bridge
+// (`placementAccuracy(…, { collect: true, bridge })`). Both keep the full
+// ranking per track. This joins the two per track and asks one question: at
+// what weight between them does the account's own filing come out best?
+//
+// The weight is fitted honestly. For each fold, it is chosen on the *other*
+// folds' tracks and then scored on this fold's, so the reported number is for
+// tracks the weight was never tuned on — a grid search over eleven values is a
+// fit like any other, and reporting its best in-sample score would flatter it.
+// The weight the File screen then uses is fitted on every track, which is the
+// usual cross-validation bargain: the score describes the procedure, the
+// final fit is the procedure run on everything.
+//
+// No model is trained. It is one number per account, from counts.
+
+
+
+
+const BLEND_ACCURACY_VERSION = '1.0.0';
+
+/**
+ * How far the blend has to beat the tag engine, on held-out tracks, before the
+ * File screen uses it: a point of top-1, with top-3 no more than a point down.
+ * Less than a point on a few hundred tracks is fold noise, and switching an
+ * account's filing over on noise is the thing every phase has refused to do.
+ */
+const BEAT_MARGIN = 0.01;
+
+/** Same as space.mjs's MIN_DEFINITION_TRACKS: a destination needs five members. */
+const MIN_MEMBERS = 5;
+
+const rate = (n, d) => (d > 0 ? +(n / d).toFixed(4) : null);
+
+/**
+ * Which scored tracks are by "never-filed" artists, decided exactly as
+ * `placementAccuracy` decides it: none of the track's artists is in any
+ * destination of the space built without the track's fold. Worked out here
+ * from the library rather than carried on the rows, so the harness's own
+ * output (pinned byte for byte by test/fixtures/space-v4-golden.json) is
+ * unchanged.
+ */
+function neverFiledIds(lib, ids, { folds = DEFAULT_FOLDS, targets = null, isMirror = null } = {}) {
+  const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
+  const allowed = targets ? new Set(targets) : null;
+  const scored = new Set(ids);
+  const byFold = new Map();
+  for (const id of scored) {
+    const f = foldOf(id, folds);
+    if (!byFold.has(f)) byFold.set(f, []);
+    byFold.get(f).push(id);
+  }
+  const trackArtists = new Map();
+  for (const p of lib?.playlists ?? []) for (const t of p.tracks ?? [])
+    if (t?.id && scored.has(t.id) && !trackArtists.has(t.id)) trackArtists.set(t.id, t.artists ?? []);
+  const out = new Set();
+  for (const [, members] of byFold) {
+    const skip = new Set(members);
+    const filed = new Set();
+    for (const p of lib?.playlists ?? []) {
+      if (!p?.id || mirror(p) || (allowed && !allowed.has(p.id))) continue;
+      const kept = (p.tracks ?? []).filter(t => t?.id && !skip.has(t.id));
+      if (kept.length < MIN_MEMBERS) continue;
+      for (const t of kept) for (const a of t.artists ?? []) if (a?.id) filed.add(a.id);
+    }
+    for (const id of members)
+      if (!(trackArtists.get(id) ?? []).some(a => a?.id && filed.has(a.id))) out.add(id);
+  }
+  return out;
+}
+
+/**
+ * @param {Array<{id, scores: [string, number][], truth: string[]}>} tagRows    baseline rows
+ * @param {Array<{id, scores: [string, number][], truth: string[]}>} nativeRows placementAccuracy rows
+ *        (with the bridge when there was one)
+ * @param {object} [opts]
+ * @param {number}   [opts.folds]       the folds the rows were scored with
+ * @param {number[]} [opts.grid]        weights on the tag engine to try
+ * @param {Set<string>} [opts.neverFiled]  ids of tracks by never-filed artists
+ * @returns {null | {scored, weight, top1, top3, tags, native, neverFiled, foldWeights, beatsTags, …}}
+ *          null when there is nothing to join.
+ */
+function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid = BLEND_GRID,
+                                                     neverFiled = null } = {}) {
+  if (!tagRows?.length || !nativeRows?.length) return null;
+  const tagById = new Map(tagRows.map(r => [r.id, r]));
+  // One entry per track both engines were asked about, with each engine's
+  // ranking normalised once and, for every weight on the grid, whether the
+  // blend's first answer (and first three) held a playlist the track is in.
+  const rows = [];
+  for (const n of nativeRows) {
+    const t = tagById.get(n.id);
+    if (!t) continue;
+    const want = new Set(n.truth ?? t.truth ?? []);
+    if (!want.size) continue;
+    const tag = normalised(t.scores), nat = normalised(n.scores);
+    const hits = grid.map(w => {
+      const r = blendScores(tag, nat, w);
+      return [!!r[0] && want.has(r[0][0]), r.slice(0, 3).some(x => want.has(x[0]))];
+    });
+    const top = list => [!!list[0] && want.has(list[0][0]), (list ?? []).slice(0, 3).some(x => want.has(x[0]))];
+    rows.push({ id: n.id, fold: foldOf(n.id, folds), fresh: !!neverFiled?.has(n.id),
+                hits, tag: top(t.scores ?? []), nat: top(n.scores ?? []) });
+  }
+  if (!rows.length) return null;
+
+  // The grid index that does best on `subset`: top-1 first, then top-3, then
+  // the weight nearest today's engine (tags), so a tie never moves anyone off
+  // what they have for nothing.
+  const best = subset => {
+    let bi = -1, b1 = -1, b3 = -1;
+    grid.forEach((w, i) => {
+      let h1 = 0, h3 = 0;
+      for (const r of subset) { if (r.hits[i][0]) h1++; if (r.hits[i][1]) h3++; }
+      if (h1 > b1 || (h1 === b1 && (h3 > b3 || (h3 === b3 && w > grid[bi])))) { bi = i; b1 = h1; b3 = h3; }
+    });
+    return bi;
+  };
+
+  const foldIds = [...new Set(rows.map(r => r.fold))].sort((a, b) => a - b);
+  const foldWeights = {};
+  const all = { n: 0, b1: 0, b3: 0, t1: 0, t3: 0, n1: 0, n3: 0 };
+  const nf = { n: 0, b1: 0, b3: 0, t1: 0, t3: 0, n1: 0, n3: 0 };
+  for (const f of foldIds) {
+    const train = rows.filter(r => r.fold !== f);
+    const test = rows.filter(r => r.fold === f);
+    // A single fold has nothing to train on: fit on itself, which is the most
+    // anyone can do, and the beat test below still compares like with like.
+    const i = best(train.length ? train : test);
+    foldWeights[f] = grid[i];
+    for (const r of test) for (const acc of r.fresh ? [all, nf] : [all]) {
+      acc.n++;
+      if (r.hits[i][0]) acc.b1++;
+      if (r.hits[i][1]) acc.b3++;
+      if (r.tag[0]) acc.t1++;
+      if (r.tag[1]) acc.t3++;
+      if (r.nat[0]) acc.n1++;
+      if (r.nat[1]) acc.n3++;
+    }
+  }
+  const out = acc => ({ scored: acc.n, top1: rate(acc.b1, acc.n), top3: rate(acc.b3, acc.n),
+                        tags: { top1: rate(acc.t1, acc.n), top3: rate(acc.t3, acc.n) },
+                        native: { top1: rate(acc.n1, acc.n), top3: rate(acc.n3, acc.n) } });
+  const head = out(all);
+  const beatsTags = head.top1 != null && head.tags.top1 != null
+    && head.top1 >= head.tags.top1 + BEAT_MARGIN - 1e-9
+    && head.top3 >= head.tags.top3 - BEAT_MARGIN - 1e-9;
+  return {
+    ...head,
+    weight: grid[best(rows)],
+    foldWeights,
+    neverFiled: neverFiled ? out(nf) : null,
+    beatsTags,
+    margin: BEAT_MARGIN,
+    blendVersion: BLEND_VERSION,
+    version: BLEND_ACCURACY_VERSION,
+  };
+}
+
+/**
+ * The whole step, as the Score run calls it: the rows from both engines (the
+ * native side with its bridge when it had one), never-filed worked out the
+ * harness's way, and the fit. Null when either side has no rows (no tags, or
+ * the run was not collecting).
+ */
+function blendFromRun(lib, { base, mine, folds = DEFAULT_FOLDS, targets = null, isMirror = null } = {}) {
+  const nativeRows = mine?.withBridge?.rows ?? mine?.rows ?? null;
+  if (!base?.rows?.length || !nativeRows?.length) return null;
+  const nf = neverFiledIds(lib, nativeRows.map(r => r.id), { folds, targets, isMirror });
+  const r = blendAccuracy(base.rows, nativeRows, { folds, neverFiled: nf });
+  return r ? { ...r, withBridge: !!mine?.withBridge?.rows } : null;
+}
+return { BLEND_ACCURACY_VERSION, BEAT_MARGIN, neverFiledIds, blendAccuracy, blendFromRun };
 })();
 /* ---- core/playlists/name.mjs ---- */
 __mod["core/playlists/name.mjs"] = (function () {
@@ -9538,6 +9831,8 @@ globalThis["BetterfyBridge"] = __mod["core/intrinsic/bridge.mjs"];
 globalThis["BetterfyBridgeFetch"] = __mod["core/intrinsic/bridge-fetch.mjs"];
 globalThis["BetterfyDeezer"] = __mod["core/sources/deezer.mjs"];
 globalThis["BetterfyCalibrate"] = __mod["core/intrinsic/calibrate.mjs"];
+globalThis["BetterfyBlend"] = __mod["core/intrinsic/blend.mjs"];
+globalThis["BetterfyBlendScore"] = __mod["core/validate/blend.mjs"];
 globalThis["BetterfyGaps"] = __mod["core/recommend/gaps.mjs"];
 globalThis["BetterfyAudioGaps"] = __mod["core/recommend/audio-gaps.mjs"];
 globalThis["BetterfyWikidata"] = __mod["core/sources/wikidata.mjs"];

@@ -1708,7 +1708,7 @@ const TP_MAJOR = [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0];
 const TP_MINOR = [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0];
 
 // Faraldo et al. (2016), EDM profiles as Essentia ships them: 'edma' (estimated
-// automatically from EDM) and 'bgate' (Beatport-genre-averaged). On the v2
+// automatically from EDM) and 'bgate' (Beatport-genre-averaged). On the v3
 // measurement they reached ~34% and ~37% exact on their own — better than
 // KK+Temperley (30%) but far from the learned weights below.
 // PROFILES.edm: fitted on the same dataset by PR #106 (scripts/audio-dsp/key-fit.mjs),

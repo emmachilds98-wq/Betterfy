@@ -529,6 +529,30 @@ test('with similar artists on, the score shows both ways, on the same tracks', a
   assert.ok(!/Track \w+|House0|Amb0/.test(text), 'the summary must not leak track or artist names');
 });
 
+test('with tags and similar artists, the score blends the two and keeps the fit for the File screen', async () => {
+  const s = screen({ bridge: true, tags: { 'ar-House0': { tags: [['house', 100]] }, 'ar-Amb0': { tags: [['ambient', 100]] } } });
+  lookups(s);
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  const v = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', s));
+  assert.ok(!v.error, v.error);
+  assert.ok(v.blend, 'docs/SMARTER-GENRES-PLAN.md phase 1: a blended line');
+  assert.equal(v.blend.scored, v.mine.scored, 'over the same tracks');
+  assert.equal(v.blend.withBridge, true);
+  assert.equal(v.base.rows, undefined, 'the tag rows were only for the fit');
+  const kept = vm.runInContext('idb.get("engine-blend")', s);
+  assert.equal(kept.weight, v.blend.weight);
+  assert.equal(kept.beatsTags, v.blend.beatsTags);
+  assert.match(vm.runInContext('vEngine()', s), /Today’s engine and this one, together/);
+  const text = vm.runInContext('engineSummary()', s);
+  assert.match(text, /Blended \(tags [\d.]+ \+ this engine with similar artists\): top-1 \d+%, top-3 \d+%/);
+  assert.match(text, /Phase 1: /);
+  assert.ok(!/undefined|NaN|\[object Object\]/.test(text), text);
+  // Forgetting the engine forgets the fit too.
+  await vm.runInContext('engineReset()', s);
+  assert.equal(vm.runInContext('idb.get("engine-blend")', s), null);
+});
+
 test('what similar artists were found is remembered, so the next score asks nobody', async () => {
   const s = screen({ bridge: true });
   const calls = lookups(s);
