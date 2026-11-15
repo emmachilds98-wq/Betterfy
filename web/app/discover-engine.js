@@ -91,6 +91,35 @@ function rankSeeds(weights, n = 40) {
   return top.map(([name, x]) => ({ name, w: 0.35 + 0.65 * (x / most) }));
 }
 
+/* What this account has told Discover: artists passed on (never offered again) and
+ * artists liked or added from it (extra seeds next run). Kept in this browser's
+ * storage only: not synced, not shared with any other account. */
+const DISC_MEM_KEY = 'bf_disc_mem';
+const DISC_MEM_CAP = 500;
+function discMemory() {
+  try {
+    const m = JSON.parse(LS.getItem(DISC_MEM_KEY) || '{}');
+    return { pass: Array.isArray(m.pass) ? m.pass : [], like: Array.isArray(m.like) ? m.like : [] };
+  } catch { return { pass: [], like: [] }; }
+}
+/** Remember an artist as `pass` or `like` (names, as shown on the card); a pass cancels a like and the reverse. */
+function discRemember(kind, name) {
+  const key = norm(name ?? '');
+  if (!key || (kind !== 'pass' && kind !== 'like')) return;
+  const m = discMemory(), other = kind === 'pass' ? 'like' : 'pass';
+  m[other] = m[other].filter(x => x !== key);
+  m[kind] = [...m[kind].filter(x => x !== key), key].slice(-DISC_MEM_CAP);
+  try { LS.setItem(DISC_MEM_KEY, JSON.stringify(m)); } catch {}
+}
+/** Liked/added artists as extra seeds: each worth half the strongest seed, on top of whatever listening says. */
+function discBoostLiked(weights, liked) {
+  if (!liked.length) return weights;
+  const lead = Math.max(1, ...weights.values());
+  const byKey = new Map([...weights.keys()].map(n => [norm(n), n]));
+  for (const k of liked) { const n = byKey.get(k); if (n != null) weights.set(n, weights.get(n) + lead * 0.5); }
+  return weights;
+}
+
 async function runDiscovery(seedPlaylistId) {
   // No key is not a dead end any more (CLAUDE.md: every account, Spotify
   // library alone): without one, the candidates come from Deezer's and
@@ -103,9 +132,14 @@ async function runDiscovery(seedPlaylistId) {
   for (const p of LIB.playlists) p.tracks.forEach(own);
   LIB.liked.forEach(own);
 
+  // Artists you passed on are treated as owned: the same hard filter, so nothing downstream offers them.
+  const mem = discMemory();
+  for (const k of mem.pass) ownedArtist.add(k);
+
   const src = seedPlaylistId ? LIB.playlists.find(p => p.id === seedPlaylistId) : null;
   if (!src) stage('Reading what you have been playing…', 0.02);
   const weights = src ? playlistSeeds(src) : await listeningSeeds();
+  if (!src) discBoostLiked(weights, mem.like);
   const seeds = rankSeeds(weights);
   if (!seeds.length) { toast('Nothing to seed from.'); return; }
 

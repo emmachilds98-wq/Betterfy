@@ -42,6 +42,27 @@ function describe(rows) {
   return { verdict:'unknown', why:'Same title; no identifier to separate them.' };
 }
 
+/** Merge name-groups whose tracks share an ISRC (union-find over the groups). */
+function mergeByIsrc(groups) {
+  const parent = groups.map((_, i) => i);
+  const find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  const seen = new Map();
+  groups.forEach((rows, i) => { for (const t of rows) if (t.isrc) {
+    if (seen.has(t.isrc)) parent[find(i)] = find(seen.get(t.isrc)); else seen.set(t.isrc, i); } });
+  const out = new Map();
+  groups.forEach((rows, i) => { const r = find(i); if (!out.has(r)) out.set(r, []); out.get(r).push(...rows); });
+  return [...out.values()];
+}
+
+/** How likely a cross-filed track is a mistake, not a choice: two genre playlists is the
+ *  suspicious case, two on another shared axis next, genre plus mood (deliberate) last. */
+function crossSuspicion(placements) {
+  const by = new Map();
+  for (const p of placements) by.set(p.axis, (by.get(p.axis) ?? 0) + 1);
+  if ((by.get('genre') ?? 0) >= 2) return 3;
+  return [...by.values()].some(n => n >= 2) ? 2 : 1;
+}
+
 function buildReports(lib, cfg, tags) {
   // Same gate classify() applies, recomputed fresh here since tags can change
   // mid-session (a fetch, a correction) without cfg being rebuilt.
@@ -68,7 +89,10 @@ function buildReports(lib, cfg, tags) {
       if (!where.has(k)) where.set(k, []);
       where.get(k).push({ playlist:p.name, playlistId:p.id, ...shape(t) });
     }
-    for (const [, rows] of groups) {
+    // Repeats group by ISRC first, then by name: two groups that share a
+    // recording id are the same track filed under two spellings of its title.
+    const merged = mergeByIsrc([...groups.values()]);
+    for (const rows of merged) {
       if (rows.length < 2) continue;
       const shaped = rows.map(shape);
       const d = describe(shaped);
@@ -87,11 +111,20 @@ function buildReports(lib, cfg, tags) {
                                    trackId:r.id, dur:r.dur })),
       mixedReleases: new Set(rows.map(r=>r.id)).size > 1,
       mixedRecordings: new Set(rows.map(r=>r.isrc).filter(Boolean)).size > 1 };
-  }).sort((a,b) => b.placements.length - a.placements.length);
+  });
 
   const targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id));
   const axisOf = id => cfg[id]?.axis ?? null;
   const { profiles, idf } = buildProfiles(lib, tags, targets, axisOf);
+  // Cross-filed, most suspicious first, each with the playlist it fits best as the keeper.
+  for (const x of across) {
+    x.suspicion = crossSuspicion(x.placements);
+    const fit = new Map(rank(meta.get(x.id), tags, profiles, idf, { top: 999 }).map(r => [r.id, r.score]));
+    const genre = x.placements.filter(p => p.axis === 'genre');
+    const pool = x.suspicion === 3 ? genre : x.placements;
+    x.keeper = pool.reduce((best, p) => (fit.get(p.playlistId) ?? -1) > (fit.get(best.playlistId) ?? -1) ? p : best, pool[0]).playlistId;
+  }
+  across.sort((a, b) => (b.suspicion - a.suspicion) || (b.placements.length - a.placements.length));
 
   // Shared with the Node pipeline (misfile.mjs) via profile.mjs, bundled in
   // verbatim — the two builds cannot silently drift into different answers.

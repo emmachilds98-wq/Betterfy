@@ -28,6 +28,6 @@ test('the fit call and the other picks carry band and evidence', () => {
   const html = renderDiscover(t, { renderers: fake });
   assert.match(html, /<div class="sndchip"><span class="SC">172<\/span><\/div>/);
   assert.match(html, /<div class="sndstrip"><span class="SS">1<\/span><\/div>/);
-  assert.match(html, /ranked by the same model the file queue uses<\/span><span class="EB">tags\+sound<\/span><\/span>\s*<span class="BC">AMBIGUOUS<\/span><span class="sc">61% fit/);
+  assert.match(html, /ranked by the same model the file queue uses<\/span><span class="EB">tags\+sound<\/span><\/span>\s*<span class="BC">AMBIGUOUS<\/span><span class="sc">Likely/);
   assert.equal((html.match(/class="BC"/g) ?? []).length, 3);
 });

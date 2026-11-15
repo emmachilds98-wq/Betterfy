@@ -35,18 +35,26 @@ export function secDupes(c) {
     ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash')}`;
 }
 
+/** Why a cross-filed row is ranked where it is: the reading behind its suspicion. */
+function crossNote(x) {
+  return x.suspicion === 3 ? '<div class="why">Two genre playlists: usually one is a slip.</div>'
+    : x.suspicion === 2 ? '<div class="why">Two playlists of the same kind.</div>' : '';
+}
+
 export function secCross(c) {
   const ib = c.infoBtn ?? (() => '');
   const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton } = c;
   const a = R.across.filter(x => x.placements.length >= S.crossMin);
-  return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is preselected.${ib('tidy-cross', 'Cross-filed', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
+  return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is removed unless you tap. The likeliest slips come first, with the best-fitting playlist starred.${ib('tidy-cross', 'Cross-filed', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
     <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
       `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-act="cmin" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
     <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
+      ${crossNote(c)}
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
-        `<button class="chip" data-act="xpl" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
+        `<button class="chip${p.playlistId === c.keeper ? ' keeper' : ''}" data-act="xpl" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}${p.playlistId === c.keeper ? ' — the best fit' : ''}">${p.playlistId === c.keeper ? '★ ' : ''}${esc(p.playlist)}</button>`).join('')}
+        ${c.keeper && c.suspicion >= 2 ? `<button class="b sm" data-act="xkeep" data-xkeeper="${esc(c.keeper)}" data-xtr="${esc(c.placements[0].trackId)}" data-xall="${esc(c.placements.map(p => p.playlistId).join(','))}">Keep only in ${esc(c.placements.find(p => p.playlistId === c.keeper)?.playlist ?? '')}</button>` : ''}</div>
     </div></div>`).join('')
       || (R.across.length
         ? emptyState(`Nothing at ${S.crossMin}+ playlists`, 'Lower the threshold to see tracks filed in fewer places.', { compact: true })
@@ -65,6 +73,21 @@ function mfBandChip(c, b) {
   const [, vm, cls, word] = MF_BANDS.find(x => x[0] === b) ?? MF_BANDS[0];
   return (typeof c.bandChip === 'function' && c.bandChip(vm)) || `<span class="band band-${cls}">${word}</span>`;
 }
+
+/** The tag tier's rows, minus any the sound tier judged differently: where the two
+ *  disagree about a track in a playlist, sound wins and the tag row is dropped. */
+export function tagMisfiles(c) {
+  const sound = (typeof c.tidySoundRows === 'function' ? c.tidySoundRows() : null) ?? [];
+  if (!sound.length) return c.R.misfiled;
+  const heard = new Map(sound.map(x => [`${x.id}|${x.from}`, x.to]));
+  return c.R.misfiled.filter(m => {
+    const to = heard.get(`${m.id}|${m.currentPlaylistId}`);
+    return to == null || to === m.suggest.find(sg => sg.id)?.id;
+  });
+}
+
+/** A cosine fit in words, not a percentage nobody can calibrate. */
+const mfFitWord = v => v >= 0.5 ? 'strong' : v >= 0.25 ? 'fair' : v >= 0.1 ? 'weak' : 'barely';
 
 function tidySections(c) {
   return c.tidySoundOn() ? [...TIDY_SECTIONS, ['sound', 'By sound']] : TIDY_SECTIONS;
@@ -117,8 +140,9 @@ export function secMisfile(c) {
   const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton, tagChips, tagEditorHTML, store, getListening } = c;
   const LISTENING_CACHE = c.LISTENING_CACHE, LISTENING_PENDING = c.LISTENING_PENDING;
   const counts = { high: 0, medium: 0, low: 0 };
-  for (const x of R.misfiled) counts[x.confidence]++;
-  const m = R.misfiled.filter(x => x.confidence === S.mfBand);
+  const MF = tagMisfiles(c);
+  for (const x of MF) counts[x.confidence]++;
+  const m = MF.filter(x => x.confidence === S.mfBand);
   // Best-effort, fetched once and reused: a "misfiled" track you actually
   // play a lot is more likely a deliberate keep than a mistake. Doesn't
   // change the confidence tier — just gives you the context to judge it —
@@ -130,7 +154,7 @@ export function secMisfile(c) {
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
   return `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p>')}</p>
-    ${R.misfiled.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
+    ${MF.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
       `<button type="button" aria-pressed="${S.mfBand === b}" data-act="mfb" data-mfb="${b}">${mfBandChip(c, b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
     <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
@@ -139,8 +163,8 @@ export function secMisfile(c) {
       return `<div class="row ${done ? 'done' : ''}" data-flip data-key="${esc(`mf:${x.id}:${x.currentPlaylistId}`)}">${thumbHTML(x)}<div class="main">
         <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
         ${to ? `<div class="swap"><span class="from">${esc(x.current)}</span><span class="arw">→</span><span class="to">${esc(to.name)}</span>
-          <span class="mono" style="color:var(--ink-3)">${(x.currentScore * 100).toFixed(0)}% → ${(to.score * 100).toFixed(0)}%</span></div>`
-        : `<div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore * 100).toFixed(0)}% fit</span></div>`}
+          <span class="mono" style="color:var(--ink-3)">${esc(mfFitWord(x.currentScore))} → ${esc(mfFitWord(to.score))} fit</span></div>`
+        : `<div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${esc(mfFitWord(x.currentScore))} fit</span></div>`}
         ${playedALot ? `<div class="sub" style="color:var(--accent)">You play this a lot right now — might be deliberate.</div>` : ''}
       </div><div class="acts">
         ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-act="move" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}" data-mvtier="${MF_TIER[S.mfBand] ?? ""}">${done ? 'Moved' : 'Move'}</button>` : ''}
@@ -156,7 +180,7 @@ export function secMisfile(c) {
           ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
       </div>` : ''}</div>`;
     }).join('')
-      || (R.misfiled.length
+      || (MF.length
         ? emptyState(`Nothing ${mfBandWord(S.mfBand)}`, S.mfBand === 'high'
             ? 'Nothing is clearly in the wrong place. Likely has the more speculative ones.' : 'Try another of the three.', { compact: true })
         : emptyState('Everything fits where it is', 'No track sits in a playlist that fits far worse than another one on the same axis. New ones show up here after a sync.'))}</div>
@@ -166,7 +190,7 @@ export function secMisfile(c) {
 export function view(c) {
   const { S, R, esc } = c;
   c.tidySoundWarm();
-  const n = { misfile: R.misfiled.length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount() };
+  const n = { misfile: tagMisfiles(c).length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount() };
   const secs = tidySections(c);
   // Opens on the first section with something in it rather than on "Wrong
   // place 0" while Repeats has work. A section the listener picked (S.tidySec,
@@ -244,6 +268,25 @@ export const actions = {
       const at = (await c.getLog())[0]?.at;
       el.classList.add('cut');
       c.toast(`Removed from ${plName}.`, () => c.undoAction(at));
+    } catch (err) { c.toast('Failed: ' + err.message); }
+  },
+
+  /** Cross-filed: keep the track in the suggested playlist only, out of every other. */
+  async xkeep(c, el) {
+    const keeper = el.dataset.xkeeper, tr = el.dataset.xtr;
+    const drops = el.dataset.xall.split(',').filter(id => id && id !== keeper);
+    try {
+      const group = c.newGroup();
+      for (const pl of drops) {
+        const before = await c.playlistIds(pl);
+        const positions = {}; before.forEach((id, i) => { if (id === tr) (positions[id] ??= []).push(i); });
+        await c.delTracks(pl, [tr]);
+        await c.logAction({ op:'remove', playlistId:pl, playlistName:c.CFG[pl]?.name ?? pl, trackIds:[tr], positions, reason:'cross-file trim', group });
+      }
+      const at = (await c.getLog())[0]?.at;
+      c.toast(`Kept only in ${c.CFG[keeper]?.name ?? keeper}.`, () => c.undoAction(at));
+      c.R.across = c.R.across.filter(x => !x.placements.some(p => p.trackId === tr));
+      c.render();
     } catch (err) { c.toast('Failed: ' + err.message); }
   },
 

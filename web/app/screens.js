@@ -101,5 +101,5 @@ SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, ded
 SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
   soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
-  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall });
+  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember });
 // --- end shuffle/discover ---
