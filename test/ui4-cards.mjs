@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { withInbox } from './screenctx.mjs';
+import { bindDiscover } from './screenctx.mjs';
 
 export const BUNDLE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
 export const GOLDEN = new URL('./fixtures/ui4/', import.meta.url);
@@ -50,11 +51,11 @@ export function cards({ S = {}, R = {}, renderers = {} } = {}) {
   vm.runInContext(between('/** A row of tag chips', 'function describe(rows)', 'tagChips'), sandbox);
   vm.runInContext(between('function artHTML(t', 'function vTidy()', 'vInbox'), sandbox);
   withInbox(sandbox);
-  vm.runInContext(between('/** The discovery currently on the card. */', 'const AXES = ', 'vDiscover'), sandbox);
+  vm.runInContext(between('/** The discovery currently on the card. */', 'const AXES = ', 'the discover helpers'), sandbox);
   // The bundle's own web/ui/sound.mjs functions were just declared in this
   // context; put the stand-ins back over them.
   Object.assign(sandbox, renderers);
-  return sandbox;
+  return bindDiscover(sandbox);
 }
 
 const tagPicks = () => [{ id: 'p1', name: 'Jungle & Breaks', axis: 'genre', score: 0.61 },

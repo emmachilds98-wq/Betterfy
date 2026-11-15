@@ -58,3 +58,13 @@ Object.assign(SCREEN_CTX, {
                   matchMedia: q => globalThis.matchMedia(q) }),
 });
 // --- /home/inbox ---
+// --- shuffle/discover ---
+SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, dedupe, spacedShuffle, shuffleStats, rnd, artistOf,
+  mixHeardIn, shuffleMix, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
+  get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
+  labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
+SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
+  soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
+  artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
+  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall });
+// --- end shuffle/discover ---

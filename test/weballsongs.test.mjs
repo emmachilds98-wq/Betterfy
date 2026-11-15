@@ -131,7 +131,7 @@ function load({ playlists = [], liked = [], existing = null, pinned = null } = {
   vm.runInContext(slice('const RATE_LIMITED', '/* ---------- axis classification', 'spotify/idb block'), sandbox);
   vm.runInContext(slice("const ALL_SONGS_KEY = 'bf_allsongs';", 'const isMirrorPlaylist', 'the mirror pin'), sandbox);
   vm.runInContext(slice('async function logAction(entry)', '/* ---------- player: Spotify Connect', 'log/write-helper block'), sandbox);
-  vm.runInContext(slice('const ALL_SONGS_NAME', 'function vShuffle()', 'All Songs block'), sandbox);
+  vm.runInContext(slice('const ALL_SONGS_NAME', '/* ---------- discovery: new by construction', 'All Songs block'), sandbox);
   return Object.assign(sandbox, {
     mineNow: () => mine,
     idsNow: () => (mine?.slots ?? []).map(s => s.id),
@@ -323,11 +323,8 @@ test('it is filed as context, not a genre/mood target — nothing should suggest
   assert.equal(app.CFG[id].target, false);
 });
 
-test('Shuffle prefers it over any single playlist, once one exists', () => {
-  const from = BUNDLE.indexOf('function vShuffle()');
-  const to = BUNDLE.indexOf('function vDiscover()');
-  assert.ok(from > 0 && to > from, 'vShuffle not found — rebuild with npm run build:web');
-  const body = BUNDLE.slice(from, to);
+test('Shuffle prefers it over any single playlist, once one exists', async () => {
+  const body = (await import('node:fs')).readFileSync(new URL('../web/screens/shuffle.mjs', import.meta.url), 'utf8');
   assert.match(body, /allSongs\?\.id \?\? pls\[0\]\?\.id/,
     'the shuffle source must fall back to the All Songs playlist before the biggest bucket');
 });
