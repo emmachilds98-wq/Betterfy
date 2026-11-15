@@ -65,8 +65,9 @@ function screen({ lib = library(), backlog = null, tags = {}, durable = true,
                   worker = null, isMirror = () => false, cfg = null, bridge = false } = {}) {
   const store = new Map();
   // Similar artists are off unless a test asks for them: everything else here
-  // must run without reaching for a network that is not there.
-  const ls = new Map(bridge ? [] : [['bf_bridge_off', '1']]);
+  // must run without reaching for a network that is not there. Listening is on
+  // by default in the page; here it is off, since there is no audio.js to load.
+  const ls = new Map([['bf_audio', JSON.stringify({ on: false })], ...(bridge ? [] : [['bf_bridge_off', '1']])]);
   const sandbox = {
     LS: { getItem: k => ls.get(k) ?? null, setItem: (k, v) => ls.set(k, String(v)), removeItem: k => ls.delete(k) },
     ...(worker ? { Worker: worker } : {}),

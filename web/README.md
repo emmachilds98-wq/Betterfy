@@ -31,7 +31,7 @@ by screen in A4.
 | `app/auth.js` | PKCE sign-in, tokens, and `sp()` (every Spotify call) |
 | `app/cache.js` | the IndexedDB library cache (`idb`) |
 | `app/feedback.js` | skips and rejects (`FB`) |
-| `app/classify.js` | `classify()`, mirrors `axes.mjs` |
+| `app/classify.js` | `classify()`: the page's wrapper over `core/playlists/axes.mjs`, which `axes.mjs` runs too |
 | `app/reports.js` | `buildReports()`, mirrors `dupes.mjs` / `misfile.mjs` |
 | `app/ui.js` | page state (`LIB`, `S`, `view`), screen order and names, `toast()` |
 | `app/actionlog.js` | the History log, undo, playlist and library writes |

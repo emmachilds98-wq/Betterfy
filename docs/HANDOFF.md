@@ -33,7 +33,7 @@ all four merged, and CI was green on main.
 
 | PR / branch | State | What it needs |
 |---|---|---|
-| S5 key detection (`core/audio/dsp/key.mjs`) | in progress in its own thread at handoff; if a PR exists it is a draft | Key is 30% exact, so it stays hidden. Merge only with a re-measured accuracy that clears the bar (`scripts/audio-dsp/beatport-eval.mjs`); only then use Camelot key in `mixesWith` and the DJ order |
+| S5 key detection v2 (`core/audio/dsp/key.mjs`) | **merged as #106** (`KEY_VERSION` 2.0.0, so records' dsp is re-measured) | EDM-fitted profiles and calibrated confidence: held-out Beatport half 47.2% exact (was 24.8%), MIREX 58.3%, 69.4% exact at confidence ≥0.6 (`scripts/audio-dsp/key-fit.mjs` reproduces it). Still below BUILD-5-PLAN §6.1's bar (≥60% exact and ≥70% MIREX), so key stays hidden and out of `mixesWith`. Next: a separate major/minor decision (tonic is right on ~67%), a non-EDM re-measure, or §6.1 step 2 (S-KEY) |
 | #90 MAEST (WP-C1) | draft | The model file is not committed: run `scripts/audio-maest/export.py` on a machine that can reach essentia.upf.edu, add the file, then the owner's MAEST-vs-effnet Score run |
 | WP-C2 part 2, CLAP audio encoder | merged (#104) | `core/audio/clap.mjs`: 48 kHz front end (matches `ClapFeatureExtractor` to 1e-4 dB), 77 MB int8 encoder from LAION's original CC0 music checkpoint (the HF `larger_clap_music` upload has an untrained text half; `music_and_speech` places music worse), behind #84's "Search by description". Rebuilding needs `scripts/audio-clap/` and the 2.4 GB checkpoint |
 | #41 MusicBrainz/iTunes tag sources | draft, old (2026-09) | Owner's decision (keyless tag sources) |

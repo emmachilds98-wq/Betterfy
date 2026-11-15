@@ -32,7 +32,7 @@ nothing pooled across accounts; byte-identical when a feature has no data;
 | Listening (Deezer preview by ISRC → 16 kHz decode → Discogs-EffNet in the browser) | Shipped behind "Listen to my music" |
 | Sound-first filing, sound ID (genre › sub-genre › BPM), "mixes with" | Merged in #88 |
 | Tempo | 86% within ±1 BPM at confidence ≥ 0.3 (Beatport set); shown |
-| Key | 30% exact; hidden |
+| Key | 47% exact after #106 (was 30%); hidden |
 | Mood / voice / energy heads | Stored, hidden until the owner's label review passes 70% |
 | v3 evidence engine (`core/engine.mjs`, `core/analysis`, `core/evidence`, `core/ai`, `core/review`) | **Not in the page.** Reached only by Node scripts, benchmarks and tests |
 
@@ -303,6 +303,8 @@ S-KEY's weights are **non-commercial**. Betterfy is free and personal today,
 so they fit, but each one is recorded in `docs/models/LICENSE` and About.
 
 ### 6.1 Key: from 30% to usable
+
+*Step 1 done in #106 (2026-11-15): EDM profiles fitted on the dev half of the Beatport set, held-out 47.2% exact, MIREX 58.3%, 69.4% exact at confidence ≥0.6. Below the bar at the end of this section; step 2 or a separate major/minor decision is next.*
 
 - **Why it's weak.** `core/audio/dsp/key.mjs` correlates chroma with the
   Krumhansl–Kessler and Temperley profiles — both derived from classical
