@@ -39,6 +39,22 @@ async function call(playlistId, method, body) {
 }
 
 /**
+ * DELETE /playlists/{id}/items for any number of `{ uri }` objects. Spotify's
+ * reference now documents the body as `{ items: [{ uri }] }`, max 100 per
+ * call; the legacy `{ tracks: [...] }` body is sent only when that one is
+ * refused with a 400. Chunks go one after another, never in parallel.
+ */
+export async function removeItems(playlistId, objs) {
+  for (const part of chunk(objs, 100)) {
+    try { await call(playlistId, 'DELETE', { items: part }); }
+    catch (e) {
+      if (e.status !== 400 && !/^400/.test(e.message)) throw e;
+      await call(playlistId, 'DELETE', { tracks: part });
+    }
+  }
+}
+
+/**
  * Remove specific track ids from one playlist.
  * Records the positions so the removal can be undone in place.
  */
@@ -47,7 +63,7 @@ export async function removeFrom(playlistId, playlistName, trackIds, reason, txn
   const positions = {};
   before.forEach((t, i) => { if (trackIds.includes(t.id)) (positions[t.id] ??= []).push(i); });
 
-  await call(playlistId, 'DELETE', { tracks: trackIds.map(id => ({ uri: `spotify:track:${id}` })) });
+  await removeItems(playlistId, trackIds.map(id => ({ uri: `spotify:track:${id}` })));
   log({ op: 'remove', playlistId, playlistName, trackIds, positions, reason, undoable: true, txn });
   return { removed: trackIds.length };
 }
@@ -78,6 +94,18 @@ export async function moveTrack(fromId, fromName, toId, toName, trackId, reason)
 async function libraryCall(method, trackId) {
   try { return await api(`/me/library?uris=spotify:track:${trackId}`, { method }); }
   catch (e) { if (!/^40[34]/.test(e.message)) throw e; return await api(`/me/tracks?ids=${trackId}`, { method }); }
+}
+
+/** Take a playlist out of the library — Spotify's "delete" for one you own.
+ *  DELETE /playlists/{id}/followers was removed in February 2026 in favour
+ *  of DELETE /me/library?uris=spotify:playlist:{id}; the old path is tried
+ *  only if the new one answers 403/404, the same fallback as libraryCall. */
+export async function removePlaylistFromLibrary(playlistId) {
+  try { return await api(`/me/library?uris=spotify:playlist:${playlistId}`, { method: 'DELETE' }); }
+  catch (e) {
+    if (!/^40[34]/.test(e.message)) throw e;
+    return await api(`/playlists/${playlistId}/followers`, { method: 'DELETE' });
+  }
 }
 
 /** Unlike a track, recording enough to re-like it on undo. */
@@ -115,7 +143,7 @@ export async function undo(entry) {
     return { restored: entry.trackIds.length };
   }
   if (entry.op === 'add') {
-    await call(entry.playlistId, 'DELETE', { tracks: entry.trackIds.map(id => ({ uri: `spotify:track:${id}` })) });
+    await removeItems(entry.playlistId, entry.trackIds.map(id => ({ uri: `spotify:track:${id}` })));
     log({ op: 'undo-add', of: entry.at, playlistId: entry.playlistId, trackIds: entry.trackIds });
     return { removed: entry.trackIds.length };
   }
@@ -125,9 +153,9 @@ export async function undo(entry) {
     return { restored: 1 };
   }
   if (entry.op === 'create-playlist') {
-    // Spotify has no true delete for an owned playlist; unfollowing your own
-    // playlist removes it from your library, which is what "undo create" means here.
-    await api(`/playlists/${entry.playlistId}/followers`, { method: 'DELETE' });
+    // Spotify has no true delete for an owned playlist; taking your own
+    // playlist out of your library is what "undo create" means here.
+    await removePlaylistFromLibrary(entry.playlistId);
     log({ op: 'undo-create-playlist', of: entry.at, playlistId: entry.playlistId });
     return { removed: entry.playlistName };
   }

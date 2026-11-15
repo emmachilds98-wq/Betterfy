@@ -29,7 +29,7 @@
        font:inherit; display:flex; flex-direction:column; gap:6px;
        background:color-mix(in srgb, var(--ac) 15%, var(--surface));
        border:1px solid color-mix(in srgb, var(--ac) 32%, transparent);
-       transition:transform .12s ease, box-shadow .14s ease}
+       transition:transform var(--dur-1) ease, box-shadow .14s ease}
   .act:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
   .act:active{transform:scale(.99)}
   .act .ic{width:40px; height:40px; border-radius:14px; background:var(--ac); color:var(--ac-ink);
@@ -47,7 +47,7 @@
   .panel .ph h2{margin:0; font-size:19px}
   .panel .ph .mono{font-size:12px; color:var(--ink-3)}
   .bar{display:flex; height:22px; border-radius:11px; overflow:hidden; background:var(--surface-3)}
-  .bar i{display:block; transition:width .4s cubic-bezier(.2,.7,.3,1)}
+  .bar i{display:block; transition:width .4s var(--ease-out)}
   .key{display:flex; gap:22px; margin-top:14px; flex-wrap:wrap; font-size:13.5px; color:var(--ink-2)}
   .key span{display:flex; align-items:center; gap:8px}
   .key i{width:10px; height:10px; border-radius:3px; display:block}
@@ -63,7 +63,7 @@
   .upnext{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px}
   .upnext .u{border-radius:var(--r-3); overflow:hidden; background:var(--surface); border:1px solid var(--line);
         text-align:left; font:inherit; color:var(--ink); cursor:pointer; padding:0;
-        transition:transform .12s ease, box-shadow .14s ease;
+        transition:transform var(--dur-1) ease, box-shadow .14s ease;
         display:flex; flex-direction:column; min-width:0}
   .upnext .u:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
   .upnext .u .cov{aspect-ratio:1; width:100%; display:grid; place-items:center; object-fit:cover;
@@ -82,7 +82,7 @@
 
   /* The card animation, kept: the action cards on Home use it. */
   @keyframes tileIn{from{opacity:0; transform:translateY(9px)}}
-  .acts4 .act{animation:tileIn .34s cubic-bezier(.2,.7,.3,1) backwards}
+  .acts4 .act{animation:tileIn .34s var(--ease-out) backwards}
   .acts4 .act:nth-child(2){animation-delay:.04s}
   .acts4 .act:nth-child(3){animation-delay:.08s}
   .acts4 .act:nth-child(4){animation-delay:.12s}
