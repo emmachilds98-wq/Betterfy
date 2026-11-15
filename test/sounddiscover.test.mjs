@@ -176,7 +176,7 @@ function page(extra = {}) {
   vm.createContext(sandbox);
   vm.runInContext(line(/const esc = [^\n]+/), sandbox);
   vm.runInContext(between('/* ---------- Discover without a key', '/** The discovery currently on the card. */'), sandbox);
-  vm.runInContext(between('/* The "by sound" pieces of the Discover screen.', 'function vDiscover()'), sandbox);
+  vm.runInContext(between('/* The "by sound" pieces of the Discover screen.', '/* ---------- giving a tag back'), sandbox);
   return sandbox;
 }
 

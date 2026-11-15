@@ -19,7 +19,7 @@ import vm from 'node:vm';
 const BUNDLE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
 
 function load() {
-  const i = BUNDLE.indexOf('const rnd = a =>'), j = BUNDLE.indexOf('function vShuffle()');
+  const i = BUNDLE.indexOf('const rnd = a =>'), j = BUNDLE.indexOf('/* ---------- discovery: new by construction');
   assert.ok(i > 0 && j > i, 'shuffle block not found — rebuild with npm run build:web');
   const sandbox = { console };
   vm.createContext(sandbox);
@@ -73,17 +73,17 @@ test('a library the size of a real one shuffles in well under a second', () => {
   assert.ok(ms < 2000, `spacedShuffle took ${ms}ms for 12,000 tracks — the per-pick scan is back`);
 });
 
-test('the shuffle is cached against its source rather than recomputed on every redraw', () => {
-  const from = BUNDLE.indexOf('function vShuffle()'), to = BUNDLE.indexOf('function vDiscover()');
-  const body = BUNDLE.slice(from, to);
+test('the shuffle is cached against its source rather than recomputed on every redraw', async () => {
+  const body = (await import('node:fs')).readFileSync(new URL('../web/screens/shuffle.mjs', import.meta.url), 'utf8');
   assert.match(body, /S\.shufCache\?\.id !== sel \|\| S\.shufCache\?\.n !== tracks\.length/,
     'a redraw for an unrelated reason must not re-shuffle the whole library');
   assert.match(body, /id="shufAgain"/, 'and re-rolling it is a deliberate button');
 });
 
-test('changing the source, or topping All Songs up, drops the cached order', () => {
-  assert.match(BUNDLE, /id === 'shufPl'\) \{ S\.shufPl = e\.target\.value; S\.shufCache = null;/);
-  assert.match(BUNDLE, /id === 'shufAgain'\) \{ S\.shufCache = null; return render\(\); \}/);
+test('changing the source, or topping All Songs up, drops the cached order', async () => {
+  const src = (await import('node:fs')).readFileSync(new URL('../web/screens/shuffle.mjs', import.meta.url), 'utf8');
+  assert.match(src, /shufPl\(\{ S, render \}, el\) \{ S\.shufPl = el\.value; S\.shufCache = null;/);
+  assert.match(src, /shufAgain\(\{ S, render \}\) \{ S\.shufCache = null;/);
   assert.match(BUNDLE, /S\.shufPl = pl\.id; S\.shufCache = null;/,
     'tracks just added to All Songs have to be able to reach the order');
 });

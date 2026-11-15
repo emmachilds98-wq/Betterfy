@@ -204,6 +204,7 @@ test('a library-sized mix finishes in reasonable time', () => {
 
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { bindShuffle } from './screenctx.mjs';
 
 const PAGE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
 const ENGINE = readFileSync(new URL('../docs/engine.js', import.meta.url), 'utf8');
@@ -231,7 +232,7 @@ function shufflePage({ records = null, mode = undefined, energyShown = false, en
   // The shared empty state (UI-1), which the mix's loading and error boxes use.
   const e = PAGE.indexOf('function emptyState('), f = PAGE.indexOf('/* ---------- Tidy by sound', e);
   vm.runInContext(PAGE.slice(e, f), sandbox);
-  return sandbox;
+  return bindShuffle(sandbox);
 }
 const heardRecords = (n, o = {}) => new Map(Array.from({ length: n }, (_, k) =>
   ['s' + k, rec('s' + k, { bpm: [124, 172, 132][k % 3] + (k % 2), fam: ['h', 'd', 'g'][k % 3], energy: (k % 10) / 10, ...o })]));

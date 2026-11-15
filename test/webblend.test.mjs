@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { withInbox } from './screenctx.mjs';
 
 import * as Blend from '../core/intrinsic/blend.mjs';
 import * as Bridge from '../core/intrinsic/bridge.mjs';
@@ -97,7 +98,7 @@ function load({ stored = null, raw = null, bridgeOff = false, blend = true, list
   };
   sandbox.bridgeOn = () => sandbox.LS.getItem('bf_bridge_off') !== '1';
   vm.createContext(sandbox);
-  vm.runInContext(INBOX, sandbox);
+  vm.runInContext(INBOX, sandbox); withInbox(sandbox);
   if (blend) vm.runInContext(BLEND_SRC, sandbox);
   return Object.assign(sandbox, { calls, store, lib });
 }
@@ -160,7 +161,7 @@ test('blend on: an untagged track gets picks from the engine and similar artists
   assert.match(untagged, /where you file this artist and ones like them/);
   assert.doesNotMatch(untagged, /No confident suggestion/);
   // A tagged track still leads with what its tags and filing agree on.
-  assert.match(tagged, /class="pick best" data-selfile="p-garage"/);
+  assert.match(tagged, /class="pick best" data-act="selfile" data-selfile="p-garage"/);
   assert.match(tagged, /tags, and where you file/);
 });
 
