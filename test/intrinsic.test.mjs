@@ -738,6 +738,7 @@ test('at rung 0 the engine proposes buckets instead of pretending to file', () =
   const byArtist = out.find(p => p.kind === 'artist');
   assert.equal(byArtist.label, 'Busy Producer');
   assert.equal(byArtist.size, 6);
+  assert.equal(byArtist.ids.length, 6, 'a proposal carries the ids that tapping it would add');
   assert.ok(byArtist.labels.includes('GBAAA'), 'a shared label family is worth showing');
 
   const byShape = out.find(p => p.kind === 'shape');

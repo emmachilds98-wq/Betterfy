@@ -31,18 +31,93 @@ export function suggestionsOf(GAPS, R) {
   return out;
 }
 
+/** Tracks that appear more than once in a playlist (same Spotify id): the surplus copies. */
+export function repeatCount(tracks) {
+  const seen = new Set(); let n = 0;
+  for (const t of tracks ?? []) { if (!t?.id) continue; if (seen.has(t.id)) n++; else seen.add(t.id); }
+  return n;
+}
+
+/** Days since the newest track was added, or null when no track says when (nothing is guessed). */
+export function staleDays(tracks, now = Date.now()) {
+  let newest = -Infinity;
+  for (const t of tracks ?? []) { const x = Date.parse(t?.added_at); if (Number.isFinite(x) && x > newest) newest = x; }
+  return Number.isFinite(newest) ? Math.max(0, Math.floor((now - newest) / 864e5)) : null;
+}
+
+/** Playlists the engine could not tell apart (bucketPairs' "indistinguishable" verdict), by playlist id: the names of its twins. */
+export function twinsOf(pairs) {
+  const out = new Map();
+  for (const p of Array.isArray(pairs) ? pairs : []) {
+    if (p?.verdict !== 'indistinguishable' || !p.a?.id || !p.b?.id) continue;
+    for (const [x, y] of [[p.a, p.b], [p.b, p.a]]) out.set(x.id, [...(out.get(x.id) ?? []), y.name ?? y.id]);
+  }
+  return out;
+}
+
 /** 0-100 and the reasons, from what Betterfy already knows about one playlist: misfiled tracks,
- *  drift, a second genre, an axis nobody has settled. Null under eight tracks (too few to judge). */
-export function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false } = {}) {
+ *  drift, a second genre, a twin it cannot be told from, repeats, staleness, an axis nobody has
+ *  settled. Null under eight tracks (too few to judge). Every input is optional: no data, no mark. */
+export function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false,
+                                 twins = [], repeats = 0, staleDays: stale = null } = {}) {
   if (tracks < 8) return null;
   const notes = [];
   let score = 100;
   if (misfiled) { score -= Math.min(45, Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
   if (drifting) { score -= 15; notes.push('newest additions read differently from the rest'); }
   if (split) { score -= 20; notes.push('sounds like two genres'); }
+  if (twins?.length) { score -= 10; notes.push(`hard to tell apart from ${twins.slice(0, 2).join(' and ')}`); }
+  if (repeats > 0) { score -= Math.min(15, repeats * 3); notes.push(`${repeats} repeated track${repeats === 1 ? '' : 's'}`); }
+  if (stale !== null && stale >= 365) { score -= 5; notes.push(`nothing added in ${Math.floor(stale / 365)}+ year${stale >= 730 ? 's' : ''}`); }
   if (undecided) { score -= 10; notes.push('no axis decided yet'); }
   score = Math.max(0, score);
   return { score, word: score >= 85 ? 'Healthy' : score >= 65 ? 'Fine' : 'Needs a look', notes };
+}
+
+/** "These look like genre playlists": playlists not yet called genre (and not set by you) whose tags are mostly
+ *  genre, or somewhat genre with a sound profile that is mostly one style. One tap to confirm, none to ignore. */
+export function genreTickSuggestions(rows, mixes, sounds) {
+  const out = [];
+  for (const p of rows ?? []) {
+    if (p.axis === 'genre' || p.why === 'set by you' || !(p.tracks >= 8) || p.mirror) continue;
+    const mix = mixes?.get?.(p.id);
+    if (!mix?.tracks) continue;
+    const topStyle = sounds?.(p.id)?.styles?.[0]?.[1] ?? 0;
+    const g = mix.genre ?? 0;
+    if (g >= 0.5 || (g >= 0.3 && topStyle >= 0.5))
+      out.push({ id: p.id, name: p.name, why: `${Math.round(g * 100)}% of its tags are genre${g < 0.5 ? ' and it sounds like one style' : ''}` });
+  }
+  return out;
+}
+
+/** "Start these playlists" for an account with no genre playlist: groups made only of what Spotify gives
+ *  (artist/format/era, plus unnamed sound clusters named by sound ID when the engine and CLAP have run). Nothing is made until tapped. */
+export function coldStartOffers({ proposals = [], clusters = [] } = {}, limit = 6) {
+  const out = [];
+  for (const c of clusters) {
+    const ids = c.ids ?? (c.tracks ?? []).map(t => t.id);
+    if (ids.length < 4) continue;
+    const name = c.confirmed ?? c.suggest?.name ?? null;
+    out.push({ title: name ?? 'Group that sounds alike', named: !!name, n: ids.length, ids, why: 'sounds alike',
+      eg: (c.tracks ?? []).slice(0, 3).map(t => t.name).filter(Boolean) });
+  }
+  for (const p of proposals)
+    if ((p.ids?.length ?? 0) >= 4) out.push({ title: p.label, named: false, n: p.ids.length, ids: p.ids,
+      why: p.kind === 'artist' ? 'one artist you collect' : 'same era and length',
+      eg: (p.examples ?? []).slice(0, 3).map(e => e.name).filter(Boolean) });
+  return out.slice(0, limit);
+}
+
+/** New-genre candidates: clusters of the tracks the calibration is "unsure" about, most listened-to first
+ *  (artists in `active`, Spotify's recent and short-term top), each named by sound ID where CLAP has a name. */
+export function newGenreOffers(clusters, active) {
+  const played = c => (c.tracks ?? []).filter(t => (t.artists ?? []).some(a => active?.has?.(a))).length;
+  return (clusters ?? []).map(c => ({ ...c, ids: c.ids ?? (c.tracks ?? []).map(t => t.id), played: played(c) }))
+    .filter(c => c.ids.length >= 4)
+    .sort((a, b) => b.played - a.played || b.ids.length - a.ids.length)
+    .map(c => { const name = c.confirmed ?? c.suggest?.name ?? null;
+      return { title: name ? `${name}?` : 'New genre?', n: c.ids.length, ids: c.ids, played: c.played, named: !!name,
+        why: 'tracks Betterfy is unsure where to file, sitting together' }; });
 }
 
 /** A thin strip of how a playlist sounds: its top styles as a stacked bar, else its energy range. '' without a profile. */
@@ -63,7 +138,9 @@ export function sparkHTML(vm) {
 function plInfo(c, p, splitIds, undecidedIds) {
   const { R, LISTS_SOUND } = c;
   const vm = LISTS_SOUND.profile(p.id);
+  const pl = c.LIB?.playlists?.find(x => x.id === p.id);
   const health = playlistHealth({ tracks: p.tracks,
+    twins: twinsOf(c.twinPairs?.()).get(p.id) ?? [], repeats: repeatCount(pl?.tracks), staleDays: staleDays(pl?.tracks),
     misfiled: (R.misfiled ?? []).filter(m => m.playlistId === p.id).length,
     drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
     split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
@@ -127,6 +204,34 @@ export function view(c) {
   const splitIds = new Set(listsSplits().map(x => x.p.id));
   const undecidedIds = new Set(rows.filter(p => p.why === NO_SIGNAL).map(p => p.id));
   const sugg = suggestionsOf(GAPS, R);
+  const mixes = c.playlistMixes().mix;
+  const ticks = genreTickSuggestions(rows.map(p => ({ ...p, mirror: c.isMirrorPlaylist?.({ id: p.id, name: p.name }) })), mixes, id => c.LISTS_SOUND.profile(id));
+  const ticksHTML = ticks.length ? `<section class="plsugg" aria-labelledby="pltick-h">
+      <div class="plsugg-head"><h2 id="pltick-h">These look like genre playlists</h2>
+        <button class="b sm p" data-act="ltickall">Mark all ${ticks.length} as genre</button></div>
+      <div class="plrows">${ticks.slice(0, 5).map(t => `<div class="plrow"><span class="plmain"><span class="ttl">${esc(t.name)}</span>
+        <span class="plmeta">${esc(t.why)}</span></span><button class="b sm" data-act="ltick" data-pl="${esc(t.id)}">Genre</button></div>`).join('')}</div>
+    </section>` : '';
+  // Cold start: no genre playlist at all. Offers come from what Spotify gives every account; nothing is made until tapped.
+  const noGenre = rows.length > 0 && !rows.some(p => p.axis === 'genre');
+  c.coldKick?.(noGenre);
+  const cold = c.COLD?.status === 'ready' && noGenre ? coldStartOffers(c.COLD.found) : [];
+  const coldHTML = cold.length ? `<section class="plsugg" aria-labelledby="plcold-h">
+      <div class="plsugg-head"><h2 id="plcold-h">Start these playlists</h2></div>
+      <p class="hint">You have no genre playlists yet. These groups already sit together in your library.</p>
+      <div class="plrows">${cold.map((o, i) => `<div class="plrow"><span class="plmain">
+        <input id="coldnm${i}" aria-label="Name for this playlist" value="${esc(o.title)}">
+        <span class="plmeta"><span class="mono">${o.n}</span> tracks · ${esc(o.why)}${o.eg.length ? ` · e.g. ${esc(o.eg.join(', '))}` : ''}</span></span>
+        <button class="b sm p" data-act="lcold" data-cold="${i}">Start</button></div>`).join('')}</div>
+    </section>` : '';
+  const newg = c.COLD?.status === 'ready' ? newGenreOffers(c.COLD.newGenre, c.COLD.active).slice(0, 3) : [];
+  const newgHTML = newg.length ? `<section class="plsugg" aria-labelledby="plnewg-h">
+      <div class="plsugg-head"><h2 id="plnewg-h">Possible new genres</h2></div>
+      <div class="plrows">${newg.map((o, i) => `<div class="plrow"><span class="plmain">
+        <input id="newgnm${i}" aria-label="Name for this playlist" ${o.named ? `value="${esc(o.title.replace(/\?$/, ''))}"` : 'placeholder="Name it"'}>
+        <span class="plmeta"><span class="mono">${o.n}</span> tracks${o.played ? ` · ${o.played} you are playing` : ''} · ${esc(o.why)}</span></span>
+        <button class="b sm" data-act="lnewg" data-newg="${i}">Start</button></div>`).join('')}</div>
+    </section>` : '';
   const suggHTML = sugg.length ? `<section class="plsugg" aria-labelledby="plsugg-h">
       <div class="plsugg-head"><h2 id="plsugg-h">Suggested playlists</h2>
         <button class="b sm" data-go="new">See all ${sugg.length}</button></div>
@@ -136,7 +241,7 @@ export function view(c) {
     </section>` : '';
   return `<h1>Library</h1>
     <p class="lede">Tap a playlist for its axis, health and shuffle.</p>
-    ${suggHTML}
+    ${ticksHTML}${coldHTML}${newgHTML}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
       <button class="b sm" data-go="sources">Genre sources</button>
@@ -159,13 +264,43 @@ export const actions = {
     try { await c.listsSplitMake(el.dataset.lsplit); } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
   },
 
+  /** One "looks like a genre playlist": confirmed. */
+  ltick(c, el) { return setAxis(c, el.dataset.pl, { value: 'genre' }, null); },
+  /** Every suggested one at once. */
+  ltickall(c) {
+    const rows = Object.entries(c.CFG).map(([id, v]) => ({ id, ...v, mirror: c.isMirrorPlaylist?.({ id, name: v.name }) }));
+    const ids = genreTickSuggestions(rows, c.playlistMixes().mix, id => c.LISTS_SOUND.profile(id)).map(t => t.id);
+    for (const id of ids) setAxis(c, id, { value: 'genre' }, null, true);
+    return finishAxes(c, `${ids.length} marked as genre`);
+  },
+  /** Cold start: make the playlist for one offered group. */
+  async lcold(c, el) {
+    const i = +el.dataset.cold, o = coldStartOffers(c.COLD.found)[i], name = c.$('#coldnm' + i)?.value.trim();
+    if (!o) return;
+    if (!name) return c.toast('Give it a name first.');
+    el.disabled = true;
+    try { await c.gapsCreate(name, o.ids); c.COLD.found.proposals = c.COLD.found.proposals.filter(p => p.ids !== o.ids);
+      c.COLD.found.clusters = c.COLD.found.clusters.filter(p => (p.ids ?? p.tracks?.map(t => t.id)) !== o.ids); c.render(); }
+    catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  },
+  /** A possible new genre: make it, and remember the name for CLAP when it is one. */
+  async lnewg(c, el) {
+    const i = +el.dataset.newg, o = newGenreOffers(c.COLD.newGenre, c.COLD.active)[i], name = c.$('#newgnm' + i)?.value.trim();
+    if (!o) return;
+    if (!name) return c.toast('Give it a name first.');
+    el.disabled = true;
+    try { await c.gapsCreate(name, o.ids); if (c.clapConfirm) c.clapConfirm(o.ids, name).catch(() => {});
+      c.COLD.newGenre = c.COLD.newGenre.filter(x => (x.ids ?? x.tracks?.map(t => t.id)) !== o.ids); c.render(); }
+    catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  },
+
   /** Axis edit: per-viewer, persisted on this device. */
   axis(c, el) { return setAxis(c, el.dataset.ax, el, null); },
   /** Receives-suggestions tick. */
   target(c, el) { return setAxis(c, el.dataset.tg, null, el); },
 };
 
-function setAxis(c, id, ax, tg) {
+function setAxis(c, id, ax, tg, quiet = false) {
   const { CFG, LS } = c;
   if (ax) {
     CFG[id].axis = ax.value;
@@ -183,8 +318,12 @@ function setAxis(c, id, ax, tg) {
   const saved = JSON.parse(LS.getItem('bf_axes') || '{}');
   saved[id] = { axis: CFG[id].axis, target: CFG[id].target, at: Date.now() };
   LS.setItem('bf_axes', JSON.stringify(saved));
+  if (!quiet) finishAxes(c, 'Updated');
+}
+
+function finishAxes(c, said) {
   c.rebuildReports();
-  c.toast('Updated — suggestions recomputed.');
+  c.toast(`${said} — suggestions recomputed.`);
   c.render();
   // Shared with linked devices straight away, not only at the next load.
   c.syncAxes().then(changed => { if (changed) c.store.set('reports', c.rebuildReports()); });

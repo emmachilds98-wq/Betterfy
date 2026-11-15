@@ -204,6 +204,8 @@ export function proposeBuckets(tracks, { minProposal = MIN_PROPOSAL, limit = 12 
       kind: p.kind,
       label: p.label,
       size: p.tracks.length,
+      // What tapping "start this playlist" adds; the proposal itself writes nothing.
+      ids: p.tracks.map(t => t.id),
       // A label family shared across a proposal is worth showing: it is often
       // the thing that makes a group obvious to its owner.
       labels: [...new Set(p.tracks.map(registrantOf).filter(Boolean))].slice(0, 3),

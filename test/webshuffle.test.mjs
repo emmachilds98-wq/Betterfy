@@ -87,3 +87,37 @@ test('changing the source, or topping All Songs up, drops the cached order', asy
   assert.match(BUNDLE, /S\.shufPl = pl\.id; S\.shufCache = null;/,
     'tracks just added to All Songs have to be able to reach the order');
 });
+
+test('rediscover puts what you have been playing last, still spaced, nothing lost', () => {
+  const app = load();
+  const tracks = library(200, 20);
+  const hot = new Set(['Artist 0', 'Artist 1', 'Artist 2']);
+  const order = app.shuffleOrder(tracks, { rediscover: hot });
+  assert.equal(new Set(order.map(t => t.id)).size, 200);
+  const firstHot = order.findIndex(t => hot.has(t.artists[0].name));
+  assert.equal(firstHot, 200 - 30, 'the 30 tracks by those artists form the tail');
+  assert.ok(order.slice(0, firstHot).every(t => !hot.has(t.artists[0].name)));
+});
+
+test('flow: neighbours get closer, artist spacing holds, nothing is dropped', () => {
+  const app = load();
+  const tracks = library(300, 60);
+  // Sound is the parity of the track number: 1 for the same side, 0 otherwise.
+  const near = (a, b) => (+a.id.slice(1) % 2 === +b.id.slice(1) % 2 ? 1 : 0);
+  const plain = app.spacedShuffle(tracks), flowed = app.flowOrder(plain, near);
+  assert.equal(new Set(flowed.map(t => t.id)).size, 300);
+  const same = o => o.slice(1).filter((t, i) => near(o[i], t)).length;
+  assert.ok(same(flowed) > same(plain) * 1.3, `${same(flowed)} vs ${same(plain)}`);
+  const last = new Map(); let min = Infinity;
+  flowed.forEach((t, i) => { const k = t.artists[0].name; if (last.has(k)) min = Math.min(min, i - last.get(k)); last.set(k, i); });
+  assert.ok(min >= 3, 'the same artist is never within three slots');
+  assert.equal(app.shuffleOrder(tracks, {}).length, 300);
+});
+
+test('flow is only offered once half the list has a sound reading or a genre tag', () => {
+  const app = load();
+  const tracks = library(10, 5).map(t => ({ ...t, artists: [{ id: 'x' + t.id, name: t.artists[0].name }] }));
+  assert.equal(app.flowReady(tracks), false);
+  app.TAGS = {}; for (const t of tracks.slice(0, 6)) app.TAGS[t.artists[0].id] = { tags: [['house', 10]] };
+  assert.equal(app.flowReady(tracks), true);
+});
