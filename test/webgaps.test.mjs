@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { addStore } from './fixtures/page-store.mjs';
 
 /*
  * The New playlists screen's gaps and splits (docs/SMARTER-GENRES-PLAN.md,
@@ -64,6 +65,7 @@ function screen({ lib = library(), listening = null, listeningFails = false } = 
   s.sp = async (path, init) => { calls.push(['sp', path, init?.method ?? 'GET', init?.body ?? null]); return { id: 'new-pl' }; };
   s.addTracks = async (id, ids) => { calls.push(['add', id, ids.length]); };
   vm.createContext(s);
+  addStore(s);
   vm.runInContext(ENGINE, s);
   vm.runInContext(EMPTY, s);
   vm.runInContext(CODE, s);

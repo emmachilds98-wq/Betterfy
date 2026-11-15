@@ -103,7 +103,7 @@ $('#syncRedeem').onclick = async () => {
     input.value = '';
     toast('Linked — pulling in what the other device knows…');
     const changed = await syncEverything();
-    if (changed) { R = buildReports(LIB, CFG, TAGS); render(); }
+    if (changed) store.set('reports', buildReports(LIB, CFG, TAGS));
   } catch (e) { toast('Could not link: ' + e.message); }
   finally { btn.disabled = false; }
 };
@@ -284,7 +284,7 @@ async function start(force) {
     // Background, after the first paint — never delays it, and only redraws
     // again if another device actually had feedback this one did not, rather
     // than resetting the screen on every load for nothing.
-    syncEverything().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); render(); } });
+    syncEverything().then(changed => { if (changed) store.set('reports', buildReports(LIB, CFG, TAGS)); });
     // Keyless genres for artists nothing has tagged. Cached per artist, so after
     // the first load this asks only about artists that are new or stale.
     if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});

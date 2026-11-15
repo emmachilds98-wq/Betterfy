@@ -114,8 +114,9 @@ function audioMidRun(vm) {
   fire((async () => {
     try { await audioRefresh(); } finally { AUDIO_MIDRUN_AT.busy = false; }
     // The File card picks new tracks up through soundHear; a rebuild is due only once enough more was heard.
-    if (view === 'inbox' || view === 'home') { soundWarm(); render(); }
-    else if (view === 'tidy') render();
+    if (view === 'inbox' || view === 'home') soundWarm();
+    // More heard: File's picks and Tidy by sound redraw; Home's count ticks in place.
+    repaint(['sound']);
   })());
 }
 

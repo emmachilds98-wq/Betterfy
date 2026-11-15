@@ -41,7 +41,7 @@ async function engineBridge(tracks) {
  * empty table and reporting that it lost would be rigging the comparison.
  */
 const engineValidate = guard(async () => {
-  ENG.valRunning = true; ENG.val = null; ENG.valStage = null; render();
+  store.set('eng', { valRunning: true, val: null, valStage: null });
   try {
     const tags = TAGS && Object.keys(TAGS).length ? TAGS : null;
     const t0 = performance.now();
@@ -52,14 +52,14 @@ const engineValidate = guard(async () => {
     let bridge = null, bridgeStats = null, bridgeErr = null;
     const useBridge = bridgeOn();
     if (useBridge) {
-      ENG.valStage = 'bridge'; ENG.bridgeProgress = {}; render();
+      store.set('eng', { valStage: 'bridge', bridgeProgress: {} });
       try {
         await engineLoad();
         const tracks = BetterfyValidate.scoredTracks(LIB, { limit: VALIDATE_N, isMirror: isMirrorPlaylist,
                                                            targets: new Set(engineTargets()) });
         ({ bridge, stats: bridgeStats } = await engineBridge(tracks));
       } catch (e) { bridge = null; bridgeErr = e?.message ?? String(e); }
-      ENG.valStage = 'score'; render();
+      store.set('eng', { valStage: 'score' });
     }
     const bridgeMs = useBridge ? Math.round(performance.now() - t0) : 0;
     const t1 = performance.now();
@@ -95,7 +95,7 @@ const engineValidate = guard(async () => {
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }
-  ENG.valRunning = false; ENG.valStage = null; render();
+  store.set('eng', { valRunning: false, valStage: null });
 });
 
 /**

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { soundLibrary } from './fixtures/sound-library.mjs';
 import { assertSameHTML } from './golden.mjs';
+import { addStore } from './fixtures/page-store.mjs';
 
 /*
  * The New playlists screen's proposals by sound (docs/AUDIO-BUILD-PLAN.md
@@ -67,6 +68,7 @@ function screen({ lib = library(), records = null, cfg = null } = {}) {
   s.sp = async (path, init) => { calls.push(['sp', path, init?.method ?? 'GET', init?.body ?? null]); return { id: 'new-pl' }; };
   s.addTracks = async (id, ids) => { calls.push(['add', id, ids.length]); };
   vm.createContext(s);
+  addStore(s);
   vm.runInContext(ENGINE, s);
   vm.runInContext(EMPTY, s);
   vm.runInContext(CODE, s);

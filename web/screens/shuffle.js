@@ -288,8 +288,8 @@ function mixIndexNow() {
  *  { pending } while engine.js loads. */
 function shuffleMix(sel, tracks, mode) {
   if (!globalThis.BetterfyOrder) {
-    if (!MIX_PAGE.err) fire(engineLoad().then(() => { if (view === 'shuffle') render(); },
-      e => { MIX_PAGE.err = e?.message ?? String(e); if (view === 'shuffle') render(); }));
+    if (!MIX_PAGE.err) fire(engineLoad().then(() => repaint(['ui.shuffle']),
+      e => { MIX_PAGE.err = e?.message ?? String(e); repaint(['ui.shuffle']); }));
     return { pending: true };
   }
   const index = mixIndexNow();

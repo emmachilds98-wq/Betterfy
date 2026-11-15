@@ -21,6 +21,7 @@ export const APP_FILES = [
   'app/classify.js',
   'app/reports.js',
   'app/ui.js',
+  'app/store.js',
   'app/actionlog.js',
   'app/player.js',
   'screens/home.js',

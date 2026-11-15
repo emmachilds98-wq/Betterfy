@@ -53,7 +53,7 @@ async function soundBuild(targets) {
   } catch (e) {
     Object.assign(SOUND, { status: 'error', err: e?.message ?? String(e), n: soundHeard(), targets, memo: null });
   }
-  if (view === 'inbox' || view === 'home') render();
+  repaint(['sound']);
 }
 
 /** A space learned elsewhere that the File screen can use as it is: built for
@@ -69,7 +69,7 @@ function soundShareable(space, targets) {
 function soundAdopt(space) {
   const targets = engineTargets().join();
   if (SOUND.status === 'working' || !soundShareable(space, targets)) return;
-  Object.assign(SOUND, { space, n: soundHeard(), targets, status: 'ready', err: null, memo: null, idMemo: null });
+  store.set('sound', { space, n: soundHeard(), targets, status: 'ready', err: null, memo: null, idMemo: null });
 }
 
 /** Heard since the space was built: let it be scored and matched now. */

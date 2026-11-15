@@ -41,7 +41,7 @@ async function gapsCompute() {
   } catch (e) {
     GAPS.status = 'error'; GAPS.err = e?.message ?? String(e);
   }
-  render();
+  repaint(['gaps']);
 }
 
 /** Make a private playlist holding these tracks. Nothing else in the library changes. */

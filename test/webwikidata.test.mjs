@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 import { genreQuery, genresFrom, genreTags } from '../core/sources/wikidata.mjs';
+import { addStore } from './fixtures/page-store.mjs';
 
 /*
  * Keyless genres from Wikidata for artists nothing else has tagged
@@ -74,6 +75,7 @@ function load({ tags = {}, cache = {}, wikidata = {}, wikidataFails = false, las
     URLSearchParams, URL, setTimeout, console,
   };
   vm.createContext(s);
+  addStore(s);
   vm.runInContext(ENGINE, s);
   vm.runInContext(block, s);
   return Object.assign(s, { store: () => store.tags_extra, asked });

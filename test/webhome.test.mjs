@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { addStore } from './fixtures/page-store.mjs';
 
 // UI-5: Home, the chrome's listening slot and the landing line. The sound layer
 // must be invisible to anyone who never turns listening on: with no ListenVM,
@@ -42,6 +43,7 @@ function home({ views = {} } = {}) {
       backlog: [track(2, { suggest: [{ name: 'Deep house', score: 0.82 }] }), track(3)] },
   };
   vm.createContext(sandbox);
+  addStore(sandbox);
   vm.runInContext(slice('const ACT_IC = {', '/** A row-sized cover.', 'Home and the listening slot'), sandbox);
   return sandbox;
 }

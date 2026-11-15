@@ -6,6 +6,7 @@ import { soundLibrary } from './fixtures/sound-library.mjs';
 import { table, clapField, resetSeed } from './fixtures/clap-fixture.mjs';
 import { DISCOVER, renderDiscover, GOLDEN } from './ui4-cards.mjs';
 import { assertSameHTML } from './golden.mjs';
+import { addStore } from './fixtures/page-store.mjs';
 
 /*
  * WP-C3 in the real built page: suggested names on New playlists' "new
@@ -52,6 +53,7 @@ function screen({ lib, records, bare = false, tableJson = table() }) {
   s.addTracks = async (id, ids) => { calls.push(['add', id, ids.length]); };
   s.fetch = async url => { fetched.push(url); return tableJson ? { ok: true, json: async () => tableJson } : { ok: false, status: 404 }; };
   vm.createContext(s);
+  addStore(s);
   vm.runInContext(ENGINE, s);
   if (!bare) vm.runInContext(AUDIOJS, s);
   vm.runInContext(EMPTY, s);

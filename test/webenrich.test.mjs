@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { addStore } from './fixtures/page-store.mjs';
 
 /*
  * Filling a tag gap costs a Last.fm request, and the answer is cached in
@@ -57,6 +58,7 @@ function load({ artists = [], answers = {}, cache = {}, discogs = null } = {}) {
     URLSearchParams, URL, setTimeout, console,
   };
   vm.createContext(sandbox);
+  addStore(sandbox);
   vm.runInContext(slice('async function discogsTags(', "/* ---------- correcting one artist's tags", 'enrich block'), sandbox);
   return Object.assign(sandbox, { store: () => store.tags_extra, asked });
 }

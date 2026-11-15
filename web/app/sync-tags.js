@@ -144,12 +144,11 @@ async function enrichMissing() {
     if (done && done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
   }
   await idb.set('tags_extra', cached);
-  R = buildReports(LIB, CFG, TAGS);
+  store.set('reports', buildReports(LIB, CFG, TAGS));
   $('#land').hidden = true; $('#app').hidden = false;
   toast(`Tags filled for ${done} of ${todo.length} artists.`
     + (viaDiscogs ? ` ${viaDiscogs} from Discogs, where Last.fm had nothing.` : '')
     + (blank ? ` ${blank} have no tags anywhere.` : '')
     + (failed ? ` ${failed} could not be reached — run it again to pick those up.` : ''));
-  render();
 }
 

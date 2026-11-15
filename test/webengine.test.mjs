@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { addStore } from './fixtures/page-store.mjs';
 
 /*
  * The Engine screen, run rather than reasoned about.
@@ -100,6 +101,7 @@ function screen({ lib = library(), backlog = null, tags = {}, durable = true,
   sandbox.render = () => { sandbox.renders++; };
   sandbox.toast = m => sandbox.toasts.push(m);
   vm.createContext(sandbox);
+  addStore(sandbox);
   // The engine bundle first, so the screen's lazy loader finds it already present
   // and never needs the DOM. Loaded exactly as a <script> would: bare, global.
   vm.runInContext(ENGINE, sandbox);

@@ -204,8 +204,9 @@ test('secMisfile notes when a "misfiled" track is one you actually play a lot, w
   const body = BUNDLE.slice(from, to);
   assert.match(body, /recentlyActive\?\.has\(x\.artist\)/);
   assert.match(body, /You play this a lot right now/);
-  // The fetch is lazy and must not block the row rendering that's already there.
-  assert.match(body, /getListening\(\)\.then\(\(\) => render\(\)\)/);
+  // The fetch is lazy and must not block the row rendering that's already there;
+  // when it lands, only Tidy repaints (docs/BUILD-5-PLAN.md A3).
+  assert.match(body, /getListening\(\)\.then\(\(\) => repaint\(\['ui\.tidy'\]\)\)/);
 });
 
 /* ---------- corrections are recorded for syncing (docs/SMARTER-GENRES-PLAN.md phase 4) ---------- */

@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import { fixture, FAMILIES } from './fixtures/engine-library.mjs';
 import { makeRecord, N_STYLES, EMB_DIM } from '../core/audio/record.mjs';
 import { STYLE_LABELS } from '../core/sources/audio-vocab.mjs';
+import { addStore } from './fixtures/page-store.mjs';
 
 /*
  * Sound-first filing on the File screen (the owner's call, 2026-11-14), run
@@ -88,6 +89,7 @@ function page({ on = true, heardNew = true, fb = {}, nudge = null, bpm = false }
     return { space: s.BetterfyIntrinsic.buildSpace(s.LIB, { targets: s.engineTargets(), audio, genreGraph: true }) };
   };
   vm.createContext(s);
+  addStore(s);
   vm.runInContext(ENGINE, s);
   vm.runInContext(CARD, s);
   vm.runInContext('/*' + SOUND_CODE, s);
