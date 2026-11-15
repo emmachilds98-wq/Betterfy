@@ -639,7 +639,7 @@ guess, and everything downstream reads the file, not the rules.
 
 ### Sound first, once a track has been heard
 
-With **Listen to my music** on (Sources, or the File screen's prompt), the File
+With **Listen to my music** on (the default since 2026-11-15; Sources switches it off), the File
 screen files a heard track by **how it sounds**, not by who made it. Its picks
 come from the account-native engine with sound leading: each genre playlist's
 sound prototype (the average of your own heard tracks in it, nudged toward a

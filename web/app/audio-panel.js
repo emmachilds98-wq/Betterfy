@@ -28,9 +28,18 @@ async function audioTracks() {
   return ids.map(id => byId.get(id)).filter(Boolean).map(t => ({ id: t.id, isrc: t.isrc ?? null, durationMs: t.duration_ms }));
 }
 
+/* Listening is on by default, so "is this Wi-Fi?" can't be a question every
+ * session. A computer (a fine pointer and no touch screen) is taken as not
+ * metered when the browser won't say, and a phone's "yes, I'm on Wi-Fi" is
+ * remembered on this device. Cellular and Data Saver still always wait. */
+function audioWifiKnown() {
+  if (AUDIO.wifiOk) return true;
+  try { if (LS.getItem('bf_audio_wifi_ok') === '1') return true; } catch { /* storage off */ }
+  try { return matchMedia('(pointer: fine)').matches && !(navigator.maxTouchPoints > 0); } catch { return false; }
+}
 function audioConnection() {
   const set = audioSettings();
-  return BetterfyAudio.connectionVerdict(navigator.connection, { wifiOnly: set.wifiOnly, confirmed: AUDIO.wifiOk });
+  return BetterfyAudio.connectionVerdict(navigator.connection, { wifiOnly: set.wifiOnly, confirmed: audioWifiKnown() });
 }
 
 /** Start (or resume) listening, if switched on and the connection allows it. */
