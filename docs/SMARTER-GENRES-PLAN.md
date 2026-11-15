@@ -26,6 +26,7 @@ owner's.
 |---|---|
 | Phase 0: similar-artist bridge, measured on the Score card | **Shipped** (#48). **Passed** on the owner's library (+38.1 points on never-filed artists, +29.7 overall; §7) |
 | Phase 1: bridge in real placement, blended with tags | **Built** (this PR): the Score card's "Blended" line, and File's picks from the blend once that line beats tags (§7, "Phase 1 as built") |
+| §4.2(1) the engine's own weights fitted per account | **Built** (this PR): fitted on held-out folds in the Score run, used only when a point ahead of the defaults; the blend is fitted on top (§7, "Weights fitted per account, as built") |
 | Phase 2: calibrated "confident / short list / not sure" | **Shipped** (#49) |
 | Phase 3: New playlists proposes uncovered genres and splits | **Shipped** (#50) |
 | Phase 4: corrections and playlist types sync; artist roll-forward | **Shipped** (#51). Teach queue no longer gated (phase 1 is built), not started |
@@ -423,12 +424,96 @@ from the code and the owner's numbers, and checked on a synthetic library:
   playlists by more than that. On a synthetic library shaped like this one
   (uneven playlist sizes, 85% single-playlist artists), filed-artist top-1
   went from 77% with today's weights to 90% with the graph weighted ×4. The
-  weights are still the priors from `space.mjs`; fitting them on the
-  account's held-out folds is the obvious next step, and the harness already
-  takes `weights`.
+  weights were still the priors from `space.mjs`; fitting them on the
+  account's held-out folds is now built ("Weights fitted per account, as
+  built", below).
 - *Tags see the crowd's word for the artist even when you've filed nothing
   by them*, which is exactly the case the graph can't answer, and exactly the
   case the bridge fixed (11% → 49%).
+
+**Weights fitted per account, as built (2026-11-15).** §4.2(1)'s first half,
+and the next step the finding above names. `core/validate/weights.mjs`.
+
+- **What is fitted.** One multiplier per group of components on top of
+  `space.mjs`'s priors: the artist graph, the label (registrant), the record's
+  shape (length, era, release type, album size, popularity, together), and
+  similar artists for the bridge variant. Each from a seven-step grid (0, ¼, ½,
+  1, 2, 4, 8) by coordinate ascent from the defaults, moving only on a strict
+  gain in top-1 (then top-3), so a library that can't tell two values apart
+  keeps WEIGHTS exactly. Sound and the Rekordbox bonus are left alone: a heard
+  track is still placed with `SOUND_FIRST_WEIGHTS`, so the fit governs unheard
+  tracks. Nothing is trained: it is a handful of combination weights chosen by
+  counting held-out hits on the account's own filing, the same kind of fit
+  the blend weight and the calibration already make, never pooled.
+- **Cheap.** `placementAccuracy(…, { fitParts: true })` keeps every held-out
+  track's raw components against every destination of its own fold's space
+  (`space.mjs` `componentParts`, the same function `placements` now builds its
+  rows with, so the two can't drift). Any weights are then a re-combination of
+  those numbers: no rebuild. On the 500–600-track synthetic libraries the fit
+  adds about 1 s and the nested blend about 0.4 s to the run.
+- **Nested.** For each fold the multipliers are chosen on the other four
+  folds' tracks and scored on this one, so "fitted" on the Score card is for
+  tracks the weights weren't tuned on. Re-scored at the default multipliers it
+  reproduces the harness's own top-1/top-3 exactly (tested). Then the blend is
+  fitted **on top**: fold f's blend weight is chosen on the other folds'
+  tracks as ranked by the native engine with fold f's weights, and scored on
+  fold f under the same, so nothing about fold f, weights or blend, is chosen
+  on fold f (`blendAccuracy`'s `nativeByFold`).
+- **Used only when it earns it.** The page keeps the fit in IndexedDB
+  (`engine-weights`), keyed like the blend by the set of genre playlists and
+  the engine version, and places with it (the Engine screen's comparison, File's
+  blend) only when the held-out top-1 beat the defaults by at least a point.
+  The blend record says whether its weight was fitted on the fitted engine
+  (`nativeFitted`); if so File ranks with those weights, and if that fit is
+  gone or stale the blend isn't used at all. "How sure" is refitted on the
+  fitted engine's held-out rankings when the fit is used. With no stored fit,
+  or one that didn't win, every placement is the same call as before, with no
+  `weights` passed, and the output is byte-identical (`test/webengine.test.mjs`,
+  `test/webblend.test.mjs`). "Forget and learn again" clears it.
+- **Shown.** The Score card gets "Weights fitted to your filing" (default
+  against fitted, for the engine alone and with similar artists, the
+  multipliers, used or not) and a "…with weights fitted to your filing" line
+  under the headline; Copy results gets `This engine, weights fitted to your
+  filing: …` and `With similar artists, weights fitted: …` lines, and the
+  blended line says `fitted weights` when it was fitted on top of them.
+
+*Measured on a synthetic library shaped like the owner's*
+(`test/fixtures/shaped-library.mjs`: 29 genre playlists of 7–60 tracks, five
+scene families, ~15% of artists in two playlists, labels shared within a
+family, half the ISRCs on a distributor code; three seeds, 505–610 scored
+tracks). At the default weights it lands close to the owner's run: 26–35%
+top-1 alone, 7–23% for never-filed artists, 57–66% with similar artists.
+
+| seed | alone, default → fitted | with similar artists, default → fitted | multipliers chosen (alone; with similar artists) |
+|---|---|---|---|
+| 11 | 33% → 53% | 64% → 73% | graph ×8, label off, shape off; graph ×8, label off, shape ×½, similar ×1 |
+| 12 | 26% → 50% | 57% → 67% | graph ×8, label ×¼, shape off; graph ×8, label ×2, shape ×½, similar ×1 |
+| 13 | 35% → 53% | 66% → 73% | graph ×8, label ×1, shape ×½; graph ×8, label ×½, shape ×½, similar ×2 |
+
+The graph goes up and the shape group down every time, which is the
+diagnosis above confirmed by the account's own data rather than assumed.
+For never-filed artists on the engine alone it is roughly a wash (top-1
+13% → 17%, 7% → 18%, 23% → 22%; top-3 fell on one seed, 41% → 23%, because
+shape was all it had for them), and the bridge covers them: with similar
+artists never-filed top-1 rises on every seed (69% → 73%, 65% → 68%,
+74% → 79%). Blended with synthetic tags, fitting the blend on the fitted engine added
+another 3 points of top-1 (82% → 85%, 77% → 80%, 78% → 81%). On the owner's
+library the Score card will say whether any of that holds; until a run shows
+a point of held-out gain, nothing changes for anyone.
+
+*The wide-playlist fix, measured and not adopted.* `space.mjs`
+`graphNormalised` divides the graph cosine by the centroid's own norm (for
+one-artist-per-track members, a member's mean cosine with its centroid is
+exactly that norm), so a filed artist reads about 1 in a playlist of three
+artists or of forty. Offered to the fit as one more group (`graphN`, starting
+at zero), it never beat the fit without it on held-out tracks: −0.8, −0.9 and
+−0.3 points of top-1 alone, −0.6, +0.3 and 0.0 with similar artists. The
+graph's own multiplier already absorbs most of the dilution once shape stops
+out-voting it, and the extra degree of freedom costs a little in overfitting.
+So the Score run doesn't search it (`GRAPH_N_SEARCHED = false`); the component
+is computed only for weights that name it, which the defaults and the stored
+fits never do, and a harness can turn it back on to measure it on another
+library.
 
 **Phase 2 as built (2026-11-14).** `core/intrinsic/calibrate.mjs`, fed by
 `placementAccuracy(…, { collect: true })`. Three changes from §4.2's sketch,

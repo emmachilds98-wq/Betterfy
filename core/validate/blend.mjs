@@ -86,28 +86,43 @@ export function neverFiledIds(lib, ids, { folds = DEFAULT_FOLDS, targets = null,
  *          null when there is nothing to join.
  */
 export function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid = BLEND_GRID,
-                                                     neverFiled = null } = {}) {
+                                                     neverFiled = null, nativeByFold = null, nativeAll = null } = {}) {
   if (!tagRows?.length || !nativeRows?.length) return null;
   const tagById = new Map(tagRows.map(r => [r.id, r]));
   // One entry per track both engines were asked about, with each engine's
   // ranking normalised once and, for every weight on the grid, whether the
   // blend's first answer (and first three) held a playlist the track is in.
-  const rows = [];
-  for (const n of nativeRows) {
-    const t = tagById.get(n.id);
-    if (!t) continue;
-    const want = new Set(n.truth ?? t.truth ?? []);
-    if (!want.size) continue;
-    const tag = normalised(t.scores), nat = normalised(n.scores);
-    const hits = grid.map(w => {
-      const r = blendScores(tag, nat, w);
-      return [!!r[0] && want.has(r[0][0]), r.slice(0, 3).some(x => want.has(x[0]))];
-    });
-    const top = list => [!!list[0] && want.has(list[0][0]), (list ?? []).slice(0, 3).some(x => want.has(x[0]))];
-    rows.push({ id: n.id, fold: foldOf(n.id, folds), fresh: !!neverFiled?.has(n.id),
-                hits, tag: top(t.scores ?? []), nat: top(n.scores ?? []) });
-  }
+  const join = natRows => {
+    const out = [];
+    for (const n of natRows) {
+      const t = tagById.get(n.id);
+      if (!t) continue;
+      const want = new Set(n.truth ?? t.truth ?? []);
+      if (!want.size) continue;
+      const tag = normalised(t.scores), nat = normalised(n.scores);
+      const hits = grid.map(w => {
+        const r = blendScores(tag, nat, w);
+        return [!!r[0] && want.has(r[0][0]), r.slice(0, 3).some(x => want.has(x[0]))];
+      });
+      const top = list => [!!list[0] && want.has(list[0][0]), (list ?? []).slice(0, 3).some(x => want.has(x[0]))];
+      out.push({ id: n.id, fold: foldOf(n.id, folds), fresh: !!neverFiled?.has(n.id),
+                 hits, tag: top(t.scores ?? []), nat: top(n.scores ?? []) });
+    }
+    return out;
+  };
+  const rows = join(nativeRows);
   if (!rows.length) return null;
+  // Nested (core/validate/weights.mjs): the native engine's own weights were
+  // fitted per fold, so fold f's blend is chosen on the other folds' tracks
+  // as ranked by the native engine fold f uses, and scored on fold f's under
+  // the same. Nothing about fold f, weights or blend, is chosen on fold f.
+  const nested = !!nativeByFold;
+  const perFold = new Map();
+  const rowsFor = f => {
+    if (!nested || !nativeByFold[f]) return rows;
+    if (!perFold.has(f)) perFold.set(f, join(nativeByFold[f]));
+    return perFold.get(f);
+  };
 
   // The grid index that does best on `subset`: top-1 first, then top-3, then
   // the weight nearest today's engine (tags), so a tie never moves anyone off
@@ -127,8 +142,9 @@ export function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid
   const all = { n: 0, b1: 0, b3: 0, t1: 0, t3: 0, n1: 0, n3: 0 };
   const nf = { n: 0, b1: 0, b3: 0, t1: 0, t3: 0, n1: 0, n3: 0 };
   for (const f of foldIds) {
-    const train = rows.filter(r => r.fold !== f);
-    const test = rows.filter(r => r.fold === f);
+    const these = rowsFor(f);
+    const train = these.filter(r => r.fold !== f);
+    const test = these.filter(r => r.fold === f);
     // A single fold has nothing to train on: fit on itself, which is the most
     // anyone can do, and the beat test below still compares like with like.
     const i = best(train.length ? train : test);
@@ -152,13 +168,14 @@ export function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid
     && head.top3 >= head.tags.top3 - BEAT_MARGIN - 1e-9;
   return {
     ...head,
-    weight: grid[best(rows)],
+    weight: grid[best(nested && nativeAll ? join(nativeAll) : rows)],
     foldWeights,
     neverFiled: neverFiled ? out(nf) : null,
     beatsTags,
     margin: BEAT_MARGIN,
     blendVersion: BLEND_VERSION,
     version: BLEND_ACCURACY_VERSION,
+    ...(nested ? { nested: true } : {}),
   };
 }
 
@@ -168,10 +185,18 @@ export function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid
  * harness's way, and the fit. Null when either side has no rows (no tags, or
  * the run was not collecting).
  */
-export function blendFromRun(lib, { base, mine, folds = DEFAULT_FOLDS, targets = null, isMirror = null } = {}) {
+export function blendFromRun(lib, { base, mine, folds = DEFAULT_FOLDS, targets = null, isMirror = null,
+                                    nativeFit = null } = {}) {
+  const withBridge = !!mine?.withBridge?.rows;
   const nativeRows = mine?.withBridge?.rows ?? mine?.rows ?? null;
   if (!base?.rows?.length || !nativeRows?.length) return null;
   const nf = neverFiledIds(lib, nativeRows.map(r => r.id), { folds, targets, isMirror });
-  const r = blendAccuracy(base.rows, nativeRows, { folds, neverFiled: nf });
-  return r ? { ...r, withBridge: !!mine?.withBridge?.rows } : null;
+  // The native engine's fitted weights, when this account's fit earned its
+  // place (weights.mjs `use`): the blend is then fitted on top of the engine
+  // the page will actually run. Otherwise the defaults, exactly as before.
+  const fit = withBridge ? nativeFit?.bridge : nativeFit?.plain;
+  const nested = fit?.use && fit.byFold && fit.all
+    ? { nativeByFold: fit.byFold, nativeAll: fit.all } : {};
+  const r = blendAccuracy(base.rows, nativeRows, { folds, neverFiled: nf, ...nested });
+  return r ? { ...r, withBridge, ...(nested.nativeAll ? { nativeFitted: true } : {}) } : null;
 }

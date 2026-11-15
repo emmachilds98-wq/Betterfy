@@ -50,12 +50,13 @@ const TAGS_OF = lib => {
 const RAW = { ['freshNew0'.padEnd(22, 'x')]: { deezerId: 1, deezerAt: Date.now(), mbidAt: Date.now(),
   deezer: [0, 1, 2, 3].map(i => ({ id: 100 + i, name: `jungle core ${i}` })) } };
 
-function load({ stored = null, raw = null, bridgeOff = false, blend = true, listening = null } = {}) {
+function load({ stored = null, raw = null, bridgeOff = false, blend = true, listening = null, weights = null } = {}) {
   const lib = library(), tags = TAGS_OF(lib);
   const targets = new Set(['p-jungle', 'p-garage']);
   const { profiles, idf } = buildProfiles(lib, tags, targets);
   const store = new Map();
   if (stored) store.set('engine-blend', stored);
+  if (weights) store.set('engine-weights', weights);
   if (raw) store.set('bridge-raw', { at: 1, raw });
   const calls = { engineLoad: 0, gather: [], fired: [], renders: 0 };
   const row = (t, suggest) => ({ id: t.id, title: t.name, artist: t.artists[0].name, album: 'A', released: '2021',
@@ -86,6 +87,7 @@ function load({ stored = null, raw = null, bridgeOff = false, blend = true, list
     BetterfyBlend: Blend, BetterfyBridge: Bridge,
     BetterfyIntrinsic: { placements },
     BetterfyPersist: { ENGINE_STAMP: 'stamp' },
+    BetterfyWeightFit: { WEIGHT_FIT_VERSION: '1.0.0' },
     BetterfyBridgeFetch: { TTL_MS: 60 * 864e5,
       gatherBridge: async (artists, { cache }) => { calls.gather.push([...artists.keys()]); return { raw: { ...cache }, stats: {} }; } },
     matchMedia: () => ({ matches: false }),
@@ -192,4 +194,48 @@ test('a new Score run that drops the blend puts File back to today', async () =>
   await app.blendRemember({ blend: null });
   assert.equal(app.store.has('engine-blend'), false);
   assert.deepEqual(await screens(app), today);
+});
+
+/* ---------- this engine's fitted weights (core/validate/weights.mjs) ---------- */
+
+const WSTAMP = '1.0.0/stamp';
+/** A fit for the engine with similar artists that ignores them entirely, so a
+ *  newcomer known only through similar artists gets no native picks at all. */
+const FIT = { stamp: WSTAMP, targets: ['p-garage', 'p-jungle'],
+  bridge: { use: true, weights: { graph: 1, registrant: 0.5, minutes: 0.25, era: 0.3, albumType: 0.2, albumTracks: 0.15,
+                                  popularity: 0.1, bpm: 0.4, key: 0.25, audio: 0.5, learned: 0.5, bridge: 0 } } };
+
+test('a blend fitted on default weights ignores a stored weight fit: picks byte-identical', async () => {
+  const plain = await screens(load({ stored: BEATS, raw: RAW }));
+  const app = load({ stored: BEATS, raw: RAW, weights: FIT });
+  assert.deepEqual(await screens(app), plain);
+  assert.equal(vm.runInContext('BLEND.native', app), null);
+});
+
+test('a blend fitted on the fitted engine, with that fit gone or stale: File is today\'s', async () => {
+  const today = await screens(load({ blend: false, raw: RAW }));
+  for (const weights of [null, { ...FIT, stamp: 'old' }, { ...FIT, targets: ['p-other'] },
+                         { ...FIT, bridge: { ...FIT.bridge, use: false } }]) {
+    const app = load({ stored: { ...BEATS, nativeFitted: true }, raw: RAW, weights });
+    assert.deepEqual(await screens(app), today, JSON.stringify(weights)?.slice(0, 60));
+    assert.equal(vm.runInContext('BLEND.status', app), 'off');
+  }
+});
+
+test('a blend fitted on the fitted engine ranks with those weights', async () => {
+  const app = load({ stored: { ...BEATS, nativeFitted: true }, raw: RAW, weights: FIT });
+  await screens(app);
+  assert.equal(vm.runInContext('BLEND.status', app), 'ready');
+  assert.equal(vm.runInContext('BLEND.native.bridge', app), 0);
+  // Similar artists weighted to nothing: the untagged newcomer, known only
+  // through them, no longer leans to the playlist they live in…
+  const picks = app.blendPicks(app.lib.liked[0], []);
+  assert.ok(picks.length >= 2);
+  assert.equal(picks[0].score, picks[1].score, JSON.stringify(picks));
+  // …whereas at the default weights it does.
+  const plain = load({ stored: BEATS, raw: RAW });
+  await screens(plain);
+  const def = plain.blendPicks(plain.lib.liked[0], []);
+  assert.equal(def[0].id, 'p-jungle');
+  assert.ok(def[0].score > def[1].score, JSON.stringify(def));
 });

@@ -18,7 +18,7 @@
  * engine's picks underneath them. Nothing here writes to Spotify.
  * ======================================================================== */
 const BLEND_KEY = 'engine-blend';
-const BLEND = { status: 'idle', rec: null, base: null, space: null, targets: '', memo: new Map(), ver: 0,
+const BLEND = { status: 'idle', rec: null, base: null, space: null, native: null, targets: '', memo: new Map(), ver: 0,
                 fetching: false, gated: null, gatedFor: null, liked: null, likedFor: null, err: null };
 /** Similar-artist lookups gathered per save: small enough that a closed tab loses little. */
 const BLEND_CHUNK = 40;
@@ -34,6 +34,9 @@ async function blendRemember(v) {
     if (!b) await idb.del(BLEND_KEY);
     else await idb.set(BLEND_KEY, { stamp: blendStamp(), targets: engineTargets(), at: Date.now(),
       weight: b.weight, beatsTags: !!b.beatsTags, withBridge: !!b.withBridge, scored: b.scored,
+      // Fitted on top of this engine's fitted weights (core/validate/weights.mjs):
+      // the File screen must then rank with those same weights, or not at all.
+      ...(b.nativeFitted ? { nativeFitted: true } : {}),
       top1: b.top1, top3: b.top3, tags: b.tags, neverFiled: b.neverFiled ?? null });
   } catch { /* not remembered: File keeps today's picks, which is the safe side */ }
   blendForget();
@@ -41,7 +44,7 @@ async function blendRemember(v) {
 
 /** Start again from the stored record on the next File render. */
 function blendForget() {
-  Object.assign(BLEND, { status: 'idle', rec: null, base: null, space: null, err: null });
+  Object.assign(BLEND, { status: 'idle', rec: null, base: null, space: null, native: null, err: null });
   BLEND.memo.clear(); BLEND.ver++;
 }
 
@@ -69,11 +72,20 @@ async function blendStart() {
     const raw = (await idb.get(BRIDGE_KEY))?.raw ?? null;
     await engineLoad();
     if (rec.stamp !== blendStamp()) { BLEND.status = 'off'; return; }
+    // A blend weight fitted on top of the engine's fitted weights is only
+    // right with those weights; without them (forgotten, or another engine
+    // version) it is not used at all.
+    let native = null;
+    if (rec.nativeFitted) {
+      await weightsLoad();
+      native = fittedWeights('bridge');
+      if (!native) { BLEND.status = 'off'; return; }
+    }
     const learned = typeof ENG !== 'undefined' && ENG.space
       && JSON.stringify(ENG.space.targets ?? null) === JSON.stringify(targets) ? ENG.space : null;
     const base = learned ?? (await engineSpace()).space;
     if (!base) { BLEND.status = 'off'; return; }
-    Object.assign(BLEND, { rec, base, targets: targets.join(), status: 'ready', err: null });
+    Object.assign(BLEND, { rec, base, native, targets: targets.join(), status: 'ready', err: null });
     blendSetBridge(raw);
     if (view === 'inbox' || view === 'home') render();
     fire(blendFetch());
@@ -162,7 +174,8 @@ function blendPicks(t, tagPicks) {
   let picks = tagPicks;
   if (raw) {
     const tagRanked = R?.profiles && TAGS ? rank(raw, blendTags(), R.profiles, R.idf, { top: Infinity }) : [];
-    const nat = BetterfyIntrinsic.placements(raw, BLEND.space, { limit: Infinity }).results ?? [];
+    const nat = BetterfyIntrinsic.placements(raw, BLEND.space,
+      BLEND.native ? { limit: Infinity, weights: BLEND.native } : { limit: Infinity }).results ?? [];
     const w = BLEND.rec.weight;
     const ranked = BetterfyBlend.blendScores(tagRanked, nat, w)
       .filter(([id]) => CFG[id]?.target && !rejected.includes(id));
@@ -182,4 +195,63 @@ function blendPicks(t, tagPicks) {
   }
   BLEND.memo.set(key, picks);
   return picks;
+}
+
+/* ---------- this engine's own weights, fitted to this account ----------
+ * core/validate/weights.mjs: the Score run fits how much the artist graph,
+ * the label, the record's shape and similar artists each count, on this
+ * account's own held-out filing, nested over the folds. Kept per set of genre
+ * playlists and engine version (like the blend above, not per library
+ * fingerprint, so filing a track doesn't throw it away), and used for placing
+ * (the Engine screen's comparison, File's blend) only where the held-out top-1
+ * beat the default weights by a point. Nothing stored, or a fit that didn't
+ * win: every placement is made exactly as before, with no `weights` passed. */
+const WFIT_KEY = 'engine-weights';
+/** `undefined` until read from storage; null when there is nothing to use. */
+const WFIT = { rec: undefined };
+const wfitStamp = () => `${BetterfyWeightFit.WEIGHT_FIT_VERSION}/${BetterfyPersist.ENGINE_STAMP}`;
+
+/** Read the stored fit once (needs the engine bundle for its stamp). */
+async function weightsLoad() {
+  if (WFIT.rec !== undefined) return WFIT.rec;
+  let rec = null;
+  try { rec = (await idb.get(WFIT_KEY)) ?? null; } catch { rec = null; }
+  if (rec && (typeof BetterfyWeightFit === 'undefined' || rec.stamp !== wfitStamp())) rec = null;
+  return (WFIT.rec = rec);
+}
+
+/** The fitted weights for 'plain' (the engine alone) or 'bridge' (with similar
+ *  artists), or null: not fitted, not ahead by a point, or other playlists. */
+function fittedWeights(kind) {
+  const rec = WFIT.rec, v = rec?.[kind];
+  if (!v?.use || !v.weights) return null;
+  if (JSON.stringify(rec.targets ?? null) !== JSON.stringify(engineTargets())) return null;
+  return v.weights;
+}
+
+/** `opts` for placements(), with the fitted weights when there are any to use
+ *  and `opts` itself otherwise, so a default placement is the same call as before. */
+function withFittedWeights(opts, kind) {
+  const w = fittedWeights(kind);
+  return w ? { ...opts, weights: w } : opts;
+}
+
+/** Keep the Score run's fit, or forget the last one when this run had none. */
+async function weightsRemember(v) {
+  const f = v && !v.error ? v.weights : null;
+  const keep = x => (x ? { use: !!x.use, weights: x.weights, multipliers: x.multipliers,
+                           scored: x.scored, default: x.default, fitted: x.fitted } : null);
+  const rec = f?.plain ? { stamp: wfitStamp(), targets: engineTargets(), at: Date.now(),
+                           plain: keep(f.plain), bridge: keep(f.bridge) } : null;
+  try {
+    if (!rec) await idb.del(WFIT_KEY);
+    else await idb.set(WFIT_KEY, rec);
+  } catch { /* not remembered: it still applies until the page is closed */ }
+  WFIT.rec = rec;
+}
+
+/** Forget the fit ("Forget and learn again"). */
+async function weightsForget() {
+  try { await idb.del(WFIT_KEY); } catch {}
+  WFIT.rec = null;
 }

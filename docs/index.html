@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0824">
+<meta name="bf-build" content="2026-11-15-0846">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1486,7 +1486,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0824</span>
+    <span class="mono">build 2026-11-15-0846</span>
   </p>
 
   <div class="feat">
@@ -1590,7 +1590,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0824</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0846</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1631,7 +1631,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0824</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0846</span>
   </div>
 </div>
 
@@ -3500,7 +3500,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0824';
+const BUILD = '2026-11-15-0846';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3821,7 +3821,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0824', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0846', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -7879,7 +7879,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0824';
+    s.src = 'engine.js?v=2026-11-15-0846';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -7901,7 +7901,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0824');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0846');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -8032,8 +8032,17 @@ async function engineCalibrate(v) {
   const mine = v?.mine;
   if (!mine?.rows) return;
   await engineLoad();
-  const base = BetterfyCalibrate.calibrationReport(mine.rows);
-  const bridge = mine.withBridge?.rows ? BetterfyCalibrate.calibrationReport(mine.withBridge.rows) : null;
+  // Where this run's fitted weights are the ones placement now uses
+  // (weightsRemember), "how sure" is fitted on the engine they make: each
+  // track's held-out ranking under its own fold's weights. Otherwise the
+  // default-weight rows, exactly as before.
+  const wf = v.weights;
+  const baseRows = wf?.plain?.use && wf.plain.rows ? wf.plain.rows : mine.rows;
+  const bridgeRows = wf?.bridge?.use && wf.bridge.rows ? wf.bridge.rows : mine.withBridge?.rows;
+  if (wf?.plain) delete wf.plain.rows;
+  if (wf?.bridge) delete wf.bridge.rows;
+  const base = BetterfyCalibrate.calibrationReport(baseRows);
+  const bridge = bridgeRows ? BetterfyCalibrate.calibrationReport(bridgeRows) : null;
   // WP-C1: which ear this run chose. The first ear unless a second ear passed
   // the gate and beat it; its calibration then comes from that ear's rows.
   const choice = mine.withAudio?.choice ?? null;
@@ -8068,7 +8077,7 @@ function engineDecorate() {
     row.decision = null;
     const raw = cal && likedById.get(row.id);
     if (!raw) continue;
-    const full = BetterfyIntrinsic.placements(raw, space, { limit: Infinity, soundFirst: true });
+    const full = BetterfyIntrinsic.placements(raw, space, withFittedWeights({ limit: Infinity, soundFirst: true }, 'plain'));
     const p = full.results?.[0]?.parts ?? {};
     const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []),
                                        'audio' in p || 'learned' in p ? soundCal : cal);
@@ -8077,6 +8086,43 @@ function engineDecorate() {
     count[d.kind]++;
   }
   sh.decided = cal ? count : null;
+}
+
+/** The comparison with the File screen's picks, for the tracks waiting first.
+ *  Redone after a Score run, since that may have changed the weights. */
+function engineShadow() {
+  const space = ENG.space;
+  if (!space) return;
+  const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
+  const rows = [];
+  for (const b of R.backlog.slice(0, SHADOW_N)) {
+    const raw = likedById.get(b.id);
+    if (!raw) continue;
+    // Sound-first, as the File screen files: a heard track by its sound.
+    // With this account's fitted weights when its Score run earned them
+    // (app/blend.js `withFittedWeights`); otherwise exactly as before.
+    const out = BetterfyIntrinsic.placements(raw, space, withFittedWeights({ why: true, limit: 3, soundFirst: true }, 'plain'));
+    const mine = out.results?.[0] ?? null;
+    const theirs = b.suggest?.[0] ?? null;
+    rows.push({ id: b.id, title: b.title, artist: b.artist,
+      theirs: theirs ? { id: theirs.id, name: theirs.name } : null,
+      mine: mine ? { id: mine.playlistId, name: mine.name, score: mine.score } : null,
+      band: out.band ?? null, declined: !!out.declined, why: mine?.why ?? null,
+      // Whether anything it said is about *this record* rather than about its
+      // shape. A track by an artist the account has never filed still places,
+      // on duration and release type and era alone — and that is a far weaker
+      // claim than the confidence band on its own suggests, because generic
+      // shape fits a generic bucket comfortably. The strong mark is the engine's
+      // own flag for evidence that names something, so its absence is the test.
+      shapeOnly: !!mine && !(mine.why ?? []).some(w => w.mark === BetterfyExplain.MARKS.strong) });
+  }
+  const judged = rows.filter(r => r.theirs && r.mine);
+  ENG.shadow = { rows, judged: judged.length,
+    agree: judged.filter(r => r.theirs.id === r.mine.id).length,
+    onlyMine: rows.filter(r => r.mine && !r.theirs).length,
+    onlyTheirs: rows.filter(r => r.theirs && !r.mine).length,
+    shapeOnly: rows.filter(r => r.shapeOnly).length };
+  engineDecorate();
 }
 
 /** Learn the account, then show what this engine would do with the same tracks
@@ -8090,33 +8136,8 @@ const engineAnalyse = guard(async () => {
     soundAdopt(space);
     ENG.rung = BetterfyColdStart.rungOf(LIB, space);
 
-    const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
-    const rows = [];
-    for (const b of R.backlog.slice(0, SHADOW_N)) {
-      const raw = likedById.get(b.id);
-      if (!raw) continue;
-      // Sound-first, as the File screen files: a heard track by its sound.
-      const out = BetterfyIntrinsic.placements(raw, space, { why: true, limit: 3, soundFirst: true });
-      const mine = out.results?.[0] ?? null;
-      const theirs = b.suggest?.[0] ?? null;
-      rows.push({ id: b.id, title: b.title, artist: b.artist,
-        theirs: theirs ? { id: theirs.id, name: theirs.name } : null,
-        mine: mine ? { id: mine.playlistId, name: mine.name, score: mine.score } : null,
-        band: out.band ?? null, declined: !!out.declined, why: mine?.why ?? null,
-        // Whether anything it said is about *this record* rather than about its
-        // shape. A track by an artist the account has never filed still places,
-        // on duration and release type and era alone — and that is a far weaker
-        // claim than the confidence band on its own suggests, because generic
-        // shape fits a generic bucket comfortably. The strong mark is the engine's
-        // own flag for evidence that names something, so its absence is the test.
-        shapeOnly: !!mine && !(mine.why ?? []).some(w => w.mark === BetterfyExplain.MARKS.strong) });
-    }
-    const judged = rows.filter(r => r.theirs && r.mine);
-    ENG.shadow = { rows, judged: judged.length,
-      agree: judged.filter(r => r.theirs.id === r.mine.id).length,
-      onlyMine: rows.filter(r => r.mine && !r.theirs).length,
-      onlyTheirs: rows.filter(r => r.theirs && !r.mine).length,
-      shapeOnly: rows.filter(r => r.shapeOnly).length };
+    await weightsLoad();
+    engineShadow();
     await engineLoadCalibration();
     engineDecorate();
 
@@ -8234,7 +8255,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0824';
+    s.src = 'audio.js?v=2026-11-15-0846';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -8270,7 +8291,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0824', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0846', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -8571,7 +8592,7 @@ function soundPicks(t) {
  * engine's picks underneath them. Nothing here writes to Spotify.
  * ======================================================================== */
 const BLEND_KEY = 'engine-blend';
-const BLEND = { status: 'idle', rec: null, base: null, space: null, targets: '', memo: new Map(), ver: 0,
+const BLEND = { status: 'idle', rec: null, base: null, space: null, native: null, targets: '', memo: new Map(), ver: 0,
                 fetching: false, gated: null, gatedFor: null, liked: null, likedFor: null, err: null };
 /** Similar-artist lookups gathered per save: small enough that a closed tab loses little. */
 const BLEND_CHUNK = 40;
@@ -8587,6 +8608,9 @@ async function blendRemember(v) {
     if (!b) await idb.del(BLEND_KEY);
     else await idb.set(BLEND_KEY, { stamp: blendStamp(), targets: engineTargets(), at: Date.now(),
       weight: b.weight, beatsTags: !!b.beatsTags, withBridge: !!b.withBridge, scored: b.scored,
+      // Fitted on top of this engine's fitted weights (core/validate/weights.mjs):
+      // the File screen must then rank with those same weights, or not at all.
+      ...(b.nativeFitted ? { nativeFitted: true } : {}),
       top1: b.top1, top3: b.top3, tags: b.tags, neverFiled: b.neverFiled ?? null });
   } catch { /* not remembered: File keeps today's picks, which is the safe side */ }
   blendForget();
@@ -8594,7 +8618,7 @@ async function blendRemember(v) {
 
 /** Start again from the stored record on the next File render. */
 function blendForget() {
-  Object.assign(BLEND, { status: 'idle', rec: null, base: null, space: null, err: null });
+  Object.assign(BLEND, { status: 'idle', rec: null, base: null, space: null, native: null, err: null });
   BLEND.memo.clear(); BLEND.ver++;
 }
 
@@ -8622,11 +8646,20 @@ async function blendStart() {
     const raw = (await idb.get(BRIDGE_KEY))?.raw ?? null;
     await engineLoad();
     if (rec.stamp !== blendStamp()) { BLEND.status = 'off'; return; }
+    // A blend weight fitted on top of the engine's fitted weights is only
+    // right with those weights; without them (forgotten, or another engine
+    // version) it is not used at all.
+    let native = null;
+    if (rec.nativeFitted) {
+      await weightsLoad();
+      native = fittedWeights('bridge');
+      if (!native) { BLEND.status = 'off'; return; }
+    }
     const learned = typeof ENG !== 'undefined' && ENG.space
       && JSON.stringify(ENG.space.targets ?? null) === JSON.stringify(targets) ? ENG.space : null;
     const base = learned ?? (await engineSpace()).space;
     if (!base) { BLEND.status = 'off'; return; }
-    Object.assign(BLEND, { rec, base, targets: targets.join(), status: 'ready', err: null });
+    Object.assign(BLEND, { rec, base, native, targets: targets.join(), status: 'ready', err: null });
     blendSetBridge(raw);
     if (view === 'inbox' || view === 'home') render();
     fire(blendFetch());
@@ -8715,7 +8748,8 @@ function blendPicks(t, tagPicks) {
   let picks = tagPicks;
   if (raw) {
     const tagRanked = R?.profiles && TAGS ? rank(raw, blendTags(), R.profiles, R.idf, { top: Infinity }) : [];
-    const nat = BetterfyIntrinsic.placements(raw, BLEND.space, { limit: Infinity }).results ?? [];
+    const nat = BetterfyIntrinsic.placements(raw, BLEND.space,
+      BLEND.native ? { limit: Infinity, weights: BLEND.native } : { limit: Infinity }).results ?? [];
     const w = BLEND.rec.weight;
     const ranked = BetterfyBlend.blendScores(tagRanked, nat, w)
       .filter(([id]) => CFG[id]?.target && !rejected.includes(id));
@@ -8735,6 +8769,65 @@ function blendPicks(t, tagPicks) {
   }
   BLEND.memo.set(key, picks);
   return picks;
+}
+
+/* ---------- this engine's own weights, fitted to this account ----------
+ * core/validate/weights.mjs: the Score run fits how much the artist graph,
+ * the label, the record's shape and similar artists each count, on this
+ * account's own held-out filing, nested over the folds. Kept per set of genre
+ * playlists and engine version (like the blend above, not per library
+ * fingerprint, so filing a track doesn't throw it away), and used for placing
+ * (the Engine screen's comparison, File's blend) only where the held-out top-1
+ * beat the default weights by a point. Nothing stored, or a fit that didn't
+ * win: every placement is made exactly as before, with no `weights` passed. */
+const WFIT_KEY = 'engine-weights';
+/** `undefined` until read from storage; null when there is nothing to use. */
+const WFIT = { rec: undefined };
+const wfitStamp = () => `${BetterfyWeightFit.WEIGHT_FIT_VERSION}/${BetterfyPersist.ENGINE_STAMP}`;
+
+/** Read the stored fit once (needs the engine bundle for its stamp). */
+async function weightsLoad() {
+  if (WFIT.rec !== undefined) return WFIT.rec;
+  let rec = null;
+  try { rec = (await idb.get(WFIT_KEY)) ?? null; } catch { rec = null; }
+  if (rec && (typeof BetterfyWeightFit === 'undefined' || rec.stamp !== wfitStamp())) rec = null;
+  return (WFIT.rec = rec);
+}
+
+/** The fitted weights for 'plain' (the engine alone) or 'bridge' (with similar
+ *  artists), or null: not fitted, not ahead by a point, or other playlists. */
+function fittedWeights(kind) {
+  const rec = WFIT.rec, v = rec?.[kind];
+  if (!v?.use || !v.weights) return null;
+  if (JSON.stringify(rec.targets ?? null) !== JSON.stringify(engineTargets())) return null;
+  return v.weights;
+}
+
+/** `opts` for placements(), with the fitted weights when there are any to use
+ *  and `opts` itself otherwise, so a default placement is the same call as before. */
+function withFittedWeights(opts, kind) {
+  const w = fittedWeights(kind);
+  return w ? { ...opts, weights: w } : opts;
+}
+
+/** Keep the Score run's fit, or forget the last one when this run had none. */
+async function weightsRemember(v) {
+  const f = v && !v.error ? v.weights : null;
+  const keep = x => (x ? { use: !!x.use, weights: x.weights, multipliers: x.multipliers,
+                           scored: x.scored, default: x.default, fitted: x.fitted } : null);
+  const rec = f?.plain ? { stamp: wfitStamp(), targets: engineTargets(), at: Date.now(),
+                           plain: keep(f.plain), bridge: keep(f.bridge) } : null;
+  try {
+    if (!rec) await idb.del(WFIT_KEY);
+    else await idb.set(WFIT_KEY, rec);
+  } catch { /* not remembered: it still applies until the page is closed */ }
+  WFIT.rec = rec;
+}
+
+/** Forget the fit ("Forget and learn again"). */
+async function weightsForget() {
+  try { await idb.del(WFIT_KEY); } catch {}
+  WFIT.rec = null;
 }
 /* ---------- CLAP: names for "new genre?" groups, and "sounds like" search ----------
  * docs/AUDIO-BUILD-PLAN.md WP-C3, over core/audio/clap-search.mjs. Both read
@@ -8932,7 +9025,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-0824', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-0846', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -9119,7 +9212,7 @@ const engineValidate = guard(async () => {
     // with sound leading (soundFirst), so the number is the engine you use.
     try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioScore(audio),
                                                     opts: { folds: 5, limit: VALIDATE_N, collect: true,
-                                                            genreGraph: true, soundFirst: true } }); }
+                                                            genreGraph: true, soundFirst: true, fitParts: true } }); }
     catch { done = null; }
     const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
     if (done?.result?.mine) {
@@ -9130,24 +9223,34 @@ const engineValidate = guard(async () => {
       await yieldToPaint();
       const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
                        audio: engineAudioScore(audio), collect: true,
-                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS };
+                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS, fitParts: true };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
-      // The two blended per track, as the worker does (plan phase 1).
+      // This engine's weights fitted to your filing, nested, as the worker does.
+      let fit = null;
+      try { fit = BetterfyWeightFit.weightsFromRun(mine); }
+      catch { fit = null; delete mine.partRows; }
+      // The two blended per track, as the worker does (plan phase 1), on top of
+      // the fitted weights when those earned their place.
       let blend = null;
       try { blend = base ? BetterfyBlendScore.blendFromRun(LIB, { base, mine, folds: common.folds,
-              targets: common.targets, isMirror: isMirrorPlaylist }) : null; }
+              targets: common.targets, isMirror: isMirrorPlaylist, nativeFit: fit }) : null; }
       catch { blend = null; }
+      const weights = BetterfyWeightFit.fitSummary(fit);
       if (base) delete base.rows;
       let identify = null;
       try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
       catch { identify = null; }
-      ENG.val = { mine, base, blend, identify, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      ENG.val = { mine, base, blend, identify, weights, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
+    // The fitted weights first: calibration is refitted on the engine they
+    // make, and the comparison above is redone with them.
+    await weightsRemember(ENG.val);
     await engineCalibrate(ENG.val);
     // Kept for the File screen, which uses the blend only if this says it is ahead.
     await blendRemember(ENG.val);
+    if (ENG.space && ENG.status === 'ready') { try { engineShadow(); } catch { /* the old comparison stays */ } }
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }
@@ -9356,11 +9459,12 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0824`,
+    `Betterfy engine score — build 2026-11-15-0846`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
     `This engine: top-1 ${pc(v.mine.top1)}, top-3 ${pc(v.mine.top3)} (${v.mine.scored} tracks)`,
+    ...weightsLines(v, pc),
     v.base ? `Today's engine: top-1 ${pc(v.base.top1)}, top-3 ${pc(v.base.top3)}${v.base.noAnswer ? `, no tags for ${v.base.noAnswer}` : ''}`
            : `Today's engine: not scored (no tag data loaded)`,
     v.mine.declined ? `Declined: ${v.mine.declined}, of which would have been right: ${v.mine.declinedWouldHaveBeenRight ?? 0}` : null,
@@ -9376,6 +9480,51 @@ function engineSummary() {
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   return lines.filter(Boolean).join('\n');
+}
+
+/** "×4" for a multiplier, "off" for zero. */
+const timesText = m => (m === 0 ? 'off' : `×${m}`);
+
+/** The fitted weights as words: what each group was multiplied by. */
+function multipliersText(m, withBridge) {
+  if (!m) return '';
+  const bits = [`artist graph ${timesText(m.graph)}`, `label ${timesText(m.registrant)}`, `record shape ${timesText(m.shape)}`];
+  if (withBridge) bits.push(`similar artists ${timesText(m.bridge)}`);
+  if (m.graphN) bits.push(`graph, wide playlists evened ${timesText(m.graphN)}`);
+  return bits.join(', ');
+}
+
+/** The weight fit's part of the pasteable summary (core/validate/weights.mjs). */
+function weightsLines(v, pc) {
+  const f = v.weights;
+  if (!f?.plain) return [];
+  const line = (label, x, withBridge) => x ? `${label}: top-1 ${pc(x.fitted.top1)}, top-3 ${pc(x.fitted.top3)} `
+    + `(default weights ${pc(x.default.top1)} / ${pc(x.default.top3)}); ${multipliersText(x.multipliers, withBridge)} — `
+    + (x.use ? 'used' : 'not a point ahead, defaults kept') : null;
+  return [
+    line('This engine, weights fitted to your filing', f.plain, false),
+    line('With similar artists, weights fitted', f.bridge, true),
+  ].filter(Boolean);
+}
+
+/** The weight fit on the score card. Empty without one. */
+function weightsCard(v, p) {
+  const f = v && !v.error ? v.weights : null;
+  if (!f?.plain) return '';
+  const names = ['default', 'fitted'];
+  const one = (title, x, withBridge) => !x ? '' : `
+    <div class="pairs">
+      ${pairBars(`${title} — right first time`, x.default.top1, x.fitted.top1, p, null, names)}
+      ${pairBars(`${title} — in the top three`, x.default.top3, x.fitted.top3, p, null, names)}
+    </div>
+    <p class="why" style="margin-top:6px"><span class="tag ${x.use ? 'ok' : 'idle'}">${x.use ? 'used' : 'not used'}</span>
+      ${esc(multipliersText(x.multipliers, withBridge))}.</p>`;
+  return `<h3 style="margin:18px 0 6px; font-size:16px">Weights fitted to your filing</h3>
+    <p class="why">How much the artist graph, the label, the record's shape${f.bridge ? ' and similar artists' : ''} each
+      count, chosen on four folds of your filed tracks and scored on the fifth, five times over — so "fitted" is on
+      tracks the weights weren't tuned on. They're only used when that beats the defaults by a point.</p>
+    ${one('This engine', f.plain, false)}
+    ${one('With similar artists', f.bridge, true)}`;
 }
 
 /** The bridge's part of the pasteable summary. Counts and rates only. */
@@ -9403,7 +9552,7 @@ function blendLines(v, pc) {
   const nf = b.neverFiled;
   const folds = Object.values(b.foldWeights ?? {}).join(', ');
   return [
-    `Blended (tags ${b.weight} + this engine${b.withBridge ? ' with similar artists' : ''}): top-1 ${pc(b.top1)}, top-3 ${pc(b.top3)}; `
+    `Blended (tags ${b.weight} + this engine${b.withBridge ? ' with similar artists' : ''}${b.nativeFitted ? ', fitted weights' : ''}): top-1 ${pc(b.top1)}, top-3 ${pc(b.top3)}; `
       + `today's ${pc(b.tags.top1)} / ${pc(b.tags.top3)}, this engine ${pc(b.native.top1)} / ${pc(b.native.top3)} on the same ${b.scored} tracks`
       + (folds ? ` (weight per fold ${folds})` : ''),
     nf?.scored ? `Never-filed artists blended: top-1 ${pc(nf.top1)}, top-3 ${pc(nf.top3)} (today's ${pc(nf.tags.top1)}, `
@@ -9478,6 +9627,8 @@ const engineReset = guard(async () => {
   // And the blend the File screen was using: it was fitted on what is being forgotten.
   try { await idb.del(BLEND_KEY); } catch {}
   blendForget();
+  // And this engine's fitted weights, fitted on the same.
+  await weightsForget();
   Object.assign(ENG, { status:'idle', space:null, rung:null, shadow:null,
                        pairs:null, val:null, calib:null, ms:0, from:null });
   toast('Cleared. The next analysis rebuilds from your library.');
@@ -9632,6 +9783,7 @@ function vEngine() {
     ${v && !v.error ? `<div class="facts" style="margin-top:16px">
       <div><span><b>This engine</b> — right first time</span><b class="mono">${p(v.mine.top1)}</b></div>
       <div><span>…in its top three</span><b class="mono">${p(v.mine.top3)}</b></div>
+      ${v.weights?.plain ? `<div><span>…with weights fitted to your filing${v.weights.plain.use ? '' : ' (not used)'}</span><b class="mono">${p(v.weights.plain.fitted.top1)} / ${p(v.weights.plain.fitted.top3)}</b></div>` : ''}
       ${v.base ? `<hr>
       <div><span><b>Today's engine</b> — right first time</span><b class="mono">${p(v.base.top1)}</b></div>
       <div><span>…in its top three</span><b class="mono">${p(v.base.top3)}</b></div>` : ''}
@@ -9648,6 +9800,7 @@ function vEngine() {
       verdict === 'ahead' ? 'On your library, reading nothing but your own filing beats reading the tag table.'
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
       : 'There is nothing to choose between them on your library.'}</p>` : ''}
+    ${weightsCard(v, p)}
     ${bridgeCard(v, p)}
     ${blendCard(v, p)}
     ${audioCard(v, p)}

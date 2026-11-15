@@ -680,3 +680,90 @@ test('forgetting also forgets the calibration', async () => {
   assert.equal(vm.runInContext('ENG.calib', s), null);
   assert.equal(vm.runInContext('idb.get(CAL_KEY)', s), null);
 });
+
+/* ---------- weights fitted to the account's filing (core/validate/weights.mjs) ---------- */
+
+const shadowOf = s => JSON.parse(vm.runInContext('JSON.stringify(ENG.shadow)', s));
+
+test('the Score run fits this engine\'s weights, shows them beside the defaults, and keeps them', async () => {
+  const s = screen({ bridge: true, tags: { 'ar-House0': { tags: [['house', 100]] }, 'ar-Amb0': { tags: [['ambient', 100]] } } });
+  lookups(s);
+  await vm.runInContext('engineAnalyse()', s);
+  await vm.runInContext('engineValidate()', s);
+  const v = JSON.parse(vm.runInContext('JSON.stringify(ENG.val)', s));
+  assert.ok(!v.error, v.error);
+  assert.ok(v.weights?.plain, 'a fit for the engine alone');
+  assert.ok(v.weights.bridge, 'and one with similar artists');
+  assert.equal(v.weights.plain.default.top1, v.mine.top1, 'its default is the headline number');
+  assert.equal(v.weights.bridge.default.top1, v.mine.withBridge.top1);
+  assert.equal(v.mine.partRows, undefined, 'the per-track components stay behind');
+  assert.equal(v.weights.plain.rows, undefined, 'and the calibration rows are dropped once used');
+  assert.equal(v.weights.plain.byFold, undefined);
+  const kept = JSON.parse(vm.runInContext('JSON.stringify(idb.get("engine-weights"))', s));
+  assert.equal(kept.stamp, vm.runInContext('wfitStamp()', s));
+  assert.deepEqual(kept.targets, JSON.parse(vm.runInContext('JSON.stringify(engineTargets())', s)));
+  assert.deepEqual(kept.plain.weights, v.weights.plain.weights);
+  assert.equal(kept.plain.use, v.weights.plain.use);
+  // The blend says whether it was fitted on top of the fitted engine.
+  const blendRec = vm.runInContext('idb.get("engine-blend")', s);
+  assert.equal(!!blendRec.nativeFitted, !!v.blend.nativeFitted);
+  assert.equal(!!v.blend.nativeFitted, !!v.weights.bridge.use);
+
+  const html = vm.runInContext('vEngine()', s);
+  assert.match(html, /Weights fitted to your filing/);
+  assert.match(html, /with weights fitted to your filing/);
+  const text = vm.runInContext('engineSummary()', s);
+  assert.match(text, /This engine, weights fitted to your filing: top-1 \d+%, top-3 \d+% \(default weights \d+% \/ \d+%\); artist graph (×[\d.]+|off), label/);
+  assert.match(text, /With similar artists, weights fitted: top-1 \d+%/);
+  assert.ok(!/undefined|NaN|\[object Object\]/.test(text), text);
+
+  // "Forget and learn again" forgets the fit too.
+  await vm.runInContext('engineReset()', s);
+  assert.equal(vm.runInContext('idb.get("engine-weights")', s), null);
+  assert.equal(vm.runInContext('fittedWeights("plain")', s), null);
+});
+
+test('the worker and the page fit the same weights', async () => {
+  const viaWorker = screen({ bridge: true, worker: fakeWorker() });
+  lookups(viaWorker);
+  await vm.runInContext('engineValidate()', viaWorker);
+  const onPage = screen({ bridge: true });
+  lookups(onPage);
+  await vm.runInContext('engineValidate()', onPage);
+  const w = JSON.parse(vm.runInContext('JSON.stringify(ENG.val.weights)', viaWorker));
+  const p = JSON.parse(vm.runInContext('JSON.stringify(ENG.val.weights)', onPage));
+  assert.ok(w?.plain);
+  assert.deepEqual(w, p);
+});
+
+test('without a fit that earned its place, the comparison is byte-identical to the default engine', async () => {
+  const fresh = screen();
+  await vm.runInContext('engineAnalyse()', fresh);
+  const today = shadowOf(fresh);
+  const page = s => vm.runInContext('vEngine()', s).replace(/learned in \d+ms/, 'learned in —');
+  const html = page(fresh);
+  const fit = (s, over) => ({ stamp: vm.runInContext('wfitStamp()', s), targets: vm.runInContext('engineTargets()', s),
+    plain: { use: true, weights: { ...vm.runInContext('BetterfyIntrinsic.WEIGHTS', s), graph: 8, minutes: 0, era: 0 } }, ...over });
+  const cases = [
+    s => ({ ...fit(s), plain: { ...fit(s).plain, use: false } }),   // fitted, but not a point ahead
+    s => fit(s, { stamp: 'another-engine' }),                       // another engine version
+    s => fit(s, { targets: ['p-other'] }),                          // other genre playlists
+  ];
+  for (const make of cases) {
+    const s = screen();
+    vm.runInContext('engineLoad()', s);
+    s.idb.set('engine-weights', make(s));
+    await vm.runInContext('engineAnalyse()', s);
+    assert.deepEqual(shadowOf(s), today, JSON.stringify(make(s)).slice(0, 80));
+    assert.equal(page(s), html);
+    assert.equal(vm.runInContext('fittedWeights("plain")', s), null);
+  }
+  // And one that did: the comparison is made with it.
+  const s = screen();
+  s.idb.set('engine-weights', fit(s));
+  await vm.runInContext('engineAnalyse()', s);
+  assert.equal(vm.runInContext('fittedWeights("plain").graph', s), 8);
+  const opts = vm.runInContext('withFittedWeights({ limit: 3 }, "plain")', s);
+  assert.equal(opts.weights.graph, 8);
+  assert.equal(vm.runInContext('withFittedWeights({ limit: 3 }, "bridge").weights', s), undefined);
+});

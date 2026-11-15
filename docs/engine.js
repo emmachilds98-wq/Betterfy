@@ -4635,6 +4635,68 @@ function combine(parts, weights = WEIGHTS) {
 }
 
 /**
+ * The graph component with a wide playlist's dilution taken out: the cosine
+ * divided by the centroid's own norm, capped at 1.
+ *
+ * Why the norm: for members that are one artist each, a member's mean cosine
+ * with its playlist's centroid is exactly the centroid's norm (Σ share² ÷ |c|),
+ * so this reads "how typical a member of this playlist would this track be",
+ * which is about 1 for a filed artist whether the playlist holds three artists
+ * or forty. The raw cosine of the same artist is 0.58 in the first and 0.16 in
+ * the second, which lets the record's shape out-vote it in exactly the wide
+ * playlists. Uses nothing but what the space already keeps (`centroidNorm`),
+ * so a revived space can answer it too. Null whenever `graph` is.
+ */
+function graphNormalised(graph, d) {
+  if (graph === null || graph === undefined || !(d?.centroidNorm > 0)) return null;
+  return Math.min(1, graph / d.centroidNorm);
+}
+
+/**
+ * One destination's components for one track, before weighting: what
+ * `placements` combines, and what core/validate/weights.mjs recombines at
+ * other weights. One function for both, so the two cannot drift apart.
+ */
+function destinationParts(track, d, space, { vec, vecNorm, bridged, sound, learned, tempo, graphN }) {
+  const shape = shapeScores(track, d.profile, { registrants: space.registrants });
+  const graph = vec.size && d.centroid.size
+    ? cosine(vec, d.centroid, vecNorm, d.centroidNorm) : null;
+  const extra = space.bonus?.size ? bonusScores(track, d.bonusProfile, space.bonus)
+                                  : { bpm: null, key: null };
+  const parts = bridged ? { graph, ...shape, ...extra, bridge: bridged.get(d.id) ?? 0 }
+                        : { graph, ...shape, ...extra };
+  if (sound) parts.audio = sound.get(d.id);
+  if (learned) parts.learned = learned.get(d.id);
+  if (tempo && (parts.bpm === null || parts.bpm === undefined)) {
+    const f = tempoShare(tempo, space.audio.profiles?.get(d.id), space.audio.index);
+    if (f !== null) parts.bpm = f;
+  }
+  if (graphN) parts.graphN = graphNormalised(graph, d);
+  return parts;
+}
+
+/**
+ * Every destination's raw components for one track, sound left out (the
+ * weight fit is for the engine an unheard track is placed by): the bridge when
+ * the space has one, and `graphN` beside `graph`. Unrounded, so weights
+ * recombined from these rank exactly as `placements` would with them.
+ *
+ * @returns {Array<{playlistId: string, parts: object}>}
+ */
+function componentParts(track, space, { exclude = null } = {}) {
+  if (!track?.id || !space?.destinations?.size) return [];
+  const vec = trackVector(track, space.graph);
+  const ctx = { vec, vecNorm: norm(vec), bridged: space.bridge ? bridgeScores(track, space) : null,
+                sound: null, learned: null, tempo: null, graphN: true };
+  const out = [];
+  for (const d of space.destinations.values()) {
+    if (exclude?.has(d.id)) continue;
+    out.push({ playlistId: d.id, parts: destinationParts(track, d, space, ctx) });
+  }
+  return out;
+}
+
+/**
  * Returns `{ declined }` rather than a weak list when there is nothing to go
  * on — the same refusal the v3 classifier makes, for the same reason: a ranking
  * is always *producible*, which is exactly why producing one is not evidence
@@ -4679,22 +4741,13 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
   // without sound is unchanged): only a confident reading counts.
   const heardTempo = useAudio && rawSound ? tempoOf(space.audio.index?.get(track.id)?.rec) : null;
   const tempo = heardTempo && heardTempo.conf >= MIX_MIN_CONF ? heardTempo : null;
+  // `graphN` (core/validate/weights.mjs) is only worked out for weights that
+  // name it, which the defaults never do, so a default placement is unchanged.
+  const ctx = { vec, vecNorm, bridged, sound, learned, tempo, graphN: !!weights && 'graphN' in weights };
   const rows = [];
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
-    const shape = shapeScores(track, d.profile, { registrants: space.registrants });
-    const graph = vec.size && d.centroid.size
-      ? cosine(vec, d.centroid, vecNorm, d.centroidNorm) : null;
-    const extra = space.bonus?.size ? bonusScores(track, d.bonusProfile, space.bonus)
-                                    : { bpm: null, key: null };
-    const parts = bridged ? { graph, ...shape, ...extra, bridge: bridged.get(d.id) ?? 0 }
-                          : { graph, ...shape, ...extra };
-    if (sound) parts.audio = sound.get(d.id);
-    if (learned) parts.learned = learned.get(d.id);
-    if (tempo && (parts.bpm === null || parts.bpm === undefined)) {
-      const f = tempoShare(tempo, space.audio.profiles?.get(d.id), space.audio.index);
-      if (f !== null) parts.bpm = f;
-    }
+    const parts = destinationParts(track, d, space, ctx);
     const { score, used, judged } = combine(parts, weights);
     if (!judged) continue;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
@@ -4733,7 +4786,7 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
     version: SPACE_VERSION,
   };
 }
-return { SPACE_VERSION, WEIGHTS, SOUND_FIRST_WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, withAudioLayer, hearMore, MIN_TEMPO_MEMBERS, relativeSound, combine, placements };
+return { SPACE_VERSION, WEIGHTS, SOUND_FIRST_WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, withAudioLayer, hearMore, MIN_TEMPO_MEMBERS, relativeSound, combine, graphNormalised, componentParts, placements };
 })();
 /* ---- core/intrinsic/coldstart.mjs ---- */
 __mod["core/intrinsic/coldstart.mjs"] = (function () {
@@ -5820,7 +5873,7 @@ return { GATE_VERSION, GATE, audioGate, audioInUse, audioCalibration, EAR_GATE, 
 })();
 /* ---- core/validate/loo.mjs ---- */
 __mod["core/validate/loo.mjs"] = (function () {
-const { buildSpace, placements, withAudioLayer, BANDS, WEIGHTS } = __mod["core/intrinsic/space.mjs"];
+const { buildSpace, placements, withAudioLayer, componentParts, BANDS, WEIGHTS } = __mod["core/intrinsic/space.mjs"];
 const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 const { scoresOf } = __mod["core/intrinsic/calibrate.mjs"];
 const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
@@ -5982,12 +6035,19 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
  *                                 reported in `withAudio.arms[ear]` with its
  *                                 own gate verdict. gate.mjs `earChoice` reads
  *                                 them against the first ear.
+ * @param {boolean} [opts.fitParts] also return `partRows`: each held-out
+ *                                 track's raw components against every
+ *                                 destination of its fold's space, for
+ *                                 core/validate/weights.mjs to fit the
+ *                                 component weights on. Every other key of
+ *                                 the result is unchanged by it.
  */
 function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
                                          weights = null, targets = null, bridge = null,
                                          audio = null, collect = false,
-                                         genreGraph = false, soundWeights = null } = {}) {
+                                         genreGraph = false, soundWeights = null,
+                                         fitParts = false } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -6023,6 +6083,10 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
   const sound = audioOpts ? { all: tally(), neverFiled: tally(), heard: 0, heardNeverFiled: 0,
                               judged: 0, changed: 0, rows: collect ? [] : null } : null;
   const limit3 = collect ? Infinity : 3;
+  // `fitParts`: every held-out track's raw components against every
+  // destination of its own fold's space, for core/validate/weights.mjs to fit
+  // the component weights on without rebuilding anything. Never on the canary.
+  const partRows = fitParts && !leaky ? [] : null;
   // WP-C1: the other ears, each tallied exactly like `sound`.
   const arms = sound ? armsOf(audio, audioOpts, collect) : [];
 
@@ -6058,6 +6122,9 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       // space that has not seen this track. The engine's weakest case, and the
       // one the bridge exists for.
       const fresh = !(track.artists ?? []).some(a => a?.id && filed.has(a.id));
+
+      if (partRows) partRows.push({ id, fold: foldOf(id, folds), truth: [...want].sort(), fresh,
+                                    dests: componentParts(track, space) });
 
       const band = out.band ?? BANDS.NONE;
       if (!stats.byBand.has(band)) stats.byBand.set(band, { n: 0, right: 0 });
@@ -6203,6 +6270,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                coverage: bridge.coverage ?? null,
                                ...(rowsPlus ? { rows: rowsPlus } : {}) } } : {}),
     ...(withAudio ? { withAudio } : {}),
+    ...(partRows ? { partRows } : {}),
     version: VALIDATE_VERSION,
   };
   // The verdict travels with the numbers it was read from, so no caller can
@@ -6818,6 +6886,330 @@ function normalised(scores) {
 }
 return { BLEND_VERSION, BLEND_GRID, normalise, blendScores, normalised };
 })();
+/* ---- core/validate/weights.mjs ---- */
+__mod["core/validate/weights.mjs"] = (function () {
+const { WEIGHTS } = __mod["core/intrinsic/space.mjs"];
+const { scoresOf } = __mod["core/intrinsic/calibrate.mjs"];
+const { DEFAULT_FOLDS } = __mod["core/validate/loo.mjs"];
+// The account-native engine's component weights, fitted to this account's own
+// held-out filing — docs/SMARTER-GENRES-PLAN.md §4.2(1), "Weights fitted per
+// account".
+//
+// `space.mjs`'s WEIGHTS are priors: graph 1.0 against a shape group (length,
+// era, release type, album size, popularity) worth 1.0 between them and a
+// registrant worth 0.5. On the owner's library that let the record's shape
+// out-vote the artist graph even for artists the account *had* filed, and on a
+// synthetic library shaped like it the graph at ×4 lifted filed-artist top-1
+// from 77% to 90%. The right balance is a property of the account, not of the
+// engine, so it is fitted per account here.
+//
+// What is fitted: one multiplier per group of components (graph, registrant,
+// shape, the similar-artist bridge when there is one, and `graphN`, the graph
+// with a wide playlist's dilution taken out, which starts at zero), from a
+// seven-step grid, by coordinate ascent. A handful of combination weights
+// chosen by counting held-out hits, the same kind of fit the blend weight and
+// the calibration already do. No model is trained; nothing leaves the account.
+//
+// Cheap, because nothing is rebuilt. `placementAccuracy(…, { fitParts: true })`
+// keeps every held-out track's raw components against every destination of
+// its own fold's space, and any weights are then a re-combination of those
+// numbers: a few milliseconds per candidate for 600 tracks.
+//
+// Honest, because it is nested. For each fold, the multipliers are chosen on
+// the other folds' tracks and scored on this fold's, so the reported "fitted"
+// number is for tracks the weights were never tuned on. The weights the page
+// then uses are fitted on every track (the usual cross-validation bargain: the
+// score describes the procedure, the final fit is the procedure run on all of
+// it), and only when the held-out number beat the defaults by a point.
+
+
+
+
+const WEIGHT_FIT_VERSION = '1.0.0';
+
+/** Fitted weights are used only when their held-out top-1 beats the defaults' by this. */
+const FIT_MARGIN = 0.01;
+
+/** Which components move together. Bonus (Rekordbox) and sound are left as they are. */
+const GROUPS = Object.freeze({
+  graph:      Object.freeze(['graph']),
+  registrant: Object.freeze(['registrant']),
+  shape:      Object.freeze(['minutes', 'era', 'albumType', 'albumTracks', 'popularity']),
+  bridge:     Object.freeze(['bridge']),
+  graphN:     Object.freeze(['graphN']),
+});
+
+/** The multipliers each group may take. Zero is in, so "drop it" is a candidate. */
+const MULTIPLIERS = Object.freeze([0, 0.25, 0.5, 1, 2, 4, 8]);
+
+/** Where the search starts, and what "the defaults" means: WEIGHTS exactly. */
+const DEFAULT_MULT = Object.freeze({ graph: 1, registrant: 1, shape: 1, bridge: 1, graphN: 0 });
+
+/**
+ * Whether the search may also try `graphN` (space.mjs `graphNormalised`), the
+ * graph with a wide playlist's dilution divided out. Measured on the shaped
+ * synthetic library (test/fixtures/shaped-library.mjs, three seeds): offered
+ * alongside the other groups it never beat the plain fit on held-out tracks
+ * (−0.9 to +0.3 points of top-1; the graph's own multiplier already absorbs
+ * the dilution), so the Score run leaves it out. Kept as an option so a
+ * harness can measure it again on another library.
+ */
+const GRAPH_N_SEARCHED = false;
+
+/** Coordinate ascent stops after this many passes, or sooner when a pass moves nothing. */
+const MAX_PASSES = 3;
+
+const rate = (n, d) => (d > 0 ? +(n / d).toFixed(4) : null);
+const tidy = x => +x.toFixed(6);
+
+/**
+ * The defaults, key for key as `placementAccuracy` scores them: WEIGHTS without
+ * the bridge for the headline, with it appended for the similar-artist variant.
+ * Key order matters only for floating-point ties, and is kept anyway.
+ */
+function baseWeights(withBridge = false) {
+  const base = { ...WEIGHTS };
+  const b = base.bridge;
+  delete base.bridge;
+  return withBridge ? { ...base, bridge: b } : base;
+}
+
+/** Multipliers → the weights object `placements` takes. */
+function weightsFor(mult, { withBridge = false } = {}) {
+  const w = baseWeights(withBridge);
+  for (const [g, keys] of Object.entries(GROUPS)) {
+    if (g === 'graphN') continue;
+    const m = mult?.[g] ?? DEFAULT_MULT[g];
+    for (const k of keys) if (k in w) w[k] = tidy(w[k] * m);
+  }
+  const n = mult?.graphN ?? 0;
+  if (n > 0) w.graphN = tidy(WEIGHTS.graph * n);
+  return w;
+}
+
+/**
+ * Part rows → arrays the search can re-combine quickly. Destinations are kept
+ * in `placements`' tie order (by id), and one with nothing judged is dropped,
+ * exactly as `placements` drops it (`judged` counts present components
+ * whatever their weight).
+ */
+function compileRows(partRows, keys) {
+  const K = keys.length;
+  const out = [];
+  for (const r of partRows ?? []) {
+    const truth = new Set(r.truth ?? []);
+    if (!truth.size) continue;
+    const dests = (r.dests ?? []).slice().sort((a, b) => a.playlistId.localeCompare(b.playlistId));
+    const ids = [], vals = [];
+    for (const d of dests) {
+      const row = new Array(K);
+      let present = 0;
+      for (let k = 0; k < K; k++) {
+        const v = d.parts?.[keys[k]];
+        if (v === null || v === undefined || !Number.isFinite(v)) row[k] = NaN;
+        else { row[k] = v; present++; }
+      }
+      if (!present) continue;
+      ids.push(d.playlistId);
+      vals.push(...row);
+    }
+    out.push({ id: r.id, fold: r.fold, fresh: !!r.fresh, truth, ids,
+               hit: Uint8Array.from(ids, id => (truth.has(id) ? 1 : 0)), vals: Float64Array.from(vals) });
+  }
+  return out;
+}
+
+/** One row's scores at weight vector `w` (aligned with the compiled keys). */
+function scoreRow(r, w, exact) {
+  const K = w.length, n = r.ids.length, s = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let num = 0, den = 0;
+    const o = i * K;
+    for (let k = 0; k < K; k++) {
+      const v = r.vals[o + k];
+      if (v !== v) continue;   // NaN: not judged
+      num += w[k] * v;
+      den += w[k];
+    }
+    const x = den > 0 ? num / den : 0;
+    s[i] = exact ? +x.toFixed(4) : Math.round(x * 1e4) / 1e4;
+  }
+  return s;
+}
+
+/** Top-1 and top-3 hits over `rows` at weight vector `w`. */
+function evaluate(rows, w, exact = false) {
+  let h1 = 0, h3 = 0;
+  for (const r of rows) {
+    const s = scoreRow(r, w, exact);
+    // The three best, by score then id (ids are already in id order, so the
+    // earlier index wins a tie), as placements sorts them.
+    let a = -1, b = -1, c = -1;
+    for (let i = 0; i < s.length; i++) {
+      if (a < 0 || s[i] > s[a]) { c = b; b = a; a = i; }
+      else if (b < 0 || s[i] > s[b]) { c = b; b = i; }
+      else if (c < 0 || s[i] > s[c]) c = i;
+    }
+    if (a >= 0 && r.hit[a]) h1++;
+    if ((a >= 0 && r.hit[a]) || (b >= 0 && r.hit[b]) || (c >= 0 && r.hit[c])) h3++;
+  }
+  return { n: rows.length, h1, h3 };
+}
+
+/** One row as calibrate's / the blend's `{ id, scores, truth }`. */
+function scoredRow(r, w) {
+  const s = scoreRow(r, w, true);
+  const results = r.ids.map((id, i) => ({ playlistId: id, score: s[i] }));
+  return { id: r.id, scores: scoresOf(results), truth: [...r.truth].sort() };
+}
+
+/**
+ * Held-out top-1 and top-3 of part rows at one weights object, exactly as
+ * `placementAccuracy(…, { weights })` would report them: for checking, and for
+ * a harness measuring a candidate by hand.
+ */
+function accuracyAt(partRows, weights) {
+  const keys = Object.keys(weights ?? {});
+  const rows = compileRows(partRows, keys);
+  const r = evaluate(rows, keys.map(k => weights[k]), true);
+  return { top1: rate(r.h1, r.n), top3: rate(r.h3, r.n) };
+}
+
+const better = (x, y) => x.h1 > y.h1 || (x.h1 === y.h1 && x.h3 > y.h3);
+
+/**
+ * Coordinate ascent over the groups' multipliers, from the defaults. A move is
+ * taken only when it is strictly better (top-1, then top-3), so a library that
+ * cannot tell two values apart keeps the default, and a flat surface stays at
+ * WEIGHTS exactly.
+ */
+function fitMultipliers(rows, keys, { groups, withBridge = false, grid = MULTIPLIERS } = {}) {
+  const vec = mult => { const w = weightsFor(mult, { withBridge }); return keys.map(k => w[k] ?? 0); };
+  let cur = { ...DEFAULT_MULT };
+  let best = evaluate(rows, vec(cur));
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let moved = false;
+    for (const g of groups) {
+      for (const m of grid) {
+        if (m === cur[g]) continue;
+        const cand = { ...cur, [g]: m };
+        const r = evaluate(rows, vec(cand));
+        if (better(r, best)) { cur = cand; best = r; moved = true; }
+      }
+    }
+    if (!moved) break;
+  }
+  return { mult: cur, ...best };
+}
+
+/**
+ * Fit one variant (the headline engine, or the engine with similar artists)
+ * from `placementAccuracy`'s part rows, nested over its folds.
+ *
+ * @returns {null | {
+ *   scored, default: {top1, top3}, fitted: {top1, top3},
+ *   neverFiled: {scored, default: {top1, top3}, fitted: {top1, top3}},
+ *   multipliers, weights, foldMultipliers, use, margin,
+ *   rows, byFold, all }}
+ *   `rows` are each track's held-out ranking under its own fold's fit (for
+ *   calibration); `byFold[f]` every track under fold f's fit and `all` every
+ *   track under the final fit (for the nested blend). The last three are only
+ *   kept when `use` is true, since nothing reads them otherwise.
+ */
+function fitVariant(partRows, { withBridge = false, grid = MULTIPLIERS, graphN = GRAPH_N_SEARCHED } = {}) {
+  // Only the components some row has at all (sound and the Rekordbox bonus
+  // are absent for almost everybody), which is also all `combine` would read.
+  const seen = new Set();
+  for (const r of partRows ?? []) for (const d of r.dests ?? []) for (const [k, v] of Object.entries(d.parts ?? {}))
+    if (Number.isFinite(v)) seen.add(k);
+  const keys = [...Object.keys(baseWeights(withBridge)), ...(graphN ? ['graphN'] : [])].filter(k => seen.has(k));
+  const rows = compileRows(partRows, keys);
+  if (!rows.length) return null;
+  const groups = ['graph', ...(graphN ? ['graphN'] : []), 'registrant', 'shape', ...(withBridge ? ['bridge'] : [])];
+  const vec = mult => { const w = weightsFor(mult, { withBridge }); return keys.map(k => w[k] ?? 0); };
+
+  const folds = [...new Set(rows.map(r => r.fold))].sort((a, b) => a - b);
+  const foldMultipliers = {};
+  const acc = { n: 0, f1: 0, f3: 0 }, accNf = { n: 0, f1: 0, f3: 0 };
+  const held = new Map();     // id → held-out row under its own fold's fit
+  const foldW = {};
+  for (const f of folds) {
+    const train = rows.filter(r => r.fold !== f), test = rows.filter(r => r.fold === f);
+    // A single fold has nothing to train on: it fits on itself, the most anyone
+    // can do, and says so by reporting the one fold.
+    const { mult } = fitMultipliers(train.length ? train : test, keys, { groups, withBridge, grid });
+    foldMultipliers[f] = mult;
+    const w = vec(mult);
+    for (const r of test) {
+      const one = evaluate([r], w, true);
+      for (const a of r.fresh ? [acc, accNf] : [acc]) { a.n++; a.f1 += one.h1; a.f3 += one.h3; }
+      held.set(r.id, scoredRow(r, w));
+    }
+    foldW[f] = w;
+  }
+  const def = evaluate(rows, vec(DEFAULT_MULT), true);
+  const fresh = rows.filter(r => r.fresh);
+  const defNf = evaluate(fresh, vec(DEFAULT_MULT), true);
+  const final = fitMultipliers(rows, keys, { groups, withBridge, grid }).mult;
+
+  const out = {
+    scored: rows.length,
+    default: { top1: rate(def.h1, def.n), top3: rate(def.h3, def.n) },
+    fitted: { top1: rate(acc.f1, acc.n), top3: rate(acc.f3, acc.n) },
+    neverFiled: { scored: fresh.length,
+                  default: { top1: rate(defNf.h1, defNf.n), top3: rate(defNf.h3, defNf.n) },
+                  fitted: { top1: rate(accNf.f1, accNf.n), top3: rate(accNf.f3, accNf.n) } },
+    multipliers: final,
+    weights: weightsFor(final, { withBridge }),
+    foldMultipliers,
+    margin: FIT_MARGIN,
+  };
+  out.use = out.fitted.top1 != null && out.default.top1 != null
+    && out.fitted.top1 >= out.default.top1 + FIT_MARGIN - 1e-9;
+  if (out.use) {
+    // Every track under each fold's fit, so the blend for fold f can be chosen
+    // on the other folds' tracks ranked by the native engine fold f would use.
+    out.byFold = {};
+    for (const f of folds) out.byFold[f] = rows.map(r => scoredRow(r, foldW[f]));
+    out.all = rows.map(r => scoredRow(r, vec(final)));
+    out.rows = rows.map(r => held.get(r.id));
+  }
+  return out;
+}
+
+/**
+ * The whole step, as the Score run calls it: the headline engine, and the
+ * engine with similar artists when the run had them, each fitted from the
+ * run's part rows. Null without part rows. Takes the part rows off `mine`, so
+ * they never cross from the worker or sit in memory after.
+ */
+function weightsFromRun(mine, { grid = MULTIPLIERS, graphN = GRAPH_N_SEARCHED } = {}) {
+  const partRows = mine?.partRows;
+  if (mine) delete mine.partRows;
+  if (!partRows?.length) return null;
+  const plain = fitVariant(partRows, { withBridge: false, grid, graphN });
+  const bridge = mine.withBridge ? fitVariant(partRows, { withBridge: true, grid, graphN }) : null;
+  return { plain, bridge, folds: Object.keys(plain?.foldMultipliers ?? {}).length || DEFAULT_FOLDS,
+           version: WEIGHT_FIT_VERSION };
+}
+
+/**
+ * What crosses to the page: the weights, the numbers they were judged by, and
+ * (only when they are used) each track's held-out ranking under its own fold's
+ * fit, which the page's calibration is refitted on and then drops. The
+ * per-fold rankings the nested blend read are left behind.
+ */
+function fitSummary(fit) {
+  if (!fit) return null;
+  const strip = v => {
+    if (!v) return null;
+    const { byFold, all, ...rest } = v;
+    return rest;
+  };
+  return { ...fit, plain: strip(fit.plain), bridge: strip(fit.bridge) };
+}
+return { WEIGHT_FIT_VERSION, FIT_MARGIN, GROUPS, MULTIPLIERS, DEFAULT_MULT, GRAPH_N_SEARCHED, baseWeights, weightsFor, compileRows, accuracyAt, fitMultipliers, fitVariant, weightsFromRun, fitSummary };
+})();
 /* ---- core/validate/blend.mjs ---- */
 __mod["core/validate/blend.mjs"] = (function () {
 const { foldOf, DEFAULT_FOLDS } = __mod["core/validate/loo.mjs"];
@@ -6910,28 +7302,43 @@ function neverFiledIds(lib, ids, { folds = DEFAULT_FOLDS, targets = null, isMirr
  *          null when there is nothing to join.
  */
 function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid = BLEND_GRID,
-                                                     neverFiled = null } = {}) {
+                                                     neverFiled = null, nativeByFold = null, nativeAll = null } = {}) {
   if (!tagRows?.length || !nativeRows?.length) return null;
   const tagById = new Map(tagRows.map(r => [r.id, r]));
   // One entry per track both engines were asked about, with each engine's
   // ranking normalised once and, for every weight on the grid, whether the
   // blend's first answer (and first three) held a playlist the track is in.
-  const rows = [];
-  for (const n of nativeRows) {
-    const t = tagById.get(n.id);
-    if (!t) continue;
-    const want = new Set(n.truth ?? t.truth ?? []);
-    if (!want.size) continue;
-    const tag = normalised(t.scores), nat = normalised(n.scores);
-    const hits = grid.map(w => {
-      const r = blendScores(tag, nat, w);
-      return [!!r[0] && want.has(r[0][0]), r.slice(0, 3).some(x => want.has(x[0]))];
-    });
-    const top = list => [!!list[0] && want.has(list[0][0]), (list ?? []).slice(0, 3).some(x => want.has(x[0]))];
-    rows.push({ id: n.id, fold: foldOf(n.id, folds), fresh: !!neverFiled?.has(n.id),
-                hits, tag: top(t.scores ?? []), nat: top(n.scores ?? []) });
-  }
+  const join = natRows => {
+    const out = [];
+    for (const n of natRows) {
+      const t = tagById.get(n.id);
+      if (!t) continue;
+      const want = new Set(n.truth ?? t.truth ?? []);
+      if (!want.size) continue;
+      const tag = normalised(t.scores), nat = normalised(n.scores);
+      const hits = grid.map(w => {
+        const r = blendScores(tag, nat, w);
+        return [!!r[0] && want.has(r[0][0]), r.slice(0, 3).some(x => want.has(x[0]))];
+      });
+      const top = list => [!!list[0] && want.has(list[0][0]), (list ?? []).slice(0, 3).some(x => want.has(x[0]))];
+      out.push({ id: n.id, fold: foldOf(n.id, folds), fresh: !!neverFiled?.has(n.id),
+                 hits, tag: top(t.scores ?? []), nat: top(n.scores ?? []) });
+    }
+    return out;
+  };
+  const rows = join(nativeRows);
   if (!rows.length) return null;
+  // Nested (core/validate/weights.mjs): the native engine's own weights were
+  // fitted per fold, so fold f's blend is chosen on the other folds' tracks
+  // as ranked by the native engine fold f uses, and scored on fold f's under
+  // the same. Nothing about fold f, weights or blend, is chosen on fold f.
+  const nested = !!nativeByFold;
+  const perFold = new Map();
+  const rowsFor = f => {
+    if (!nested || !nativeByFold[f]) return rows;
+    if (!perFold.has(f)) perFold.set(f, join(nativeByFold[f]));
+    return perFold.get(f);
+  };
 
   // The grid index that does best on `subset`: top-1 first, then top-3, then
   // the weight nearest today's engine (tags), so a tie never moves anyone off
@@ -6951,8 +7358,9 @@ function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid = BLEN
   const all = { n: 0, b1: 0, b3: 0, t1: 0, t3: 0, n1: 0, n3: 0 };
   const nf = { n: 0, b1: 0, b3: 0, t1: 0, t3: 0, n1: 0, n3: 0 };
   for (const f of foldIds) {
-    const train = rows.filter(r => r.fold !== f);
-    const test = rows.filter(r => r.fold === f);
+    const these = rowsFor(f);
+    const train = these.filter(r => r.fold !== f);
+    const test = these.filter(r => r.fold === f);
     // A single fold has nothing to train on: fit on itself, which is the most
     // anyone can do, and the beat test below still compares like with like.
     const i = best(train.length ? train : test);
@@ -6976,13 +7384,14 @@ function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid = BLEN
     && head.top3 >= head.tags.top3 - BEAT_MARGIN - 1e-9;
   return {
     ...head,
-    weight: grid[best(rows)],
+    weight: grid[best(nested && nativeAll ? join(nativeAll) : rows)],
     foldWeights,
     neverFiled: neverFiled ? out(nf) : null,
     beatsTags,
     margin: BEAT_MARGIN,
     blendVersion: BLEND_VERSION,
     version: BLEND_ACCURACY_VERSION,
+    ...(nested ? { nested: true } : {}),
   };
 }
 
@@ -6992,12 +7401,20 @@ function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid = BLEN
  * harness's way, and the fit. Null when either side has no rows (no tags, or
  * the run was not collecting).
  */
-function blendFromRun(lib, { base, mine, folds = DEFAULT_FOLDS, targets = null, isMirror = null } = {}) {
+function blendFromRun(lib, { base, mine, folds = DEFAULT_FOLDS, targets = null, isMirror = null,
+                                    nativeFit = null } = {}) {
+  const withBridge = !!mine?.withBridge?.rows;
   const nativeRows = mine?.withBridge?.rows ?? mine?.rows ?? null;
   if (!base?.rows?.length || !nativeRows?.length) return null;
   const nf = neverFiledIds(lib, nativeRows.map(r => r.id), { folds, targets, isMirror });
-  const r = blendAccuracy(base.rows, nativeRows, { folds, neverFiled: nf });
-  return r ? { ...r, withBridge: !!mine?.withBridge?.rows } : null;
+  // The native engine's fitted weights, when this account's fit earned its
+  // place (weights.mjs `use`): the blend is then fitted on top of the engine
+  // the page will actually run. Otherwise the defaults, exactly as before.
+  const fit = withBridge ? nativeFit?.bridge : nativeFit?.plain;
+  const nested = fit?.use && fit.byFold && fit.all
+    ? { nativeByFold: fit.byFold, nativeAll: fit.all } : {};
+  const r = blendAccuracy(base.rows, nativeRows, { folds, neverFiled: nf, ...nested });
+  return r ? { ...r, withBridge, ...(nested.nativeAll ? { nativeFitted: true } : {}) } : null;
 }
 return { BLEND_ACCURACY_VERSION, BEAT_MARGIN, neverFiledIds, blendAccuracy, blendFromRun };
 })();
@@ -9832,6 +10249,7 @@ globalThis["BetterfyBridgeFetch"] = __mod["core/intrinsic/bridge-fetch.mjs"];
 globalThis["BetterfyDeezer"] = __mod["core/sources/deezer.mjs"];
 globalThis["BetterfyCalibrate"] = __mod["core/intrinsic/calibrate.mjs"];
 globalThis["BetterfyBlend"] = __mod["core/intrinsic/blend.mjs"];
+globalThis["BetterfyWeightFit"] = __mod["core/validate/weights.mjs"];
 globalThis["BetterfyBlendScore"] = __mod["core/validate/blend.mjs"];
 globalThis["BetterfyGaps"] = __mod["core/recommend/gaps.mjs"];
 globalThis["BetterfyAudioGaps"] = __mod["core/recommend/audio-gaps.mjs"];
