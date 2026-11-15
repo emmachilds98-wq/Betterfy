@@ -2,7 +2,9 @@
 import { writeFileSync } from 'node:fs';
 import { api, paged } from './spotify.mjs';
 
-const FIELDS = 'next,items(added_at,item(id,name,popularity,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type,total_tracks),artists(id,name)))';
+// No `popularity` (tracks and artists) or `linked_from`: Spotify removed them
+// from its objects in February 2026.
+const FIELDS = 'next,items(added_at,item(id,name,duration_ms,explicit,external_ids,track_number,album(id,name,release_date,album_type,total_tracks),artists(id,name)))';
 
 const track = t => t && ({
   id: t.id,
@@ -17,7 +19,6 @@ const track = t => t && ({
   duration_ms: t.duration_ms,
   explicit: t.explicit,
   isrc: t.external_ids?.isrc,              // the recording's global identity
-  popularity: t.popularity,
 });
 
 const me = await api('/me');
@@ -51,7 +52,7 @@ const topTracks = {}, topArtists = {};
 for (const range of ['short_term', 'medium_term', 'long_term']) {
   topTracks[range] = (await paged(`/me/top/tracks?limit=50&time_range=${range}`)).map(track);
   topArtists[range] = (await paged(`/me/top/artists?limit=50&time_range=${range}`))
-    .map(a => ({ id: a.id, name: a.name, genres: a.genres, popularity: a.popularity }));
+    .map(a => ({ id: a.id, name: a.name, genres: a.genres }));
 }
 console.error(`top artists: ${topArtists.long_term.length} long-term`);
 

@@ -13,7 +13,9 @@ import vm from 'node:vm';
 // Three things break that in a real account, and all three are covered below.
 // The playlist gets renamed, and a lookup by name builds a second one. A track
 // comes back from Spotify under a different id than the one that was added
-// (relinking), and looks missing on every refresh forever. And a run from
+// (relinking), and looks missing on every refresh forever. (Spotify stopped
+// sending `linked_from` in February 2026, so a relinked slot is now recognised
+// by its ISRC; the fake below serves `external_ids` and no `linked_from`.) And a run from
 // before either fix left duplicates behind, which nothing ever cleared out.
 
 const BUNDLE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
@@ -59,13 +61,13 @@ const own = x => JSON.parse(JSON.stringify(x));
 
 const track = id => ({ id, name: 't' + id, artists: [{ id: 'a1', name: 'Artist' }] });
 
-/** A playlist slot: the id Spotify shows, and the id that was actually added. */
-const slot = s => (typeof s === 'string' ? { id: s, from: null } : { id: s.id ?? null, from: s.from ?? null });
+/** A playlist slot: the id Spotify shows, and the recording's ISRC if known. */
+const slot = s => (typeof s === 'string' ? { id: s, isrc: null } : { id: s.id ?? null, isrc: s.isrc ?? null });
 
 /**
  * @param {object|null} existing - a playlist already sitting in the account, as
  *   { id, name, owner, trackIds }, or null for "never made one yet". trackIds
- *   entries may be a bare id, or { id, from } to model a relinked track, or
+ *   entries may be a bare id, or { id, isrc } to model a relinked track, or
  *   { id: null } to model a local file that holds a position but has no id.
  * @param {string|null} pinned - the id a previous run remembered, if any.
  */
@@ -94,7 +96,7 @@ function load({ playlists = [], liked = [], existing = null, pinned = null } = {
       if (items && method === 'GET') {
         const slots = mine?.id === items[1] ? mine.slots : [];
         return ok({ next: null, items: slots.map(s => ({
-          item: s.id ? { id: s.id, ...(s.from ? { linked_from: { id: s.from } } : {}) } : null })) });
+          item: s.id ? { id: s.id, ...(s.isrc ? { external_ids: { isrc: s.isrc } } : {}) } : null })) });
       }
       if (items && method === 'POST') {
         if (mine?.id === items[1]) mine.slots.push(...body.uris.map(u => slot(u.replace('spotify:track:', ''))));
@@ -103,8 +105,12 @@ function load({ playlists = [], liked = [], existing = null, pinned = null } = {
       if (items && method === 'DELETE') {
         // Spotify removes by position against one snapshot, so gone positions
         // must not shift the ones still to be removed in the same request.
-        const gone = new Set(body.tracks.flatMap(t => t.positions ?? []));
-        for (const t of body.tracks)
+        // The documented body is `items`; `tracks` is the legacy fallback.
+        const list = body.items ?? body.tracks;
+        assert.ok(body.items, 'the documented `items` body is sent first');
+        assert.ok(list.length <= 100, 'at most 100 per request');
+        const gone = new Set(list.flatMap(t => t.positions ?? []));
+        for (const t of list)
           assert.ok(Array.isArray(t.positions), 'the mirror never deletes by uri — that would take out the copy that stays');
         if (mine?.id === items[1]) mine.slots = mine.slots.filter((_, i) => !gone.has(i));
         return ok({ snapshot_id: 's3' });
@@ -230,13 +236,15 @@ test('a mirror you have deleted is built fresh rather than topped up unseen', as
 /* ---- relinking: the id you add is not always the id you read back ---- */
 
 test('a track Spotify hands back under a different id is not added a second time', async () => {
-  // Relinking swaps a track for whichever pressing is playable in your market
-  // and returns the original under linked_from. Matching on the visible id
-  // alone, the track looked missing on every refresh and was added every time.
+  // Relinking swaps a track for whichever pressing is playable in your market.
+  // Spotify no longer says which id it replaced (no linked_from since
+  // February 2026), but the recording's ISRC is the same under either id.
+  // Matching on the visible id alone, the track looked missing on every
+  // refresh and was added every time.
   const app = load({
-    playlists: [{ id: 'p1', name: 'House', tracks: [track('t1'), track('t2')] }],
+    playlists: [{ id: 'p1', name: 'House', tracks: [{ ...track('t1'), isrc: 'GBAAA0000001' }, track('t2')] }],
     existing: { id: 'as1', name: MIRROR, owner: { id: 'emma' },
-                trackIds: [{ id: 'market-t1', from: 't1' }, 't2'] },
+                trackIds: [{ id: 'market-t1', isrc: 'GBAAA0000001' }, 't2'] },
     pinned: 'as1',
   });
   await app.syncAllSongsPlaylist();
@@ -343,7 +351,7 @@ test('a delete that removed too much is healed by the very next refresh', async 
   app.fetch = async (url, opts = {}) => {
     if ((opts.method ?? 'GET') === 'DELETE' && /\/playlists\/[^/?]+\/items/.test(url)) {
       const body = JSON.parse(opts.body);
-      const ids = new Set(body.tracks.map(t => t.uri.replace('spotify:track:', '')));
+      const ids = new Set((body.items ?? body.tracks).map(t => t.uri.replace('spotify:track:', '')));
       const m = app.mineNow();
       m.slots = m.slots.filter(sl => !ids.has(sl.id));
       return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ snapshot_id: 's3' }) };
