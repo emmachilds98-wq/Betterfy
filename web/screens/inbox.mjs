@@ -180,13 +180,18 @@ export async function fileCurrent(ctx, playlistIds) {
   if (!ids.length) return;
   const at = inboxIndex(ctx), t = R.backlog[at]; if (!t) return;
   const names = ids.map(id => CFG[id]?.name ?? id);
+  // Logged with each filing so the Score summary can measure itself (§7):
+  // where in the queue it was filed from, and the band File showed for it.
+  let picks = [];
+  try { picks = ctx.filePicks?.(t) ?? []; } catch { /* no band, still filed */ }
+  const bandOf = id => picks.find(p => p.id === id)?.band;
   try {
     // One log entry per playlist, so History and its per-row undo stay exact —
     // the toast just chains all of them for the common "undo the lot" case.
     const ats = [];
     for (const id of ids) {
       await addTracks(id, [t.id]);
-      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox' });
+      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, band:bandOf(id) });
       ats.push((await getLog())[0]?.at);
     }
     // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so

@@ -199,7 +199,7 @@ export function weakBuckets(v, LIB, n = 5) {
  * names of the user's own weakest playlists — so pasting it somewhere shares
  * how the engine did, not what the library holds beyond that.
  */
-export function summary({ ENG, LIB, maestScoreText }) {
+export function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   const v = ENG.val, r = ENG.rung;
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
@@ -222,6 +222,7 @@ export function summary({ ENG, LIB, maestScoreText }) {
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
+    ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   return lines.filter(Boolean).join('\n');
@@ -593,7 +594,7 @@ export const actions = {
   },
   /** Copy the score as text; no clipboard permission offers the share sheet, then a manual copy. */
   async copy(c) {
-    const text = summary(c);
+    const text = summary(c, await c.getLog?.().catch(() => null));
     if (!text) return;
     try { await c.navigator.clipboard.writeText(text); return c.toast('Copied — paste it wherever you like.'); }
     catch { /* fall through to share */ }
