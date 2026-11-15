@@ -8,7 +8,7 @@
 // quantised), so text is embedded at BUILD time only
 // (scripts/audio-clap/build-text-table.py → docs/models/clap-text-table.json,
 // a reviewed prompt list). The page ships the quantised AUDIO encoder
-// (77 MB, docs/models/larger_clap_music-audio-q8-1.onnx), downloaded only
+// (77 MB, docs/models/laion_clap_music-audio-q8-1.onnx), downloaded only
 // when the listener switches "Describe the sound in words" on.
 //
 // What is here, all isomorphic (no DOM, no Node APIs):

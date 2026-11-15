@@ -135,6 +135,10 @@ const ENGINE_ENTRIES = [
   // The same screen's proposals by sound (docs/AUDIO-BUILD-PLAN.md WP-H2).
   // Empty without audio records; brings the style vocabulary with it.
   'core/recommend/audio-gaps.mjs',
+  // What a heard track is (genre, sub-genre, tempo) and what it sounds like and
+  // mixes with, from the account's own heard tracks.
+  'core/audio/match.mjs',
+  'core/audio/identify.mjs',
 ];
 
 const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
@@ -153,6 +157,8 @@ const { code: engine, files: engineFiles } = bundleModules(ENGINE_ENTRIES, {
     BetterfyGaps: 'core/recommend/gaps.mjs',
     BetterfyAudioGaps: 'core/recommend/audio-gaps.mjs',
     BetterfyWikidata: 'core/sources/wikidata.mjs',
+    BetterfyMatch: 'core/audio/match.mjs',
+    BetterfyIdentify: 'core/audio/identify.mjs',
   },
 });
 
@@ -179,7 +185,10 @@ self.onmessage = function (e) {
     if (m.op === 'build') {
       // Posted back serialised: the page revives it far faster than it could
       // build it, and the same object is what gets cached in IndexedDB.
-      var space = BetterfyIntrinsic.buildSpace(m.lib, { isMirror: isMirror, targets: m.targets || null, audio: m.audio || null });
+      // genreGraph: the artist graph learns from genre playlists only, so
+      // mood and event playlists stop teaching genre (sound-first filing).
+      var space = BetterfyIntrinsic.buildSpace(m.lib, { isMirror: isMirror, targets: m.targets || null,
+                                                        audio: m.audio || null, genreGraph: m.genreGraph === true });
       result = BetterfyPersist.serialiseSpace(space, m.lib);
       // The "can't tell apart" report costs more than the build on a big
       // library (2.9s for 250 playlists) and needs nothing but the space, so it
@@ -189,9 +198,17 @@ self.onmessage = function (e) {
     } else if (m.op === 'validate') {
       var common = Object.assign({}, m.opts, { isMirror: isMirror,
                                                 targets: m.targets ? new Set(m.targets) : null,
-                                                bridge: m.bridge || null, audio: m.audio || null });
+                                                bridge: m.bridge || null, audio: m.audio || null,
+                                                // The sound variant is scored the way the File screen
+                                                // files a heard track: sound leading.
+                                                soundWeights: m.opts && m.opts.soundFirst
+                                                  ? BetterfyIntrinsic.SOUND_FIRST_WEIGHTS : null });
       result = { mine: BetterfyValidate.placementAccuracy(m.lib, common),
                  base: m.tags ? BetterfyBaseline.baselineAccuracy(m.lib, m.tags, common) : null };
+      // How well it names genres by sound, on the same filed tracks.
+      try { result.identify = m.audio ? BetterfyIdentify.identifyAccuracyFor(m.lib, m.audio,
+              { targets: m.targets || null, isMirror: isMirror }) : null; }
+      catch (e) { result.identify = null; }
     } else {
       throw new Error('unknown engine op: ' + m.op);
     }
@@ -209,7 +226,11 @@ self.onmessage = function (e) {
  * that lands one does not also need a build edit to reach the page. */
 const listMjs = dir => { try { return readdirSync(dir).filter(f => /\.(mjs|js)$/.test(f)).sort().map(f => `${dir}/${f}`); } catch { return []; } };
 const AUDIO_INTRINSIC = readdirSync('core/intrinsic').filter(f => /^audio.*\.mjs$/.test(f)).sort().map(f => `core/intrinsic/${f}`);
-const AUDIO_ENTRIES = ['web/audio/index.mjs', ...listMjs('core/audio'), ...listMjs('core/audio/dsp'), ...AUDIO_INTRINSIC];
+// Engine-side lookups over the sound space (sound ID, sound-alikes, mixes):
+// they ship in engine.js, and would only add the genre ontology (~100 KB) here.
+const ENGINE_SIDE = new Set(['core/audio/identify.mjs', 'core/audio/match.mjs']);
+const AUDIO_ENTRIES = ['web/audio/index.mjs', ...listMjs('core/audio').filter(f => !ENGINE_SIDE.has(f)),
+                       ...listMjs('core/audio/dsp'), ...AUDIO_INTRINSIC];
 const camel = f => f.replace(/^.*\//, '').replace(/\.m?js$/, '').split(/[-_]/).map(w => w[0].toUpperCase() + w.slice(1)).join('');
 const { code: audio, files: audioFiles } = bundleModules(AUDIO_ENTRIES, {
   namespace: {
@@ -232,12 +253,12 @@ const AUDIO_MODELS = arg('audio-models') ?? readEnv('AUDIO_MODELS') ?? 'models/'
 /* The inference worker: a module worker, because onnxruntime-web 1.31 ships as
  * ES modules. It holds the ear and the heads and nothing else; the page keeps
  * lookup, download, decode and the mel (core/audio/worker.js explains why). */
-const { code: earCode } = bundleModules(['core/audio/infer.mjs', 'core/audio/heads.mjs'], {
-  namespace: { BetterfyInfer: 'core/audio/infer.mjs', BetterfyHeads: 'core/audio/heads.mjs' },
+const { code: earCode } = bundleModules(['core/audio/infer.mjs', 'core/audio/heads.mjs', 'core/audio/clap.mjs'], {
+  namespace: { BetterfyInfer: 'core/audio/infer.mjs', BetterfyHeads: 'core/audio/heads.mjs', BetterfyClap: 'core/audio/clap.mjs' },
 });
 const AUDIO_WORKER = `/* Generated by build-web.mjs — do not edit here. */
 ${earCode}
-let ort = null, ear = null, heads = null;
+let ort = null, ear = null, heads = null, clapEar = null;
 const opts = () => ({ executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
 self.onmessage = async function (e) {
   const m = e.data || {};
@@ -263,6 +284,13 @@ self.onmessage = async function (e) {
       if (!heads) throw new Error('no heads loaded');
       result = await heads.run(m.emb, m.patches);
       transfer = Object.values(result).map(a => a.buffer);
+    } else if (m.op === 'clapInit') {
+      // CLAP (WP-C2): only when the page's "Search by description" switch is on.
+      clapEar = clapEar || await BetterfyClap.createClapEar({ ort, modelUrl: m.modelUrl, sessionOptions: opts() });
+      result = true;
+    } else if (m.op === 'clap') {
+      if (!clapEar) throw new Error('CLAP not loaded');
+      result = await BetterfyClap.clapEmbed(clapEar, m.windows);
     } else {
       throw new Error('unknown audio op: ' + m.op);
     }

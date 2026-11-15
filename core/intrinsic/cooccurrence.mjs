@@ -98,7 +98,7 @@ export function artistsOf(playlist, { skip = null } = {}) {
  *            playlists: number, artists: number, pairsConsidered: number,
  *            wideSkipped: number, version: string}}
  */
-export function cooccurrence(lib, { skip = null, isMirror = null } = {}) {
+export function cooccurrence(lib, { skip = null, isMirror = null, only = null } = {}) {
   const structural = mirrorPredicate(lib, { also: isMirror ?? undefined });
 
   // A playlist holding the whole library co-occurs everything with everything
@@ -107,6 +107,11 @@ export function cooccurrence(lib, { skip = null, isMirror = null } = {}) {
   const sets = [];
   for (const p of lib?.playlists ?? []) {
     if (structural(p)) continue;
+    // `only`: learn who goes with whom from these playlists alone. Sound-first
+    // filing passes the genre playlists, so a mood or event playlist ("Sunday",
+    // "Fabric 14 Sept") cannot teach that a jungle and a house artist belong
+    // together just because one night or one feeling put them side by side.
+    if (only && !only.has(p.id)) continue;
     const a = artistsOf(p, { skip });
     if (a.size >= 2) sets.push(a);
   }

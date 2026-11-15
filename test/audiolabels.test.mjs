@@ -204,7 +204,7 @@ test('review flow on fixtures: card shows each reading with Right/Wrong, verdict
 
   // once voice is on, the chip says vocal/instrumental and nothing else new
   const r = records.get(sample[0].track.id);
-  const vmc = mergeSoundVM(dspSoundVM(r, { show: false }), labelSoundVM(r, labelsShown(mine, memLS())));
+  const vmc = mergeSoundVM(dspSoundVM(r, { show: false, bpm: false }), labelSoundVM(r, labelsShown(mine, memLS())));
   assert.deepEqual(Object.keys(vmc), ['voice']);
   assert.match(soundChip(vmc), /<span class="snd-voice">(vocal|instrumental)<\/span>/);
 });

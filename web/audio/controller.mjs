@@ -65,6 +65,13 @@ export function createWorkerEar(worker, init) {
     ear: { run: async (data, patches) => { await ready; return call('ear', { data, patches }, [data.buffer]); } },
     heads: { run: async (emb, patches) => { const r = await ready; if (!r?.heads?.length) throw new Error('no heads loaded');
       return call('heads', { emb: emb.slice(), patches }); } },
+    /** CLAP (WP-C2): load its encoder in the same Worker, once; then `embed`
+     *  takes 48 kHz windows (transferred) and returns the record's clap field. */
+    loadClap: async modelUrl => {
+      await ready;
+      await call('clapInit', { modelUrl });
+      return { embed: windows => call('clap', { windows }, windows.map(w => w.buffer)) };
+    },
   };
 }
 

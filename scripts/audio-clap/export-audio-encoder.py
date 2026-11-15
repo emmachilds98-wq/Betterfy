@@ -2,7 +2,7 @@
 """Export CLAP's audio encoder for the page, and the test fixture (WP-C2).
 
 Writes:
-  docs/models/larger_clap_music-audio-q8-1.onnx   ~71 MB, int8 weights
+  docs/models/laion_clap_music-audio-q8-1.onnx   ~71 MB, int8 weights
       input  input_features [n, 1, 1001, 64]  (core/audio/clap.mjs clapFeatures)
       output audio_embeds   [n, 512]          L2-normalised
   test/fixtures/clap-fixture.json
@@ -29,7 +29,7 @@ import clap_model  # noqa: E402
 pack = clap_model.pack
 
 ROOT = os.path.dirname(os.path.dirname(HERE))
-MODEL_OUT = os.path.join(ROOT, "docs", "models", "larger_clap_music-audio-q8-1.onnx")
+MODEL_OUT = os.path.join(ROOT, "docs", "models", "laion_clap_music-audio-q8-1.onnx")
 FIXTURE_OUT = os.path.join(ROOT, "test", "fixtures", "clap-fixture.json")
 SR = 48000
 SECONDS = 10

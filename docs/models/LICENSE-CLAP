@@ -1,7 +1,7 @@
 Betterfy "describe the sound in words" model (CLAP)
 ===================================================
 
-larger_clap_music-audio-q8-1.onnx and clap-text-table.json are derived from
+laion_clap_music-audio-q8-1.onnx and clap-text-table.json are derived from
 LAION's CLAP music checkpoint:
 
     music_audioset_epoch_15_esc_90.14.pt

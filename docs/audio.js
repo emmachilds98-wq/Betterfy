@@ -42,7 +42,14 @@ const SECTION_TOP = 3;      // styles kept per section (patch)
 const MAEST_MODEL = 'discogs-maest-10s-pw-2-int8';
 const MAEST_DIM = 768;
 const MAEST_N_STYLES = 400;
-const CLAP_MODEL = 'larger_clap_music-audio-q8-1';
+// LAION's original CLAP music checkpoint (music_audioset_epoch_15_esc_90.14,
+// CC0), converted strictly by scripts/audio-clap/clap_model.py. Not the
+// Hugging Face laion/larger_clap_music upload (its text tower was never
+// filled in: every prompt within cosine 0.999), and not
+// larger_clap_music_and_speech, which works but places music worse on the
+// table's own neighbours (donk → boom bap, drum and bass → shoegaze; the
+// music checkpoint gives bassline and halftime). docs/AUDIO-BUILD-PLAN.md §7.
+const CLAP_MODEL = 'laion_clap_music-audio-q8-1';
 const CLAP_DIM = 512;
 const EARS = Object.freeze({
   maest: Object.freeze({ model: MAEST_MODEL, dim: MAEST_DIM, nStyles: MAEST_N_STYLES }),
@@ -727,7 +734,7 @@ const { scanFrames, downmix } = __mod["core/audio/decode.mjs"];
 // quantised), so text is embedded at BUILD time only
 // (scripts/audio-clap/build-text-table.py → docs/models/clap-text-table.json,
 // a reviewed prompt list). The page ships the quantised AUDIO encoder
-// (77 MB, docs/models/larger_clap_music-audio-q8-1.onnx), downloaded only
+// (77 MB, docs/models/laion_clap_music-audio-q8-1.onnx), downloaded only
 // when the listener switches "Describe the sound in words" on.
 //
 // What is here, all isomorphic (no DOM, no Node APIs):
@@ -2418,6 +2425,13 @@ function createWorkerEar(worker, init) {
     ear: { run: async (data, patches) => { await ready; return call('ear', { data, patches }, [data.buffer]); } },
     heads: { run: async (emb, patches) => { const r = await ready; if (!r?.heads?.length) throw new Error('no heads loaded');
       return call('heads', { emb: emb.slice(), patches }); } },
+    /** CLAP (WP-C2): load its encoder in the same Worker, once; then `embed`
+     *  takes 48 kHz windows (transferred) and returns the record's clap field. */
+    loadClap: async modelUrl => {
+      await ready;
+      await call('clapInit', { modelUrl });
+      return { embed: windows => call('clap', { windows }, windows.map(w => w.buffer)) };
+    },
   };
 }
 
@@ -4134,56 +4148,72 @@ return { HEADS_VERSION, MAX_BATCH, TOP_MOODS, MOOD_LABELS, HEADS, MOOD_MAP, crea
 __mod["web/audio/dsp-view.mjs"] = (function () {
 // AudioRecord.dsp → the BPM/key part of web/ui/sound.mjs's SoundVM (WP-D4).
 //
-// Hidden by default. Tempo and key are only checked on synthetic audio so
-// far; per the build plan (§0 rule 7) they show only once the Rekordbox
-// comparison is in AUDIO-ANALYSIS-PLAN.md §0 and passes. Until then
-// DSP_UI_DEFAULT stays false and dspSoundVM() returns null, so every
-// renderer that takes its output draws nothing. Turning it on is a one-line
-// change here once the numbers pass; `localStorage.bf_audio_dsp = '1'` turns
-// it on for one browser, for checking the display before then.
+// Measured 2026-11-14 on 400 tracks of the Beatport EDM Key Dataset
+// (scripts/audio-dsp/beatport-eval.mjs, numbers in AUDIO-ANALYSIS-PLAN.md §0):
+//  - tempo: 80% within ±1 BPM overall, 86% when confidence ≥ 0.3, and most
+//    octave errors are flagged. Shown by default at confidence ≥ BPM_MIN_CONF,
+//    with "87/174?" when half/double time is unsure.
+//  - key: 30% exact. Not good enough to show; stays hidden until key.mjs is
+//    improved and re-measured.
+// `localStorage.bf_audio_dsp = '1'` shows key too (for checking), '0' hides
+// everything.
 //
 // Energy is never put in the view model yet: D3's weights are hand-picked and
 // unchecked on real previews.
 
-const DSP_UI_DEFAULT = false;
+const DSP_UI_DEFAULT = false;       // key (and everything) — off until key passes
+const BPM_UI_DEFAULT = true;        // tempo alone — on, measured above
+/** Tempo shown by default only at or above this confidence (86% within ±1 BPM there). */
+const BPM_MIN_CONF = 0.3;
 const DSP_UI_KEY = 'bf_audio_dsp';
 
 /** Below this confidence a reading is not shown at all. */
 const MIN_SHOW_CONF = 0.15;
 
-/** Is the BPM/key display on? A per-browser override beats the default. */
-function dspShown(ls = globalThis.localStorage) {
+/** The per-browser override: '1' → true, '0' → false, otherwise null. */
+function override(ls) {
   try {
     const v = ls?.getItem?.(DSP_UI_KEY);
     if (v === '1') return true;
     if (v === '0') return false;
   } catch { /* private mode: use the default */ }
-  return DSP_UI_DEFAULT;
+  return null;
+}
+
+/** Is the full BPM/key display on? A per-browser override beats the default. */
+function dspShown(ls = globalThis.localStorage) {
+  return override(ls) ?? DSP_UI_DEFAULT;
+}
+
+/** Is tempo shown on its own? Off only when the browser override says '0'. */
+function bpmShown(ls = globalThis.localStorage) {
+  return override(ls) !== false && BPM_UI_DEFAULT;
 }
 
 /**
  * @param {object|null|undefined} record  a stored AudioRecord (or miss)
- * @param {{ show?: boolean }} [o]          default dspShown()
+ * @param {{ show?: boolean, bpm?: boolean }} [o]  show: everything (default dspShown());
+ *        bpm: tempo alone at BPM_MIN_CONF (default bpmShown())
  * @returns {{ bpm?: number, bpmAlt?: number, bpmConf?: number, key?: string, camelot?: string, keyConf?: number } | null}
  */
-function dspSoundVM(record, { show = dspShown() } = {}) {
-  if (!show) return null;
+function dspSoundVM(record, { show = dspShown(), bpm = bpmShown() } = {}) {
+  if (!show && !bpm) return null;
   const d = record && !record.miss ? record.dsp : null;
   if (!d || typeof d !== 'object') return null;
   const vm = {};
-  if (Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= MIN_SHOW_CONF) {
+  if (Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= (show ? MIN_SHOW_CONF : BPM_MIN_CONF)) {
     vm.bpm = Math.round(d.bpm);
     vm.bpmConf = d.bpmConf;
     if (d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0) vm.bpmAlt = Math.round(d.bpmAlt);
   }
-  if (typeof d.key === 'string' && d.key && (d.keyConf ?? 0) >= MIN_SHOW_CONF) {
+  if (show && typeof d.key === 'string' && d.key && (d.keyConf ?? 0) >= MIN_SHOW_CONF) {
     vm.key = d.key;
     if (typeof d.camelot === 'string') vm.camelot = d.camelot;
     vm.keyConf = d.keyConf;
   }
   return Object.keys(vm).length ? vm : null;
 }
-return { DSP_UI_DEFAULT, DSP_UI_KEY, MIN_SHOW_CONF, dspShown, dspSoundVM };
+return { DSP_UI_DEFAULT, BPM_UI_DEFAULT, BPM_MIN_CONF, DSP_UI_KEY, MIN_SHOW_CONF, dspShown, bpmShown, dspSoundVM };
 })();
 /* ---- web/audio/labels-view.mjs ---- */
 __mod["web/audio/labels-view.mjs"] = (function () {
@@ -4440,6 +4470,88 @@ function reviewHTML(vm) {
 }
 return { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, MOOD_TOP, VOICE_CUT, LABELS_UI_KEY, CHECKS_KEY, moodsOf, voiceOf, energyOf, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, seenOf, reviewHTML };
 })();
+/* ---- web/audio/deep-settings.mjs ---- */
+__mod["web/audio/deep-settings.mjs"] = (function () {
+const { connectionVerdict } = __mod["web/audio/settings.mjs"];
+// "Deep listen (laptop)" settings: the two Option C ears, MAEST (WP-C1) and
+// CLAP (WP-C2), each a large extra download on top of "Listen to my music".
+//
+// One settings object for both so the page has one block and one writer:
+// localStorage `bf_audio_deep` = { maest, clap, memoryOverride }, all off by
+// default. Nothing here downloads anything; it only answers "may this ear
+// download and run right now?".
+//
+// The rules (docs/AUDIO-BUILD-PLAN.md, Option C):
+//  - each ear only on its own explicit switch;
+//  - Wi-Fi only, always: unlike listening there is no "Wi-Fi only" switch to
+//    turn off, because the models are ~90 MB (MAEST) and ~71 MB (CLAP);
+//  - MAEST also needs navigator.deviceMemory >= 8, or the listener saying
+//    "this computer has the memory" (memoryOverride). deviceMemory is
+//    Chromium-only and capped at 8, so a missing value is "unknown", and only
+//    the override lets it through. CLAP has no memory rule (its encoder runs
+//    fine on smaller machines, measured by WP-C2).
+
+
+const DEEP_SETTINGS_KEY = 'bf_audio_deep';
+const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: false, clap: false, memoryOverride: false });
+const DEEP_EARS = Object.freeze(['maest', 'clap']);
+/** GB of device memory MAEST needs (navigator.deviceMemory's top value). */
+const MAEST_MIN_MEMORY_GB = 8;
+
+/** Settings from a localStorage-like store; anything odd falls back to its default. */
+function readDeepSettings(ls) {
+  let raw = null;
+  try { raw = JSON.parse(ls?.getItem?.(DEEP_SETTINGS_KEY) ?? 'null'); } catch { raw = null; }
+  const d = DEFAULT_DEEP_SETTINGS, out = { ...d };
+  if (!raw || typeof raw !== 'object') return out;
+  for (const k of Object.keys(d)) if (typeof raw[k] === 'boolean') out[k] = raw[k];
+  return out;
+}
+
+/** Merge a change in and save it. Returns the saved settings. Unknown keys are dropped. */
+function writeDeepSettings(ls, change) {
+  const clean = readDeepSettings({ getItem: () => JSON.stringify({ ...readDeepSettings(ls), ...change }) });
+  try { ls?.setItem?.(DEEP_SETTINGS_KEY, JSON.stringify(clean)); } catch { /* memory only */ }
+  return clean;
+}
+
+/**
+ * May this ear download and run now?
+ *  - 'ok'
+ *  - 'off'            its switch is off (or it is not a deep ear)
+ *  - 'offline'
+ *  - 'low-memory'     MAEST only: deviceMemory below 8 and no override
+ *  - 'memory-unknown' MAEST only: the browser does not say, and no override
+ *  - 'metered'        cellular or Data Saver: wait for Wi-Fi
+ *  - 'unknown'        the browser will not say whether it is on Wi-Fi: ask once
+ *
+ * @param {'maest'|'clap'} ear
+ * @param {{ settings?: object, connection?: object, deviceMemory?: number, confirmed?: boolean }} o
+ *        connection = navigator.connection, deviceMemory = navigator.deviceMemory,
+ *        confirmed = the listener said "I'm on Wi-Fi" this session
+ */
+function deepListenAllowed(ear, { settings = DEFAULT_DEEP_SETTINGS, connection = undefined,
+                                        deviceMemory = undefined, confirmed = false } = {}) {
+  if (!DEEP_EARS.includes(ear) || settings?.[ear] !== true) return 'off';
+  if (connection?.type === 'none') return 'offline';
+  if (ear === 'maest' && settings.memoryOverride !== true) {
+    if (!Number.isFinite(deviceMemory)) return 'memory-unknown';
+    if (deviceMemory < MAEST_MIN_MEMORY_GB) return 'low-memory';
+  }
+  return connectionVerdict(connection, { wifiOnly: true, confirmed });
+}
+
+/** Plain-English text for each answer that is not 'ok'. */
+const DEEP_TEXT = Object.freeze({
+  off: 'Off.',
+  offline: 'Paused: offline.',
+  'low-memory': 'This device reports less than 8 GB of memory, so it stays off. If it really has the memory, tick “This computer has the memory”.',
+  'memory-unknown': 'This browser doesn’t say how much memory the computer has. Tick “This computer has the memory” if it has 8 GB or more.',
+  metered: 'Paused: waiting for Wi-Fi.',
+  unknown: 'This browser doesn’t say whether it is on Wi-Fi.',
+});
+return { DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, MAEST_MIN_MEMORY_GB, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_TEXT };
+})();
 /* ---- core/audio/clap-search.mjs ---- */
 __mod["core/audio/clap-search.mjs"] = (function () {
 const { unpackEmbedding } = __mod["core/audio/record.mjs"];
@@ -4451,7 +4563,7 @@ const { unpackEmbedding } = __mod["core/audio/record.mjs"];
 //  - **The text table** (`docs/models/clap-text-table.json`): a reviewed list
 //    of prompts — every ontology genre by name, plus descriptions such as
 //    "dark rolling bassline" — embedded once, at build time, by
-//    laion/larger_clap_music's text encoder. Shape:
+//    the CLAP music checkpoint's text encoder (scripts/audio-clap/). Shape:
 //      { v, model, revision?, dim, template?, prompts: [{ text, kind: 'genre'|'description',
 //        concept?, emb: {s, q} }] }
 //    with each `emb` L2-normalised before `packEmbedding`.
@@ -4789,13 +4901,15 @@ const { analyseOne } = __mod["core/audio/worker.js"];
 const { MISS, validRecord, isCurrent, RECORD_VERSION, MODEL } = __mod["core/audio/record.mjs"];
 const { MEL_VERSION } = __mod["core/audio/mel.mjs"];
 const { HEADS, summariseHeads } = __mod["core/audio/heads.mjs"];
-const { dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY } = __mod["web/audio/dsp-view.mjs"];
+const { dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, DSP_UI_KEY } = __mod["web/audio/dsp-view.mjs"];
 const { measureWindows, needsDsp, DSP_VERSION } = __mod["core/audio/dsp/combine.mjs"];
 const { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf } = __mod["web/audio/labels-view.mjs"];
+const { readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB } = __mod["web/audio/deep-settings.mjs"];
 const { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } = __mod["core/audio/clap-search.mjs"];
+const { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 // What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
 // One namespace so the template reaches core/audio through a single name.
-return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, DSP_UI_DEFAULT, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION };
+return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
 })();
 /* ---- core/audio/infer.mjs ---- */
 __mod["core/audio/infer.mjs"] = (function () {
