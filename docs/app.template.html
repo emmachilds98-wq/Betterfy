@@ -1141,7 +1141,15 @@ const idb = (() => {
  * in-memory index — so the same wrong suggestion came back every session, for
  * the same track, forever. This keeps the negative half.
  *
- *   { [trackId]: { skips, lastSkip, rejected: [playlistId, ...] } }
+ *   { [trackId]: { skips, lastSkip, rejected: [playlistId, ...],
+ *                  accepted?: [playlistId, ...], kept?: [playlistId, ...] } }
+ *
+ * `accepted` is where you filed it from the File screen: the sound learner
+ * (core/intrinsic/audio-feedback.mjs) reads it as "yes, it belongs there"
+ * before the next sync shows the track in that playlist. `kept` is Tidy's
+ * "Keep here": the track stays in that playlist and neither Tidy tier offers it
+ * as wrong there again. Both appear only once used, so a store that never used
+ * them is the same object it always was.
  */
 let FB = {};
 const loadFeedback = async () => { FB = (await idb.get('feedback')) ?? {}; };
@@ -1158,6 +1166,34 @@ async function recordSkip(trackId) {
 async function recordReject(trackId, playlistId) {
   const f = fbFor(trackId);
   if (!f.rejected.includes(playlistId)) f.rejected.push(playlistId);
+  await saveFeedback();
+}
+
+/** Filed from the File screen into these playlists: "yes, there". The latest
+ *  word on a pair wins, so it also lifts an earlier "not that playlist". */
+async function recordAccept(trackId, playlistIds) {
+  const f = fbFor(trackId), ids = [].concat(playlistIds).filter(Boolean);
+  f.accepted = [...new Set([...(f.accepted ?? []), ...ids])];
+  f.rejected = f.rejected.filter(p => !ids.includes(p));
+  await saveFeedback();
+}
+
+/** The filing was undone: take back the "yes, there". */
+async function forgetAccept(trackId, playlistIds) {
+  const f = FB[trackId], ids = [].concat(playlistIds);
+  if (!f?.accepted) return;
+  f.accepted = f.accepted.filter(p => !ids.includes(p));
+  if (!f.accepted.length) delete f.accepted;
+  await saveFeedback();
+}
+
+/** Tidy's "Keep here": the track belongs in `here`, and each playlist in `away`
+ *  that a Tidy tier wanted to move it to is a "not that playlist" — the same
+ *  verdict the sound tier's Keep here has always recorded. */
+async function recordKeep(trackId, here, away = []) {
+  const f = fbFor(trackId);
+  if (here && !(f.kept ??= []).includes(here)) f.kept.push(here);
+  for (const p of [].concat(away).filter(Boolean)) if (!f.rejected.includes(p)) f.rejected.push(p);
   await saveFeedback();
 }
 
@@ -1584,28 +1620,23 @@ function buildReports(lib, cfg, tags) {
     // A real suggestion, just built on very little Last.fm data — worth
     // knowing before trusting or dismissing the move.
     thinData: isThinSignal(m.track, tags),
-    artists: (m.track.artists ?? []).filter(a => a.id).map(a => ({ id: a.id, name: a.name })) }));
+    artists: (m.track.artists ?? []).filter(a => a.id).map(a => ({ id: a.id, name: a.name })) }))
+    // A track you said to keep where it is ("Keep here", either Tidy tier) is
+    // not offered as wrong there again.
+    .filter(m => !keptHere(m.id, m.currentPlaylistId));
 
-  const filed = new Set();
+  // Filed means filed as any release of it: a liked single whose album copy
+  // (same ISRC, or the same trackKey — artist, title and version) already sits
+  // in a playlist is not waiting to be filed, whatever its Spotify id.
+  const filed = new Set(), filedIsrc = new Set(), filedKey = new Set();
   for (const p of lib.playlists) { if (isMirrorPlaylist(p)) continue;
-    for (const t of p.tracks) filed.add(t.id); }
-  const unfiled = lib.liked.filter(t => t?.id && !filed.has(t.id));
+    for (const t of p.tracks) { if (!t) continue; filed.add(t.id);
+      if (t.isrc) filedIsrc.add(t.isrc); if (t.name) filedKey.add(trackKey(t)); } }
+  const isFiled = t => filed.has(t.id) || (!!t.isrc && filedIsrc.has(t.isrc)) || (!!t.name && filedKey.has(trackKey(t)));
+  const unfiled = lib.liked.filter(t => t?.id && !isFiled(t));
   const backlog = unfiled.map(t => {
     const fb = FB[t.id];
-    // Ask for more than three, then drop the playlists already rejected for
-    // this track, so a rejection promotes the next real candidate instead of
-    // leaving a gap where the rejected one was.
-    const ranked = rank(t, tags, profiles, idf, { top: 8 })
-      .filter(b => !fb?.rejected?.includes(b.id))
-      .slice(0, 3)
-      .map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null, via: 'tags' }));
-    // Tag-based fit already found something worth trusting; the artist's own
-    // filing history only ever steps in when it hasn't — no fetch, no third
-    // party, just where the user already put this artist's other tracks.
-    const suggest = (ranked.length && ranked[0].score >= 0.30) ? ranked
-      : artistHistory(t, lib, targets)
-          .filter(h => !fb?.rejected?.includes(h.id))
-          .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
+    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets);
     return { id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
       album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
       tags: topTags(t, tags, idf),
@@ -1651,6 +1682,37 @@ function buildReports(lib, cfg, tags) {
   // library at all, and must score them against the same centroids the inbox
   // uses rather than a second, subtly different model.
   return { within, across, misfiled, backlog, clusters, drift, profiles, idf };
+}
+
+/** "Keep here" was said for this track in this playlist (recordKeep). */
+function keptHere(trackId, playlistId) { return !!FB[trackId]?.kept?.includes(playlistId); }
+
+/**
+ * The File queue's picks for one unfiled track: the tag engine's best three,
+ * or, when none of them fits well enough to trust, where the artist's other
+ * tracks are already filed. buildReports() makes every card's picks with this,
+ * and rejecting a pick re-ranks the card through it too, so the slot a
+ * rejection frees fills exactly the way the card was first filled — the
+ * filing-history fallback and the `via` label included. `tags` are the gated
+ * tags buildReports scores with.
+ */
+function backlogSuggest(t, lib, cfg, tags, profiles, idf,
+                        targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id))) {
+  const fb = FB[t.id];
+  // Ask for more than three, then drop the playlists already rejected for
+  // this track, so a rejection promotes the next real candidate instead of
+  // leaving a gap where the rejected one was.
+  const ranked = rank(t, tags, profiles, idf, { top: 8 })
+    .filter(b => !fb?.rejected?.includes(b.id))
+    .slice(0, 3)
+    .map(b => ({ ...b, axis: cfg[b.id]?.axis ?? null, via: 'tags' }));
+  // Tag-based fit already found something worth trusting; the artist's own
+  // filing history only ever steps in when it hasn't — no fetch, no third
+  // party, just where the user already put this artist's other tracks.
+  return (ranked.length && ranked[0].score >= 0.30) ? ranked
+    : artistHistory(t, lib, targets)
+        .filter(h => !fb?.rejected?.includes(h.id))
+        .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
 }
 
 /* ===================== UI ===================== */
@@ -2401,8 +2463,9 @@ function mfBandChip(b) {
  * measured there on tracks you filed yourself (planted in the wrong playlist,
  * held out). The section only exists once listening has heard something;
  * without it Tidy draws exactly what it always did. Moves use the same Move
- * button, History entry and undo as "Wrong place"; "Keep here" is a "not that
- * playlist" verdict, so the same move is never offered again. */
+ * button, History entry and undo as "Wrong place"; "Keep here" (recordKeep, in
+ * both tiers) is a "not that playlist" verdict plus "it belongs here", so the
+ * track is offered as wrong there by neither tier again. */
 const TSOUND = { status: 'idle', key: '', res: null, err: null };
 const tidySoundKey = () => `${soundHeard()}|${engineTargets().join()}|${Object.values(FB).reduce((n, f) => n + (f.rejected?.length ?? 0), 0)}|${LIB?.playlists?.length ?? 0}`;
 // Guarded: the page tests run Tidy in a sandbox without the audio or engine parts.
@@ -2412,7 +2475,9 @@ function tidySections() {
   return tidySoundOn() ? [...TIDY_SECTIONS, ['sound', 'By sound']] : TIDY_SECTIONS;
 }
 function tidySoundRows() {
-  return (TSOUND.res?.rows ?? []).filter(x => !(FB[x.id]?.rejected ?? []).includes(x.to));
+  // Not a move you turned down, and not a track you said to keep where it is
+  // (Keep here in either tier: FB.kept).
+  return (TSOUND.res?.rows ?? []).filter(x => !(FB[x.id]?.rejected ?? []).includes(x.to) && !(FB[x.id]?.kept ?? []).includes(x.from));
 }
 const tidySoundCount = () => tidySoundRows().length;
 /** Load the heard records if listening is on, and work the moves out when they've changed. Cheap when nothing is due. */
@@ -2481,7 +2546,7 @@ function secSound() {
         <div class="why">${esc(x.why.join('; '))}.</div>
       </div><div class="acts">
         <button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.from)}" data-mvto="${esc(x.to)}">${done ? 'Moved' : 'Move'}</button>
-        ${done ? '' : `<button class="b sm" data-tskeep="${esc(x.id)}" data-tsto="${esc(x.to)}">Keep here</button>`}
+        ${done ? '' : `<button class="b sm" data-tsfrom="${esc(x.from)}" data-tskeep="${esc(x.id)}" data-tsto="${esc(x.to)}">Keep here</button>`}
         <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${t.dur}">Play</button></div></div>`;
     }).join('')
       || (rows.length
@@ -2521,6 +2586,7 @@ function secMisfile() {
         ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}">${done ? 'Moved' : 'Move'}</button>` : ''}
         ${x.suggest.filter(sg => sg.id).slice(1, 2).map(sg =>
           `<button class="b sm" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(sg.id)}">→ ${esc(sg.name)}</button>`).join('')}
+        ${done ? '' : `<button class="b sm" data-mfkeep="${esc(x.id)}" data-mffrom="${esc(x.currentPlaylistId)}" data-mfaway="${esc(x.suggest.filter(sg => sg.id).slice(0, 2).map(sg => sg.id).join(','))}">Keep here</button>`}
         <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${x.dur ?? 0}">Play</button></div>
       ${x.tags?.length ? `<div style="flex-basis:100%; margin-top:6px">
         ${tagChips(x.tags, x.thinData)}
@@ -4200,10 +4266,14 @@ function mergeFeedback(local, remote) {
   const merged = { ...local };
   for (const [id, r] of Object.entries(remote ?? {})) {
     const l = merged[id];
+    // Accepts and keeps union the same way; each only appears once either side has one.
+    const union = k => [...new Set([...(l[k] ?? []), ...(r[k] ?? [])])];
     merged[id] = !l ? r : {
       skips: Math.max(l.skips ?? 0, r.skips ?? 0),
       lastSkip: [l.lastSkip, r.lastSkip].filter(Boolean).sort().at(-1) ?? null,
-      rejected: [...new Set([...(l.rejected ?? []), ...(r.rejected ?? [])])],
+      rejected: union('rejected'),
+      ...(l.accepted || r.accepted ? { accepted: union('accepted') } : {}),
+      ...(l.kept || r.kept ? { kept: union('kept') } : {}),
     };
   }
   return merged;
@@ -5347,9 +5417,13 @@ async function engineAudio() {
 }
 /** The records as the engine takes them, plus what you told it (WP-L2): a
  *  rejection teaches the sound learner "not there", and the Score run drops the
- *  verdicts on whichever tracks it is holding out. No feedback, the records
- *  alone, exactly as before. */
-const engineAudioIn = audio => (audio && Object.keys(FB).length ? { records: audio, feedback: FB } : audio);
+ *  verdicts on whichever tracks it is holding out. The learner is always the
+ *  prototype one (BUILD-5-PLAN §2.3, option b): each playlist's sound is the
+ *  average of your own heard tracks in it, and nothing is fitted to playlist
+ *  membership — the logistic model stays for offline measurement only. The
+ *  worker holds itself to the same (build-web.mjs). */
+const ENGINE_LEARN_MODEL = 'prototype';
+const engineAudioIn = audio => (audio ? { records: audio, model: ENGINE_LEARN_MODEL, ...(Object.keys(FB).length ? { feedback: FB } : {}) } : audio);
 /** Audio changes a suggestion only once WP-E2's gate has passed on this library. */
 const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?.gate ?? null);
 
@@ -5358,8 +5432,8 @@ const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?
  *
  * What a track sounds like decides where the File screen suggests it goes.
  * For a track listening has heard, the picks come from the engine with sound
- * leading (placements' `soundFirst`): a learner trained on each genre
- * playlist's own heard tracks, the nearest playlist by sound, and an artist
+ * leading (placements' `soundFirst`): each genre playlist's sound prototype
+ * (the average of its own heard tracks), the nearest playlist by sound, and an artist
  * graph built from genre playlists only, so a mood or event playlist ("Sunday",
  * "Fabric 14 Sept") cannot vote on genre. An unheard track keeps the tag
  * engine's picks, unchanged.
@@ -6457,7 +6531,16 @@ document.addEventListener('click', guard(async e => {
   const tsb = e.target.closest('[data-tsb]');
   if (tsb) { S.tsBand = tsb.dataset.tsb; return render(); }
   const tsk = e.target.closest('[data-tskeep]');
-  if (tsk) { await recordReject(tsk.dataset.tskeep, tsk.dataset.tsto); toast('Kept where it is. It won’t be offered there again.'); return render(); }
+  if (tsk) { await recordKeep(tsk.dataset.tskeep, tsk.dataset.tsfrom, [tsk.dataset.tsto]); toast('Kept where it is. It won’t be offered there again.'); return render(); }
+  // Wrong place's Keep here: the same record as By sound's, and the row leaves both tiers.
+  const mfk = e.target.closest('[data-mfkeep]');
+  if (mfk) {
+    const id = mfk.dataset.mfkeep, from = mfk.dataset.mffrom;
+    await recordKeep(id, from, mfk.dataset.mfaway.split(',').filter(Boolean));
+    R.misfiled = R.misfiled.filter(m => !(m.id === id && m.currentPlaylistId === from));
+    toast('Kept where it is. It won’t be offered as wrong there again.');
+    return render();
+  }
   const mfb = e.target.closest('[data-mfb]');
   if (mfb) { S.mfBand = mfb.dataset.mfb; if (T.rememberFilters) { T.mfBand = S.mfBand; saveTheme(); } return render(); }
 
@@ -6471,12 +6554,10 @@ document.addEventListener('click', guard(async e => {
     await recordReject(t.id, pid);
     S.fileSel.delete(pid);
     // Re-rank this one track now, so the slot fills with the next real
-    // candidate instead of leaving a gap.
+    // candidate instead of leaving a gap — through the same backlogSuggest()
+    // that made the card, so the filing-history fallback and `via` survive.
     const raw = LIB.liked.find(x => x.id === t.id);
-    t.suggest = (raw ? rank(raw, TAGS, R.profiles, R.idf, { top: 8 }) : [])
-      .filter(b => !FB[t.id]?.rejected?.includes(b.id))
-      .slice(0, 3)
-      .map(b => ({ ...b, axis: CFG[b.id]?.axis ?? null }));
+    t.suggest = raw ? backlogSuggest(raw, LIB, CFG, gateTags(TAGS, tagGate(TAGS)), R.profiles, R.idf) : [];
     toast(`Won't suggest ${pname} for this track again.`, async () => {
       const f = FB[t.id]; if (f) f.rejected = f.rejected.filter(x => x !== pid);
       await saveFeedback(); R = buildReports(LIB, CFG, TAGS); render();
@@ -6816,7 +6897,11 @@ async function fileCurrent(playlistIds) {
       await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox' });
       ats.push((await getLog())[0]?.at);
     }
-    const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
+    // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so
+    // the sound learner hears "yes, there" before the next sync shows it.
+    await recordAccept(t.id, ids);
+    const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
+                                  await forgetAccept(t.id, ids); };
     toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
     S.fileSel = new Set();
     R.backlog.splice(at, 1); S.inboxAt = inboxIndex();
