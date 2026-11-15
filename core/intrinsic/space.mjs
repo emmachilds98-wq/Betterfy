@@ -213,6 +213,8 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
  *
  *   { records, mel }   records, optionally dropping another mel front end's
  *   { index }          an `audioIndex` already built (reused across folds)
+ *   { ear }            WP-C1: 'effnet' (default), 'maest' or 'both', the ear
+ *                      `audioIndex` hears with when building from `records`
  *   { feedback }       WP-L2: the listener's verdicts (audio-feedback.mjs
  *                      reads a CorrectionLog or the page's feedback state),
  *                      handed to the trainer with `skip`, the fold whose
@@ -236,7 +238,9 @@ function audioLayer(audio, destinations, skip) {
   if (!audio) return {};
   const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
     && ('records' in audio || 'index' in audio || 'learn' in audio || 'feedback' in audio) ? audio : { records: audio };
-  const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
+  // `ear` (WP-C1): which ear the index hears with; absent is the first ear, as before.
+  const index = opts.index instanceof Map ? opts.index
+    : audioIndex(opts.records, { mel: opts.mel, ...(opts.ear ? { ear: opts.ear } : {}) });
   if (!index.size) return {};
   const layer = buildAudioProfiles(destinations, index, { skip });
   const out = { audio: layer };
@@ -259,10 +263,12 @@ function audioLayer(audio, destinations, skip) {
  * Takes `audio` exactly as `buildSpace` does. Returns a new space; with
  * nothing to hear, the space unchanged. Any existing layer is replaced.
  */
-export function withAudioLayer(space, audio) {
+export function withAudioLayer(space, audio, { skip = null } = {}) {
   if (!space?.destinations) return space;
   const { audio: _a, learned: _l, ...rest } = space;
-  const layer = audioLayer(audio, space.destinations, null);
+  // `skip` (WP-C1's Score arms): the fold this space was built without, so a
+  // listener's verdict on a held-out track never trains the learner scoring it.
+  const layer = audioLayer(audio, space.destinations, skip);
   return Object.keys(layer).length ? { ...rest, ...layer } : (('audio' in space || 'learned' in space) ? rest : space);
 }
 

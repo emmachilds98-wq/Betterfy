@@ -2772,7 +2772,7 @@ return { RECORD_VERSION, MIN_RECORD_VERSION, MODEL, N_STYLES, EMB_DIM, TOP_STYLE
 })();
 /* ---- core/intrinsic/audio.mjs ---- */
 __mod["core/intrinsic/audio.mjs"] = (function () {
-const { validRecord, isCurrent, unpackEmbedding, EMB_DIM } = __mod["core/audio/record.mjs"];
+const { validRecord, isCurrent, unpackEmbedding, earCurrent, EMB_DIM, MAEST_DIM } = __mod["core/audio/record.mjs"];
 // What a track sounds like, against what each of this account's playlists
 // sounds like.
 //
@@ -2803,7 +2803,20 @@ const { validRecord, isCurrent, unpackEmbedding, EMB_DIM } = __mod["core/audio/r
 // pins the two equal, so they cannot drift apart silently.
 
 
-const AUDIO_COMPONENT_VERSION = '1.0.0';
+// 1.1.0 (WP-C1): `audioIndex(records, { ear })` can read the second ear.
+// Without `ear` it is exactly 1.0.0.
+const AUDIO_COMPONENT_VERSION = '1.1.0';
+
+/**
+ * Which ear an index hears with (WP-C1). 'effnet' is the first ear and the
+ * default. 'maest' is the second ear's embedding alone. 'both' joins the two
+ * unit embeddings (each half weighted equally, then renormalised), so a
+ * cosine on it is the mean of the two ears' cosines. An index never mixes
+ * spaces: a 'maest' or 'both' index holds only tracks that have a current
+ * `maest` field.
+ */
+const EARS = Object.freeze(['effnet', 'maest', 'both']);
+const EAR_DIM = { effnet: EMB_DIM, maest: MAEST_DIM, both: EMB_DIM + MAEST_DIM };
 
 /**
  * A playlist needs this many *analysed* members before its sound is a
@@ -2853,23 +2866,38 @@ function recordsOf(records) {
  * Two records for one id: the newer (`at`) wins.
  *
  * @param {Iterable<object>|Record<string, object>|null} records
- * @param {{ mel?: string }} [opts]  pass the page's MEL_VERSION to also drop
- *        records computed with another front end
+ * @param {{ mel?: string, ear?: 'effnet'|'maest'|'both' }} [opts]  `mel`: pass the
+ *        page's MEL_VERSION to also drop records computed with another front
+ *        end. `ear`: see EARS; default 'effnet'.
  * @returns {Map<string, { emb: Float32Array, styles: Array<[number, number]>, rec: object }>}
  */
-function audioIndex(records, { mel = undefined } = {}) {
+function audioIndex(records, { mel = undefined, ear = 'effnet' } = {}) {
+  if (!EARS.includes(ear)) throw new Error(`unknown ear: ${ear}`);
   const index = new Map();
   for (const rec of recordsOf(records)) {
     if (!validRecord(rec) || rec.miss) continue;
     if (!isCurrent(rec, { mel })) continue;
+    if (ear !== 'effnet' && !earCurrent(rec, 'maest')) continue;
     const prev = index.get(rec.id);
     if (prev && !((rec.at ?? 0) > (prev.rec.at ?? 0))) continue;
     let emb;
-    try { emb = unit(unpackEmbedding(rec.emb)); } catch { emb = null; }
-    if (!emb || emb.length !== EMB_DIM) continue;
-    index.set(rec.id, { emb, styles: rec.styles, rec });
+    try { emb = embeddingOf(rec, ear); } catch { emb = null; }
+    if (!emb || emb.length !== EAR_DIM[ear]) continue;
+    index.set(rec.id, { emb, styles: ear === 'maest' ? rec.maest.styles : rec.styles, rec });
   }
   return index;
+}
+
+/** One record's unit embedding as `ear` hears it, or null. */
+function embeddingOf(rec, ear) {
+  if (ear === 'effnet') return unit(unpackEmbedding(rec.emb));
+  const m = unit(unpackEmbedding(rec.maest.emb));
+  if (ear === 'maest') return m;
+  const e = unit(unpackEmbedding(rec.emb));
+  if (!e || !m) return null;
+  const both = new Float32Array(e.length + m.length);
+  both.set(e, 0); both.set(m, e.length);
+  return unit(both);
 }
 
 /**
@@ -3006,7 +3034,7 @@ function audioScores(track, space, { leaveOneOut = false, minMembers = null } = 
   }
   return out;
 }
-return { AUDIO_COMPONENT_VERSION, MIN_AUDIO_MEMBERS, audioIndex, audioProfileOf, profileWithout, buildAudioProfiles, audioScores };
+return { AUDIO_COMPONENT_VERSION, EARS, MIN_AUDIO_MEMBERS, audioIndex, audioProfileOf, profileWithout, buildAudioProfiles, audioScores };
 })();
 /* ---- core/intrinsic/audio-feedback.mjs ---- */
 __mod["core/intrinsic/audio-feedback.mjs"] = (function () {
@@ -4072,6 +4100,8 @@ function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null, targe
  *
  *   { records, mel }   records, optionally dropping another mel front end's
  *   { index }          an `audioIndex` already built (reused across folds)
+ *   { ear }            WP-C1: 'effnet' (default), 'maest' or 'both', the ear
+ *                      `audioIndex` hears with when building from `records`
  *   { feedback }       WP-L2: the listener's verdicts (audio-feedback.mjs
  *                      reads a CorrectionLog or the page's feedback state),
  *                      handed to the trainer with `skip`, the fold whose
@@ -4095,7 +4125,9 @@ function audioLayer(audio, destinations, skip) {
   if (!audio) return {};
   const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
     && ('records' in audio || 'index' in audio || 'learn' in audio || 'feedback' in audio) ? audio : { records: audio };
-  const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
+  // `ear` (WP-C1): which ear the index hears with; absent is the first ear, as before.
+  const index = opts.index instanceof Map ? opts.index
+    : audioIndex(opts.records, { mel: opts.mel, ...(opts.ear ? { ear: opts.ear } : {}) });
   if (!index.size) return {};
   const layer = buildAudioProfiles(destinations, index, { skip });
   const out = { audio: layer };
@@ -4118,10 +4150,12 @@ function audioLayer(audio, destinations, skip) {
  * Takes `audio` exactly as `buildSpace` does. Returns a new space; with
  * nothing to hear, the space unchanged. Any existing layer is replaced.
  */
-function withAudioLayer(space, audio) {
+function withAudioLayer(space, audio, { skip = null } = {}) {
   if (!space?.destinations) return space;
   const { audio: _a, learned: _l, ...rest } = space;
-  const layer = audioLayer(audio, space.destinations, null);
+  // `skip` (WP-C1's Score arms): the fold this space was built without, so a
+  // listener's verdict on a held-out track never trains the learner scoring it.
+  const layer = audioLayer(audio, space.destinations, skip);
   return Object.keys(layer).length ? { ...rest, ...layer } : (('audio' in space || 'learned' in space) ? rest : space);
 }
 
@@ -5306,15 +5340,67 @@ function audioCalibration(acc, opts = {}) {
   const withAudio = acc?.withAudio?.rows?.length ? calibrationReport(acc.withAudio.rows, opts) : null;
   return { without, withAudio };
 }
-return { GATE_VERSION, GATE, audioGate, audioInUse, audioCalibration };
+
+/**
+ * WP-C1: which ear may place tracks, read from one Score run that also scored
+ * the other ears (`placementAccuracy(lib, { audio: { records, arms: ['maest', 'both'] } })`).
+ *
+ * The first ear (EffNet, Option B) is the default and stays it unless another
+ * arm, on the same run, both
+ *   1. passes the same gate against no sound at all (`audioGate`), and
+ *   2. beats the first ear: at least `minLiftOverFirst` more top-1 on
+ *      never-filed artists, and no loss overall, against the first ear's arm.
+ * The second bar is set before any of the owner's numbers exist, like the
+ * first: a second ear that only ties is a 90 MB download for nothing. Among
+ * arms that clear both, the larger never-filed top-1 wins, then 'maest' (one
+ * model) over 'both' on a tie.
+ *
+ * Returns `{ ear, gate, reason, text, vsFirst }`: `gate` is the verdict for the
+ * chosen ear, so `useAudio: audioInUse(choice.gate)` is the same question as
+ * before. Without arms it is `{ ear: 'effnet', gate: withAudio.gate }`, exactly
+ * what the page used until now.
+ */
+const EAR_GATE = Object.freeze({ minLiftOverFirst: 0.02 });
+
+function earChoice(acc, opts = {}) {
+  const bar = { ...EAR_GATE, ...opts };
+  const w = acc?.withAudio ?? null;
+  const first = w?.gate ?? (w ? audioGate(acc) : null);
+  const keep = (reason, text, vsFirst = {}) => ({ ear: 'effnet', gate: first, reason, text, vsFirst, bar });
+  const arms = w?.arms ? Object.entries(w.arms) : [];
+  if (!arms.length) return keep('NO_ARMS', 'Only the first ear was scored.');
+
+  const vsFirst = {};
+  let best = null;
+  for (const [ear, a] of arms) {
+    const lift = (a.neverFiled?.top1 ?? 0) - (w.neverFiled?.top1 ?? 0);
+    const overall = (a.top1 ?? 0) - (w.top1 ?? 0);
+    const beats = a.gate?.pass === true && lift + EPS >= bar.minLiftOverFirst && overall >= -EPS;
+    vsFirst[ear] = { lift: +lift.toFixed(4), overall: +overall.toFixed(4), passes: a.gate?.pass ?? null, beats };
+    if (!beats) continue;
+    const score = a.neverFiled?.top1 ?? 0;
+    if (!best || score > best.score + EPS || (Math.abs(score - best.score) <= EPS && ear === 'maest'))
+      best = { ear, score, gate: a.gate };
+  }
+  if (!best) {
+    const undecided = arms.some(([, a]) => a.gate?.pass == null);
+    return keep(undecided ? 'ARMS_UNDECIDED' : 'FIRST_EAR_KEPT',
+      undecided ? 'Too few tracks heard by the second ear to judge it yet, so the first ear stays.'
+        : 'The second ear did not beat the first on your library, so the first ear stays.', vsFirst);
+  }
+  const v = vsFirst[best.ear];
+  return { ear: best.ear, gate: best.gate, reason: 'SECOND_EAR', vsFirst, bar,
+           text: `${best.ear === 'maest' ? 'The second ear' : 'Both ears together'} ${pts(v.lift)} on never-filed artists over the first ear, ${pts(v.overall)} overall.` };
+}
+return { GATE_VERSION, GATE, audioGate, audioInUse, audioCalibration, EAR_GATE, earChoice };
 })();
 /* ---- core/validate/loo.mjs ---- */
 __mod["core/validate/loo.mjs"] = (function () {
-const { buildSpace, placements, BANDS, WEIGHTS } = __mod["core/intrinsic/space.mjs"];
+const { buildSpace, placements, withAudioLayer, BANDS, WEIGHTS } = __mod["core/intrinsic/space.mjs"];
 const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 const { scoresOf } = __mod["core/intrinsic/calibrate.mjs"];
 const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
-const { audioGate } = __mod["core/validate/gate.mjs"];
+const { audioGate, earChoice } = __mod["core/validate/gate.mjs"];
 // Held-out placement accuracy — the account grades the engine.
 //
 // This is the reason the intrinsic approach is worth building. Every other
@@ -5354,6 +5440,8 @@ const { audioGate } = __mod["core/validate/gate.mjs"];
 
 
 // 4.1.0: `audio` (WP-E2). Without it the result is key for key what 4.0.0 gave.
+// `audio.arms` (WP-C1) adds `withAudio.arms` and nothing else, so the version
+// is left alone: without arms every result is key for key what it was.
 const VALIDATE_VERSION = '4.1.0';
 
 const DEFAULT_FOLDS = 5;
@@ -5462,6 +5550,14 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
  *                                 profiles and any learner are built without the
  *                                 fold, so a track never hears itself. The
  *                                 headline numbers are unchanged by it.
+ *                                 `audio.arms` (WP-C1, with `records`): more
+ *                                 ears to score the same way, e.g.
+ *                                 ['maest', 'both']. Each is one more ranking
+ *                                 per track against the same fold's space with
+ *                                 only the sound layer rebuilt for that ear,
+ *                                 reported in `withAudio.arms[ear]` with its
+ *                                 own gate verdict. gate.mjs `earChoice` reads
+ *                                 them against the first ear.
  */
 function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
@@ -5502,6 +5598,8 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
   const sound = audioOpts ? { all: tally(), neverFiled: tally(), heard: 0, heardNeverFiled: 0,
                               judged: 0, changed: 0, rows: collect ? [] : null } : null;
   const limit3 = collect ? Infinity : 3;
+  // WP-C1: the other ears, each tallied exactly like `sound`.
+  const arms = sound ? armsOf(audio, audioOpts, collect) : [];
 
   const stats = {
     scored: 0, top1: 0, top3: 0, declined: 0, declinedWouldHaveBeenRight: 0,
@@ -5520,6 +5618,8 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     const skip = leaky ? null : new Set(members);
     const space = buildSpace(lib, { skip, isMirror, targets: allowed, bridge, audio: audioOpts });
     const filed = filedArtists(space);
+    // Same graph, only the sound layer swapped for each other ear.
+    const armSpaces = arms.map(a => withAudioLayer(space, a.opts, { skip }));
 
     for (const id of members) {
       const track = byId.get(id);
@@ -5578,6 +5678,20 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
         if (r[0]?.playlistId !== ranked[0]?.playlistId) sound.changed++;
         sound.all.scored++; if (s1) sound.all.top1++; if (s3) sound.all.top3++;
         if (fresh) { sound.neverFiled.scored++; if (s1) sound.neverFiled.top1++; if (s3) sound.neverFiled.top3++; }
+
+        arms.forEach((a, i) => {
+          const sp = armSpaces[i];
+          const res = sp.audio ? placements(track, sp, { limit: limit3, weights: base, useAudio: true }) : out;
+          const ra = res.results ?? [];
+          if (a.t.rows) a.t.rows.push({ id, scores: scoresOf(ra), truth: [...want].sort() });
+          const a1 = ra[0] && want.has(ra[0].playlistId);
+          const a3 = ra.slice(0, 3).some(x => want.has(x.playlistId));
+          if (sp.audio?.index.has(id)) { a.t.heard++; if (fresh) a.t.heardNeverFiled++; }
+          if (ra[0]?.parts && ('audio' in ra[0].parts || 'learned' in ra[0].parts)) a.t.judged++;
+          if (ra[0]?.playlistId !== ranked[0]?.playlistId) a.t.changed++;
+          a.t.all.scored++; if (a1) a.t.all.top1++; if (a3) a.t.all.top3++;
+          if (fresh) { a.t.neverFiled.scored++; if (a1) a.t.neverFiled.top1++; if (a3) a.t.neverFiled.top3++; }
+        });
       }
 
       // Per-bucket, credited to every bucket the track really is in. This is
@@ -5665,7 +5779,31 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
   // The verdict travels with the numbers it was read from, so no caller can
   // show one run's numbers beside another run's verdict.
   if (withAudio) withAudio.gate = audioGate(result);
+  if (withAudio && arms.length) {
+    withAudio.arms = {};
+    for (const a of arms) {
+      const arm = { ...tallyOut(a.t.all), neverFiled: tallyOut(a.t.neverFiled),
+                    heard: a.t.heard, heardNeverFiled: a.t.heardNeverFiled, judged: a.t.judged, changed: a.t.changed,
+                    analysed: a.opts.index.size, ...(a.t.rows ? { rows: a.t.rows } : {}) };
+      // Each arm's own verdict against no sound at all, on the same run.
+      arm.gate = audioGate({ ...result, withAudio: arm });
+      withAudio.arms[a.ear] = arm;
+    }
+    // Which ear may place tracks, read from this same run (gate.mjs).
+    withAudio.choice = earChoice(result);
+  }
   return result;
+}
+
+/** `audio.arms` → [{ ear, opts, t }] with an index per ear, built once like the first ear's. */
+function armsOf(audio, base, collect) {
+  const list = audio && typeof audio === 'object' && Array.isArray(audio.arms) ? audio.arms : [];
+  if (!list.length || !audio.records) return [];
+  return [...new Set(list)].filter(ear => ear !== 'effnet').map(ear => ({
+    ear,
+    opts: { ...base, index: audioIndex(audio.records, { mel: audio.mel, ear }) },
+    t: { all: tally(), neverFiled: tally(), heard: 0, heardNeverFiled: 0, judged: 0, changed: 0, rows: collect ? [] : null },
+  }));
 }
 
 /** `audio` as placementAccuracy was given it → buildSpace options with a prebuilt index, or null. */
