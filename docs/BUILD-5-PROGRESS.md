@@ -17,7 +17,8 @@ merge so a fresh session can pick up where the last one stopped.
 
 - PR #114 open: default Last.fm key + one-tap Analyse, A4 pilot (history/sources/engine), merged with main #105/#111/#116/#117
 - #114 merged (Last.fm key, Analyse, A4 pilot). #118 merged (A4 home/inbox, shuffle/discover)
-- Running: A4 tidy/lists/new; UI-D 4-tab shell + Settings; §7 History measurements
+- #119 merged (§7 measurements). A4 complete: every screen is a module (PR open)
+- Running: UI-D 4-tab shell + Settings
 
 ## Next
 - Wave 3: remaining A4 screens, in groups:
