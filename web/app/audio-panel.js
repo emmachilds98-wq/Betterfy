@@ -125,10 +125,18 @@ function deepPanelHTML() {
     <p class="srcline">Larger listening models, for a computer on Wi-Fi. Each is a one-off download and stays off until you tick it.</p>
     <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMaest" ${d.maest ? 'checked' : ''}> Second ear (MAEST, about 90 MB)</label>
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP)</label>
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP, about 77 MB)</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has the memory (8 GB or more)</label>
     </div>
-    ${why('maest')}${why('clap')}
+    ${why('maest')}${why('clap')}${clapStatusHTML(d)}
   </div>`;
 }
 
+/** CLAP's line in the Deep listen block: how many heard tracks it has described. Nothing while off. */
+function clapStatusHTML(d) {
+  if (!d.clap || deepAllowed('clap') !== 'ok' || !globalThis.BetterfyAudio?.needsClap) return '';
+  const heard = [...(AUDIO.records?.values() ?? [])].filter(r => !r.miss);
+  const done = heard.filter(r => !BetterfyAudio.needsClap(r)).length;
+  return `<p class="sub" style="margin:4px 0">Described ${done.toLocaleString()} of ${heard.length.toLocaleString()} heard track${heard.length === 1 ? '' : 's'}${
+    done < heard.length ? `, ${BetterfyAudio.CLAP_FILL_PER_RUN} more each time it listens` : ''}. The model is about 77 MB, downloaded once.</p>`;
+}

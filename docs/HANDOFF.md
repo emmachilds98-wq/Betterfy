@@ -18,6 +18,9 @@ matching, CLAP text table) and the four merged pieces of
 
 | Piece | PR | What it added |
 |---|---|---|
+| Sound ID and matching | `e626b69` | Genre › sub-genre › BPM for heard tracks; sound-alikes and "mixes with"; tempo used in filing |
+| Sound-first filing | `9f0637e` | Heard tracks are filed by sound; the artist graph learns from genre playlists only |
+| CLAP text table (WP-C2 part 1) | `84d5c08`, `69c75d3` | The build-time text table, and the CLAP model id moves to `larger_clap_music_and_speech` (since replaced by WP-C2 part 2: LAION's original music checkpoint, which places music better) |
 | S1 Tidy by sound + plumbing | #92 | `core/audio/misfit.mjs`; Tidy › By sound (move/undo, "Keep here", held-out caught/false-alarm line); File screen reuses the Engine's space (`soundShareable`/`soundAdopt`); records refresh mid-run (`audioMidRun`) |
 | S2 Playlist sound profiles | #93 | `core/audio/plprofile.mjs`; genre mix and BPM range per playlist; "two genres by sound" with a Make-playlist split |
 | S3 DJ order | #94 | `core/audio/order.mjs`; Shuffle's tempo- and sound-aware order with an optional energy arc, written to a `🎧` playlist |
@@ -32,7 +35,7 @@ all four merged, and CI was green on main.
 |---|---|---|
 | S5 key detection (`core/audio/dsp/key.mjs`) | in progress in its own thread at handoff; if a PR exists it is a draft | Key is 30% exact, so it stays hidden. Merge only with a re-measured accuracy that clears the bar (`scripts/audio-dsp/beatport-eval.mjs`); only then use Camelot key in `mixesWith` and the DJ order |
 | #90 MAEST (WP-C1) | draft | The model file is not committed: run `scripts/audio-maest/export.py` on a machine that can reach essentia.upf.edu, add the file, then the owner's MAEST-vs-effnet Score run |
-| WP-C2 part 2, CLAP audio encoder | not started | Port `ClapFeatureExtractor` (48 kHz, 64 mel, 10 s) with a parity test, run `Xenova/larger_clap_music_and_speech` behind #84's opt-in. Cloud sessions can't download it (huggingface blocked). This switches on WP-C3 naming and "sounds like" search; the text table (#88) is already on main |
+| WP-C2 part 2, CLAP audio encoder | merged (#104) | `core/audio/clap.mjs`: 48 kHz front end (matches `ClapFeatureExtractor` to 1e-4 dB), 77 MB int8 encoder from LAION's original CC0 music checkpoint (the HF `larger_clap_music` upload has an untrained text half; `music_and_speech` places music worse), behind #84's "Search by description". Rebuilding needs `scripts/audio-clap/` and the 2.4 GB checkpoint |
 | #41 MusicBrainz/iTunes tag sources | draft, old (2026-09) | Owner's decision (keyless tag sources) |
 | #89 UI-6 (paused) | closed: superseded by #81, which merged UI-6 | nothing |
 | branch `claude/project-thread-zoqwss` (UI-2) | stale, no PR: superseded by #80 | can be deleted |
@@ -138,7 +141,7 @@ When writing page tests, the sandbox needs:
    - Tidy by sound's `MISFIT` thresholds (misfit.mjs), against its caught/false-alarm line;
    - playlist splits' `SPLIT_*`/`NEAR_GAP` (plprofile.mjs); Discover's 60/40 sound/artist blend (discover.mjs).
 2. **Key detection (S5)**, see §1. Then key in `mixesWith` and the DJ order.
-3. **WP-C2 part 2: the CLAP audio encoder in the page** (§1). Needs a machine that can reach huggingface.
+3. ~~**WP-C2 part 2: the CLAP audio encoder in the page.**~~ Done (#104): `core/audio/clap.mjs` behind #84's "Search by description" switch, table and encoder from LAION's original music checkpoint (AUDIO-BUILD-PLAN §4, §7). WP-C3 naming and search draw on it once emma ticks it.
 4. **WP-C1: MAEST** (#90), after the export.
 5. **Show the held-out measures together.** Tidy by sound, splits and Discover's fit each measure themselves on the account's own tracks; the Engine Score card could list them beside filing and naming accuracy.
 6. Built in this round (for reference): Tidy by sound, playlist profiles, DJ order, Discover by sound and keyless Discover, a shared sound space, mid-run record refresh.

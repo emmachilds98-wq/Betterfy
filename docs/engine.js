@@ -2601,11 +2601,14 @@ const SECTION_TOP = 3;      // styles kept per section (patch)
 const MAEST_MODEL = 'discogs-maest-10s-pw-2-int8';
 const MAEST_DIM = 768;
 const MAEST_N_STYLES = 400;
-// larger_clap_music_and_speech, not larger_clap_music: the music-only
-// checkpoint's text tower is collapsed (every prompt within cosine 0.999 of
-// every other, measured 2026-11-14), so text and audio could never be matched.
-// Same architecture and size; see docs/AUDIO-BUILD-PLAN.md §7.
-const CLAP_MODEL = 'larger_clap_music_and_speech-audio-q8-1';
+// LAION's original CLAP music checkpoint (music_audioset_epoch_15_esc_90.14,
+// CC0), converted strictly by scripts/audio-clap/clap_model.py. Not the
+// Hugging Face laion/larger_clap_music upload (its text tower was never
+// filled in: every prompt within cosine 0.999), and not
+// larger_clap_music_and_speech, which works but places music worse on the
+// table's own neighbours (donk → boom bap, drum and bass → shoegaze; the
+// music checkpoint gives bassline and halftime). docs/AUDIO-BUILD-PLAN.md §7.
+const CLAP_MODEL = 'laion_clap_music-audio-q8-1';
 const CLAP_DIM = 512;
 const EARS = Object.freeze({
   maest: Object.freeze({ model: MAEST_MODEL, dim: MAEST_DIM, nStyles: MAEST_N_STYLES }),

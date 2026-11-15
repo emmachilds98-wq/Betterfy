@@ -19,7 +19,7 @@ const AUDIO_MODEL_FILE = 'discogs-effnet-bsdynamic-1.onnx';
 const AUDIO_HEAD_FILES = { mtg_jamendo_moodtheme: 'mtg_jamendo_moodtheme-discogs-effnet-1.onnx',
   voice_instrumental: 'voice_instrumental-discogs-effnet-1.onnx', danceability: 'danceability-discogs-effnet-1.onnx' };
 
-const AUDIO = { ctrl: null, store: null, vm: null, records: null, labels: null, wifiOk: false, err: null, worker: null };
+const AUDIO = { ctrl: null, store: null, vm: null, records: null, labels: null, wifiOk: false, err: null, worker: null, wear: null };
 
 let AUDIO_JS = null;
 function audioLoad() {
@@ -65,6 +65,7 @@ function audioEars() {
     AUDIO.worker = new Worker('audio-worker.js?v=__BUILD__', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
+    AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
     const r = await w.ready;
     return { ear: w.ear, heads: r?.heads?.length ? w.heads : undefined, summariseHeads: A.summariseHeads };
   })().catch(e => { AUDIO_EARS = null; throw e; });
@@ -82,6 +83,14 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: audioEars,
+    // CLAP (WP-C2): only while "Search by description" is ticked and Wi-Fi allows it.
+    // Its encoder (~77 MB) loads in the same Worker on the first such run.
+    clapOn: () => deepAllowed('clap') === 'ok',
+    loadClap: async () => {
+      await audioEars();
+      const c = await AUDIO.wear.loadClap(audioModelUrl(A.CLAP_MODEL_FILE));
+      return { decode: buf => A.decodeTo48k(buf), embed: c.embed };
+    },
     onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); },
   });
   await audioRefresh();

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0024">
+<meta name="bf-build" content="2026-11-15-0109">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1465,7 +1465,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0024</span>
+    <span class="mono">build 2026-11-15-0109</span>
   </p>
 
   <div class="feat">
@@ -1569,7 +1569,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0024</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0109</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1610,7 +1610,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0024</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0109</span>
   </div>
 </div>
 
@@ -3071,7 +3071,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0024';
+const BUILD = '2026-11-15-0109';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3392,7 +3392,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0024', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0109', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -7490,7 +7490,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0024';
+    s.src = 'engine.js?v=2026-11-15-0109';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -7512,7 +7512,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0024');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0109');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -7830,14 +7830,14 @@ const AUDIO_MODEL_FILE = 'discogs-effnet-bsdynamic-1.onnx';
 const AUDIO_HEAD_FILES = { mtg_jamendo_moodtheme: 'mtg_jamendo_moodtheme-discogs-effnet-1.onnx',
   voice_instrumental: 'voice_instrumental-discogs-effnet-1.onnx', danceability: 'danceability-discogs-effnet-1.onnx' };
 
-const AUDIO = { ctrl: null, store: null, vm: null, records: null, labels: null, wifiOk: false, err: null, worker: null };
+const AUDIO = { ctrl: null, store: null, vm: null, records: null, labels: null, wifiOk: false, err: null, worker: null, wear: null };
 
 let AUDIO_JS = null;
 function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0024';
+    s.src = 'audio.js?v=2026-11-15-0109';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -7873,9 +7873,10 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0024', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0109', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
+    AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
     const r = await w.ready;
     return { ear: w.ear, heads: r?.heads?.length ? w.heads : undefined, summariseHeads: A.summariseHeads };
   })().catch(e => { AUDIO_EARS = null; throw e; });
@@ -7893,6 +7894,14 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: audioEars,
+    // CLAP (WP-C2): only while "Search by description" is ticked and Wi-Fi allows it.
+    // Its encoder (~77 MB) loads in the same Worker on the first such run.
+    clapOn: () => deepAllowed('clap') === 'ok',
+    loadClap: async () => {
+      await audioEars();
+      const c = await AUDIO.wear.loadClap(audioModelUrl(A.CLAP_MODEL_FILE));
+      return { decode: buf => A.decodeTo48k(buf), embed: c.embed };
+    },
     onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); },
   });
   await audioRefresh();
@@ -8367,13 +8376,21 @@ function deepPanelHTML() {
     <p class="srcline">Larger listening models, for a computer on Wi-Fi. Each is a one-off download and stays off until you tick it.</p>
     <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMaest" ${d.maest ? 'checked' : ''}> Second ear (MAEST, about 90 MB)</label>
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP)</label>
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP, about 77 MB)</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has the memory (8 GB or more)</label>
     </div>
-    ${why('maest')}${why('clap')}
+    ${why('maest')}${why('clap')}${clapStatusHTML(d)}
   </div>`;
 }
 
+/** CLAP's line in the Deep listen block: how many heard tracks it has described. Nothing while off. */
+function clapStatusHTML(d) {
+  if (!d.clap || deepAllowed('clap') !== 'ok' || !globalThis.BetterfyAudio?.needsClap) return '';
+  const heard = [...(AUDIO.records?.values() ?? [])].filter(r => !r.miss);
+  const done = heard.filter(r => !BetterfyAudio.needsClap(r)).length;
+  return `<p class="sub" style="margin:4px 0">Described ${done.toLocaleString()} of ${heard.length.toLocaleString()} heard track${heard.length === 1 ? '' : 's'}${
+    done < heard.length ? `, ${BetterfyAudio.CLAP_FILL_PER_RUN} more each time it listens` : ''}. The model is about 77 MB, downloaded once.</p>`;
+}
 function bridgeProgressText() {
   const p = ENG.bridgeProgress ?? {};
   const part = (label, x) => x ? `${label} ${Math.min(x.done, x.total).toLocaleString()} of ${x.total.toLocaleString()}` : null;
@@ -8675,7 +8692,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0024`,
+    `Betterfy engine score — build 2026-11-15-0109`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -9352,6 +9369,8 @@ document.addEventListener('change', guard(async e => {
       : e.target.id === 'deepClap' ? { clap: e.target.checked } : { memoryOverride: e.target.checked };
     if (globalThis.BetterfyAudio?.writeDeepSettings) BetterfyAudio.writeDeepSettings(LS, change);
     else LS.setItem('bf_audio_deep', JSON.stringify({ ...deepSettings(), ...change }));
+    // Ticking CLAP describes the tracks already heard; the next run picks it up, so start one now.
+    if (change.clap && audioSettings().on && !AUDIO.ctrl?.running) audioStart({ quiet: true });
     return audioRedraw();
   }
   if (e.target.id === 'audioOn' || e.target.id === 'audioWifi' || e.target.id === 'audioScope') {

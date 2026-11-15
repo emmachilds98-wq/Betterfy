@@ -378,6 +378,8 @@ document.addEventListener('change', guard(async e => {
       : e.target.id === 'deepClap' ? { clap: e.target.checked } : { memoryOverride: e.target.checked };
     if (globalThis.BetterfyAudio?.writeDeepSettings) BetterfyAudio.writeDeepSettings(LS, change);
     else LS.setItem('bf_audio_deep', JSON.stringify({ ...deepSettings(), ...change }));
+    // Ticking CLAP describes the tracks already heard; the next run picks it up, so start one now.
+    if (change.clap && audioSettings().on && !AUDIO.ctrl?.running) audioStart({ quiet: true });
     return audioRedraw();
   }
   if (e.target.id === 'audioOn' || e.target.id === 'audioWifi' || e.target.id === 'audioScope') {
