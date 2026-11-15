@@ -172,8 +172,17 @@ async function engineCalibrate(v) {
   const mine = v?.mine;
   if (!mine?.rows) return;
   await engineLoad();
-  const base = BetterfyCalibrate.calibrationReport(mine.rows);
-  const bridge = mine.withBridge?.rows ? BetterfyCalibrate.calibrationReport(mine.withBridge.rows) : null;
+  // Where this run's fitted weights are the ones placement now uses
+  // (weightsRemember), "how sure" is fitted on the engine they make: each
+  // track's held-out ranking under its own fold's weights. Otherwise the
+  // default-weight rows, exactly as before.
+  const wf = v.weights;
+  const baseRows = wf?.plain?.use && wf.plain.rows ? wf.plain.rows : mine.rows;
+  const bridgeRows = wf?.bridge?.use && wf.bridge.rows ? wf.bridge.rows : mine.withBridge?.rows;
+  if (wf?.plain) delete wf.plain.rows;
+  if (wf?.bridge) delete wf.bridge.rows;
+  const base = BetterfyCalibrate.calibrationReport(baseRows);
+  const bridge = bridgeRows ? BetterfyCalibrate.calibrationReport(bridgeRows) : null;
   // WP-C1: which ear this run chose. The first ear unless a second ear passed
   // the gate and beat it; its calibration then comes from that ear's rows.
   const choice = mine.withAudio?.choice ?? null;
@@ -208,7 +217,7 @@ function engineDecorate() {
     row.decision = null;
     const raw = cal && likedById.get(row.id);
     if (!raw) continue;
-    const full = BetterfyIntrinsic.placements(raw, space, { limit: Infinity, soundFirst: true });
+    const full = BetterfyIntrinsic.placements(raw, space, withFittedWeights({ limit: Infinity, soundFirst: true }, 'plain'));
     const p = full.results?.[0]?.parts ?? {};
     const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []),
                                        'audio' in p || 'learned' in p ? soundCal : cal);
@@ -217,6 +226,43 @@ function engineDecorate() {
     count[d.kind]++;
   }
   sh.decided = cal ? count : null;
+}
+
+/** The comparison with the File screen's picks, for the tracks waiting first.
+ *  Redone after a Score run, since that may have changed the weights. */
+function engineShadow() {
+  const space = ENG.space;
+  if (!space) return;
+  const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
+  const rows = [];
+  for (const b of R.backlog.slice(0, SHADOW_N)) {
+    const raw = likedById.get(b.id);
+    if (!raw) continue;
+    // Sound-first, as the File screen files: a heard track by its sound.
+    // With this account's fitted weights when its Score run earned them
+    // (app/blend.js `withFittedWeights`); otherwise exactly as before.
+    const out = BetterfyIntrinsic.placements(raw, space, withFittedWeights({ why: true, limit: 3, soundFirst: true }, 'plain'));
+    const mine = out.results?.[0] ?? null;
+    const theirs = b.suggest?.[0] ?? null;
+    rows.push({ id: b.id, title: b.title, artist: b.artist,
+      theirs: theirs ? { id: theirs.id, name: theirs.name } : null,
+      mine: mine ? { id: mine.playlistId, name: mine.name, score: mine.score } : null,
+      band: out.band ?? null, declined: !!out.declined, why: mine?.why ?? null,
+      // Whether anything it said is about *this record* rather than about its
+      // shape. A track by an artist the account has never filed still places,
+      // on duration and release type and era alone — and that is a far weaker
+      // claim than the confidence band on its own suggests, because generic
+      // shape fits a generic bucket comfortably. The strong mark is the engine's
+      // own flag for evidence that names something, so its absence is the test.
+      shapeOnly: !!mine && !(mine.why ?? []).some(w => w.mark === BetterfyExplain.MARKS.strong) });
+  }
+  const judged = rows.filter(r => r.theirs && r.mine);
+  ENG.shadow = { rows, judged: judged.length,
+    agree: judged.filter(r => r.theirs.id === r.mine.id).length,
+    onlyMine: rows.filter(r => r.mine && !r.theirs).length,
+    onlyTheirs: rows.filter(r => r.theirs && !r.mine).length,
+    shapeOnly: rows.filter(r => r.shapeOnly).length };
+  engineDecorate();
 }
 
 /** Learn the account, then show what this engine would do with the same tracks
@@ -230,33 +276,8 @@ const engineAnalyse = guard(async () => {
     soundAdopt(space);
     ENG.rung = BetterfyColdStart.rungOf(LIB, space);
 
-    const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
-    const rows = [];
-    for (const b of R.backlog.slice(0, SHADOW_N)) {
-      const raw = likedById.get(b.id);
-      if (!raw) continue;
-      // Sound-first, as the File screen files: a heard track by its sound.
-      const out = BetterfyIntrinsic.placements(raw, space, { why: true, limit: 3, soundFirst: true });
-      const mine = out.results?.[0] ?? null;
-      const theirs = b.suggest?.[0] ?? null;
-      rows.push({ id: b.id, title: b.title, artist: b.artist,
-        theirs: theirs ? { id: theirs.id, name: theirs.name } : null,
-        mine: mine ? { id: mine.playlistId, name: mine.name, score: mine.score } : null,
-        band: out.band ?? null, declined: !!out.declined, why: mine?.why ?? null,
-        // Whether anything it said is about *this record* rather than about its
-        // shape. A track by an artist the account has never filed still places,
-        // on duration and release type and era alone — and that is a far weaker
-        // claim than the confidence band on its own suggests, because generic
-        // shape fits a generic bucket comfortably. The strong mark is the engine's
-        // own flag for evidence that names something, so its absence is the test.
-        shapeOnly: !!mine && !(mine.why ?? []).some(w => w.mark === BetterfyExplain.MARKS.strong) });
-    }
-    const judged = rows.filter(r => r.theirs && r.mine);
-    ENG.shadow = { rows, judged: judged.length,
-      agree: judged.filter(r => r.theirs.id === r.mine.id).length,
-      onlyMine: rows.filter(r => r.mine && !r.theirs).length,
-      onlyTheirs: rows.filter(r => r.theirs && !r.mine).length,
-      shapeOnly: rows.filter(r => r.shapeOnly).length };
+    await weightsLoad();
+    engineShadow();
     await engineLoadCalibration();
     engineDecorate();
 

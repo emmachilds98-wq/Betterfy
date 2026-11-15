@@ -71,7 +71,7 @@ const engineValidate = guard(async () => {
     // with sound leading (soundFirst), so the number is the engine you use.
     try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioScore(audio),
                                                     opts: { folds: 5, limit: VALIDATE_N, collect: true,
-                                                            genreGraph: true, soundFirst: true } }); }
+                                                            genreGraph: true, soundFirst: true, fitParts: true } }); }
     catch { done = null; }
     const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
     if (done?.result?.mine) {
@@ -82,24 +82,34 @@ const engineValidate = guard(async () => {
       await yieldToPaint();
       const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
                        audio: engineAudioScore(audio), collect: true,
-                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS };
+                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS, fitParts: true };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
-      // The two blended per track, as the worker does (plan phase 1).
+      // This engine's weights fitted to your filing, nested, as the worker does.
+      let fit = null;
+      try { fit = BetterfyWeightFit.weightsFromRun(mine); }
+      catch { fit = null; delete mine.partRows; }
+      // The two blended per track, as the worker does (plan phase 1), on top of
+      // the fitted weights when those earned their place.
       let blend = null;
       try { blend = base ? BetterfyBlendScore.blendFromRun(LIB, { base, mine, folds: common.folds,
-              targets: common.targets, isMirror: isMirrorPlaylist }) : null; }
+              targets: common.targets, isMirror: isMirrorPlaylist, nativeFit: fit }) : null; }
       catch { blend = null; }
+      const weights = BetterfyWeightFit.fitSummary(fit);
       if (base) delete base.rows;
       let identify = null;
       try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
       catch { identify = null; }
-      ENG.val = { mine, base, blend, identify, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      ENG.val = { mine, base, blend, identify, weights, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
+    // The fitted weights first: calibration is refitted on the engine they
+    // make, and the comparison above is redone with them.
+    await weightsRemember(ENG.val);
     await engineCalibrate(ENG.val);
     // Kept for the File screen, which uses the blend only if this says it is ahead.
     await blendRemember(ENG.val);
+    if (ENG.space && ENG.status === 'ready') { try { engineShadow(); } catch { /* the old comparison stays */ } }
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }
@@ -313,6 +323,7 @@ function engineSummary() {
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
     `This engine: top-1 ${pc(v.mine.top1)}, top-3 ${pc(v.mine.top3)} (${v.mine.scored} tracks)`,
+    ...weightsLines(v, pc),
     v.base ? `Today's engine: top-1 ${pc(v.base.top1)}, top-3 ${pc(v.base.top3)}${v.base.noAnswer ? `, no tags for ${v.base.noAnswer}` : ''}`
            : `Today's engine: not scored (no tag data loaded)`,
     v.mine.declined ? `Declined: ${v.mine.declined}, of which would have been right: ${v.mine.declinedWouldHaveBeenRight ?? 0}` : null,
@@ -328,6 +339,51 @@ function engineSummary() {
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   return lines.filter(Boolean).join('\n');
+}
+
+/** "×4" for a multiplier, "off" for zero. */
+const timesText = m => (m === 0 ? 'off' : `×${m}`);
+
+/** The fitted weights as words: what each group was multiplied by. */
+function multipliersText(m, withBridge) {
+  if (!m) return '';
+  const bits = [`artist graph ${timesText(m.graph)}`, `label ${timesText(m.registrant)}`, `record shape ${timesText(m.shape)}`];
+  if (withBridge) bits.push(`similar artists ${timesText(m.bridge)}`);
+  if (m.graphN) bits.push(`graph, wide playlists evened ${timesText(m.graphN)}`);
+  return bits.join(', ');
+}
+
+/** The weight fit's part of the pasteable summary (core/validate/weights.mjs). */
+function weightsLines(v, pc) {
+  const f = v.weights;
+  if (!f?.plain) return [];
+  const line = (label, x, withBridge) => x ? `${label}: top-1 ${pc(x.fitted.top1)}, top-3 ${pc(x.fitted.top3)} `
+    + `(default weights ${pc(x.default.top1)} / ${pc(x.default.top3)}); ${multipliersText(x.multipliers, withBridge)} — `
+    + (x.use ? 'used' : 'not a point ahead, defaults kept') : null;
+  return [
+    line('This engine, weights fitted to your filing', f.plain, false),
+    line('With similar artists, weights fitted', f.bridge, true),
+  ].filter(Boolean);
+}
+
+/** The weight fit on the score card. Empty without one. */
+function weightsCard(v, p) {
+  const f = v && !v.error ? v.weights : null;
+  if (!f?.plain) return '';
+  const names = ['default', 'fitted'];
+  const one = (title, x, withBridge) => !x ? '' : `
+    <div class="pairs">
+      ${pairBars(`${title} — right first time`, x.default.top1, x.fitted.top1, p, null, names)}
+      ${pairBars(`${title} — in the top three`, x.default.top3, x.fitted.top3, p, null, names)}
+    </div>
+    <p class="why" style="margin-top:6px"><span class="tag ${x.use ? 'ok' : 'idle'}">${x.use ? 'used' : 'not used'}</span>
+      ${esc(multipliersText(x.multipliers, withBridge))}.</p>`;
+  return `<h3 style="margin:18px 0 6px; font-size:16px">Weights fitted to your filing</h3>
+    <p class="why">How much the artist graph, the label, the record's shape${f.bridge ? ' and similar artists' : ''} each
+      count, chosen on four folds of your filed tracks and scored on the fifth, five times over — so "fitted" is on
+      tracks the weights weren't tuned on. They're only used when that beats the defaults by a point.</p>
+    ${one('This engine', f.plain, false)}
+    ${one('With similar artists', f.bridge, true)}`;
 }
 
 /** The bridge's part of the pasteable summary. Counts and rates only. */
@@ -355,7 +411,7 @@ function blendLines(v, pc) {
   const nf = b.neverFiled;
   const folds = Object.values(b.foldWeights ?? {}).join(', ');
   return [
-    `Blended (tags ${b.weight} + this engine${b.withBridge ? ' with similar artists' : ''}): top-1 ${pc(b.top1)}, top-3 ${pc(b.top3)}; `
+    `Blended (tags ${b.weight} + this engine${b.withBridge ? ' with similar artists' : ''}${b.nativeFitted ? ', fitted weights' : ''}): top-1 ${pc(b.top1)}, top-3 ${pc(b.top3)}; `
       + `today's ${pc(b.tags.top1)} / ${pc(b.tags.top3)}, this engine ${pc(b.native.top1)} / ${pc(b.native.top3)} on the same ${b.scored} tracks`
       + (folds ? ` (weight per fold ${folds})` : ''),
     nf?.scored ? `Never-filed artists blended: top-1 ${pc(nf.top1)}, top-3 ${pc(nf.top3)} (today's ${pc(nf.tags.top1)}, `
@@ -430,6 +486,8 @@ const engineReset = guard(async () => {
   // And the blend the File screen was using: it was fitted on what is being forgotten.
   try { await idb.del(BLEND_KEY); } catch {}
   blendForget();
+  // And this engine's fitted weights, fitted on the same.
+  await weightsForget();
   Object.assign(ENG, { status:'idle', space:null, rung:null, shadow:null,
                        pairs:null, val:null, calib:null, ms:0, from:null });
   toast('Cleared. The next analysis rebuilds from your library.');
@@ -584,6 +642,7 @@ function vEngine() {
     ${v && !v.error ? `<div class="facts" style="margin-top:16px">
       <div><span><b>This engine</b> — right first time</span><b class="mono">${p(v.mine.top1)}</b></div>
       <div><span>…in its top three</span><b class="mono">${p(v.mine.top3)}</b></div>
+      ${v.weights?.plain ? `<div><span>…with weights fitted to your filing${v.weights.plain.use ? '' : ' (not used)'}</span><b class="mono">${p(v.weights.plain.fitted.top1)} / ${p(v.weights.plain.fitted.top3)}</b></div>` : ''}
       ${v.base ? `<hr>
       <div><span><b>Today's engine</b> — right first time</span><b class="mono">${p(v.base.top1)}</b></div>
       <div><span>…in its top three</span><b class="mono">${p(v.base.top3)}</b></div>` : ''}
@@ -600,6 +659,7 @@ function vEngine() {
       verdict === 'ahead' ? 'On your library, reading nothing but your own filing beats reading the tag table.'
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
       : 'There is nothing to choose between them on your library.'}</p>` : ''}
+    ${weightsCard(v, p)}
     ${bridgeCard(v, p)}
     ${blendCard(v, p)}
     ${audioCard(v, p)}

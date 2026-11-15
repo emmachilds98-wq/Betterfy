@@ -31,7 +31,7 @@
 // engine. Pessimism is the safe direction for a number used to decide whether
 // to take over somebody's filing.
 // ---------------------------------------------------------------------------
-import { buildSpace, placements, withAudioLayer, BANDS, WEIGHTS } from '../intrinsic/space.mjs';
+import { buildSpace, placements, withAudioLayer, componentParts, BANDS, WEIGHTS } from '../intrinsic/space.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
 import { scoresOf } from '../intrinsic/calibrate.mjs';
 import { audioIndex } from '../intrinsic/audio.mjs';
@@ -156,12 +156,19 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
  *                                 reported in `withAudio.arms[ear]` with its
  *                                 own gate verdict. gate.mjs `earChoice` reads
  *                                 them against the first ear.
+ * @param {boolean} [opts.fitParts] also return `partRows`: each held-out
+ *                                 track's raw components against every
+ *                                 destination of its fold's space, for
+ *                                 core/validate/weights.mjs to fit the
+ *                                 component weights on. Every other key of
+ *                                 the result is unchanged by it.
  */
 export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          limit = null, isMirror = null,
                                          weights = null, targets = null, bridge = null,
                                          audio = null, collect = false,
-                                         genreGraph = false, soundWeights = null } = {}) {
+                                         genreGraph = false, soundWeights = null,
+                                         fitParts = false } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -197,6 +204,10 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
   const sound = audioOpts ? { all: tally(), neverFiled: tally(), heard: 0, heardNeverFiled: 0,
                               judged: 0, changed: 0, rows: collect ? [] : null } : null;
   const limit3 = collect ? Infinity : 3;
+  // `fitParts`: every held-out track's raw components against every
+  // destination of its own fold's space, for core/validate/weights.mjs to fit
+  // the component weights on without rebuilding anything. Never on the canary.
+  const partRows = fitParts && !leaky ? [] : null;
   // WP-C1: the other ears, each tallied exactly like `sound`.
   const arms = sound ? armsOf(audio, audioOpts, collect) : [];
 
@@ -232,6 +243,9 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       // space that has not seen this track. The engine's weakest case, and the
       // one the bridge exists for.
       const fresh = !(track.artists ?? []).some(a => a?.id && filed.has(a.id));
+
+      if (partRows) partRows.push({ id, fold: foldOf(id, folds), truth: [...want].sort(), fresh,
+                                    dests: componentParts(track, space) });
 
       const band = out.band ?? BANDS.NONE;
       if (!stats.byBand.has(band)) stats.byBand.set(band, { n: 0, right: 0 });
@@ -377,6 +391,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                coverage: bridge.coverage ?? null,
                                ...(rowsPlus ? { rows: rowsPlus } : {}) } } : {}),
     ...(withAudio ? { withAudio } : {}),
+    ...(partRows ? { partRows } : {}),
     version: VALIDATE_VERSION,
   };
   // The verdict travels with the numbers it was read from, so no caller can
