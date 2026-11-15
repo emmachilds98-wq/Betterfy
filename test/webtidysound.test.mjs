@@ -77,3 +77,54 @@ test('a remembered By sound section falls back to Wrong place once there is no s
   vm.runInContext('vTidy()', s);
   assert.equal(vm.runInContext('S.tidySec', s), 'misfile');
 });
+
+// BUILD-5-PLAN §4.1 / UI-A: Tidy opens on the first section with work in it,
+// not on "Wrong place 0" while another section has rows.
+const pressed = html => html.match(/aria-pressed="true" data-tidy="(\w+)"/)?.[1];
+const REPEAT = { verdict: 'same-recording', title: 'Twice', artist: 'Someone', playlist: 'House', playlistId: 'pl-house', why: 'same ISRC',
+  options: [{ id: 'a', dur: '3:00' }, { id: 'b', dur: '3:00' }] };
+
+test('with nothing in Wrong place, Tidy opens on the first section that has work', () => {
+  const s = tidy();
+  s.R.within = [REPEAT];
+  const html = vm.runInContext('vTidy()', s);
+  assert.equal(pressed(html), 'dupes');
+  assert.match(html, /The same recording, twice/);
+  assert.equal(vm.runInContext('S.tidySec', s), undefined, 'the automatic pick is not stored as a choice');
+});
+
+test('the first non-empty section can be Cross-filed, or By sound', () => {
+  const s = tidy();
+  s.R.across = [{ title: 'x', placements: [] }];
+  assert.equal(pressed(vm.runInContext('vTidy()', s)), 'cross');
+  const t = tidy({ audio: true, rows: [ROW] });
+  assert.equal(pressed(vm.runInContext('vTidy()', t)), 'sound');
+});
+
+test('Wrong place still comes first when it has rows', () => {
+  const s = tidy();
+  s.R.within = [REPEAT];
+  s.R.misfiled = [{ id: 't9', confidence: 'medium', suggest: [], current: 'House', currentScore: 0.1, title: 'Stray' }];
+  assert.equal(pressed(vm.runInContext('vTidy()', s)), 'misfile');
+});
+
+test('with every section empty Tidy opens on Wrong place', () => {
+  assert.equal(pressed(vm.runInContext('vTidy()', tidy())), 'misfile');
+});
+
+test('a section the listener picked is kept, even when it is empty', () => {
+  const s = tidy();
+  s.R.within = [REPEAT];
+  vm.runInContext("S.tidySec = 'misfile'", s);
+  assert.equal(pressed(vm.runInContext('vTidy()', s)), 'misfile');
+  vm.runInContext("S.tidySec = 'cross'", s);
+  assert.equal(pressed(vm.runInContext('vTidy()', s)), 'cross');
+});
+
+test('a remembered section that has gone away falls back to the first one with work', () => {
+  const s = tidy();
+  s.R.within = [REPEAT];
+  vm.runInContext("S.tidySec = 'sound'", s);
+  assert.equal(pressed(vm.runInContext('vTidy()', s)), 'dupes');
+  assert.equal(vm.runInContext('S.tidySec', s), 'dupes');
+});

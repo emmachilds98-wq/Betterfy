@@ -5,9 +5,9 @@
   .peek{position:absolute; inset:14px 0 auto; height:120px; border-radius:var(--r-4); background:var(--surface);
         border:1px solid var(--line); transform:scale(.955); opacity:.75; z-index:0}
   .swipecard{position:relative; z-index:1; touch-action:pan-y; will-change:transform;
-             transition:transform .28s cubic-bezier(.2,.7,.3,1), box-shadow .2s ease}
+             transition:transform .28s var(--ease-out), box-shadow var(--dur-2) ease}
   .swipecard.drag{transition:none}
-  .swipecard.gone{transition:transform .3s ease-out, opacity .3s ease-out; opacity:0}
+  .swipecard.gone{transition:transform var(--dur-3) ease-out, opacity var(--dur-3) ease-out; opacity:0}
   .verdicts{position:absolute; inset:0; pointer-events:none; z-index:3; border-radius:var(--r-4); overflow:hidden}
   .verdict{position:absolute; top:16px; display:flex; align-items:center; gap:7px; padding:8px 15px; border-radius:999px;
            font-family:var(--display); font-weight:800; font-size:13px; letter-spacing:.06em; text-transform:uppercase;
@@ -34,7 +34,7 @@
 
   button.b, a.b{appearance:none; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:6px; font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; border:1px solid var(--line-2);
            background:var(--surface); color:var(--ink); border-radius:var(--r); padding:9px 15px;
-           transition:border-color .12s ease, background .12s ease, transform .08s ease, box-shadow .12s ease}
+           transition:border-color var(--dur-1) ease, background var(--dur-1) ease, transform .08s ease, box-shadow var(--dur-1) ease}
   button.b:hover, a.b:hover{border-color:var(--ink-3)}
   button.b:active, a.b:active{transform:scale(.97)}
   button.b.p{background:var(--btn-accent); border-color:var(--btn-accent); color:var(--btn-ink); box-shadow:var(--shadow)}
@@ -58,7 +58,7 @@
   .rows{gap:10px}
   .row{position:relative; background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:15px 17px;
        display:flex; gap:15px; align-items:center; justify-content:space-between; flex-wrap:wrap; overflow:hidden;
-       transition:border-color .12s ease}
+       transition:border-color var(--dur-1) ease}
   .row::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--view); opacity:.55}
   /* A move that has been applied stays on screen, dimmed, so the list does
      not jump under the thumb that just tapped it. */
@@ -86,7 +86,7 @@
   table.cmp th{text-align:left; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600; padding:0 10px 3px 0}
   table.cmp td{padding:4px 10px 4px 0; border-top:1px solid var(--line)}
   table.cmp .differs{color:var(--accent); font-weight:600}
-  .chip{font-size:12.5px; border:1px solid var(--line); border-radius:999px; padding:7px 14px; background:var(--surface-2); color:var(--ink-2); cursor:pointer; font-family:inherit; transition:border-color .12s ease, transform .08s ease}
+  .chip{font-size:12.5px; border:1px solid var(--line); border-radius:999px; padding:7px 14px; background:var(--surface-2); color:var(--ink-2); cursor:pointer; font-family:inherit; transition:border-color var(--dur-1) ease, transform .08s ease}
   .chip:hover{border-color:var(--hover-accent); color:var(--ink)}
   .chip:active{transform:scale(.96)}
   .chip.cut{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); text-decoration:line-through}
@@ -102,7 +102,7 @@
   .toast{position:fixed; right:calc(18px + var(--sar)); bottom:calc(18px + var(--sab));
          background:var(--surface-2); color:var(--ink); border:1px solid var(--line);
          padding:13px 18px; border-radius:var(--r-2); font-size:13.5px; display:flex; gap:16px; align-items:center;
-         z-index:28; max-width:420px; box-shadow:var(--shadow-2); animation:toastIn .22s cubic-bezier(.2,.7,.3,1)}
+         z-index:28; max-width:420px; box-shadow:var(--shadow-2); animation:toastIn .22s var(--ease-out)}
   @keyframes toastIn{from{opacity:0; transform:translateY(10px)}}
   .toast button{appearance:none; border:0; background:none; color:var(--accent); font:inherit; font-weight:700; cursor:pointer; padding:0}
 
@@ -110,7 +110,7 @@
   .fabBar{position:fixed; top:calc(14px + var(--sat)); right:calc(16px + var(--sar)); z-index:25; display:flex; gap:8px}
   .fab{appearance:none; position:relative; border:1px solid var(--line); background:var(--surface); color:var(--ink-2);
     border-radius:13px; width:38px; height:38px; font-size:16px; cursor:pointer; display:flex;
-    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color .12s ease, color .12s ease, transform .08s ease}
+    align-items:center; justify-content:center; box-shadow:var(--shadow); transition:border-color var(--dur-1) ease, color var(--dur-1) ease, transform .08s ease}
   .fab:active{transform:scale(.94)}
   .fab:hover{border-color:var(--hover-accent); color:var(--ink)}
   .fab[aria-expanded="true"]{background:var(--surface-2); color:var(--ink)}
@@ -118,3 +118,22 @@
   .fab.spin{animation:spin .6s linear infinite}
   .fab.busy{animation:pulse 1s ease-in-out infinite}
   @keyframes pulse{50%{opacity:.4}}
+
+  /* ---- the File button stays in reach on a phone (BUILD-5-PLAN B3) ----
+     At 390×844 the card is taller than the screen, so File and Skip sat
+     under the tab bar until you scrolled. The row now sticks just above the
+     tab bar, over a fade of the card's own surface, and settles back into
+     the card once the card's foot scrolls up to it. CSS only: the card's
+     markup is pinned by the UI-4 goldens. */
+  @media (max-width:820px){
+    .swipecard > .rowbtns:has(> [data-filesel]){position:sticky; z-index:4; bottom:calc(var(--tabh) + var(--sab));
+      margin-left:-6px; margin-right:-6px; padding:12px 6px 10px;
+      background:linear-gradient(to bottom, transparent, var(--surface) 12px)}
+    /* The undo toast rises above the pinned row instead of covering File. */
+    body:has(.swipecard > .rowbtns > [data-filesel]) .toast{bottom:calc(var(--tabh) + var(--sab) + 90px)}
+  }
+  /* A keyboard hint is noise under a thumb. vInbox already picks the touch
+     wording when it can tell; this catches a touch screen it couldn't. */
+  @media (hover:none) and (pointer:coarse){
+    .counter > span:nth-child(2):not(.how-touch){display:none}
+  }
