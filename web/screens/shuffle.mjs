@@ -56,9 +56,16 @@ export function view(ctx) {
   // every single redraw of this screen — including the redraw after an
   // unrelated toast — and it is by some distance the most expensive thing the
   // app computes. "Shuffle again" below is how you deliberately re-roll it.
-  if (S.shufCache?.id !== sel || S.shufCache?.n !== tracks.length) {
-    S.shufCache = { id: sel, n: tracks.length,
-      order: tracks.length ? spacedShuffle(tracks) : [],
+  if (S.shufFlow === undefined) { try { S.shufFlow = LS.getItem('bf_shuf_flow') === '1'; S.shufRedisc = LS.getItem('bf_shuf_redisc') === '1'; } catch { S.shufFlow = S.shufRedisc = false; } }
+  // Flow needs a sound reading or a genre tag on half the list; without that the option is not offered.
+  const canFlow = !!ctx.flowReady?.(tracks), flow = canFlow && S.shufFlow;
+  const redisc = !!S.shufRedisc && S.shufActive?.size > 0;
+  if (S.shufRedisc && !S.shufActive && ctx.rediscoverKick) ctx.rediscoverKick();
+  if (S.shufCache?.id !== sel || S.shufCache?.n !== tracks.length || S.shufCache.flow !== flow || S.shufCache.redisc !== redisc) {
+    S.shufCache = { id: sel, n: tracks.length, flow, redisc,
+      order: tracks.length ? (ctx.shuffleOrder
+        ? ctx.shuffleOrder(tracks, { rediscover: redisc ? S.shufActive : null, near: flow ? ctx.flowNear() : null })
+        : spacedShuffle(tracks)) : [],
       naive: tracks.length ? shuffleStats(rnd([...tracks])) : null };
   }
   const order = S.shufCache.order, naive = S.shufCache.naive;
@@ -83,6 +90,9 @@ export function view(ctx) {
       <button class="b" data-act="shufPlay" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
       <button class="b sm" data-act="shufAgain" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
     </div>
+    ${order.length ? `<div class="rowbtns" style="margin:-12px 0 18px">${canFlow ? `
+      <label class="pls-f"><input type="checkbox" data-act="shufFlow" ${flow ? 'checked' : ''}> keep neighbours alike</label>` : ''}
+      <label class="pls-f"><input type="checkbox" data-act="shufRedisc" ${S.shufRedisc ? 'checked' : ''}> rediscover: what you have not been playing first</label></div>` : ''}
     ${mix ? mixHTML(mix, tracks, p, ctx) : good ? `<div class="vs">
       <div class="bad"><div class="l">Spotify's shuffle</div><div class="n">${naive.minGap}</div>
         <div class="d">${naive.minGap === 1 ? 'slot' : 'slots'} between the same artist, ${naive.within3} ${naive.within3 === 1 ? 'pair' : 'pairs'} within three</div></div>
@@ -107,6 +117,11 @@ export const actions = {
   shufPl({ S, render }, el) { S.shufPl = el.value; S.shufCache = null; render(); },
   shufMode({ S, LS, render }, el) { S.shufMode = el.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} render(); },
   shufAgain({ S, render }) { S.shufCache = null; render(); },
+  shufFlow({ S, LS, render }, el) { S.shufFlow = el.checked; try { LS.setItem('bf_shuf_flow', el.checked ? '1' : '0'); } catch {} S.shufCache = null; render(); },
+  shufRedisc({ S, LS, render, rediscoverKick }, el) {
+    S.shufRedisc = el.checked; try { LS.setItem('bf_shuf_redisc', el.checked ? '1' : '0'); } catch {}
+    S.shufCache = null; if (el.checked) rediscoverKick?.(); render();
+  },
   shufApply(ctx, btn) { return build(ctx, btn, false); },
   shufPlay(ctx, btn) { return build(ctx, btn, true); },
 };

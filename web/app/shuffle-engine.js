@@ -86,6 +86,76 @@ function spacedShuffle(items) {
   }
   return out;
 }
+/**
+ * Soft continuity inside the spaced order: walking the shuffle, each slot takes the most alike of the next few
+ * candidates (by `near`, higher is closer) instead of simply the next one, but never one whose artist played in
+ * the last `gap` slots, so the spacing is kept and only the flow improves. Nothing is dropped or added; the
+ * look-ahead is short, so it stays a shuffle rather than turning into a sort.
+ */
+function flowOrder(order, near, { window = 8, gap = 3 } = {}) {
+  const rest = order.slice(), out = [];
+  while (rest.length) {
+    const prev = out[out.length - 1];
+    const recent = new Set(out.slice(-gap).map(artistOf));
+    let best = -1, bestS = -Infinity;
+    for (let i = 0, lim = Math.min(window, rest.length); i < lim; i++) {
+      if (recent.has(artistOf(rest[i]))) continue;
+      // The small index penalty keeps the original order on ties.
+      const s = (prev ? near(prev, rest[i]) : 0) - i * 0.01;
+      if (s > bestS) { best = i; bestS = s; }
+    }
+    out.push(rest.splice(best < 0 ? 0 : best, 1)[0]);
+  }
+  return out;
+}
+
+/** How alike two tracks are, 0..1.5: their sound (the embedding both heard tracks have, a cosine) plus the genre
+ *  tags their lead artists share. Whichever half either track lacks simply counts nothing. */
+function flowNear() {
+  const idx = globalThis.BetterfyOrder && typeof AUDIO !== 'undefined' && AUDIO.records?.size ? mixIndexNow() : null;
+  const tagSet = t => { const id = t.artists?.[0]?.id; const tg = id && typeof TAGS !== 'undefined' ? TAGS[id]?.tags : null;
+    return tg?.length ? new Set(tg.slice(0, 6).map(x => String(x[0]).toLowerCase())) : null; };
+  const cache = new Map();
+  const tagsOf = t => { if (!cache.has(t.id)) cache.set(t.id, tagSet(t)); return cache.get(t.id); };
+  return (a, b) => {
+    let s = 0;
+    const x = idx?.get(a.id)?.emb, y = idx?.get(b.id)?.emb;
+    if (x && y && x.length === y.length) { let d = 0; for (let i = 0; i < x.length; i++) d += x[i] * y[i]; s += Math.max(0, d); }
+    const ta = tagsOf(a), tb = tagsOf(b);
+    if (ta && tb) { let n = 0; for (const k of ta) if (tb.has(k)) n++; s += 0.5 * n / Math.min(ta.size, tb.size); }
+    return s;
+  };
+}
+
+/** Whether there is enough to flow on: at least half of these tracks have a sound reading or a genre tag. */
+function flowReady(tracks) {
+  if (!tracks?.length) return false;
+  const heard = typeof AUDIO !== 'undefined' ? AUDIO.records : null;
+  let n = 0;
+  for (const t of tracks) {
+    const g = t.artists?.[0]?.id, d = heard?.get(t.id);
+    if ((d && !d.miss) || (g && typeof TAGS !== 'undefined' && TAGS[g]?.tags?.length)) n++;
+  }
+  return n >= tracks.length / 2;
+}
+
+/**
+ * The shuffle the screen shows: spaced, then optionally
+ *   rediscover: artists in the set (what Spotify says you are playing: short-term top, recently played) go to
+ *               the back, spaced among themselves, so what you have not heard lately comes first;
+ *   flow:       soft sound/genre continuity (flowOrder), when `near` is given.
+ * Key is deliberately not used: it is below its bar, so it stays out of the order.
+ */
+function shuffleOrder(items, { rediscover = null, near = null } = {}) {
+  let base;
+  if (rediscover?.size) {
+    const hot = [], fresh = [];
+    for (const t of items) ((t.artists ?? []).some(a => rediscover.has(a.name)) ? hot : fresh).push(t);
+    base = hot.length && fresh.length ? [...spacedShuffle(fresh), ...spacedShuffle(hot)] : spacedShuffle(items);
+  } else base = spacedShuffle(items);
+  return near ? flowOrder(base, near) : base;
+}
+
 function shuffleStats(order) {
   const last = new Map(); const gaps = []; let adjacent = 0, within3 = 0;
   order.forEach((t,i) => { const k = artistOf(t);
@@ -259,6 +329,15 @@ async function syncAllSongsPlaylist() {
     say.push(`${(missing.length - adding.length).toLocaleString()} left over — Spotify caps a playlist at ${PLAYLIST_MAX.toLocaleString()}`);
   toast(say.length ? `${entry.name} refreshed — ${say.join(', ')}.` : `${entry.name} is already up to date.`);
   render();
+}
+
+/** Fetch what Spotify says is being played (short-term top artists and recently played) for "rediscover", once. */
+async function rediscoverKick() {
+  if (S.shufActive || S.shufActivePending) return;
+  S.shufActivePending = true;
+  try { S.shufActive = (await getListening())?.recentlyActive ?? new Set(); }
+  catch { S.shufActive = new Set(); S.shufRedisc = false; toast('Couldn’t read what you have been playing.'); }
+  S.shufActivePending = false; S.shufCache = null; store.touch('ui.shuffle');
 }
 
 /* ---------- DJ order: Shuffle by tempo and sound (core/audio/order.mjs) ----------

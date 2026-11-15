@@ -31,7 +31,7 @@ const STORE_WATCH = {
   eng:     ['engine'],
   sound:   ['inbox'],
   audio:   ['inbox', 'tidy', 'sources'],
-  gaps:    ['new'],
+  gaps:    ['new', 'lists'],
   player:  [],
 };
 for (const [slice, screens] of Object.entries(STORE_WATCH))

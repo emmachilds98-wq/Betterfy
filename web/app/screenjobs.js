@@ -238,6 +238,48 @@ async function gapsCompute() {
   store.touch('gaps');
 }
 
+/* ---------- Library: cold start and new genres (docs/BUILD-5-PLAN.md 5.4) ----------
+ * Both read only what every account has. Cold start (no genre playlist at all) groups the library by
+ * artist, era and length with proposeBuckets, plus unnamed sound clusters on the intrinsic space when the
+ * engine has run. New genres cluster the tracks the calibration is "unsure" about, most listened-to first.
+ * Names come from CLAP (sound ID) when it has heard the group. Nothing is written until a button is tapped. */
+const COLD = { status:'idle', for:null, found:{ proposals:[], clusters:[] }, newGenre:[], active:null, made:new Set() };
+
+function coldKick(needCold) {
+  if (COLD.status === 'working' || (COLD.status === 'ready' && COLD.for === R) || COLD.status === 'error') return;
+  COLD.status = 'working'; COLD.for = R;
+  fire(coldCompute(needCold));
+}
+
+async function coldCompute(needCold) {
+  try {
+    await engineLoad();
+    const tracks = allLibraryTracks();
+    const found = { proposals: needCold ? BetterfyColdStart.proposeBuckets(tracks) : [], clusters: [] };
+    let newGenre = [];
+    const space = ENG.space;
+    let active = null;
+    try { active = (await getListening())?.recentlyActive ?? null; } catch { active = null; }
+    if (space) {
+      try {
+        // Bounded: placing every track is the expensive part, and the first few thousand are plenty to find groups in.
+        if (needCold) found.clusters = BetterfyReports.unnamedClusters(tracks.slice(0, 3000), space, { limit: 6 })
+          .map(c => ({ ...c, ids: c.tracks.map(t => t.id) }));
+        const unsure = new Set((ENG.shadow?.rows ?? []).filter(r => r.decision?.kind === 'unsure').map(r => r.id));
+        if (unsure.size >= 8) newGenre = BetterfyReports.unnamedClusters(tracks.filter(t => unsure.has(t.id)), space, { limit: 6 })
+          .map(c => ({ ...c, ids: c.tracks.map(t => t.id) }));
+      } catch { /* the groups are a bonus: none is better than a wrong one */ }
+    }
+    const records = await gapsRecords();
+    if (records && typeof clapNameOrphans === 'function') {
+      const all = [...found.clusters, ...newGenre];
+      if (all.length) await clapNameOrphans(all, records);
+    }
+    Object.assign(COLD, { status:'ready', found, newGenre, active });
+  } catch { COLD.status = 'error'; }
+  store.touch('gaps');
+}
+
 /** Make a private playlist holding these tracks. Nothing else in the library changes. */
 async function gapsCreate(name, ids) {
   const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });

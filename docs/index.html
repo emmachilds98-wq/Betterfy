@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-1111">
+<meta name="bf-build" content="2026-11-15-1121">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1616,7 +1616,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-1111</span>
+    <span class="mono">build 2026-11-15-1121</span>
   </p>
 
   <div class="feat">
@@ -1708,7 +1708,7 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1111</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1121</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1825,7 +1825,7 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-15-1111. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-15-1121. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -4067,7 +4067,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-1111`,
+    `Betterfy engine score — build 2026-11-15-1121`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -4857,18 +4857,93 @@ function suggestionsOf(GAPS, R) {
   return out;
 }
 
+/** Tracks that appear more than once in a playlist (same Spotify id): the surplus copies. */
+function repeatCount(tracks) {
+  const seen = new Set(); let n = 0;
+  for (const t of tracks ?? []) { if (!t?.id) continue; if (seen.has(t.id)) n++; else seen.add(t.id); }
+  return n;
+}
+
+/** Days since the newest track was added, or null when no track says when (nothing is guessed). */
+function staleDays(tracks, now = Date.now()) {
+  let newest = -Infinity;
+  for (const t of tracks ?? []) { const x = Date.parse(t?.added_at); if (Number.isFinite(x) && x > newest) newest = x; }
+  return Number.isFinite(newest) ? Math.max(0, Math.floor((now - newest) / 864e5)) : null;
+}
+
+/** Playlists the engine could not tell apart (bucketPairs' "indistinguishable" verdict), by playlist id: the names of its twins. */
+function twinsOf(pairs) {
+  const out = new Map();
+  for (const p of Array.isArray(pairs) ? pairs : []) {
+    if (p?.verdict !== 'indistinguishable' || !p.a?.id || !p.b?.id) continue;
+    for (const [x, y] of [[p.a, p.b], [p.b, p.a]]) out.set(x.id, [...(out.get(x.id) ?? []), y.name ?? y.id]);
+  }
+  return out;
+}
+
 /** 0-100 and the reasons, from what Betterfy already knows about one playlist: misfiled tracks,
- *  drift, a second genre, an axis nobody has settled. Null under eight tracks (too few to judge). */
-function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false } = {}) {
+ *  drift, a second genre, a twin it cannot be told from, repeats, staleness, an axis nobody has
+ *  settled. Null under eight tracks (too few to judge). Every input is optional: no data, no mark. */
+function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false,
+                                 twins = [], repeats = 0, staleDays: stale = null } = {}) {
   if (tracks < 8) return null;
   const notes = [];
   let score = 100;
   if (misfiled) { score -= Math.min(45, Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
   if (drifting) { score -= 15; notes.push('newest additions read differently from the rest'); }
   if (split) { score -= 20; notes.push('sounds like two genres'); }
+  if (twins?.length) { score -= 10; notes.push(`hard to tell apart from ${twins.slice(0, 2).join(' and ')}`); }
+  if (repeats > 0) { score -= Math.min(15, repeats * 3); notes.push(`${repeats} repeated track${repeats === 1 ? '' : 's'}`); }
+  if (stale !== null && stale >= 365) { score -= 5; notes.push(`nothing added in ${Math.floor(stale / 365)}+ year${stale >= 730 ? 's' : ''}`); }
   if (undecided) { score -= 10; notes.push('no axis decided yet'); }
   score = Math.max(0, score);
   return { score, word: score >= 85 ? 'Healthy' : score >= 65 ? 'Fine' : 'Needs a look', notes };
+}
+
+/** "These look like genre playlists": playlists not yet called genre (and not set by you) whose tags are mostly
+ *  genre, or somewhat genre with a sound profile that is mostly one style. One tap to confirm, none to ignore. */
+function genreTickSuggestions(rows, mixes, sounds) {
+  const out = [];
+  for (const p of rows ?? []) {
+    if (p.axis === 'genre' || p.why === 'set by you' || !(p.tracks >= 8) || p.mirror) continue;
+    const mix = mixes?.get?.(p.id);
+    if (!mix?.tracks) continue;
+    const topStyle = sounds?.(p.id)?.styles?.[0]?.[1] ?? 0;
+    const g = mix.genre ?? 0;
+    if (g >= 0.5 || (g >= 0.3 && topStyle >= 0.5))
+      out.push({ id: p.id, name: p.name, why: `${Math.round(g * 100)}% of its tags are genre${g < 0.5 ? ' and it sounds like one style' : ''}` });
+  }
+  return out;
+}
+
+/** "Start these playlists" for an account with no genre playlist: groups made only of what Spotify gives
+ *  (artist/format/era, plus unnamed sound clusters named by sound ID when the engine and CLAP have run). Nothing is made until tapped. */
+function coldStartOffers({ proposals = [], clusters = [] } = {}, limit = 6) {
+  const out = [];
+  for (const c of clusters) {
+    const ids = c.ids ?? (c.tracks ?? []).map(t => t.id);
+    if (ids.length < 4) continue;
+    const name = c.confirmed ?? c.suggest?.name ?? null;
+    out.push({ title: name ?? 'Group that sounds alike', named: !!name, n: ids.length, ids, why: 'sounds alike',
+      eg: (c.tracks ?? []).slice(0, 3).map(t => t.name).filter(Boolean) });
+  }
+  for (const p of proposals)
+    if ((p.ids?.length ?? 0) >= 4) out.push({ title: p.label, named: false, n: p.ids.length, ids: p.ids,
+      why: p.kind === 'artist' ? 'one artist you collect' : 'same era and length',
+      eg: (p.examples ?? []).slice(0, 3).map(e => e.name).filter(Boolean) });
+  return out.slice(0, limit);
+}
+
+/** New-genre candidates: clusters of the tracks the calibration is "unsure" about, most listened-to first
+ *  (artists in `active`, Spotify's recent and short-term top), each named by sound ID where CLAP has a name. */
+function newGenreOffers(clusters, active) {
+  const played = c => (c.tracks ?? []).filter(t => (t.artists ?? []).some(a => active?.has?.(a))).length;
+  return (clusters ?? []).map(c => ({ ...c, ids: c.ids ?? (c.tracks ?? []).map(t => t.id), played: played(c) }))
+    .filter(c => c.ids.length >= 4)
+    .sort((a, b) => b.played - a.played || b.ids.length - a.ids.length)
+    .map(c => { const name = c.confirmed ?? c.suggest?.name ?? null;
+      return { title: name ? `${name}?` : 'New genre?', n: c.ids.length, ids: c.ids, played: c.played, named: !!name,
+        why: 'tracks Betterfy is unsure where to file, sitting together' }; });
 }
 
 /** A thin strip of how a playlist sounds: its top styles as a stacked bar, else its energy range. '' without a profile. */
@@ -4889,7 +4964,9 @@ function sparkHTML(vm) {
 function plInfo(c, p, splitIds, undecidedIds) {
   const { R, LISTS_SOUND } = c;
   const vm = LISTS_SOUND.profile(p.id);
+  const pl = c.LIB?.playlists?.find(x => x.id === p.id);
   const health = playlistHealth({ tracks: p.tracks,
+    twins: twinsOf(c.twinPairs?.()).get(p.id) ?? [], repeats: repeatCount(pl?.tracks), staleDays: staleDays(pl?.tracks),
     misfiled: (R.misfiled ?? []).filter(m => m.playlistId === p.id).length,
     drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
     split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
@@ -4953,6 +5030,34 @@ function view(c) {
   const splitIds = new Set(listsSplits().map(x => x.p.id));
   const undecidedIds = new Set(rows.filter(p => p.why === NO_SIGNAL).map(p => p.id));
   const sugg = suggestionsOf(GAPS, R);
+  const mixes = c.playlistMixes().mix;
+  const ticks = genreTickSuggestions(rows.map(p => ({ ...p, mirror: c.isMirrorPlaylist?.({ id: p.id, name: p.name }) })), mixes, id => c.LISTS_SOUND.profile(id));
+  const ticksHTML = ticks.length ? `<section class="plsugg" aria-labelledby="pltick-h">
+      <div class="plsugg-head"><h2 id="pltick-h">These look like genre playlists</h2>
+        <button class="b sm p" data-act="ltickall">Mark all ${ticks.length} as genre</button></div>
+      <div class="plrows">${ticks.slice(0, 5).map(t => `<div class="plrow"><span class="plmain"><span class="ttl">${esc(t.name)}</span>
+        <span class="plmeta">${esc(t.why)}</span></span><button class="b sm" data-act="ltick" data-pl="${esc(t.id)}">Genre</button></div>`).join('')}</div>
+    </section>` : '';
+  // Cold start: no genre playlist at all. Offers come from what Spotify gives every account; nothing is made until tapped.
+  const noGenre = rows.length > 0 && !rows.some(p => p.axis === 'genre');
+  c.coldKick?.(noGenre);
+  const cold = c.COLD?.status === 'ready' && noGenre ? coldStartOffers(c.COLD.found) : [];
+  const coldHTML = cold.length ? `<section class="plsugg" aria-labelledby="plcold-h">
+      <div class="plsugg-head"><h2 id="plcold-h">Start these playlists</h2></div>
+      <p class="hint">You have no genre playlists yet. These groups already sit together in your library.</p>
+      <div class="plrows">${cold.map((o, i) => `<div class="plrow"><span class="plmain">
+        <input id="coldnm${i}" aria-label="Name for this playlist" value="${esc(o.title)}">
+        <span class="plmeta"><span class="mono">${o.n}</span> tracks · ${esc(o.why)}${o.eg.length ? ` · e.g. ${esc(o.eg.join(', '))}` : ''}</span></span>
+        <button class="b sm p" data-act="lcold" data-cold="${i}">Start</button></div>`).join('')}</div>
+    </section>` : '';
+  const newg = c.COLD?.status === 'ready' ? newGenreOffers(c.COLD.newGenre, c.COLD.active).slice(0, 3) : [];
+  const newgHTML = newg.length ? `<section class="plsugg" aria-labelledby="plnewg-h">
+      <div class="plsugg-head"><h2 id="plnewg-h">Possible new genres</h2></div>
+      <div class="plrows">${newg.map((o, i) => `<div class="plrow"><span class="plmain">
+        <input id="newgnm${i}" aria-label="Name for this playlist" ${o.named ? `value="${esc(o.title.replace(/\?$/, ''))}"` : 'placeholder="Name it"'}>
+        <span class="plmeta"><span class="mono">${o.n}</span> tracks${o.played ? ` · ${o.played} you are playing` : ''} · ${esc(o.why)}</span></span>
+        <button class="b sm" data-act="lnewg" data-newg="${i}">Start</button></div>`).join('')}</div>
+    </section>` : '';
   const suggHTML = sugg.length ? `<section class="plsugg" aria-labelledby="plsugg-h">
       <div class="plsugg-head"><h2 id="plsugg-h">Suggested playlists</h2>
         <button class="b sm" data-go="new">See all ${sugg.length}</button></div>
@@ -4962,7 +5067,7 @@ function view(c) {
     </section>` : '';
   return `<h1>Library</h1>
     <p class="lede">Tap a playlist for its axis, health and shuffle.</p>
-    ${suggHTML}
+    ${ticksHTML}${coldHTML}${newgHTML}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
       <button class="b sm" data-go="sources">Genre sources</button>
@@ -4985,13 +5090,43 @@ const actions = {
     try { await c.listsSplitMake(el.dataset.lsplit); } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
   },
 
+  /** One "looks like a genre playlist": confirmed. */
+  ltick(c, el) { return setAxis(c, el.dataset.pl, { value: 'genre' }, null); },
+  /** Every suggested one at once. */
+  ltickall(c) {
+    const rows = Object.entries(c.CFG).map(([id, v]) => ({ id, ...v, mirror: c.isMirrorPlaylist?.({ id, name: v.name }) }));
+    const ids = genreTickSuggestions(rows, c.playlistMixes().mix, id => c.LISTS_SOUND.profile(id)).map(t => t.id);
+    for (const id of ids) setAxis(c, id, { value: 'genre' }, null, true);
+    return finishAxes(c, `${ids.length} marked as genre`);
+  },
+  /** Cold start: make the playlist for one offered group. */
+  async lcold(c, el) {
+    const i = +el.dataset.cold, o = coldStartOffers(c.COLD.found)[i], name = c.$('#coldnm' + i)?.value.trim();
+    if (!o) return;
+    if (!name) return c.toast('Give it a name first.');
+    el.disabled = true;
+    try { await c.gapsCreate(name, o.ids); c.COLD.found.proposals = c.COLD.found.proposals.filter(p => p.ids !== o.ids);
+      c.COLD.found.clusters = c.COLD.found.clusters.filter(p => (p.ids ?? p.tracks?.map(t => t.id)) !== o.ids); c.render(); }
+    catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  },
+  /** A possible new genre: make it, and remember the name for CLAP when it is one. */
+  async lnewg(c, el) {
+    const i = +el.dataset.newg, o = newGenreOffers(c.COLD.newGenre, c.COLD.active)[i], name = c.$('#newgnm' + i)?.value.trim();
+    if (!o) return;
+    if (!name) return c.toast('Give it a name first.');
+    el.disabled = true;
+    try { await c.gapsCreate(name, o.ids); if (c.clapConfirm) c.clapConfirm(o.ids, name).catch(() => {});
+      c.COLD.newGenre = c.COLD.newGenre.filter(x => (x.ids ?? x.tracks?.map(t => t.id)) !== o.ids); c.render(); }
+    catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  },
+
   /** Axis edit: per-viewer, persisted on this device. */
   axis(c, el) { return setAxis(c, el.dataset.ax, el, null); },
   /** Receives-suggestions tick. */
   target(c, el) { return setAxis(c, el.dataset.tg, null, el); },
 };
 
-function setAxis(c, id, ax, tg) {
+function setAxis(c, id, ax, tg, quiet = false) {
   const { CFG, LS } = c;
   if (ax) {
     CFG[id].axis = ax.value;
@@ -5009,8 +5144,12 @@ function setAxis(c, id, ax, tg) {
   const saved = JSON.parse(LS.getItem('bf_axes') || '{}');
   saved[id] = { axis: CFG[id].axis, target: CFG[id].target, at: Date.now() };
   LS.setItem('bf_axes', JSON.stringify(saved));
+  if (!quiet) finishAxes(c, 'Updated');
+}
+
+function finishAxes(c, said) {
   c.rebuildReports();
-  c.toast('Updated — suggestions recomputed.');
+  c.toast(`${said} — suggestions recomputed.`);
   c.render();
   // Shared with linked devices straight away, not only at the next load.
   c.syncAxes().then(changed => { if (changed) c.store.set('reports', c.rebuildReports()); });
@@ -5022,7 +5161,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, playlistHealth, sparkHTML, sheetHTML, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, sheetHTML, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -5083,9 +5222,16 @@ function view(ctx) {
   // every single redraw of this screen — including the redraw after an
   // unrelated toast — and it is by some distance the most expensive thing the
   // app computes. "Shuffle again" below is how you deliberately re-roll it.
-  if (S.shufCache?.id !== sel || S.shufCache?.n !== tracks.length) {
-    S.shufCache = { id: sel, n: tracks.length,
-      order: tracks.length ? spacedShuffle(tracks) : [],
+  if (S.shufFlow === undefined) { try { S.shufFlow = LS.getItem('bf_shuf_flow') === '1'; S.shufRedisc = LS.getItem('bf_shuf_redisc') === '1'; } catch { S.shufFlow = S.shufRedisc = false; } }
+  // Flow needs a sound reading or a genre tag on half the list; without that the option is not offered.
+  const canFlow = !!ctx.flowReady?.(tracks), flow = canFlow && S.shufFlow;
+  const redisc = !!S.shufRedisc && S.shufActive?.size > 0;
+  if (S.shufRedisc && !S.shufActive && ctx.rediscoverKick) ctx.rediscoverKick();
+  if (S.shufCache?.id !== sel || S.shufCache?.n !== tracks.length || S.shufCache.flow !== flow || S.shufCache.redisc !== redisc) {
+    S.shufCache = { id: sel, n: tracks.length, flow, redisc,
+      order: tracks.length ? (ctx.shuffleOrder
+        ? ctx.shuffleOrder(tracks, { rediscover: redisc ? S.shufActive : null, near: flow ? ctx.flowNear() : null })
+        : spacedShuffle(tracks)) : [],
       naive: tracks.length ? shuffleStats(rnd([...tracks])) : null };
   }
   const order = S.shufCache.order, naive = S.shufCache.naive;
@@ -5110,6 +5256,9 @@ function view(ctx) {
       <button class="b" data-act="shufPlay" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
       <button class="b sm" data-act="shufAgain" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
     </div>
+    ${order.length ? `<div class="rowbtns" style="margin:-12px 0 18px">${canFlow ? `
+      <label class="pls-f"><input type="checkbox" data-act="shufFlow" ${flow ? 'checked' : ''}> keep neighbours alike</label>` : ''}
+      <label class="pls-f"><input type="checkbox" data-act="shufRedisc" ${S.shufRedisc ? 'checked' : ''}> rediscover: what you have not been playing first</label></div>` : ''}
     ${mix ? mixHTML(mix, tracks, p, ctx) : good ? `<div class="vs">
       <div class="bad"><div class="l">Spotify's shuffle</div><div class="n">${naive.minGap}</div>
         <div class="d">${naive.minGap === 1 ? 'slot' : 'slots'} between the same artist, ${naive.within3} ${naive.within3 === 1 ? 'pair' : 'pairs'} within three</div></div>
@@ -5134,6 +5283,11 @@ const actions = {
   shufPl({ S, render }, el) { S.shufPl = el.value; S.shufCache = null; render(); },
   shufMode({ S, LS, render }, el) { S.shufMode = el.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} render(); },
   shufAgain({ S, render }) { S.shufCache = null; render(); },
+  shufFlow({ S, LS, render }, el) { S.shufFlow = el.checked; try { LS.setItem('bf_shuf_flow', el.checked ? '1' : '0'); } catch {} S.shufCache = null; render(); },
+  shufRedisc({ S, LS, render, rediscoverKick }, el) {
+    S.shufRedisc = el.checked; try { LS.setItem('bf_shuf_redisc', el.checked ? '1' : '0'); } catch {}
+    S.shufCache = null; if (el.checked) rediscoverKick?.(); render();
+  },
   shufApply(ctx, btn) { return build(ctx, btn, false); },
   shufPlay(ctx, btn) { return build(ctx, btn, true); },
 };
@@ -5630,7 +5784,7 @@ const STORE_WATCH = {
   eng:     ['engine'],
   sound:   ['inbox'],
   audio:   ['inbox', 'tidy', 'sources'],
-  gaps:    ['new'],
+  gaps:    ['new', 'lists'],
   player:  [],
 };
 for (const [slice, screens] of Object.entries(STORE_WATCH))
@@ -5938,7 +6092,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-1111';
+const BUILD = '2026-11-15-1121';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -6259,7 +6413,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-1111', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-1121', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -7578,6 +7732,48 @@ async function gapsCompute() {
   store.touch('gaps');
 }
 
+/* ---------- Library: cold start and new genres (docs/BUILD-5-PLAN.md 5.4) ----------
+ * Both read only what every account has. Cold start (no genre playlist at all) groups the library by
+ * artist, era and length with proposeBuckets, plus unnamed sound clusters on the intrinsic space when the
+ * engine has run. New genres cluster the tracks the calibration is "unsure" about, most listened-to first.
+ * Names come from CLAP (sound ID) when it has heard the group. Nothing is written until a button is tapped. */
+const COLD = { status:'idle', for:null, found:{ proposals:[], clusters:[] }, newGenre:[], active:null, made:new Set() };
+
+function coldKick(needCold) {
+  if (COLD.status === 'working' || (COLD.status === 'ready' && COLD.for === R) || COLD.status === 'error') return;
+  COLD.status = 'working'; COLD.for = R;
+  fire(coldCompute(needCold));
+}
+
+async function coldCompute(needCold) {
+  try {
+    await engineLoad();
+    const tracks = allLibraryTracks();
+    const found = { proposals: needCold ? BetterfyColdStart.proposeBuckets(tracks) : [], clusters: [] };
+    let newGenre = [];
+    const space = ENG.space;
+    let active = null;
+    try { active = (await getListening())?.recentlyActive ?? null; } catch { active = null; }
+    if (space) {
+      try {
+        // Bounded: placing every track is the expensive part, and the first few thousand are plenty to find groups in.
+        if (needCold) found.clusters = BetterfyReports.unnamedClusters(tracks.slice(0, 3000), space, { limit: 6 })
+          .map(c => ({ ...c, ids: c.tracks.map(t => t.id) }));
+        const unsure = new Set((ENG.shadow?.rows ?? []).filter(r => r.decision?.kind === 'unsure').map(r => r.id));
+        if (unsure.size >= 8) newGenre = BetterfyReports.unnamedClusters(tracks.filter(t => unsure.has(t.id)), space, { limit: 6 })
+          .map(c => ({ ...c, ids: c.tracks.map(t => t.id) }));
+      } catch { /* the groups are a bonus: none is better than a wrong one */ }
+    }
+    const records = await gapsRecords();
+    if (records && typeof clapNameOrphans === 'function') {
+      const all = [...found.clusters, ...newGenre];
+      if (all.length) await clapNameOrphans(all, records);
+    }
+    Object.assign(COLD, { status:'ready', found, newGenre, active });
+  } catch { COLD.status = 'error'; }
+  store.touch('gaps');
+}
+
 /** Make a private playlist holding these tracks. Nothing else in the library changes. */
 async function gapsCreate(name, ids) {
   const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
@@ -7683,6 +7879,76 @@ function spacedShuffle(items) {
   }
   return out;
 }
+/**
+ * Soft continuity inside the spaced order: walking the shuffle, each slot takes the most alike of the next few
+ * candidates (by `near`, higher is closer) instead of simply the next one, but never one whose artist played in
+ * the last `gap` slots, so the spacing is kept and only the flow improves. Nothing is dropped or added; the
+ * look-ahead is short, so it stays a shuffle rather than turning into a sort.
+ */
+function flowOrder(order, near, { window = 8, gap = 3 } = {}) {
+  const rest = order.slice(), out = [];
+  while (rest.length) {
+    const prev = out[out.length - 1];
+    const recent = new Set(out.slice(-gap).map(artistOf));
+    let best = -1, bestS = -Infinity;
+    for (let i = 0, lim = Math.min(window, rest.length); i < lim; i++) {
+      if (recent.has(artistOf(rest[i]))) continue;
+      // The small index penalty keeps the original order on ties.
+      const s = (prev ? near(prev, rest[i]) : 0) - i * 0.01;
+      if (s > bestS) { best = i; bestS = s; }
+    }
+    out.push(rest.splice(best < 0 ? 0 : best, 1)[0]);
+  }
+  return out;
+}
+
+/** How alike two tracks are, 0..1.5: their sound (the embedding both heard tracks have, a cosine) plus the genre
+ *  tags their lead artists share. Whichever half either track lacks simply counts nothing. */
+function flowNear() {
+  const idx = globalThis.BetterfyOrder && typeof AUDIO !== 'undefined' && AUDIO.records?.size ? mixIndexNow() : null;
+  const tagSet = t => { const id = t.artists?.[0]?.id; const tg = id && typeof TAGS !== 'undefined' ? TAGS[id]?.tags : null;
+    return tg?.length ? new Set(tg.slice(0, 6).map(x => String(x[0]).toLowerCase())) : null; };
+  const cache = new Map();
+  const tagsOf = t => { if (!cache.has(t.id)) cache.set(t.id, tagSet(t)); return cache.get(t.id); };
+  return (a, b) => {
+    let s = 0;
+    const x = idx?.get(a.id)?.emb, y = idx?.get(b.id)?.emb;
+    if (x && y && x.length === y.length) { let d = 0; for (let i = 0; i < x.length; i++) d += x[i] * y[i]; s += Math.max(0, d); }
+    const ta = tagsOf(a), tb = tagsOf(b);
+    if (ta && tb) { let n = 0; for (const k of ta) if (tb.has(k)) n++; s += 0.5 * n / Math.min(ta.size, tb.size); }
+    return s;
+  };
+}
+
+/** Whether there is enough to flow on: at least half of these tracks have a sound reading or a genre tag. */
+function flowReady(tracks) {
+  if (!tracks?.length) return false;
+  const heard = typeof AUDIO !== 'undefined' ? AUDIO.records : null;
+  let n = 0;
+  for (const t of tracks) {
+    const g = t.artists?.[0]?.id, d = heard?.get(t.id);
+    if ((d && !d.miss) || (g && typeof TAGS !== 'undefined' && TAGS[g]?.tags?.length)) n++;
+  }
+  return n >= tracks.length / 2;
+}
+
+/**
+ * The shuffle the screen shows: spaced, then optionally
+ *   rediscover: artists in the set (what Spotify says you are playing: short-term top, recently played) go to
+ *               the back, spaced among themselves, so what you have not heard lately comes first;
+ *   flow:       soft sound/genre continuity (flowOrder), when `near` is given.
+ * Key is deliberately not used: it is below its bar, so it stays out of the order.
+ */
+function shuffleOrder(items, { rediscover = null, near = null } = {}) {
+  let base;
+  if (rediscover?.size) {
+    const hot = [], fresh = [];
+    for (const t of items) ((t.artists ?? []).some(a => rediscover.has(a.name)) ? hot : fresh).push(t);
+    base = hot.length && fresh.length ? [...spacedShuffle(fresh), ...spacedShuffle(hot)] : spacedShuffle(items);
+  } else base = spacedShuffle(items);
+  return near ? flowOrder(base, near) : base;
+}
+
 function shuffleStats(order) {
   const last = new Map(); const gaps = []; let adjacent = 0, within3 = 0;
   order.forEach((t,i) => { const k = artistOf(t);
@@ -7856,6 +8122,15 @@ async function syncAllSongsPlaylist() {
     say.push(`${(missing.length - adding.length).toLocaleString()} left over — Spotify caps a playlist at ${PLAYLIST_MAX.toLocaleString()}`);
   toast(say.length ? `${entry.name} refreshed — ${say.join(', ')}.` : `${entry.name} is already up to date.`);
   render();
+}
+
+/** Fetch what Spotify says is being played (short-term top artists and recently played) for "rediscover", once. */
+async function rediscoverKick() {
+  if (S.shufActive || S.shufActivePending) return;
+  S.shufActivePending = true;
+  try { S.shufActive = (await getListening())?.recentlyActive ?? new Set(); }
+  catch { S.shufActive = new Set(); S.shufRedisc = false; toast('Couldn’t read what you have been playing.'); }
+  S.shufActivePending = false; S.shufCache = null; store.touch('ui.shuffle');
 }
 
 /* ---------- DJ order: Shuffle by tempo and sound (core/audio/order.mjs) ----------
@@ -9486,7 +9761,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-1111';
+    s.src = 'engine.js?v=2026-11-15-1121';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -9508,7 +9783,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-1111');
+    const w = new Worker('engine-worker.js?v=2026-11-15-1121');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9983,7 +10258,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-1111';
+    s.src = 'audio.js?v=2026-11-15-1121';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -10019,7 +10294,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1111', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1121', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -10753,7 +11028,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1111', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1121', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -11032,7 +11307,10 @@ SCREEN_CTX.tidy = () => ({
 });
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
-  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render,
+  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
+  twinPairs: () => ENG?.pairs ?? null,
+  coldKick: needCold => coldKick(needCold),
+  get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
   // Library's Suggested section reads the same gaps New playlists draws: start them the way that screen does.
   gapsKick: () => { if (GAPS.status === 'idle' || (GAPS.status === 'ready' && GAPS.for !== R)) { GAPS.status = 'working'; fire(gapsCompute()); } },
@@ -11061,7 +11339,7 @@ Object.assign(SCREEN_CTX, {
 // --- /home/inbox ---
 // --- shuffle/discover ---
 SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, dedupe, spacedShuffle, shuffleStats, rnd, artistOf,
-  mixHeardIn, shuffleMix, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
+  mixHeardIn, shuffleMix, shuffleOrder, flowReady, flowNear, rediscoverKick, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
   labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
