@@ -42,6 +42,7 @@ export const APP_FILES = [
   'app/render.js',
   'app/gestures.js',
   'app/more.js',
+  'app/router.js',
   'app/errors.js',
   'app/engine.js',
   'app/audio.js',

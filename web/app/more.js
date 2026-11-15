@@ -5,6 +5,7 @@ function openSheet(open) {
   sheet.setAttribute('aria-hidden', String(!open));
   $('#scrim').classList.toggle('open', open);
   $('#tabMore').setAttribute('aria-expanded', String(open));
+  routeNote();
 }
 const closeSheet = () => { if ($('#moreSheet').classList.contains('open')) openSheet(false); };
 

@@ -56,5 +56,6 @@ function go(v) {
   view = v;
   render(dir);
   window.scrollTo(0, 0);
+  routeNote();
 }
 

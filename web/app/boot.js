@@ -279,7 +279,7 @@ async function start(force) {
     const whoName = LIB.user?.name ?? LIB.user?.id ?? '';
     $('#who').textContent = whoName;
     $('#sheetWho').textContent = whoName;
-    view = 'home'; S.inboxAt = 0; render();
+    view = ROUTER.start(); S.inboxAt = 0; render();
     window.scrollTo(0, 0);
     // Background, after the first paint — never delays it, and only redraws
     // again if another device actually had feedback this one did not, rather
