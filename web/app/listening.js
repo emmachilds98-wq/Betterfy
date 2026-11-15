@@ -5,9 +5,6 @@
  * With no ListenVM the slot stays empty and Home keeps its four cards. */
 let LISTEN = null;
 const HEARD_HUE = 'm2';
-/** Where a tap on the indicator or the Heard card goes: Sources → Listening once
- *  that screen exists (UI-3), Playlists until then. */
-const listenTarget = () => (typeof VIEWS !== 'undefined' && VIEWS.sources) ? 'sources' : 'lists';
 /** Tracks heard so far, all runs together: B2's ListenVM counts them as `heard`
  *  (`done` restarts with every run), and a bare ListenVM falls back to `done`. */
 const listenHeard = () => LISTEN ? (LISTEN.heard ?? LISTEN.done ?? 0) : 0;
@@ -20,12 +17,13 @@ function setListen(vm) {
   const had = listenEverRan();
   LISTEN = vm ?? null;
   paintListen();
-  if (typeof view === 'undefined' || view !== 'home' || !$('#main')) return;
-  // Only a card appearing or going re-draws Home; a count ticking up while
-  // listening runs updates in place, so the cards don't replay their entrance.
-  if (had !== listenEverRan()) return store.touch('ui.home');
-  const n = $('#main .act[data-heard] .n');
-  if (n) n.textContent = listenHeard().toLocaleString();
+  if (typeof view === 'undefined' || view !== 'inbox' || !$('#main')) return;
+  // Only the status part appearing or going re-draws File; a count ticking up
+  // while listening runs updates in place, so the deck doesn't repaint under
+  // a hand that is picking a playlist.
+  if (had !== listenEverRan()) return store.touch('ui.inbox');
+  const n = $('#main [data-listenstat]');
+  if (n) n.textContent = listenStatus();
 }
 
 function paintListen() {
@@ -42,7 +40,7 @@ function paintListen() {
 }
 {
   const slot = document.getElementById('listenSlot');
-  const open = () => { if (slot.childElementCount || slot.textContent.trim()) go(listenTarget()); };
+  const open = () => { if (slot.childElementCount || slot.textContent.trim()) openUnderHood('sources'); };
   slot?.addEventListener('click', open);
   slot?.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
 }

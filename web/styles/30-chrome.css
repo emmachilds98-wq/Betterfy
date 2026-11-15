@@ -42,27 +42,14 @@
      four take one of the mark's colours each, so the tab, the Home card that
      opens it and the screen itself are the same colour, and that colour is
      the same one every time rather than whatever the accent spun off. */
-  [data-v="home"]{--vc:var(--accent); --vc-ink:var(--accent-ink)}
   [data-v="inbox"]{--vc:var(--m0); --vc-ink:var(--m0-ink)}
   [data-v="tidy"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
   [data-v="discover"]{--vc:var(--m3); --vc-ink:var(--m3-ink)}
   [data-v="shuffle"]{--vc:var(--m4); --vc-ink:var(--m4-ink)}
   [data-v="new"]{--vc:var(--m2); --vc-ink:var(--m2-ink)}
   [data-v="lists"]{--vc:var(--m4); --vc-ink:var(--m4-ink)}
-  [data-v="engine"]{--vc:var(--m2); --vc-ink:var(--m2-ink)}
-  [data-v="history"]{--vc:var(--m3); --vc-ink:var(--m3-ink)}
-  /* Behind More on a desktop as well as on a phone: five destinations is the
-     whole point of the fold, and the sheet lists them on both. */
-  aside .nav[data-sec]{display:none}
-  /* Lives in the More sheet on both form factors now. */
+  /* Disconnect and the account line live in the Settings sheet now. */
   .railfoot{display:none}
-  /* "More": same pill, on the top bar as well as the tab bar. */
-  .tabmore{appearance:none; border:1px solid var(--line); background:transparent; font:inherit; cursor:pointer;
-        padding:9px 16px; color:var(--ink-2); display:flex; align-items:center; gap:8px; flex:none;
-        border-radius:999px; font-size:13.5px; font-weight:600; white-space:nowrap}
-  .tabmore .ic{display:none}
-  .tabmore:hover{background:var(--surface-2); color:var(--ink); border-color:var(--line-2)}
-  .tabmore[aria-expanded="true"],.tabmore[aria-current="true"]{background:var(--surface-2); color:var(--ink)}
   /* The listening indicator: on a desktop it sits just before More, so the
      nav row (flex:1) gives up the room and More stays where it was (B8); the
      phone rule in 80-responsive moves it into the header. It holds

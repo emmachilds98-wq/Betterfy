@@ -87,7 +87,7 @@ async function blendStart() {
     if (!base) { BLEND.status = 'off'; return; }
     Object.assign(BLEND, { rec, base, native, targets: targets.join(), status: 'ready', err: null });
     blendSetBridge(raw);
-    if (view === 'inbox' || view === 'home') render();
+    if (view === 'inbox') render();
     fire(blendFetch());
   } catch (e) {
     Object.assign(BLEND, { status: 'error', err: e?.message ?? String(e), space: null });

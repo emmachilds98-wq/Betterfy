@@ -24,13 +24,13 @@ const store = (() => {
 /* Which slices repaint which screen. `ui.<screen>` always repaints that screen
  * (and only it); the shared slices are listed here. A screen not listed for a
  * slice ignores it. */
-const STORE_SCREENS = ['home', 'inbox', 'tidy', 'new', 'discover', 'shuffle', 'lists', 'engine', 'history', 'sources'];
+const STORE_SCREENS = ['inbox', 'tidy', 'new', 'discover', 'shuffle', 'lists', 'engine', 'history', 'sources'];
 const STORE_WATCH = {
   lib:     STORE_SCREENS,
   reports: STORE_SCREENS,
   eng:     ['engine'],
-  sound:   ['home', 'inbox'],
-  audio:   ['home', 'inbox', 'tidy'],
+  sound:   ['inbox'],
+  audio:   ['inbox', 'tidy', 'sources'],
   gaps:    ['new'],
   player:  [],
 };
@@ -41,6 +41,9 @@ for (const screen of STORE_SCREENS)
 
 /** Repaint the current screen if it is one of `screens` and the page is up. */
 function storeRepaint(screens) {
+  // Engine, History and Sources are sections of the Settings sheet now: repaint
+  // the one that is open, and not the page behind it.
+  if (typeof settingsOpen === 'function' && settingsOpen() && screens.includes(S.uhOpen)) underHoodRefresh();
   if (typeof view === 'undefined' || !screens.includes(view) || !document.getElementById('main')) return;
   render();
 }
