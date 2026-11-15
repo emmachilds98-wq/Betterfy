@@ -60,6 +60,7 @@ by screen in A4.
 | `app/engine.js` | engine glue: lazy `engine.js`, the worker, calibration, the neighbour bridge |
 | `app/audio.js` | listening glue: lazy `audio.js`, settings, mood/voice/energy |
 | `app/soundfirst.js` | sound-first filing, sound ID and matches |
+| `app/blend.js` | File's picks from tags blended with the engine and similar artists, once the Score run says so; the engine's per-account fitted weights (`engine-weights`, `withFittedWeights`) |
 | `app/clap.js` | CLAP cluster names and "sounds like" search |
 | `app/audio-panel.js` | the Listening and Deep listen panels |
 | `screens/engine.mjs` | Engine: screen module, its score/bridge/calibration cards and summary (its jobs are in `app/engine.js`) |

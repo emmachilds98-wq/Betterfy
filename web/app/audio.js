@@ -19,7 +19,8 @@ const AUDIO_MODEL_FILE = 'discogs-effnet-bsdynamic-1.onnx';
 const AUDIO_HEAD_FILES = { mtg_jamendo_moodtheme: 'mtg_jamendo_moodtheme-discogs-effnet-1.onnx',
   voice_instrumental: 'voice_instrumental-discogs-effnet-1.onnx', danceability: 'danceability-discogs-effnet-1.onnx' };
 
-const AUDIO = { ctrl: null, store: null, vm: null, records: null, labels: null, wifiOk: false, err: null, worker: null, wear: null };
+const AUDIO = { ctrl: null, store: null, vm: null, records: null, labels: null, wifiOk: false, err: null, worker: null, wear: null,
+                maest: null, maestVm: null };
 
 let AUDIO_JS = null;
 function audioLoad() {
@@ -170,7 +171,21 @@ async function engineAudio() {
  *  membership — the logistic model stays for offline measurement only. The
  *  worker holds itself to the same (build-web.mjs). */
 const ENGINE_LEARN_MODEL = 'prototype';
-const engineAudioIn = audio => (audio ? { records: audio, model: ENGINE_LEARN_MODEL, ...(Object.keys(FB).length ? { feedback: FB } : {}) } : audio);
+const engineAudioBase = audio => (audio ? { records: audio, model: ENGINE_LEARN_MODEL, ...(Object.keys(FB).length ? { feedback: FB } : {}) } : audio);
+/** WP-C1: the second ear places only once a Score run chose it (engineEar). */
+const engineAudioIn = audio => {
+  const base = engineAudioBase(audio);
+  const ear = audio ? engineEar(audio) : 'effnet';
+  return ear === 'effnet' ? base : { ...base, ear };
+};
+/** Which ear places tracks: the first, unless a Score run chose a second ear. */
+const engineEar = audio => (globalThis.BetterfyAudio?.chosenEar ? BetterfyAudio.chosenEar(ENG.calib?.soundChoice ?? null, audio) : 'effnet');
+/** For the Score run: as the engine takes them, first ear always, plus the second-ear arms when some records have one. */
+const engineAudioScore = audio => {
+  const base = engineAudioBase(audio);
+  const arms = audio && globalThis.BetterfyAudio?.scoreArms ? BetterfyAudio.scoreArms(audio) : null;
+  return arms ? { ...base, arms } : base;
+};
 /** Audio changes a suggestion only once WP-E2's gate has passed on this library. */
 const engineAudioGate = () => (ENG.calib?.audioGate ?? ENG.val?.mine?.withAudio?.gate ?? null);
 

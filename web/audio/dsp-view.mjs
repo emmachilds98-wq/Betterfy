@@ -5,8 +5,9 @@
 //  - tempo: 80% within ±1 BPM overall, 86% when confidence ≥ 0.3, and most
 //    octave errors are flagged. Shown by default at confidence ≥ BPM_MIN_CONF,
 //    with "87/174?" when half/double time is unsure.
-//  - key: 30% exact. Not good enough to show; stays hidden until key.mjs is
-//    improved and re-measured.
+//  - key: v1 30% exact; v3 (learned weights, 2026-11-15) 55.3% exact on the
+//    held-out half (61.8% at confidence ≥ 0.3). Still under the 60% bar, so
+//    hidden by default.
 // `localStorage.bf_audio_dsp = '1'` shows key too (for checking), '0' hides
 // everything.
 //

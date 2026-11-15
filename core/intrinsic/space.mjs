@@ -244,6 +244,8 @@ export function buildSpace(lib, { skip = null, isMirror = null, rekordbox = null
  *
  *   { records, mel }   records, optionally dropping another mel front end's
  *   { index }          an `audioIndex` already built (reused across folds)
+ *   { ear }            WP-C1: 'effnet' (default), 'maest' or 'both', the ear
+ *                      `audioIndex` hears with when building from `records`
  *   { feedback }       WP-L2: the listener's verdicts (audio-feedback.mjs
  *                      reads a CorrectionLog or the page's feedback state),
  *                      handed to the trainer with `skip`, the fold whose
@@ -275,9 +277,14 @@ function audioLayer(audio, destinations, skip) {
   if (!audio) return {};
   const opts = typeof audio === 'object' && !(audio instanceof Map) && !Array.isArray(audio)
     && ('records' in audio || 'index' in audio || 'learn' in audio || 'feedback' in audio || 'model' in audio) ? audio : { records: audio };
-  const index = opts.index instanceof Map ? opts.index : audioIndex(opts.records, { mel: opts.mel });
+  // `ear` (WP-C1): which ear the index hears with; absent is the first ear, as before.
+  const index = opts.index instanceof Map ? opts.index
+    : audioIndex(opts.records, { mel: opts.mel, ...(opts.ear ? { ear: opts.ear } : {}) });
   if (!index.size) return {};
   const layer = buildAudioProfiles(destinations, index, { skip });
+  // Which ear the index holds (WP-C1), so hearMore adds rows from the same
+  // ear. Only set for a second ear: a first-ear layer is key for key as before.
+  if (opts.ear && opts.ear !== 'effnet') layer.ear = opts.ear;
   const out = { audio: layer };
   const learn = opts.learn === undefined ? trainLearner : opts.learn;
   if (typeof learn === 'function' && layer.profiles.size) {
@@ -299,10 +306,12 @@ function audioLayer(audio, destinations, skip) {
  * Takes `audio` exactly as `buildSpace` does. Returns a new space; with
  * nothing to hear, the space unchanged. Any existing layer is replaced.
  */
-export function withAudioLayer(space, audio) {
+export function withAudioLayer(space, audio, { skip = null } = {}) {
   if (!space?.destinations) return space;
   const { audio: _a, learned: _l, ...rest } = space;
-  const layer = audioLayer(audio, space.destinations, null);
+  // `skip` (WP-C1's Score arms): the fold this space was built without, so a
+  // listener's verdict on a held-out track never trains the learner scoring it.
+  const layer = audioLayer(audio, space.destinations, skip);
   return Object.keys(layer).length ? { ...rest, ...layer } : (('audio' in space || 'learned' in space) ? rest : space);
 }
 
@@ -330,7 +339,9 @@ export function hearMore(space, records, { mel = undefined } = {}) {
   const index = space?.audio?.index;
   if (!(index instanceof Map) || !records) return 0;
   let n = 0;
-  for (const [id, row] of audioIndex(records, { mel })) {
+  // Same ear as the index (WP-C1): rows from another ear live in another space.
+  const ear = space.audio.ear;
+  for (const [id, row] of audioIndex(records, { mel, ...(ear ? { ear } : {}) })) {
     if (index.has(id)) continue;
     index.set(id, row);
     n++;
@@ -447,6 +458,68 @@ export function combine(parts, weights = WEIGHTS) {
 }
 
 /**
+ * The graph component with a wide playlist's dilution taken out: the cosine
+ * divided by the centroid's own norm, capped at 1.
+ *
+ * Why the norm: for members that are one artist each, a member's mean cosine
+ * with its playlist's centroid is exactly the centroid's norm (Σ share² ÷ |c|),
+ * so this reads "how typical a member of this playlist would this track be",
+ * which is about 1 for a filed artist whether the playlist holds three artists
+ * or forty. The raw cosine of the same artist is 0.58 in the first and 0.16 in
+ * the second, which lets the record's shape out-vote it in exactly the wide
+ * playlists. Uses nothing but what the space already keeps (`centroidNorm`),
+ * so a revived space can answer it too. Null whenever `graph` is.
+ */
+export function graphNormalised(graph, d) {
+  if (graph === null || graph === undefined || !(d?.centroidNorm > 0)) return null;
+  return Math.min(1, graph / d.centroidNorm);
+}
+
+/**
+ * One destination's components for one track, before weighting: what
+ * `placements` combines, and what core/validate/weights.mjs recombines at
+ * other weights. One function for both, so the two cannot drift apart.
+ */
+function destinationParts(track, d, space, { vec, vecNorm, bridged, sound, learned, tempo, graphN }) {
+  const shape = shapeScores(track, d.profile, { registrants: space.registrants });
+  const graph = vec.size && d.centroid.size
+    ? cosine(vec, d.centroid, vecNorm, d.centroidNorm) : null;
+  const extra = space.bonus?.size ? bonusScores(track, d.bonusProfile, space.bonus)
+                                  : { bpm: null, key: null };
+  const parts = bridged ? { graph, ...shape, ...extra, bridge: bridged.get(d.id) ?? 0 }
+                        : { graph, ...shape, ...extra };
+  if (sound) parts.audio = sound.get(d.id);
+  if (learned) parts.learned = learned.get(d.id);
+  if (tempo && (parts.bpm === null || parts.bpm === undefined)) {
+    const f = tempoShare(tempo, space.audio.profiles?.get(d.id), space.audio.index);
+    if (f !== null) parts.bpm = f;
+  }
+  if (graphN) parts.graphN = graphNormalised(graph, d);
+  return parts;
+}
+
+/**
+ * Every destination's raw components for one track, sound left out (the
+ * weight fit is for the engine an unheard track is placed by): the bridge when
+ * the space has one, and `graphN` beside `graph`. Unrounded, so weights
+ * recombined from these rank exactly as `placements` would with them.
+ *
+ * @returns {Array<{playlistId: string, parts: object}>}
+ */
+export function componentParts(track, space, { exclude = null } = {}) {
+  if (!track?.id || !space?.destinations?.size) return [];
+  const vec = trackVector(track, space.graph);
+  const ctx = { vec, vecNorm: norm(vec), bridged: space.bridge ? bridgeScores(track, space) : null,
+                sound: null, learned: null, tempo: null, graphN: true };
+  const out = [];
+  for (const d of space.destinations.values()) {
+    if (exclude?.has(d.id)) continue;
+    out.push({ playlistId: d.id, parts: destinationParts(track, d, space, ctx) });
+  }
+  return out;
+}
+
+/**
  * Returns `{ declined }` rather than a weak list when there is nothing to go
  * on — the same refusal the v3 classifier makes, for the same reason: a ranking
  * is always *producible*, which is exactly why producing one is not evidence
@@ -491,22 +564,13 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
   // without sound is unchanged): only a confident reading counts.
   const heardTempo = useAudio && rawSound ? tempoOf(space.audio.index?.get(track.id)?.rec) : null;
   const tempo = heardTempo && heardTempo.conf >= MIX_MIN_CONF ? heardTempo : null;
+  // `graphN` (core/validate/weights.mjs) is only worked out for weights that
+  // name it, which the defaults never do, so a default placement is unchanged.
+  const ctx = { vec, vecNorm, bridged, sound, learned, tempo, graphN: !!weights && 'graphN' in weights };
   const rows = [];
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
-    const shape = shapeScores(track, d.profile, { registrants: space.registrants });
-    const graph = vec.size && d.centroid.size
-      ? cosine(vec, d.centroid, vecNorm, d.centroidNorm) : null;
-    const extra = space.bonus?.size ? bonusScores(track, d.bonusProfile, space.bonus)
-                                    : { bpm: null, key: null };
-    const parts = bridged ? { graph, ...shape, ...extra, bridge: bridged.get(d.id) ?? 0 }
-                          : { graph, ...shape, ...extra };
-    if (sound) parts.audio = sound.get(d.id);
-    if (learned) parts.learned = learned.get(d.id);
-    if (tempo && (parts.bpm === null || parts.bpm === undefined)) {
-      const f = tempoShare(tempo, space.audio.profiles?.get(d.id), space.audio.index);
-      if (f !== null) parts.bpm = f;
-    }
+    const parts = destinationParts(track, d, space, ctx);
     const { score, used, judged } = combine(parts, weights);
     if (!judged) continue;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;

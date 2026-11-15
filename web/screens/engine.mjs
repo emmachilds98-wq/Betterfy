@@ -127,7 +127,7 @@ function pairBars(esc, label, without, withSound, p, line = null, names = ['with
   </div>`;
 }
 
-export function audioCard(v, p, esc) {
+export function audioCard(v, p, esc, maestScoreText) {
   const w = v && !v.error ? v.mine?.withAudio : null;
   if (!w) return '';
   const nf = v.mine.neverFiled, g = w.gate ?? {};
@@ -159,6 +159,7 @@ export function audioCard(v, p, esc) {
         ? (g.pass === true ? 'Helps.' : g.pass === false ? 'Not ahead of tags yet on your filing; sound still leads, by your call.' : 'Undecided; sound still leads, by your call.')
         : (g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.')}</b>
       ${esc(g.text ?? '')}</p>
+    ${w.arms?.maest && maestScoreText ? `<p class="why" id="maestScore" style="margin-top:8px">${esc(maestScoreText(w))}</p>` : ''}
     ${identifyHTML(v.identify, p, esc)}
   </div>`;
 }
@@ -198,7 +199,7 @@ export function weakBuckets(v, LIB, n = 5) {
  * names of the user's own weakest playlists — so pasting it somewhere shares
  * how the engine did, not what the library holds beyond that.
  */
-export function summary({ ENG, LIB }) {
+export function summary({ ENG, LIB, maestScoreText }) {
   const v = ENG.val, r = ENG.rung;
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
@@ -208,6 +209,7 @@ export function summary({ ENG, LIB }) {
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
     `This engine: top-1 ${pc(v.mine.top1)}, top-3 ${pc(v.mine.top3)} (${v.mine.scored} tracks)`,
+    ...weightsLines(v, pc),
     v.base ? `Today's engine: top-1 ${pc(v.base.top1)}, top-3 ${pc(v.base.top3)}${v.base.noAnswer ? `, no tags for ${v.base.noAnswer}` : ''}`
            : `Today's engine: not scored (no tag data loaded)`,
     v.mine.declined ? `Declined: ${v.mine.declined}, of which would have been right: ${v.mine.declinedWouldHaveBeenRight ?? 0}` : null,
@@ -215,13 +217,59 @@ export function summary({ ENG, LIB }) {
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
     v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
     ...bridgeLines(v, pc),
-    ...audioLines(v, pc),
+    ...blendLines(v, pc),
+    ...audioLines(v, pc, maestScoreText),
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   return lines.filter(Boolean).join('\n');
+}
+
+/** "×4" for a multiplier, "off" for zero. */
+const timesText = m => (m === 0 ? 'off' : `×${m}`);
+
+/** The fitted weights as words: what each group was multiplied by. */
+function multipliersText(m, withBridge) {
+  if (!m) return '';
+  const bits = [`artist graph ${timesText(m.graph)}`, `label ${timesText(m.registrant)}`, `record shape ${timesText(m.shape)}`];
+  if (withBridge) bits.push(`similar artists ${timesText(m.bridge)}`);
+  if (m.graphN) bits.push(`graph, wide playlists evened ${timesText(m.graphN)}`);
+  return bits.join(', ');
+}
+
+/** The weight fit's part of the pasteable summary (core/validate/weights.mjs). */
+function weightsLines(v, pc) {
+  const f = v.weights;
+  if (!f?.plain) return [];
+  const line = (label, x, withBridge) => x ? `${label}: top-1 ${pc(x.fitted.top1)}, top-3 ${pc(x.fitted.top3)} `
+    + `(default weights ${pc(x.default.top1)} / ${pc(x.default.top3)}); ${multipliersText(x.multipliers, withBridge)} — `
+    + (x.use ? 'used' : 'not a point ahead, defaults kept') : null;
+  return [
+    line('This engine, weights fitted to your filing', f.plain, false),
+    line('With similar artists, weights fitted', f.bridge, true),
+  ].filter(Boolean);
+}
+
+/** The weight fit on the score card. Empty without one. */
+function weightsCard(v, p, esc) {
+  const f = v && !v.error ? v.weights : null;
+  if (!f?.plain) return '';
+  const names = ['default', 'fitted'];
+  const one = (title, x, withBridge) => !x ? '' : `
+    <div class="pairs">
+      ${pairBars(esc, `${title} — right first time`, x.default.top1, x.fitted.top1, p, null, names)}
+      ${pairBars(esc, `${title} — in the top three`, x.default.top3, x.fitted.top3, p, null, names)}
+    </div>
+    <p class="why" style="margin-top:6px"><span class="tag ${x.use ? 'ok' : 'idle'}">${x.use ? 'used' : 'not used'}</span>
+      ${esc(multipliersText(x.multipliers, withBridge))}.</p>`;
+  return `<h3 style="margin:18px 0 6px; font-size:16px">Weights fitted to your filing</h3>
+    <p class="why">How much the artist graph, the label, the record's shape${f.bridge ? ' and similar artists' : ''} each
+      count, chosen on four folds of your filed tracks and scored on the fifth, five times over — so "fitted" is on
+      tracks the weights weren't tuned on. They're only used when that beats the defaults by a point.</p>
+    ${one('This engine', f.plain, false)}
+    ${one('With similar artists', f.bridge, true)}`;
 }
 
 /** The bridge's part of the pasteable summary. Counts and rates only. */
@@ -242,8 +290,53 @@ function bridgeLines(v, pc) {
   ].filter(Boolean);
 }
 
+/** The blend's part of the pasteable summary (plan phase 1). Counts and rates only. */
+function blendLines(v, pc) {
+  const b = v.blend;
+  if (!b) return v.base ? [] : ['Blended: not scored (no tag data loaded)'];
+  const nf = b.neverFiled;
+  const folds = Object.values(b.foldWeights ?? {}).join(', ');
+  return [
+    `Blended (tags ${b.weight} + this engine${b.withBridge ? ' with similar artists' : ''}${b.nativeFitted ? ', fitted weights' : ''}): top-1 ${pc(b.top1)}, top-3 ${pc(b.top3)}; `
+      + `today's ${pc(b.tags.top1)} / ${pc(b.tags.top3)}, this engine ${pc(b.native.top1)} / ${pc(b.native.top3)} on the same ${b.scored} tracks`
+      + (folds ? ` (weight per fold ${folds})` : ''),
+    nf?.scored ? `Never-filed artists blended: top-1 ${pc(nf.top1)}, top-3 ${pc(nf.top3)} (today's ${pc(nf.tags.top1)}, `
+      + `this engine ${pc(nf.native.top1)}; ${nf.scored} tracks)` : null,
+    `Phase 1: ${blendVerdict(b).short}`,
+  ].filter(Boolean);
+}
+
+/** What the blend's score means for the File screen. */
+export function blendVerdict(b) {
+  if (b.beatsTags && b.withBridge) return { on: true, short: 'blend beats tags — File uses it',
+    text: 'The File screen now takes its picks from the blend. Tracks it has heard still lead with sound, and switching off similar artists below goes back to today’s picks.' };
+  if (b.beatsTags) return { on: false, short: 'ahead without similar artists — File unchanged (needs them on)',
+    text: 'Ahead, but this run had no similar artists, and the File screen only uses the blend with them. Switch them on and score again.' };
+  return { on: false, short: 'blend not a point ahead of tags — File unchanged',
+    text: 'Not at least a point ahead of today’s engine on tracks it wasn’t tuned on, so the File screen keeps today’s picks.' };
+}
+
+/** The blended line on the score card. Empty without one. */
+function blendCard(v, p, esc) {
+  const b = v && !v.error ? v.blend : null;
+  if (!b) return '';
+  const nf = b.neverFiled, verdict = blendVerdict(b), names = ['today’s', 'blended'];
+  return `<h3 style="margin:18px 0 6px; font-size:16px">Today’s engine and this one, together</h3>
+    <p class="why">Each playlist gets a score from both engines${b.withBridge ? ' (this one with similar artists)' : ''},
+      each scaled so its best pick is 100%, then mixed: ${Math.round(b.weight * 100)}% tags. The mix is chosen on four
+      folds and scored on the fifth, five times over, so these are tracks it wasn’t tuned on. A track with no tags
+      is placed by this engine alone.</p>
+    <div class="pairs">
+      ${pairBars(esc, 'Right first time', b.tags.top1, b.top1, p, null, names)}
+      ${pairBars(esc, 'In the top three', b.tags.top3, b.top3, p, null, names)}
+      ${nf?.scored ? pairBars(esc, 'Right first time, artists not in any genre playlist yet', nf.tags.top1, nf.top1, p, null, names) : ''}
+    </div>
+    <p class="why gateverdict" style="margin-top:12px"><span class="tag ${verdict.on ? 'ok' : 'idle'}">${verdict.on ? 'used on File' : 'not used'}</span>
+      ${esc(verdict.text)}</p>`;
+}
+
 /** Sound's part of the pasteable summary. Counts and rates only. */
-function audioLines(v, pc) {
+function audioLines(v, pc, maestScoreText) {
   const w = v.mine?.withAudio;
   if (!w) return [];
   const g = w.gate ?? {};
@@ -253,6 +346,7 @@ function audioLines(v, pc) {
     `Sound coverage: ${w.heard} of ${v.mine.scored} scored tracks heard (${w.heardNeverFiled} never-filed), `
       + `${w.analysed} analysed in all; had a say on ${w.judged}, changed ${w.changed} top answers`,
     `Audio gate: ${g.pass === true ? 'PASS' : g.pass === false ? 'not yet' : 'undecided'} (${g.reason ?? '—'}) — ${g.text ?? ''}`,
+    ...(w.arms?.maest && maestScoreText ? [maestScoreText(w, pc)] : []),
     ...(v.identify?.scored ? [
       `Naming genres by sound (${v.identify.scored} filed tracks): genre ${pc(v.identify.genre)}, sub-genre ${pc(v.identify.specific)}; `
         + `model alone ${pc(v.identify.modelOnly.genre)} / ${pc(v.identify.modelOnly.specific)}; `
@@ -266,11 +360,13 @@ function audioLines(v, pc) {
 const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 
 export function view(c) {
-  const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText } = c;
+  const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
   const head = `<h1>Engine</h1>
     <p class="lede">A second opinion that reads nothing but your own playlists. No key, no other website,
       no genre list written by somebody else — just who you file together, on which label, in what shape
-      of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do.</p>`;
+      of record, from when. <b>It files nothing.</b> Everything here is what it <i>would</i> do — until the
+      score below shows it, blended with today's engine, beating today's engine on your own filing. Then the File
+      screen's picks come from the blend.</p>`;
 
   // Nothing to file into is a setting, not a result: say where it is fixed.
   if (!engineTargets().length) return `${head}
@@ -409,6 +505,7 @@ export function view(c) {
     ${v && !v.error ? `<div class="facts" style="margin-top:16px">
       <div><span><b>This engine</b> — right first time</span><b class="mono">${p(v.mine.top1)}</b></div>
       <div><span>…in its top three</span><b class="mono">${p(v.mine.top3)}</b></div>
+      ${v.weights?.plain ? `<div><span>…with weights fitted to your filing${v.weights.plain.use ? '' : ' (not used)'}</span><b class="mono">${p(v.weights.plain.fitted.top1)} / ${p(v.weights.plain.fitted.top3)}</b></div>` : ''}
       ${v.base ? `<hr>
       <div><span><b>Today's engine</b> — right first time</span><b class="mono">${p(v.base.top1)}</b></div>
       <div><span>…in its top three</span><b class="mono">${p(v.base.top3)}</b></div>` : ''}
@@ -425,8 +522,10 @@ export function view(c) {
       verdict === 'ahead' ? 'On your library, reading nothing but your own filing beats reading the tag table.'
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
       : 'There is nothing to choose between them on your library.'}</p>` : ''}
+    ${weightsCard(v, p, esc)}
     ${bridgeCard(v, p, esc)}
-    ${audioCard(v, p, esc)}
+    ${blendCard(v, p, esc)}
+    ${audioCard(v, p, esc, maestScoreText)}
     ${v && !v.error ? calibCard(p, ENG.calib) : ''}
     ${weakBuckets(v, LIB).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
       <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
@@ -489,6 +588,8 @@ export const actions = {
   lists: c => c.go('lists'),
   bridgeToggle: (c, el) => {
     if (el.checked) c.LS.removeItem('bf_bridge_off'); else c.LS.setItem('bf_bridge_off', '1');
+    // File's blend reads the switch on every pick; this lets it re-check from the start.
+    c.blendForget();
   },
   /** Copy the score as text; no clipboard permission offers the share sheet, then a manual copy. */
   async copy(c) {
@@ -503,6 +604,10 @@ export const actions = {
   async reset(c) {
     try { await c.idb.del(c.SPACE_KEY); } catch {}
     try { await c.idb.del(c.CAL_KEY); } catch {}
+    // And the blend the File screen was using, and the fitted weights: both were fitted on what is being forgotten.
+    try { await c.idb.del(c.BLEND_KEY); } catch {}
+    c.blendForget();
+    await c.weightsForget();
     Object.assign(c.ENG, { status:'idle', space:null, rung:null, shadow:null,
                            pairs:null, val:null, calib:null, ms:0, from:null });
     c.toast('Cleared. The next analysis rebuilds from your library.');

@@ -276,9 +276,9 @@ The coordinator's review is at high effort whatever the package used.
 | Mood, voice and energy | Merged, #83: shown once checked on real previews |
 | UI-1 to UI-6 | Merged: #72, #80, #69, #71, #70, #81 (see `docs/UI-BUILD-PLAN.md`) |
 | WP-C3 naming and text search | Merged, #85. **Dormant until WP-C2 ships**: `docs/models/` has no `clap-text-table.json` and no record has a `clap` ear yet, so naming and "sounds like" search draw nothing (byte-identical, as its tests pin) |
-| Record v2 contract (C1 + C2) | **Open, #82.** `main` merged in on 2026-11-14; the CLAP test fixture moved to the contract's 512 dimensions, because record v2 rejects any other size |
-| Deep listen settings (C1 + C2) | **Open, draft, #84.** `main` merged in on 2026-11-14 |
-| WP-C1 MAEST | Not started. Waits for #82 and #84 |
+| Record v2 contract (C1 + C2) | Merged, #82 |
+| Deep listen settings (C1 + C2) | Merged, #84 |
+| WP-C1 MAEST | **Built; changes no suggestion yet.** `core/audio/maest.mjs` (int8 model in `docs/models/`, 88.6 MB), the laptop top-up run behind Deep listen (`web/audio/maest-run.mjs`, `docs/maest-worker.js`), `audioIndex(…, { ear })`, Score arms `maest` and `both` (`placementAccuracy`'s `audio.arms`) and `earChoice` in gate.mjs: a second ear places tracks only once a Score run shows it passes the gate and beats the first ear by 2 points on never-filed artists with no loss overall. Phase-0 style numbers in AUDIO-ANALYSIS-PLAN §0 |
 | WP-C2 CLAP text table | **Merged.** `scripts/audio-clap/build-text-table.py` builds `docs/models/clap-text-table.json` from `prompts.json`: 221 prompts (all 108 ontology genres plus 113 reviewed descriptions), 512-d, from LAION's original music checkpoint (sha256-pinned, converted strictly by `clap_model.py`). Rebuilds identically (`--check`). Tests: built from the committed prompts, collapse guard, neighbours |
 | WP-C2 CLAP audio encoder in the page | **Merged.** `core/audio/clap.mjs`: the 48 kHz front end in plain JS (matches `ClapFeatureExtractor` to 0.0001 dB on two fixtures), `docs/models/laion_clap_music-audio-q8-1.onnx` (77 MB, int8 MatMuls, cosine 0.998 to float; 0.75 s per 10 s clip in onnxruntime-web WASM, one thread). Runs in the audio Worker only while "Search by description" (#84) is ticked and Wi-Fi allows; new records get `clap` in the same pass, older ones 25 per run. That turns on C3. Off, every record and screen is byte-identical |
 | WP-E2's gate on the owner's library | **Waiting on the owner:** Score both engines → Copy results |

@@ -24,9 +24,12 @@ const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
  * engine's sound-led picks lead (soundPicks, in the engine section) and the tag
  * engine's best stays one key away as a second opinion; not heard, the tag
  * engine's, exactly as before. Guarded, so the card still draws where the
- * engine section isn't present. */
+ * engine section isn't present. Where this account's Score says tags blended
+ * with the engine and similar artists beat tags alone, the blend stands in for
+ * the tag engine's picks (blendPicks, app/blend.js); anywhere else it returns
+ * them untouched. */
 function filePicks(t) {
-  const tags = t?.suggest ?? [];
+  const tags = typeof blendPicks === 'function' ? blendPicks(t, t?.suggest ?? []) : t?.suggest ?? [];
   const sound = typeof soundPicks === 'function' ? soundPicks(t) : [];
   if (!sound.length) return tags;
   const out = sound.slice(0, 2);

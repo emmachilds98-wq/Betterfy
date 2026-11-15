@@ -4,10 +4,12 @@
  * you file together, which label, what shape of record, what era — with no key,
  * no second website and no genre list written by somebody else.
  *
- * It is a shadow, by the owner's explicit choice: nothing here writes to Spotify
- * and nothing here changes what the File screen suggests. The point is to be able
- * to judge it before it is allowed near anybody's library. See
- * docs/THINKING-ENGINE-PLAN.md, phases 5 and 6.
+ * It is a shadow, by the owner's explicit choice: nothing here writes to Spotify,
+ * and the File screen only takes picks from it (blended with the tag engine,
+ * app/blend.js) once this account's own Score run shows the blend ahead. The
+ * point is to be able to judge it before it is allowed near anybody's library.
+ * See docs/THINKING-ENGINE-PLAN.md, phases 5 and 6, and
+ * docs/SMARTER-GENRES-PLAN.md phase 1.
  * ======================================================================== */
 
 /** Fetched on first use, so a listener who never opens this screen never pays
@@ -161,7 +163,7 @@ async function engineLoadCalibration() {
     if (c && c.stamp === calStamp() && c.fingerprint === BetterfyPersist.fingerprint(LIB)
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
       ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, audioGate: c.audioGate ?? null,
-                   at: c.at ?? null };
+                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
 }
 
@@ -170,18 +172,34 @@ async function engineCalibrate(v) {
   const mine = v?.mine;
   if (!mine?.rows) return;
   await engineLoad();
-  const base = BetterfyCalibrate.calibrationReport(mine.rows);
-  const bridge = mine.withBridge?.rows ? BetterfyCalibrate.calibrationReport(mine.withBridge.rows) : null;
-  const audio = mine.withAudio?.rows ? BetterfyCalibrate.calibrationReport(mine.withAudio.rows) : null;
+  // Where this run's fitted weights are the ones placement now uses
+  // (weightsRemember), "how sure" is fitted on the engine they make: each
+  // track's held-out ranking under its own fold's weights. Otherwise the
+  // default-weight rows, exactly as before.
+  const wf = v.weights;
+  const baseRows = wf?.plain?.use && wf.plain.rows ? wf.plain.rows : mine.rows;
+  const bridgeRows = wf?.bridge?.use && wf.bridge.rows ? wf.bridge.rows : mine.withBridge?.rows;
+  if (wf?.plain) delete wf.plain.rows;
+  if (wf?.bridge) delete wf.bridge.rows;
+  const base = BetterfyCalibrate.calibrationReport(baseRows);
+  const bridge = bridgeRows ? BetterfyCalibrate.calibrationReport(bridgeRows) : null;
+  // WP-C1: which ear this run chose. The first ear unless a second ear passed
+  // the gate and beat it; its calibration then comes from that ear's rows.
+  const choice = mine.withAudio?.choice ?? null;
+  const soundChoice = choice ? { ear: choice.ear, reason: choice.reason, gate: choice.gate ?? null } : null;
+  const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows : mine.withAudio?.rows;
+  const audio = soundRows ? BetterfyCalibrate.calibrationReport(soundRows) : null;
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
   if (mine.withAudio) delete mine.withAudio.rows;
-  ENG.calib = { base, bridge, audio, audioGate, at: Date.now() };
+  for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
+  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
-                             targets: engineTargets(), base, bridge, audio, audioGate, at: ENG.calib.at });
+                             targets: engineTargets(), base, bridge, audio, audioGate,
+                             ...(soundChoice ? { soundChoice } : {}), at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }
@@ -199,7 +217,7 @@ function engineDecorate() {
     row.decision = null;
     const raw = cal && likedById.get(row.id);
     if (!raw) continue;
-    const full = BetterfyIntrinsic.placements(raw, space, { limit: Infinity, soundFirst: true });
+    const full = BetterfyIntrinsic.placements(raw, space, withFittedWeights({ limit: Infinity, soundFirst: true }, 'plain'));
     const p = full.results?.[0]?.parts ?? {};
     const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []),
                                        'audio' in p || 'learned' in p ? soundCal : cal);
@@ -208,6 +226,43 @@ function engineDecorate() {
     count[d.kind]++;
   }
   sh.decided = cal ? count : null;
+}
+
+/** The comparison with the File screen's picks, for the tracks waiting first.
+ *  Redone after a Score run, since that may have changed the weights. */
+function engineShadow() {
+  const space = ENG.space;
+  if (!space) return;
+  const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
+  const rows = [];
+  for (const b of R.backlog.slice(0, SHADOW_N)) {
+    const raw = likedById.get(b.id);
+    if (!raw) continue;
+    // Sound-first, as the File screen files: a heard track by its sound.
+    // With this account's fitted weights when its Score run earned them
+    // (app/blend.js `withFittedWeights`); otherwise exactly as before.
+    const out = BetterfyIntrinsic.placements(raw, space, withFittedWeights({ why: true, limit: 3, soundFirst: true }, 'plain'));
+    const mine = out.results?.[0] ?? null;
+    const theirs = b.suggest?.[0] ?? null;
+    rows.push({ id: b.id, title: b.title, artist: b.artist,
+      theirs: theirs ? { id: theirs.id, name: theirs.name } : null,
+      mine: mine ? { id: mine.playlistId, name: mine.name, score: mine.score } : null,
+      band: out.band ?? null, declined: !!out.declined, why: mine?.why ?? null,
+      // Whether anything it said is about *this record* rather than about its
+      // shape. A track by an artist the account has never filed still places,
+      // on duration and release type and era alone — and that is a far weaker
+      // claim than the confidence band on its own suggests, because generic
+      // shape fits a generic bucket comfortably. The strong mark is the engine's
+      // own flag for evidence that names something, so its absence is the test.
+      shapeOnly: !!mine && !(mine.why ?? []).some(w => w.mark === BetterfyExplain.MARKS.strong) });
+  }
+  const judged = rows.filter(r => r.theirs && r.mine);
+  ENG.shadow = { rows, judged: judged.length,
+    agree: judged.filter(r => r.theirs.id === r.mine.id).length,
+    onlyMine: rows.filter(r => r.mine && !r.theirs).length,
+    onlyTheirs: rows.filter(r => r.theirs && !r.mine).length,
+    shapeOnly: rows.filter(r => r.shapeOnly).length };
+  engineDecorate();
 }
 
 /** Learn the account, then show what this engine would do with the same tracks
@@ -221,33 +276,8 @@ const engineAnalyse = guard(async () => {
     soundAdopt(space);
     ENG.rung = BetterfyColdStart.rungOf(LIB, space);
 
-    const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
-    const rows = [];
-    for (const b of R.backlog.slice(0, SHADOW_N)) {
-      const raw = likedById.get(b.id);
-      if (!raw) continue;
-      // Sound-first, as the File screen files: a heard track by its sound.
-      const out = BetterfyIntrinsic.placements(raw, space, { why: true, limit: 3, soundFirst: true });
-      const mine = out.results?.[0] ?? null;
-      const theirs = b.suggest?.[0] ?? null;
-      rows.push({ id: b.id, title: b.title, artist: b.artist,
-        theirs: theirs ? { id: theirs.id, name: theirs.name } : null,
-        mine: mine ? { id: mine.playlistId, name: mine.name, score: mine.score } : null,
-        band: out.band ?? null, declined: !!out.declined, why: mine?.why ?? null,
-        // Whether anything it said is about *this record* rather than about its
-        // shape. A track by an artist the account has never filed still places,
-        // on duration and release type and era alone — and that is a far weaker
-        // claim than the confidence band on its own suggests, because generic
-        // shape fits a generic bucket comfortably. The strong mark is the engine's
-        // own flag for evidence that names something, so its absence is the test.
-        shapeOnly: !!mine && !(mine.why ?? []).some(w => w.mark === BetterfyExplain.MARKS.strong) });
-    }
-    const judged = rows.filter(r => r.theirs && r.mine);
-    ENG.shadow = { rows, judged: judged.length,
-      agree: judged.filter(r => r.theirs.id === r.mine.id).length,
-      onlyMine: rows.filter(r => r.mine && !r.theirs).length,
-      onlyTheirs: rows.filter(r => r.theirs && !r.mine).length,
-      shapeOnly: rows.filter(r => r.shapeOnly).length };
+    await weightsLoad();
+    engineShadow();
     await engineLoadCalibration();
     engineDecorate();
 
@@ -408,9 +438,9 @@ const engineValidate = guard(async () => {
     let done = null;
     // Scored the way the app files: the genre-only artist graph, and heard tracks
     // with sound leading (soundFirst), so the number is the engine you use.
-    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioIn(audio),
+    try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioScore(audio),
                                                     opts: { folds: 5, limit: VALIDATE_N, collect: true,
-                                                            genreGraph: true, soundFirst: true } }); }
+                                                            genreGraph: true, soundFirst: true, fitParts: true } }); }
     catch { done = null; }
     const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
     if (done?.result?.mine) {
@@ -420,17 +450,35 @@ const engineValidate = guard(async () => {
       await engineLoad();
       await yieldToPaint();
       const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
-                       audio: engineAudioIn(audio), collect: true,
-                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS };
+                       audio: engineAudioScore(audio), collect: true,
+                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS, fitParts: true };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
+      // This engine's weights fitted to your filing, nested, as the worker does.
+      let fit = null;
+      try { fit = BetterfyWeightFit.weightsFromRun(mine); }
+      catch { fit = null; delete mine.partRows; }
+      // The two blended per track, as the worker does (plan phase 1), on top of
+      // the fitted weights when those earned their place.
+      let blend = null;
+      try { blend = base ? BetterfyBlendScore.blendFromRun(LIB, { base, mine, folds: common.folds,
+              targets: common.targets, isMirror: isMirrorPlaylist, nativeFit: fit }) : null; }
+      catch { blend = null; }
+      const weights = BetterfyWeightFit.fitSummary(fit);
+      if (base) delete base.rows;
       let identify = null;
       try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
       catch { identify = null; }
-      ENG.val = { mine, base, identify, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      ENG.val = { mine, base, blend, identify, weights, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
+    // The fitted weights first: calibration is refitted on the engine they
+    // make, and the comparison above is redone with them.
+    await weightsRemember(ENG.val);
     await engineCalibrate(ENG.val);
+    // Kept for the File screen, which uses the blend only if this says it is ahead.
+    await blendRemember(ENG.val);
+    if (ENG.space && ENG.status === 'ready') { try { engineShadow(); } catch { /* the old comparison stays */ } }
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
   }

@@ -18,7 +18,9 @@ const SCREEN_CTX = {
                     toast, render, enrichMissing, fillFromWikidata }),
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
-                   engineAnalyse, engineValidate,
+                   engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
+                   blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
+                   maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,
                    get navigator() { return globalThis.navigator; }, prompt: (...a) => prompt(...a) }),
 };
 
