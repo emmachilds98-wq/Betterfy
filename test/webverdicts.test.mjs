@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { installTidy } from './tidyctx.mjs';
+import * as TIDY from '../web/screens/tidy.mjs';
 import { withInbox } from './screenctx.mjs';
 import { feedbackExamples } from '../core/intrinsic/audio-feedback.mjs';
 
@@ -137,7 +139,7 @@ function tidy(R, { fb = {}, audio = false, rows = [] } = {}) {
   if (audio) Object.assign(s, { AUDIO: { records: new Map([['t1', {}]]) }, soundHeard: () => 1,
     engineTargets: () => ['p-house', 'p-jungle'], audioSettings: () => ({ on: true }), fire: () => {} });
   vm.createContext(s);
-  vm.runInContext(slice('const S = {', '// Bar order', 'Tidy state') + slice('const TIDY_SECTIONS', '/* ======================= gaps', 'Tidy'), s);
+  installTidy(s, slice);
   if (audio) {
     s.__rows = rows;
     vm.runInContext("Object.assign(TSOUND, { status: 'ready', res: { rows: __rows, accuracy: null } }); TSOUND.key = tidySoundKey();", s);
@@ -175,11 +177,15 @@ test('kept in Wrong place hides the By sound row for the same track and playlist
   assert.equal(vm.runInContext('tidySoundCount()', s), 1);
 });
 
-test('both Keep here buttons write through recordKeep; Wrong place drops the row at once', () => {
-  const body = slice("const tsk = e.target.closest('[data-tskeep]')", "const mfb = e.target.closest('[data-mfb]')", 'keep handlers');
-  assert.match(body, /recordKeep\(tsk\.dataset\.tskeep, tsk\.dataset\.tsfrom, \[tsk\.dataset\.tsto\]\)/);
-  assert.match(body, /recordKeep\(id, from, mfk\.dataset\.mfaway\.split\(','\)\.filter\(Boolean\)\)/);
-  assert.match(body, /R\.misfiled = R\.misfiled\.filter\(m => !\(m\.id === id && m\.currentPlaylistId === from\)\)/);
+test('both Keep here buttons write through recordKeep; Wrong place drops the row at once', async () => {
+  const kept = [], toasts = [];
+  const c = { R: { misfiled: [{ id: 't1', currentPlaylistId: 'p-house' }, { id: 't2', currentPlaylistId: 'p-house' }] },
+    recordKeep: async (...a) => kept.push(a), toast: m => toasts.push(m), render() {} };
+  await TIDY.actions.tskeep(c, { dataset: { tskeep: 't1', tsfrom: 'p-house', tsto: 'p-jungle' } });
+  await TIDY.actions.mfkeep(c, { dataset: { mfkeep: 't1', mffrom: 'p-house', mfaway: 'p-jungle,p-dnb' } });
+  assert.deepEqual(kept, [['t1', 'p-house', ['p-jungle']], ['t1', 'p-house', ['p-jungle', 'p-dnb']]]);
+  assert.deepEqual(c.R.misfiled.map(m => m.id), ['t2']);
+  assert.equal(toasts.length, 2);
 });
 
 /* ---- kept tracks leave the tag tier at the source (buildReports) ---- */

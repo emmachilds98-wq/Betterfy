@@ -29,7 +29,7 @@ const ALL_ON = { mood: true, voice: true, energy: true }, ALL_OFF = { mood: fals
 /* ---------------------------------------------------- byte-identical without records (written first) */
 
 test('Sources with no audio is byte-identical to main before this change', () => {
-  const CODE = between('const AXES = ', 'function tagCoverage()');
+  const CODE = between('/* ---------- Playlists: mixes, sound profiles, splits', 'function tagCoverage()');
   const LIB = { user: { id: 'u1' }, playlists: [{ id: 'P1', name: 'Jungle', tracks: [{ id: 'a' }] }], liked: [] };
   const sb = { LIB, CFG: { P1: { axis: 'genre', target: true, tracks: 1, why: 'x' } }, TAGS: {}, R: { drift: [] },
     NO_SIGNAL: 'n', MIN_FOR_TARGET: 12, facetMix: () => ({ tracks: 1, genre: 0.9, mood: 0.1 }), isMirrorPlaylist: () => false,

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { installNew } from './newctx.mjs';
 import { soundLibrary } from './fixtures/sound-library.mjs';
 import { assertSameHTML } from './golden.mjs';
 
@@ -22,7 +23,7 @@ function slice(from, to) {
 const CODE = slice('/* ======================= gaps: docs/SMARTER-GENRES-PLAN.md, phase 3',
                    '/* ---------- shuffle: spacing, not randomness');
 // The screen draws its empty sections with Tidy's empty-state helper (UI-6).
-const EMPTY = slice('function emptyState(', '/* The misfile confidence tiers');
+const EMPTY = slice('function emptyState(', '/* ---------- Tidy by sound');
 
 const TAGS = {
   bl: [['bassline', 100]], ukg: [['uk garage', 100]], dnb: [['drum and bass', 100]],
@@ -69,8 +70,7 @@ function screen({ lib = library(), records = null, cfg = null } = {}) {
   s.addTracks = async (id, ids) => { calls.push(['add', id, ids.length]); };
   vm.createContext(s);
   vm.runInContext(ENGINE, s);
-  vm.runInContext(EMPTY, s);
-  vm.runInContext(CODE, s);
+  installNew(s, slice);
   return s;
 }
 const settle = async s => { while (s.pending.length) await s.pending.shift(); };
@@ -109,7 +109,7 @@ test('each proposal by sound renders as its own card, each saying "by sound"', a
   // Pick one of these two.
   assert.match(html, /class="row prop prop-pick"/);
   assert.match(html, /Drum &amp; Bass or Bass\? <span class="tag snd">by sound<\/span> <span class="tag">4 tracks/);
-  assert.match(html, /data-sndp="0:0">Add to Drum &amp; Bass<\/button> <button class="b sm" data-sndp="0:1">Add to Bass</);
+  assert.match(html, /data-sndp="0:0">Add to Drum &amp; Bass<\/button> <button class="b sm" data-act="sndp" data-sndp="0:1">Add to Bass</);
   // The tag-based sections are still there, unchanged in shape.
   assert.match(html, /Genres with no playlist/);
 });
