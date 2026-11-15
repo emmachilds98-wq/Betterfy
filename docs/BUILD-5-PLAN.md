@@ -115,6 +115,9 @@ and #92's Tidy-by-sound thresholds.
    top-1 of logistic at 20–40 examples) and keep logistic regression for
    offline measurement only. **This plan assumes (b) until the owner decides**,
    and every new feature below is lookups and counts.
+   **Decided 2026-11-15 by the owner: (b), prototype only.** Logistic
+   regression stays for offline measurement; README/HANDOFF keep saying nothing
+   is trained in the page.
 4. **Approve the restructure** in §3 (it is the precondition for the UI and
    motion work).
 
