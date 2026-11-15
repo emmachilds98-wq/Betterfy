@@ -109,8 +109,4 @@
   .sheet .nav .ic{width:22px; height:22px} .sheet .nav .ic svg{width:19px; height:19px}
   .sheetfoot{display:flex; gap:8px; padding:12px 20px 0; border-top:1px solid var(--line); flex-wrap:wrap}
 
-  /* ---- swiping between screens ---- */
-  @keyframes slideL{from{opacity:0; transform:translateX(22px)}}
-  @keyframes slideR{from{opacity:0; transform:translateX(-22px)}}
-  main.in-l{animation:slideL .26s var(--ease-out)}
-  main.in-r{animation:slideR .26s var(--ease-out)}
+  /* Swiping between screens slides by view transition now: 74-motion.css. */

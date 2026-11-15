@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-0358">
+<meta name="bf-build" content="2026-11-15-0447">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1153,11 +1153,7 @@
   .sheet .nav .ic{width:22px; height:22px} .sheet .nav .ic svg{width:19px; height:19px}
   .sheetfoot{display:flex; gap:8px; padding:12px 20px 0; border-top:1px solid var(--line); flex-wrap:wrap}
 
-  /* ---- swiping between screens ---- */
-  @keyframes slideL{from{opacity:0; transform:translateX(22px)}}
-  @keyframes slideR{from{opacity:0; transform:translateX(-22px)}}
-  main.in-l{animation:slideL .26s var(--ease-out)}
-  main.in-r{animation:slideR .26s var(--ease-out)}
+  /* Swiping between screens slides by view transition now: 74-motion.css. */
 
   /* ---------- Shuffle: DJ order (core/audio/order.mjs) ----------
      Drawn only once listening has heard enough of the playlist and a DJ order
@@ -1188,6 +1184,68 @@
   .discfit.out{color:var(--ink-3)}
   .discfit.hi .sub, .discfit.out .sub{font-weight:400}
   .discnokey input{flex:1 1 220px; min-width:0}
+  /* ---------- motion: changing screen (docs/BUILD-5-PLAN.md §4.2) ----------
+     go() wraps the swap in document.startViewTransition (web/app/render.js).
+     Everything not named below is the root snapshot, which slides out one way
+     while the new screen slides in from the other: forward from the right,
+     back from the left. The direction is a transition type where the browser
+     has them, and <html data-dir> where it does not; the rules are written
+     once for each, separately, so a browser that cannot parse one still gets
+     the other. Springs move transform only, never opacity. */
+
+  /* Chrome that stays still while the screen under it changes. Each is drawn
+     once in either state, so its group just holds its place. */
+  .mtop{view-transition-name:topbar}
+  aside{view-transition-name:tabbar}
+  .fabBar{view-transition-name:fabs}
+  .toast{view-transition-name:toast}
+  .updatebar{view-transition-name:updatebar}
+  /* The active tab's pill, named so it glides to the new tab. On a desktop the
+     pill is the whole button; on the phone's tab bar it is the icon's wash.
+     Only inside <aside>: the More sheet's copies carry aria-current too, and
+     two elements with one name would cancel the transition. */
+  aside .nav[aria-current="true"], .tabmore[aria-current="true"]{view-transition-name:tab-pill}
+  @media (max-width:820px){
+    aside .nav[aria-current="true"], .tabmore[aria-current="true"]{view-transition-name:none}
+    aside .nav[aria-current="true"] .ic, .tabmore[aria-current="true"] .ic{view-transition-name:tab-pill}
+  }
+
+  /* Taps go to the page underneath, not to the overlay, so a quick second tap
+     on the tab bar is not swallowed by the slide. */
+  ::view-transition{pointer-events:none}
+  ::view-transition-group(tab-pill){animation-duration:var(--dur-3); animation-timing-function:var(--ease-spring)}
+  ::view-transition-old(tab-pill), ::view-transition-new(tab-pill){
+    animation-timing-function:var(--ease-out); height:100%}
+
+  @keyframes vt-out-fwd{to{opacity:0; transform:translateX(calc(var(--slide) * -1))}}
+  @keyframes vt-in-fwd{from{opacity:0; transform:translateX(var(--slide))}}
+  @keyframes vt-out-back{to{opacity:0; transform:translateX(var(--slide))}}
+  @keyframes vt-in-back{from{opacity:0; transform:translateX(calc(var(--slide) * -1))}}
+
+  /* Forward is the default, so a transition with no type still moves. */
+  ::view-transition-old(root){animation:vt-out-fwd var(--dur-2) var(--ease-in) both}
+  ::view-transition-new(root){animation:vt-in-fwd var(--dur-3) var(--ease-out) both}
+  :root:active-view-transition-type(back)::view-transition-old(root){animation-name:vt-out-back}
+  :root:active-view-transition-type(back)::view-transition-new(root){animation-name:vt-in-back}
+  :root[data-dir="back"]::view-transition-old(root){animation-name:vt-out-back}
+  :root[data-dir="back"]::view-transition-new(root){animation-name:vt-in-back}
+
+  /* No view transitions at all: #main slides in on its own, the way it did
+     before (the in-l/in-r classes, now one attribute). */
+  @keyframes main-in-fwd{from{opacity:0; transform:translateX(var(--slide))}}
+  @keyframes main-in-back{from{opacity:0; transform:translateX(calc(var(--slide) * -1))}}
+  main[data-dir="forward"]{animation:main-in-fwd var(--dur-3) var(--ease-out)}
+  main[data-dir="back"]{animation:main-in-back var(--dur-3) var(--ease-out)}
+
+  /* Reduced motion: the global kill switch in 10-base.css stops every
+     animation and transition on an element, but `*` does not reach the view
+     transition pseudo-elements, so they are stopped here. A screen change is
+     then a cut. */
+  @media (prefers-reduced-motion:reduce){
+    ::view-transition-group(*), ::view-transition-image-pair(*),
+    ::view-transition-old(*), ::view-transition-new(*){animation:none!important}
+    main[data-dir]{animation:none}
+  }
   /* Which screen you are on, out of how many — the swipe needs an anchor. */
   .dots{display:none; gap:5px; justify-content:center; padding:2px 0 10px; align-items:center}
   .dots i{width:5px; height:5px; border-radius:50%; background:var(--line-2); transition:background var(--dur-2) ease, width var(--dur-2) ease}
@@ -1465,7 +1523,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-0358</span>
+    <span class="mono">build 2026-11-15-0447</span>
   </p>
 
   <div class="feat">
@@ -1569,7 +1627,7 @@
       <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span><span class="lbl">More</span></button>
     <div class="railfoot">
       <button class="b sm" id="disconnect">Disconnect</button>
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0358</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0447</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1610,7 +1668,7 @@
     <button class="b sm" id="sheetDisconnect">Disconnect</button>
     <!-- The rail used to carry these two. It is a bar now, with no room. -->
     <span class="mono" id="sheetWho" style="font-size:11px; color:var(--ink-3); width:100%; word-break:break-all"></span>
-    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0358</span>
+    <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-0447</span>
   </div>
 </div>
 
@@ -3323,7 +3381,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-0358';
+const BUILD = '2026-11-15-0447';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -3644,7 +3702,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-0358', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-0447', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -7274,12 +7332,16 @@ const VIEWS = { home:vHome, inbox:vInbox, tidy:vTidy,
                 new:vNew, discover:vDiscover, shuffle:vShuffle, lists:vLists,
                 engine:vEngine, history:vHistory, sources:vSources };
 /**
- * Re-draw the current screen. `dir` is only passed when the screen changed:
- * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
- * content slides in from that side. Re-rendering in place after an action
- * (filing a track, undoing) passes nothing and so doesn't animate.
+ * Re-draw the current screen, in place and without animating. A screen change
+ * goes through go(), which wraps this in swapScreen() so the new screen slides
+ * in; re-rendering after an action (filing a track, undoing) or from a
+ * background job calls this directly and nothing moves. What lands in #main is
+ * VIEWS[view]() either way: the transition wraps the swap, it never changes it.
  */
-function render(dir) {
+function render() {
+  // The first paint adopts the history entry the app opened on, and may move
+  // `view` to the screen a deep link (#tidy) asked for (web/app/router.js).
+  if (!ROUTE.on) routeStart();
   const root = document.documentElement.style;
   const hue = VHUE[view];
   root.setProperty('--view', `var(--${hue})`);
@@ -7290,9 +7352,8 @@ function render(dir) {
 
   const main = $('#main');
   main.dataset.view = view;
-  main.classList.remove('in-l', 'in-r');
+  delete main.dataset.dir;
   main.innerHTML = VIEWS[view]();
-  if (dir) { void main.offsetWidth; main.classList.add(dir > 0 ? 'in-l' : 'in-r'); }
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
   document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === view)));
@@ -7319,15 +7380,233 @@ function render(dir) {
     seek.onchange = guard(async ev => { const to = +ev.target.value; PLAYER.scrub = false; await playerSeek(to); });
     playerRun();
   } else playerStop();
+
+  routeSync();
+  routeReconcile();
 }
 
-/** Move to another screen: animates in the direction of travel and starts at the top. */
+/* Transition types (forward/back) are newer than view transitions themselves:
+ * where they are missing the direction rides on <html data-dir> instead, which
+ * the same stylesheet rules read (web/styles/74-motion.css). */
+const VT_TYPES = typeof ViewTransition === 'function' && 'types' in ViewTransition.prototype;
+
+/**
+ * Swap #main for the screen `view` now names, sliding in from the direction of
+ * travel: dir > 0 forwards, < 0 back. With view transitions the browser
+ * snapshots the old screen, render() runs, and the snapshot slides out while
+ * the new one slides in; the top bar, tab bar and corner buttons are named in
+ * the stylesheet, so they stay put and only the active tab's pill glides.
+ * Without them, render() runs at once and #main slides in on data-dir.
+ * `cut` skips the motion (the browser already animated a swipe-back).
+ * Only same-document, document-level transitions: nested and scoped ones are
+ * Chrome-only (BUILD-5-PLAN §4.2).
+ */
+function swapScreen(dir, { cut = false } = {}) {
+  const way = dir < 0 ? 'back' : 'forward';
+  // A swipe leaves #main where the finger let go: the old snapshot carries
+  // that offset, so the slide carries on from it rather than snapping back.
+  const paint = () => { $('#main').style.transform = ''; render(); window.scrollTo(0, 0); };
+  if (cut || typeof document.startViewTransition !== 'function') {
+    paint();
+    if (!cut) { const main = $('#main'); void main.offsetWidth; main.dataset.dir = way; }
+    return;
+  }
+  const root = document.documentElement;
+  if (!VT_TYPES) root.dataset.dir = way;
+  const t = VT_TYPES ? document.startViewTransition({ update: paint, types: [way] })
+                     : document.startViewTransition(paint);
+  // Skipped (another swap began, the tab was hidden): the new screen is still
+  // drawn, so these say nothing worth a console error.
+  t.ready.catch(() => {});
+  t.finished.catch(() => {}).then(() => { if (root.dataset.dir === way) delete root.dataset.dir; });
+  // render() now runs a frame later, inside the transition; whatever it throws
+  // still reaches the screen, as it did when go() called it directly.
+  return t.updateCallbackDone.catch(actionFailed);
+}
+
+/** Move to another screen: one history entry, a slide in the direction of travel, and the top of the page. */
 function go(v) {
   if (v === view) return render();
   const dir = VORDER.indexOf(v) >= VORDER.indexOf(view) ? 1 : -1;
   view = v;
-  render(dir);
-  window.scrollTo(0, 0);
+  routePush(v);
+  return swapScreen(dir);
+}
+/* ---------- the router: back and forward (docs/BUILD-5-PLAN.md A6, bug B9) ----------
+ * Before this the app was one history entry: the browser's back button, and
+ * Android's back gesture, left Betterfy from whatever screen or sheet was open.
+ * Now every screen change is an entry (#tidy, #discover…; Home is the bare
+ * address) and so is every sheet that opens over a screen, so back does what
+ * a phone app's back does: close the sheet on top, else return to the screen
+ * before. The first entry is replaced, not pushed, so back from the screen the
+ * app opened on leaves the app exactly as it did before.
+ *
+ * Every entry carries { bf:1, v, n, layer?, arg? }: the screen, its depth in
+ * this app's stack, and the sheet open over it. Anything else (the {} that
+ * sign-in's tidy-up writes, a fragment link, a hash typed by hand) is not ours
+ * and is adopted rather than trusted.
+ *
+ * Sheets are not changed to know about any of this. The router reads whether
+ * each one is open (a class on the two sheets, S.editingArtist for the tag
+ * editor) and reconciles history with that after every change: opening one
+ * pushes an entry, closing one with its own button, Esc or the scrim goes back
+ * over that entry, so the stack never holds a sheet that is no longer there.
+ *
+ * The sign-in round trip is left alone: auth reads ?code= and boot tidies the
+ * address bar exactly as before. A deep link (#tidy) is read once, here, at
+ * load, and kept for a few minutes, so a link opened signed out still lands on
+ * its screen once the Spotify round trip (which drops the hash) comes back. */
+const ROUTE = { on:false, n:0, echoTo:null, queued:null, deep:null };
+const ROUTE_KEEP = 'bf_route';
+const ROUTE_KEEP_MS = 15 * 60 * 1000;
+
+/** The screen a hash names, or null: "#tidy" and "#/tidy" both count. */
+function routeHashScreen(hash) {
+  const v = String(hash ?? '').replace(/^#\/?/, '');
+  return VORDER.includes(v) ? v : null;
+}
+/** The current entry, when it is one of ours. */
+function routeState() {
+  const s = history.state;
+  return s && s.bf === 1 && VORDER.includes(s.v) ? s : null;
+}
+/** Home is the bare address; every other screen is its hash. Path and query stay. */
+const routeUrl = v => v === 'home' ? location.pathname + location.search : '#' + v;
+function routeWrite(push, st) {
+  history[push ? 'pushState' : 'replaceState'](st, '', routeUrl(st.v));
+  ROUTE.n = st.n;
+}
+
+/* The sheets, top-most first. `isOpen` is read, never stored, so the router can
+ * never disagree with what is on screen. `open` is used by the forward button. */
+const ROUTE_LAYERS = [
+  { name:'settings', isOpen: () => !!$('#settingsPanel')?.classList.contains('open'),
+    open: () => openSettings(true), close: () => openSettings(false) },
+  { name:'more', isOpen: () => !!$('#moreSheet')?.classList.contains('open'),
+    open: () => openSheet(true), close: () => openSheet(false) },
+  // The tag editor opens in place under a Tidy row rather than over the page,
+  // but it is the same idea: back closes it before it leaves the screen.
+  { name:'tagedit', isOpen: () => view === 'tidy' && !!S.editingArtist, arg: () => S.editingArtist,
+    open: id => { S.editingArtist = id; }, close: () => { S.editingArtist = null; render(); } },
+];
+const routeLayer = name => ROUTE_LAYERS.find(l => l.name === name) ?? null;
+const routeTop = () => ROUTE_LAYERS.find(l => l.isOpen()) ?? null;
+
+/** Called once, by the first render(): adopt the entry the app opened on. */
+function routeStart() {
+  ROUTE.on = true;
+  let want = ROUTE.deep;
+  if (!want) {
+    try {
+      const kept = JSON.parse(LS.getItem(ROUTE_KEEP) || 'null');
+      if (kept && Date.now() - kept.at < ROUTE_KEEP_MS) want = routeHashScreen(kept.v);
+    } catch {}
+  }
+  try { LS.removeItem(ROUTE_KEEP); } catch {}
+  if (want && want !== view) {
+    view = want;
+    if (want === 'history') routeLoadHistory();
+  }
+  routeWrite(false, { bf:1, v:view, n:0 });
+}
+
+/** History reads its log before it is shown; every other route to it does the same. */
+function routeLoadHistory() {
+  fire(getLog().then(h => { S.history = h; if (view === 'history') render(); }));
+}
+
+/** A screen change by tap, swipe or key: one new entry. */
+function routePush(v) {
+  if (!ROUTE.on) return;
+  if (ROUTE.echoTo !== null) { ROUTE.queued = v; return; }   // after the pending back lands
+  const st = routeState();
+  // A tab tapped inside the More sheet: the sheet is already shut, so its entry
+  // becomes the new screen's rather than being left behind for back to reopen.
+  if (st?.layer && !routeLayer(st.layer)?.isOpen()) return routeWrite(false, { bf:1, v, n:st.n });
+  routeWrite(true, { bf:1, v, n:(st?.n ?? ROUTE.n) + 1 });
+}
+
+/** The screen changed without go() (a re-sync lands on Home): say so in place. */
+function routeSync() {
+  if (!ROUTE.on || ROUTE.echoTo !== null) return;
+  const st = routeState();
+  if (st && st.v !== view) routeWrite(false, { ...st, v:view });
+}
+
+/** Make history agree with which sheet is open. Run after anything that can open or close one. */
+function routeReconcile() {
+  if (!ROUTE.on || ROUTE.echoTo !== null) return;
+  const st = routeState();
+  if (!st) return;
+  const top = routeTop(), arg = top?.arg?.() ?? null;
+  if (top) {
+    if (st.layer === top.name && (st.arg ?? null) === arg) return;
+    // Over a sheet that is still open: stack. Over one that has gone (Settings
+    // opened from inside More): take its place.
+    const under = st.layer ? routeLayer(st.layer) : null;
+    const stack = !under || under.isOpen();
+    routeWrite(stack, { bf:1, v:st.v, n:st.n + (stack ? 1 : 0), layer:top.name, arg });
+  } else if (st.layer) {
+    // Shut by its own button, Esc or the scrim: step back over its entry, and
+    // treat the popstate that follows as ours.
+    ROUTE.echoTo = st.n - 1;
+    history.back();
+  }
+}
+
+addEventListener('popstate', e => {
+  if (!ROUTE.on) return;                 // the landing page's own #fragment links
+  const st = routeState();
+  if (ROUTE.echoTo !== null) {
+    const ours = st && st.n === ROUTE.echoTo;
+    ROUTE.echoTo = null;
+    if (ours) {
+      const q = ROUTE.queued; ROUTE.queued = null;
+      if (q && q !== st.v) routeWrite(true, { bf:1, v:q, n:st.n + 1 });
+      routeSync(); routeReconcile();
+      return;
+    }
+  }
+  ROUTE.queued = null;
+  if (!st) {
+    // Not an entry this app wrote: a hash typed by hand or a fragment link.
+    // Go where it names, if it names a screen, and stamp it as ours.
+    const h = routeHashScreen(location.hash);
+    const n = ROUTE.n + 1;
+    if (h && h !== view) routeShow(h, 1);
+    routeWrite(false, { bf:1, v:view, n });
+    return;
+  }
+  // Back closes whatever is open over the entry it lands on...
+  for (const l of ROUTE_LAYERS) if (l.name !== st.layer && l.isOpen()) l.close();
+  // ...and forward reopens the sheet its entry had.
+  const want = st.layer ? routeLayer(st.layer) : null;
+  if (want && !want.isOpen()) want.open(st.arg);
+  const dir = st.n < ROUTE.n ? -1 : 1;
+  ROUTE.n = st.n;
+  if (st.v !== view) routeShow(st.v, dir, { cut: e.hasUAVisualTransition });
+  else if (want?.name === 'tagedit') render();
+});
+
+/** Show a screen history asked for, without writing a new entry. */
+function routeShow(v, dir, how) {
+  view = v;
+  if (v === 'history') routeLoadHistory();
+  return swapScreen(dir, how);
+}
+
+// The deep link, read before boot rewrites the address on its way through
+// sign-in. Kept across the Spotify round trip, which comes back without it.
+ROUTE.deep = routeHashScreen(location.hash);
+if (ROUTE.deep) { try { LS.setItem(ROUTE_KEEP, JSON.stringify({ v:ROUTE.deep, at:Date.now() })); } catch {} }
+
+// The two sheets open and close by a class; watch it rather than teach them.
+if (typeof MutationObserver === 'function') {
+  const watch = new MutationObserver(() => routeReconcile());
+  for (const id of ['#moreSheet', '#settingsPanel']) {
+    const el = $(id);
+    if (el) watch.observe(el, { attributes:true, attributeFilter:['class'] });
+  }
 }
 
 /* ======================= touch gestures =======================
@@ -7439,13 +7718,14 @@ function bindAppGestures() {
   }, { passive: false });
 
   const end = async () => {
-    $('#main').style.transform = '';
     const m = mode; mode = null;
-    if (m === 'page' && Math.abs(dx) > VTH) {
-      const at = VORDER.indexOf(view);
-      const next = VORDER[at + (dx < 0 ? 1 : -1)];
-      if (next) { buzz(6); if (next === 'history') S.history = await getLog(); go(next); }
-    }
+    const next = m === 'page' && Math.abs(dx) > VTH ? VORDER[VORDER.indexOf(view) + (dx < 0 ? 1 : -1)] : null;
+    // Not changing screen: spring back. Changing: leave #main where the finger
+    // let go, and swapScreen() clears it as the slide takes over from there.
+    if (!next) { $('#main').style.transform = ''; return; }
+    buzz(6);
+    if (next === 'history') S.history = await getLog();
+    return go(next);
   };
   // guard() itself isn't declared until further down the script — bindAppGestures()
   // runs at startup, long before that point, so calling guard(end) here directly
@@ -7556,7 +7836,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-0358';
+    s.src = 'engine.js?v=2026-11-15-0447';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -7578,7 +7858,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-0358');
+    const w = new Worker('engine-worker.js?v=2026-11-15-0447');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -7903,7 +8183,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-0358';
+    s.src = 'audio.js?v=2026-11-15-0447';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -7939,7 +8219,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0358', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-0447', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -8767,7 +9047,7 @@ function engineSummary() {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-0358`,
+    `Betterfy engine score — build 2026-11-15-0447`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,

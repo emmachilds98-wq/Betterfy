@@ -107,13 +107,14 @@ function bindAppGestures() {
   }, { passive: false });
 
   const end = async () => {
-    $('#main').style.transform = '';
     const m = mode; mode = null;
-    if (m === 'page' && Math.abs(dx) > VTH) {
-      const at = VORDER.indexOf(view);
-      const next = VORDER[at + (dx < 0 ? 1 : -1)];
-      if (next) { buzz(6); if (next === 'history') S.history = await getLog(); go(next); }
-    }
+    const next = m === 'page' && Math.abs(dx) > VTH ? VORDER[VORDER.indexOf(view) + (dx < 0 ? 1 : -1)] : null;
+    // Not changing screen: spring back. Changing: leave #main where the finger
+    // let go, and swapScreen() clears it as the slide takes over from there.
+    if (!next) { $('#main').style.transform = ''; return; }
+    buzz(6);
+    if (next === 'history') S.history = await getLog();
+    return go(next);
   };
   // guard() itself isn't declared until further down the script — bindAppGestures()
   // runs at startup, long before that point, so calling guard(end) here directly

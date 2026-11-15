@@ -1,0 +1,62 @@
+  /* ---------- motion: changing screen (docs/BUILD-5-PLAN.md §4.2) ----------
+     go() wraps the swap in document.startViewTransition (web/app/render.js).
+     Everything not named below is the root snapshot, which slides out one way
+     while the new screen slides in from the other: forward from the right,
+     back from the left. The direction is a transition type where the browser
+     has them, and <html data-dir> where it does not; the rules are written
+     once for each, separately, so a browser that cannot parse one still gets
+     the other. Springs move transform only, never opacity. */
+
+  /* Chrome that stays still while the screen under it changes. Each is drawn
+     once in either state, so its group just holds its place. */
+  .mtop{view-transition-name:topbar}
+  aside{view-transition-name:tabbar}
+  .fabBar{view-transition-name:fabs}
+  .toast{view-transition-name:toast}
+  .updatebar{view-transition-name:updatebar}
+  /* The active tab's pill, named so it glides to the new tab. On a desktop the
+     pill is the whole button; on the phone's tab bar it is the icon's wash.
+     Only inside <aside>: the More sheet's copies carry aria-current too, and
+     two elements with one name would cancel the transition. */
+  aside .nav[aria-current="true"], .tabmore[aria-current="true"]{view-transition-name:tab-pill}
+  @media (max-width:820px){
+    aside .nav[aria-current="true"], .tabmore[aria-current="true"]{view-transition-name:none}
+    aside .nav[aria-current="true"] .ic, .tabmore[aria-current="true"] .ic{view-transition-name:tab-pill}
+  }
+
+  /* Taps go to the page underneath, not to the overlay, so a quick second tap
+     on the tab bar is not swallowed by the slide. */
+  ::view-transition{pointer-events:none}
+  ::view-transition-group(tab-pill){animation-duration:var(--dur-3); animation-timing-function:var(--ease-spring)}
+  ::view-transition-old(tab-pill), ::view-transition-new(tab-pill){
+    animation-timing-function:var(--ease-out); height:100%}
+
+  @keyframes vt-out-fwd{to{opacity:0; transform:translateX(calc(var(--slide) * -1))}}
+  @keyframes vt-in-fwd{from{opacity:0; transform:translateX(var(--slide))}}
+  @keyframes vt-out-back{to{opacity:0; transform:translateX(var(--slide))}}
+  @keyframes vt-in-back{from{opacity:0; transform:translateX(calc(var(--slide) * -1))}}
+
+  /* Forward is the default, so a transition with no type still moves. */
+  ::view-transition-old(root){animation:vt-out-fwd var(--dur-2) var(--ease-in) both}
+  ::view-transition-new(root){animation:vt-in-fwd var(--dur-3) var(--ease-out) both}
+  :root:active-view-transition-type(back)::view-transition-old(root){animation-name:vt-out-back}
+  :root:active-view-transition-type(back)::view-transition-new(root){animation-name:vt-in-back}
+  :root[data-dir="back"]::view-transition-old(root){animation-name:vt-out-back}
+  :root[data-dir="back"]::view-transition-new(root){animation-name:vt-in-back}
+
+  /* No view transitions at all: #main slides in on its own, the way it did
+     before (the in-l/in-r classes, now one attribute). */
+  @keyframes main-in-fwd{from{opacity:0; transform:translateX(var(--slide))}}
+  @keyframes main-in-back{from{opacity:0; transform:translateX(calc(var(--slide) * -1))}}
+  main[data-dir="forward"]{animation:main-in-fwd var(--dur-3) var(--ease-out)}
+  main[data-dir="back"]{animation:main-in-back var(--dur-3) var(--ease-out)}
+
+  /* Reduced motion: the global kill switch in 10-base.css stops every
+     animation and transition on an element, but `*` does not reach the view
+     transition pseudo-elements, so they are stopped here. A screen change is
+     then a cut. */
+  @media (prefers-reduced-motion:reduce){
+    ::view-transition-group(*), ::view-transition-image-pair(*),
+    ::view-transition-old(*), ::view-transition-new(*){animation:none!important}
+    main[data-dir]{animation:none}
+  }

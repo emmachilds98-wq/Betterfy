@@ -40,6 +40,7 @@ export const APP_FILES = [
   'app/keyless.js',
   'app/tagfix.js',
   'app/render.js',
+  'app/router.js',
   'app/gestures.js',
   'app/more.js',
   'app/errors.js',
