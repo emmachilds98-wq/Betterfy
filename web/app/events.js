@@ -75,16 +75,16 @@ document.addEventListener('click', guard(async e => {
 
 document.addEventListener('change', guard(async e => {
   if (await dispatchAct(e)) return;
-  if (e.target.id === 'deepMaest' || e.target.id === 'deepClap' || e.target.id === 'deepMemory') {
+  if (e.target.id === 'deepMaest' || e.target.id === 'deepClap' || e.target.id === 'deepBeats' || e.target.id === 'deepMemory') {
     await audioLoad().catch(() => {});
     const change = e.target.id === 'deepMaest' ? { maest: e.target.checked }
-      : e.target.id === 'deepClap' ? { clap: e.target.checked } : { memoryOverride: e.target.checked };
+      : e.target.id === 'deepClap' ? { clap: e.target.checked } : e.target.id === 'deepBeats' ? { beats: e.target.checked } : { memoryOverride: e.target.checked };
     if (globalThis.BetterfyAudio?.writeDeepSettings) BetterfyAudio.writeDeepSettings(LS, change);
     else LS.setItem('bf_audio_deep', JSON.stringify({ ...deepSettings(), ...change }));
     // Ticking CLAP describes the tracks already heard; the next run picks it up, so start one now.
-    if (change.clap && audioSettings().on && !AUDIO.ctrl?.running) audioStart({ quiet: true });
+    if ((change.clap || change.beats) && audioSettings().on && !AUDIO.ctrl?.running) audioStart({ quiet: true });
     // The second ear: off stops the run in flight; on (or the memory override) starts one.
-    if (e.target.id !== 'deepClap') {
+    if (e.target.id !== 'deepClap' && e.target.id !== 'deepBeats') {
       if (!deepSettings().maest) await AUDIO.maest?.stop();
       else maestStart();
     }

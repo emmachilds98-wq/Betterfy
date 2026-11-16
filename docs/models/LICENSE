@@ -5,6 +5,13 @@ The files in this folder are pretrained models by the Music Technology Group
 (MTG), Universitat Pompeu Fabra, Barcelona, published as part of the Essentia
 models collection: https://essentia.upf.edu/models.html
 
+  beat-this-small0.onnx
+      Beat This (small0), beat and downbeat tracking, Francesco Foscarin,
+      Jan Schlueter, Gerhard Widmer, "Beat This! Accurate beat tracking
+      without DBN postprocessing", ISMIR 2024 (JKU Linz). MIT licence, see
+      LICENSE-BEAT-THIS. ONNX export from
+      https://huggingface.co/jenila-ai/beat-this-small0-onnx
+
   discogs-effnet-bsdynamic-1.onnx / .json
       Discogs-EffNet, music style classification and embeddings.
       Pablo Alonso-Jiménez, Xavier Serra, Dmitry Bogdanov, "Music

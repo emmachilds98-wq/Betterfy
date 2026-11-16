@@ -95,7 +95,7 @@ function soundIdHTML(t) {
       ${id.why.length ? `<span class="why">${esc(id.why.join('; '))}.</span>` : ''}
       <div class="sndcols">
         ${s.neighbours.length ? `<div><h4>Sounds like</h4><ol>${s.neighbours.map(n => `<li>${who(n)}${where(n) ? ` <span class="sub">in ${where(n)}</span>` : ''}</li>`).join('')}</ol></div>` : ''}
-        ${s.mix.length ? `<div><h4>Mixes with</h4><ol>${s.mix.map(m => `<li>${who(m)} <span class="sub mono">${Math.round(m.bpm)} BPM${rel[m.rel] ?? ''}</span></li>`).join('')}</ol></div>` : ''}
+        ${s.mix.length ? `<div><h4>Mixes with</h4><ol>${s.mix.map(m => `<li>${who(m)} <span class="sub mono">${Math.round(m.bpm)} BPM${rel[m.rel] ?? ''}${m.key ? ` · ${esc(m.key)}${m.keyFit === 'clash' ? '' : ' fits'}` : ''}</span></li>`).join('')}</ol></div>` : ''}
       </div></details>` : ''}</div>`;
 }
 /* One line under the picks saying where they came from when it isn't sound,

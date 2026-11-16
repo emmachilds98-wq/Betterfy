@@ -4123,6 +4123,38 @@ const MATCH_VERSION = '1.0.0';
 const MIX_TOLERANCE = 0.06;
 /** A tempo reading below this confidence is not used for mixing. */
 const MIX_MIN_CONF = 0.3;
+/**
+ * A key reading is used (shown, or counted for mixing) only at or above this
+ * confidence. Measured on the Beatport EDM Key Dataset, held-out half: 62.4%
+ * exact / 72.0% MIREX on the 53% of tracks at or above it, against 55.3% / 64.6%
+ * on all of them (BUILD-5-PROGRESS.md). web/audio/dsp-view.mjs has the same
+ * number for the chip; test/keygate.test.mjs keeps the two equal.
+ */
+const KEY_MIN_CONF = 0.65;
+/** How much a harmonic fit moves a "mixes with" ranking, in cosine-similarity units. */
+const KEY_RANK_BONUS = 0.03;
+
+const CAMELOT_RE = /^(1[0-2]|[1-9])([AB])$/;
+/** A record's Camelot key when it is sure enough to mix on, else null. */
+function keyOfRecord(record) {
+  const d = record && !record.miss ? record.dsp : null;
+  if (!d || typeof d.camelot !== 'string' || !(d.keyConf >= KEY_MIN_CONF)) return null;
+  const c = d.camelot.toUpperCase();
+  return CAMELOT_RE.test(c) ? c : null;
+}
+/**
+ * Do two Camelot keys mix? 'same', 'adjacent' (a step round the wheel, same
+ * letter) or 'relative' (same number, other letter) are harmonic; 'clash' is
+ * not; null when either key is unknown (then nothing is claimed either way).
+ */
+function keyFit(a, b) {
+  const ma = CAMELOT_RE.exec(a ?? ''), mb = CAMELOT_RE.exec(b ?? '');
+  if (!ma || !mb) return null;
+  const x = Number(ma[1]), y = Number(mb[1]);
+  if (x === y) return ma[2] === mb[2] ? 'same' : 'relative';
+  const step = Math.min(Math.abs(x - y), 12 - Math.abs(x - y));
+  return step === 1 && ma[2] === mb[2] ? 'adjacent' : 'clash';
+}
 
 function dot(a, b) {
   let s = 0;
@@ -4243,17 +4275,27 @@ function mixesWith(trackId, index, { k = 8, bpm = null, tolerance = MIX_TOLERANC
   const own = bpm ?? tempoOf(row?.rec)?.bpm ?? null;
   if (!row || !(own > 0)) return [];
   const out = [];
+  const ownKey = keyOfRecord(row.rec);
   for (const n of nearest(row.emb, index, { k: pool, exclude: new Set([trackId]) })) {
     const t = tempoOf(index.get(n.id)?.rec);
     if (!t || t.conf < MIX_MIN_CONF) continue;
     const r = tempoRelation(own, t.bpm, tolerance) ?? (t.alt ? tempoRelation(own, t.alt, tolerance) : null);
     if (!r) continue;
-    out.push({ id: n.id, sim: n.sim, bpm: +t.bpm.toFixed(1), rel: r.rel, diff: r.diff });
-    if (out.length >= k) break;
+    const hit = { id: n.id, sim: n.sim, bpm: +t.bpm.toFixed(1), rel: r.rel, diff: r.diff };
+    // Key only when both keys are sure; otherwise the entry is exactly what it always was.
+    const theirs = keyOfRecord(index.get(n.id)?.rec), fit = keyFit(ownKey, theirs);
+    if (fit) { hit.key = theirs; hit.keyFit = fit; }
+    out.push(hit);
+    if (!ownKey && out.length >= k) break;
   }
-  return out;
+  if (ownKey) {
+    // A harmonic fit lifts a mix a little, a clash lowers it; ties keep the similarity order.
+    const rank = h => h.sim + (h.keyFit ? (h.keyFit === 'clash' ? -KEY_RANK_BONUS : KEY_RANK_BONUS) : 0);
+    out.sort((a, b) => rank(b) - rank(a));
+  }
+  return out.slice(0, k);
 }
-return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith };
+return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith };
 })();
 /* ---- core/intrinsic/space.mjs ---- */
 __mod["core/intrinsic/space.mjs"] = (function () {
@@ -10627,7 +10669,7 @@ return { PLPROFILE_VERSION, MIN_HEARD, SPLIT_MIN_HEARD, SPLIT_MIN_SHARE, SPLIT_M
 })();
 /* ---- core/audio/order.mjs ---- */
 __mod["core/audio/order.mjs"] = (function () {
-const { tempoOf, tempoRelation, MIX_TOLERANCE, MIX_MIN_CONF } = __mod["core/audio/match.mjs"];
+const { tempoOf, tempoRelation, keyOfRecord, keyFit, MIX_TOLERANCE, MIX_MIN_CONF } = __mod["core/audio/match.mjs"];
 const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
 // DJ order: a playlist ordered so each next track can be mixed into the last.
 //
@@ -10642,7 +10684,8 @@ const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
 // (SMARTER-GENRES-PLAN.md §3, R3): tempo and energy measured from Deezer
 // previews in the listener's browser, and cosine similarity between their
 // audio embeddings. Nothing is trained, nothing leaves the device, nothing is
-// pooled across accounts. Tracks that haven't been heard (or whose tempo
+// pooled across accounts. Key is used only for tracks whose key reading clears
+// match.mjs's KEY_MIN_CONF, and only as a cost on a clash. Tracks that haven't been heard (or whose tempo
 // reading is too unsure to mix on) are handed back untouched as `rest`, for
 // the caller to place as it always did.
 //
@@ -10664,7 +10707,7 @@ const MIN_MIX = 8;
 /** How many unused tracks, nearest in tempo, each step considers. */
 const CANDIDATES = 32;
 /** What each part of a step costs. Tempo dominates: a step you can't beatmatch is a bad step. */
-const WEIGHTS = Object.freeze({ tempo: 1, sound: 1.6, energy: 1.2, artist: 1, octave: 0.15 });
+const WEIGHTS = Object.freeze({ tempo: 1, sound: 1.6, energy: 1.2, artist: 1, octave: 0.15, key: 0.35 });
 
 const LOG_TOL = t => Math.log2(1 + t);
 const fold = bpm => { const l = Math.log2(bpm); return l - Math.floor(l); };
@@ -10771,7 +10814,7 @@ function mixOrder(tracks, index, { arc = 'flat', seed = 1, tolerance = MIX_TOLER
   const tol = LOG_TOL(tolerance);
   const node = heard.map(t => {
     const row = index.get(t.id), tp = mixTempo(row);
-    return { t, emb: row.emb, bpm: tp.bpm, f: fold(tp.bpm), artist: artistOf(t) ?? '' };
+    return { t, emb: row.emb, bpm: tp.bpm, f: fold(tp.bpm), artist: artistOf(t) ?? '', key: keyOfRecord(row.rec) };
   });
   const ranks = arc === 'flat' ? null : energyRanks(heard.map(t => t.id), index);
   const useEnergy = !!ranks?.size;
@@ -10824,6 +10867,8 @@ function mixOrder(tracks, index, { arc = 'flat', seed = 1, tolerance = MIX_TOLER
       let cost = WEIGHTS.tempo * (d <= 1 ? 0.4 * d : 1 + 2 * Math.min(d - 1, 3));
       if (d <= 1 && Math.abs(Math.log2(c.bpm / cur.bpm)) > 0.5) cost += WEIGHTS.octave;
       cost += WEIGHTS.sound * (1 - dot(cur.emb, c.emb));
+      // Key counts only when both tracks' keys are sure (match.mjs KEY_MIN_CONF): a clash costs, nothing else does.
+      if (keyFit(cur.key, c.key) === 'clash') cost += WEIGHTS.key;
       if (target !== null) {
         const e = ranks.get(c.t.id);
         if (e !== undefined) cost += WEIGHTS.energy * Math.abs(e - target);
