@@ -13,4 +13,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Playwright is not a dependency of the page; CI installs it only so
+      # test/pageload.test.mjs can load the built page in a real browser.
+      # With CI set, that test fails rather than skips when no browser is found.
+      - run: npm install --no-save playwright@1
+      - run: npx playwright install --with-deps chromium
       - run: node --test

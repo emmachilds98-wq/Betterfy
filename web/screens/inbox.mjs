@@ -285,6 +285,7 @@ export async function fileCurrent(ctx, playlistIds) {
   const now = Date.now();
   if (S.filing || now < (S.fileLockUntil ?? 0)) return;
   const at = inboxIndex(ctx), t = R.backlog[at]; if (!t) return;
+  const deckLen = R.backlog.length;
   S.fileLockUntil = now + FLIGHT_MS; S.filing = true;
   const names = ids.map(id => CFG[id]?.name ?? id);
   // Logged with each filing so the Score summary can measure itself (§7):
@@ -307,7 +308,7 @@ export async function fileCurrent(ctx, playlistIds) {
   try {
     for (const id of ids) {
       await addTracks(id, [t.id]);
-      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, band:bandOf(id) });
+      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, deck:deckLen, band:bandOf(id) });
       ats.push((await getLog())[0]?.at);
     }
     // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so

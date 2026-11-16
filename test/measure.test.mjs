@@ -17,13 +17,14 @@ test('empty, null and malformed logs give nulls, not NaN', () => {
 
 test('queue share counts only filings that recorded a position', () => {
   const log = [
-    ...Array.from({ length: 6 }, (_, i) => filing({ queuePos: i })),
-    ...Array.from({ length: 2 }, () => filing({ queuePos: QUEUE_HEAD })),
+    ...Array.from({ length: 6 }, (_, i) => filing({ queuePos: i, deck: 200 })),
+    ...Array.from({ length: 2 }, () => filing({ queuePos: QUEUE_HEAD, deck: 200 })),
     filing(), // pre-queuePos entry: excluded
     { at: at(), op: 'add', playlistId: 'p', trackIds: ['x'], reason: 'moved from A', group: 'g' }, // not a filing
   ];
   const m = measureHistory(log);
   assert.equal(m.queue.n, 8); assert.equal(m.queue.head, 6); assert.equal(m.queue.share, 0.75); assert.equal(m.queue.of, 9);
+  assert.ok(Math.abs(m.queue.baseline - 0.1) < 1e-9); assert.ok(m.queue.beatsRandom);
 });
 
 test('batch precision: undone (undoneAt or undo entry) and later removal both count', () => {
@@ -82,9 +83,43 @@ test('lines say "not enough data yet" below each minimum and numbers above', () 
   assert.equal(few.length, 6);
   assert.ok(few.every(l => /not enough data yet/.test(l)));
   assert.match(few[0], new RegExp(`0 of ${MIN_N.queue}`));
-  const log = Array.from({ length: 10 }, (_, i) => filing({ queuePos: i < 7 ? i : 40, band: 'sure', trackIds: ['k' + i] }));
+  const log = Array.from({ length: 10 }, (_, i) => filing({ queuePos: i < 7 ? i : 40, deck: 100, band: 'sure', trackIds: ['k' + i] }));
   const lines = measureLines(measureHistory(log));
-  assert.match(lines[0], /70% of 10 filings came from the first 20/);
+  assert.match(lines[0], /70% of 10 filings came from the first 20 cards \(20% expected/);
   assert.match(lines[1], /0% of 10 sure-band/);
   assert.match(lines[2], /not enough/);
+});
+
+test('D1: a batch filing counts, and a grouped undo undoes every member', () => {
+  const g = 'batch1';
+  const mk = (pl, t) => ({ at: at(), op: 'add', playlistId: pl, trackIds: [t], reason: 'filed the sure ones', band: 'sure', queuePos: 0, group: g });
+  const a = mk('p1', 'a'), b = mk('p2', 'b');
+  let m = measureHistory([a, b]);
+  assert.equal(m.batch.n, 2); assert.equal(m.batch.back, 0); assert.equal(m.batch.precision, 1);
+  assert.equal(m.queue.n, 0); // a batch says nothing about queue order
+  // The undo entry names only the first step; both were undone.
+  m = measureHistory([a, b, { at: at(), op: 'undo', of: a.at, ofGroup: g }]);
+  assert.equal(m.batch.back, 2); assert.equal(m.batch.precision, 0);
+  m = measureHistory([a, b, { at: at(), op: 'undo', of: a.at }]); // older log, no ofGroup
+  assert.equal(m.batch.back, 2);
+  // undoneAt on one member alone also takes the group.
+  m = measureHistory([{ ...a, undoneAt: 'x' }, b]);
+  assert.equal(m.batch.back, 2);
+  // A later removal from one playlist reverses only that member.
+  m = measureHistory([a, b, { at: at(), op: 'remove', playlistId: 'p2', trackIds: ['b'] }]);
+  assert.equal(m.batch.back, 1); assert.equal(m.batch.precision, 0.5);
+});
+
+test('D2: queue order can fail, a deck with no skipping does not beat random when the deck is small', () => {
+  // Deck of 25: random order already puts 80% in the first 20.
+  const small = Array.from({ length: 10 }, (_, i) => filing({ queuePos: i, deck: 25, trackIds: ['s' + i] }));
+  let m = measureHistory(small);
+  assert.equal(m.queue.share, 1); assert.ok(Math.abs(m.queue.baseline - 0.8) < 1e-9);
+  // Filings forced deep into a big deck (bad order): share below baseline-plus-margin.
+  const bad = Array.from({ length: 10 }, (_, i) => filing({ queuePos: i < 1 ? 0 : 150, deck: 200, trackIds: ['b' + i] }));
+  m = measureHistory(bad);
+  assert.equal(m.queue.beatsRandom, false); assert.ok(m.queue.lift < 0.05);
+  assert.match(measureLines(m)[0], /no better than random/);
+  // Entries without a deck length are left out.
+  assert.equal(measureHistory([filing({ queuePos: 0 })]).queue.n, 0);
 });

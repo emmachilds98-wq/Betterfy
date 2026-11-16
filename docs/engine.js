@@ -10261,10 +10261,11 @@ __mod["core/measure/history.mjs"] = (function () {
 // own action log (web/app/actionlog.js), nothing fitted, nothing leaves the
 // device. Four numbers, each with its own minimum sample before it is shown:
 //
-//   queue    share of filings that came from the first QUEUE_HEAD cards of the
-//            File queue (is the queue's order worth anything?). Needs the
-//            `queuePos` the File screen now writes on each filing; entries
-//            from before that carry none and are left out.
+//   queue    share of single-card filings that came from the first QUEUE_HEAD
+//            cards of the File queue, against the share a random order would
+//            give for that deck (`deck`, logged with each filing; older
+//            entries without it are left out). `beatsRandom` is false unless
+//            the share clears the baseline by 5 points, so it can fail.
 //   batch    share of filings made in the "sure" band (`band: 'sure'`) that
 //            were later moved away or undone.
 //   tidy     per tier (`move.tier`: sure / likely / unsure), the share of Tidy
@@ -10273,7 +10274,7 @@ __mod["core/measure/history.mjs"] = (function () {
 //   discover share of tracks added from Discovery that were not undone.
 //
 // An entry is `{ at, op, playlistId, trackIds, reason?, group?, move?,
-// undoneAt?, queuePos?, band? }`; an `undo` entry (`of`) marks older logs.
+// undoneAt?, queuePos?, deck?, band? }`; an `undo` entry (`of`) marks older logs.
 
 const QUEUE_HEAD = 20;
 /** Fewest counted entries before a number is worth showing. */
@@ -10282,7 +10283,11 @@ const TIERS = Object.freeze(['sure', 'likely', 'unsure']);
 
 const ids = e => (Array.isArray(e?.trackIds) ? e.trackIds : []);
 const rate = (k, n) => (n > 0 ? k / n : null);
-const isFiling = e => e.op === 'add' && !e.group && /^filed (from inbox|with the rest of)/.test(e.reason ?? '');
+// A filing is one card filed from the inbox, or one step of "File the sure ones"
+// (a group, one entry per playlist). Only single cards say anything about queue
+// order: a batch's `queuePos` is its earliest card, not a card the user chose.
+const isFiling = e => e.op === 'add' && /^filed (from inbox|with the rest of|the sure ones)/.test(e.reason ?? '');
+const isCard = e => isFiling(e) && !e.group;
 const isDiscover = e => (e.op === 'add' || e.op === 'add-liked') && /discovery/.test(e.reason ?? '');
 
 /** Everything in `log` (any order), oldest first, without malformed entries. */
@@ -10290,8 +10295,11 @@ const clean = log => (Array.isArray(log) ? log : []).filter(e => e && typeof e.a
   .slice().sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 
 function undoneSet(log) {
-  const s = new Set();
-  for (const e of log) if (e.op === 'undo' && e.of) s.add(e.of);
+  const s = new Set(), groups = new Set();
+  for (const e of log) if (e.op === 'undo') { if (e.of) s.add(e.of); if (e.ofGroup) groups.add(e.ofGroup); }
+  // A grouped undo undoes every member, whichever one the undo entry names.
+  for (const e of log) if (e.group && (groups.has(e.group) || s.has(e.at) || e.undoneAt)) groups.add(e.group);
+  for (const e of log) if (e.group && groups.has(e.group)) s.add(e.at);
   return s;
 }
 
@@ -10308,8 +10316,15 @@ function measureHistory(rawLog) {
   const log = clean(rawLog), undone = undoneSet(log);
   const filings = log.filter(isFiling);
 
-  const queued = filings.filter(e => Number.isFinite(e.queuePos));
+  // Queue order (D2): a filing at the front proves nothing alone, since the
+  // user files the card in front of them. Compare with what a random order
+  // would give: with a deck of `deck` cards, a random card is in the first
+  // QUEUE_HEAD with probability min(QUEUE_HEAD, deck) / deck. Needs `deck`.
+  const queued = filings.filter(e => isCard(e) && Number.isFinite(e.queuePos) && e.deck > 0);
   const head = queued.filter(e => e.queuePos < QUEUE_HEAD).length;
+  const baseline = queued.length ? queued.reduce((a, e) => a + Math.min(QUEUE_HEAD, e.deck) / e.deck, 0) / queued.length : null;
+  const share = rate(head, queued.length);
+  const lift = share == null ? null : share - baseline;
 
   const sure = filings.filter(e => e.band === 'sure');
   const sureBack = sure.filter(e => reversed(e, log, undone)).length;
@@ -10330,7 +10345,8 @@ function measureHistory(rawLog) {
   const discKept = disc.filter(e => !(e.undoneAt || undone.has(e.at))).length;
 
   return {
-    queue: { n: queued.length, head, share: rate(head, queued.length), of: filings.length },
+    queue: { n: queued.length, head, share, baseline, lift, beatsRandom: lift == null ? null : lift > 0.05,
+             of: filings.filter(isCard).length },
     batch: { n: sure.length, back: sureBack, precision: sure.length ? 1 - sureBack / sure.length : null,
              movedShare: rate(sureBack, sure.length) },
     tidy,
@@ -10343,7 +10359,7 @@ function measureLines(m, pc = x => Math.round(x * 100) + '%') {
   const few = (label, n, min) => `${label}: not enough data yet (${n} of ${min})`;
   const out = [];
   out.push(m.queue.n >= MIN_N.queue
-    ? `Queue order: ${pc(m.queue.share)} of ${m.queue.n} filings came from the first ${QUEUE_HEAD} cards`
+    ? `Queue order: ${pc(m.queue.share)} of ${m.queue.n} filings came from the first ${QUEUE_HEAD} cards (${pc(m.queue.baseline)} expected from a random order)${m.queue.beatsRandom ? '' : ': no better than random'}`
     : few('Queue order', m.queue.n, MIN_N.queue));
   out.push(m.batch.n >= MIN_N.batch
     ? `Batch filing: ${pc(m.batch.movedShare)} of ${m.batch.n} sure-band filings later moved or undone`
