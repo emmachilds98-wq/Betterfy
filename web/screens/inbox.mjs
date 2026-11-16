@@ -380,6 +380,7 @@ export async function inboxAct(ctx, a) {
   if (a === 'play') { try { toast('Playing on ' + await playTrack(t.id)); } catch(e){ toast(e.message); } return; }
   if (a === 'skip') {
     await recordSkip(t.id);
+    try { await logAction({ op:'skip', trackIds:[t.id], reason:'skipped from inbox', queuePos:at, deck:R.backlog.length }); } catch { /* the measure only */ }
     // Move it to the back rather than stepping past it, so the rest of the
     // queue advances now and the skip still holds after a reload.
     t.skips = (t.skips ?? 0) + 1;

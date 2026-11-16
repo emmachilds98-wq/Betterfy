@@ -199,7 +199,7 @@ export function weakBuckets(v, LIB, n = 5) {
  * names of the user's own weakest playlists — so pasting it somewhere shares
  * how the engine did, not what the library holds beyond that.
  */
-export function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
+export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, log) {
   const v = ENG.val, r = ENG.rung;
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
@@ -225,6 +225,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
     ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
+  if (TUNE?.res && tuneBlock) lines.push('', tuneBlock(TUNE.res));
   return lines.filter(Boolean).join('\n');
 }
 
@@ -537,6 +538,7 @@ export function view(c) {
     <div class="rowbtns" style="margin-top:10px">
       <button class="b ${v ? '' : 'go'}" data-act="validate" ${ENG.valRunning ? 'disabled' : ''}>${
         ENG.valRunning ? 'Scoring…' : v ? 'Run it again' : 'Score both engines'}</button>
+      <button class="b" data-act="scoreTune" ${ENG.valRunning || c.TUNE?.running ? 'disabled' : ''}>Score + Tune</button>
       ${v && !v.error && !ENG.valRunning ? `<button class="b" data-act="copy">Copy results</button>` : ''}
     </div>
     ${ENG.valRunning && ENG.valStage === 'bridge' ? `<p class="why" style="margin-top:12px" id="bridgeProgress" aria-live="polite">${esc(bridgeProgressText())}</p>
@@ -549,6 +551,8 @@ export function view(c) {
       Capping the tracks scored does not make it quicker: the rebuilds are the cost, and there are ten of
       them either way.</p>` : ''}
   </div>`;
+
+  const tuneCard = tuneCardHtml(c, esc);
 
   const pairCard = ENG.pairs?.length ? `<div class="card">
     <h2 style="margin:0 0 12px; font-size:19px">Playlists it can't tell apart</h2>
@@ -574,16 +578,65 @@ export function view(c) {
     ${rungCard}
     ${shadowCard}
     ${valCard}
+    ${tuneCard}
     ${pairCard}
     <div class="rowbtns" style="margin:20px 0 0">
       <button class="b sm" data-act="reset">Forget and learn again</button>
     </div>`;
 }
 
+const TUNE_STAGE = { sound: 'filing by sound', ident: 'naming genres by sound', misfit: 'Tidy by sound' };
+
+/**
+ * The Tune card (BUILD-6 T1): per constant, the shipped value, the best of a small
+ * grid on this account's own held-out tracks, and the measured change. Only rows
+ * that clear the bar can be kept, and only on this device.
+ */
+export function tuneCardHtml(c, esc) {
+  const T = c.TUNE;
+  if (!T || (!T.res && !T.running && !T.err && !T.saved)) return '';
+  const rows = T.res?.rows ?? [];
+  const nPass = rows.filter(r => r.pass).length;
+  const kept = Object.entries(T.over ?? {}).flatMap(([g, o]) => Object.entries(o).map(([k, v]) => `${g}.${k} ${v}`));
+  const body = T.running
+    ? `<p class="why" aria-live="polite">Trying each constant over a small range on your own held-out tracks, one group at a time${
+        T.stage ? ` (now: ${esc(TUNE_STAGE[T.stage] ?? T.stage)})` : ''}. It runs ${c.engineInBackground() ? 'in the background' : 'on the page, which may stutter'}.</p>`
+    : T.err ? `<p class="why">The sweep could not finish: ${esc(T.err)}</p>`
+    : T.res ? `${rows.length ? `<div class="rows">${rows.map(r => `<div class="row"><div class="main">
+        <div class="ttl">${esc(r.label)}</div>
+        <div class="sub">${r.best === r.current ? `keep ${esc(r.current)}` : `now ${esc(r.current)}, best ${esc(r.best)}: ${esc(r.delta)}`}</div>
+      </div><span class="tag ${r.pass ? 'ok' : 'warn'}">${r.pass ? 'clears the bar' : r.best === r.current ? 'keep' : 'not enough'}</span></div>`).join('')}</div>` : ''}
+      ${(T.res.skipped ?? []).map(s => `<p class="why">${esc(s.title)}: not swept, ${esc(s.why)}.</p>`).join('')}
+      <p class="why">A change only counts if it beats today's value on both halves of your held-out tracks by the bar for its group.
+        Nothing here is shared, and nothing changes until you choose to keep it.</p>` : '';
+  return `<div class="card" id="tuneCard">
+    <h2 style="margin:0 0 12px; font-size:19px">Tune</h2>
+    ${body}
+    ${kept.length ? `<p class="why">In use on this device: ${esc(kept.join(', '))}.</p>` : ''}
+    <div class="rowbtns" style="margin-top:10px">
+      ${T.res && nPass && !T.running ? `<button class="b go" data-act="tuneApply">Use the ${nPass} that cleared the bar</button>` : ''}
+      ${T.res && !T.running ? `<button class="b" data-act="tuneCopy">Copy tune results</button>` : ''}
+      ${T.saved ? `<button class="b sm" data-act="tuneReset">Reset to default</button>` : ''}
+    </div>
+  </div>`;
+}
+
 /** `data-act` -> handler(ctx, el, ev). Click, except the checkbox, which is `change`. */
 export const actions = {
   go: c => c.engineAnalyse(),
   validate: c => c.engineValidate(),
+  scoreTune: c => c.engineScoreTune(),
+  tuneApply: async c => { await c.tuneApply(); c.toast('Kept on this device. Reset to default undoes it.'); c.render(); },
+  async tuneReset(c) { await c.tuneForget(); c.toast('Back to the defaults.'); c.render(); },
+  /** Copy the sweep as one block, to paste next to the Score card. */
+  async tuneCopy(c) {
+    const text = c.tuneBlock(c.TUNE?.res);
+    if (!text) return;
+    try { await c.navigator.clipboard.writeText(text); return c.toast('Copied: paste it with the score.'); }
+    catch { /* fall through to share */ }
+    try { if (c.navigator.share) { await c.navigator.share({ text }); return; } } catch { return; }
+    c.prompt('Copy this:', text);
+  },
   lists: c => c.go('lists'),
   bridgeToggle: (c, el) => {
     if (el.checked) c.LS.removeItem('bf_bridge_off'); else c.LS.setItem('bf_bridge_off', '1');
@@ -607,6 +660,7 @@ export const actions = {
     try { await c.idb.del(c.BLEND_KEY); } catch {}
     c.blendForget();
     await c.weightsForget();
+    await c.tuneForget?.();
     Object.assign(c.ENG, { status:'idle', space:null, rung:null, shadow:null,
                            pairs:null, val:null, calib:null, ms:0, from:null });
     c.toast('Cleared. The next analysis rebuilds from your library.');

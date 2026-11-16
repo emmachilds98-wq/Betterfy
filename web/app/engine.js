@@ -16,6 +16,7 @@
  *  the ~145 KB for it. Null again on failure, so a retry actually retries. */
 let ENGINE_JS = null;
 function engineLoad() {
+  tuneLoad().catch(() => {});
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
@@ -487,3 +488,72 @@ const engineValidate = guard(async () => {
 
 /** Whether long engine work will run off the main thread. */
 const engineInBackground = () => typeof Worker === 'function' && ENGINE_WORKER !== false;
+
+
+/* ---------- Engine > Tune (BUILD-6 T1) ----------
+ * Sweeps the Score run's constants on THIS account's own held-out tracks and
+ * shows the best value next to the shipped one with the measured delta. A tuned
+ * value is stored on this device only, and only for rows that cleared the bar on
+ * both halves of the account's tracks (core/validate/tune.mjs). Nothing is
+ * shared; "Reset to default" removes it. */
+const TUNE_KEY = 'engine-tune';
+const TUNE = { over: {}, loaded: false, res: null, running: false, stage: null, err: null, saved: false };
+
+/** Read the stored overrides once. Ignored when the playlists it was fitted to have changed. */
+async function tuneLoad() {
+  if (TUNE.loaded) return TUNE.over;
+  TUNE.loaded = true;
+  try {
+    const rec = await idb.get(TUNE_KEY);
+    if (rec && JSON.stringify(rec.targets ?? null) === JSON.stringify(engineTargets()) && globalThis.BetterfyTune) {
+      TUNE.over = BetterfyTune.cleanOverrides(rec.over); TUNE.saved = Object.keys(TUNE.over).length > 0;
+    }
+  } catch { /* defaults */ }
+  return TUNE.over;
+}
+const tuneSoundFirst = () => (globalThis.BetterfyTune ? BetterfyTune.soundFirstFor(TUNE.over) : null);
+const tuneIdentOpts = () => (globalThis.BetterfyTune ? BetterfyTune.identifyOptsFor(TUNE.over) : null);
+const tuneMisfitOpts = () => (globalThis.BetterfyTune ? BetterfyTune.misfitOptsFor(TUNE.over) : null);
+
+/** Sweep each group in the worker (the page's own thread when there is none). */
+const engineTune = guard(async () => {
+  TUNE.running = true; TUNE.res = null; TUNE.err = null; TUNE.stage = null; store.touch('eng');
+  try {
+    await engineLoad();
+    const audio = engineAudioScore(await engineAudio());
+    const parts = [];
+    for (const g of BetterfyTune.TUNE_GROUPS) {
+      TUNE.stage = g; store.touch('eng');
+      let part = null;
+      try { part = (await inEngineWorker('tune', { lib: LIB, audio, groups: [g], limit: 300 }))?.result ?? null; }
+      catch { part = null; }
+      if (!part) {
+        await yieldToPaint();
+        part = BetterfyTune.tuneSweep(LIB, { audio, targets: engineTargets(), isMirror: isMirrorPlaylist, groups: [g], limit: 300 });
+      }
+      parts.push(part);
+    }
+    TUNE.res = { ...BetterfyTune.mergeTune(parts), at: Date.now() };
+  } catch (e) { TUNE.err = e?.message ?? String(e); }
+  TUNE.running = false; TUNE.stage = null; store.touch('eng');
+});
+
+/** One action for the owner's paste: the Score run, then the sweep. */
+async function engineScoreTune() { await engineValidate(); await engineTune(); }
+
+/** Keep the rows that cleared the bar, on this device. */
+async function tuneApply() {
+  const over = TUNE.res ? BetterfyTune.tuneOverrides(TUNE.res) : {};
+  TUNE.over = BetterfyTune.cleanOverrides(over); TUNE.saved = Object.keys(TUNE.over).length > 0;
+  try { if (TUNE.saved) await idb.set(TUNE_KEY, { at: Date.now(), targets: engineTargets(), over: TUNE.over }); else await idb.del(TUNE_KEY); }
+  catch { /* applies until the page is closed */ }
+  if (typeof TSOUND !== 'undefined') TSOUND.key = null;   // Tidy by sound is re-read with the new numbers
+  store.touch('eng');
+}
+/** "Reset to default". */
+async function tuneForget() {
+  TUNE.over = {}; TUNE.saved = false;
+  try { await idb.del(TUNE_KEY); } catch {}
+  if (typeof TSOUND !== 'undefined') TSOUND.key = null;
+  store.touch('eng');
+}

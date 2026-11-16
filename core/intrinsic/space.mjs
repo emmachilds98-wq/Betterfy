@@ -539,7 +539,8 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
   // unheard one (or a space with no audio layer) falls through untouched.
   if (soundFirst && space.audio && audioScores(track, space)) {
     useAudio = true;
-    weights = SOUND_FIRST_WEIGHTS;
+    // `soundFirst` may be an object of tuned weights (Engine › Tune), laid over the priors.
+    weights = typeof soundFirst === 'object' ? { ...SOUND_FIRST_WEIGHTS, ...soundFirst } : SOUND_FIRST_WEIGHTS;
   }
 
   const vec = trackVector(track, space.graph);
