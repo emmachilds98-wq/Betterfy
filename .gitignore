@@ -33,3 +33,5 @@ scripts/audio-clap/text-embeddings.json
 
 # Python bytecode from scripts/
 __pycache__/
+# Release Radar CLI state (node radar.mjs --measure): your library's artists.
+radar-state.json

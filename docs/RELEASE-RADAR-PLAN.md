@@ -11,6 +11,60 @@ named below with the rule that answers it.
 
 ---
 
+## 0. Status (2026-11-16): phases 1–3 built, Phase 0 waits on the owner
+
+Built in `core/release/` (dates, normalise, artists, plan, library, sync,
+fixtures, simulate) with `radar.mjs` as the CLI and `test/radar.test.mjs`.
+The owner's defaults from BUILD-6-PLAN §2.3 apply: Radar is the first section
+of Discover (not a tab, so §6's placement and `VORDER` notes are superseded),
+two years back by default with older on demand, an explicit Start for the
+cold sync, library artists only, no new scope.
+
+**The API moved under this plan.** Spotify's February 2026 Development Mode
+changes (changelog read 2026-11-16, March 2026 reverted only `external_ids`):
+
+| Plan assumed | Now | What the code does |
+|---|---|---|
+| `/artists/{id}/albums` pages 50 | max `limit=10`, default 5 | asks for 10; pages newest first and stops at the first page that reaches past the window |
+| items carry `album_group` | removed | one `include_groups` value per request; the lane is read from the album's own artists (§4.3) |
+| `GET /albums?ids=` batch detail | **removed** | `/albums/{id}` one at a time, and only where §4.4 needs a track list |
+| track ISRCs from album detail | simplified tracks never had them; `GET /tracks?ids=` removed | match by (artist, title, version, ±2s) first, then probe at most 2 matched tracks with `/tracks/{id}` to upgrade to ISRC or drop a re-recording |
+| `/browse/new-releases` | removed | not used |
+
+**So §3's budget no longer holds.** "~1,000 artists × 1 request" is now
+three list requests per artist plus track lists. On the simulated 1,000-artist
+library (`core/release/simulate.mjs`, its assumptions stated there):
+
+| Sync | Requests | Minutes at 0.35 s/request |
+|---|---|---|
+| Cold, both lanes | 3,610 (3,116 list, 467 track lists, 27 ISRC probes) | ~21 |
+| Cold, main lane only (pass 1, what the feed needs first) | 2,577 | ~15 |
+| Re-sync an hour later | 0 | 0 |
+| Daily re-sync under the cadence (90 days) | mean 61, max 319, ~392 a week | ~0.4 a day |
+
+The cadence has two declared refinements, both measured: a fixed 0–25%
+per-artist stretch so a library first read on one day does not all fall due on
+one day again (day 30 asked for ~2,300 requests without it), and the features
+lane re-checked half as often as the main lane.
+
+**Phase 0, the owner's step** (needs a token on a Development Mode app created
+after February 2026, and `library.json` from `node snapshot.mjs`):
+
+1. `node radar.mjs --probe` re-checks every endpoint above on that app and
+   prints what answered. Paste the table into the PR.
+2. `node radar.mjs --measure --artists 200` reads the 200 most-listened
+   artists and prints requests, minutes, seconds per request and the
+   1,000-artist extrapolation. `--resume` carries on after a stop;
+   `--token ...` (or `RADAR_TOKEN`) uses a bare access token instead of
+   `.tokens.json`.
+3. `node radar.mjs --feed` prints the resulting feed for a by-eye check of
+   §4's seven problems on a real library.
+
+`node radar.mjs --selftest` prints the offline numbers (fixture accuracy per
+§4 problem, the simulated budget) with no token at all.
+
+---
+
 ## 1. Why this one is buildable at all
 
 Most of what would make this easy is gone. Verified against a freshly
