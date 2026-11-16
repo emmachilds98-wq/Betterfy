@@ -54,6 +54,16 @@ export function familyLine(f, pc) {
     + `(flat top-1 ${pc(f.flat)}, ${f.n} tracks); ${sure} — ${f.use ? 'used' : 'not used (family top-1 under 85%)'}`;
 }
 
+/** Package 4: "Sure when sources agree", from a calibration report's `agree`
+ *  (core/intrinsic/calibrate.mjs). Empty when the run had no levels. */
+export function agreeText(a, p) {
+  if (!a) return '';
+  if (!a.use) return `<b>Sure when sources agree:</b> not used yet (${a.why ?? 'not enough held-out cards'}). Sure still needs the margin alone.`;
+  return `<b>Sure when sources agree:</b> ${p(a.share)} of cards, right ${p(a.right)} of ${a.n} held out. `
+    + `Sure overall (by margin or agreement): ${p(a.sure?.share)}, right ${p(a.sure?.right)}.`
+    + (a.share < 0.25 ? ' That is under a quarter of cards so far.' : '');
+}
+
 /** "How sure it is", checked on tracks the thresholds were not fitted on. */
 function calibCard(p, calib) {
   const c = calib;
@@ -78,7 +88,8 @@ function calibCard(p, calib) {
       ${b?.n ? `<hr><div><span>With similar artists: short list / not sure</span><b class="mono">${p(b.chooseShare)} / ${p(b.unsureShare)}</b></div>
       ${c.bridge.cal?.tau != null && b.confidentN ? `<div><span>…confident, and right</span><b class="mono">${p(b.confidentShare)}, ${p(b.confidentRight)}</b></div>` : ''}` : ''}
     </div>
-    <p class="why" style="margin-top:12px">${verdict}</p>`;
+    <p class="why" style="margin-top:12px">${verdict}</p>
+    ${(c.audio?.agree ?? c.base?.agree) ? `<p class="why" id="agreeLine" style="margin-top:8px">${agreeText(c.audio?.agree ?? c.base.agree, p)}</p>` : ''}`;
 }
 
 /** The with/without comparison on the score card. Empty when there is none. */
@@ -233,6 +244,8 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
     ...(v.family ? [familyLine(v.family, pc)] : []),
     ...(v.moodLine ? [v.moodLine] : []),
+    ...(v.agreeLine ? [v.agreeLine] : []),
+    ...(v.pairsLine ? [v.pairsLine] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),
     ...(log && measureLines ? measureLines(log) : []),

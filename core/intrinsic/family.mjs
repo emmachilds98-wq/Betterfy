@@ -152,8 +152,8 @@ export function fitFamilyCalibration(famRows, opts = {}) {
  * @param {object|null} famCal  family-level calibration, or null when family-first is not in use
  * @param {Map<string,string>} families
  */
-export function decideCard(scores, cal, famCal, families) {
-  const flat = decide(scores, cal);
+export function decideCard(scores, cal, famCal, families, opts = {}) {
+  const flat = decide(scores, cal, opts);
   if (flat.kind === 'confident') return { kind: 'sure', playlists: flat.playlists, p: flat.p };
   if (!famCal || !families || !scores?.length || !cal) return flat;
   const fr = familyRow({ scores }, families, cal.T);

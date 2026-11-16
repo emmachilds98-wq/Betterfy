@@ -4123,6 +4123,38 @@ const MATCH_VERSION = '1.0.0';
 const MIX_TOLERANCE = 0.06;
 /** A tempo reading below this confidence is not used for mixing. */
 const MIX_MIN_CONF = 0.3;
+/**
+ * A key reading is used (shown, or counted for mixing) only at or above this
+ * confidence. Measured on the Beatport EDM Key Dataset, held-out half: 62.4%
+ * exact / 72.0% MIREX on the 53% of tracks at or above it, against 55.3% / 64.6%
+ * on all of them (BUILD-5-PROGRESS.md). web/audio/dsp-view.mjs has the same
+ * number for the chip; test/keygate.test.mjs keeps the two equal.
+ */
+const KEY_MIN_CONF = 0.65;
+/** How much a harmonic fit moves a "mixes with" ranking, in cosine-similarity units. */
+const KEY_RANK_BONUS = 0.03;
+
+const CAMELOT_RE = /^(1[0-2]|[1-9])([AB])$/;
+/** A record's Camelot key when it is sure enough to mix on, else null. */
+function keyOfRecord(record) {
+  const d = record && !record.miss ? record.dsp : null;
+  if (!d || typeof d.camelot !== 'string' || !(d.keyConf >= KEY_MIN_CONF)) return null;
+  const c = d.camelot.toUpperCase();
+  return CAMELOT_RE.test(c) ? c : null;
+}
+/**
+ * Do two Camelot keys mix? 'same', 'adjacent' (a step round the wheel, same
+ * letter) or 'relative' (same number, other letter) are harmonic; 'clash' is
+ * not; null when either key is unknown (then nothing is claimed either way).
+ */
+function keyFit(a, b) {
+  const ma = CAMELOT_RE.exec(a ?? ''), mb = CAMELOT_RE.exec(b ?? '');
+  if (!ma || !mb) return null;
+  const x = Number(ma[1]), y = Number(mb[1]);
+  if (x === y) return ma[2] === mb[2] ? 'same' : 'relative';
+  const step = Math.min(Math.abs(x - y), 12 - Math.abs(x - y));
+  return step === 1 && ma[2] === mb[2] ? 'adjacent' : 'clash';
+}
 
 function dot(a, b) {
   let s = 0;
@@ -4243,17 +4275,27 @@ function mixesWith(trackId, index, { k = 8, bpm = null, tolerance = MIX_TOLERANC
   const own = bpm ?? tempoOf(row?.rec)?.bpm ?? null;
   if (!row || !(own > 0)) return [];
   const out = [];
+  const ownKey = keyOfRecord(row.rec);
   for (const n of nearest(row.emb, index, { k: pool, exclude: new Set([trackId]) })) {
     const t = tempoOf(index.get(n.id)?.rec);
     if (!t || t.conf < MIX_MIN_CONF) continue;
     const r = tempoRelation(own, t.bpm, tolerance) ?? (t.alt ? tempoRelation(own, t.alt, tolerance) : null);
     if (!r) continue;
-    out.push({ id: n.id, sim: n.sim, bpm: +t.bpm.toFixed(1), rel: r.rel, diff: r.diff });
-    if (out.length >= k) break;
+    const hit = { id: n.id, sim: n.sim, bpm: +t.bpm.toFixed(1), rel: r.rel, diff: r.diff };
+    // Key only when both keys are sure; otherwise the entry is exactly what it always was.
+    const theirs = keyOfRecord(index.get(n.id)?.rec), fit = keyFit(ownKey, theirs);
+    if (fit) { hit.key = theirs; hit.keyFit = fit; }
+    out.push(hit);
+    if (!ownKey && out.length >= k) break;
   }
-  return out;
+  if (ownKey) {
+    // A harmonic fit lifts a mix a little, a clash lowers it; ties keep the similarity order.
+    const rank = h => h.sim + (h.keyFit ? (h.keyFit === 'clash' ? -KEY_RANK_BONUS : KEY_RANK_BONUS) : 0);
+    out.sort((a, b) => rank(b) - rank(a));
+  }
+  return out.slice(0, k);
 }
-return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith };
+return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith };
 })();
 /* ---- core/intrinsic/space.mjs ---- */
 __mod["core/intrinsic/space.mjs"] = (function () {
@@ -5628,6 +5670,9 @@ const DEFAULTS = {
   maxChoices: 3,
   /** One-sided 95% for the Wilson bound. */
   z: 1.645,
+  /** What "confident" must mean inside one agreement level (agree.mjs): a
+   *  little above `target`, so the held-out check (AGREE_GATE, 95%) has room. */
+  agreeTarget: 0.92,
 };
 
 /** Probability step the confident threshold is fitted on (see fitCalibration). */
@@ -5769,9 +5814,35 @@ function fitCalibration(rows, opts = {}) {
   const rank = Math.ceil((n + 1) * (1 - alpha));
   const qhat = n && rank <= n ? scores[rank - 1] : 1;
 
-  return { version: CALIBRATE_VERSION, n, T, tau: tau == null ? null : +tau.toFixed(5),
-           pmin: +(1 - qhat).toFixed(5), target, alpha, confidentN, confidentRight };
+  const out = { version: CALIBRATE_VERSION, n, T, tau: tau == null ? null : +tau.toFixed(5),
+                pmin: +(1 - qhat).toFixed(5), target, alpha, confidentN, confidentRight };
+  // Package 4 (docs/NEXT-WORKPLAN.md): rows that carry an agreement level
+  // (core/intrinsic/agree.mjs) get a "confident" threshold of their own per
+  // level, fitted the same way on only that level's rows. A card where sound,
+  // filing history and tags all rank the same playlist first is right far
+  // more often than its margin says; this is where that is measured.
+  if (opts.byLevel !== false && usable.some(r => r.agree)) {
+    const byLevel = {};
+    for (const level of AGREE_LEVELS) {
+      const mine = usable.filter(r => r.agree === level);
+      if (mine.length < minConfident) continue;
+      const c = fitCalibration(mine, { ...opts, target: opts.agreeTarget ?? DEFAULTS.agreeTarget, byLevel: false });
+      if (c.tau != null) byLevel[level] = { T: c.T, tau: c.tau, n: c.n, confidentN: c.confidentN, confidentRight: c.confidentRight };
+    }
+    if (Object.keys(byLevel).length) out.byLevel = byLevel;
+  }
+  return out;
 }
+
+/** The agreement levels that may earn their own "confident" (agree.mjs LEVELS minus `split`). */
+const AGREE_LEVELS = Object.freeze(['agree', 'single']);
+
+/**
+ * What agreement-earned "Sure" must do on held-out rows before it is used:
+ * right at least `minPrecision` of the time over at least `minN` cards.
+ * Set before any owner run (docs/NEXT-WORKPLAN.md package 4 gate).
+ */
+const AGREE_GATE = Object.freeze({ minPrecision: 0.95, minN: 20, coverage: 0.25 });
 
 /**
  * What to say about one track: { kind, playlists, p }.
@@ -5786,6 +5857,13 @@ function decide(scores, cal, opts = {}) {
   const [lead, p] = top[0];
   const r = x => +x.toFixed(4);
   if (cal.tau != null && p >= cal.tau) return { kind: 'confident', playlists: [lead], p: r(p) };
+  // The sources agree (opts.agree, a level from agree.mjs) and this account's
+  // held-out cards at that level were right often enough: confident on that.
+  const lv = opts.agree ? cal.byLevel?.[opts.agree] : null;
+  if (lv && lv.tau != null) {
+    const pl = softmax(scores, lv.T)[0][1];
+    if (pl >= lv.tau) return { kind: 'confident', playlists: [lead], p: r(pl), via: 'agree' };
+  }
   const set = top.filter(([, q]) => q >= cal.pmin && q > 0).map(([id]) => id);
   if (set.length >= 1 && set.length <= maxChoices) return { kind: 'choose', playlists: set, p: r(p) };
   return { kind: 'unsure', playlists: [], p: r(p) };
@@ -5793,12 +5871,18 @@ function decide(scores, cal, opts = {}) {
 
 /** How the decisions did on rows they were not fitted on. */
 function evaluate(rows, cal, opts = {}) {
-  const out = { n: 0, confident: { n: 0, right: 0 }, choose: { n: 0, contains: 0, size: 0 }, unsure: { n: 0 } };
+  const out = { n: 0, confident: { n: 0, right: 0 }, choose: { n: 0, contains: 0, size: 0 }, unsure: { n: 0 },
+                agree: { n: 0, right: 0 }, levels: {} };
   for (const r of rows ?? []) {
     if (!r?.scores?.length || !r.truth?.length) continue;
     out.n++;
-    const d = decide(r.scores, cal, opts);
-    if (d.kind === 'confident') { out.confident.n++; if (inTruth(r, d.playlists[0])) out.confident.right++; }
+    if (r.agree) out.levels[r.agree] = (out.levels[r.agree] ?? 0) + 1;
+    const d = decide(r.scores, cal, r.agree ? { ...opts, agree: r.agree } : opts);
+    if (d.kind === 'confident') {
+      const ok = inTruth(r, d.playlists[0]);
+      out.confident.n++; if (ok) out.confident.right++;
+      if (d.via === 'agree') { out.agree.n++; if (ok) out.agree.right++; }
+    }
     else if (d.kind === 'choose') {
       out.choose.n++; out.choose.size += d.playlists.length;
       if (d.playlists.some(id => inTruth(r, id))) out.choose.contains++;
@@ -5829,6 +5913,37 @@ const rate = (a, b) => (b > 0 ? +(a / b).toFixed(4) : null);
 function calibrationReport(rows, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
   const usable = (rows ?? []).filter(r => r?.id && r.scores?.length && r.truth?.length);
+  const hasLevels = usable.some(r => r.agree);
+  let run = crossCheck(usable, o);
+  let agree = null;
+  if (hasLevels) {
+    // The agreement gate (AGREE_GATE): cards made "Sure" only by agreement,
+    // checked on the half they were not fitted on. When it fails, the
+    // per-level thresholds are not used, and everything reported (and the
+    // calibration handed back) is exactly what it would be without levels.
+    const { n, right } = run.agreeSure;
+    const precision = rate(right, n);
+    const fitted = !!run.cal.byLevel;
+    const use = fitted && n >= AGREE_GATE.minN && precision != null && precision >= AGREE_GATE.minPrecision;
+    const why = use ? null
+      : !fitted ? 'no agreement level cleared its bar'
+      : !n ? 'no held-out card earned it'
+      : n < AGREE_GATE.minN ? `only ${n} held-out cards, ${AGREE_GATE.minN} needed`
+      : `held-out precision ${Math.round(precision * 100)}%, ${Math.round(AGREE_GATE.minPrecision * 100)}% needed`;
+    const levels = Object.fromEntries(Object.entries(run.levels).map(([k, v]) => [k, rate(v, run.checked.n)]));
+    agree = { use, n, right: precision, share: rate(n, run.checked.n), why, levels };
+    if (!use) run = crossCheck(usable, { ...o, byLevel: false });
+    // Every Sure card together (by margin or by agreement), as File shows them.
+    agree.sure = { share: run.checked.confidentShare, right: run.checked.confidentRight, n: run.checked.confidentN };
+  }
+  const { checked, cal } = run;
+  const holds = checked.confidentN >= o.minConfident && checked.confidentRight != null
+    ? checked.confidentRight >= o.target - 0.03 : null;
+  return { version: CALIBRATE_VERSION, cal, checked, holds, target: o.target, ...(agree ? { agree } : {}) };
+}
+
+/** Fit on one half, check on the other, both ways, pooled; plus the fit on everything. */
+function crossCheck(usable, o) {
   const a = usable.filter(r => half(r.id) === 0), b = usable.filter(r => half(r.id) === 1);
   const ea = evaluate(a, fitCalibration(b, o), o), eb = evaluate(b, fitCalibration(a, o), o);
   const pool = {
@@ -5848,11 +5963,174 @@ function calibrationReport(rows, opts = {}) {
     chooseSize: pool.choose.n ? +(pool.choose.size / pool.choose.n).toFixed(2) : null,
     unsureShare: rate(pool.unsure.n, pool.n),
   };
-  const holds = checked.confidentN >= o.minConfident && checked.confidentRight != null
-    ? checked.confidentRight >= o.target - 0.03 : null;
-  return { version: CALIBRATE_VERSION, cal: fitCalibration(usable, o), checked, holds, target: o.target };
+  const levels = {};
+  for (const e of [ea, eb]) for (const [k, v] of Object.entries(e.levels)) levels[k] = (levels[k] ?? 0) + v;
+  return { checked, cal: fitCalibration(usable, o), levels,
+           agreeSure: { n: ea.agree.n + eb.agree.n, right: ea.agree.right + eb.agree.right } };
 }
-return { CALIBRATE_VERSION, DEFAULTS, BIN, scoresOf, softmax, TEMPERATURES, fitTemperature, isotonic, wilsonLower, fitCalibration, decide, evaluate, calibrationReport };
+return { CALIBRATE_VERSION, DEFAULTS, BIN, scoresOf, softmax, TEMPERATURES, fitTemperature, isotonic, wilsonLower, fitCalibration, AGREE_LEVELS, AGREE_GATE, decide, evaluate, calibrationReport };
+})();
+/* ---- core/intrinsic/agree.mjs ---- */
+__mod["core/intrinsic/agree.mjs"] = (function () {
+// "Sure" only when the sources agree (docs/NEXT-WORKPLAN.md package 4).
+//
+// A placement is a mix of sources that make different mistakes:
+//
+//   sound    how the track sounds next to each playlist's heard members
+//            (the `audio` and `learned` parts; only for a heard track, and
+//            only on the sound-first engine that lets them in)
+//   history  where this account files this artist and its neighbours (the
+//            artist graph, the `graph` part)
+//   similar  where the artist's outside neighbours are filed (the `bridge`
+//            part; only when similar artists were looked up)
+//   tags     the crowd-tag engine's ranking (core/classify rank()), joined
+//            in from outside because the intrinsic space never reads tags
+//
+// Each source is read on its own: which playlists IT ranks first. A card on
+// which two or more independent sources rank the same playlist first, and none
+// ranks it outside its own top 3, is far more often right than its combined
+// margin says. calibrate.mjs fits a separate "confident" threshold per
+// agreement level on the account's own held-out rows, so the extra trust is
+// measured, never assumed.
+//
+// Nothing here is trained or fetched. It reads the parts a placement already
+// carries.
+
+const AGREE_VERSION = '1.0.0';
+
+/** Sources, in the order they are listed. */
+const SOURCES = Object.freeze(['sound', 'history', 'similar', 'tags']);
+
+/** Levels. `agree`: 2+ sources rank the lead first and none against it.
+ *  `single`: one source does, none against. `split`: anything else. */
+const LEVELS = Object.freeze(['agree', 'single', 'split']);
+
+/** How deep a source's list is kept: a source "is against" the lead when the
+ *  lead is not in its own top this-many. */
+const DEPTH = 3;
+
+const PART_OF = { history: ['graph'], similar: ['bridge'], sound: ['learned', 'audio'] };
+
+/**
+ * One source's top-`DEPTH` ids from per-destination scores ([[id, score]] or a
+ * Map), or null when the source has nothing to say: no positive score, or no
+ * spread between the destinations it scored (a source that rates everything
+ * the same ranks nothing).
+ */
+function topOf(scored, depth = DEPTH) {
+  const list = (scored instanceof Map ? [...scored] : scored ?? [])
+    .filter(([id, v]) => id != null && Number.isFinite(v));
+  if (list.length < 1) return null;
+  list.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const hi = list[0][1], lo = list[list.length - 1][1];
+  if (!(hi > 0)) return null;
+  if (list.length > 1 && !(hi - lo > 1e-9)) return null;
+  return list.slice(0, depth).map(([id]) => id);
+}
+
+/**
+ * Each source's own top picks from a placement's results (every destination,
+ * `placements(…, { limit: Infinity })`). Only sources present in the parts are
+ * listed: an unheard track has no `sound`, a space without a bridge no
+ * `similar`. `tags` is optional: the tag engine's [[id, score]] for the track.
+ *
+ * @returns {{sound?: string[], history?: string[], similar?: string[], tags?: string[]}}
+ */
+function sourceTops(results, { tags = null, depth = DEPTH } = {}) {
+  const out = {};
+  for (const [src, keys] of Object.entries(PART_OF)) {
+    const scored = [];
+    for (const r of results ?? []) {
+      const p = r?.parts;
+      if (!p) continue;
+      let v = null;
+      for (const k of keys) if (Number.isFinite(p[k])) v = (v ?? 0) + p[k];
+      if (v !== null) scored.push([r.playlistId, v]);
+    }
+    const top = scored.length ? topOf(scored, depth) : null;
+    if (top) out[src] = top;
+  }
+  const t = tags ? topOf(tags, depth) : null;
+  if (t) out.tags = t;
+  return out;
+}
+
+/**
+ * How the sources line up behind one lead playlist.
+ * @returns {{ level: 'agree'|'single'|'split', agree: string[], against: string[], spoke: number }}
+ */
+function agreement(lead, src) {
+  const agree = [], against = [];
+  let spoke = 0;
+  for (const s of SOURCES) {
+    const top = src?.[s];
+    if (!top?.length) continue;
+    spoke++;
+    if (top[0] === lead) agree.push(s);
+    else if (!top.includes(lead)) against.push(s);
+  }
+  const level = lead == null || against.length ? 'split' : agree.length >= 2 ? 'agree' : agree.length === 1 ? 'single' : 'split';
+  return { level, agree, against, spoke };
+}
+
+/** The level alone, for a row's lead ([[id, score]] highest first). */
+const levelOf = (scores, src) => agreement(scores?.[0]?.[0] ?? null, src).level;
+
+/**
+ * Put `agree` (a level) on held-out rows. `srcById` gives each row's sources
+ * by track id (from the run that produced the rows, or joined from others);
+ * `tagsById` optionally adds the tag engine's own top picks per track id.
+ * Rows are copied, never changed in place. A row with no sources at all is
+ * `split`: nothing vouches for it. `drop` leaves named sources out.
+ */
+function withAgreement(rows, srcById, tagsById = null, { drop = null } = {}) {
+  const get = (m, id) => (m instanceof Map ? m.get(id) : m?.[id]) ?? null;
+  return (rows ?? []).map(r => {
+    const src = { ...(get(srcById, r.id) ?? {}) };
+    const t = tagsById ? get(tagsById, r.id) : null;
+    if (t?.length) src.tags = t;
+    // A source the live card will not have (e.g. similar artists before File
+    // has them) must not shape the level it is judged at.
+    for (const k of drop ?? []) delete src[k];
+    return { ...r, agree: levelOf(r.scores, src) };
+  });
+}
+
+/** The tag engine's top picks per track id, from its held-out rows ({id, scores}). */
+function tagTopsOf(tagRows, depth = DEPTH) {
+  const out = {};
+  for (const r of tagRows ?? []) {
+    if (!r?.id) continue;
+    const t = topOf(r.scores, depth);
+    if (t) out[r.id] = t;
+  }
+  return out;
+}
+
+/** Each row's sources by id, merged over several runs' rows (later runs add
+ *  sources the earlier ones lacked, e.g. `similar` from the bridge run). */
+function srcByIdOf(...rowLists) {
+  const out = {};
+  for (const rows of rowLists) for (const r of rows ?? []) {
+    if (!r?.id || !r.src) continue;
+    out[r.id] = { ...(out[r.id] ?? {}), ...r.src };
+  }
+  return out;
+}
+
+/** Engine screen line for one calibration report with agreement levels. */
+function agreeLine(report) {
+  const a = report?.agree;
+  if (!a) return '';
+  const pc = x => `${Math.round(x * 100)}%`;
+  if (!a.use) {
+    const why = a.why ?? 'not enough held-out cards where the sources agree';
+    return `Sure when sources agree: not used yet (${why}).`;
+  }
+  return `Sure when sources agree: ${pc(a.share)} of cards, right ${pc(a.right)} of ${a.n} held out.`
+    + (a.share < 0.25 ? ' Fewer than a quarter of cards so far.' : '');
+}
+return { AGREE_VERSION, SOURCES, LEVELS, DEPTH, topOf, sourceTops, agreement, levelOf, withAgreement, tagTopsOf, srcByIdOf, agreeLine };
 })();
 /* ---- core/validate/gate.mjs ---- */
 __mod["core/validate/gate.mjs"] = (function () {
@@ -6040,6 +6318,7 @@ __mod["core/validate/loo.mjs"] = (function () {
 const { buildSpace, placements, withAudioLayer, componentParts, BANDS, WEIGHTS } = __mod["core/intrinsic/space.mjs"];
 const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 const { scoresOf } = __mod["core/intrinsic/calibrate.mjs"];
+const { sourceTops } = __mod["core/intrinsic/agree.mjs"];
 const { audioIndex, NEAR_DEFAULT } = __mod["core/intrinsic/audio.mjs"];
 const { audioGate, earChoice, nearChoice } = __mod["core/validate/gate.mjs"];
 // Held-out placement accuracy — the account grades the engine.
@@ -6074,6 +6353,7 @@ const { audioGate, earChoice, nearChoice } = __mod["core/validate/gate.mjs"];
 // engine. Pessimism is the safe direction for a number used to decide whether
 // to take over somebody's filing.
 // ---------------------------------------------------------------------------
+
 
 
 
@@ -6199,6 +6479,11 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
  *                                 reported in `withAudio.arms[ear]` with its
  *                                 own gate verdict. gate.mjs `earChoice` reads
  *                                 them against the first ear.
+ * @param {boolean} [opts.sources] with `collect`, also put `src` on every
+ *                                 row: each source's own top picks
+ *                                 (core/intrinsic/agree.mjs sourceTops), for
+ *                                 "Sure when sources agree". Off, rows are
+ *                                 exactly as before (the golden pins them).
  * @param {boolean} [opts.fitParts] also return `partRows`: each held-out
  *                                 track's raw components against every
  *                                 destination of its fold's space, for
@@ -6211,7 +6496,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          weights = null, targets = null, bridge = null,
                                          audio = null, collect = false,
                                          genreGraph = false, soundWeights = null,
-                                         fitParts = false } = {}) {
+                                         fitParts = false, sources = false } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -6296,7 +6581,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       bucket.n++;
 
       const ranked = out.results ?? [];
-      if (rows) rows.push({ id, scores: scoresOf(ranked), truth: [...want].sort() });
+      if (rows) rows.push({ id, scores: scoresOf(ranked), truth: [...want].sort(), ...(sources ? { src: sourceTops(ranked) } : {}) });
       const hit1 = ranked[0] && want.has(ranked[0].playlistId);
       const hit3 = ranked.slice(0, 3).some(r => want.has(r.playlistId));
 
@@ -6314,7 +6599,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       if (plus) {
         const more = placements(track, space, { limit: limit3, weights: plus });
         const r = more.results ?? [];
-        if (rowsPlus) rowsPlus.push({ id, scores: scoresOf(r), truth: [...want].sort() });
+        if (rowsPlus) rowsPlus.push({ id, scores: scoresOf(r), truth: [...want].sort(), ...(sources ? { src: sourceTops(r) } : {}) });
         const p1 = r[0] && want.has(r[0].playlistId);
         const p3 = r.slice(0, 3).some(x => want.has(x.playlistId));
         if (r[0]?.parts && 'bridge' in r[0].parts) bridgeJudged++;
@@ -6326,7 +6611,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
         const more = space.audio
           ? placements(track, space, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
         const r = more.results ?? [];
-        if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort() });
+        if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort(), ...(sources ? { src: sourceTops(r) } : {}) });
         const s1 = r[0] && want.has(r[0].playlistId);
         const s3 = r.slice(0, 3).some(x => want.has(x.playlistId));
         if (space.audio?.index.has(id)) { sound.heard++; if (fresh) sound.heardNeverFiled++; }
@@ -6339,7 +6624,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
           const sp = armSpaces[i];
           const res = sp.audio ? placements(track, sp, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
           const ra = res.results ?? [];
-          if (a.t.rows) a.t.rows.push({ id, scores: scoresOf(ra), truth: [...want].sort() });
+          if (a.t.rows) a.t.rows.push({ id, scores: scoresOf(ra), truth: [...want].sort(), ...(sources ? { src: sourceTops(ra) } : {}) });
           const a1 = ra[0] && want.has(ra[0].playlistId);
           const a3 = ra.slice(0, 3).some(x => want.has(x.playlistId));
           if (sp.audio?.index.has(id)) { a.t.heard++; if (fresh) a.t.heardNeverFiled++; }
@@ -9204,8 +9489,8 @@ function fitFamilyCalibration(famRows, opts = {}) {
  * @param {object|null} famCal  family-level calibration, or null when family-first is not in use
  * @param {Map<string,string>} families
  */
-function decideCard(scores, cal, famCal, families) {
-  const flat = decide(scores, cal);
+function decideCard(scores, cal, famCal, families, opts = {}) {
+  const flat = decide(scores, cal, opts);
   if (flat.kind === 'confident') return { kind: 'sure', playlists: flat.playlists, p: flat.p };
   if (!famCal || !families || !scores?.length || !cal) return flat;
   const fr = familyRow({ scores }, families, cal.T);
@@ -9362,6 +9647,259 @@ function moodLine(fit) {
   return `${head}. ${list.join('; ')}.`;
 }
 return { MOOD_VERSION, MOOD_GATE, nearScore, fitMoods, moodInUse, moodChips, moodLine };
+})();
+/* ---- core/intrinsic/pairs.mjs ---- */
+__mod["core/intrinsic/pairs.mjs"] = (function () {
+const { nearScore } = __mod["core/intrinsic/mood.mjs"];
+// The playlists it confuses (docs/NEXT-WORKPLAN.md package 5).
+//
+// Family first (#145) already settles "it's drum & bass" and asks only which
+// playlist inside the family. What is left is telling two neighbours apart:
+// jungle vs rollers, UKG vs speed garage, Late Night House vs house. Here each
+// confusable pair gets its own small sound check:
+//
+//   d(track) = how close it sits to A's nearest heard members
+//            − how close it sits to B's nearest heard members
+//
+// (mood.mjs nearScore, so the same ear and the same k), with one threshold on
+// d fitted on half of the pair's heard members and checked on the other half,
+// then swapped and pooled. A pair is used only where the checked two-way
+// accuracy reaches PAIR_GATE.minAccuracy on at least PAIR_GATE.minHeard
+// heard tracks, and only to order the two picks of a family card: it never
+// makes a card Sure, never adds a pick, never files anything.
+//
+// Which pairs: the ones this account's own held-out rows confuse (truth one
+// of the two, the other ranked above it, both in the engine's top two), plus
+// the Score run's "Can't tell apart" list. Nothing is trained or pooled across
+// accounts; it is a threshold over this account's own heard tracks.
+
+
+const PAIRS_VERSION = '1.0.0';
+
+const PAIR_GATE = Object.freeze({
+  minHeard: 20,        // heard tracks across the pair before it is fitted, and checked
+  minAccuracy: 0.7,    // checked two-way accuracy, held out
+  minSide: 5,          // heard members on each side
+  k: 5,                // nearest members averaged (as mood.mjs)
+  maxMembers: 120,     // members per side compared, for cost
+  maxPairs: 8,         // pairs fitted per Score run
+});
+
+const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; };
+// Salted, so the split is independent of mood.mjs's and of the fold assignment.
+const half = id => hash(`pair:${id}`) & 1;
+const sample = (ids, n) => ids.length <= n ? ids : [...ids].sort((a, b) => hash(a) - hash(b)).slice(0, n);
+const rate = (a, b) => (b ? +(a / b).toFixed(4) : null);
+
+/** A pair's key, the same whichever way round. */
+const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+
+/** d for one track: closeness to A's nearest members minus closeness to B's (self skipped). */
+function pairScore(emb, membersA, membersB, k = PAIR_GATE.k, self = null) {
+  const a = nearScore(emb, membersA, k, self), b = nearScore(emb, membersB, k, self);
+  return a == null || b == null ? null : a - b;
+}
+
+/**
+ * The threshold on d that best splits `scored` ([d, isA]): "A" when d ≥ tau.
+ * Tried at every midpoint; ties go to the threshold nearest 0 (no lean either way).
+ */
+function fitThreshold(scored) {
+  if (!scored.length) return null;
+  const s = [...scored].sort((x, y) => x[0] - y[0]);
+  const nA = s.filter(x => x[1]).length;
+  // Everything called A (tau below every d): right on every A.
+  let best = { tau: s[0][0] - 1e-9, right: nA };
+  let aBelow = 0, bBelow = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i][1]) aBelow++; else bBelow++;
+    if (i + 1 < s.length && s[i + 1][0] === s[i][0]) continue;
+    const tau = i + 1 < s.length ? (s[i][0] + s[i + 1][0]) / 2 : s[i][0] + 1e-9;
+    const right = bBelow + (nA - aBelow);
+    if (right > best.right || (right === best.right && Math.abs(tau) < Math.abs(best.tau))) best = { tau, right };
+  }
+  return best.tau;
+}
+
+const accuracyAt = (scored, tau) => {
+  let right = 0;
+  for (const [d, isA] of scored) if ((d >= tau) === isA) right++;
+  return { n: scored.length, right, accuracy: rate(right, scored.length) };
+};
+
+/** Heard members of a playlist, as [id, emb], minus `not` (tracks in both). */
+function heardMembers(p, index, not, max) {
+  const ids = [...new Set((p?.tracks ?? []).map(t => t?.id).filter(id => id && index.has(id) && !not.has(id)))];
+  return sample(ids, max).map(id => [id, index.get(id).emb]);
+}
+
+/** Both sides of a pair, heard, tracks in both left out. Remembered per
+ *  library and index, since File asks on every render. */
+let SIDES = { lib: null, index: null, map: new Map() };
+function sidesOf(lib, index, a, b, max) {
+  if (SIDES.lib !== lib || SIDES.index !== index) SIDES = { lib, index, map: new Map() };
+  const key = `${pairKey(a, b)}|${max}`;
+  if (SIDES.map.has(key)) return SIDES.map.get(key);
+  const byId = new Map((lib?.playlists ?? []).map(p => [p.id, p]));
+  const pa = byId.get(a), pb = byId.get(b);
+  let out = null;
+  if (pa && pb && index instanceof Map) {
+    const ida = new Set((pa.tracks ?? []).map(t => t?.id)), idb = new Set((pb.tracks ?? []).map(t => t?.id));
+    const both = new Set([...ida].filter(id => idb.has(id)));
+    out = { A: heardMembers(pa, index, both, max), B: heardMembers(pb, index, both, max) };
+  }
+  SIDES.map.set(key, out);
+  return out;
+}
+
+/**
+ * Fit one pair. `a`, `b` are playlist ids. Tracks in both are left out: they
+ * answer neither way.
+ * @returns {{ a, b, key, n, tau, tauBy, checked, use, why }}
+ */
+function fitPair(lib, index, a, b, gate = PAIR_GATE) {
+  const g = { ...PAIR_GATE, ...gate };
+  const row = { a, b, key: pairKey(a, b), n: 0, tau: null, tauBy: null, checked: null, use: false, why: null };
+  const sides = sidesOf(lib, index, a, b, g.maxMembers);
+  if (!sides) { row.why = 'playlist not found'; return row; }
+  const { A, B } = sides;
+  row.n = A.length + B.length;
+  if (A.length < g.minSide || B.length < g.minSide || row.n < g.minHeard) {
+    row.why = `only ${A.length} + ${B.length} heard, ${g.minHeard} needed with ${g.minSide} a side`;
+    return row;
+  }
+  const halves = [[], []];
+  for (const [id, emb] of A) { const d = pairScore(emb, A, B, g.k, id); if (d != null) halves[half(id)].push([d, true]); }
+  for (const [id, emb] of B) { const d = pairScore(emb, A, B, g.k, id); if (d != null) halves[half(id)].push([d, false]); }
+  if (!halves[0].length || !halves[1].length) { row.why = 'too few heard tracks to split in two'; return row; }
+  const t0 = fitThreshold(halves[0]), t1 = fitThreshold(halves[1]);
+  const c0 = accuracyAt(halves[1], t0), c1 = accuracyAt(halves[0], t1);
+  const n = c0.n + c1.n, right = c0.right + c1.right;
+  row.checked = { n, right, accuracy: rate(right, n) };
+  row.tauBy = [+t0.toFixed(6), +t1.toFixed(6)];
+  row.tau = +fitThreshold([...halves[0], ...halves[1]]).toFixed(6);
+  row.use = n >= g.minHeard && row.checked.accuracy >= g.minAccuracy;
+  row.why = row.use ? null : n < g.minHeard ? 'too few held-out tracks'
+    : `held-out two-way ${Math.round(row.checked.accuracy * 100)}%, ${Math.round(g.minAccuracy * 100)}% needed`;
+  return row;
+}
+
+/**
+ * The pairs worth fitting: held-out rows where the engine's top two are the
+ * pair and the truth is the one ranked second, counted per pair, most
+ * confused first; then the Score run's "Can't tell apart" pairs
+ * (reports.mjs bucketPairs, `indistinguishable` only: a "view" is one
+ * playlist inside another, not a confusion). `inScope(id)` limits both to the
+ * genre playlists.
+ * @returns {Array<{a, b, key, misses}>}
+ */
+function pairCandidates(rows, enginePairs = [], { limit = PAIR_GATE.maxPairs, inScope = null, together = null } = {}) {
+  const seen = new Map();
+  const ok = id => id && (!inScope || inScope(id));
+  // `together(a, b)`: the two may be a pair at all (same family). Default: any two.
+  const tog = (a, b) => !together || together(a, b);
+  for (const r of rows ?? []) {
+    const [x, y] = r?.scores ?? [];
+    if (!x || !y || !ok(x[0]) || !ok(y[0]) || !tog(x[0], y[0])) continue;
+    const truth = new Set(r.truth ?? []);
+    if (truth.has(x[0]) || !truth.has(y[0])) continue;
+    const key = pairKey(x[0], y[0]);
+    const p = seen.get(key) ?? { a: x[0] < y[0] ? x[0] : y[0], b: x[0] < y[0] ? y[0] : x[0], key, misses: 0 };
+    p.misses++;
+    seen.set(key, p);
+  }
+  const out = [...seen.values()].filter(p => p.misses >= 2).sort((p, q) => q.misses - p.misses || (p.key < q.key ? -1 : 1));
+  for (const e of enginePairs ?? []) {
+    if (e?.verdict && e.verdict !== 'indistinguishable') continue;
+    const a = e?.a?.id ?? e?.a, b = e?.b?.id ?? e?.b;
+    if (!ok(a) || !ok(b) || a === b || !tog(a, b)) continue;
+    const key = pairKey(a, b);
+    if (!out.some(p => p.key === key)) out.push({ a: a < b ? a : b, b: a < b ? b : a, key, misses: 0 });
+  }
+  return out.slice(0, limit);
+}
+
+/** Which of the two a heard track sounds like, by a fitted pair: `x`, `y` or null (not used / not heard). */
+function pairPick(trackId, x, y, fit, index, lib, { tauOf = null } = {}) {
+  const row = fit?.rows?.find(r => r.use && r.key === pairKey(x, y));
+  const rec = index?.get?.(trackId);
+  if (!row || !rec?.emb) return null;
+  const sides = sidesOf(lib, index, row.a, row.b, PAIR_GATE.maxMembers);
+  if (!sides) return null;
+  const d = pairScore(rec.emb, sides.A, sides.B, PAIR_GATE.k, trackId);
+  if (d == null) return null;
+  const tau = tauOf ? tauOf(row, trackId) : row.tau;
+  return d >= tau ? row.a : row.b;
+}
+
+/**
+ * Re-order a card's two picks by the pair check: [first, second] in the order
+ * the check says, and whether it swapped them. Unchanged when the pair is not
+ * in use or the track was not heard.
+ */
+function pairOrder(trackId, picks, fit, index, lib) {
+  const [x, y] = picks ?? [];
+  if (!x || !y) return { picks, swapped: false };
+  const p = pairPick(trackId, x, y, fit, index, lib);
+  if (p === y) return { picks: [y, x, ...picks.slice(2)], swapped: true };
+  return { picks, swapped: false };
+}
+
+/**
+ * Whether the pair checks may be used at all: on the Score run's held-out
+ * rows (`rows`, the engine that places), the top-1 with the top two
+ * re-ordered by each used pair, against the top-1 without. Each track is
+ * judged with the threshold fitted on the half it is not in, and is never one
+ * of its own nearest members. `use` only when overall top-1 is not lower.
+ */
+function pairsImpact(rows, fit, index, lib) {
+  let n = 0, before = 0, after = 0, judged = 0, swapped = 0;
+  const tauOf = (row, id) => row.tauBy?.[1 - half(id)] ?? row.tau;
+  for (const r of rows ?? []) {
+    if (!r?.scores?.length || !r.truth?.length) continue;
+    n++;
+    const truth = new Set(r.truth);
+    const x = r.scores[0][0], y = r.scores[1]?.[0];
+    let lead = x;
+    if (y) {
+      const p = pairPick(r.id, x, y, fit, index, lib, { tauOf });
+      if (p) { judged++; if (p !== x) swapped++; lead = p; }
+    }
+    if (truth.has(x)) before++;
+    if (truth.has(lead)) after++;
+  }
+  return { n, judged, swapped, before: rate(before, n), after: rate(after, n), use: judged > 0 && after >= before };
+}
+
+/**
+ * Fit the pairs for one Score run and decide whether they are used.
+ * @param {object} lib
+ * @param {Map} index    heard tracks (audio.mjs audioIndex: id → { emb })
+ * @param {Array} rows   held-out rows of the engine that places (placementAccuracy collect)
+ * @param {Array} enginePairs  the "Can't tell apart" list (reports.mjs bucketPairs)
+ */
+function fitPairs(lib, index, rows, enginePairs = [], { inScope = null, together = null, gate = PAIR_GATE } = {}) {
+  const cands = pairCandidates(rows, enginePairs, { inScope, together, limit: gate.maxPairs ?? PAIR_GATE.maxPairs });
+  const fit = { version: PAIRS_VERSION, rows: cands.map(c => ({ ...fitPair(lib, index, c.a, c.b, gate), misses: c.misses })) };
+  fit.impact = fit.rows.some(r => r.use) ? pairsImpact(rows, fit, index, lib) : null;
+  fit.use = !!fit.impact?.use;
+  return fit;
+}
+
+/** The Score line: what was measured and whether it is used. */
+function pairsLine(fit, nameOf = id => id) {
+  const rows = fit?.rows ?? [];
+  if (!rows.length) return '';
+  const pc = x => `${Math.round(x * 100)}%`;
+  const used = rows.filter(r => r.use);
+  const list = rows.map(r => `${nameOf(r.a)} vs ${nameOf(r.b)} `
+    + (r.use ? `(right ${pc(r.checked.accuracy)} of ${r.checked.n} held out)` : `(not used: ${r.why})`));
+  const imp = fit.impact;
+  const tail = imp ? ` Top-1 with them ${pc(imp.after)} vs ${pc(imp.before)} without (${imp.judged} of ${imp.n} cards judged, ${imp.swapped} re-ordered)`
+    + `${fit.use ? '' : ', so they are not used'}.` : '';
+  return `Pair checks: ${used.length} of ${rows.length} confusable pairs told apart by sound. ${list.join('; ')}.${tail}`;
+}
+return { PAIRS_VERSION, PAIR_GATE, pairKey, pairScore, fitThreshold, fitPair, pairCandidates, pairPick, pairOrder, pairsImpact, fitPairs, pairsLine };
 })();
 /* ---- core/recommend/audio-gaps.mjs ---- */
 __mod["core/recommend/audio-gaps.mjs"] = (function () {
@@ -10131,7 +10669,7 @@ return { PLPROFILE_VERSION, MIN_HEARD, SPLIT_MIN_HEARD, SPLIT_MIN_SHARE, SPLIT_M
 })();
 /* ---- core/audio/order.mjs ---- */
 __mod["core/audio/order.mjs"] = (function () {
-const { tempoOf, tempoRelation, MIX_TOLERANCE, MIX_MIN_CONF } = __mod["core/audio/match.mjs"];
+const { tempoOf, tempoRelation, keyOfRecord, keyFit, MIX_TOLERANCE, MIX_MIN_CONF } = __mod["core/audio/match.mjs"];
 const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
 // DJ order: a playlist ordered so each next track can be mixed into the last.
 //
@@ -10146,7 +10684,8 @@ const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
 // (SMARTER-GENRES-PLAN.md §3, R3): tempo and energy measured from Deezer
 // previews in the listener's browser, and cosine similarity between their
 // audio embeddings. Nothing is trained, nothing leaves the device, nothing is
-// pooled across accounts. Tracks that haven't been heard (or whose tempo
+// pooled across accounts. Key is used only for tracks whose key reading clears
+// match.mjs's KEY_MIN_CONF, and only as a cost on a clash. Tracks that haven't been heard (or whose tempo
 // reading is too unsure to mix on) are handed back untouched as `rest`, for
 // the caller to place as it always did.
 //
@@ -10168,7 +10707,7 @@ const MIN_MIX = 8;
 /** How many unused tracks, nearest in tempo, each step considers. */
 const CANDIDATES = 32;
 /** What each part of a step costs. Tempo dominates: a step you can't beatmatch is a bad step. */
-const WEIGHTS = Object.freeze({ tempo: 1, sound: 1.6, energy: 1.2, artist: 1, octave: 0.15 });
+const WEIGHTS = Object.freeze({ tempo: 1, sound: 1.6, energy: 1.2, artist: 1, octave: 0.15, key: 0.35 });
 
 const LOG_TOL = t => Math.log2(1 + t);
 const fold = bpm => { const l = Math.log2(bpm); return l - Math.floor(l); };
@@ -10275,7 +10814,7 @@ function mixOrder(tracks, index, { arc = 'flat', seed = 1, tolerance = MIX_TOLER
   const tol = LOG_TOL(tolerance);
   const node = heard.map(t => {
     const row = index.get(t.id), tp = mixTempo(row);
-    return { t, emb: row.emb, bpm: tp.bpm, f: fold(tp.bpm), artist: artistOf(t) ?? '' };
+    return { t, emb: row.emb, bpm: tp.bpm, f: fold(tp.bpm), artist: artistOf(t) ?? '', key: keyOfRecord(row.rec) };
   });
   const ranks = arc === 'flat' ? null : energyRanks(heard.map(t => t.id), index);
   const useEnergy = !!ranks?.size;
@@ -10328,6 +10867,8 @@ function mixOrder(tracks, index, { arc = 'flat', seed = 1, tolerance = MIX_TOLER
       let cost = WEIGHTS.tempo * (d <= 1 ? 0.4 * d : 1 + 2 * Math.min(d - 1, 3));
       if (d <= 1 && Math.abs(Math.log2(c.bpm / cur.bpm)) > 0.5) cost += WEIGHTS.octave;
       cost += WEIGHTS.sound * (1 - dot(cur.emb, c.emb));
+      // Key counts only when both tracks' keys are sure (match.mjs KEY_MIN_CONF): a clash costs, nothing else does.
+      if (keyFit(cur.key, c.key) === 'clash') cost += WEIGHTS.key;
       if (target !== null) {
         const e = ranks.get(c.t.id);
         if (e !== undefined) cost += WEIGHTS.energy * Math.abs(e - target);
@@ -13095,11 +13636,13 @@ globalThis["BetterfyBridge"] = __mod["core/intrinsic/bridge.mjs"];
 globalThis["BetterfyBridgeFetch"] = __mod["core/intrinsic/bridge-fetch.mjs"];
 globalThis["BetterfyDeezer"] = __mod["core/sources/deezer.mjs"];
 globalThis["BetterfyCalibrate"] = __mod["core/intrinsic/calibrate.mjs"];
+globalThis["BetterfyAgree"] = __mod["core/intrinsic/agree.mjs"];
 globalThis["BetterfyBlend"] = __mod["core/intrinsic/blend.mjs"];
 globalThis["BetterfyWeightFit"] = __mod["core/validate/weights.mjs"];
 globalThis["BetterfyBlendScore"] = __mod["core/validate/blend.mjs"];
 globalThis["BetterfyFamily"] = __mod["core/intrinsic/family.mjs"];
 globalThis["BetterfyMood"] = __mod["core/intrinsic/mood.mjs"];
+globalThis["BetterfyPairs"] = __mod["core/intrinsic/pairs.mjs"];
 globalThis["BetterfyGaps"] = __mod["core/recommend/gaps.mjs"];
 globalThis["BetterfyAudioGaps"] = __mod["core/recommend/audio-gaps.mjs"];
 globalThis["BetterfyWikidata"] = __mod["core/sources/wikidata.mjs"];

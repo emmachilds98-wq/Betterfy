@@ -34,6 +34,10 @@ import { SAMPLE_RATE } from '../mel.mjs';
 export const BEATS_VERSION = '1.0.0';
 /** Default model location, relative to the page (docs/). Override with createBeatTracker({ modelUrl }). */
 export const BEAT_MODEL_URL = 'models/beat-this-small0.onnx';
+/** The file under models/ (self-hosted, MIT, ~10 MB), as the other ears' *_FILE constants. */
+export const BEAT_MODEL_FILE = 'beat-this-small0.onnx';
+/** Flagged records given Beat This per start(): ~1 s each on a laptop, so a run stays short. */
+export const BEATS_FILL_PER_RUN = 40;
 /** Frames of zero padding each side; the model was not trained on its edges. */
 export const BORDER = 6;
 /** Beats within this fraction of a level count as that level. */
@@ -231,6 +235,16 @@ export function withBeats(dsp, tracker, opts) {
     try { beat = await tracker.measure(windows); } catch { return d; }
     return { ...resolveOctave(d, beat, opts), beatsV: BEATS_VERSION };
   };
+}
+
+/**
+ * Beat This runs only where the DSP is unsure of the half/double-time level
+ * (BUILD-5-PROGRESS.md: flagged-only 82.7% ±1 BPM, 43 octave errors, against the
+ * DSP's 80.9% / 50; run on every record it was 81.1% / 49). Needs it: a tempo
+ * flagged octave-ambiguous that Beat This hasn't listened to yet.
+ */
+export function needsBeatsFlagged(rec) {
+  return needsBeats(rec) && rec.dsp.octaveAmbiguous === true;
 }
 
 /** Does this record have a tempo that Beat This hasn't listened to yet (this BEATS_VERSION)? */

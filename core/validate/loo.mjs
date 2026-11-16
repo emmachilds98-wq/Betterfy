@@ -34,6 +34,7 @@
 import { buildSpace, placements, withAudioLayer, componentParts, BANDS, WEIGHTS } from '../intrinsic/space.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
 import { scoresOf } from '../intrinsic/calibrate.mjs';
+import { sourceTops } from '../intrinsic/agree.mjs';
 import { audioIndex, NEAR_DEFAULT } from '../intrinsic/audio.mjs';
 import { audioGate, earChoice, nearChoice } from './gate.mjs';
 
@@ -156,6 +157,11 @@ const tallyOut = t => ({ scored: t.scored, top1: rate(t.top1, t.scored), top3: r
  *                                 reported in `withAudio.arms[ear]` with its
  *                                 own gate verdict. gate.mjs `earChoice` reads
  *                                 them against the first ear.
+ * @param {boolean} [opts.sources] with `collect`, also put `src` on every
+ *                                 row: each source's own top picks
+ *                                 (core/intrinsic/agree.mjs sourceTops), for
+ *                                 "Sure when sources agree". Off, rows are
+ *                                 exactly as before (the golden pins them).
  * @param {boolean} [opts.fitParts] also return `partRows`: each held-out
  *                                 track's raw components against every
  *                                 destination of its fold's space, for
@@ -168,7 +174,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          weights = null, targets = null, bridge = null,
                                          audio = null, collect = false,
                                          genreGraph = false, soundWeights = null,
-                                         fitParts = false } = {}) {
+                                         fitParts = false, sources = false } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -253,7 +259,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       bucket.n++;
 
       const ranked = out.results ?? [];
-      if (rows) rows.push({ id, scores: scoresOf(ranked), truth: [...want].sort() });
+      if (rows) rows.push({ id, scores: scoresOf(ranked), truth: [...want].sort(), ...(sources ? { src: sourceTops(ranked) } : {}) });
       const hit1 = ranked[0] && want.has(ranked[0].playlistId);
       const hit3 = ranked.slice(0, 3).some(r => want.has(r.playlistId));
 
@@ -271,7 +277,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
       if (plus) {
         const more = placements(track, space, { limit: limit3, weights: plus });
         const r = more.results ?? [];
-        if (rowsPlus) rowsPlus.push({ id, scores: scoresOf(r), truth: [...want].sort() });
+        if (rowsPlus) rowsPlus.push({ id, scores: scoresOf(r), truth: [...want].sort(), ...(sources ? { src: sourceTops(r) } : {}) });
         const p1 = r[0] && want.has(r[0].playlistId);
         const p3 = r.slice(0, 3).some(x => want.has(x.playlistId));
         if (r[0]?.parts && 'bridge' in r[0].parts) bridgeJudged++;
@@ -283,7 +289,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
         const more = space.audio
           ? placements(track, space, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
         const r = more.results ?? [];
-        if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort() });
+        if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort(), ...(sources ? { src: sourceTops(r) } : {}) });
         const s1 = r[0] && want.has(r[0].playlistId);
         const s3 = r.slice(0, 3).some(x => want.has(x.playlistId));
         if (space.audio?.index.has(id)) { sound.heard++; if (fresh) sound.heardNeverFiled++; }
@@ -296,7 +302,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
           const sp = armSpaces[i];
           const res = sp.audio ? placements(track, sp, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
           const ra = res.results ?? [];
-          if (a.t.rows) a.t.rows.push({ id, scores: scoresOf(ra), truth: [...want].sort() });
+          if (a.t.rows) a.t.rows.push({ id, scores: scoresOf(ra), truth: [...want].sort(), ...(sources ? { src: sourceTops(ra) } : {}) });
           const a1 = ra[0] && want.has(ra[0].playlistId);
           const a3 = ra.slice(0, 3).some(x => want.has(x.playlistId));
           if (sp.audio?.index.has(id)) { a.t.heard++; if (fresh) a.t.heardNeverFiled++; }

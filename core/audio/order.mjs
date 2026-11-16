@@ -12,7 +12,8 @@
 // (SMARTER-GENRES-PLAN.md §3, R3): tempo and energy measured from Deezer
 // previews in the listener's browser, and cosine similarity between their
 // audio embeddings. Nothing is trained, nothing leaves the device, nothing is
-// pooled across accounts. Tracks that haven't been heard (or whose tempo
+// pooled across accounts. Key is used only for tracks whose key reading clears
+// match.mjs's KEY_MIN_CONF, and only as a cost on a clash. Tracks that haven't been heard (or whose tempo
 // reading is too unsure to mix on) are handed back untouched as `rest`, for
 // the caller to place as it always did.
 //
@@ -22,7 +23,7 @@
 // scores only the nearest unused tracks around the current one. A 12,000-track
 // library therefore costs n × CANDIDATES dot products, not n².
 
-import { tempoOf, tempoRelation, MIX_TOLERANCE, MIX_MIN_CONF } from './match.mjs';
+import { tempoOf, tempoRelation, keyOfRecord, keyFit, MIX_TOLERANCE, MIX_MIN_CONF } from './match.mjs';
 import { audioIndex } from '../intrinsic/audio.mjs';
 
 export const ORDER_VERSION = '1.0.0';
@@ -34,7 +35,7 @@ export const MIN_MIX = 8;
 /** How many unused tracks, nearest in tempo, each step considers. */
 export const CANDIDATES = 32;
 /** What each part of a step costs. Tempo dominates: a step you can't beatmatch is a bad step. */
-export const WEIGHTS = Object.freeze({ tempo: 1, sound: 1.6, energy: 1.2, artist: 1, octave: 0.15 });
+export const WEIGHTS = Object.freeze({ tempo: 1, sound: 1.6, energy: 1.2, artist: 1, octave: 0.15, key: 0.35 });
 
 const LOG_TOL = t => Math.log2(1 + t);
 const fold = bpm => { const l = Math.log2(bpm); return l - Math.floor(l); };
@@ -141,7 +142,7 @@ export function mixOrder(tracks, index, { arc = 'flat', seed = 1, tolerance = MI
   const tol = LOG_TOL(tolerance);
   const node = heard.map(t => {
     const row = index.get(t.id), tp = mixTempo(row);
-    return { t, emb: row.emb, bpm: tp.bpm, f: fold(tp.bpm), artist: artistOf(t) ?? '' };
+    return { t, emb: row.emb, bpm: tp.bpm, f: fold(tp.bpm), artist: artistOf(t) ?? '', key: keyOfRecord(row.rec) };
   });
   const ranks = arc === 'flat' ? null : energyRanks(heard.map(t => t.id), index);
   const useEnergy = !!ranks?.size;
@@ -194,6 +195,8 @@ export function mixOrder(tracks, index, { arc = 'flat', seed = 1, tolerance = MI
       let cost = WEIGHTS.tempo * (d <= 1 ? 0.4 * d : 1 + 2 * Math.min(d - 1, 3));
       if (d <= 1 && Math.abs(Math.log2(c.bpm / cur.bpm)) > 0.5) cost += WEIGHTS.octave;
       cost += WEIGHTS.sound * (1 - dot(cur.emb, c.emb));
+      // Key counts only when both tracks' keys are sure (match.mjs KEY_MIN_CONF): a clash costs, nothing else does.
+      if (keyFit(cur.key, c.key) === 'clash') cost += WEIGHTS.key;
       if (target !== null) {
         const e = ranks.get(c.t.id);
         if (e !== undefined) cost += WEIGHTS.energy * Math.abs(e - target);

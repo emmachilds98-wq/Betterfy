@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-2006">
+<meta name="bf-build" content="2026-11-16-2329">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1924,7 +1924,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-2006</span>
+    <span class="mono">build 2026-11-16-2329</span>
   </p>
 
   <div class="feat">
@@ -2017,7 +2017,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-2006</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-2329</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2134,7 +2134,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-2006. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-2329. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5407,6 +5407,16 @@ function familyLine(f, pc) {
     + `(flat top-1 ${pc(f.flat)}, ${f.n} tracks); ${sure} — ${f.use ? 'used' : 'not used (family top-1 under 85%)'}`;
 }
 
+/** Package 4: "Sure when sources agree", from a calibration report's `agree`
+ *  (core/intrinsic/calibrate.mjs). Empty when the run had no levels. */
+function agreeText(a, p) {
+  if (!a) return '';
+  if (!a.use) return `<b>Sure when sources agree:</b> not used yet (${a.why ?? 'not enough held-out cards'}). Sure still needs the margin alone.`;
+  return `<b>Sure when sources agree:</b> ${p(a.share)} of cards, right ${p(a.right)} of ${a.n} held out. `
+    + `Sure overall (by margin or agreement): ${p(a.sure?.share)}, right ${p(a.sure?.right)}.`
+    + (a.share < 0.25 ? ' That is under a quarter of cards so far.' : '');
+}
+
 /** "How sure it is", checked on tracks the thresholds were not fitted on. */
 function calibCard(p, calib) {
   const c = calib;
@@ -5431,7 +5441,8 @@ function calibCard(p, calib) {
       ${b?.n ? `<hr><div><span>With similar artists: short list / not sure</span><b class="mono">${p(b.chooseShare)} / ${p(b.unsureShare)}</b></div>
       ${c.bridge.cal?.tau != null && b.confidentN ? `<div><span>…confident, and right</span><b class="mono">${p(b.confidentShare)}, ${p(b.confidentRight)}</b></div>` : ''}` : ''}
     </div>
-    <p class="why" style="margin-top:12px">${verdict}</p>`;
+    <p class="why" style="margin-top:12px">${verdict}</p>
+    ${(c.audio?.agree ?? c.base?.agree) ? `<p class="why" id="agreeLine" style="margin-top:8px">${agreeText(c.audio?.agree ?? c.base.agree, p)}</p>` : ''}`;
 }
 
 /** The with/without comparison on the score card. Empty when there is none. */
@@ -5566,7 +5577,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-2006`,
+    `Betterfy engine score — build 2026-11-16-2329`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5586,6 +5597,8 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
     ...(v.family ? [familyLine(v.family, pc)] : []),
     ...(v.moodLine ? [v.moodLine] : []),
+    ...(v.agreeLine ? [v.agreeLine] : []),
+    ...(v.pairsLine ? [v.pairsLine] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),
     ...(log && measureLines ? measureLines(log) : []),
@@ -6061,7 +6074,7 @@ const actions = {
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, familyLine, audioCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, view, tuneCardHtml, actions };
+return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -7037,7 +7050,7 @@ const n = x => (Number.isFinite(x) ? x.toLocaleString('en-GB') : '0');
  * The rows, in the order they matter to filing. `s` is the page's state (any
  * part may be missing): { lib: { playlists, liked }, listening: { artists },
  * cov: { pct, have, total }, lfm: { key, own, asked }, bridge: { on, deezerAsked,
- * deezerPct, wikidataAsked, wikidataPct }, audio: { on, state, heard, reason },
+ * deezerPct, wikidataAsked, wikidataPct, warm: { asked, total, running, quota, gate } }, audio: { on, state, heard, reason },
  * deep: { maest, clap }, discogs, engine: { status } }.
  * Each row: { id, name, on, kind: 'ok'|'idle'|'warn'|'off', status, did, optional? }.
  */
@@ -7064,6 +7077,14 @@ function helperRows(s = {}) {
     did: `Similar artists${b.deezerAsked ? ` (knows ${b.deezerPct}% of your artists)` : ''}, Discover picks without a key, and the 30-second previews Listening and Discover play.` });
   rows.push({ id: 'listenbrainz', name: 'ListenBrainz', on: b.on !== false, kind: b.on === false ? 'off' : 'ok', status: b.on === false ? 'Off' : 'On · no key',
     did: 'Similar artists from real listening sessions, for artists you have not filed yet and for Discover.' });
+  const w = b.warm ?? {};
+  const simOff = b.on === false, simGate = w.gate === false;
+  rows.push({ id: 'similar', name: 'Similar artists in File', on: !simOff, kind: simOff ? 'off' : simGate ? 'idle' : 'ok',
+    status: simOff ? 'Off' : w.running ? 'On · looking up' : simGate ? 'On · not used' : 'On',
+    did: simOff ? 'Turned off in Engine.'
+      : `${w.total ? `Similar artists: ${n(w.asked)} of ${n(w.total)} artists looked up` : 'Looked up by itself after the library loads'}${w.quota ? ', paused by Deezer for now' : ''}. `
+        + (simGate ? 'Your last Score run said they didn’t help your picks, so File leaves them out.'
+                   : 'File uses them for artists you haven’t filed yet, no Score run needed.') });
   const a = s.audio ?? {};
   const aKind = !a.on ? 'off' : a.problem ? 'warn' : 'ok';
   rows.push({ id: 'sound', name: 'Listening (sound)', on: !!a.on, kind: aKind,
@@ -9782,7 +9803,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-2006';
+const BUILD = '2026-11-16-2329';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10120,7 +10141,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-2006', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-2329', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -10878,7 +10899,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-2006');
+    const w = new Worker('reports-worker.js?v=2026-11-16-2329');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11598,13 +11619,33 @@ const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
 function filePicks(t) {
   const tags = typeof blendPicks === 'function' ? blendPicks(t, t?.suggest ?? []) : t?.suggest ?? [];
   const sound = typeof soundPicks === 'function' ? soundPicks(t) : [];
-  if (!sound.length) return tags;
+  if (!sound.length) {
+    // Nothing from tags or sound: where this artist's similar artists are filed.
+    if (!tags.length && typeof bridgePicks === 'function') { const b = bridgePicks(t); if (b.length) return b; }
+    return filePairOrder(t, tags);
+  }
   const out = sound.slice(0, 2);
   for (const sg of [...tags, ...sound.slice(2)]) {
     if (out.length >= 3) break;
     if (!out.some(o => o.id === sg.id)) out.push(sg);
   }
-  return out;
+  return filePairOrder(t, out);
+}
+/* Package 5 (core/intrinsic/pairs.mjs): when the top two picks are two
+ * playlists of one family this account's Score run can tell apart by sound,
+ * put the one the track sounds like first. Only the order of those two: never
+ * on a Sure card, never a new pick. Not scored yet, or no pair earned it: the
+ * picks as they were. */
+function filePairOrder(t, picks) {
+  const fit = typeof ENG !== 'undefined' ? ENG.calib?.pairs : null;
+  if (!fit?.use || !t?.id || (picks?.length ?? 0) < 2 || typeof BetterfyPairs === 'undefined') return picks;
+  try {
+    if (typeof engineDecisionOf === 'function' && engineDecisionOf(t.id)?.kind === 'confident') return picks;
+    const fams = engineFamiliesMemo(), famOf = id => fams.get(id) ?? `own:${id}`;
+    if (famOf(picks[0].id) !== famOf(picks[1].id)) return picks;
+    const { swapped } = BetterfyPairs.pairOrder(t.id, [picks[0].id, picks[1].id], fit, engineMoodIndex(), LIB);
+    return swapped ? [{ ...picks[1], pair: true }, picks[0], ...picks.slice(2)] : picks;
+  } catch { return picks; }
 }
 /* The band the File card shows for its leading pick: the Engine's calibrated
  * verdict on this track when it has judged it, else the pick's own band. */
@@ -11646,7 +11687,7 @@ function soundIdHTML(t) {
       ${id.why.length ? `<span class="why">${esc(id.why.join('; '))}.</span>` : ''}
       <div class="sndcols">
         ${s.neighbours.length ? `<div><h4>Sounds like</h4><ol>${s.neighbours.map(n => `<li>${who(n)}${where(n) ? ` <span class="sub">in ${where(n)}</span>` : ''}</li>`).join('')}</ol></div>` : ''}
-        ${s.mix.length ? `<div><h4>Mixes with</h4><ol>${s.mix.map(m => `<li>${who(m)} <span class="sub mono">${Math.round(m.bpm)} BPM${rel[m.rel] ?? ''}</span></li>`).join('')}</ol></div>` : ''}
+        ${s.mix.length ? `<div><h4>Mixes with</h4><ol>${s.mix.map(m => `<li>${who(m)} <span class="sub mono">${Math.round(m.bpm)} BPM${rel[m.rel] ?? ''}${m.key ? ` · ${esc(m.key)}${m.keyFit === 'clash' ? '' : ' fits'}` : ''}</span></li>`).join('')}</ol></div>` : ''}
       </div></details>` : ''}</div>`;
 }
 /* One line under the picks saying where they came from when it isn't sound,
@@ -14357,7 +14398,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-2006';
+    s.src = 'engine.js?v=2026-11-16-2329';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -14379,7 +14420,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-2006');
+    const w = new Worker('engine-worker.js?v=2026-11-16-2329');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14502,7 +14543,7 @@ async function engineLoadCalibration() {
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
       ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, audioGate: c.audioGate ?? null,
                    ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), ...(c.family ? { family: c.family } : {}),
-                   ...(c.mood ? { mood: c.mood } : {}), at: c.at ?? null };
+                   ...(c.mood ? { mood: c.mood } : {}), ...(c.pairs ? { pairs: c.pairs } : {}), at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
 }
 
@@ -14527,6 +14568,26 @@ function engineMoodFit() {
   const index = engineMoodIndex();
   if (!index?.size || typeof BetterfyMood === 'undefined') return null;
   const fit = BetterfyMood.fitMoods(LIB, index, id => CFG[id]?.axis ?? null);
+  return fit.rows.length ? fit : null;
+}
+
+/* ---------- the playlists it confuses (docs/NEXT-WORKPLAN.md package 5) ----------
+ * A small sound check per confusable pair inside one family, fitted on half
+ * the pair's heard members and checked on the other half (core/intrinsic/pairs.mjs).
+ * Used only to order a card's top two picks, never to make a card Sure. */
+let FAMS_MEMO = { key: null, map: null };
+function engineFamiliesMemo() {
+  const key = engineTargets().map(id => `${id}:${CFG[id]?.name ?? ''}`).join('|');
+  if (FAMS_MEMO.key !== key) FAMS_MEMO = { key, map: engineFamilies() };
+  return FAMS_MEMO.map;
+}
+function enginePairsFit(rows) {
+  const index = engineMoodIndex();
+  if (!index?.size || !rows?.length || typeof BetterfyPairs === 'undefined' || typeof BetterfyFamily === 'undefined') return null;
+  const fams = engineFamiliesMemo(), targets = new Set(engineTargets());
+  const fit = BetterfyPairs.fitPairs(LIB, index, rows, ENG.pairs ?? [], {
+    inScope: id => targets.has(id),
+    together: (a, b) => (fams.get(a) ?? `own:${a}`) === (fams.get(b) ?? `own:${b}`) });
   return fit.rows.length ? fit : null;
 }
 
@@ -14556,8 +14617,18 @@ async function engineCalibrate(v) {
   const bridgeRows = wf?.bridge?.use && wf.bridge.rows ? wf.bridge.rows : mine.withBridge?.rows;
   if (wf?.plain) delete wf.plain.rows;
   if (wf?.bridge) delete wf.bridge.rows;
-  const base = BetterfyCalibrate.calibrationReport(baseRows);
-  const bridge = bridgeRows ? BetterfyCalibrate.calibrationReport(bridgeRows) : null;
+  // Package 4: each row's agreement level (core/intrinsic/agree.mjs) from the
+  // sources of the run that ranked it, plus the tag engine's own top picks,
+  // so "confident" can be fitted per level. Without the module: as before.
+  const agreeOn = typeof BetterfyAgree !== 'undefined';
+  const tagTops = v.tagTops ?? null;
+  // Read with only the sources the File card will have: similar artists count
+  // only once the File space carries them (package 2), and tags only when loaded.
+  const drop = [...(ENG.space?.bridge ? [] : ['similar']), ...(tagTops ? [] : ['tags'])];
+  const withAgree = (rows, ...from) => agreeOn && rows
+    ? BetterfyAgree.withAgreement(rows, BetterfyAgree.srcByIdOf(...from), tagTops, { drop }) : rows;
+  const base = BetterfyCalibrate.calibrationReport(withAgree(baseRows, mine.rows));
+  const bridge = bridgeRows ? BetterfyCalibrate.calibrationReport(withAgree(bridgeRows, mine.withBridge?.rows)) : null;
   // WP-C1: which ear this run chose. The first ear unless a second ear passed
   // the gate and beat it; its calibration then comes from that ear's rows.
   const choice = mine.withAudio?.choice ?? null;
@@ -14566,13 +14637,19 @@ async function engineCalibrate(v) {
   // Calibrated on the engine that will place: the chosen ear, or the first ear with its nearest tracks.
   const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows
     : near ? mine.withAudio.arms?.near?.rows : mine.withAudio?.rows;
-  const audio = soundRows ? BetterfyCalibrate.calibrationReport(soundRows) : null;
+  const audio = soundRows ? BetterfyCalibrate.calibrationReport(withAgree(soundRows, soundRows)) : null;
+  const agreeRep = audio?.agree ?? base?.agree ?? null;
+  if (agreeOn && agreeRep) v.agreeLine = BetterfyAgree.agreeLine(audio?.agree ? audio : base);
+  delete v.tagTops;
   // Family first (ENGINE-REVIEW layer 3), measured on the rows of the engine that places.
   const family = engineFamilyFit(soundRows ?? baseRows);
   if (family) v.family = family.summary;
   let mood = null;
   try { mood = engineMoodFit(); } catch { mood = null; }
   if (mood) v.moodLine = BetterfyMood.moodLine(mood);
+  let pairs = null;
+  try { pairs = enginePairsFit(soundRows ?? baseRows); } catch { pairs = null; }
+  if (pairs) v.pairsLine = BetterfyPairs.pairsLine(pairs, id => CFG[id]?.name ?? id);
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
@@ -14580,12 +14657,12 @@ async function engineCalibrate(v) {
   if (mine.withAudio) delete mine.withAudio.rows;
   for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
   ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}),
-                ...(mood ? { mood } : {}), at: Date.now() };
+                ...(mood ? { mood } : {}), ...(pairs ? { pairs } : {}), at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
                              targets: engineTargets(), base, bridge, audio, audioGate,
                              ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}),
-                             ...(mood ? { mood } : {}), at: ENG.calib.at });
+                             ...(mood ? { mood } : {}), ...(pairs ? { pairs } : {}), at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }
@@ -14608,16 +14685,32 @@ function engineDecorate() {
     const p = full.results?.[0]?.parts ?? {};
     const scores = BetterfyCalibrate.scoresOf(full.results ?? []);
     const useCal = 'audio' in p || 'learned' in p ? soundCal : cal;
+    // Package 4: how the sources line up behind the lead (sound, filing
+    // history, similar artists, tags), read the way the Score run read it.
+    const agree = useCal?.byLevel && typeof BetterfyAgree !== 'undefined'
+      ? BetterfyAgree.agreement(scores[0]?.[0] ?? null,
+          BetterfyAgree.sourceTops(full.results ?? [], { tags: engineTagScores(raw) })) : null;
+    const dopts = agree ? { agree: agree.level } : {};
     // Family first, once this account's Score run earned it: commit to the
     // family and ask only which playlist inside it.
     const fam = ENG.calib?.family?.use ? ENG.calib.family : null;
-    const dc = fam ? BetterfyFamily.decideCard(scores, useCal, fam.cal, families ??= engineFamilies()) : null;
-    const d = dc ? { ...dc, kind: dc.kind === 'sure' ? 'confident' : dc.kind } : BetterfyCalibrate.decide(scores, useCal);
+    const dc = fam ? BetterfyFamily.decideCard(scores, useCal, fam.cal, families ??= engineFamilies(), dopts) : null;
+    const d = dc ? { ...dc, kind: dc.kind === 'sure' ? 'confident' : dc.kind } : BetterfyCalibrate.decide(scores, useCal, dopts);
     row.decision = { kind: d.kind, ...(d.family ? { family: d.family } : {}),
+                     ...(agree ? { agree: agree.agree, against: agree.against } : {}),
                      playlists: d.playlists.map(id => ({ id, name: space.destinations.get(id)?.name ?? id })) };
     count[d.kind] = (count[d.kind] ?? 0) + 1;
   }
   sh.decided = cal ? count : null;
+}
+
+/** The tag engine's ranking of one liked track, as [[playlistId, score]], for
+ *  the agreement check. Empty when tags or the reports are not loaded. */
+function engineTagScores(raw) {
+  try {
+    if (!raw || !R?.profiles || !TAGS || typeof rank !== 'function' || typeof blendTags !== 'function') return null;
+    return rank(raw, blendTags(), R.profiles, R.idf, { top: Infinity }).map(b => [b.id, b.score]);
+  } catch { return null; }
 }
 
 /** The comparison with the File screen's picks, for the tracks waiting first.
@@ -14833,7 +14926,7 @@ const engineValidate = guard(async () => {
     // with sound leading (soundFirst), so the number is the engine you use.
     try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioScore(audio),
                                                     opts: { folds: 5, limit: VALIDATE_N, collect: true,
-                                                            genreGraph: true, soundFirst: true, fitParts: true } }); }
+                                                            genreGraph: true, soundFirst: true, fitParts: true, sources: true } }); }
     catch { done = null; }
     const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
     if (done?.result?.mine) {
@@ -14844,7 +14937,7 @@ const engineValidate = guard(async () => {
       await yieldToPaint();
       const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
                        audio: engineAudioScore(audio), collect: true,
-                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS, fitParts: true };
+                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS, fitParts: true, sources: true };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
@@ -14859,6 +14952,8 @@ const engineValidate = guard(async () => {
               targets: common.targets, isMirror: isMirrorPlaylist, nativeFit: fit }) : null; }
       catch { blend = null; }
       const weights = BetterfyWeightFit.fitSummary(fit);
+      // The tag engine's own top picks per track, for the agreement check (package 4).
+      const tagTops = base?.rows && typeof BetterfyAgree !== 'undefined' ? BetterfyAgree.tagTopsOf(base.rows) : null;
       if (base) delete base.rows;
       let identify = null;
       try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
@@ -14867,7 +14962,7 @@ const engineValidate = guard(async () => {
       try { fill = BetterfyFill.fillRecall(LIB, { tags, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist }); } catch { fill = null; }
       let teach = null;
       try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true, audio: engineAudioIn(audio) }); } catch { teach = null; }
-      ENG.val = { mine, base, blend, identify, weights, fill, teach, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      ENG.val = { mine, base, blend, identify, weights, fill, teach, tagTops, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).
     try { if (ENG.val.fill?.recall != null) LS.setItem('bf_fill', JSON.stringify({ ...ENG.val.fill, at: Date.now() })); } catch { /* shown next run */ }
@@ -14875,6 +14970,8 @@ const engineValidate = guard(async () => {
     try { if (ENG.val.teach) teachRemember(ENG.val.teach); } catch { /* shown next run */ }
     // The fitted weights first: calibration is refitted on the engine they
     // make, and the comparison above is redone with them.
+    // File's similar artists follow this account's own verdict (web/app/bridgewarm.js).
+    if (typeof bridgeGateRemember === 'function') bridgeGateRemember(ENG.val);
     await weightsRemember(ENG.val);
     await engineCalibrate(ENG.val);
     // Kept for the File screen, which uses the blend only if this says it is ahead.
@@ -14986,7 +15083,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-2006';
+    s.src = 'audio.js?v=2026-11-16-2329';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -15007,7 +15104,7 @@ const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;
 function deepSettings() {
   if (globalThis.BetterfyAudio?.readDeepSettings) return BetterfyAudio.readDeepSettings(LS);
   let s = null; try { s = JSON.parse(LS.getItem('bf_audio_deep') || 'null'); } catch { s = null; }
-  return { maest: s?.maest !== false, clap: s?.clap !== false, memoryOverride: s?.memoryOverride === true };
+  return { maest: s?.maest !== false, clap: s?.clap !== false, beats: s?.beats !== false, memoryOverride: s?.memoryOverride === true };
 }
 /** May this deep ear run now? 'off' until audio.js has loaded. */
 function deepAllowed(ear) {
@@ -15023,7 +15120,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-2006', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-2329', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -15051,6 +15148,13 @@ async function audioInit() {
       await audioEars();
       const c = await AUDIO.wear.loadClap(audioModelUrl(A.CLAP_MODEL_FILE));
       return { decode: buf => A.decodeTo48k(buf), embed: c.embed };
+    },
+    // Beat This (tempo): opt-in, Wi-Fi only, only for tracks whose half/double time the DSP is unsure of.
+    // Its model (~10 MB) loads in the same Worker on the first such run.
+    beatsOn: () => deepAllowed('beats') === 'ok',
+    loadBeats: async () => {
+      await audioEars();
+      return AUDIO.wear.loadBeats(audioModelUrl(A.BEAT_MODEL_FILE));
     },
     onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); },
   });
@@ -15287,7 +15391,8 @@ function learnNow(trackId, playlistIds) {
   let changed = false;
   for (const space of new Set([SOUND.space, typeof ENG !== 'undefined' ? ENG.space : null].filter(Boolean)))
     for (const pid of [].concat(playlistIds)) changed = BetterfyIntrinsic.learnFiled(space, raw, pid) || changed;
-  if (changed) { SOUND.memo = null; SOUND.idMemo = null; SOUND.moodMemo = new Map(); }
+  if (changed) { SOUND.memo = null; SOUND.idMemo = null; SOUND.moodMemo = new Map();
+                 if (typeof bridgeSpaceStale === 'function') bridgeSpaceStale(); }
 }
 
 /** Mood "also fits" chips for one heard track (core/intrinsic/mood.mjs): the mood
@@ -15306,10 +15411,11 @@ function moodChipsFor(t) {
 /** Sound-led picks for one track on the File screen, or [] when it hasn't been
  *  heard, the space isn't ready, or sound can't tell (too few heard members). */
 function soundPicks(t) {
-  const space = SOUND.space;
+  // With similar artists let in, once they are gathered (web/app/bridgewarm.js).
+  const space = typeof bridgedSpace === 'function' ? bridgedSpace(SOUND.space) : SOUND.space;
   if (!t?.id || !space?.audio || !globalThis.BetterfyIntrinsic) return [];
   const rejected = FB[t.id]?.rejected ?? [];
-  const key = `${t.id}|${rejected.join()}|${space.audio.index.size}`;
+  const key = `${t.id}|${rejected.join()}|${space.audio.index.size}${typeof bridgeVer === 'function' ? '|' + bridgeVer() : ''}`;
   if (SOUND.memo?.key === key) return SOUND.memo.picks;
   if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
   const raw = SOUND.byId.get(t.id);
@@ -15459,7 +15565,8 @@ async function blendListening() {
 /** Gather similar artists for the tracks waiting to be filed, in the background,
  *  most-played artists first, saving after every chunk so nothing is asked twice. */
 async function blendFetch() {
-  if (BLEND.fetching || !bridgeOn() || !R?.backlog?.length) return;
+  // The library-wide background lookups (web/app/bridgewarm.js) already cover these.
+  if (BLEND.fetching || !bridgeOn() || !R?.backlog?.length || (typeof BRIDGE_WARM !== 'undefined' && BRIDGE_WARM.running)) return;
   BLEND.fetching = true;
   try {
     const listen = await blendListening();
@@ -15594,6 +15701,222 @@ async function weightsRemember(v) {
 async function weightsForget() {
   try { await idb.del(WFIT_KEY); } catch {}
   WFIT.rec = null;
+}
+/* ======================= similar artists, fetched in the background =======================
+ * docs/NEXT-WORKPLAN.md package 2. Deezer's "fans also like" and ListenBrainz's
+ * listening-session neighbours (the neighbour bridge, core/intrinsic/bridge.mjs)
+ * used to be fetched only for the tracks a Score run scored, so File only had
+ * them once somebody pressed Score, and only for those artists. Now they are
+ * gathered quietly after the library loads (after Wikidata and Last.fm, which
+ * share the request budget and write the tag cache), into the same per-artist
+ * cache the Score run fills (BRIDGE_KEY), for every artist in the library:
+ * artists of the liked songs waiting to be filed first, then the filed ones,
+ * each group most-played first (inEnrichOrder). Saved after every chunk, so a
+ * closed tab loses little and the next load carries on where it stopped.
+ *
+ * File uses what is gathered straight away:
+ *  - heard tracks: the sound-led picks (soundPicks) are placed in a copy of
+ *    the sound space with the bridge let in (withBridge), so a never-filed
+ *    artist's track also hears where artists like them are filed;
+ *  - tracks with no tag picks and no sound picks (an untagged artist nobody
+ *    has heard yet): picks from where their similar artists are filed.
+ *
+ * Gate: the account's own Score run (bridgeVerdict, the plan's bar: never-filed
+ * top-1 +5 points with no overall loss). A run that says the bridge does not
+ * clear it switches it off for File; no run yet keeps it on (the owner's
+ * library measured 11% -> 49%). `bf_bridge_off` switches all of it off.
+ * The outside sources only ever say who sits near whom; the vote lands in this
+ * account's own playlists. Nothing here writes to Spotify.
+ * ======================================================================== */
+const BRIDGE_WARM = { running: false, asked: 0, total: 0, at: null, err: null, quota: false,
+                      raw: null, bridge: null, ver: 0, loaded: false,
+                      spaceFor: null, spaceVer: -1, spaced: null, base: null, baseStatus: 'idle', drawn: 0,
+                      memo: new Map(), memoVer: -1, likedFor: null, liked: null };
+/** Artists looked up per save. */
+const BRIDGE_WARM_CHUNK = 40;
+/** The last Score run's verdict on similar artists, for File. */
+const BRIDGE_GATE_KEY = 'bf_bridge_gate';
+
+/** The account's own Score verdict, or null when it has never been scored with them. */
+function bridgeGate() {
+  try { return JSON.parse(LS.getItem(BRIDGE_GATE_KEY) || 'null'); } catch { return null; }
+}
+
+/** Keep the Score run's verdict (web/screens/engine.mjs bridgeVerdict). A run
+ *  without similar artists says nothing about them, so the last verdict stays. */
+function bridgeGateRemember(v) {
+  try {
+    if (!v?.mine?.withBridge || typeof SCREEN_MODS === 'undefined' || !SCREEN_MODS.engine?.bridgeVerdict) return;
+    const g = SCREEN_MODS.engine.bridgeVerdict(v);
+    if (!g) return;
+    LS.setItem(BRIDGE_GATE_KEY, JSON.stringify({ pass: g.pass, lift: +(g.lift ?? 0).toFixed(4),
+                                                 overall: +(g.overall ?? 0).toFixed(4), at: Date.now() }));
+    BRIDGE_WARM.spaceFor = null; BRIDGE_WARM.ver++;
+  } catch { /* not remembered: File keeps the default, on */ }
+}
+
+/** The bridge File may use right now, or null. */
+function bridgeForFile() {
+  if (!BRIDGE_WARM.bridge || (typeof bridgeOn === 'function' && !bridgeOn())) return null;
+  return bridgeGate()?.pass === false ? null : BRIDGE_WARM.bridge;
+}
+
+/** Let gathered lookups into File (and the blend, when that is on). */
+function bridgeWarmSet(raw) {
+  const has = !!raw && Object.keys(raw).length > 0;
+  BRIDGE_WARM.raw = has ? raw : null;
+  BRIDGE_WARM.bridge = has && LIB ? BetterfyBridge.bridgeFrom(raw, LIB) : null;
+  BRIDGE_WARM.ver++; BRIDGE_WARM.spaceFor = null;
+  if (typeof BLEND !== 'undefined' && BLEND.status === 'ready' && typeof blendSetBridge === 'function') blendSetBridge(raw);
+  if (typeof SOUND !== 'undefined') SOUND.memo = null;
+  // Redraw File at most every 15 s while lookups land, so a card does not jump under a thumb.
+  const now = Date.now();
+  if (typeof view !== 'undefined' && view === 'inbox' && now - BRIDGE_WARM.drawn > 15000) { BRIDGE_WARM.drawn = now; render(); }
+}
+
+/** What this device already remembers, once, without asking anything. */
+async function bridgeWarmLoad() {
+  if (BRIDGE_WARM.loaded) return;
+  BRIDGE_WARM.loaded = true;
+  let raw = null;
+  try { raw = (await idb.get(BRIDGE_KEY))?.raw ?? null; } catch { raw = null; }
+  if (raw) bridgeWarmSet(raw);
+}
+
+/** Who to look up, in the order that helps File most: the first-billed artists
+ *  of liked songs waiting to be filed, then everyone filed (their ids and MBIDs
+ *  are what map a neighbour back exactly), each group most-played first. */
+async function bridgeWarmArtists() {
+  const waiting = new Set((R?.backlog ?? []).map(b => b.id));
+  const liked = LIB.liked ?? [];
+  const unfiled = liked.filter(t => waiting.has(t.id));
+  const filed = [...liked.filter(t => !waiting.has(t.id)), ...(LIB.playlists ?? []).flatMap(p => p.tracks ?? [])];
+  const out = new Map(await inEnrichOrder(BetterfyBridge.sourceArtists(unfiled), ([, a]) => a.name));
+  for (const [id, a] of await inEnrichOrder(BetterfyBridge.sourceArtists(filed), ([, a]) => a.name)) {
+    const seen = out.get(id);
+    if (!seen) out.set(id, { ...a });
+    else if (!seen.isrc && a.isrc) out.set(id, { ...seen, isrc: a.isrc });
+  }
+  return out;
+}
+
+/** Whether an artist still needs asking: no fresh Deezer answer (when an ISRC
+ *  can reach them) or no fresh Wikidata/MusicBrainz answer. */
+function bridgeDue(raw, sid, a, now) {
+  const ttl = BetterfyBridgeFetch.TTL_MS;
+  const fresh = at => Number.isFinite(at) && now - at < ttl;
+  return (!!a?.isrc && !fresh(raw?.[sid]?.deezerAt)) || !fresh(raw?.[sid]?.mbidAt);
+}
+
+/** Gather similar artists for the whole library, quietly, resumably. */
+async function bridgeWarm() {
+  if (BRIDGE_WARM.running || !LIB || !bridgeOn()) return;
+  BRIDGE_WARM.running = true; BRIDGE_WARM.err = null; BRIDGE_WARM.quota = false;
+  try {
+    await engineLoad();
+    await bridgeWarmLoad();
+    // Data saver asks for no background downloads: use what is remembered, ask nothing.
+    if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return;
+    const artists = await bridgeWarmArtists();
+    let raw = BRIDGE_WARM.raw ?? {};
+    const now = Date.now();
+    const todo = [...artists].filter(([sid, a]) => bridgeDue(raw, sid, a, now));
+    BRIDGE_WARM.total = artists.size; BRIDGE_WARM.asked = artists.size - todo.length;
+    for (let i = 0; i < todo.length; i += BRIDGE_WARM_CHUNK) {
+      // Switched off, or a Score run or File's blend is filling the same cache: stop; the next load resumes.
+      if (!bridgeOn() || (typeof ENG !== 'undefined' && ENG.valRunning)
+          || (typeof BLEND !== 'undefined' && BLEND.fetching)) break;
+      const chunk = new Map(todo.slice(i, i + BRIDGE_WARM_CHUNK));
+      // Start from what is stored now, so answers a Score run or Discover saved meanwhile are kept.
+      try { raw = (await idb.get(BRIDGE_KEY))?.raw ?? raw; } catch { /* the copy in hand */ }
+      const { raw: next, stats } = await BetterfyBridgeFetch.gatherBridge(chunk,
+        { deezer: deezerJsonp, json: corsJson, cache: raw });
+      raw = next;
+      try { await idb.set(BRIDGE_KEY, { at: Date.now(), raw }); } catch { /* still used this session */ }
+      BRIDGE_WARM.asked += [...chunk].filter(([sid, a]) => !bridgeDue(raw, sid, a, Date.now())).length;
+      bridgeWarmSet(raw);
+      if (typeof underHoodRefresh === 'function') { try { underHoodRefresh(); } catch { /* not open */ } }
+      if (stats?.quota) { BRIDGE_WARM.quota = true; break; }
+    }
+  } catch (e) {
+    BRIDGE_WARM.err = e?.message ?? String(e);
+  } finally {
+    BRIDGE_WARM.running = false; BRIDGE_WARM.at = Date.now();
+  }
+}
+
+/** A space with the bridge let in, kept until the bridge or the space changes.
+ *  The space passed in is left alone (withBridge copies it). */
+function bridgedSpace(space) {
+  const b = space ? bridgeForFile() : null;
+  if (!b) return space;
+  if (BRIDGE_WARM.spaceFor === space && BRIDGE_WARM.spaceVer === BRIDGE_WARM.ver) return BRIDGE_WARM.spaced;
+  const spaced = BetterfyBridge.withBridge(space, b);
+  Object.assign(BRIDGE_WARM, { spaceFor: space, spaceVer: BRIDGE_WARM.ver, spaced });
+  return spaced;
+}
+/** A filing changed where artists live: work the homes out again on the next pick. */
+const bridgeSpaceStale = () => { BRIDGE_WARM.spaceFor = null; BRIDGE_WARM.memoVer = -1; };
+/** The memo key part that changes whenever File's bridge does. */
+const bridgeVer = () => (bridgeForFile() ? BRIDGE_WARM.ver : -1);
+
+/** The space bridge-only picks are placed in: the sound space or the Engine's
+ *  when one is ready, else one learned once (cached by engineSpace). */
+function bridgeBaseSpace() {
+  if (typeof SOUND !== 'undefined' && SOUND.space) return SOUND.space;
+  const targets = JSON.stringify(engineTargets());
+  if (typeof ENG !== 'undefined' && ENG.status === 'ready' && ENG.space
+      && JSON.stringify(ENG.space.targets ?? null) === targets) return ENG.space;
+  if (BRIDGE_WARM.base && JSON.stringify(BRIDGE_WARM.base.targets ?? null) === targets) return BRIDGE_WARM.base;
+  if (BRIDGE_WARM.baseStatus === 'idle') {
+    BRIDGE_WARM.baseStatus = 'working';
+    fire((async () => {
+      try {
+        await engineLoad();
+        BRIDGE_WARM.base = (await engineSpace()).space ?? null;
+        BRIDGE_WARM.baseStatus = BRIDGE_WARM.base ? 'ready' : 'error';
+      } catch { BRIDGE_WARM.base = null; BRIDGE_WARM.baseStatus = 'error'; }
+      BRIDGE_WARM.spaceFor = null;
+      if (typeof view !== 'undefined' && view === 'inbox') render();
+    })());
+  }
+  return null;
+}
+
+/** Picks for a track nothing else can place (no tags, not heard): where the
+ *  artists like this one are filed. [] when the bridge knows none of them. */
+function bridgePicks(t) {
+  if (!t?.id || !bridgeForFile() || !globalThis.BetterfyIntrinsic) return [];
+  const known = (t.artists ?? []).some(a => a?.id && BRIDGE_WARM.bridge.neighbours?.[a.id]?.length);
+  if (!known) return [];
+  const base = bridgeBaseSpace();
+  if (!base) return [];
+  if (BRIDGE_WARM.likedFor !== LIB) { BRIDGE_WARM.liked = new Map((LIB.liked ?? []).map(x => [x.id, x])); BRIDGE_WARM.likedFor = LIB; }
+  const raw = BRIDGE_WARM.liked.get(t.id);
+  if (!raw) return [];
+  const rejected = FB[t.id]?.rejected ?? [];
+  const spaced = bridgedSpace(base);
+  if (BRIDGE_WARM.memoVer !== BRIDGE_WARM.ver || BRIDGE_WARM.memoFor !== spaced) {
+    BRIDGE_WARM.memo = new Map(); BRIDGE_WARM.memoVer = BRIDGE_WARM.ver; BRIDGE_WARM.memoFor = spaced;
+  }
+  const key = `${t.id}|${rejected.join()}`;
+  if (BRIDGE_WARM.memo.has(key)) return BRIDGE_WARM.memo.get(key);
+  const out = BetterfyIntrinsic.placements(raw, spaced, { limit: Infinity, exclude: rejected.length ? new Set(rejected) : null });
+  const picks = (out.results ?? [])
+    .filter(r => (r.parts?.bridge ?? 0) > 0 && CFG[r.playlistId]?.target && !rejected.includes(r.playlistId))
+    .slice(0, 3)
+    .map(r => ({ id: r.playlistId, name: CFG[r.playlistId]?.name ?? r.name, axis: CFG[r.playlistId]?.axis ?? null,
+                 via: 'blend', untagged: true, similar: true, score: r.score,
+                 filed: (r.parts?.graph ?? 0) > 0 }));
+  BRIDGE_WARM.memo.set(key, picks);
+  return picks;
+}
+
+/** For Settings: "N of M artists looked up". */
+function bridgeWarmState() {
+  return { asked: BRIDGE_WARM.asked, total: BRIDGE_WARM.total, running: BRIDGE_WARM.running,
+           quota: BRIDGE_WARM.quota, err: BRIDGE_WARM.err, usedInFile: !!bridgeForFile(),
+           gate: bridgeGate()?.pass ?? null };
 }
 /* ---------- the teach queue on File (BUILD-6 SG; SMARTER-GENRES-PLAN §4.3, phase 4) ----------
  * A few one-tap questions about the waiting tracks whose answers should teach the
@@ -15936,7 +16259,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-2006', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-2329', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -16020,9 +16343,10 @@ function deepPanelHTML() {
     <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMaest" ${d.maest ? 'checked' : ''}> Second ear (MAEST, about 90 MB)</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP, about 77 MB)</label>
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepBeats" ${d.beats ? 'checked' : ''}> Better tempo (Beat This, about 10 MB)</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has the memory (8 GB or more)</label>
     </div>
-    ${why('maest')}${d.maest ? maestLineHTML() : ''}${why('clap')}${clapStatusHTML(d)}
+    ${why('maest')}${d.maest ? maestLineHTML() : ''}${why('clap')}${clapStatusHTML(d)}${why('beats')}${beatsStatusHTML(d)}
   </div>`;
 }
 
@@ -16034,6 +16358,14 @@ function maestLineHTML() {
     ${run ? '<button class="b sm" id="maestStop">Stop</button>' : ok && audioSettings().on ? '<button class="b sm" id="maestGo">Listen with the second ear now</button>' : ''}
     ${deepAllowed('maest') === 'unknown' ? '<button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button>' : ''}</p>
     <p class="sub">It changes no suggestion until a Score run (More → Engine) shows it places your tracks better than the first ear.</p>`;
+}
+
+/** Beat This's line: how many octave-unsure tempos it has re-listened to. Nothing while off. */
+function beatsStatusHTML(d) {
+  if (!d.beats || deepAllowed('beats') !== 'ok' || !globalThis.BetterfyAudio?.needsBeatsFlagged) return '';
+  const flagged = [...(AUDIO.records?.values() ?? [])].filter(r => !r.miss && r.dsp?.octaveAmbiguous === true);
+  const left = flagged.filter(r => BetterfyAudio.needsBeatsFlagged(r)).length;
+  return `<p class="sub" style="margin:4px 0">${left ? `${left.toLocaleString()} track${left === 1 ? '' : 's'} where half or double time was unsure still to re-check, ${BetterfyAudio.BEATS_FILL_PER_RUN} more each time it listens.` : 'Every tempo that was unsure between half and double time has been re-checked.'} Tempos that were already clear are left alone. The model is about 10 MB, downloaded once.</p>`;
 }
 
 /** CLAP's line in the Deep listen block: how many heard tracks it has described. Nothing while off. */
@@ -16408,6 +16740,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_lfm', group:'Genre data', why:'Your own Last.fm API key, if you added one.' },
   { where:'local', key:'bf_discogs', group:'Genre data', why:'Your Discogs personal access token, if you added one.' },
   { where:'local', key:'bf_bridge_off', group:'Genre data', why:'Set when you turn similar-artist bridges off in Engine.' },
+  { where:'local', key:'bf_bridge_gate', group:'Genre data', why:'What your last Score run said about similar artists, so File uses them only if they helped your picks.' },
 
   // --- the engine ---
   { where:'idb', key:'engine-space-g', group:'Engine', why:'The engine\'s map of your library (how near each track sits to each playlist), so it does not rebuild on every visit.' },
@@ -16923,7 +17256,8 @@ function helpersState() {
     listening: { artists: LISTENING_CACHE?.recentlyActive?.size ?? 0 },
     cov,
     lfm: { key: !!lfmKey(), own: !!LS.getItem('bf_lfm') },
-    bridge: { on: typeof bridgeOn === 'function' ? bridgeOn() : true, ...(br ?? {}) },
+    bridge: { on: typeof bridgeOn === 'function' ? bridgeOn() : true, ...(br ?? {}),
+              ...(typeof bridgeWarmState === 'function' ? { warm: bridgeWarmState() } : {}) },
     audio, deep,
     discogs: !!LS.getItem('bf_discogs'),
     engine: { status: typeof ENG !== 'undefined' ? ENG.status : null },
@@ -17079,16 +17413,16 @@ document.addEventListener('click', guard(async e => {
 
 document.addEventListener('change', guard(async e => {
   if (await dispatchAct(e)) return;
-  if (e.target.id === 'deepMaest' || e.target.id === 'deepClap' || e.target.id === 'deepMemory') {
+  if (e.target.id === 'deepMaest' || e.target.id === 'deepClap' || e.target.id === 'deepBeats' || e.target.id === 'deepMemory') {
     await audioLoad().catch(() => {});
     const change = e.target.id === 'deepMaest' ? { maest: e.target.checked }
-      : e.target.id === 'deepClap' ? { clap: e.target.checked } : { memoryOverride: e.target.checked };
+      : e.target.id === 'deepClap' ? { clap: e.target.checked } : e.target.id === 'deepBeats' ? { beats: e.target.checked } : { memoryOverride: e.target.checked };
     if (globalThis.BetterfyAudio?.writeDeepSettings) BetterfyAudio.writeDeepSettings(LS, change);
     else LS.setItem('bf_audio_deep', JSON.stringify({ ...deepSettings(), ...change }));
     // Ticking CLAP describes the tracks already heard; the next run picks it up, so start one now.
-    if (change.clap && audioSettings().on && !AUDIO.ctrl?.running) audioStart({ quiet: true });
+    if ((change.clap || change.beats) && audioSettings().on && !AUDIO.ctrl?.running) audioStart({ quiet: true });
     // The second ear: off stops the run in flight; on (or the memory override) starts one.
-    if (e.target.id !== 'deepClap') {
+    if (e.target.id !== 'deepClap' && e.target.id !== 'deepBeats') {
       if (!deepSettings().maest) await AUDIO.maest?.stop();
       else maestStart();
     }
@@ -17514,6 +17848,10 @@ async function start(force) {
       if (LS.getItem('bf_analysed') && lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
         await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
       }
+      // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
+      // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
+      // don't compete with the tag lookups; resumes where the last load stopped.
+      if (typeof bridgeWarm === 'function') await bridgeWarm().catch(() => {});
     })();
     // Listening resumes by itself where it left off, if it was switched on — after the first paint.
     if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
