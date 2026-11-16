@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as ENGINE_SCREEN from '../web/screens/engine.mjs';
+import { enrichOrder, listenedWeights } from '../core/personal/relevance.mjs';
 
 /*
  * The Engine screen, run rather than reasoned about.
@@ -111,6 +112,9 @@ function screen({ lib = library(), backlog = null, tags = {}, durable = true,
   // and never needs the DOM. Loaded exactly as a <script> would: bare, global.
   vm.runInContext(ENGINE, sandbox);
   vm.runInContext(SCREEN(), sandbox);
+  // The page's D9 ordering, which engineBridge runs its artists through (no listening here: order unchanged).
+  Object.assign(sandbox, { enrichOrder, listenedWeights });
+  vm.runInContext(slice('/* Listening-weighted enrichment', '/** Fill tag gaps', 'app/sync-tags.js'), sandbox);
   return sandbox;
 }
 
