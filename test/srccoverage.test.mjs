@@ -60,7 +60,7 @@ test('the Sources screen draws the card from ctx.sourceCoverage, and nothing new
 
 test('the page hands the Sources screen its coverage, read from this device only', () => {
   const page = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
-  assert.match(page, /sources: \(\) => \(\{[^}]*sourceCoverage \}\)/, 'ctx.sourceCoverage');
+  assert.match(page, /sources: \(\) => \(\{[^}]*sourceCoverage[,\s]/, 'ctx.sourceCoverage');
   const loader = page.slice(page.indexOf('async function loadSourceCoverage'), page.indexOf('async function loadSourceCoverage') + 2000);
   assert.ok(loader.includes("idb.get('tags_extra')") && loader.includes('idb.get(BRIDGE_KEY)'));
   assert.ok(!/fetch\(|fetchDeadline\(|sp\(/.test(loader.slice(0, loader.indexOf('return changed'))), 'nothing is fetched to work it out');
