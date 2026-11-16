@@ -25,6 +25,13 @@ test('File the sure ones files them in one go and one Undo takes them back', { s
     return ids.map(id => ({ id, pl: filePicks(R.backlog.find(r => r.id === id))[0].id }));
   });
   assert.equal(sure.length, 3);
+  // A confident verdict alone is not Sure: the pick must be backed by sound or
+  // filing history (USER-REVIEW item 2). Count the tags-only ones out.
+  const unbacked = await page.evaluate(ids => ids.filter(id => !pickBacked(filePicks(R.backlog.find(r => r.id === id))[0])).length,
+    sure.map(s => s.id));
+  if (unbacked === 3) assert.equal(await page.locator('[data-act="filesure"]').count(), 0, 'tags-only picks are never Sure');
+  // The synthetic account has no sound, so stand in for the backing here and test the batch itself.
+  await page.evaluate(() => { window.backedBand = b => b ?? null; render(); });
   const before = Object.fromEntries(sure.map(s => [s.pl, fake.playlist(s.pl).length]));
   await page.waitForSelector('[data-act="filesure"]');
   assert.match(await page.locator('[data-act="filesure"]').innerText(), /File the 3 sure ones/);
