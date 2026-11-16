@@ -66,6 +66,10 @@ SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
   twinPairs: () => ENG?.pairs ?? null,
+  // Fill this playlist (BUILD-6 F2): ranked by core/recommend/fill.mjs in the lazy engine, written through the History log.
+  TAGS, addTracks, logAction, undoAction, newGroup, engineLoad,
+  engineAudio: () => (typeof engineAudio === 'function' ? engineAudio() : null),
+  get BetterfyFill() { return globalThis.BetterfyFill; },
   coldKick: needCold => coldKick(needCold),
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),

@@ -219,6 +219,9 @@ self.onmessage = function (e) {
       try { result.identify = m.audio ? BetterfyIdentify.identifyAccuracyFor(m.lib, m.audio,
               { targets: m.targets || null, isMirror: isMirror }) : null; }
       catch (e) { result.identify = null; }
+      // Fill this playlist's gate (BUILD-6 F2, M4): recall@10 on hidden tracks.
+      try { result.fill = BetterfyFill.fillRecall(m.lib, { tags: m.tags || null, audio: m.audio || null, isMirror: isMirror }); }
+      catch (e) { result.fill = null; }
     } else if (m.op === 'misfits') {
       // Tidy by sound: an all-pairs nearest-neighbour pass over the heard
       // tracks, too long for the page's thread on a big library.
