@@ -596,6 +596,8 @@ const engineValidate = guard(async () => {
     await engineCalibrate(ENG.val);
     // Kept for the File screen, which uses the blend only if this says it is ahead.
     await blendRemember(ENG.val);
+    // A run by hand counts as this week's run, so the automatic one (app/autoscore.js) counts from it.
+    if (typeof autoScoreNote === 'function' && !AUTOSCORE_RUN.running) autoScoreNote('manual', !ENG.val?.error);
     if (ENG.space && ENG.status === 'ready') { try { engineShadow(); } catch { /* the old comparison stays */ } }
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };

@@ -11,7 +11,7 @@ function helpersState() {
   try {
     const set = audioSettings(), vm = AUDIO.vm;
     const why = vm?.reason && !['stopped', 'ask', 'waiting for Wi-Fi', 'offline'].includes(vm.reason) && vm.state !== 'running' && vm.state !== 'done' ? vm.reason : null;
-    audio = { on: !!set.on, state: vm?.state ?? null, heard: listenHeard() || vm?.heard || 0,
+    audio = { on: !!set.on, all: set.scope === 'all', state: vm?.state ?? null, heard: listenHeard() || vm?.heard || 0,
       problem: why ? String(why).replace(/https?:\/\/\S+/g, '').slice(0, 60).trim() : null };
   } catch { /* before the audio glue */ }
   let deep = {};
@@ -28,6 +28,9 @@ function helpersState() {
     audio, deep,
     discogs: !!LS.getItem('bf_discogs'),
     engine: { status: typeof ENG !== 'undefined' ? ENG.status : null },
+    auto: (() => { try { const l = autoScoreLast(); return { at: l?.at ?? null, ok: l?.ok !== false,
+      ago: l?.at && typeof agoWords === 'function' ? agoWords(Date.now() - l.at) : null, running: AUTOSCORE_RUN.running }; }
+      catch { return {}; } })(),
   };
 }
 

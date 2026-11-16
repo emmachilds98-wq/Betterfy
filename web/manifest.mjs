@@ -55,6 +55,7 @@ export const APP_FILES = [
   'app/clap.js',
   'app/audio-panel.js',
   'app/analyse.js',
+  'app/autoscore.js',
   'app/screens.js',
   'app/datakeys.js',
   'app/backup.js',

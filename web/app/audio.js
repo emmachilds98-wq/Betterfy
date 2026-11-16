@@ -36,10 +36,27 @@ function audioLoad() {
 
 /** The saved settings; readable before audio.js has loaded, with the same defaults. */
 function audioSettings() {
-  if (globalThis.BetterfyAudio) return BetterfyAudio.readAudioSettings(LS);
+  const computer = audioOnComputer();
+  if (globalThis.BetterfyAudio) return BetterfyAudio.readAudioSettings(LS, { computer });
   let s = null; try { s = JSON.parse(LS.getItem('bf_audio') || 'null'); } catch { s = null; }
-  // A saved off counts only when it was chosen (web/audio/settings.mjs offChosen).
-  return { on: !(s?.on === false && s?.offChosen === true), wifiOnly: s?.wifiOnly !== false, scope: s?.scope === 'all' ? 'all' : 'playing+unfiled' };
+  // A saved off counts only when it was chosen (web/audio/settings.mjs offChosen); a saved
+  // narrow scope only when it was picked (scopeChosen), else a computer hears everything.
+  const narrow = s?.scope === 'playing+unfiled' && s?.scopeChosen === true;
+  return { on: !(s?.on === false && s?.offChosen === true), wifiOnly: s?.wifiOnly !== false,
+           scope: s?.scope === 'all' || (computer && !narrow) ? 'all' : 'playing+unfiled' };
+}
+/** A computer: a fine pointer and no touch screen (the test Listening uses for Wi-Fi, too). */
+function audioOnComputer() {
+  try { return matchMedia('(pointer: fine)').matches && !(navigator.maxTouchPoints > 0); } catch { return false; }
+}
+/** Save a Listening settings change, the same way whether or not audio.js has loaded. */
+function audioSettingsWrite(change) {
+  if (globalThis.BetterfyAudio) return BetterfyAudio.writeAudioSettings(LS, change, { computer: audioOnComputer() });
+  let s = null; try { s = JSON.parse(LS.getItem('bf_audio') || 'null'); } catch { s = null; }
+  const next = { ...audioSettings(), ...change };
+  if ('scope' in change || s?.scopeChosen === true) next.scopeChosen = true; else delete next.scope;
+  if (next.on === false) next.offChosen = true;
+  LS.setItem('bf_audio', JSON.stringify(next));
 }
 
 const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;

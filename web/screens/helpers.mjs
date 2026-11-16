@@ -46,7 +46,7 @@ export function helperRows(s = {}) {
   rows.push({ id: 'sound', name: 'Listening (sound)', on: !!a.on, kind: aKind,
     status: !a.on ? 'Off' : a.problem ? 'On · paused' : a.state === 'running' ? 'On · listening' : 'On',
     did: !a.on ? 'Places tracks by how they sound. Switch it on in Listening.' : a.problem ? `Paused: ${a.problem}` :
-      `Places tracks by how they sound against your playlists${a.heard ? `; ${n(a.heard)} tracks heard` : ''}.` });
+      `Places tracks by how they sound against your playlists${a.all ? ', hearing your whole library' : ''}${a.heard ? `; ${n(a.heard)} tracks heard` : ''}.` });
   const d = s.deep ?? {};
   const deepOn = d.maest || d.clap;
   rows.push({ id: 'deep', name: 'Deep listen', on: !!deepOn, kind: !deepOn ? 'off' : d.blocked ? 'idle' : 'ok',
@@ -55,6 +55,12 @@ export function helperRows(s = {}) {
   rows.push({ id: 'engine', name: 'Learning from your playlists', on: true, kind: s.engine?.status === 'error' ? 'warn' : 'ok',
     status: s.engine?.status === 'ready' ? 'On · learnt' : s.engine?.status === 'error' ? 'Problem' : 'On',
     did: 'Who you file together and where, plus every File and Skip tap, so picks follow your own filing.' });
+  // Score + Tune by itself (NEXT-WORKPLAN package 1): the gates and fitted weights decide themselves.
+  const au = s.auto ?? {};
+  rows.push({ id: 'autoscore', name: 'Checks itself weekly', on: true, kind: au.at && !au.ok ? 'idle' : 'ok',
+    status: au.running ? 'On · scoring now' : !au.at ? 'On · first run soon' : !au.ok ? 'On · retrying' : `On · ran ${au.ago ?? 'recently'}`,
+    did: `Scores itself on your own filing after listening finishes and every week, and switches on the parts that measure better for you${
+      au.at && au.ago ? `; last run ${au.ago}` : ''}. No button to press.` });
   rows.push({ id: 'discogs', name: 'Discogs', on: !!s.discogs, kind: s.discogs ? 'ok' : 'idle', status: s.discogs ? 'On · your token' : 'Optional', optional: true,
     did: 'Release styles for artists nothing else knows. Needs a personal token, so it stays an extra.' });
   return rows;
