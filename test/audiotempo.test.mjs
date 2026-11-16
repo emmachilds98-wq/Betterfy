@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tempo, tempoFromMel, TEMPO_VERSION, OCTAVE_AMBIGUOUS } from '../core/audio/dsp/tempo.mjs';
+import { tempo, tempoFromMel, bandAutocorrelations, FPS, TEMPO_VERSION, OCTAVE_AMBIGUOUS } from '../core/audio/dsp/tempo.mjs';
 import { melFrames, SAMPLE_RATE as SR } from '../core/audio/mel.mjs';
 
 // Synthetic drum tracks, deterministic (seeded PRNG), 16 kHz mono.
@@ -46,7 +46,7 @@ const policy = (r, truth) => assert.ok(right(r, truth), `truth ${truth}: ${JSON.
 
 test('result shape and version', () => {
   const r = tempo(kicks(120));
-  assert.deepEqual(Object.keys(r).sort(), ['alternates', 'bpm', 'confidence', 'octaveAmbiguous', 'version']);
+  assert.deepEqual(Object.keys(r).sort(), ['alternates', 'bpm', 'confidence', 'octaveAmbiguous', 'pulse', 'version']);
   assert.equal(r.version, TEMPO_VERSION);
   assert.ok(r.confidence >= 0 && r.confidence <= 1);
   for (const a of r.alternates) assert.ok(a.bpm >= 60 && a.bpm <= 200 && a.score > 0 && a.score <= 1, JSON.stringify(a));
@@ -187,4 +187,22 @@ test('speed: 30 s of audio', () => {
   tempoFromMel(mel);
   console.log(`  tempo: ${ms.toFixed(1)} ms per 30 s (mel ${melMs.toFixed(1)} ms + tempo from mel ${(performance.now() - t2).toFixed(1)} ms)`);
   assert.ok(ms < 2000, `${ms} ms`);
+});
+
+test('bandAutocorrelations: four groups, 1 at lag 0, a kick pulse peaks at its beat period', async () => {
+  const { melFrames } = await import('../core/audio/mel.mjs');
+  const acfs = bandAutocorrelations(melFrames(kicks(120).subarray(0, 10 * SR)));
+  assert.equal(acfs.length, 4);
+  const kick = acfs[0];
+  assert.ok(Math.abs(kick[0] - 1) < 1e-9);
+  const P = Math.round(60 * FPS / 120);   // 31 frames at 120 BPM
+  assert.ok(kick[P] > kick[Math.round(P / 2)], `A(P)=${kick[P]} vs A(P/2)=${kick[Math.round(P / 2)]}`);
+  assert.equal(bandAutocorrelations(melFrames(new Float32Array(SR))), null, 'under 4 s: nothing');
+});
+
+test('pulse: a steady four-on-the-floor reads high, noise reads low', () => {
+  const k = tempo(kicks(128));
+  assert.ok(k.pulse > 0.38, `kicks pulse ${k.pulse}`);
+  const n = tempo(noise(new Float32Array(10 * SR), 0.3));
+  if (n.bpm) assert.ok(n.pulse < 0.38, `noise pulse ${n.pulse}`);
 });

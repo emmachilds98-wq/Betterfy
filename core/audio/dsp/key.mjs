@@ -256,7 +256,7 @@ function magnitudeSpectrum(re, im, n, { rev, cos, sin }, mag) {
  * Exported for tests and the comparison script; key() is the public entry.
  * @returns {{ chroma: Float64Array, tuningCents: number, seconds: number, tonalWeight: number, gridness: number, frames: number }}
  */
-export function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
+export function chromagram(samples, { sampleRate = SAMPLE_RATE, fMin = F_MIN, fMax = F_MAX, keepPeaks = false } = {}) {
   // One signal, or several parts (a record's preview windows) pooled into one chroma.
   const parts = Array.isArray(samples) && samples.length && typeof samples[0] !== 'number' ? samples.filter(p => p?.length) : [samples];
   const N = 2 ** Math.round(Math.log2(sampleRate * FRAME_SECONDS));
@@ -269,14 +269,14 @@ export function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
 
   const tables = fftTables(N);
   const binHz = sampleRate / N;
-  const kMin = Math.max(2, Math.ceil(F_MIN / binHz));
-  const kMax = Math.min(N / 2 - 2, Math.floor(Math.min(F_MAX, sampleRate / 2 * 0.95) / binHz));
+  const kMin = Math.max(2, Math.ceil(fMin / binHz));
+  const kMax = Math.min(N / 2 - 2, Math.floor(Math.min(fMax, sampleRate / 2 * 0.95) / binHz));
   const halfW = Math.max(4, Math.round(FLOOR_HALF_WIDTH_HZ / binHz));
   const re = new Float64Array(N), im = new Float64Array(N), mag = new Float64Array(N / 2 + 1);
   const prefix = new Float64Array(N / 2 + 2);
 
   // Pass 1: peaks (semitones above A4, weight) from every non-silent frame.
-  const semis = [], weights = [];
+  const semis = [], weights = [], peakFrames = [];
   let frameCount = 0;
   for (const samples of parts) {
   const n = samples.length;
@@ -311,6 +311,7 @@ export function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
       if (!(w > 0)) continue;
       semis.push(12 * Math.log2(hz / A4));
       weights.push(w);
+      if (keepPeaks) peakFrames.push(frameCount - frames + f);
     }
   }
   }
@@ -340,7 +341,11 @@ export function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
     chroma[(((note + 9) % 12) + 12) % 12] += w;   // A = 9
     tonalWeight += w;
   }
-  return { chroma, tuningCents: Math.round(tuning * 1000) / 10, seconds, tonalWeight, gridness, frames };
+  const out = { chroma, tuningCents: Math.round(tuning * 1000) / 10, seconds, tonalWeight, gridness, frames };
+  // keepPeaks (measurement scripts): every peak as semitones above A4 after
+  // tuning, its weight and its frame, before the off-grid drop and folding.
+  if (keepPeaks) out.peaks = { semis: Float64Array.from(semis, x => x - tuning), weights: Float64Array.from(weights), frames: Int32Array.from(peakFrames) };
+  return out;
 }
 
 // ---------- profile matching ----------
