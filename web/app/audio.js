@@ -48,7 +48,7 @@ const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;
 function deepSettings() {
   if (globalThis.BetterfyAudio?.readDeepSettings) return BetterfyAudio.readDeepSettings(LS);
   let s = null; try { s = JSON.parse(LS.getItem('bf_audio_deep') || 'null'); } catch { s = null; }
-  return { maest: s?.maest !== false, clap: s?.clap !== false, memoryOverride: s?.memoryOverride === true };
+  return { maest: s?.maest !== false, clap: s?.clap !== false, beats: s?.beats !== false, memoryOverride: s?.memoryOverride === true };
 }
 /** May this deep ear run now? 'off' until audio.js has loaded. */
 function deepAllowed(ear) {
@@ -92,6 +92,13 @@ async function audioInit() {
       await audioEars();
       const c = await AUDIO.wear.loadClap(audioModelUrl(A.CLAP_MODEL_FILE));
       return { decode: buf => A.decodeTo48k(buf), embed: c.embed };
+    },
+    // Beat This (tempo): opt-in, Wi-Fi only, only for tracks whose half/double time the DSP is unsure of.
+    // Its model (~10 MB) loads in the same Worker on the first such run.
+    beatsOn: () => deepAllowed('beats') === 'ok',
+    loadBeats: async () => {
+      await audioEars();
+      return AUDIO.wear.loadBeats(audioModelUrl(A.BEAT_MODEL_FILE));
     },
     onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); },
   });

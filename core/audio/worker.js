@@ -123,7 +123,7 @@ export async function fillDsp(deps, record, track = {}) {
   got = null;
 
   let dsp = null;
-  try { dsp = deps.dsp(parts); } catch { dsp = null; }
+  try { dsp = await deps.dsp(parts); } catch { dsp = null; }   // await: Beat This's dsp is async
   parts = null; // drop the audio
   if (!dsp) return { skip: 'nothing-measured' };
   return { record: { ...record, dsp } };
