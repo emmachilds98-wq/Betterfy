@@ -27,6 +27,7 @@ export const APP_FILES = [
   'app/reports.js',
   'app/ui.js',
   'app/actionlog.js',
+  'app/offline.js',
   'app/player.js',
   'app/listening.js',
   'app/soundslots.js',
