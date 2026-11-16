@@ -21,7 +21,7 @@ merge so a fresh session can pick up where the last one stopped.
 - #120 merged (A4 complete). #121 merged (UI-D 4-tab shell + Settings)
 - UI-G merged on branch (entrances, FLIP helper, skeletons). Follow-ups: wire patch() into render so FLIP runs; use skeleton() in screens; add .lgtitle markup
 - #122 merged (UI-C optimistic filing, UI-G motion). #123 merged (UI-E Library tab; patch() in render, FLIP rows, skeletons)
-- #124 merged (UI-F copy pass). §5.2–§5.6 smarter functions merged on branch (PR open)
+- #124 merged (UI-F copy pass). #125 merged (§5.2–§5.6 smarter functions). Build 5 plan complete up to owner-gated work
 - Left: wave 5 — tune from the owner's Score run (HANDOFF §2); §6 key step 2 (S-KEY ONNX) and Beat This tempo need model export + measurement; owner to set LASTFM_PUBLIC_KEY
 
 ## Next
