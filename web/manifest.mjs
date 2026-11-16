@@ -55,6 +55,7 @@ export const APP_FILES = [
   'app/shell.js',
   'app/events.js',
   'screens/inbox-actions.js',
+  'app/keys.js',
   'app/boot.js',
 ];
 

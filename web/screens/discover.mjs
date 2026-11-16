@@ -28,7 +28,7 @@ export function view(ctx) {
       <div class="rowbtns" style="margin-top:8px"><button class="b" type="button" data-lfmconnect>Connect Last.fm</button></div>
     </div>`}
     <div class="rowbtns" style="margin-bottom:16px">
-      <select data-act="discPl" id="discPl">
+      <select data-act="discPl" id="discPl" aria-label="Find new music from">
         <option value="">Everything I listen to</option>
         <optgroup label="Playlist radio">
           ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}

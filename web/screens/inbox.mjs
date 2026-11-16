@@ -215,7 +215,7 @@ export function view(ctx) {
           </div>
         </div>${trackStrip(t)}${soundIdHTML(t)}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
-          <button class="pick ${n === 0 ? 'best' : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
+          <div class="pickw"><button class="pick ${n === 0 ? 'best' : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
@@ -226,9 +226,8 @@ export function view(ctx) {
               : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
             <span class="rt">${pickBand(n === 0 && topBand ? { ...sg, band: topBand } : sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
-            <span class="nope" data-act="reject" data-reject="${esc(sg.id)}" role="button" tabindex="0"
-              title="Never suggest ${esc(sg.name)} for this track">✕</span>
-          </button>`).join('')}</div>`
+          </button><button class="nope" type="button" data-act="reject" data-reject="${esc(sg.id)}"
+            title="Never suggest ${esc(sg.name)} for this track" aria-label="Never suggest ${esc(sg.name)} for this track"><span aria-hidden="true">✕</span></button></div>`).join('')}</div>`
         : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
         ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
           ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).map(id =>

@@ -44,6 +44,7 @@
     aside .nav .ic{width:24px; height:24px; border-radius:9px; transition:background var(--dur-1) ease, color var(--dur-1) ease}
     aside .nav .ic svg{width:19px; height:19px}
     aside .nav[aria-current="true"]{background:none; color:var(--vc); view-transition-name:none}
+    aside .nav[aria-current="true"] .lbl{color:var(--ink)}
     aside .nav[aria-current="true"] .ic{view-transition-name:vt-pill}
     aside .nav[aria-current="true"] .ic{background:color-mix(in srgb, var(--vc) 16%, transparent); color:var(--vc)}
     aside .nav:active{transform:scale(.94)}
