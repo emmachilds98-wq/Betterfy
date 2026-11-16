@@ -30,6 +30,7 @@ const DATA_KEYS = [
   { where:'idb', key:'library', group:'Your library', why:'A copy of your playlists and liked songs as read from Spotify (track ids, names, artists, ISRCs, cover links, dates added), so the app opens without re-reading everything.' },
   { where:'idb', key:'part:', prefix:true, group:'Your library', why:'Pieces of a library read that was interrupted, so the next try resumes instead of starting again. Dropped once a read completes, or after a day.' },
   { where:'idb', key:'actions', group:'Your library', why:'History: every change Betterfy made to your Spotify playlists, with what is needed to undo it.' },
+  { where:'idb', key:'offline_queue', group:'Your library', why:'Decisions you made with no connection (filings, removals, unlikes), kept until the page is next open and online and then sent to Spotify once each. Empty the rest of the time. The page itself is kept for offline use in the browser\'s cache under "betterfy-shell-<build>".' },
   { where:'idb', key:'feedback', group:'Your library', why:'Tracks you skipped or turned down for a playlist, and filings you accepted, so the same suggestion is not made again.' },
   { where:'idb', key:'listening_raw', group:'Your library', why:'Your top artists and recently played tracks from Spotify, used to put what you actually play first.' },
   { where:'local', key:'bf_axes', group:'Your library', why:'What kind of playlist each one is (genre, mood, occasion...), as you set it.' },
@@ -44,6 +45,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
+  { where:'local', key:'bf_mergesplit', group:'Your library', why:'Which merge and split offers (twin playlists, playlists that are two genres) were shown, dismissed or made, and when. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 
   // --- genre data ---
