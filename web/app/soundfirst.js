@@ -20,7 +20,7 @@
  * Nothing here writes to Spotify: it only changes which playlists are offered.
  * ======================================================================== */
 const SOUND = { status: 'idle', space: null, n: 0, targets: '', err: null, memo: null, byId: null, lib: null,
-                idMemo: null, memb: null, names: null, namesLib: null };
+                idMemo: null, memb: null, names: null, namesLib: null, moodFit: null, moodMemo: new Map() };
 /** Heard records worth a rebuild: a tenth more, and at least 20. */
 const SOUND_REBUILD = n => Math.max(20, Math.round(n * 0.1));
 const soundHeard = () => { let n = 0; for (const r of AUDIO.records?.values() ?? []) if (!r.miss) n++; return n; };
@@ -133,7 +133,20 @@ function learnNow(trackId, playlistIds) {
   let changed = false;
   for (const space of new Set([SOUND.space, typeof ENG !== 'undefined' ? ENG.space : null].filter(Boolean)))
     for (const pid of [].concat(playlistIds)) changed = BetterfyIntrinsic.learnFiled(space, raw, pid) || changed;
-  if (changed) { SOUND.memo = null; SOUND.idMemo = null; }
+  if (changed) { SOUND.memo = null; SOUND.idMemo = null; SOUND.moodMemo = new Map(); }
+}
+
+/** Mood "also fits" chips for one heard track (core/intrinsic/mood.mjs): the mood
+ *  and context playlists this account's Score run fitted a threshold for, that the
+ *  track clears and is not already in. [] until a Score run earned one. */
+function moodChipsFor(t) {
+  const fit = typeof ENG !== 'undefined' ? ENG.calib?.mood : null;
+  const index = SOUND.space?.audio?.index;
+  if (!t?.id || !fit || !index || typeof BetterfyMood === 'undefined' || !BetterfyMood.moodInUse(fit)) return [];
+  const key = `${t.id}|${index.size}|${fit === SOUND.moodFit ? 1 : 0}`;
+  if (SOUND.moodFit !== fit) { SOUND.moodFit = fit; SOUND.moodMemo = new Map(); }
+  if (!SOUND.moodMemo.has(key)) SOUND.moodMemo.set(key, BetterfyMood.moodChips(t.id, fit, index, LIB));
+  return SOUND.moodMemo.get(key);
 }
 
 /** Sound-led picks for one track on the File screen, or [] when it hasn't been

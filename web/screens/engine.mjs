@@ -232,6 +232,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
     ...(v.family ? [familyLine(v.family, pc)] : []),
+    ...(v.moodLine ? [v.moodLine] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),
     ...(log && measureLines ? measureLines(log) : []),
