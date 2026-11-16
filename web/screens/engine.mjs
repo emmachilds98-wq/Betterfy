@@ -223,6 +223,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
     fillLine(v.fill, pc),
+    teachLine(v.teach, pc),
     ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
@@ -240,6 +241,19 @@ function fillRow(f, p) {
   if (!f || f.recall == null) return '';
   return `<div class="fillscore"><span><b>Fill this playlist</b> — hidden tracks back in the top 10 <span class="sub">· ${f.playlists} playlists, random ${p(f.random)}, needs ${p(f.bar)}${
     f.pass ? '' : ', so it stays off'}</span></span><b class="mono">${p(f.recall)}</b></div>`;
+}
+
+/** The teach questions' gate (BUILD-6 SG): 20 simulated answers on a hidden fold of your own filing. */
+export function teachLine(t, pc) {
+  if (!t) return null;
+  if (t.before == null) return `Teach questions: off (${t.why})`;
+  return `Teach questions: top-1 ${pc(t.before)} -> ${pc(t.after)} after ${t.asked} simulated answers, ${t.scored} hidden tracks — ${
+    t.pass ? 'shown on File' : `off (${t.why})`}`;
+}
+function teachRow(t, p) {
+  if (!t || t.before == null) return '';
+  return `<div class="fillscore"><span><b>Teach questions</b> — right first time after 20 answers <span class="sub">· was ${p(t.before)}${
+    t.pass ? ', so File asks them' : ', not enough better, so they stay off'}</span></span><b class="mono">${p(t.after)}</b></div>`;
 }
 
 /** "×4" for a multiplier, "off" for zero. */
@@ -525,6 +539,7 @@ export function view(c) {
       <hr>
       <div><span>Tracks scored, each engine</span><b class="mono">${v.mine.scored.toLocaleString()}</b></div>
       ${fillRow(v.fill, p)}
+      ${teachRow(v.teach, p)}
       ${v.base?.noAnswer ? `<p>Today's engine had no tags at all for ${v.base.noAnswer.toLocaleString()} of them.
         Counted as misses: a filing tool that returns nothing has not filed anything.</p>` : ''}
       ${!v.base ? `<p>No tag data is loaded, so there is nothing to compare against — the figure above

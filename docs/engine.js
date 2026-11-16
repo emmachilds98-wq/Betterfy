@@ -10991,6 +10991,545 @@ function tuneBlock(result) {
 }
 return { TUNE_VERSION, TUNE_MIN, NOT_SWEPT, TUNE_GROUPS, tuneSweep, mergeTune, tuneOverrides, cleanOverrides, soundFirstFor, identifyOptsFor, misfitOptsFor, tuneLines, tuneBlock };
 })();
+/* ---- core/analysis/confidence.mjs ---- */
+__mod["core/analysis/confidence.mjs"] = (function () {
+// The four confidence labels, on their own so a module that only needs the
+// names (core/personal/relevance.mjs, bundled into the page) does not pull the
+// whole classifier and ontology in with them. classify.mjs re-exports it.
+const CONFIDENCE = {
+  HIGH: 'HIGH',
+  LIKELY: 'LIKELY',
+  AMBIGUOUS: 'AMBIGUOUS',
+  INSUFFICIENT_DATA: 'INSUFFICIENT_DATA',
+};
+return { CONFIDENCE };
+})();
+/* ---- core/personal/relevance.mjs ---- */
+__mod["core/personal/relevance.mjs"] = (function () {
+const { listeningWeights } = __mod["profile.mjs"];
+const { CONFIDENCE } = __mod["core/analysis/confidence.mjs"];
+const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
+// Listening behaviour as a *priority* signal — §22.
+//
+// "It must NOT automatically determine objective genre." That sentence is why
+// this module is here rather than in core/analysis, and why nothing in the
+// classifier imports it. Two questions that look similar and are not:
+//
+//     What is this track?          -> evidence. Listening says nothing.
+//     Is it worth my attention?    -> listening, almost entirely.
+//
+// v1 already fetches the raw numbers (listening.mjs) and combines them
+// (listeningWeights in profile.mjs). Both are reused verbatim — this adds the
+// second half §28 asks for, which is combining relevance with *uncertainty*
+// so that expensive work goes to tracks that are both played a lot and badly
+// understood, rather than to whichever came first in playlist order.
+
+
+
+
+const RELEVANCE_VERSION = '3.0.0';
+
+
+/**
+ * How little the engine knows about a track, 0 (certain) to 1 (nothing).
+ *
+ * Deliberately steep between AMBIGUOUS and LIKELY. A LIKELY answer is usually
+ * right and re-asking about it is close to wasted; an AMBIGUOUS one is a
+ * coin-flip the listener will eventually be shown, and every one of those
+ * resolved is a misfile that never happens.
+ */
+const UNCERTAINTY = {
+  [CONFIDENCE.INSUFFICIENT_DATA]: 1.0,
+  [CONFIDENCE.AMBIGUOUS]: 0.9,
+  [CONFIDENCE.LIKELY]: 0.45,
+  [CONFIDENCE.HIGH]: 0.05,
+};
+
+const uncertaintyOf = profile => UNCERTAINTY[profile?.genre?.confidence] ?? 0.5;
+
+/**
+ * How much this listener actually plays a track, as a multiplier on a floor
+ * of 1 rather than a term added to a 0-1 uncertainty.
+ *
+ * Listening weights are unbounded and relative (see listeningWeights), so
+ * adding them would let one heavily-played artist swamp the uncertainty
+ * signal entirely and turn the whole queue into "your top artist, forty
+ * times".
+ */
+function relevanceOf(track, weights) {
+  const w = weights?.get?.(track?.artists?.[0]?.name) ?? 0;
+  return 1 + w;
+}
+
+/**
+ * How many playlists a track sits in — its blast radius.
+ *
+ * §35 ranks "tracks affecting many playlists" highly, and rightly: getting
+ * one wrong about a track filed in six places is six wrong answers, and it
+ * also drags six centroids.
+ */
+function playlistReach(lib, { isMirror = null } = {}) {
+  const mirror = isMirror ?? mirrorPredicate(lib);
+  const reach = new Map();
+  for (const p of lib?.playlists ?? []) {
+    // A record-of-everything playlist adds one to every track alike, which is
+    // not blast radius — it is a constant, and it pushed the whole library
+    // over the queue's MANY_PLAYLISTS threshold at once.
+    if (mirror(p)) continue;
+    // Distinct playlists, not placements. A playlist that contains the same
+    // track twice is a duplicate — which this project has a whole report
+    // about — and counting it twice inflated the blast radius of exactly the
+    // tracks most likely to be duplicated.
+    const seen = new Set();
+    for (const t of p.tracks ?? []) {
+      if (!t?.id || seen.has(t.id)) continue;
+      seen.add(t.id);
+      reach.set(t.id, (reach.get(t.id) ?? 0) + 1);
+    }
+  }
+  return reach;
+}
+
+/**
+ * §28's priority: high-use and uncertain first, rare and already-confident
+ * last. The number expensive analysis is spent in order of.
+ *
+ * @param {{profile: object}} entry
+ * @param {{weights?: Map, reach?: Map, track: object}} ctx
+ */
+function analysisPriority({ profile }, { weights = null, reach = null, track } = {}) {
+  const uncertainty = uncertaintyOf(profile);
+  const played = relevanceOf(track, weights);
+  // Reach is capped: a track in twelve playlists is not twelve times more
+  // important than one in six, and without a cap the mirror playlist's
+  // contents would sort to the top of everything.
+  const spread = 1 + Math.min(3, (reach?.get?.(track?.id) ?? 1) - 1) * 0.25;
+  return +(uncertainty * played * spread).toFixed(4);
+}
+return { RELEVANCE_VERSION, UNCERTAINTY, uncertaintyOf, relevanceOf, playlistReach, analysisPriority, listeningWeights };
+})();
+/* ---- core/review/filequeue.mjs ---- */
+__mod["core/review/filequeue.mjs"] = (function () {
+const { relevanceOf, UNCERTAINTY } = __mod["core/personal/relevance.mjs"];
+// The File queue's order and its sure batch (docs/BUILD-5-PLAN.md §5.2).
+//
+// Pure counts over what Spotify already gives every account: the three
+// top-artist windows, recently played and /me/top/tracks. Nothing here is
+// trained, fetched or pooled. Bundled into the page and exposed as globals.
+//
+// Order = how much you play it x how little the engine knows it, the same two
+// halves core/personal/relevance.mjs names (relevanceOf, UNCERTAINTY). Listening
+// only decides what to ask about first, never what a track is.
+
+
+const FILEQUEUE_VERSION = '1.0.0';
+
+/** What the card's band is called in the History log, which Score reads (core/measure/history.mjs). */
+const BAND_LOG = { HIGH: 'sure', LIKELY: 'likely', AMBIGUOUS: 'unsure' };
+
+/** The Engine's calibrated decide() kinds, as the bands the chip draws. */
+const DECISION_BAND = { confident: 'HIGH', choose: 'LIKELY', unsure: 'AMBIGUOUS' };
+
+/** The band for a card: the calibrated verdict when the Engine has judged this
+ *  track, else the leading pick's own band, else none. */
+function cardBand(picks, decision = null) {
+  return DECISION_BAND[decision?.kind] ?? picks?.[0]?.band ?? null;
+}
+
+/**
+ * Track-level listening, as a count: a place in each /me/top/tracks window
+ * (weighted like the artist windows) plus how often it turns up in recently
+ * played. Map of track id -> weight.
+ */
+function trackWeights({ topTracks = [], recentTracks = [] } = {}) {
+  const w = new Map();
+  const bump = (id, x) => { if (id) w.set(id, (w.get(id) ?? 0) + x); };
+  for (const { items, weight } of topTracks) (items ?? []).forEach((id, i) => bump(id, weight * (1 - i / 60)));
+  for (const id of recentTracks) bump(id, 0.6);
+  return w;
+}
+
+/**
+ * How little is known about where a row goes, 0..1. The band when there is one
+ * (relevance.mjs's UNCERTAINTY), else the top pick's own score, else nothing.
+ */
+function rowUncertainty(row, band = null) {
+  if (band && band in UNCERTAINTY) return UNCERTAINTY[band];
+  const s = row?.suggest?.[0]?.score;
+  return Number.isFinite(s) ? Math.max(0.05, 1 - Math.min(1, s)) : 1;
+}
+
+/** Listening weight x uncertainty, for one backlog row. */
+function valueOf(row, { weights = null, tracks = null, bandOf = null } = {}) {
+  const played = relevanceOf(row, weights) + (tracks?.get?.(row?.id) ?? 0);
+  return +(played * rowUncertainty(row, bandOf?.(row) ?? null)).toFixed(4);
+}
+
+/**
+ * The queue in order of value. Skipped tracks stay below everything unseen
+ * (the old rule); within a skip count, most valuable first, ties newest-liked
+ * first. Without any listening data every weight is the same 1, so this is the
+ * uncertainty order alone, and with neither it is the old newest-first order.
+ * Returns a new array.
+ */
+function orderBacklog(rows, ctx = {}) {
+  const v = new Map((rows ?? []).map(r => [r.id, valueOf(r, ctx)]));
+  return [...(rows ?? [])].sort((a, b) => ((a.skips ?? 0) - (b.skips ?? 0))
+    || (v.get(b.id) - v.get(a.id)) || (b.added ?? '').localeCompare(a.added ?? ''));
+}
+
+/**
+ * The cards that are sure, each with where it goes: a calibrated HIGH band and
+ * a leading pick, not skipped, not rejected for that playlist. In queue order.
+ * `picksOf(row)` and `bandOf(row, picks)` come from the page.
+ * @returns {{row: object, playlistId: string, name: string}[]}
+ */
+function sureOnes(rows, { picksOf, bandOf, limit = 300 } = {}) {
+  const out = [];
+  for (const row of (rows ?? []).slice(0, limit)) {
+    if ((row.skips ?? 0) > 0) continue;
+    const picks = picksOf(row) ?? [];
+    const top = picks[0];
+    if (!top?.id || bandOf(row, picks) !== 'HIGH') continue;
+    out.push({ row, playlistId: top.id, name: top.name });
+  }
+  return out;
+}
+
+/**
+ * The label code in an ISRC: country + registrant, its first five characters
+ * (the same reading core/intrinsic/features.mjs registrantOf makes, kept here
+ * so File does not need the lazy Engine bundle). Null when malformed.
+ */
+function registrantOfIsrc(isrc) {
+  const raw = String(isrc ?? '').replace(/-/g, '').toUpperCase();
+  return /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(raw) ? raw.slice(0, 5) : null;
+}
+return { FILEQUEUE_VERSION, BAND_LOG, DECISION_BAND, cardBand, trackWeights, rowUncertainty, valueOf, orderBacklog, sureOnes, registrantOfIsrc };
+})();
+/* ---- core/review/teach.mjs ---- */
+__mod["core/review/teach.mjs"] = (function () {
+const { valueOf } = __mod["core/review/filequeue.mjs"];
+// The teach queue (docs/SMARTER-GENRES-PLAN.md §4.3 and phase 4; BUILD-6 SG).
+//
+// A handful of one-tap questions about the waiting tracks whose answers should
+// teach the engine most:
+//
+//   value = listening x uncertainty    (filequeue.mjs valueOf, the File order)
+//         x reach                      (this artist's other waiting tracks: an
+//                                       answer files the artist, and the File
+//                                       card then offers the rest of them)
+//         x openness                   (a choice of two or three over a yes/no)
+//
+// and never two questions about one artist in a batch. A track the Engine is
+// confident about is never asked: the answer is one it already has.
+//
+// The choices are the Engine's checked short list where it has one
+// (core/intrinsic/calibrate.mjs decide(), kind `choose`), else the card's own
+// best guesses, labelled as guesses. An answer is an ordinary filing (the File
+// screen's add, History entry and accept), so it feeds the same learning path
+// every filing does: the next space built from the library has the track in it.
+// Nothing is trained, fetched or pooled (plan §3, R1-R3).
+//
+// Whether it is worth showing is measured per account, not assumed:
+// core/validate/teach.mjs `teachGate` on the account's own filing, run with the
+// Score run. Bundled into the page and exposed as globals, like filequeue.mjs.
+
+
+const TEACH_VERSION = '1.0.0';
+
+const TEACH = {
+  /** Questions shown at once ("ten tracks at a time", plan §4.3). */
+  batch: 10,
+  /** A list of one is a yes/no rather than a choice: it teaches less. */
+  singleWeight: 0.6,
+  /** Best guesses shown for a track the Engine is not sure about. */
+  guesses: 3,
+};
+
+/** decide() kinds as the bands filequeue.mjs reads uncertainty by. */
+const KIND_BAND = { choose: 'LIKELY', unsure: 'AMBIGUOUS' };
+
+/** The first artist's id (or name) of a backlog row or raw track. */
+function artistKeyOf(row) {
+  const a = row?.artists?.[0];
+  return a?.id ?? a?.name ?? (typeof row?.artist === 'string' ? row.artist.split(',')[0].trim() || null : null);
+}
+
+/** How many waiting rows each artist has: artist key -> count. */
+function artistSpread(rows) {
+  const m = new Map();
+  for (const r of rows ?? []) { const k = artistKeyOf(r); if (k) m.set(k, (m.get(k) ?? 0) + 1); }
+  return m;
+}
+
+const asChoice = p => (typeof p === 'string' ? { id: p, name: p } : p?.id ? { id: p.id, name: p.name ?? p.id } : null);
+
+/**
+ * What to offer for one row: { choices: [{ id, name }], checked } or null.
+ *
+ *   choose     the Engine's checked short list (`checked: true`)
+ *   unsure     the card's best guesses, `guesses(row)`, at most TEACH.guesses
+ *              (`checked: false`: the page says they are guesses)
+ *   confident  nothing: an answer the engine already has teaches it nothing
+ *
+ * A row with no Engine verdict at all is treated as unsure.
+ */
+function choicesOf(row, decision, guesses = null) {
+  if (decision?.kind === 'confident') return null;
+  if (decision?.kind === 'choose' && decision.playlists?.length) {
+    const choices = decision.playlists.map(asChoice).filter(Boolean);
+    return choices.length ? { choices, checked: true } : null;
+  }
+  const g = (guesses?.(row) ?? []).map(asChoice).filter(Boolean).slice(0, TEACH.guesses);
+  return g.length ? { choices: g, checked: false } : null;
+}
+
+/**
+ * How much one answer about this row should teach, 0 when there is nothing to
+ * ask. `spread` is artistSpread over the waiting rows.
+ */
+function teachValue(row, { kind = null, choices = [] } = {}, { weights = null, tracks = null, spread = null } = {}) {
+  if (!choices?.length || kind === 'confident') return 0;
+  const base = valueOf(row, { weights, tracks, bandOf: () => KIND_BAND[kind] ?? null });
+  const reach = 1 + Math.log2(Math.max(1, spread?.get?.(artistKeyOf(row)) ?? 1));
+  const open = choices.length >= 2 ? 1 : TEACH.singleWeight;
+  return +(base * reach * open).toFixed(4);
+}
+
+/**
+ * The batch to ask about, most worth asking first:
+ * [{ row, choices, checked, kind, value }].
+ *
+ * `decisionOf(row)` is the Engine's calibrated verdict (or null), `guesses(row)`
+ * the card's picks for a row it is not sure about. Skipped rows and those in
+ * `answered` (ids) are left out, and so is any choice already rejected for that
+ * track (`rejected(row, playlistId)`); a row left with no choice is not asked.
+ * One question per artist.
+ */
+function teachQueue(rows, { decisionOf = null, guesses = null, weights = null, tracks = null,
+                                   limit = TEACH.batch, answered = null, rejected = null } = {}) {
+  const list = (rows ?? []).filter(r => r?.id && !(r.skips > 0) && !answered?.has?.(r.id));
+  const spread = artistSpread(list);
+  const out = [];
+  for (const row of list) {
+    const d = decisionOf?.(row) ?? null;
+    const c = choicesOf(row, d, guesses);
+    if (!c) continue;
+    const choices = rejected ? c.choices.filter(x => !rejected(row, x.id)) : c.choices;
+    if (!choices.length) continue;
+    const kind = d?.kind ?? 'unsure';
+    const value = teachValue(row, { kind, choices }, { weights, tracks, spread });
+    if (value > 0) out.push({ row, choices, checked: c.checked, kind, value });
+  }
+  out.sort((a, b) => b.value - a.value || (b.row.added ?? '').localeCompare(a.row.added ?? '')
+    || (a.row.id < b.row.id ? -1 : 1));
+  const seen = new Set(), batch = [];
+  for (const q of out) {
+    const k = artistKeyOf(q.row);
+    if (k && seen.has(k)) continue;
+    if (k) seen.add(k);
+    batch.push(q);
+    if (batch.length >= limit) break;
+  }
+  return batch;
+}
+return { TEACH_VERSION, TEACH, artistKeyOf, artistSpread, choicesOf, teachValue, teachQueue };
+})();
+/* ---- core/validate/teach.mjs ---- */
+__mod["core/validate/teach.mjs"] = (function () {
+const { buildSpace, placements } = __mod["core/intrinsic/space.mjs"];
+const { scoresOf, decide, calibrationReport } = __mod["core/intrinsic/calibrate.mjs"];
+const { placementAccuracy, foldOf, truthOf, scoredTracks } = __mod["core/validate/loo.mjs"];
+const { libraryWithout } = __mod["core/validate/baseline.mjs"];
+const { BEAT_MARGIN } = __mod["core/validate/blend.mjs"];
+const { orderBacklog, DECISION_BAND } = __mod["core/review/filequeue.mjs"];
+const { teachQueue, TEACH } = __mod["core/review/teach.mjs"];
+// Does the teach queue teach? A measurement (BUILD-6 SG's gate: "Score after
+// 20 teach answers beats before").
+//
+// A library, its waiting (unfiled) tracks and an answer key for them. The
+// listener is simulated: each question the teach queue asks is answered from the
+// key, by filing the track where it really goes. The engine is then rebuilt from
+// the library with those answers in it, exactly as the page rebuilds it after
+// any filing, and scored again on the tracks still waiting.
+//
+//   Score  top-1 of the account-native engine (core/intrinsic/space.mjs) on the
+//          waiting tracks nobody answered, the same tracks before and after.
+//
+// `strategy: 'queue'` asks about the first tracks in the File queue's own order
+// (filequeue.mjs orderBacklog) instead, to compare choosing where to ask with
+// just filing from the top.
+//
+// Two ways in:
+//
+//   simulateTeach  any library, waiting tracks and answer key. test/teach.test.mjs
+//                  runs it on the synthetic accounts in test/fixtures/.
+//   teachGate      this account's own filing: one fold of its filed tracks is
+//                  hidden and treated as waiting, the playlists they came from
+//                  are the key. The Score run calls it, and the File screen's
+//                  teach card is shown only where it passes (per account, on
+//                  this device; nothing is shared). Like every number here it
+//                  is the account grading the engine with its own answers.
+
+
+
+
+
+
+
+
+const TEACH_SIM_VERSION = '1.0.0';
+
+const rowOf = t => ({ id: t.id, artists: (t.artists ?? []).filter(a => a?.id).map(a => ({ id: a.id, name: a.name })),
+                      artist: (t.artists ?? []).map(a => a?.name).join(', '), added: t.added_at ?? '', skips: 0 });
+
+/** The library with each [track, playlistId] answer filed. A copy; the input is untouched. */
+function withAnswers(lib, answers) {
+  const add = new Map();
+  for (const [t, pid] of answers) (add.get(pid) ?? add.set(pid, []).get(pid)).push(t);
+  return { ...lib, playlists: (lib.playlists ?? []).map(p => add.has(p.id) ? { ...p, tracks: [...(p.tracks ?? []), ...add.get(p.id)] } : p) };
+}
+
+/** Top-1 of the engine (a built space) on `tracks`, against `truth` (id -> playlist ids). */
+function scoreOn(space, tracks, truth) {
+  let right = 0, n = 0;
+  for (const t of tracks) {
+    const want = truth.get(t.id);
+    if (!want?.length) continue;
+    n++;
+    const top = placements(t, space, { limit: 1 }).results?.[0];
+    if (top && want.includes(top.playlistId)) right++;
+  }
+  return { n, right, top1: n ? +(right / n).toFixed(4) : null };
+}
+
+/** The engine's calibrated verdict for each waiting track, and its best
+ *  guesses (the top three, the card's picks): id -> { decision, guesses }. */
+function decisionsFor(space, tracks, cal) {
+  const out = new Map();
+  for (const t of tracks) {
+    const results = placements(t, space, { limit: Infinity }).results ?? [];
+    out.set(t.id, { decision: decide(scoresOf(results), cal),
+                    guesses: results.slice(0, TEACH.guesses).map(r => ({ id: r.playlistId, name: r.name })) });
+  }
+  return out;
+}
+
+/**
+ * Simulate `answers` answers, asked `batch` at a time with the engine rebuilt
+ * between batches (each answer re-scores everything, plan §4.3).
+ *
+ * @param {object} lib       { playlists, liked }
+ * @param {object} o
+ * @param {object[]} o.waiting  the unfiled tracks, raw Spotify-shaped
+ * @param {Map}    o.truth      track id -> [playlist ids it belongs in]
+ * @param {'teach'|'queue'} [o.strategy]
+ * @returns {{ strategy, asked, inList, before, after, gain }}
+ */
+function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH.batch, strategy = 'teach',
+                                    folds = 5, targets = null, genreGraph = false, cal = null, calLimit = null,
+                                    isMirror = null } = {}) {
+  const spaceOpts = { targets: targets ? new Set(targets) : null, genreGraph, isMirror };
+  // "How sure may it be", fitted once on the library's own filing, as the Score run does.
+  cal ??= calibrationReport(placementAccuracy(lib, { folds, collect: true, limit: calLimit, ...spaceOpts }).rows).cal;
+  const pending = (waiting ?? []).filter(t => truth.get(t.id)?.length);
+  const asked = [];
+  const first = buildSpace(lib, spaceOpts);
+  let cur = lib, space = first, inList = 0;
+  while (asked.length < answers) {
+    const done = new Set(asked.map(([t]) => t.id));
+    const left = pending.filter(t => !done.has(t.id));
+    if (!left.length) break;
+    const want = Math.min(batch, answers - asked.length);
+    const dec = decisionsFor(space, left, cal);
+    const rows = left.map(rowOf);
+    const byId = new Map(left.map(t => [t.id, t]));
+    let picks;
+    if (strategy === 'teach') {
+      picks = teachQueue(rows, { decisionOf: r => dec.get(r.id).decision, guesses: r => dec.get(r.id).guesses,
+                                 limit: want })
+        .map(q => ({ t: byId.get(q.row.id), choices: q.choices.map(c => c.id) }));
+    } else {
+      // The File card shows its top three too: same tap, the queue's own order.
+      picks = orderBacklog(rows, { bandOf: r => DECISION_BAND[dec.get(r.id).decision?.kind] ?? null }).slice(0, want)
+        .map(r => ({ t: byId.get(r.id), choices: dec.get(r.id).guesses.map(g => g.id) }));
+    }
+    if (!picks.length) break;
+    const round = [];
+    for (const { t, choices } of picks) {
+      const real = truth.get(t.id);
+      // The tap: one of the short list when the right playlist is on it, else
+      // "somewhere else" and the right one picked from the full list.
+      const hit = choices.find(id => real.includes(id));
+      if (hit) inList++;
+      round.push([t, hit ?? real[0]]);
+    }
+    asked.push(...round);
+    cur = withAnswers(cur, round);
+    space = buildSpace(cur, spaceOpts);
+  }
+  const done = new Set(asked.map(([t]) => t.id));
+  const rest = pending.filter(t => !done.has(t.id));
+  const before = scoreOn(first, rest, truth), after = scoreOn(space, rest, truth);
+  return { version: TEACH_SIM_VERSION, strategy, asked: asked.length, inList, before, after,
+           answered: asked.map(([t, pid]) => [t.id, pid]),
+           gain: before.top1 != null && after.top1 != null ? +(after.top1 - before.top1).toFixed(4) : null };
+}
+
+/** What the gate needs before it says anything: the answers asked, and
+ *  enough hidden tracks left to score that one track is not the whole verdict. */
+const TEACH_GATE = { answers: 20, minScored: 30, waitingCap: 400, calLimit: 600, calFolds: 5, fold: 0, folds: 5,
+  /** "Beats": at least a point of top-1 (the blend's own bar, validate/blend.mjs)
+   *  and at least two more tracks right, so one lucky track is never a verdict. */
+  margin: BEAT_MARGIN, minTracks: 2 };
+
+/**
+ * The per-account gate. One fold of this account's filed tracks is hidden (the
+ * same deterministic fold assignment as the Score run) and becomes the queue;
+ * where each really sat is the answer key. 20 answers are simulated from that
+ * key through the teach queue, and the engine is scored on the hidden tracks
+ * nobody was asked about, before and after.
+ *
+ * { pass, why, asked, scored, before, after, gain }. `pass` only when all 20
+ * were asked, enough tracks were left to score, and more of them were placed
+ * right after than before ("beats", not "ties"). Otherwise the teach card stays
+ * hidden, and `why` says which.
+ */
+function teachGate(lib, { targets = null, isMirror = null, genreGraph = false, ...over } = {}) {
+  const o = { ...TEACH_GATE, ...over };
+  const allowed = targets ? new Set(targets) : null;
+  const truthAll = truthOf(lib, { isMirror });
+  const hidden = scoredTracks(lib, { isMirror, targets: allowed })
+    .filter(t => foldOf(t.id, o.folds) === o.fold).slice(0, o.waitingCap);
+  const truth = new Map();
+  for (const t of hidden) {
+    const want = [...(truthAll.get(t.id) ?? [])].filter(id => !allowed || allowed.has(id)).sort();
+    if (want.length) truth.set(t.id, want);
+  }
+  const out = { version: TEACH_SIM_VERSION, pass: false, why: null, asked: 0, scored: 0,
+                before: null, after: null, gain: null };
+  if (truth.size < o.answers + o.minScored) return { ...out, why: `not enough filed tracks yet (${truth.size} of ${o.answers + o.minScored})` };
+  const base = libraryWithout(lib, new Set(truth.keys()));
+  const r = simulateTeach(base, { waiting: hidden, truth, answers: o.answers, targets, genreGraph, isMirror,
+                                  folds: o.calFolds, calLimit: o.calLimit });
+  Object.assign(out, { asked: r.asked, inList: r.inList, scored: r.before.n, before: r.before.top1, after: r.after.top1,
+                       gain: r.gain, right: [r.before.right, r.after.right] });
+  return teachVerdict(out, o);
+}
+
+/** The gate's verdict on a measured result: { ...result, pass, why }. */
+function teachVerdict(r, over = {}) {
+  const o = { ...TEACH_GATE, ...over };
+  const [was, now] = r?.right ?? [0, 0];
+  const why = (r?.asked ?? 0) < o.answers ? `only ${r?.asked ?? 0} of ${o.answers} questions to ask`
+    : (r?.scored ?? 0) < o.minScored ? `only ${r?.scored ?? 0} tracks left to score`
+    : !((r.gain ?? 0) >= o.margin && now - was >= o.minTracks) ? 'the answers did not move the score enough'
+    : null;
+  return { ...r, pass: !why, why: why ?? 'beats' };
+}
+return { TEACH_SIM_VERSION, withAnswers, scoreOn, decisionsFor, simulateTeach, TEACH_GATE, teachGate, teachVerdict };
+})();
 globalThis["BetterfyIntrinsic"] = __mod["core/intrinsic/space.mjs"];
 globalThis["BetterfyColdStart"] = __mod["core/intrinsic/coldstart.mjs"];
 globalThis["BetterfyExplain"] = __mod["core/intrinsic/explain.mjs"];
@@ -11017,3 +11556,4 @@ globalThis["BetterfyDiscover"] = __mod["core/audio/discover.mjs"];
 globalThis["BetterfyFill"] = __mod["core/recommend/fill.mjs"];
 globalThis["BetterfyMeasure"] = __mod["core/measure/history.mjs"];
 globalThis["BetterfyTune"] = __mod["core/validate/tune.mjs"];
+globalThis["BetterfyTeach"] = __mod["core/validate/teach.mjs"];

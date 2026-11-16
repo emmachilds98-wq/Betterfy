@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1245">
+<meta name="bf-build" content="2026-11-16-1631">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1558,6 +1558,24 @@ main:focus{outline:none}
     .acts4{grid-template-columns:1fr}
     aside .nav .lbl{font-size:9.5px}
   }
+  /* ---------- File: the teach questions (BUILD-6 SG, web/app/teach.js teachHTML) ----------
+     A card above the deck, only on an account whose Score run measured that answers help. */
+  .teach{margin:0 0 16px; padding:14px 16px}
+  .teach .teach-h{display:flex; align-items:center; justify-content:space-between; gap:12px}
+  .teach h2{margin:0; font-family:var(--mono); font-size:11.5px; font-weight:600; letter-spacing:.12em;
+            text-transform:uppercase; color:var(--accent)}
+  .teach .teach-x{flex:none; display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px;
+                  border:0; border-radius:var(--r); background:none; color:var(--ink-3); cursor:pointer; font-size:14px}
+  .teach .teach-x:hover{color:var(--ink); background:var(--surface-2)}
+  .teach .teach-sub{margin:6px 0 0; color:var(--ink-2)}
+  .teach .rowbtns{margin-top:10px}
+  .teach .teach-list{list-style:none; margin:12px 0 0; padding:0; display:grid; gap:10px}
+  .teach .teach-q{padding:10px 0 0; border-top:1px solid var(--line)}
+  .teach .teach-t{overflow-wrap:anywhere}
+  .teach .teach-how{margin:2px 0 8px; font-size:12px; color:var(--ink-3)}
+  .teach .teach-choices{display:flex; flex-wrap:wrap; gap:8px}
+  .teach .teach-choices .b{min-height:44px; max-width:100%; overflow-wrap:anywhere; text-align:left}
+  .teach .teach-pass{color:var(--ink-2)}
 /* soundChip (WP-D4): one compact row per track, "174 BPM · 8A A minor". */
 .snd{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:.15em .45em;font-family:var(--mono);font-size:.78rem;line-height:1.35;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .snd>span{white-space:nowrap}
@@ -1700,7 +1718,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1245</span>
+    <span class="mono">build 2026-11-16-1631</span>
   </p>
 
   <div class="feat">
@@ -1793,7 +1811,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1245</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1631</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1910,7 +1928,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1245. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1631. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3359,6 +3377,135 @@ function registrantOfIsrc(isrc) {
 }
 return { FILEQUEUE_VERSION, BAND_LOG, DECISION_BAND, cardBand, trackWeights, rowUncertainty, valueOf, orderBacklog, sureOnes, registrantOfIsrc };
 })();
+/* ---- core/review/teach.mjs ---- */
+__mod["core/review/teach.mjs"] = (function () {
+const { valueOf } = __mod["core/review/filequeue.mjs"];
+// The teach queue (docs/SMARTER-GENRES-PLAN.md §4.3 and phase 4; BUILD-6 SG).
+//
+// A handful of one-tap questions about the waiting tracks whose answers should
+// teach the engine most:
+//
+//   value = listening x uncertainty    (filequeue.mjs valueOf, the File order)
+//         x reach                      (this artist's other waiting tracks: an
+//                                       answer files the artist, and the File
+//                                       card then offers the rest of them)
+//         x openness                   (a choice of two or three over a yes/no)
+//
+// and never two questions about one artist in a batch. A track the Engine is
+// confident about is never asked: the answer is one it already has.
+//
+// The choices are the Engine's checked short list where it has one
+// (core/intrinsic/calibrate.mjs decide(), kind `choose`), else the card's own
+// best guesses, labelled as guesses. An answer is an ordinary filing (the File
+// screen's add, History entry and accept), so it feeds the same learning path
+// every filing does: the next space built from the library has the track in it.
+// Nothing is trained, fetched or pooled (plan §3, R1-R3).
+//
+// Whether it is worth showing is measured per account, not assumed:
+// core/validate/teach.mjs `teachGate` on the account's own filing, run with the
+// Score run. Bundled into the page and exposed as globals, like filequeue.mjs.
+
+
+const TEACH_VERSION = '1.0.0';
+
+const TEACH = {
+  /** Questions shown at once ("ten tracks at a time", plan §4.3). */
+  batch: 10,
+  /** A list of one is a yes/no rather than a choice: it teaches less. */
+  singleWeight: 0.6,
+  /** Best guesses shown for a track the Engine is not sure about. */
+  guesses: 3,
+};
+
+/** decide() kinds as the bands filequeue.mjs reads uncertainty by. */
+const KIND_BAND = { choose: 'LIKELY', unsure: 'AMBIGUOUS' };
+
+/** The first artist's id (or name) of a backlog row or raw track. */
+function artistKeyOf(row) {
+  const a = row?.artists?.[0];
+  return a?.id ?? a?.name ?? (typeof row?.artist === 'string' ? row.artist.split(',')[0].trim() || null : null);
+}
+
+/** How many waiting rows each artist has: artist key -> count. */
+function artistSpread(rows) {
+  const m = new Map();
+  for (const r of rows ?? []) { const k = artistKeyOf(r); if (k) m.set(k, (m.get(k) ?? 0) + 1); }
+  return m;
+}
+
+const asChoice = p => (typeof p === 'string' ? { id: p, name: p } : p?.id ? { id: p.id, name: p.name ?? p.id } : null);
+
+/**
+ * What to offer for one row: { choices: [{ id, name }], checked } or null.
+ *
+ *   choose     the Engine's checked short list (`checked: true`)
+ *   unsure     the card's best guesses, `guesses(row)`, at most TEACH.guesses
+ *              (`checked: false`: the page says they are guesses)
+ *   confident  nothing: an answer the engine already has teaches it nothing
+ *
+ * A row with no Engine verdict at all is treated as unsure.
+ */
+function choicesOf(row, decision, guesses = null) {
+  if (decision?.kind === 'confident') return null;
+  if (decision?.kind === 'choose' && decision.playlists?.length) {
+    const choices = decision.playlists.map(asChoice).filter(Boolean);
+    return choices.length ? { choices, checked: true } : null;
+  }
+  const g = (guesses?.(row) ?? []).map(asChoice).filter(Boolean).slice(0, TEACH.guesses);
+  return g.length ? { choices: g, checked: false } : null;
+}
+
+/**
+ * How much one answer about this row should teach, 0 when there is nothing to
+ * ask. `spread` is artistSpread over the waiting rows.
+ */
+function teachValue(row, { kind = null, choices = [] } = {}, { weights = null, tracks = null, spread = null } = {}) {
+  if (!choices?.length || kind === 'confident') return 0;
+  const base = valueOf(row, { weights, tracks, bandOf: () => KIND_BAND[kind] ?? null });
+  const reach = 1 + Math.log2(Math.max(1, spread?.get?.(artistKeyOf(row)) ?? 1));
+  const open = choices.length >= 2 ? 1 : TEACH.singleWeight;
+  return +(base * reach * open).toFixed(4);
+}
+
+/**
+ * The batch to ask about, most worth asking first:
+ * [{ row, choices, checked, kind, value }].
+ *
+ * `decisionOf(row)` is the Engine's calibrated verdict (or null), `guesses(row)`
+ * the card's picks for a row it is not sure about. Skipped rows and those in
+ * `answered` (ids) are left out, and so is any choice already rejected for that
+ * track (`rejected(row, playlistId)`); a row left with no choice is not asked.
+ * One question per artist.
+ */
+function teachQueue(rows, { decisionOf = null, guesses = null, weights = null, tracks = null,
+                                   limit = TEACH.batch, answered = null, rejected = null } = {}) {
+  const list = (rows ?? []).filter(r => r?.id && !(r.skips > 0) && !answered?.has?.(r.id));
+  const spread = artistSpread(list);
+  const out = [];
+  for (const row of list) {
+    const d = decisionOf?.(row) ?? null;
+    const c = choicesOf(row, d, guesses);
+    if (!c) continue;
+    const choices = rejected ? c.choices.filter(x => !rejected(row, x.id)) : c.choices;
+    if (!choices.length) continue;
+    const kind = d?.kind ?? 'unsure';
+    const value = teachValue(row, { kind, choices }, { weights, tracks, spread });
+    if (value > 0) out.push({ row, choices, checked: c.checked, kind, value });
+  }
+  out.sort((a, b) => b.value - a.value || (b.row.added ?? '').localeCompare(a.row.added ?? '')
+    || (a.row.id < b.row.id ? -1 : 1));
+  const seen = new Set(), batch = [];
+  for (const q of out) {
+    const k = artistKeyOf(q.row);
+    if (k && seen.has(k)) continue;
+    if (k) seen.add(k);
+    batch.push(q);
+    if (batch.length >= limit) break;
+  }
+  return batch;
+}
+return { TEACH_VERSION, TEACH, artistKeyOf, artistSpread, choicesOf, teachValue, teachQueue };
+})();
 /* ---- web/ui/sound.mjs ---- */
 __mod["web/ui/sound.mjs"] = (function () {
 // The sound layer's renderers — the contract docs/UI-BUILD-PLAN.md §5 freezes.
@@ -4658,7 +4805,8 @@ function view(ctx) {
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
     : '';
 
-  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+  // The teach questions (BUILD-6 SG, app/teach.js): '' unless this account's Score run said they help.
+  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
@@ -4740,7 +4888,7 @@ const inboxTrack = ctx => ctx.R.backlog[inboxIndex(ctx)] ?? null;
  *  a single id (the swipe gesture, keyboard 1-3 followed by Enter's fallback)
  *  or an array (the multi-select confirm button) — either way nothing is
  *  written until this actually runs. */
-async function fileCurrent(ctx, playlistIds) {
+async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
   const { S, R, CFG, FB, addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, toast, render } = ctx;
   const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
   if (!ids.length) return;
@@ -4774,7 +4922,7 @@ async function fileCurrent(ctx, playlistIds) {
   try {
     for (const id of ids) {
       await addTracks(id, [t.id]);
-      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, deck:deckLen, band:bandOf(id) });
+      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, deck:deckLen, band:bandOf(id), ...(via ? { via } : {}) });
       ats.push((await getLog())[0]?.at);
     }
     // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so
@@ -4837,6 +4985,7 @@ const actions = {
   selfile: (ctx, el) => toggleFileSel(ctx, el.dataset.selfile),
   anyPl: (ctx, el) => { if (el.value) toggleFileSel(ctx, el.value); },
   filesure: (ctx) => fileSureOnes(ctx),
+  teach: (ctx, el) => ctx.teachAct?.(el),
   digestMore(ctx) {
     const D = ctx.S.digest; if (!D) return;
     if (!D.expandedOnce) { D.expandedOnce = true; bumpMeasure(ctx, 'expanded'); }
@@ -5110,7 +5259,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1245`,
+    `Betterfy engine score — build 2026-11-16-1631`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5129,6 +5278,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
     fillLine(v.fill, pc),
+    teachLine(v.teach, pc),
     ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
@@ -5146,6 +5296,19 @@ function fillRow(f, p) {
   if (!f || f.recall == null) return '';
   return `<div class="fillscore"><span><b>Fill this playlist</b> — hidden tracks back in the top 10 <span class="sub">· ${f.playlists} playlists, random ${p(f.random)}, needs ${p(f.bar)}${
     f.pass ? '' : ', so it stays off'}</span></span><b class="mono">${p(f.recall)}</b></div>`;
+}
+
+/** The teach questions' gate (BUILD-6 SG): 20 simulated answers on a hidden fold of your own filing. */
+function teachLine(t, pc) {
+  if (!t) return null;
+  if (t.before == null) return `Teach questions: off (${t.why})`;
+  return `Teach questions: top-1 ${pc(t.before)} -> ${pc(t.after)} after ${t.asked} simulated answers, ${t.scored} hidden tracks — ${
+    t.pass ? 'shown on File' : `off (${t.why})`}`;
+}
+function teachRow(t, p) {
+  if (!t || t.before == null) return '';
+  return `<div class="fillscore"><span><b>Teach questions</b> — right first time after 20 answers <span class="sub">· was ${p(t.before)}${
+    t.pass ? ', so File asks them' : ', not enough better, so they stay off'}</span></span><b class="mono">${p(t.after)}</b></div>`;
 }
 
 /** "×4" for a multiplier, "off" for zero. */
@@ -5431,6 +5594,7 @@ function view(c) {
       <hr>
       <div><span>Tracks scored, each engine</span><b class="mono">${v.mine.scored.toLocaleString()}</b></div>
       ${fillRow(v.fill, p)}
+      ${teachRow(v.teach, p)}
       ${v.base?.noAnswer ? `<p>Today's engine had no tags at all for ${v.base.noAnswer.toLocaleString()} of them.
         Counted as misses: a filing tool that returns nothing has not filed anything.</p>` : ''}
       ${!v.base ? `<p>No tag data is loaded, so there is nothing to compare against — the figure above
@@ -5587,7 +5751,7 @@ const actions = {
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, audioCard, weakBuckets, summary, fillLine, blendVerdict, view, tuneCardHtml, actions };
+return { bridgeVerdict, decisionHtml, audioCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -7104,6 +7268,7 @@ Object.assign(globalThis, __mod["profile.mjs"]);
 Object.assign(globalThis, __mod["core/playlists/axes.mjs"]);
 Object.assign(globalThis, __mod["core/personal/relevance.mjs"]);
 Object.assign(globalThis, __mod["core/review/filequeue.mjs"]);
+Object.assign(globalThis, __mod["core/review/teach.mjs"]);
 Object.assign(globalThis, __mod["web/ui/sound.mjs"]);
 Object.assign(globalThis, __mod["web/app/patch.mjs"]);
 globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], tidy: __mod["web/screens/tidy.mjs"], lists: __mod["web/screens/lists.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"], new: __mod["web/screens/new.mjs"] };
@@ -7500,7 +7665,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1245';
+const BUILD = '2026-11-16-1631';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -7838,7 +8003,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1245', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1631', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -8594,7 +8759,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1245');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1631');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11697,7 +11862,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1245';
+    s.src = 'engine.js?v=2026-11-16-1631';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -11719,7 +11884,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1245');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1631');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12150,10 +12315,14 @@ const engineValidate = guard(async () => {
       catch { identify = null; }
       let fill = null;
       try { fill = BetterfyFill.fillRecall(LIB, { tags, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist }); } catch { fill = null; }
-      ENG.val = { mine, base, blend, identify, weights, fill, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      let teach = null;
+      try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true }); } catch { teach = null; }
+      ENG.val = { mine, base, blend, identify, weights, fill, teach, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).
     try { if (ENG.val.fill?.recall != null) LS.setItem('bf_fill', JSON.stringify({ ...ENG.val.fill, at: Date.now() })); } catch { /* shown next run */ }
+    // File's teach questions show only once this account's own measurement beats (BUILD-6 SG).
+    try { if (ENG.val.teach) teachRemember(ENG.val.teach); } catch { /* shown next run */ }
     // The fitted weights first: calibration is refitted on the engine they
     // make, and the comparison above is redone with them.
     await weightsRemember(ENG.val);
@@ -12267,7 +12436,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1245';
+    s.src = 'audio.js?v=2026-11-16-1631';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -12303,7 +12472,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1245', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1631', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -12841,6 +13010,149 @@ async function weightsForget() {
   try { await idb.del(WFIT_KEY); } catch {}
   WFIT.rec = null;
 }
+/* ---------- the teach queue on File (BUILD-6 SG; SMARTER-GENRES-PLAN §4.3, phase 4) ----------
+ * A few one-tap questions about the waiting tracks whose answers should teach the
+ * engine most (core/review/teach.mjs `teachQueue`): the Engine's checked short list
+ * where it has one, else the card's own best guesses, said as such. A tap is an
+ * ordinary filing through File's own path (fileCurrent: the add, its History
+ * entry, the accept, and the artist roll-forward offer), so nothing new is
+ * written anywhere and History's undo takes it back.
+ *
+ * Shown only where it is measured to help: the Score run simulates 20 answers on a
+ * hidden fold of this account's own filing (core/validate/teach.mjs `teachGate`)
+ * and keeps the verdict in `bf_teach`. No verdict, or one that did not beat: no
+ * card, no engine download, nothing. `bf_teach_force` = '1' is the owner's flag to
+ * show it anyway (read only; set it by hand). */
+const TEACH_KEY = 'bf_teach';
+/** Waiting tracks scored by the engine per batch: the cheap order (listening x reach) picks which. */
+const TEACH_SCAN = 300;
+const TEACH_UI = { status: 'idle', items: [], answered: new Set(), err: null, hidden: false };
+
+/** Keep the Score run's teach measurement for File. */
+function teachRemember(m) {
+  LS.setItem(TEACH_KEY, JSON.stringify({ pass: !!m.pass, why: m.why ?? null, before: m.before ?? null, after: m.after ?? null,
+                                         gain: m.gain ?? null, asked: m.asked ?? 0, scored: m.scored ?? 0, right: m.right ?? null,
+                                         at: Date.now() }));
+  if (!m.pass) Object.assign(TEACH_UI, { status: 'idle', items: [] });
+}
+/** The last measurement, or null. */
+function teachMeasure() {
+  try { return JSON.parse(LS.getItem(TEACH_KEY) ?? 'null'); } catch { return null; }
+}
+/** Whether File shows the teach questions on this account. */
+function teachGateOpen() {
+  let forced = false;
+  try { forced = LS.getItem('bf_teach_force') === '1'; } catch { /* not forced */ }
+  return forced || !!teachMeasure()?.pass;
+}
+
+/** The listening half of the order, once it has landed (fileOrderCtx's inputs). */
+const teachListening = () => {
+  const L = typeof LISTENING_CACHE !== 'undefined' ? LISTENING_CACHE : null;
+  return { weights: L?.weights ?? null, tracks: L?.tracks ?? null };
+};
+
+/** Find the next batch: the engine's verdict on the likeliest candidates, then teachQueue. */
+async function teachStart() {
+  if (TEACH_UI.status === 'working') return;
+  TEACH_UI.status = 'working'; TEACH_UI.err = null; store.touch('ui.inbox');
+  try {
+    await engineLoad();
+    if (!ENG.space || ENG.status !== 'ready') await engineAnalyse();
+    await engineLoadCalibration();
+    const space = ENG.space;
+    if (!space) throw new Error(ENG.err || 'the engine could not learn this library yet');
+    const cal = ENG.calib?.base?.cal ?? null, soundCal = ENG.calib?.audio?.cal ?? cal;
+    const { weights, tracks } = teachListening();
+    const rows = R.backlog.filter(r => !(r.skips > 0) && !TEACH_UI.answered.has(r.id));
+    // Placing every waiting track is too much for a phone on a big backlog; the
+    // half of the value that needs no engine (listening x reach) picks which to place.
+    const spread = artistSpread(rows);
+    const pre = rows.map(r => [r, valueOf(r, { weights, tracks }) * (1 + Math.log2(spread.get(artistKeyOf(r)) ?? 1))])
+      .sort((a, b) => b[1] - a[1]).slice(0, TEACH_SCAN).map(([r]) => r);
+    const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
+    const dec = new Map();
+    if (cal) for (const r of pre) {
+      const raw = likedById.get(r.id);
+      if (!raw) continue;
+      const full = BetterfyIntrinsic.placements(raw, space, withFittedWeights({ limit: Infinity, soundFirst: true }, 'plain'));
+      const p = full.results?.[0]?.parts ?? {};
+      const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []), 'audio' in p || 'learned' in p ? soundCal : cal);
+      dec.set(r.id, { kind: d.kind, playlists: d.playlists.map(id => ({ id, name: CFG[id]?.name ?? space.destinations.get(id)?.name ?? id })) });
+    }
+    TEACH_UI.items = teachQueue(pre, { decisionOf: r => dec.get(r.id) ?? null, guesses: r => filePicks(r), weights, tracks,
+                                       rejected: (r, pid) => !!FB[r.id]?.rejected?.includes(pid) });
+    TEACH_UI.status = 'ready';
+  } catch (e) {
+    TEACH_UI.status = 'error'; TEACH_UI.err = e?.message ?? String(e);
+  }
+  store.touch('ui.inbox');
+}
+
+/** One tap: file this track where the listener said, through File's own path, and
+ *  leave the card the deck was showing where it was. */
+async function teachAnswer(id, pid) {
+  const q = TEACH_UI.items.find(x => x.row.id === id);
+  const at = R.backlog.findIndex(b => b.id === id);
+  TEACH_UI.items = TEACH_UI.items.filter(x => x.row.id !== id);
+  if (at < 0 || !pid) return render();
+  const keep = R.backlog[Math.min(Math.max(S.inboxAt | 0, 0), R.backlog.length - 1)]?.id;
+  TEACH_UI.answered.add(id);
+  S.inboxAt = at; S.fileSel = new Set(); S.fileSelFor = id;
+  await fileCurrent([pid], { via: 'teach' });
+  if (R.backlog.some(b => b.id === id)) {
+    // It did not land (fileCurrent said why and put the card back): ask again.
+    TEACH_UI.answered.delete(id);
+    if (q) TEACH_UI.items.unshift(q);
+  }
+  if (keep && keep !== id) S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+  render();
+}
+
+/** The File screen's data-act="teach" buttons. */
+function teachAct(el) {
+  const what = el?.dataset?.teach;
+  if (what === 'start' || what === 'more') return teachStart();
+  if (what === 'hide') { TEACH_UI.hidden = true; return render(); }
+  if (what === 'pass') {
+    TEACH_UI.answered.add(el.dataset.id);
+    TEACH_UI.items = TEACH_UI.items.filter(x => x.row.id !== el.dataset.id);
+    return render();
+  }
+  if (what === 'file') return teachAnswer(el.dataset.id, el.dataset.pl);
+}
+
+/** The teach card above File's deck, or '' where it does not apply. */
+function teachHTML() {
+  if (TEACH_UI.hidden || S.roll || !R?.backlog?.length || typeof teachQueue !== 'function' || !teachGateOpen()) return '';
+  const head = (sub, extra = '') => `<div class="teach-h"><h2 id="teachH">Teach the engine</h2>
+      <button class="teach-x" data-act="teach" data-teach="hide" aria-label="Hide the teach questions" title="Hide"><span aria-hidden="true">✕</span></button>
+    </div><p class="sub teach-sub">${sub}</p>${extra}`;
+  const wrap = inner => `<section class="card teach" aria-labelledby="teachH">${inner}</section>`;
+  if (TEACH_UI.status === 'working') return wrap(head('Finding where an answer helps most…'));
+  if (TEACH_UI.status === 'error') return wrap(head(`Couldn't find questions: ${esc(TEACH_UI.err ?? '')}`,
+    `<div class="rowbtns"><button class="b sm" data-act="teach" data-teach="start">Try again</button></div>`));
+  if (TEACH_UI.status !== 'ready') {
+    const m = teachMeasure();
+    const proof = m?.pass && m.before != null ? ` On your own filed tracks, 20 answers took the engine from ${Math.round(m.before * 100)}% to ${Math.round(m.after * 100)}% right.` : '';
+    return wrap(head(`A few one-tap questions about the tracks where your answer helps the engine most.${esc(proof)}`,
+      `<div class="rowbtns"><button class="b sm p" data-act="teach" data-teach="start">Start</button></div>`));
+  }
+  if (!TEACH_UI.items.length) return wrap(head('Nothing left to ask for now.',
+    `<div class="rowbtns"><button class="b sm" data-act="teach" data-teach="more">Look again</button></div>`));
+  const n = TEACH_UI.items.length;
+  return wrap(head(`${n} ${n === 1 ? 'question' : 'questions'}. One tap files the track there, and History can undo it.`,
+    `<ol class="teach-list">${TEACH_UI.items.map(q => {
+      const t = q.row;
+      return `<li class="teach-q">
+        <div class="teach-t"><b>${esc(t.title ?? '')}</b><span class="sub"> — ${esc(t.artist ?? '')}</span></div>
+        <div class="teach-how">${q.checked ? 'The engine narrowed it to these' : 'Best guesses'}</div>
+        <div class="teach-choices" role="group" aria-label="${esc(`Where does ${t.title ?? 'this track'} go?`)}">
+          ${q.choices.map(c => `<button class="b sm" data-act="teach" data-teach="file" data-id="${esc(t.id)}" data-pl="${esc(c.id)}">${esc(c.name)}</button>`).join('')}
+          <button class="b sm teach-pass" data-act="teach" data-teach="pass" data-id="${esc(t.id)}">Not sure</button>
+        </div></li>`;
+    }).join('')}</ol>`));
+}
 /* ---------- CLAP: names for "new genre?" groups, and "sounds like" search ----------
  * docs/AUDIO-BUILD-PLAN.md WP-C3, over core/audio/clap-search.mjs. Both read
  * the records' optional `clap` field (WP-C2's audio encoder, opt-in) and the
@@ -13037,7 +13349,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1245', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1631', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -13389,7 +13701,7 @@ Object.assign(SCREEN_CTX, {
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
                   addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
-                  fileBand, fileSure, fileOrderKick,
+                  fileBand, fileSure, fileOrderKick, teachHTML, teachAct,
                   rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
                   saveFeedback, toast, render, flyCard,
@@ -13457,6 +13769,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
+  { where:'local', key:'bf_teach', group:'Your library', why:'This account\'s own teach-queue measurement from the last Score run (the engine\'s score on your filed tracks before and after 20 simulated answers), which decides whether File shows the teach questions.' },
   { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 
   // --- genre data ---
@@ -14062,7 +14375,7 @@ const FILE_GLUE = {
   track: () => SCREEN_MODS.inbox.inboxTrack(screenCtx('inbox')),
   toggle: id => SCREEN_MODS.inbox.toggleFileSel(screenCtx('inbox'), id),
 };
-const fileCurrent = ids => SCREEN_MODS.inbox.fileCurrent(screenCtx('inbox'), ids);
+const fileCurrent = (ids, opts) => SCREEN_MODS.inbox.fileCurrent(screenCtx('inbox'), ids, opts);
 const inboxAct = a => SCREEN_MODS.inbox.inboxAct(screenCtx('inbox'), a);
 
 // Keyboard parity for the swipe: the same walk through VORDER, for anyone not

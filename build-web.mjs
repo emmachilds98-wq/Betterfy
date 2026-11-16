@@ -101,7 +101,7 @@ const UI_MODULES = ['web/ui/sound.mjs', 'web/app/patch.mjs'];
 
 /* The File queue's order and sure batch (BUILD-5-PLAN §5.2): relevance.mjs's listening-x-uncertainty
  * pieces and the pure ordering built on them. Exposed as globals like v1. */
-const FILE_MODULES = ['core/personal/relevance.mjs', 'core/review/filequeue.mjs'];
+const FILE_MODULES = ['core/personal/relevance.mjs', 'core/review/filequeue.mjs', 'core/review/teach.mjs'];
 
 /* Screen modules (docs/BUILD-5-PLAN.md A4): web/screens/<name>.mjs, each opting
  * in with `// @bundle screens <name> <order>` (see bundler.mjs discoverBundles;
@@ -222,6 +222,11 @@ self.onmessage = function (e) {
       // Fill this playlist's gate (BUILD-6 F2, M4): recall@10 on hidden tracks.
       try { result.fill = BetterfyFill.fillRecall(m.lib, { tags: m.tags || null, audio: m.audio || null, isMirror: isMirror }); }
       catch (e) { result.fill = null; }
+      // The teach queue's gate (BUILD-6 SG): 20 simulated answers on a hidden fold of the
+      // account's own filing, the engine scored before and after (core/validate/teach.mjs).
+      try { result.teach = BetterfyTeach.teachGate(m.lib, { targets: m.targets || null, isMirror: isMirror,
+              genreGraph: !!(m.opts && m.opts.genreGraph) }); }
+      catch (e) { result.teach = null; }
     } else if (m.op === 'misfits') {
       // Tidy by sound: an all-pairs nearest-neighbour pass over the heard
       // tracks, too long for the page's thread on a big library.
