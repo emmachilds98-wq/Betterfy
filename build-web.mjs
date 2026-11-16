@@ -223,7 +223,12 @@ self.onmessage = function (e) {
       // Tidy by sound: an all-pairs nearest-neighbour pass over the heard
       // tracks, too long for the page's thread on a big library.
       result = BetterfyMisfit.soundMisfitsFor(m.lib, m.audio || null,
-        { targets: m.targets || null, isMirror: isMirror, measure: m.measure !== false });
+        { targets: m.targets || null, isMirror: isMirror, measure: m.measure !== false, opts: m.misfitOpts || undefined });
+    } else if (m.op === 'tune') {
+      // Engine › Tune: one group per call, so the page can show where it is.
+      // Per-device parameter sweep over the account's own folds (core/validate/tune.mjs).
+      result = BetterfyTune.tuneSweep(m.lib, { audio: prototypesOnly(m.audio), targets: m.targets || null, isMirror: isMirror,
+                                               limit: m.limit || 300, folds: m.folds || 5, groups: m.groups || undefined });
     } else {
       throw new Error('unknown engine op: ' + m.op);
     }

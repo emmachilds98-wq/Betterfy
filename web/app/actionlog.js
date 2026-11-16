@@ -12,10 +12,16 @@ async function logAction(entry) {
   const last = log.at(-1)?.at;
   if (last && at <= last) at = new Date(Date.parse(last) + 1).toISOString();
   log.push({ at, ...entry });
-  await idb.set('actions', log.slice(-500));
+  // Skips (BUILD-6 D2) are lightweight entries for the queue measure only: kept
+  // in their own, smaller allowance so they can never push real changes out.
+  const real = log.filter(x => x.op !== 'skip').slice(-500), skips = log.filter(x => x.op === 'skip').slice(-300);
+  await idb.set('actions', log.length > 500 ? [...real, ...skips].sort((a, b) => (a.at < b.at ? -1 : 1)) : log);
   return at;
 }
-const getLog = async () => ((await idb.get('actions')) ?? []).slice().reverse();
+/** Newest first. Skips are the queue measure's, not History's, so they are
+ *  left out unless asked for (`{ all: true }`). */
+const getLog = async ({ all = false } = {}) =>
+  ((await idb.get('actions')) ?? []).filter(x => all || x.op !== 'skip').reverse();
 const newGroup = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 /** True once an entry has been undone: `undoneAt` on the entry, or (for a log
