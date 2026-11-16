@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-2006">
+<meta name="bf-build" content="2026-11-16-2303">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1924,7 +1924,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-2006</span>
+    <span class="mono">build 2026-11-16-2303</span>
   </p>
 
   <div class="feat">
@@ -2017,7 +2017,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-2006</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-2303</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2134,7 +2134,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-2006. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-2303. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5407,6 +5407,16 @@ function familyLine(f, pc) {
     + `(flat top-1 ${pc(f.flat)}, ${f.n} tracks); ${sure} — ${f.use ? 'used' : 'not used (family top-1 under 85%)'}`;
 }
 
+/** Package 4: "Sure when sources agree", from a calibration report's `agree`
+ *  (core/intrinsic/calibrate.mjs). Empty when the run had no levels. */
+function agreeText(a, p) {
+  if (!a) return '';
+  if (!a.use) return `<b>Sure when sources agree:</b> not used yet (${a.why ?? 'not enough held-out cards'}). Sure still needs the margin alone.`;
+  return `<b>Sure when sources agree:</b> ${p(a.share)} of cards, right ${p(a.right)} of ${a.n} held out. `
+    + `Sure overall (by margin or agreement): ${p(a.sure?.share)}, right ${p(a.sure?.right)}.`
+    + (a.share < 0.25 ? ' That is under a quarter of cards so far.' : '');
+}
+
 /** "How sure it is", checked on tracks the thresholds were not fitted on. */
 function calibCard(p, calib) {
   const c = calib;
@@ -5431,7 +5441,8 @@ function calibCard(p, calib) {
       ${b?.n ? `<hr><div><span>With similar artists: short list / not sure</span><b class="mono">${p(b.chooseShare)} / ${p(b.unsureShare)}</b></div>
       ${c.bridge.cal?.tau != null && b.confidentN ? `<div><span>…confident, and right</span><b class="mono">${p(b.confidentShare)}, ${p(b.confidentRight)}</b></div>` : ''}` : ''}
     </div>
-    <p class="why" style="margin-top:12px">${verdict}</p>`;
+    <p class="why" style="margin-top:12px">${verdict}</p>
+    ${(c.audio?.agree ?? c.base?.agree) ? `<p class="why" id="agreeLine" style="margin-top:8px">${agreeText(c.audio?.agree ?? c.base.agree, p)}</p>` : ''}`;
 }
 
 /** The with/without comparison on the score card. Empty when there is none. */
@@ -5566,7 +5577,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-2006`,
+    `Betterfy engine score — build 2026-11-16-2303`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5586,6 +5597,8 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
     ...(v.family ? [familyLine(v.family, pc)] : []),
     ...(v.moodLine ? [v.moodLine] : []),
+    ...(v.agreeLine ? [v.agreeLine] : []),
+    ...(v.pairsLine ? [v.pairsLine] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),
     ...(log && measureLines ? measureLines(log) : []),
@@ -6061,7 +6074,7 @@ const actions = {
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, familyLine, audioCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, view, tuneCardHtml, actions };
+return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -9782,7 +9795,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-2006';
+const BUILD = '2026-11-16-2303';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10120,7 +10133,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-2006', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-2303', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -10878,7 +10891,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-2006');
+    const w = new Worker('reports-worker.js?v=2026-11-16-2303');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11598,13 +11611,29 @@ const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
 function filePicks(t) {
   const tags = typeof blendPicks === 'function' ? blendPicks(t, t?.suggest ?? []) : t?.suggest ?? [];
   const sound = typeof soundPicks === 'function' ? soundPicks(t) : [];
-  if (!sound.length) return tags;
+  if (!sound.length) return filePairOrder(t, tags);
   const out = sound.slice(0, 2);
   for (const sg of [...tags, ...sound.slice(2)]) {
     if (out.length >= 3) break;
     if (!out.some(o => o.id === sg.id)) out.push(sg);
   }
-  return out;
+  return filePairOrder(t, out);
+}
+/* Package 5 (core/intrinsic/pairs.mjs): when the top two picks are two
+ * playlists of one family this account's Score run can tell apart by sound,
+ * put the one the track sounds like first. Only the order of those two: never
+ * on a Sure card, never a new pick. Not scored yet, or no pair earned it: the
+ * picks as they were. */
+function filePairOrder(t, picks) {
+  const fit = typeof ENG !== 'undefined' ? ENG.calib?.pairs : null;
+  if (!fit?.use || !t?.id || (picks?.length ?? 0) < 2 || typeof BetterfyPairs === 'undefined') return picks;
+  try {
+    if (typeof engineDecisionOf === 'function' && engineDecisionOf(t.id)?.kind === 'confident') return picks;
+    const fams = engineFamiliesMemo(), famOf = id => fams.get(id) ?? `own:${id}`;
+    if (famOf(picks[0].id) !== famOf(picks[1].id)) return picks;
+    const { swapped } = BetterfyPairs.pairOrder(t.id, [picks[0].id, picks[1].id], fit, engineMoodIndex(), LIB);
+    return swapped ? [{ ...picks[1], pair: true }, picks[0], ...picks.slice(2)] : picks;
+  } catch { return picks; }
 }
 /* The band the File card shows for its leading pick: the Engine's calibrated
  * verdict on this track when it has judged it, else the pick's own band. */
@@ -14357,7 +14386,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-2006';
+    s.src = 'engine.js?v=2026-11-16-2303';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -14379,7 +14408,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-2006');
+    const w = new Worker('engine-worker.js?v=2026-11-16-2303');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14502,7 +14531,7 @@ async function engineLoadCalibration() {
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
       ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, audioGate: c.audioGate ?? null,
                    ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), ...(c.family ? { family: c.family } : {}),
-                   ...(c.mood ? { mood: c.mood } : {}), at: c.at ?? null };
+                   ...(c.mood ? { mood: c.mood } : {}), ...(c.pairs ? { pairs: c.pairs } : {}), at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
 }
 
@@ -14527,6 +14556,26 @@ function engineMoodFit() {
   const index = engineMoodIndex();
   if (!index?.size || typeof BetterfyMood === 'undefined') return null;
   const fit = BetterfyMood.fitMoods(LIB, index, id => CFG[id]?.axis ?? null);
+  return fit.rows.length ? fit : null;
+}
+
+/* ---------- the playlists it confuses (docs/NEXT-WORKPLAN.md package 5) ----------
+ * A small sound check per confusable pair inside one family, fitted on half
+ * the pair's heard members and checked on the other half (core/intrinsic/pairs.mjs).
+ * Used only to order a card's top two picks, never to make a card Sure. */
+let FAMS_MEMO = { key: null, map: null };
+function engineFamiliesMemo() {
+  const key = engineTargets().map(id => `${id}:${CFG[id]?.name ?? ''}`).join('|');
+  if (FAMS_MEMO.key !== key) FAMS_MEMO = { key, map: engineFamilies() };
+  return FAMS_MEMO.map;
+}
+function enginePairsFit(rows) {
+  const index = engineMoodIndex();
+  if (!index?.size || !rows?.length || typeof BetterfyPairs === 'undefined' || typeof BetterfyFamily === 'undefined') return null;
+  const fams = engineFamiliesMemo(), targets = new Set(engineTargets());
+  const fit = BetterfyPairs.fitPairs(LIB, index, rows, ENG.pairs ?? [], {
+    inScope: id => targets.has(id),
+    together: (a, b) => (fams.get(a) ?? `own:${a}`) === (fams.get(b) ?? `own:${b}`) });
   return fit.rows.length ? fit : null;
 }
 
@@ -14556,8 +14605,18 @@ async function engineCalibrate(v) {
   const bridgeRows = wf?.bridge?.use && wf.bridge.rows ? wf.bridge.rows : mine.withBridge?.rows;
   if (wf?.plain) delete wf.plain.rows;
   if (wf?.bridge) delete wf.bridge.rows;
-  const base = BetterfyCalibrate.calibrationReport(baseRows);
-  const bridge = bridgeRows ? BetterfyCalibrate.calibrationReport(bridgeRows) : null;
+  // Package 4: each row's agreement level (core/intrinsic/agree.mjs) from the
+  // sources of the run that ranked it, plus the tag engine's own top picks,
+  // so "confident" can be fitted per level. Without the module: as before.
+  const agreeOn = typeof BetterfyAgree !== 'undefined';
+  const tagTops = v.tagTops ?? null;
+  // Read with only the sources the File card will have: similar artists count
+  // only once the File space carries them (package 2), and tags only when loaded.
+  const drop = [...(ENG.space?.bridge ? [] : ['similar']), ...(tagTops ? [] : ['tags'])];
+  const withAgree = (rows, ...from) => agreeOn && rows
+    ? BetterfyAgree.withAgreement(rows, BetterfyAgree.srcByIdOf(...from), tagTops, { drop }) : rows;
+  const base = BetterfyCalibrate.calibrationReport(withAgree(baseRows, mine.rows));
+  const bridge = bridgeRows ? BetterfyCalibrate.calibrationReport(withAgree(bridgeRows, mine.withBridge?.rows)) : null;
   // WP-C1: which ear this run chose. The first ear unless a second ear passed
   // the gate and beat it; its calibration then comes from that ear's rows.
   const choice = mine.withAudio?.choice ?? null;
@@ -14566,13 +14625,19 @@ async function engineCalibrate(v) {
   // Calibrated on the engine that will place: the chosen ear, or the first ear with its nearest tracks.
   const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows
     : near ? mine.withAudio.arms?.near?.rows : mine.withAudio?.rows;
-  const audio = soundRows ? BetterfyCalibrate.calibrationReport(soundRows) : null;
+  const audio = soundRows ? BetterfyCalibrate.calibrationReport(withAgree(soundRows, soundRows)) : null;
+  const agreeRep = audio?.agree ?? base?.agree ?? null;
+  if (agreeOn && agreeRep) v.agreeLine = BetterfyAgree.agreeLine(audio?.agree ? audio : base);
+  delete v.tagTops;
   // Family first (ENGINE-REVIEW layer 3), measured on the rows of the engine that places.
   const family = engineFamilyFit(soundRows ?? baseRows);
   if (family) v.family = family.summary;
   let mood = null;
   try { mood = engineMoodFit(); } catch { mood = null; }
   if (mood) v.moodLine = BetterfyMood.moodLine(mood);
+  let pairs = null;
+  try { pairs = enginePairsFit(soundRows ?? baseRows); } catch { pairs = null; }
+  if (pairs) v.pairsLine = BetterfyPairs.pairsLine(pairs, id => CFG[id]?.name ?? id);
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
@@ -14580,12 +14645,12 @@ async function engineCalibrate(v) {
   if (mine.withAudio) delete mine.withAudio.rows;
   for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
   ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}),
-                ...(mood ? { mood } : {}), at: Date.now() };
+                ...(mood ? { mood } : {}), ...(pairs ? { pairs } : {}), at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
                              targets: engineTargets(), base, bridge, audio, audioGate,
                              ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}),
-                             ...(mood ? { mood } : {}), at: ENG.calib.at });
+                             ...(mood ? { mood } : {}), ...(pairs ? { pairs } : {}), at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }
@@ -14608,16 +14673,32 @@ function engineDecorate() {
     const p = full.results?.[0]?.parts ?? {};
     const scores = BetterfyCalibrate.scoresOf(full.results ?? []);
     const useCal = 'audio' in p || 'learned' in p ? soundCal : cal;
+    // Package 4: how the sources line up behind the lead (sound, filing
+    // history, similar artists, tags), read the way the Score run read it.
+    const agree = useCal?.byLevel && typeof BetterfyAgree !== 'undefined'
+      ? BetterfyAgree.agreement(scores[0]?.[0] ?? null,
+          BetterfyAgree.sourceTops(full.results ?? [], { tags: engineTagScores(raw) })) : null;
+    const dopts = agree ? { agree: agree.level } : {};
     // Family first, once this account's Score run earned it: commit to the
     // family and ask only which playlist inside it.
     const fam = ENG.calib?.family?.use ? ENG.calib.family : null;
-    const dc = fam ? BetterfyFamily.decideCard(scores, useCal, fam.cal, families ??= engineFamilies()) : null;
-    const d = dc ? { ...dc, kind: dc.kind === 'sure' ? 'confident' : dc.kind } : BetterfyCalibrate.decide(scores, useCal);
+    const dc = fam ? BetterfyFamily.decideCard(scores, useCal, fam.cal, families ??= engineFamilies(), dopts) : null;
+    const d = dc ? { ...dc, kind: dc.kind === 'sure' ? 'confident' : dc.kind } : BetterfyCalibrate.decide(scores, useCal, dopts);
     row.decision = { kind: d.kind, ...(d.family ? { family: d.family } : {}),
+                     ...(agree ? { agree: agree.agree, against: agree.against } : {}),
                      playlists: d.playlists.map(id => ({ id, name: space.destinations.get(id)?.name ?? id })) };
     count[d.kind] = (count[d.kind] ?? 0) + 1;
   }
   sh.decided = cal ? count : null;
+}
+
+/** The tag engine's ranking of one liked track, as [[playlistId, score]], for
+ *  the agreement check. Empty when tags or the reports are not loaded. */
+function engineTagScores(raw) {
+  try {
+    if (!raw || !R?.profiles || !TAGS || typeof rank !== 'function' || typeof blendTags !== 'function') return null;
+    return rank(raw, blendTags(), R.profiles, R.idf, { top: Infinity }).map(b => [b.id, b.score]);
+  } catch { return null; }
 }
 
 /** The comparison with the File screen's picks, for the tracks waiting first.
@@ -14833,7 +14914,7 @@ const engineValidate = guard(async () => {
     // with sound leading (soundFirst), so the number is the engine you use.
     try { done = await inEngineWorker('validate', { lib: LIB, tags, bridge, audio: engineAudioScore(audio),
                                                     opts: { folds: 5, limit: VALIDATE_N, collect: true,
-                                                            genreGraph: true, soundFirst: true, fitParts: true } }); }
+                                                            genreGraph: true, soundFirst: true, fitParts: true, sources: true } }); }
     catch { done = null; }
     const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
     if (done?.result?.mine) {
@@ -14844,7 +14925,7 @@ const engineValidate = guard(async () => {
       await yieldToPaint();
       const common = { folds: 5, limit: VALIDATE_N, isMirror: isMirrorPlaylist, targets: new Set(engineTargets()), bridge,
                        audio: engineAudioScore(audio), collect: true,
-                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS, fitParts: true };
+                       genreGraph: true, soundWeights: BetterfyIntrinsic.SOUND_FIRST_WEIGHTS, fitParts: true, sources: true };
       const mine = BetterfyValidate.placementAccuracy(LIB, common);
       await yieldToPaint();
       const base = tags ? BetterfyBaseline.baselineAccuracy(LIB, tags, common) : null;
@@ -14859,6 +14940,8 @@ const engineValidate = guard(async () => {
               targets: common.targets, isMirror: isMirrorPlaylist, nativeFit: fit }) : null; }
       catch { blend = null; }
       const weights = BetterfyWeightFit.fitSummary(fit);
+      // The tag engine's own top picks per track, for the agreement check (package 4).
+      const tagTops = base?.rows && typeof BetterfyAgree !== 'undefined' ? BetterfyAgree.tagTopsOf(base.rows) : null;
       if (base) delete base.rows;
       let identify = null;
       try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
@@ -14867,7 +14950,7 @@ const engineValidate = guard(async () => {
       try { fill = BetterfyFill.fillRecall(LIB, { tags, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist }); } catch { fill = null; }
       let teach = null;
       try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true, audio: engineAudioIn(audio) }); } catch { teach = null; }
-      ENG.val = { mine, base, blend, identify, weights, fill, teach, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      ENG.val = { mine, base, blend, identify, weights, fill, teach, tagTops, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).
     try { if (ENG.val.fill?.recall != null) LS.setItem('bf_fill', JSON.stringify({ ...ENG.val.fill, at: Date.now() })); } catch { /* shown next run */ }
@@ -14986,7 +15069,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-2006';
+    s.src = 'audio.js?v=2026-11-16-2303';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -15023,7 +15106,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-2006', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-2303', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -15936,7 +16019,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-2006', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-2303', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;

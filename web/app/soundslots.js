@@ -31,13 +31,29 @@ const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
 function filePicks(t) {
   const tags = typeof blendPicks === 'function' ? blendPicks(t, t?.suggest ?? []) : t?.suggest ?? [];
   const sound = typeof soundPicks === 'function' ? soundPicks(t) : [];
-  if (!sound.length) return tags;
+  if (!sound.length) return filePairOrder(t, tags);
   const out = sound.slice(0, 2);
   for (const sg of [...tags, ...sound.slice(2)]) {
     if (out.length >= 3) break;
     if (!out.some(o => o.id === sg.id)) out.push(sg);
   }
-  return out;
+  return filePairOrder(t, out);
+}
+/* Package 5 (core/intrinsic/pairs.mjs): when the top two picks are two
+ * playlists of one family this account's Score run can tell apart by sound,
+ * put the one the track sounds like first. Only the order of those two: never
+ * on a Sure card, never a new pick. Not scored yet, or no pair earned it: the
+ * picks as they were. */
+function filePairOrder(t, picks) {
+  const fit = typeof ENG !== 'undefined' ? ENG.calib?.pairs : null;
+  if (!fit?.use || !t?.id || (picks?.length ?? 0) < 2 || typeof BetterfyPairs === 'undefined') return picks;
+  try {
+    if (typeof engineDecisionOf === 'function' && engineDecisionOf(t.id)?.kind === 'confident') return picks;
+    const fams = engineFamiliesMemo(), famOf = id => fams.get(id) ?? `own:${id}`;
+    if (famOf(picks[0].id) !== famOf(picks[1].id)) return picks;
+    const { swapped } = BetterfyPairs.pairOrder(t.id, [picks[0].id, picks[1].id], fit, engineMoodIndex(), LIB);
+    return swapped ? [{ ...picks[1], pair: true }, picks[0], ...picks.slice(2)] : picks;
+  } catch { return picks; }
 }
 /* The band the File card shows for its leading pick: the Engine's calibrated
  * verdict on this track when it has judged it, else the pick's own band. */
