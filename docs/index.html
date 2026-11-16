@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1617">
+<meta name="bf-build" content="2026-11-16-1625">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1569,6 +1569,54 @@ main:focus{outline:none}
   .wiz .wizgo{position:sticky; bottom:calc(-24px - var(--sab, 0px)); background:var(--surface); padding:10px 0 calc(16px + var(--sab, 0px)); margin:0 0 calc(-24px - var(--sab, 0px))}
   .wiz .hint.warn{color:var(--warn)}
   .msline{font-size:12px; color:var(--ink-3)}
+  /* ---------- Tidy: library health report and keyboard sprint (BUILD-6 F9) ----------
+     The report is Tidy's Health section (.hrep); the sprint replaces a list with one
+     track at a time (.sprint). The score's own look (.plhealth, .plnotes) is
+     61-library.css's, shared with the Library sheet. */
+  .seg.tidysecs{flex-wrap:wrap}
+
+  .hrep{list-style:none; margin:0; padding:0; display:grid; gap:10px; counter-reset:hrep}
+  .hrow{counter-increment:hrep; display:flex; gap:14px; align-items:flex-start; background:var(--surface);
+    border:1px solid var(--line); border-radius:20px; padding:14px 16px}
+  .hrow::before{content:counter(hrep); font-family:var(--mono); color:var(--ink-3); min-width:1.2em; padding-top:2px}
+  .hmain{flex:1; min-width:0}
+  .hmain .ttl{font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:4px}
+  .hmain .plhealth .mono{font-size:20px}
+  .hrow>.b{flex:none; align-self:center}
+
+  .tidypl{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 14px; color:var(--ink-2)}
+  .tidypl b{color:var(--ink)}
+
+  .sprintbar{display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; margin:0 0 14px}
+  .sprintbar .hint, .sprint .hint{color:var(--ink-2); font-size:var(--fs-small, 13px)}
+  .sprintbar .sub{flex-basis:100%; color:var(--ink-2); font-size:var(--fs-small, 13px)}
+  .sprint kbd, .sprintbar kbd{font-family:var(--mono); font-size:.85em; padding:0 5px; border:1px solid var(--line-2, var(--line));
+    border-bottom-width:2px; border-radius:6px; background:var(--surface-2); color:var(--ink)}
+
+  .sprint h2{display:flex; align-items:baseline; gap:10px; margin:0 0 10px}
+  .sprint h2 .mono{font-size:14px; color:var(--ink-2); font-weight:500}
+  .sprintcard{display:flex; gap:14px; align-items:flex-start; background:var(--surface); border:1px solid var(--line);
+    border-radius:20px; padding:16px 18px; margin:0 0 12px}
+  /* Focus sits on the track being decided: shown plainly, not only on :focus-visible,
+     since the sprint puts it there itself after every key. */
+  .sprintcard:focus{outline:3px solid var(--accent); outline-offset:3px}
+  .sprintcard .main{flex:1; min-width:0}
+  .sprintcard .ttl{font-weight:700; font-size:18px}
+  .sprintcard .swap{margin-top:6px}
+  .sprintcard.sprintdone p{margin:0}
+  .sprintacts{display:flex; flex-wrap:wrap; gap:8px; margin:0 0 8px}
+  .sprintacts .b:not(.sm){min-height:var(--ctl-h, 44px)}
+  .sprintstat{color:var(--ink-2); font-size:var(--fs-small, 13px); margin:6px 0 0}
+  .sprint-live{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap}
+
+  @media (max-width: 760px){
+    .sprintacts>.b:not(.sm){flex:1 1 40%; justify-content:center}
+    .hrow{padding:12px 13px}
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .sprintcard{animation:sprintIn var(--dur-1) var(--ease-out)}
+    @keyframes sprintIn{from{opacity:.4; transform:translateX(8px)} to{opacity:1; transform:none}}
+  }
 /* soundChip (WP-D4): one compact row per track, "174 BPM · 8A A minor". */
 .snd{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:.15em .45em;font-family:var(--mono);font-size:.78rem;line-height:1.35;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .snd>span{white-space:nowrap}
@@ -1711,7 +1759,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1617</span>
+    <span class="mono">build 2026-11-16-1625</span>
   </p>
 
   <div class="feat">
@@ -1804,7 +1852,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1617</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1625</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1921,7 +1969,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1617. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1625. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5168,7 +5216,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1617`,
+    `Betterfy engine score — build 2026-11-16-1625`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5834,11 +5882,145 @@ const actions = {
 };
 return { artistCoverage, coverageHTML, view, yourDataHTML, actions };
 })();
+/* ---- core/review/health.mjs ---- */
+__mod["core/review/health.mjs"] = (function () {
+// The library health report and the Tidy cleanup sprint (BUILD-6 F9).
+//
+// Pure: no DOM, no storage, no fetch. The health score itself is the one the
+// Library rows already show (web/screens/lists.mjs playlistHealth); this module
+// only builds its inputs from the reports every account has (R.misfiled,
+// R.within, R.drift, the sound tier's rows), ranks the result, and keeps the
+// sprint's own counts. Bundled into the page through web/screens/tidy.mjs.
+
+const HEALTH_VERSION = '1.0.0';
+/** How many playlists the report lists. */
+const REPORT_N = 5;
+/** At or above this a playlist reads "Healthy" (lists.mjs's word) and is left off the report. */
+const HEALTHY = 85;
+/** Sessions of the sprint kept on this device. */
+const SPRINT_KEEP = 20;
+
+/** What Tidy can act on per playlist: rows in Wrong place, By sound and Repeats. Map id -> counts. */
+function tidyCounts({ misfiled = [], soundRows = [], within = [] } = {}) {
+  const out = new Map();
+  const at = id => { let x = out.get(id); if (!x) out.set(id, x = { misfile: 0, sound: 0, dupes: 0 }); return x; };
+  for (const m of misfiled ?? []) if (m?.currentPlaylistId) at(m.currentPlaylistId).misfile++;
+  for (const r of soundRows ?? []) if (r?.from) at(r.from).sound++;
+  for (const d of within ?? []) if (d?.playlistId) at(d.playlistId).dupes++;
+  return out;
+}
+
+/** The Tidy section a playlist's report row opens: the first with rows for it, else null. */
+function sectionFor(t) {
+  if (!t) return null;
+  return t.misfile > 0 ? 'misfile' : t.sound > 0 ? 'sound' : t.dupes > 0 ? 'dupes' : null;
+}
+
+/**
+ * Inputs for playlistHealth() for one playlist, from the reports. Misfiled rows
+ * name their playlist as `currentPlaylistId` (web/app/reports.js); drift rows
+ * as `playlistId`.
+ */
+function healthInputs({ id, tracks = 0, list = [], misfiled = [], drift = [], splitIds, undecidedIds, twins } = {}, { repeatCount, staleDays } = {}) {
+  return {
+    tracks,
+    misfiled: (misfiled ?? []).filter(m => m?.currentPlaylistId === id).length,
+    drifting: (drift ?? []).some(d => d?.playlistId === id),
+    split: !!splitIds?.has?.(id),
+    undecided: !!undecidedIds?.has?.(id),
+    twins: twins?.get?.(id) ?? [],
+    repeats: typeof repeatCount === 'function' ? repeatCount(list) : 0,
+    staleDays: typeof staleDays === 'function' ? staleDays(list) : null,
+  };
+}
+
+/**
+ * The worst `n` playlists by health, lowest score first. rows: [{ id, name,
+ * tracks, health: { score, word, notes } | null, tidy?: counts }]. Rows with no
+ * health (under eight tracks) and healthy ones are left off. Ties go to the
+ * playlist with more Tidy can fix, then the bigger one, then by name, so the
+ * order never depends on the input's.
+ */
+function rankHealth(rows, { n = REPORT_N, below = HEALTHY } = {}) {
+  const work = t => (t ? t.misfile + t.sound + t.dupes : 0);
+  return (rows ?? []).filter(r => r?.health && Number.isFinite(r.health.score) && r.health.score < below)
+    .sort((a, b) => a.health.score - b.health.score || work(b.tidy) - work(a.tidy)
+      || (b.tracks ?? 0) - (a.tracks ?? 0) || String(a.name).localeCompare(String(b.name)) || String(a.id).localeCompare(String(b.id)))
+    .slice(0, n)
+    .map(r => ({ id: r.id, name: r.name, score: r.health.score, word: r.health.word,
+      why: (r.health.notes ?? []).slice(0, 3), section: sectionFor(r.tidy), fixable: work(r.tidy) }));
+}
+
+/* ---------- the sprint's own counts ---------- */
+
+/** A new sprint session. `now` is ms. */
+function sprintStart(now, { sec = null, pl = null } = {}) {
+  return { start: now, last: now, sec, pl, moves: 0, keeps: 0, undos: 0, movesUndone: 0, stack: [] };
+}
+
+/** Record one decision (kind 'move' | 'keep') with whatever is needed to take it back. Returns the session. */
+function sprintDecide(s, kind, undo, now) {
+  if (kind === 'move') s.moves++; else s.keeps++;
+  s.stack.push({ kind, ...undo });
+  s.last = now;
+  return s;
+}
+
+/** Take the newest decision back; returns it (or null when there is none). */
+function sprintUndo(s, now) {
+  const d = s.stack.pop();
+  if (!d) return null;
+  s.undos++;
+  if (d.kind === 'move') s.movesUndone++;
+  if (d.kind === 'move') s.moves--; else s.keeps--;
+  s.last = now;
+  return d;
+}
+
+/**
+ * The numbers a session ends with. Decisions are the ones that stand (undone
+ * ones subtracted). `perMin` runs from the first key to the last decision, so
+ * a sprint left open does not drag it down. `kept` is the share of moves made
+ * that were not taken back, the same reading as core/measure/history.mjs's
+ * Tidy tier rate ("moves kept"), null without a move.
+ */
+function sprintStats(s) {
+  const decisions = s.moves + s.keeps;
+  const ms = Math.max(0, s.last - s.start);
+  const made = s.moves + s.movesUndone;
+  return { decisions, moves: s.moves, made, keeps: s.keeps, undos: s.undos, ms,
+    perMin: decisions && ms > 0 ? +(decisions / (ms / 60000)).toFixed(1) : null,
+    kept: made ? s.moves / made : null };
+}
+
+/** Add a finished session's stats to the stored list (newest last, at most SPRINT_KEEP); sessions with no decision are dropped. */
+function sprintSave(list, stats, at) {
+  const prev = Array.isArray(list) ? list.filter(x => x && Number.isFinite(x.decisions)) : [];
+  if (!stats?.decisions && !stats?.undos) return prev.slice(-SPRINT_KEEP);
+  return [...prev, { at, decisions: stats.decisions, moves: stats.moves, made: stats.made, keeps: stats.keeps, undos: stats.undos, ms: stats.ms,
+    perMin: stats.perMin, kept: stats.kept }].slice(-SPRINT_KEEP);
+}
+
+/** Totals over stored sessions: decisions a minute over all of them, and the share of moves made that stood. */
+function sprintTotals(list) {
+  let d = 0, ms = 0, moves = 0, made = 0, n = 0;
+  for (const x of Array.isArray(list) ? list : []) {
+    if (!x || !Number.isFinite(x.decisions)) continue;
+    n++; d += x.decisions; ms += x.ms ?? 0; moves += x.moves ?? 0; made += x.made ?? x.moves ?? 0;
+  }
+  return { sessions: n, decisions: d, perMin: d && ms > 0 ? +(d / (ms / 60000)).toFixed(1) : null, kept: made ? moves / made : null };
+}
+return { HEALTH_VERSION, REPORT_N, HEALTHY, SPRINT_KEEP, tidyCounts, sectionFor, healthInputs, rankHealth, sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTotals };
+})();
 /* ---- web/screens/tidy.mjs ---- */
 __mod["web/screens/tidy.mjs"] = (function () {
+const { tidyCounts, healthInputs, rankHealth, sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTotals } = __mod["core/review/health.mjs"];
 /* The Tidy screen (docs/BUILD-5-PLAN.md A4): an ES module. It touches nothing outside `ctx`
  * (web/README.md, "Screen modules"); SCREEN_CTX.tidy in app/screens.js builds it. The sound
  * misfit state and jobs, and emptyState, stay classic in app/screenjobs.js. */
+/* The library health report and the keyboard cleanup sprint (BUILD-6 F9) are at the end of
+ * this file; their pure parts (ranking, the sprint's counts) are core/review/health.mjs. */
+
 
 /* ---------- Tidy: three screens' worth of the same question ----------
  *
@@ -5852,8 +6034,9 @@ const TIDY_SECTIONS = [['misfile', 'Wrong place'], ['dupes', 'Repeats'], ['cross
 function secDupes(c) {
   const ib = c.infoBtn ?? (() => '');
   const { R, esc, thumbHTML, cmpTable, shownOf, emptyState, moreButton } = c;
-  const exact = R.within.filter(x => x.verdict === 'same-recording');
-  const clash = R.within.filter(x => x.verdict !== 'same-recording');
+  const within = onlyPl(c, R.within, x => x.playlistId);
+  const exact = within.filter(x => x.verdict === 'same-recording');
+  const clash = within.filter(x => x.verdict !== 'same-recording');
   const sec = (title, list, note, key) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
     <p class="lede">${note}</p>
     <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row" data-flip data-key="${esc(`dup:${c.playlistId}:${c.options.map(o => o.id).join(',')}`)}">${thumbHTML(c)}<div class="main">
@@ -5863,7 +6046,7 @@ function secDupes(c) {
       `<button class="b sm" data-act="keep" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z => z.id !== o.id).map(z => z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
     </div></div>`).join('') || emptyState('None found', 'Nothing in your library matches this.', { compact: true })}</div>
     ${moreButton(key, list.length)}`;
-  const lede = `<p class="lede">Same track twice in one playlist.${ib('tidy-dupes', 'Repeats', '<p>Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>')}</p>`;
+  const lede = `<p class="lede">Same track twice in one playlist.${ib('tidy-dupes', 'Repeats', '<p>Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>')}</p>${plChip(c)}`;
   // Both lists empty is one answer, not two grey boxes under two headings.
   if (!exact.length && !clash.length) return `${lede}
     ${emptyState('No repeats', 'None of your playlists has the same track in it twice, as the same recording or as a different cut.')}`;
@@ -5938,7 +6121,7 @@ const TS_BANDS = [['sure', 'HIGH'], ['likely', 'LIKELY']];
 function secSound(c) {
   const ib = c.infoBtn ?? (() => '');
   const { S, esc, thumbHTML, shownOf, emptyState, moreButton, TSOUND, LIB, tidySoundRows } = c;
-  const rows = tidySoundRows();
+  const rows = onlyPl(c, tidySoundRows(), x => x.from);
   const band = S.tsBand ?? 'sure';
   const counts = { sure: 0, likely: 0 };
   for (const x of rows) counts[x.band]++;
@@ -5946,13 +6129,15 @@ function secSound(c) {
   const pct = v => `${Math.round(v * 100)}%`;
   const checked = acc?.scored ? `<p class="sub tsacc">Checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
     acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>` : '';
-  const lede = `<p class="lede">Filed in one playlist, but it sounds like another.${ib('tidy-sound', 'Sounds wrong', '<p>Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn\'t place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>')}</p>`;
+  const lede = `<p class="lede">Filed in one playlist, but it sounds like another.${ib('tidy-sound', 'Sounds wrong', '<p>Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn\'t place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>')}</p>${plChip(c)}`;
   if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true }) + (c.skeleton ? c.skeleton('rows', 3) : '');
   if (TSOUND.status === 'error' && !TSOUND.res) return lede + emptyState('Couldn’t compare by sound', esc(TSOUND.err ?? ''), { compact: true });
+  if (S.sprint?.sec === 'sound') return lede + sprintPanel(c, 'sound');
   const m = rows.filter(x => x.band === band);
   return `${lede}${checked}
     ${rows.length ? `<div class="seg mfbands tsbands" role="group" aria-label="How sure">${TS_BANDS.map(([b, vm]) =>
       `<button type="button" aria-pressed="${band === b}" data-act="tsb" data-tsb="${b}">${mfBandChip(c, vm === 'HIGH' ? 'high' : 'medium')} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
+    ${sprintBar(c, 'sound', sprintRows(c, 'sound').length)}
     <div class="rows">${m.slice(0, shownOf('tsound-' + band)).map(x => {
       const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
       return `<div class="row tsrow ${done ? 'done' : ''}" data-flip data-key="${esc(`ts:${x.id}`)}">${thumbHTML(t)}<div class="main">
@@ -5977,7 +6162,7 @@ function secMisfile(c) {
   const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton, tagChips, tagEditorHTML, store, getListening } = c;
   const LISTENING_CACHE = c.LISTENING_CACHE, LISTENING_PENDING = c.LISTENING_PENDING;
   const counts = { high: 0, medium: 0, low: 0 };
-  const MF = tagMisfiles(c);
+  const MF = onlyPl(c, tagMisfiles(c), x => x.currentPlaylistId);
   for (const x of MF) counts[x.confidence]++;
   const m = MF.filter(x => x.confidence === S.mfBand);
   // Best-effort, fetched once and reused: a "misfiled" track you actually
@@ -5990,9 +6175,12 @@ function secMisfile(c) {
   // Only draw the (stateful, id-bearing) editor once, even if the artist
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
-  return `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p>')}</p>
+  const lede = `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p>')}</p>${plChip(c)}`;
+  if (S.sprint?.sec === 'misfile') return lede + sprintPanel(c, 'misfile');
+  return `${lede}
     ${MF.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
       `<button type="button" aria-pressed="${S.mfBand === b}" data-act="mfb" data-mfb="${b}">${mfBandChip(c, b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
+    ${sprintBar(c, 'misfile', sprintRows(c, 'misfile').length)}
     <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
@@ -6027,15 +6215,17 @@ function secMisfile(c) {
 function view(c) {
   const { S, R, esc } = c;
   c.tidySoundWarm();
-  const n = { misfile: tagMisfiles(c).length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount() };
-  const secs = tidySections(c);
+  const report = healthReport(c);
+  const n = { misfile: tagMisfiles(c).length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount(), health: report.length };
+  const secs = report.length ? [...tidySections(c), ['health', 'Health']] : tidySections(c);
   // Opens on the first section with something in it rather than on "Wrong
   // place 0" while Repeats has work. A section the listener picked (S.tidySec,
   // set only by a tap) is kept; one that has gone away falls back the same way.
-  const first = (secs.find(([id]) => n[id] > 0) ?? secs[0])[0];
+  // Health is a report, not a list of work: it is never opened for you.
+  const first = (secs.find(([id]) => n[id] > 0 && id !== 'health') ?? secs[0])[0];
   if (S.tidySec != null && !secs.some(([id]) => id === S.tidySec)) S.tidySec = first;
   const sec = S.tidySec ?? first;
-  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound }[sec];
+  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound, health: secHealth }[sec];
   return `<h1>Tidy</h1>
     <div class="seg tidysecs" role="group" aria-label="Section">${secs.map(([id, label]) =>
       `<button type="button" aria-pressed="${sec === id}" data-act="section" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
@@ -6044,7 +6234,10 @@ function view(c) {
 
 
 const actions = {
-  section(c, el) { c.S.tidySec = el.dataset.tidy; c.render(); },
+  section(c, el) {
+    if (c.S.sprint) endSprint(c);
+    c.S.tidySec = el.dataset.tidy; c.S.tidyPl = null; c.render();
+  },
 
   cmin(c, el) {
     const { S, T } = c;
@@ -6130,31 +6323,333 @@ const actions = {
   async move(c, el) {
     el.disabled = true;
     const { mvto:to, mvfrom:from, mvtr:tr, mvtier:tier } = el.dataset;
-    const { CFG } = c;
-    const toName = CFG[to]?.name ?? to, fromName = CFG[from]?.name ?? from;
+    const toName = c.CFG[to]?.name ?? to;
     try {
-      // Add first: if the removal then fails the track is still filed somewhere
-      // rather than lost between playlists. Both steps share a group, so one
-      // Undo (toast or History) reverses the pair: back where it was, at its
-      // position, and out of the playlist it was moved to.
-      const group = c.newGroup();
-      await c.addTracks(to, [tr]);
-      const at = await c.logAction({ op:'add', playlistId:to, playlistName:toName, trackIds:[tr], reason:`moved from ${fromName}`, group });
-      const before = await c.playlistIds(from);
-      const positions = {}; before.forEach((id, i) => { if (id === tr) (positions[id] ??= []).push(i); });
-      await c.delTracks(from, [tr]);
-      await c.logAction({ op:'remove', playlistId:from, playlistName:fromName, trackIds:[tr], positions, reason:`moved to ${toName}`, group,
-                          move:{ trackId:tr, from, to, fromName, toName, ...(tier ? { tier } : {}) } });
+      const at = await writeMove(c, { tr, from, to, tier });
       c.toast(`Moved to ${toName}.`, () => c.undoAction(at));
-      // What the sound learner reads as a move: yes to `to`, no to `from`.
-      await c.recordMove(tr, from, to).catch(() => {});
       c.S.moved.add(tr);
       el.closest('.row').classList.add('done');
       el.classList.remove('go'); el.textContent = 'Moved';
     } catch (err) { c.toast('Failed: ' + err.message); el.disabled = false; }
   },
+  /* ---- the library health report (BUILD-6 F9) ---- */
+
+  /** Open Tidy at one playlist: its first section with rows, on the first band that has some. */
+  hgo(c, el) {
+    const { S } = c, pl = el.dataset.hpl, sec = el.dataset.hsec;
+    if (S.sprint) endSprint(c);
+    S.tidyPl = pl; S.tidySec = sec;
+    if (sec === 'misfile') {
+      const mine = tagMisfiles(c).filter(x => x.currentPlaylistId === pl);
+      S.mfBand = ['high', 'medium', 'low'].find(b => mine.some(x => x.confidence === b)) ?? S.mfBand;
+    }
+    if (sec === 'sound') {
+      const mine = c.tidySoundRows().filter(x => x.from === pl);
+      S.tsBand = ['sure', 'likely'].find(b => mine.some(x => x.band === b)) ?? S.tsBand;
+    }
+    S.tidyFocus = 'rows';
+    c.render();
+  },
+  /** Nothing Tidy can act on: the playlist's own sheet in Library says the rest. */
+  hopen(c, el) { c.go?.('lists'); c.openPlSheet?.(el.dataset.hpl); },
+  hclear(c) { if (c.S.sprint) endSprint(c); c.S.tidyPl = null; c.S.tidyFocus = 'rows'; c.render(); },
+
+  /* ---- the keyboard sprint (BUILD-6 F9, D7) ---- */
+
+  spstart(c, el) {
+    const sec = el.dataset.spsec, n = sprintRows(c, sec).length;
+    if (!n) return;
+    c.S.sprint = { sec, s: sprintStart(Date.now(), { sec, pl: c.S.tidyPl ?? null }) };
+    c.S.tidyFocus = 'sprint';
+    announce(c, `Sprint: ${n} to decide. Right arrow moves, left arrow keeps, U undoes, Escape stops.`);
+    c.render();
+  },
+
+  /** → : move the current track to the suggested playlist. The screen moves on at once; the
+   *  Spotify writes run one after another behind it, and a failed one puts the track back. */
+  spmove(c) {
+    const sp = c.S.sprint; if (!sp) return;
+    const rows = sprintRows(c, sp.sec), x = rows[0]; if (!x) return;
+    c.S.moved.add(x.id);
+    const d = { id: x.id, at: null, failed: false };
+    d.p = CHAIN = CHAIN.then(() => writeMove(c, { tr: x.id, from: x.from, to: x.to, tier: x.tier }))
+      .then(at => { d.at = at; }, err => {
+        d.failed = true; c.S.moved.delete(x.id);
+        const i = sp.s.stack.findIndex(y => y.d === d);
+        if (i >= 0) { sp.s.stack.splice(i, 1); sp.s.moves--; }
+        c.toast('Failed: ' + (err?.message ?? err)); c.render();
+      });
+    sprintDecide(sp.s, 'move', { d }, Date.now());
+    c.S.tidyFocus = 'sprint';
+    announce(c, `Moved ${x.title} to ${x.toName}. ${left(rows.length - 1)}`);
+    c.render();
+  },
+
+  /** ← : keep it where it is, the same record as the rows' Keep here. */
+  spkeep(c) {
+    const sp = c.S.sprint; if (!sp) return;
+    const rows = sprintRows(c, sp.sec), x = rows[0]; if (!x) return;
+    const f = c.FB?.[x.id];
+    const u = { id: x.id, from: x.from, newKept: !(f?.kept ?? []).includes(x.from),
+      newRej: x.away.filter(p => !(f?.rejected ?? []).includes(p)), row: x.row ?? null, idx: -1 };
+    // recordKeep changes FB before its first await, so the row has left the list by the next key.
+    Promise.resolve(c.recordKeep(x.id, x.from, x.away)).catch(err => c.toast('Failed: ' + (err?.message ?? err)));
+    if (x.row) {
+      u.idx = c.R.misfiled.indexOf(x.row);
+      c.R.misfiled = c.R.misfiled.filter(m => m !== x.row);
+    }
+    sprintDecide(sp.s, 'keep', u, Date.now());
+    c.S.tidyFocus = 'sprint';
+    announce(c, `Kept ${x.title} in ${x.fromName}. ${left(rows.length - 1)}`);
+    c.render();
+  },
+
+  /** U : take the newest sprint decision back. */
+  spundo(c) {
+    const sp = c.S.sprint; if (!sp) return;
+    const d = sprintUndo(sp.s, Date.now()); if (!d) return;
+    c.S.tidyFocus = 'sprint';
+    if (d.kind === 'move') {
+      const m = d.d;
+      c.S.moved.delete(m.id);
+      CHAIN = CHAIN.then(() => m.p).then(() => (m.failed || !m.at ? null : c.undoAction(m.at)))
+        .catch(err => c.toast('Undo failed: ' + (err?.message ?? err)));
+      announce(c, `Move undone. ${trackName(c, m.id)} is back.`);
+    } else {
+      unkeep(c, d);
+      announce(c, `Keep undone. ${trackName(c, d.id)} is back.`);
+    }
+    c.render();
+  },
+
+  /** Esc : stop, and keep this sprint's counts on this device. */
+  spend(c) { endSprint(c, true); c.render(); },
 };
-return { secDupes, secCross, tagMisfiles, secSound, secMisfile, view, actions };
+
+/* ---------- the library health report (BUILD-6 F9) ----------
+ * Library's own health score (lists.mjs's playlistHealth, read through ctx.libHealth) for every
+ * playlist, the worst five listed with why, and one tap into Tidy at that playlist. */
+
+const HCACHE = new WeakMap();
+function healthReport(c) {
+  const H = c.libHealth;
+  if (typeof H?.playlistHealth !== 'function' || !c.CFG || !c.LIB?.playlists || !c.R) return [];
+  const sound = (typeof c.tidySoundRows === 'function' ? c.tidySoundRows() : null) ?? [];
+  const splits = c.healthSplits?.() ?? [];
+  const key = [c.R.misfiled?.length, c.R.within?.length, sound.length, Object.keys(c.CFG).length, c.LIB.playlists.length, splits.length].join('|');
+  const hit = HCACHE.get(c.R);
+  if (hit?.key === key) return hit.out;
+  const byId = new Map(c.LIB.playlists.map(p => [p.id, p]));
+  const twins = typeof H.twinsOf === 'function' ? H.twinsOf(c.twinPairs?.()) : new Map();
+  const splitIds = new Set(splits);
+  const undecidedIds = new Set(Object.entries(c.CFG).filter(([, v]) => c.NO_SIGNAL != null && v?.why === c.NO_SIGNAL).map(([id]) => id));
+  const counts = tidyCounts({ misfiled: tagMisfiles(c), soundRows: sound, within: c.R.within });
+  const rows = Object.entries(c.CFG).filter(([id, v]) => !c.isMirrorPlaylist?.({ id, name: v?.name ?? byId.get(id)?.name })).map(([id, v]) => {
+    const list = byId.get(id)?.tracks ?? [];
+    const tracks = v?.tracks ?? list.length;
+    const health = H.playlistHealth(healthInputs({ id, tracks, list, misfiled: c.R.misfiled, drift: c.R.drift, splitIds, undecidedIds, twins }, H));
+    return { id, name: v?.name ?? byId.get(id)?.name ?? id, tracks, health, tidy: counts.get(id) };
+  });
+  const out = rankHealth(rows);
+  HCACHE.set(c.R, { key, out });
+  return out;
+}
+
+function secHealth(c) {
+  const { esc, emptyState } = c;
+  const ib = c.infoBtn ?? (() => '');
+  const rep = healthReport(c);
+  return `<p class="lede">The playlists in the worst shape, by the health score Library shows for each.${ib('tidy-health', 'Health', '<p>The same score as a playlist’s sheet in Library: tracks that look misfiled, newest additions that read differently, two genres in one, a twin it can’t be told from, repeats, nothing added for a year, no axis decided. Only playlists under 85 are listed, worst first.</p>')}</p>
+    ${rep.length ? `<ol class="hrep">${rep.map(h => `<li class="hrow">
+      <div class="hmain"><div class="ttl">${esc(h.name)}</div>
+        <p class="plhealth plh-${h.score >= 65 ? 'fine' : 'low'}"><b class="mono">${h.score}</b> ${esc(h.word)}</p>
+        ${h.why.length ? `<ul class="plnotes">${h.why.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</div>
+      ${h.section
+        ? `<button type="button" class="b sm go" data-act="hgo" data-hpl="${esc(h.id)}" data-hsec="${h.section}" aria-label="${esc(`Tidy ${h.fixable} in ${h.name}`)}">Tidy ${h.fixable.toLocaleString()}</button>`
+        : `<button type="button" class="b sm" data-act="hopen" data-hpl="${esc(h.id)}" aria-label="${esc(`Open in Library: ${h.name}`)}">Open in Library</button>`}</li>`).join('')}</ol>`
+      : emptyState('Every playlist is healthy', 'None scores under 85.', { compact: true })}`;
+}
+
+/** Rows of one playlist only, when the report opened Tidy at it. */
+function onlyPl(c, list, key) {
+  const pl = c.S.tidyPl;
+  return pl ? (list ?? []).filter(x => key(x) === pl) : list;
+}
+function plChip(c) {
+  const pl = c.S.tidyPl;
+  if (!pl) return '';
+  const name = c.CFG?.[pl]?.name ?? c.LIB?.playlists?.find(p => p.id === pl)?.name ?? pl;
+  return `<p class="tidypl">Only <b>${c.esc(name)}</b> <button type="button" class="b sm" data-act="hclear">Show every playlist</button></p>`;
+}
+
+/* ---------- the keyboard sprint (BUILD-6 F9, D7) ----------
+ * One track at a time from Wrong place or By sound (the band showing, and the playlist the
+ * report opened, if any): → moves it to the suggested playlist, ← keeps it where it is, U
+ * undoes the newest decision, Esc stops. The buttons do the same for a pointer. Every
+ * decision is said in a live region, and focus stays on the track being decided. Decisions a
+ * minute and the share of moves kept are counted on this device only (SPRINT_KEY). */
+
+const SPRINT_KEY = 'bf_tidy_sprint';
+let CHAIN = Promise.resolve();
+const left = n => (n ? `${n} left.` : 'That was the last one.');
+
+/** What the sprint walks, in the list's own order, decided ones gone. */
+function sprintRows(c, sec) {
+  const { S } = c;
+  if (sec === 'misfile') return onlyPl(c, tagMisfiles(c), x => x.currentPlaylistId)
+    .filter(x => x.confidence === S.mfBand && !S.moved.has(x.id))
+    .map(x => {
+      const to = (x.suggest ?? []).find(sg => sg.id);
+      return to ? { id: x.id, title: x.title ?? '', artist: x.artist ?? '', art: x.art ?? null, from: x.currentPlaylistId, fromName: x.current ?? '',
+        to: to.id, toName: to.name ?? to.id, tier: MF_TIER[S.mfBand] ?? '', away: x.suggest.filter(sg => sg.id).slice(0, 2).map(sg => sg.id),
+        why: `${mfFitWord(x.currentScore)} fit here, ${mfFitWord(to.score)} there`, row: x } : null;
+    }).filter(Boolean);
+  if (sec === 'sound' && typeof c.tidySoundRows === 'function') return onlyPl(c, c.tidySoundRows(), x => x.from)
+    .filter(x => x.band === (S.tsBand ?? 'sure') && !S.moved.has(x.id))
+    .map(x => {
+      const t = tidySoundTrack(c.LIB, x.id);
+      return { id: x.id, title: t.title, artist: t.artist, art: t.art, from: x.from, fromName: x.fromName, to: x.to, toName: x.toName,
+        tier: x.band, away: [x.to], why: (x.why ?? []).join('; ') };
+    });
+  return [];
+}
+
+function readSprints(c) {
+  try { const v = JSON.parse(c.LS?.getItem(SPRINT_KEY) ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
+function sprintBar(c, sec, n) {
+  if (!n) return '';
+  const tot = sprintTotals(readSprints(c));
+  const past = tot.perMin != null ? ` <span class="sub">Your sprints so far: ${tot.perMin} decisions a minute${tot.kept != null ? `, ${Math.round(tot.kept * 100)}% of moves kept` : ''}.</span>` : '';
+  return `<div class="sprintbar"><button type="button" class="b sm" id="sprintGo" data-act="spstart" data-spsec="${sec}" aria-describedby="sprintHint">Sprint through ${n.toLocaleString()}</button>
+    <span class="hint" id="sprintHint">One at a time by keyboard: <kbd>→</kbd> move, <kbd>←</kbd> keep, <kbd>U</kbd> undo, <kbd>Esc</kbd> stop.</span>${past}</div>`;
+}
+
+function sprintTally(st) {
+  return `${st.decisions} decided${st.perMin != null ? ` · ${st.perMin} a minute` : ''}${st.kept != null ? ` · ${Math.round(st.kept * 100)}% of moves kept` : ''}`;
+}
+
+function sprintPanel(c, sec) {
+  const { S, esc } = c, sp = S.sprint;
+  const rows = sprintRows(c, sec), x = rows[0];
+  const tally = sprintTally(sprintStats(sp.s));
+  const undo = `<button type="button" class="b sm" data-act="spundo" aria-keyshortcuts="U"${sp.s.stack.length ? '' : ' disabled'}>Undo <kbd>U</kbd></button>`;
+  const stop = `<button type="button" class="b sm" data-act="spend" aria-keyshortcuts="Escape">${x ? 'Stop' : 'Done'} <kbd>Esc</kbd></button>`;
+  if (!x) return `<section class="sprint" id="sprint" aria-labelledby="sprintH"><h2 id="sprintH">Sprint done</h2>
+      <div class="sprintcard sprintdone" id="sprintCard" tabindex="-1"><p>Nothing left in this list. ${esc(tally)}.</p></div>
+      <div class="sprintacts">${undo}${stop}</div></section>`;
+  return `<section class="sprint" id="sprint" aria-labelledby="sprintH">
+    <h2 id="sprintH">Sprint <span class="mono">${rows.length.toLocaleString()} left</span></h2>
+    <div class="sprintcard" id="sprintCard" tabindex="-1" role="group" aria-roledescription="track" data-sptr="${esc(x.id)}"
+      aria-label="${esc(`${x.title}${x.artist ? ` by ${x.artist}` : ''}: in ${x.fromName}, suggested ${x.toName}`)}" aria-describedby="sprintKeys">
+      ${c.thumbHTML(x)}<div class="main"><div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist)}</span></div>
+      <div class="swap"><span class="from">${esc(x.fromName)}</span><span class="arw">→</span><span class="to">${esc(x.toName)}</span></div>
+      ${x.why ? `<div class="why">${esc(x.why)}</div>` : ''}</div></div>
+    <div class="sprintacts">
+      <button type="button" class="b" data-act="spkeep" aria-keyshortcuts="ArrowLeft"><kbd>←</kbd> Keep in ${esc(x.fromName)}</button>
+      <button type="button" class="b go" data-act="spmove" aria-keyshortcuts="ArrowRight">Move to ${esc(x.toName)} <kbd>→</kbd></button>
+      ${undo}${stop}</div>
+    <p class="hint" id="sprintKeys">Right arrow moves it, left arrow keeps it where it is, U undoes the last one, Escape stops.</p>
+    <p class="sprintstat mono">${esc(tally)}</p></section>`;
+}
+
+/** Add, then remove: the same order and the same History entries as the rows' Move button. */
+async function writeMove(c, { tr, from, to, tier }) {
+  const { CFG } = c;
+  const toName = CFG[to]?.name ?? to, fromName = CFG[from]?.name ?? from;
+  // Add first: if the removal then fails the track is still filed somewhere
+  // rather than lost between playlists. Both steps share a group, so one
+  // Undo (toast or History) reverses the pair: back where it was, at its
+  // position, and out of the playlist it was moved to.
+  const group = c.newGroup();
+  await c.addTracks(to, [tr]);
+  const at = await c.logAction({ op:'add', playlistId:to, playlistName:toName, trackIds:[tr], reason:`moved from ${fromName}`, group });
+  const before = await c.playlistIds(from);
+  const positions = {}; before.forEach((id, i) => { if (id === tr) (positions[id] ??= []).push(i); });
+  await c.delTracks(from, [tr]);
+  await c.logAction({ op:'remove', playlistId:from, playlistName:fromName, trackIds:[tr], positions, reason:`moved to ${toName}`, group,
+                      move:{ trackId:tr, from, to, fromName, toName, ...(tier ? { tier } : {}) } });
+  // What the sound learner reads as a move: yes to `to`, no to `from`.
+  await c.recordMove(tr, from, to).catch(() => {});
+  return at;
+}
+
+/** Take a sprint's Keep here back: only what that keep added to FB, and the row where it was. */
+function unkeep(c, u) {
+  const f = c.FB?.[u.id];
+  if (f) {
+    if (u.newKept && f.kept) { f.kept = f.kept.filter(p => p !== u.from); if (!f.kept.length) delete f.kept; }
+    if (u.newRej.length) {
+      f.rejected = (f.rejected ?? []).filter(p => !u.newRej.includes(p));
+      if (f.rejectedAt) { for (const p of u.newRej) delete f.rejectedAt[p]; if (!Object.keys(f.rejectedAt).length) delete f.rejectedAt; }
+    }
+    Promise.resolve(c.saveFeedback?.()).catch(() => {});
+  }
+  if (u.row && !c.R.misfiled.includes(u.row)) {
+    const list = c.R.misfiled.slice();
+    list.splice(u.idx >= 0 ? Math.min(u.idx, list.length) : 0, 0, u.row);
+    c.R.misfiled = list;
+  }
+}
+
+function trackName(c, id) {
+  return c.R?.misfiled?.find(m => m.id === id)?.title ?? tidySoundTrack(c.LIB, id).title;
+}
+
+function endSprint(c, say) {
+  const sp = c.S.sprint; if (!sp) return;
+  const st = sprintStats(sp.s);
+  try { c.LS?.setItem(SPRINT_KEY, JSON.stringify(sprintSave(readSprints(c), st, new Date().toISOString()))); } catch { /* counts only */ }
+  c.S.sprint = null;
+  c.S.tidyFocus = 'sprintstart';
+  if (say) announce(c, st.decisions ? `Sprint stopped. ${sprintTally(st)}.` : 'Sprint stopped.');
+}
+
+/** Say it in the live region (made once by mount). */
+function announce(c, text) {
+  const el = c.document?.getElementById?.('tidyLive');
+  if (el) el.textContent = text;
+}
+
+/** The sprint's keys press its own buttons, so a key and a click run the same action. Captured
+ *  before the page's own ←/→ (walk the tabs) and Up/Down handlers, and only while the sprint
+ *  is on screen, nothing is typed into, and no sheet is open. A held key does not repeat. */
+const SPRINT_KEYS = { ArrowRight: 'spmove', ArrowLeft: 'spkeep', u: 'spundo', U: 'spundo', Escape: 'spend' };
+function sprintKeys(doc) {
+  return e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const act = SPRINT_KEYS[e.key]; if (!act) return;
+    const panel = doc.getElementById('sprint');
+    if (!panel || !panel.isConnected || !panel.offsetParent) return;
+    if (e.target?.matches?.('input,select,textarea,[contenteditable]')) return;
+    if (doc.querySelector('#settingsPanel.open, #plSheet.open, dialog[open]')) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.repeat) return;
+    const b = panel.querySelector(`[data-act="${act}"]`);
+    if (b && !b.disabled) b.click();
+  };
+}
+
+function mount(c) {
+  const doc = c.document;
+  if (!doc?.body) return;
+  if (!doc.getElementById('tidyLive')) {
+    const d = doc.createElement('div');
+    d.id = 'tidyLive'; d.className = 'sprint-live';
+    d.setAttribute('role', 'status'); d.setAttribute('aria-live', 'polite'); d.setAttribute('aria-atomic', 'true');
+    doc.body.appendChild(d);
+  }
+  if (!doc.__tidySprintKeys) { doc.__tidySprintKeys = true; doc.addEventListener('keydown', sprintKeys(doc), true); }
+  const want = c.S.tidyFocus;
+  c.S.tidyFocus = null;
+  const a = doc.activeElement;
+  const lost = !a || a === doc.body;
+  if (c.S.sprint && (want === 'sprint' || lost)) doc.getElementById('sprintCard')?.focus();
+  else if (want === 'sprintstart') (doc.getElementById('sprintGo') ?? doc.querySelector('#main .tidysecs [aria-pressed="true"]'))?.focus();
+  else if (want === 'rows') (doc.querySelector('#main .rows .row .acts button:not([disabled])') ?? doc.querySelector('#main .tidypl button'))?.focus();
+}
+return { secDupes, secCross, tagMisfiles, secSound, secMisfile, view, actions, healthReport, secHealth, sprintRows, mount };
 })();
 /* ---- core/playlists/mergesplit.mjs ---- */
 __mod["core/playlists/mergesplit.mjs"] = (function () {
@@ -8035,7 +8530,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1617';
+const BUILD = '2026-11-16-1625';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -8373,7 +8868,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1617', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1625', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -9129,7 +9624,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1617');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1625');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12332,7 +12827,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1617';
+    s.src = 'engine.js?v=2026-11-16-1625';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -12354,7 +12849,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1617');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1625');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12903,7 +13398,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1617';
+    s.src = 'audio.js?v=2026-11-16-1625';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -12939,7 +13434,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1617', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1625', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -13674,7 +14169,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1617', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1625', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -13995,6 +14490,11 @@ SCREEN_CTX.tidy = () => ({
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get LISTENING_CACHE() { return LISTENING_CACHE; },
   get LISTENING_PENDING() { return LISTENING_PENDING; },
+  // The health report and keyboard sprint (BUILD-6 F9): Library's own score, read from its module.
+  LS, NO_SIGNAL, saveFeedback, go, openPlSheet, isMirrorPlaylist, twinPairs: () => ENG?.pairs ?? null,
+  healthSplits: () => (LPROF?.out ? listsSplits().map(x => x.p.id) : []),
+  get libHealth() { return SCREEN_MODS.lists; },
+  get document() { return globalThis.document; },
 });
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
@@ -14097,6 +14597,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
+  { where:'local', key:'bf_tidy_sprint', group:'Your library', why:'Your last 20 Tidy sprints: how many tracks you decided, how fast, and how many moves you kept. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_mergesplit', group:'Your library', why:'Which merge and split offers (twin playlists, playlists that are two genres) were shown, dismissed or made, and when. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 
