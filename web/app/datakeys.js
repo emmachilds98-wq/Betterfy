@@ -46,6 +46,12 @@ const DATA_KEYS = [
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
   { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 
+  // --- release radar (Discover) ---
+  { where:'idb', key:'radar:artist:', prefix:true, group:'Release radar', why:'Per artist in your library: when the radar last asked Spotify about their releases and the date of their newest, so it only asks again when one is due.' },
+  { where:'idb', key:'radar:release:', prefix:true, group:'Release radar', why:'Each release the radar found by an artist in your library (name, date, cover link, track list where it was read), with whether you own it and whether it is a reissue.' },
+  { where:'idb', key:'radar:index', group:'Release radar', why:'How far the radar\'s last read got, so a stopped read picks up where it stopped.' },
+  { where:'idb', key:'radar:dismissed', group:'Release radar', why:'Releases you dismissed or filed from the radar, so they stay out of it.' },
+
   // --- genre data ---
   { where:'idb', key:'tags_extra', group:'Genre data', why:'Genre tags fetched for artists in your library that the shipped table does not cover (Last.fm, Wikidata, Discogs).' },
   { where:'idb', key:'tag_corrections', group:'Genre data', why:'Tags you corrected by hand for an artist.' },
