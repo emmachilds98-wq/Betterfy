@@ -30,6 +30,7 @@ const DATA_KEYS = [
   { where:'idb', key:'library', group:'Your library', why:'A copy of your playlists and liked songs as read from Spotify (track ids, names, artists, ISRCs, cover links, dates added), so the app opens without re-reading everything.' },
   { where:'idb', key:'part:', prefix:true, group:'Your library', why:'Pieces of a library read that was interrupted, so the next try resumes instead of starting again. Dropped once a read completes, or after a day.' },
   { where:'idb', key:'actions', group:'Your library', why:'History: every change Betterfy made to your Spotify playlists, with what is needed to undo it.' },
+  { where:'idb', key:'offline_queue', group:'Your library', why:'Decisions you made with no connection (filings, removals, unlikes), kept until the page is next open and online and then sent to Spotify once each. Empty the rest of the time. The page itself is kept for offline use in the browser\'s cache under "betterfy-shell-<build>".' },
   { where:'idb', key:'feedback', group:'Your library', why:'Tracks you skipped or turned down for a playlist, and filings you accepted, so the same suggestion is not made again.' },
   { where:'idb', key:'listening_raw', group:'Your library', why:'Your top artists and recently played tracks from Spotify, used to put what you actually play first.' },
   { where:'local', key:'bf_axes', group:'Your library', why:'What kind of playlist each one is (genre, mood, occasion...), as you set it.' },
@@ -45,6 +46,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
   { where:'local', key:'bf_tidy_sprint', group:'Your library', why:'Your last 20 Tidy sprints: how many tracks you decided, how fast, and how many moves you kept. Counts only, kept here and never sent.' },
+  { where:'local', key:'bf_mergesplit', group:'Your library', why:'Which merge and split offers (twin playlists, playlists that are two genres) were shown, dismissed or made, and when. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 
   // --- genre data ---
@@ -84,7 +86,8 @@ const DATA_KEYS = [
   { where:'firestore', key:'linkCodes/{code}', group:'Sync', why:'A six-digit code you asked for to link another device. Expires after ten minutes and is deleted when used.' },
 
   // --- the shared tag table ---
-  { where:'firestore', key:'tagContributions/{artist}', group:'Shared tags', why:'When a Last.fm fetch finds tags for an artist the shipped table lacks: that artist\'s Spotify id and up to ten tags. No account, playlist or listening data, nothing that says who sent it.' },
+  { where:'local', key:'bf_tagshare_secret', group:'Shared tags', why:'A random number made on this device and never sent. Each tag you share carries a code worked out from it and the artist, so the shared table can count two different listeners agreeing, without those codes linking your shares to each other or to you.' },
+  { where:'firestore', key:'tagContributions/{artistAndCode}', group:'Shared tags', why:'When a Last.fm fetch finds tags for an artist the shipped table lacks: that artist\'s Spotify id, a code that is different for every artist (see bf_tagshare_secret), and up to ten tags. No account, playlist or listening data, nothing that says who sent it. A tag joins the shared table only once two listeners have sent it.' },
 
   // --- the look ---
   { where:'local', key:'betterfy-theme', keep:true, group:'Look', why:'Your colour, density and filter settings. Kept by "Wipe this device".' },

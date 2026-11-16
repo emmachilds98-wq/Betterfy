@@ -35,6 +35,7 @@ by screen in A4.
 | `app/reports.js` | `buildReports()`, mirrors `dupes.mjs` / `misfile.mjs` |
 | `app/ui.js` | page state (`LIB`, `S`, `view`), screen order and names, `toast()` |
 | `app/actionlog.js` | the History log, undo, playlist and library writes |
+| `app/offline.js` | the service worker's registration (`web/sw.js` → `docs/sw.js`, BUILD-6 F6) and the offline decision queue: writes made with no connection are kept and replayed once each when next online |
 | `app/player.js` | Spotify Connect playback bar |
 | `screens/home.mjs` | File, the home tab: status line, deck (the `inbox` module) and Up next |
 | `app/listening.js` | the listening indicator (`setListen`), cover thumbnails |

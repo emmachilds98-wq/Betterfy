@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1552">
+<meta name="bf-build" content="2026-11-16-1617">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1421,6 +1421,14 @@ main:focus{outline:none}
   .yourdata label.b{display:inline-flex; align-items:center; justify-content:center; font-size:13.5px; font-weight:600; border:1px solid var(--line-2);
        background:var(--surface); color:var(--ink); border-radius:var(--r); padding:9px 15px; min-height:40px}
   .yourdata label.b:hover{border-color:var(--ink-3)}
+  /* ---------- offline decision queue (BUILD-6 F6; app/offline.js offlineShow) ----------
+     "N decisions waiting to sync": a small pill above the bottom edge, drawn on
+     its own outside every screen, shown only while the queue holds something. */
+  .syncwait{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(76px + env(safe-area-inset-bottom, 0px)); z-index:40;
+       max-width:calc(100vw - 32px); padding:6px 12px; border-radius:999px; border:1px solid var(--line-2);
+       background:var(--surface); color:var(--ink-2); font-size:12.5px; line-height:1.3; text-align:center;
+       box-shadow:0 2px 10px rgba(0,0,0,.18); pointer-events:none}
+  .syncwait[hidden]{display:none}
 
   /* ================= iPhone and other narrow screens ================= */
   @media (max-width:820px){
@@ -1550,54 +1558,17 @@ main:focus{outline:none}
     .acts4{grid-template-columns:1fr}
     aside .nav .lbl{font-size:9.5px}
   }
-  /* ---------- Tidy: library health report and keyboard sprint (BUILD-6 F9) ----------
-     The report is Tidy's Health section (.hrep); the sprint replaces a list with one
-     track at a time (.sprint). The score's own look (.plhealth, .plnotes) is
-     61-library.css's, shared with the Library sheet. */
-  .seg.tidysecs{flex-wrap:wrap}
-
-  .hrep{list-style:none; margin:0; padding:0; display:grid; gap:10px; counter-reset:hrep}
-  .hrow{counter-increment:hrep; display:flex; gap:14px; align-items:flex-start; background:var(--surface);
-    border:1px solid var(--line); border-radius:20px; padding:14px 16px}
-  .hrow::before{content:counter(hrep); font-family:var(--mono); color:var(--ink-3); min-width:1.2em; padding-top:2px}
-  .hmain{flex:1; min-width:0}
-  .hmain .ttl{font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:4px}
-  .hmain .plhealth .mono{font-size:20px}
-  .hrow>.b{flex:none; align-self:center}
-
-  .tidypl{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 14px; color:var(--ink-2)}
-  .tidypl b{color:var(--ink)}
-
-  .sprintbar{display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; margin:0 0 14px}
-  .sprintbar .hint, .sprint .hint{color:var(--ink-2); font-size:var(--fs-small, 13px)}
-  .sprintbar .sub{flex-basis:100%; color:var(--ink-2); font-size:var(--fs-small, 13px)}
-  .sprint kbd, .sprintbar kbd{font-family:var(--mono); font-size:.85em; padding:0 5px; border:1px solid var(--line-2, var(--line));
-    border-bottom-width:2px; border-radius:6px; background:var(--surface-2); color:var(--ink)}
-
-  .sprint h2{display:flex; align-items:baseline; gap:10px; margin:0 0 10px}
-  .sprint h2 .mono{font-size:14px; color:var(--ink-2); font-weight:500}
-  .sprintcard{display:flex; gap:14px; align-items:flex-start; background:var(--surface); border:1px solid var(--line);
-    border-radius:20px; padding:16px 18px; margin:0 0 12px}
-  /* Focus sits on the track being decided: shown plainly, not only on :focus-visible,
-     since the sprint puts it there itself after every key. */
-  .sprintcard:focus{outline:3px solid var(--accent); outline-offset:3px}
-  .sprintcard .main{flex:1; min-width:0}
-  .sprintcard .ttl{font-weight:700; font-size:18px}
-  .sprintcard .swap{margin-top:6px}
-  .sprintcard.sprintdone p{margin:0}
-  .sprintacts{display:flex; flex-wrap:wrap; gap:8px; margin:0 0 8px}
-  .sprintacts .b:not(.sm){min-height:var(--ctl-h, 44px)}
-  .sprintstat{color:var(--ink-2); font-size:var(--fs-small, 13px); margin:6px 0 0}
-  .sprint-live{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap}
-
-  @media (max-width: 760px){
-    .sprintacts>.b:not(.sm){flex:1 1 40%; justify-content:center}
-    .hrow{padding:12px 13px}
-  }
-  @media (prefers-reduced-motion: no-preference){
-    .sprintcard{animation:sprintIn var(--dur-1) var(--ease-out)}
-    @keyframes sprintIn{from{opacity:.4; transform:translateX(8px)} to{opacity:1; transform:none}}
-  }
+/* Merge and split (BUILD-6 F4): the wizard drawn into the playlist sheet (lists.mjs wizardHTML). */
+  .wiz .wizpart{border:1px solid var(--line); border-radius:var(--r-3); padding:12px 12px 10px; background:var(--surface-2)}
+  .wiz .wizname input{flex:1; min-width:0}
+  .wizrows{list-style:none; margin:8px 0 0; padding:0; border-top:1px solid var(--line)}
+  .wizrow{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); min-height:48px}
+  .wizrow:last-child{border-bottom:0}
+  .wizrow.rest .ttl{color:var(--ink-2)}
+  .wizrow .b{flex:none}
+  .wiz .wizgo{position:sticky; bottom:calc(-24px - var(--sab, 0px)); background:var(--surface); padding:10px 0 calc(16px + var(--sab, 0px)); margin:0 0 calc(-24px - var(--sab, 0px))}
+  .wiz .hint.warn{color:var(--warn)}
+  .msline{font-size:12px; color:var(--ink-3)}
 /* soundChip (WP-D4): one compact row per track, "174 BPM · 8A A minor". */
 .snd{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:.15em .45em;font-family:var(--mono);font-size:.78rem;line-height:1.35;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .snd>span{white-space:nowrap}
@@ -1740,7 +1711,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1552</span>
+    <span class="mono">build 2026-11-16-1617</span>
   </p>
 
   <div class="feat">
@@ -1833,7 +1804,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1552</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1617</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1950,7 +1921,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1552. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1617. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3298,7 +3269,54 @@ function analysisPriority({ profile }, { weights = null, reach = null, track } =
   const spread = 1 + Math.min(3, (reach?.get?.(track?.id) ?? 1) - 1) * 0.25;
   return +(uncertainty * played * spread).toFixed(4);
 }
-return { RELEVANCE_VERSION, UNCERTAINTY, uncertaintyOf, relevanceOf, playlistReach, analysisPriority, listeningWeights };
+
+/** What the engine knows about an artist from its tag count, on the confidence scale. */
+const artistConfidence = n => (n <= 0 ? CONFIDENCE.INSUFFICIENT_DATA : n < 3 ? CONFIDENCE.AMBIGUOUS : CONFIDENCE.LIKELY);
+
+/**
+ * The order to spend enrichment requests in (BUILD-6 D9): the tag-gap fill and
+ * the similar-artist lookups, most-listened and least-known artists first, by
+ * analysisPriority, so a run cut short by a closed tab, a quota or a five-minute
+ * attention span has already covered what this listener actually plays.
+ *
+ * `weights` are listening only — Spotify's top artists over three windows and
+ * recently played, by name (listenedWeights below: no library floor). When there
+ * are none (no listening data, or it failed) the entries come back in exactly
+ * the order they went in: byte-identical to not calling this at all.
+ *
+ * No `reach` (spread) term, deliberately, though analysisPriority takes one:
+ * measured on the large non-owner fixture (test/enrichorder.test.mjs), adding
+ * the number of playlists an artist is filed in let widely-filed artists nobody
+ * plays push listened ones out of the first 100 Last.fm requests (96% -> 88%
+ * of the top-100 listened covered). Uncertainty stays: an artist with no tags
+ * at all goes before one with a thin answer, at equal listening.
+ *
+ * @param {Iterable} entries     e.g. [artistId, name] pairs, or [id, {name}] for a bridge Map
+ * @param {object}   o
+ * @param {Map<string, number>} [o.weights]  listening weight by artist name
+ * @param {(id: string) => number} [o.tagCount]  tags the artist already has
+ * @param {(e) => string} [o.idOf]
+ * @param {(e) => string} [o.nameOf]
+ */
+function enrichOrder(entries, { weights = null, tagCount = () => 0,
+                                       idOf = e => e[0], nameOf = e => e[1] } = {}) {
+  const list = [...(entries ?? [])];
+  if (!weights?.size) return list;
+  const scored = list.map((e, i) => {
+    const id = idOf(e);
+    const p = analysisPriority({ profile: { genre: { confidence: artistConfidence(tagCount(id)) } } },
+                               { weights, track: { id, artists: [{ name: nameOf(e) }] } });
+    return [e, i, p];
+  });
+  return scored.sort((a, b) => (b[2] - a[2]) || (a[1] - b[1])).map(x => x[0]);
+}
+
+/** Listening-only weights from the raw listening fetch ({ topWindows, recentArtists }), or null when there is none. */
+function listenedWeights(raw) {
+  const w = listeningWeights({ topWindows: raw?.topWindows ?? [], recentArtists: raw?.recentArtists ?? [] });
+  return w.size ? w : null;
+}
+return { RELEVANCE_VERSION, UNCERTAINTY, uncertaintyOf, relevanceOf, playlistReach, analysisPriority, enrichOrder, listenedWeights, listeningWeights };
 })();
 /* ---- core/review/filequeue.mjs ---- */
 __mod["core/review/filequeue.mjs"] = (function () {
@@ -5150,7 +5168,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1552`,
+    `Betterfy engine score — build 2026-11-16-1617`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5641,10 +5659,61 @@ function sourceCard(id, name, state, status, line, body) {
   </section>`;
 }
 
+/**
+ * How much each source knows about this account's own artists (BUILD-6 H1,
+ * SMARTER-GENRES §6): "Deezer knows N%, Wikidata M%, shared table K%". Worked
+ * out on this device from what the page already holds, so a source that is
+ * thin for one account's taste shows up as thin for that account, and nothing
+ * is sent anywhere to get it.
+ *
+ *   ids      the account's artist ids (playlists and liked songs)
+ *   shipped  the shared table as downloaded: id -> tags (either shape)
+ *   extra    tags_extra: id -> { source, tags }  (only `source` and `tags.length` are read)
+ *   bridge   bridge-raw's entries: id -> { deezerId, deezerAt, mbid, mbidAt }
+ *
+ * A source counts as knowing an artist when it answered with something:
+ * Deezer found the artist (its related-artists list hangs off that); Wikidata
+ * gave genres or a MusicBrainz id. `asked` is how many it has been asked
+ * about, since a source never asked has not said it does not know.
+ */
+function artistCoverage({ ids = [], shipped = {}, extra = {}, bridge = {} } = {}) {
+  const all = [...new Set(ids)];
+  const n = all.length;
+  const tagsOf = e => (Array.isArray(e) ? e : e?.tags) ?? [];
+  let shared = 0, deezer = 0, deezerAsked = 0, wikidata = 0, wikidataAsked = 0;
+  for (const id of all) {
+    if (tagsOf(shipped?.[id]).length) shared++;
+    const b = bridge?.[id], x = extra?.[id];
+    if (Number.isFinite(b?.deezerAt)) { deezerAsked++; if (b.deezerId) deezer++; }
+    const wdGenres = x?.source === 'wikidata';
+    if (Number.isFinite(b?.mbidAt) || wdGenres) {
+      wikidataAsked++;
+      if (b?.mbid || (wdGenres && tagsOf(x).length)) wikidata++;
+    }
+  }
+  const pct = k => (n ? Math.round(100 * k / n) : 0);
+  return { total: n, shared, deezer, wikidata, deezerAsked, wikidataAsked,
+           sharedPct: pct(shared), deezerPct: pct(deezer), wikidataPct: pct(wikidata) };
+}
+
+/** The coverage card's body: one sentence, then what has not been asked yet.
+ *  Nothing to count (not read yet, or no artists): '' and no card at all, so
+ *  the screen is byte-identical to what it was before the card existed. */
+function coverageHTML(cov) {
+  if (!cov?.total) return '';
+  const part = (name, pct, asked) => asked ? `${name} knows <b class="mono">${pct}%</b>` : `${name} <b>not asked yet</b>`;
+  const unasked = [['Deezer', cov.deezerAsked], ['Wikidata', cov.wikidataAsked]]
+    .filter(([, k]) => k && k < cov.total).map(([name, k]) => `${name} about ${k.toLocaleString()}`);
+  return `<p class="srcline srcknow">${part('Deezer', cov.deezerPct, cov.deezerAsked)}, ${part('Wikidata', cov.wikidataPct, cov.wikidataAsked)},
+      shared table <b class="mono">${cov.sharedPct}%</b> of your <span class="mono">${cov.total.toLocaleString()}</span> artists.</p>
+    ${unasked.length ? `<p class="srcline sub">Asked so far: ${unasked.join(', ')}. The rest are looked up as File, Score and Discover need them.</p>` : ''}`;
+}
+
 /** Where genre data and (later) listening come from — moved out of Playlists,
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
-function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML, ...rest }) {
+function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
+                       sourceCoverage = () => null, ...rest }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
@@ -5661,7 +5730,9 @@ function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes,
       artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
 
     <div class="srcgrid">
-    ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
+    ${(body => body ? sourceCard('coverage', 'Your artists', 'ok', 'This account',
+      'How much each source knows about the artists in your own library, worked out on this device.', body) + '\n\n    ' : '')(
+      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())))}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
       'Crowd genre tags for the artists the shipped set doesn\'t cover. '
         + (!lfmOwn && lfm ? 'Using Betterfy\'s shared Last.fm key — add your own to raise limits.' : 'Needs a free API key.'),
       `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : 'Connect Last.fm'}</button></div>
@@ -5761,147 +5832,13 @@ const actions = {
   wipeGo: c => c.wipeThisDevice(),
   fillWikidata: c => c.fillFromWikidata(),
 };
-return { view, yourDataHTML, actions };
-})();
-/* ---- core/review/health.mjs ---- */
-__mod["core/review/health.mjs"] = (function () {
-// The library health report and the Tidy cleanup sprint (BUILD-6 F9).
-//
-// Pure: no DOM, no storage, no fetch. The health score itself is the one the
-// Library rows already show (web/screens/lists.mjs playlistHealth); this module
-// only builds its inputs from the reports every account has (R.misfiled,
-// R.within, R.drift, the sound tier's rows), ranks the result, and keeps the
-// sprint's own counts. Bundled into the page through web/screens/tidy.mjs.
-
-const HEALTH_VERSION = '1.0.0';
-/** How many playlists the report lists. */
-const REPORT_N = 5;
-/** At or above this a playlist reads "Healthy" (lists.mjs's word) and is left off the report. */
-const HEALTHY = 85;
-/** Sessions of the sprint kept on this device. */
-const SPRINT_KEEP = 20;
-
-/** What Tidy can act on per playlist: rows in Wrong place, By sound and Repeats. Map id -> counts. */
-function tidyCounts({ misfiled = [], soundRows = [], within = [] } = {}) {
-  const out = new Map();
-  const at = id => { let x = out.get(id); if (!x) out.set(id, x = { misfile: 0, sound: 0, dupes: 0 }); return x; };
-  for (const m of misfiled ?? []) if (m?.currentPlaylistId) at(m.currentPlaylistId).misfile++;
-  for (const r of soundRows ?? []) if (r?.from) at(r.from).sound++;
-  for (const d of within ?? []) if (d?.playlistId) at(d.playlistId).dupes++;
-  return out;
-}
-
-/** The Tidy section a playlist's report row opens: the first with rows for it, else null. */
-function sectionFor(t) {
-  if (!t) return null;
-  return t.misfile > 0 ? 'misfile' : t.sound > 0 ? 'sound' : t.dupes > 0 ? 'dupes' : null;
-}
-
-/**
- * Inputs for playlistHealth() for one playlist, from the reports. Misfiled rows
- * name their playlist as `currentPlaylistId` (web/app/reports.js); drift rows
- * as `playlistId`.
- */
-function healthInputs({ id, tracks = 0, list = [], misfiled = [], drift = [], splitIds, undecidedIds, twins } = {}, { repeatCount, staleDays } = {}) {
-  return {
-    tracks,
-    misfiled: (misfiled ?? []).filter(m => m?.currentPlaylistId === id).length,
-    drifting: (drift ?? []).some(d => d?.playlistId === id),
-    split: !!splitIds?.has?.(id),
-    undecided: !!undecidedIds?.has?.(id),
-    twins: twins?.get?.(id) ?? [],
-    repeats: typeof repeatCount === 'function' ? repeatCount(list) : 0,
-    staleDays: typeof staleDays === 'function' ? staleDays(list) : null,
-  };
-}
-
-/**
- * The worst `n` playlists by health, lowest score first. rows: [{ id, name,
- * tracks, health: { score, word, notes } | null, tidy?: counts }]. Rows with no
- * health (under eight tracks) and healthy ones are left off. Ties go to the
- * playlist with more Tidy can fix, then the bigger one, then by name, so the
- * order never depends on the input's.
- */
-function rankHealth(rows, { n = REPORT_N, below = HEALTHY } = {}) {
-  const work = t => (t ? t.misfile + t.sound + t.dupes : 0);
-  return (rows ?? []).filter(r => r?.health && Number.isFinite(r.health.score) && r.health.score < below)
-    .sort((a, b) => a.health.score - b.health.score || work(b.tidy) - work(a.tidy)
-      || (b.tracks ?? 0) - (a.tracks ?? 0) || String(a.name).localeCompare(String(b.name)) || String(a.id).localeCompare(String(b.id)))
-    .slice(0, n)
-    .map(r => ({ id: r.id, name: r.name, score: r.health.score, word: r.health.word,
-      why: (r.health.notes ?? []).slice(0, 3), section: sectionFor(r.tidy), fixable: work(r.tidy) }));
-}
-
-/* ---------- the sprint's own counts ---------- */
-
-/** A new sprint session. `now` is ms. */
-function sprintStart(now, { sec = null, pl = null } = {}) {
-  return { start: now, last: now, sec, pl, moves: 0, keeps: 0, undos: 0, movesUndone: 0, stack: [] };
-}
-
-/** Record one decision (kind 'move' | 'keep') with whatever is needed to take it back. Returns the session. */
-function sprintDecide(s, kind, undo, now) {
-  if (kind === 'move') s.moves++; else s.keeps++;
-  s.stack.push({ kind, ...undo });
-  s.last = now;
-  return s;
-}
-
-/** Take the newest decision back; returns it (or null when there is none). */
-function sprintUndo(s, now) {
-  const d = s.stack.pop();
-  if (!d) return null;
-  s.undos++;
-  if (d.kind === 'move') s.movesUndone++;
-  if (d.kind === 'move') s.moves--; else s.keeps--;
-  s.last = now;
-  return d;
-}
-
-/**
- * The numbers a session ends with. Decisions are the ones that stand (undone
- * ones subtracted). `perMin` runs from the first key to the last decision, so
- * a sprint left open does not drag it down. `kept` is the share of moves made
- * that were not taken back, the same reading as core/measure/history.mjs's
- * Tidy tier rate ("moves kept"), null without a move.
- */
-function sprintStats(s) {
-  const decisions = s.moves + s.keeps;
-  const ms = Math.max(0, s.last - s.start);
-  const made = s.moves + s.movesUndone;
-  return { decisions, moves: s.moves, made, keeps: s.keeps, undos: s.undos, ms,
-    perMin: decisions && ms > 0 ? +(decisions / (ms / 60000)).toFixed(1) : null,
-    kept: made ? s.moves / made : null };
-}
-
-/** Add a finished session's stats to the stored list (newest last, at most SPRINT_KEEP); sessions with no decision are dropped. */
-function sprintSave(list, stats, at) {
-  const prev = Array.isArray(list) ? list.filter(x => x && Number.isFinite(x.decisions)) : [];
-  if (!stats?.decisions && !stats?.undos) return prev.slice(-SPRINT_KEEP);
-  return [...prev, { at, decisions: stats.decisions, moves: stats.moves, made: stats.made, keeps: stats.keeps, undos: stats.undos, ms: stats.ms,
-    perMin: stats.perMin, kept: stats.kept }].slice(-SPRINT_KEEP);
-}
-
-/** Totals over stored sessions: decisions a minute over all of them, and the share of moves made that stood. */
-function sprintTotals(list) {
-  let d = 0, ms = 0, moves = 0, made = 0, n = 0;
-  for (const x of Array.isArray(list) ? list : []) {
-    if (!x || !Number.isFinite(x.decisions)) continue;
-    n++; d += x.decisions; ms += x.ms ?? 0; moves += x.moves ?? 0; made += x.made ?? x.moves ?? 0;
-  }
-  return { sessions: n, decisions: d, perMin: d && ms > 0 ? +(d / (ms / 60000)).toFixed(1) : null, kept: made ? moves / made : null };
-}
-return { HEALTH_VERSION, REPORT_N, HEALTHY, SPRINT_KEEP, tidyCounts, sectionFor, healthInputs, rankHealth, sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTotals };
+return { artistCoverage, coverageHTML, view, yourDataHTML, actions };
 })();
 /* ---- web/screens/tidy.mjs ---- */
 __mod["web/screens/tidy.mjs"] = (function () {
-const { tidyCounts, healthInputs, rankHealth, sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTotals } = __mod["core/review/health.mjs"];
 /* The Tidy screen (docs/BUILD-5-PLAN.md A4): an ES module. It touches nothing outside `ctx`
  * (web/README.md, "Screen modules"); SCREEN_CTX.tidy in app/screens.js builds it. The sound
  * misfit state and jobs, and emptyState, stay classic in app/screenjobs.js. */
-/* The library health report and the keyboard cleanup sprint (BUILD-6 F9) are at the end of
- * this file; their pure parts (ranking, the sprint's counts) are core/review/health.mjs. */
-
 
 /* ---------- Tidy: three screens' worth of the same question ----------
  *
@@ -5915,9 +5852,8 @@ const TIDY_SECTIONS = [['misfile', 'Wrong place'], ['dupes', 'Repeats'], ['cross
 function secDupes(c) {
   const ib = c.infoBtn ?? (() => '');
   const { R, esc, thumbHTML, cmpTable, shownOf, emptyState, moreButton } = c;
-  const within = onlyPl(c, R.within, x => x.playlistId);
-  const exact = within.filter(x => x.verdict === 'same-recording');
-  const clash = within.filter(x => x.verdict !== 'same-recording');
+  const exact = R.within.filter(x => x.verdict === 'same-recording');
+  const clash = R.within.filter(x => x.verdict !== 'same-recording');
   const sec = (title, list, note, key) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
     <p class="lede">${note}</p>
     <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row" data-flip data-key="${esc(`dup:${c.playlistId}:${c.options.map(o => o.id).join(',')}`)}">${thumbHTML(c)}<div class="main">
@@ -5927,7 +5863,7 @@ function secDupes(c) {
       `<button class="b sm" data-act="keep" data-keep="${esc(o.id)}" data-pl="${esc(c.playlistId)}" data-drop="${esc(c.options.filter(z => z.id !== o.id).map(z => z.id).join(','))}">Keep ${esc(o.dur)}</button>`).join('')}
     </div></div>`).join('') || emptyState('None found', 'Nothing in your library matches this.', { compact: true })}</div>
     ${moreButton(key, list.length)}`;
-  const lede = `<p class="lede">Same track twice in one playlist.${ib('tidy-dupes', 'Repeats', '<p>Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>')}</p>${plChip(c)}`;
+  const lede = `<p class="lede">Same track twice in one playlist.${ib('tidy-dupes', 'Repeats', '<p>Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>')}</p>`;
   // Both lists empty is one answer, not two grey boxes under two headings.
   if (!exact.length && !clash.length) return `${lede}
     ${emptyState('No repeats', 'None of your playlists has the same track in it twice, as the same recording or as a different cut.')}`;
@@ -6002,7 +5938,7 @@ const TS_BANDS = [['sure', 'HIGH'], ['likely', 'LIKELY']];
 function secSound(c) {
   const ib = c.infoBtn ?? (() => '');
   const { S, esc, thumbHTML, shownOf, emptyState, moreButton, TSOUND, LIB, tidySoundRows } = c;
-  const rows = onlyPl(c, tidySoundRows(), x => x.from);
+  const rows = tidySoundRows();
   const band = S.tsBand ?? 'sure';
   const counts = { sure: 0, likely: 0 };
   for (const x of rows) counts[x.band]++;
@@ -6010,15 +5946,13 @@ function secSound(c) {
   const pct = v => `${Math.round(v * 100)}%`;
   const checked = acc?.scored ? `<p class="sub tsacc">Checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
     acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>` : '';
-  const lede = `<p class="lede">Filed in one playlist, but it sounds like another.${ib('tidy-sound', 'Sounds wrong', '<p>Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn\'t place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>')}</p>${plChip(c)}`;
+  const lede = `<p class="lede">Filed in one playlist, but it sounds like another.${ib('tidy-sound', 'Sounds wrong', '<p>Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn\'t place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>')}</p>`;
   if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true }) + (c.skeleton ? c.skeleton('rows', 3) : '');
   if (TSOUND.status === 'error' && !TSOUND.res) return lede + emptyState('Couldn’t compare by sound', esc(TSOUND.err ?? ''), { compact: true });
-  if (S.sprint?.sec === 'sound') return lede + sprintPanel(c, 'sound');
   const m = rows.filter(x => x.band === band);
   return `${lede}${checked}
     ${rows.length ? `<div class="seg mfbands tsbands" role="group" aria-label="How sure">${TS_BANDS.map(([b, vm]) =>
       `<button type="button" aria-pressed="${band === b}" data-act="tsb" data-tsb="${b}">${mfBandChip(c, vm === 'HIGH' ? 'high' : 'medium')} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
-    ${sprintBar(c, 'sound', sprintRows(c, 'sound').length)}
     <div class="rows">${m.slice(0, shownOf('tsound-' + band)).map(x => {
       const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
       return `<div class="row tsrow ${done ? 'done' : ''}" data-flip data-key="${esc(`ts:${x.id}`)}">${thumbHTML(t)}<div class="main">
@@ -6043,7 +5977,7 @@ function secMisfile(c) {
   const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton, tagChips, tagEditorHTML, store, getListening } = c;
   const LISTENING_CACHE = c.LISTENING_CACHE, LISTENING_PENDING = c.LISTENING_PENDING;
   const counts = { high: 0, medium: 0, low: 0 };
-  const MF = onlyPl(c, tagMisfiles(c), x => x.currentPlaylistId);
+  const MF = tagMisfiles(c);
   for (const x of MF) counts[x.confidence]++;
   const m = MF.filter(x => x.confidence === S.mfBand);
   // Best-effort, fetched once and reused: a "misfiled" track you actually
@@ -6056,12 +5990,9 @@ function secMisfile(c) {
   // Only draw the (stateful, id-bearing) editor once, even if the artist
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
-  const lede = `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p>')}</p>${plChip(c)}`;
-  if (S.sprint?.sec === 'misfile') return lede + sprintPanel(c, 'misfile');
-  return `${lede}
+  return `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p>')}</p>
     ${MF.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
       `<button type="button" aria-pressed="${S.mfBand === b}" data-act="mfb" data-mfb="${b}">${mfBandChip(c, b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
-    ${sprintBar(c, 'misfile', sprintRows(c, 'misfile').length)}
     <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
@@ -6096,17 +6027,15 @@ function secMisfile(c) {
 function view(c) {
   const { S, R, esc } = c;
   c.tidySoundWarm();
-  const report = healthReport(c);
-  const n = { misfile: tagMisfiles(c).length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount(), health: report.length };
-  const secs = report.length ? [...tidySections(c), ['health', 'Health']] : tidySections(c);
+  const n = { misfile: tagMisfiles(c).length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount() };
+  const secs = tidySections(c);
   // Opens on the first section with something in it rather than on "Wrong
   // place 0" while Repeats has work. A section the listener picked (S.tidySec,
   // set only by a tap) is kept; one that has gone away falls back the same way.
-  // Health is a report, not a list of work: it is never opened for you.
-  const first = (secs.find(([id]) => n[id] > 0 && id !== 'health') ?? secs[0])[0];
+  const first = (secs.find(([id]) => n[id] > 0) ?? secs[0])[0];
   if (S.tidySec != null && !secs.some(([id]) => id === S.tidySec)) S.tidySec = first;
   const sec = S.tidySec ?? first;
-  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound, health: secHealth }[sec];
+  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound }[sec];
   return `<h1>Tidy</h1>
     <div class="seg tidysecs" role="group" aria-label="Section">${secs.map(([id, label]) =>
       `<button type="button" aria-pressed="${sec === id}" data-act="section" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
@@ -6115,10 +6044,7 @@ function view(c) {
 
 
 const actions = {
-  section(c, el) {
-    if (c.S.sprint) endSprint(c);
-    c.S.tidySec = el.dataset.tidy; c.S.tidyPl = null; c.render();
-  },
+  section(c, el) { c.S.tidySec = el.dataset.tidy; c.render(); },
 
   cmin(c, el) {
     const { S, T } = c;
@@ -6204,339 +6130,268 @@ const actions = {
   async move(c, el) {
     el.disabled = true;
     const { mvto:to, mvfrom:from, mvtr:tr, mvtier:tier } = el.dataset;
-    const toName = c.CFG[to]?.name ?? to;
+    const { CFG } = c;
+    const toName = CFG[to]?.name ?? to, fromName = CFG[from]?.name ?? from;
     try {
-      const at = await writeMove(c, { tr, from, to, tier });
+      // Add first: if the removal then fails the track is still filed somewhere
+      // rather than lost between playlists. Both steps share a group, so one
+      // Undo (toast or History) reverses the pair: back where it was, at its
+      // position, and out of the playlist it was moved to.
+      const group = c.newGroup();
+      await c.addTracks(to, [tr]);
+      const at = await c.logAction({ op:'add', playlistId:to, playlistName:toName, trackIds:[tr], reason:`moved from ${fromName}`, group });
+      const before = await c.playlistIds(from);
+      const positions = {}; before.forEach((id, i) => { if (id === tr) (positions[id] ??= []).push(i); });
+      await c.delTracks(from, [tr]);
+      await c.logAction({ op:'remove', playlistId:from, playlistName:fromName, trackIds:[tr], positions, reason:`moved to ${toName}`, group,
+                          move:{ trackId:tr, from, to, fromName, toName, ...(tier ? { tier } : {}) } });
       c.toast(`Moved to ${toName}.`, () => c.undoAction(at));
+      // What the sound learner reads as a move: yes to `to`, no to `from`.
+      await c.recordMove(tr, from, to).catch(() => {});
       c.S.moved.add(tr);
       el.closest('.row').classList.add('done');
       el.classList.remove('go'); el.textContent = 'Moved';
     } catch (err) { c.toast('Failed: ' + err.message); el.disabled = false; }
   },
-  /* ---- the library health report (BUILD-6 F9) ---- */
-
-  /** Open Tidy at one playlist: its first section with rows, on the first band that has some. */
-  hgo(c, el) {
-    const { S } = c, pl = el.dataset.hpl, sec = el.dataset.hsec;
-    if (S.sprint) endSprint(c);
-    S.tidyPl = pl; S.tidySec = sec;
-    if (sec === 'misfile') {
-      const mine = tagMisfiles(c).filter(x => x.currentPlaylistId === pl);
-      S.mfBand = ['high', 'medium', 'low'].find(b => mine.some(x => x.confidence === b)) ?? S.mfBand;
-    }
-    if (sec === 'sound') {
-      const mine = c.tidySoundRows().filter(x => x.from === pl);
-      S.tsBand = ['sure', 'likely'].find(b => mine.some(x => x.band === b)) ?? S.tsBand;
-    }
-    S.tidyFocus = 'rows';
-    c.render();
-  },
-  /** Nothing Tidy can act on: the playlist's own sheet in Library says the rest. */
-  hopen(c, el) { c.go?.('lists'); c.openPlSheet?.(el.dataset.hpl); },
-  hclear(c) { if (c.S.sprint) endSprint(c); c.S.tidyPl = null; c.S.tidyFocus = 'rows'; c.render(); },
-
-  /* ---- the keyboard sprint (BUILD-6 F9, D7) ---- */
-
-  spstart(c, el) {
-    const sec = el.dataset.spsec, n = sprintRows(c, sec).length;
-    if (!n) return;
-    c.S.sprint = { sec, s: sprintStart(Date.now(), { sec, pl: c.S.tidyPl ?? null }) };
-    c.S.tidyFocus = 'sprint';
-    announce(c, `Sprint: ${n} to decide. Right arrow moves, left arrow keeps, U undoes, Escape stops.`);
-    c.render();
-  },
-
-  /** → : move the current track to the suggested playlist. The screen moves on at once; the
-   *  Spotify writes run one after another behind it, and a failed one puts the track back. */
-  spmove(c) {
-    const sp = c.S.sprint; if (!sp) return;
-    const rows = sprintRows(c, sp.sec), x = rows[0]; if (!x) return;
-    c.S.moved.add(x.id);
-    const d = { id: x.id, at: null, failed: false };
-    d.p = CHAIN = CHAIN.then(() => writeMove(c, { tr: x.id, from: x.from, to: x.to, tier: x.tier }))
-      .then(at => { d.at = at; }, err => {
-        d.failed = true; c.S.moved.delete(x.id);
-        const i = sp.s.stack.findIndex(y => y.d === d);
-        if (i >= 0) { sp.s.stack.splice(i, 1); sp.s.moves--; }
-        c.toast('Failed: ' + (err?.message ?? err)); c.render();
-      });
-    sprintDecide(sp.s, 'move', { d }, Date.now());
-    c.S.tidyFocus = 'sprint';
-    announce(c, `Moved ${x.title} to ${x.toName}. ${left(rows.length - 1)}`);
-    c.render();
-  },
-
-  /** ← : keep it where it is, the same record as the rows' Keep here. */
-  spkeep(c) {
-    const sp = c.S.sprint; if (!sp) return;
-    const rows = sprintRows(c, sp.sec), x = rows[0]; if (!x) return;
-    const f = c.FB?.[x.id];
-    const u = { id: x.id, from: x.from, newKept: !(f?.kept ?? []).includes(x.from),
-      newRej: x.away.filter(p => !(f?.rejected ?? []).includes(p)), row: x.row ?? null, idx: -1 };
-    // recordKeep changes FB before its first await, so the row has left the list by the next key.
-    Promise.resolve(c.recordKeep(x.id, x.from, x.away)).catch(err => c.toast('Failed: ' + (err?.message ?? err)));
-    if (x.row) {
-      u.idx = c.R.misfiled.indexOf(x.row);
-      c.R.misfiled = c.R.misfiled.filter(m => m !== x.row);
-    }
-    sprintDecide(sp.s, 'keep', u, Date.now());
-    c.S.tidyFocus = 'sprint';
-    announce(c, `Kept ${x.title} in ${x.fromName}. ${left(rows.length - 1)}`);
-    c.render();
-  },
-
-  /** U : take the newest sprint decision back. */
-  spundo(c) {
-    const sp = c.S.sprint; if (!sp) return;
-    const d = sprintUndo(sp.s, Date.now()); if (!d) return;
-    c.S.tidyFocus = 'sprint';
-    if (d.kind === 'move') {
-      const m = d.d;
-      c.S.moved.delete(m.id);
-      CHAIN = CHAIN.then(() => m.p).then(() => (m.failed || !m.at ? null : c.undoAction(m.at)))
-        .catch(err => c.toast('Undo failed: ' + (err?.message ?? err)));
-      announce(c, `Move undone. ${trackName(c, m.id)} is back.`);
-    } else {
-      unkeep(c, d);
-      announce(c, `Keep undone. ${trackName(c, d.id)} is back.`);
-    }
-    c.render();
-  },
-
-  /** Esc : stop, and keep this sprint's counts on this device. */
-  spend(c) { endSprint(c, true); c.render(); },
 };
+return { secDupes, secCross, tagMisfiles, secSound, secMisfile, view, actions };
+})();
+/* ---- core/playlists/mergesplit.mjs ---- */
+__mod["core/playlists/mergesplit.mjs"] = (function () {
+// The merge/split playlist wizard's planning (BUILD-6-PLAN §4.1/§4.2 F4).
+//
+// Two offers already existed and had no one place to act on them: "twins",
+// pairs of playlists the engine cannot tell apart (lists.mjs twinsOf, from
+// bucketPairs), and "two genres", a playlist whose tracks split into two
+// (core/audio/plprofile.mjs by sound, core/recommend/gaps.mjs splitCandidates
+// by tags). The wizard puts both behind one preview and writes only new
+// private playlists: the originals are never edited.
+//
+// Everything here is pure: plans in, plans out, no Spotify and no storage.
+// The page (web/screens/lists.mjs) draws a plan, lets you rename and move
+// tracks, and writes `writesOf(plan)` as one History group.
+//
+// Counts on the account's own playlists only (SMARTER-GENRES-PLAN §3, R3):
+// nothing is learned, nothing leaves the device.
 
-/* ---------- the library health report (BUILD-6 F9) ----------
- * Library's own health score (lists.mjs's playlistHealth, read through ctx.libHealth) for every
- * playlist, the worst five listed with why, and one tap into Tidy at that playlist. */
+/** A track's identity for de-duplication: its ISRC (the recording, the same
+ *  under any relinked pressing) when it has one, else its Spotify id. */
+function trackKey(t) {
+  const isrc = typeof t?.isrc === 'string' ? t.isrc : t?.external_ids?.isrc;
+  if (typeof isrc === 'string' && isrc.trim()) return 'isrc:' + isrc.trim().toUpperCase();
+  return t?.id ? 'id:' + t.id : null;
+}
 
-const HCACHE = new WeakMap();
-function healthReport(c) {
-  const H = c.libHealth;
-  if (typeof H?.playlistHealth !== 'function' || !c.CFG || !c.LIB?.playlists || !c.R) return [];
-  const sound = (typeof c.tidySoundRows === 'function' ? c.tidySoundRows() : null) ?? [];
-  const splits = c.healthSplits?.() ?? [];
-  const key = [c.R.misfiled?.length, c.R.within?.length, sound.length, Object.keys(c.CFG).length, c.LIB.playlists.length, splits.length].join('|');
-  const hit = HCACHE.get(c.R);
-  if (hit?.key === key) return hit.out;
-  const byId = new Map(c.LIB.playlists.map(p => [p.id, p]));
-  const twins = typeof H.twinsOf === 'function' ? H.twinsOf(c.twinPairs?.()) : new Map();
-  const splitIds = new Set(splits);
-  const undecidedIds = new Set(Object.entries(c.CFG).filter(([, v]) => c.NO_SIGNAL != null && v?.why === c.NO_SIGNAL).map(([id]) => id));
-  const counts = tidyCounts({ misfiled: tagMisfiles(c), soundRows: sound, within: c.R.within });
-  const rows = Object.entries(c.CFG).filter(([id, v]) => !c.isMirrorPlaylist?.({ id, name: v?.name ?? byId.get(id)?.name })).map(([id, v]) => {
-    const list = byId.get(id)?.tracks ?? [];
-    const tracks = v?.tracks ?? list.length;
-    const health = H.playlistHealth(healthInputs({ id, tracks, list, misfiled: c.R.misfiled, drift: c.R.drift, splitIds, undecidedIds, twins }, H));
-    return { id, name: v?.name ?? byId.get(id)?.name ?? id, tracks, health, tidy: counts.get(id) };
-  });
-  const out = rankHealth(rows);
-  HCACHE.set(c.R, { key, out });
+const artistLine = t => (t?.artists ?? []).map(a => a?.name).filter(Boolean).join(', ');
+const row = (t, from) => ({ id: t.id, title: t.name ?? t.id, artist: artistLine(t), from });
+
+/** Tracks with an id, in order, each recording once (by id and by ISRC). */
+function uniq(tracks, seenId = new Set(), seenKey = new Set()) {
+  const out = [];
+  for (const t of tracks ?? []) {
+    if (!t?.id || seenId.has(t.id)) continue;
+    const k = trackKey(t);
+    if (k && seenKey.has(k)) continue;
+    seenId.add(t.id); if (k) seenKey.add(k);
+    out.push(t);
+  }
   return out;
 }
 
-function secHealth(c) {
-  const { esc, emptyState } = c;
-  const ib = c.infoBtn ?? (() => '');
-  const rep = healthReport(c);
-  return `<p class="lede">The playlists in the worst shape, by the health score Library shows for each.${ib('tidy-health', 'Health', '<p>The same score as a playlist’s sheet in Library: tracks that look misfiled, newest additions that read differently, two genres in one, a twin it can’t be told from, repeats, nothing added for a year, no axis decided. Only playlists under 85 are listed, worst first.</p>')}</p>
-    ${rep.length ? `<ol class="hrep">${rep.map(h => `<li class="hrow">
-      <div class="hmain"><div class="ttl">${esc(h.name)}</div>
-        <p class="plhealth plh-${h.score >= 65 ? 'fine' : 'low'}"><b class="mono">${h.score}</b> ${esc(h.word)}</p>
-        ${h.why.length ? `<ul class="plnotes">${h.why.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</div>
-      ${h.section
-        ? `<button type="button" class="b sm go" data-act="hgo" data-hpl="${esc(h.id)}" data-hsec="${h.section}" aria-label="${esc(`Tidy ${h.fixable} in ${h.name}`)}">Tidy ${h.fixable.toLocaleString()}</button>`
-        : `<button type="button" class="b sm" data-act="hopen" data-hpl="${esc(h.id)}" aria-label="${esc(`Open in Library: ${h.name}`)}">Open in Library</button>`}</li>`).join('')}</ol>`
-      : emptyState('Every playlist is healthy', 'None scores under 85.', { compact: true })}`;
+/** "Deep House + House Classics", kept under Spotify's 100-character limit. */
+function mergeName(a, b) {
+  return `${String(a?.name ?? '').trim() || 'Playlist'} + ${String(b?.name ?? '').trim() || 'Playlist'}`.slice(0, 100);
 }
 
-/** Rows of one playlist only, when the report opened Tidy at it. */
-function onlyPl(c, list, key) {
-  const pl = c.S.tidyPl;
-  return pl ? (list ?? []).filter(x => key(x) === pl) : list;
-}
-function plChip(c) {
-  const pl = c.S.tidyPl;
-  if (!pl) return '';
-  const name = c.CFG?.[pl]?.name ?? c.LIB?.playlists?.find(p => p.id === pl)?.name ?? pl;
-  return `<p class="tidypl">Only <b>${c.esc(name)}</b> <button type="button" class="b sm" data-act="hclear">Show every playlist</button></p>`;
-}
-
-/* ---------- the keyboard sprint (BUILD-6 F9, D7) ----------
- * One track at a time from Wrong place or By sound (the band showing, and the playlist the
- * report opened, if any): → moves it to the suggested playlist, ← keeps it where it is, U
- * undoes the newest decision, Esc stops. The buttons do the same for a pointer. Every
- * decision is said in a live region, and focus stays on the track being decided. Decisions a
- * minute and the share of moves kept are counted on this device only (SPRINT_KEY). */
-
-const SPRINT_KEY = 'bf_tidy_sprint';
-let CHAIN = Promise.resolve();
-const left = n => (n ? `${n} left.` : 'That was the last one.');
-
-/** What the sprint walks, in the list's own order, decided ones gone. */
-function sprintRows(c, sec) {
-  const { S } = c;
-  if (sec === 'misfile') return onlyPl(c, tagMisfiles(c), x => x.currentPlaylistId)
-    .filter(x => x.confidence === S.mfBand && !S.moved.has(x.id))
-    .map(x => {
-      const to = (x.suggest ?? []).find(sg => sg.id);
-      return to ? { id: x.id, title: x.title ?? '', artist: x.artist ?? '', art: x.art ?? null, from: x.currentPlaylistId, fromName: x.current ?? '',
-        to: to.id, toName: to.name ?? to.id, tier: MF_TIER[S.mfBand] ?? '', away: x.suggest.filter(sg => sg.id).slice(0, 2).map(sg => sg.id),
-        why: `${mfFitWord(x.currentScore)} fit here, ${mfFitWord(to.score)} there`, row: x } : null;
-    }).filter(Boolean);
-  if (sec === 'sound' && typeof c.tidySoundRows === 'function') return onlyPl(c, c.tidySoundRows(), x => x.from)
-    .filter(x => x.band === (S.tsBand ?? 'sure') && !S.moved.has(x.id))
-    .map(x => {
-      const t = tidySoundTrack(c.LIB, x.id);
-      return { id: x.id, title: t.title, artist: t.artist, art: t.art, from: x.from, fromName: x.fromName, to: x.to, toName: x.toName,
-        tier: x.band, away: [x.to], why: (x.why ?? []).join('; ') };
-    });
-  return [];
-}
-
-function readSprints(c) {
-  try { const v = JSON.parse(c.LS?.getItem(SPRINT_KEY) ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
-}
-
-function sprintBar(c, sec, n) {
-  if (!n) return '';
-  const tot = sprintTotals(readSprints(c));
-  const past = tot.perMin != null ? ` <span class="sub">Your sprints so far: ${tot.perMin} decisions a minute${tot.kept != null ? `, ${Math.round(tot.kept * 100)}% of moves kept` : ''}.</span>` : '';
-  return `<div class="sprintbar"><button type="button" class="b sm" id="sprintGo" data-act="spstart" data-spsec="${sec}" aria-describedby="sprintHint">Sprint through ${n.toLocaleString()}</button>
-    <span class="hint" id="sprintHint">One at a time by keyboard: <kbd>→</kbd> move, <kbd>←</kbd> keep, <kbd>U</kbd> undo, <kbd>Esc</kbd> stop.</span>${past}</div>`;
-}
-
-function sprintTally(st) {
-  return `${st.decisions} decided${st.perMin != null ? ` · ${st.perMin} a minute` : ''}${st.kept != null ? ` · ${Math.round(st.kept * 100)}% of moves kept` : ''}`;
-}
-
-function sprintPanel(c, sec) {
-  const { S, esc } = c, sp = S.sprint;
-  const rows = sprintRows(c, sec), x = rows[0];
-  const tally = sprintTally(sprintStats(sp.s));
-  const undo = `<button type="button" class="b sm" data-act="spundo" aria-keyshortcuts="U"${sp.s.stack.length ? '' : ' disabled'}>Undo <kbd>U</kbd></button>`;
-  const stop = `<button type="button" class="b sm" data-act="spend" aria-keyshortcuts="Escape">${x ? 'Stop' : 'Done'} <kbd>Esc</kbd></button>`;
-  if (!x) return `<section class="sprint" id="sprint" aria-labelledby="sprintH"><h2 id="sprintH">Sprint done</h2>
-      <div class="sprintcard sprintdone" id="sprintCard" tabindex="-1"><p>Nothing left in this list. ${esc(tally)}.</p></div>
-      <div class="sprintacts">${undo}${stop}</div></section>`;
-  return `<section class="sprint" id="sprint" aria-labelledby="sprintH">
-    <h2 id="sprintH">Sprint <span class="mono">${rows.length.toLocaleString()} left</span></h2>
-    <div class="sprintcard" id="sprintCard" tabindex="-1" role="group" aria-roledescription="track" data-sptr="${esc(x.id)}"
-      aria-label="${esc(`${x.title}${x.artist ? ` by ${x.artist}` : ''}: in ${x.fromName}, suggested ${x.toName}`)}" aria-describedby="sprintKeys">
-      ${c.thumbHTML(x)}<div class="main"><div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist)}</span></div>
-      <div class="swap"><span class="from">${esc(x.fromName)}</span><span class="arw">→</span><span class="to">${esc(x.toName)}</span></div>
-      ${x.why ? `<div class="why">${esc(x.why)}</div>` : ''}</div></div>
-    <div class="sprintacts">
-      <button type="button" class="b" data-act="spkeep" aria-keyshortcuts="ArrowLeft"><kbd>←</kbd> Keep in ${esc(x.fromName)}</button>
-      <button type="button" class="b go" data-act="spmove" aria-keyshortcuts="ArrowRight">Move to ${esc(x.toName)} <kbd>→</kbd></button>
-      ${undo}${stop}</div>
-    <p class="hint" id="sprintKeys">Right arrow moves it, left arrow keeps it where it is, U undoes the last one, Escape stops.</p>
-    <p class="sprintstat mono">${esc(tally)}</p></section>`;
-}
-
-/** Add, then remove: the same order and the same History entries as the rows' Move button. */
-async function writeMove(c, { tr, from, to, tier }) {
-  const { CFG } = c;
-  const toName = CFG[to]?.name ?? to, fromName = CFG[from]?.name ?? from;
-  // Add first: if the removal then fails the track is still filed somewhere
-  // rather than lost between playlists. Both steps share a group, so one
-  // Undo (toast or History) reverses the pair: back where it was, at its
-  // position, and out of the playlist it was moved to.
-  const group = c.newGroup();
-  await c.addTracks(to, [tr]);
-  const at = await c.logAction({ op:'add', playlistId:to, playlistName:toName, trackIds:[tr], reason:`moved from ${fromName}`, group });
-  const before = await c.playlistIds(from);
-  const positions = {}; before.forEach((id, i) => { if (id === tr) (positions[id] ??= []).push(i); });
-  await c.delTracks(from, [tr]);
-  await c.logAction({ op:'remove', playlistId:from, playlistName:fromName, trackIds:[tr], positions, reason:`moved to ${toName}`, group,
-                      move:{ trackId:tr, from, to, fromName, toName, ...(tier ? { tier } : {}) } });
-  // What the sound learner reads as a move: yes to `to`, no to `from`.
-  await c.recordMove(tr, from, to).catch(() => {});
-  return at;
-}
-
-/** Take a sprint's Keep here back: only what that keep added to FB, and the row where it was. */
-function unkeep(c, u) {
-  const f = c.FB?.[u.id];
-  if (f) {
-    if (u.newKept && f.kept) { f.kept = f.kept.filter(p => p !== u.from); if (!f.kept.length) delete f.kept; }
-    if (u.newRej.length) {
-      f.rejected = (f.rejected ?? []).filter(p => !u.newRej.includes(p));
-      if (f.rejectedAt) { for (const p of u.newRej) delete f.rejectedAt[p]; if (!Object.keys(f.rejectedAt).length) delete f.rejectedAt; }
-    }
-    Promise.resolve(c.saveFeedback?.()).catch(() => {});
+/**
+ * Two playlists as one: every track of `a` in its order, then every track of
+ * `b` that `a` does not already hold, the same recording counted once whether
+ * it is the same id or the same ISRC under another id.
+ * @returns {{ kind:'merge', sources:[{id,name,n}], name, parts:[{name, rows, include}],
+ *            counts:{ a, b, both, total, dupes } }}
+ */
+function mergePlan(a, b, { name } = {}) {
+  const seenId = new Set(), seenKey = new Set();
+  const fromA = uniq(a?.tracks, seenId, seenKey);
+  const aKeys = new Set(fromA.map(trackKey).filter(Boolean));
+  const aIds = new Set(fromA.map(t => t.id));
+  const fromB = [], bothSeen = new Set();
+  for (const t of b?.tracks ?? []) {
+    if (!t?.id) continue;
+    const k = trackKey(t);
+    if (aIds.has(t.id) || (k && aKeys.has(k))) { bothSeen.add(k ?? t.id); continue; }
+    if (seenId.has(t.id) || (k && seenKey.has(k))) continue;
+    seenId.add(t.id); if (k) seenKey.add(k);
+    fromB.push(t);
   }
-  if (u.row && !c.R.misfiled.includes(u.row)) {
-    const list = c.R.misfiled.slice();
-    list.splice(u.idx >= 0 ? Math.min(u.idx, list.length) : 0, 0, u.row);
-    c.R.misfiled = list;
-  }
-}
-
-function trackName(c, id) {
-  return c.R?.misfiled?.find(m => m.id === id)?.title ?? tidySoundTrack(c.LIB, id).title;
-}
-
-function endSprint(c, say) {
-  const sp = c.S.sprint; if (!sp) return;
-  const st = sprintStats(sp.s);
-  try { c.LS?.setItem(SPRINT_KEY, JSON.stringify(sprintSave(readSprints(c), st, new Date().toISOString()))); } catch { /* counts only */ }
-  c.S.sprint = null;
-  c.S.tidyFocus = 'sprintstart';
-  if (say) announce(c, st.decisions ? `Sprint stopped. ${sprintTally(st)}.` : 'Sprint stopped.');
-}
-
-/** Say it in the live region (made once by mount). */
-function announce(c, text) {
-  const el = c.document?.getElementById?.('tidyLive');
-  if (el) el.textContent = text;
-}
-
-/** The sprint's keys press its own buttons, so a key and a click run the same action. Captured
- *  before the page's own ←/→ (walk the tabs) and Up/Down handlers, and only while the sprint
- *  is on screen, nothing is typed into, and no sheet is open. A held key does not repeat. */
-const SPRINT_KEYS = { ArrowRight: 'spmove', ArrowLeft: 'spkeep', u: 'spundo', U: 'spundo', Escape: 'spend' };
-function sprintKeys(doc) {
-  return e => {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    const act = SPRINT_KEYS[e.key]; if (!act) return;
-    const panel = doc.getElementById('sprint');
-    if (!panel || !panel.isConnected || !panel.offsetParent) return;
-    if (e.target?.matches?.('input,select,textarea,[contenteditable]')) return;
-    if (doc.querySelector('#settingsPanel.open, #plSheet.open, dialog[open]')) return;
-    e.preventDefault(); e.stopImmediatePropagation();
-    if (e.repeat) return;
-    const b = panel.querySelector(`[data-act="${act}"]`);
-    if (b && !b.disabled) b.click();
+  const both = bothSeen.size;
+  const rows = [...fromA.map(t => row(t, 'a')), ...fromB.map(t => row(t, 'b'))];
+  const raw = (a?.tracks ?? []).filter(t => t?.id).length + (b?.tracks ?? []).filter(t => t?.id).length;
+  return {
+    kind: 'merge',
+    sources: [a, b].map(p => ({ id: p?.id, name: p?.name ?? p?.id, n: (p?.tracks ?? []).length })),
+    parts: [{ name: (name ?? mergeName(a, b)).slice(0, 100), rows, include: true }],
+    counts: { a: fromA.length, b: fromB.length, both, total: rows.length, dupes: raw - rows.length },
   };
 }
 
-function mount(c) {
-  const doc = c.document;
-  if (!doc?.body) return;
-  if (!doc.getElementById('tidyLive')) {
-    const d = doc.createElement('div');
-    d.id = 'tidyLive'; d.className = 'sprint-live';
-    d.setAttribute('role', 'status'); d.setAttribute('aria-live', 'polite'); d.setAttribute('aria-atomic', 'true');
-    doc.body.appendChild(d);
+/**
+ * One playlist as two or more: each proposed part takes the tracks its `ids`
+ * name, in the playlist's order; a track no part names (not heard, no genre
+ * in its tags) goes to part `restTo` (the half the playlist's name owns), or
+ * is left out with `restTo: -1`. A track two parts name goes to the first.
+ * @param playlist {id, name, tracks}
+ * @param parts [{ name, ids }]
+ * @returns {{ kind:'split', sources:[{id,name,n}], parts:[{name, rows, include}], rest:number }}
+ */
+function splitPlan(playlist, parts, { restTo = 0 } = {}) {
+  const want = (parts ?? []).map(p => new Set(p?.ids ?? []));
+  const out = (parts ?? []).map(p => ({ name: String(p?.name ?? '').slice(0, 100), rows: [], include: true }));
+  let rest = 0;
+  for (const t of uniq(playlist?.tracks)) {
+    const k = want.findIndex(s => s.has(t.id));
+    if (k >= 0) { out[k].rows.push(row(t, 'named')); continue; }
+    rest++;
+    if (out[restTo]) out[restTo].rows.push(row(t, 'rest'));
   }
-  if (!doc.__tidySprintKeys) { doc.__tidySprintKeys = true; doc.addEventListener('keydown', sprintKeys(doc), true); }
-  const want = c.S.tidyFocus;
-  c.S.tidyFocus = null;
-  const a = doc.activeElement;
-  const lost = !a || a === doc.body;
-  if (c.S.sprint && (want === 'sprint' || lost)) doc.getElementById('sprintCard')?.focus();
-  else if (want === 'sprintstart') (doc.getElementById('sprintGo') ?? doc.querySelector('#main .tidysecs [aria-pressed="true"]'))?.focus();
-  else if (want === 'rows') (doc.querySelector('#main .rows .row .acts button:not([disabled])') ?? doc.querySelector('#main .tidypl button'))?.focus();
+  return { kind: 'split', sources: [{ id: playlist?.id, name: playlist?.name ?? playlist?.id, n: (playlist?.tracks ?? []).length }], parts: out, rest };
 }
-return { secDupes, secCross, tagMisfiles, secSound, secMisfile, view, actions, healthReport, secHealth, sprintRows, mount };
+
+/** A plprofile split ({ keep, move }) as wizard parts: "House — House", "House — Jungle". */
+function partsFromSound(playlistName, split) {
+  const base = String(playlistName ?? '').trim() || 'Playlist';
+  return [split?.keep, split?.move].filter(Boolean).map(g => ({ name: `${base} — ${g.name ?? g.slug ?? 'part'}`.slice(0, 100), ids: g.ids ?? [] }));
+}
+
+/** A gaps.mjs split ({ name, parts:[{label, ids, rest}] }) as wizard parts. */
+function partsFromTags(split) {
+  const base = String(split?.name ?? '').trim() || 'Playlist';
+  return (split?.parts ?? []).map(x => ({ name: `${base} — ${x.rest ? 'rest of ' : ''}${x.label ?? x.concept ?? 'part'}`.slice(0, 100), ids: x.ids ?? [] }));
+}
+
+/** The plan with one track moved to part `to` (pure; an unknown track or part changes nothing). */
+function moveTrack(plan, id, to) {
+  if (!plan?.parts?.[to]) return plan;
+  const from = plan.parts.findIndex(p => p.rows.some(r => r.id === id));
+  if (from < 0 || from === to) return plan;
+  const r = plan.parts[from].rows.find(x => x.id === id);
+  return { ...plan, parts: plan.parts.map((p, k) =>
+    k === from ? { ...p, rows: p.rows.filter(x => x.id !== id) }
+    : k === to ? { ...p, rows: [...p.rows, r] } : p) };
+}
+
+/** The plan with part `k` renamed (trimmed later, when written). */
+function renamePart(plan, k, name) {
+  if (!plan?.parts?.[k]) return plan;
+  return { ...plan, parts: plan.parts.map((p, i) => (i === k ? { ...p, name: String(name ?? '').slice(0, 100) } : p)) };
+}
+
+/** The plan with part `k` in or out of what gets made. */
+function includePart(plan, k, on) {
+  if (!plan?.parts?.[k]) return plan;
+  return { ...plan, parts: plan.parts.map((p, i) => (i === k ? { ...p, include: !!on } : p)) };
+}
+
+/**
+ * What the wizard would make: one new private playlist per included part
+ * with at least one track. `problems` says why Create is not offered yet
+ * (a part with no name, two parts with one name, nothing to make).
+ * @returns {{ writes:[{ name, ids }], problems:string[] }}
+ */
+function writesOf(plan) {
+  const writes = [], problems = [];
+  for (const p of plan?.parts ?? []) {
+    if (!p.include || !p.rows.length) continue;
+    const name = String(p.name ?? '').trim();
+    if (!name) { problems.push('Every playlist it makes needs a name.'); continue; }
+    writes.push({ name, ids: p.rows.map(r => r.id) });
+  }
+  const names = writes.map(w => w.name.toLowerCase());
+  if (new Set(names).size !== names.length) problems.push('Two of the new playlists have the same name.');
+  if (!writes.length && !problems.length) problems.push('Nothing to make: every part is empty or left out.');
+  return { writes, problems: [...new Set(problems)] };
+}
+
+/** Twin pairs (bucketPairs' "indistinguishable" verdict) as merge offers, one per pair. */
+function twinOffers(pairs) {
+  const out = [], seen = new Set();
+  for (const p of Array.isArray(pairs) ? pairs : []) {
+    if (p?.verdict !== 'indistinguishable' || !p.a?.id || !p.b?.id || p.a.id === p.b.id) continue;
+    const key = offerKey('merge', [p.a.id, p.b.id]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ key, a: { id: p.a.id, name: p.a.name ?? p.a.id }, b: { id: p.b.id, name: p.b.name ?? p.b.id }, similarity: p.similarity ?? null });
+  }
+  return out;
+}
+
+/** One key per offer, the same whichever screen showed it: "merge:A+B" (sorted), "split:A". */
+function offerKey(kind, ids) {
+  const xs = (Array.isArray(ids) ? ids : [ids]).map(String);
+  return kind === 'merge' ? 'merge:' + [...xs].sort().join('+') : kind + ':' + xs[0];
+}
+
+/* ---------- the measure: how often an offer is waved away ----------
+ * Kept on this device only (`bf_mergesplit`): for each offer key, when it was
+ * first shown, and whether it was dismissed or made. The bar (BUILD-6-PLAN
+ * §3.1, §4.1 F4) is a dismiss rate of at most 25% over at least 10 offers;
+ * above a third, the split constants in plprofile.mjs are too eager. */
+const DISMISS_BAR = 0.25;
+const DISMISS_MIN = 10;
+
+const emptyMeasure = () => ({ shown: {}, dismissed: {}, made: {} });
+
+/** A stored measure, repaired: anything unreadable is an empty one. */
+function readMeasure(raw) {
+  let m = raw;
+  if (typeof raw === 'string') { try { m = JSON.parse(raw); } catch { m = null; } }
+  const out = emptyMeasure();
+  if (m && typeof m === 'object') for (const k of Object.keys(out))
+    if (m[k] && typeof m[k] === 'object') for (const [key, at] of Object.entries(m[k])) if (Number.isFinite(at)) out[k][key] = at;
+  return out;
+}
+
+/** The measure with `what` ('shown' | 'dismissed' | 'made') recorded for `key`, once (the first time stands).
+ *  Dismissing or making an offer also counts it as shown. Null when that was already recorded. */
+function recordOffer(measure, what, key, now = Date.now()) {
+  const m = readMeasure(measure);
+  if (!key || !(what in m) || (m[what][key] && m.shown[key])) return null;
+  m[what][key] ??= now;
+  m.shown[key] ??= now;
+  return m;
+}
+
+/** Shown, dismissed, made, and the dismiss rate against its bar. Merges and splits apart and together. */
+function dismissRate(measure) {
+  const m = readMeasure(measure);
+  const count = (o, kind) => Object.keys(o).filter(k => !kind || k.startsWith(kind + ':')).length;
+  const one = kind => {
+    const shown = count(m.shown, kind), dismissed = count(m.dismissed, kind), made = count(m.made, kind);
+    const rate = shown ? dismissed / shown : null;
+    return { shown, dismissed, made, rate, enough: shown >= DISMISS_MIN, ok: rate === null ? null : rate <= DISMISS_BAR };
+  };
+  return { ...one(null), merge: one('merge'), split: one('split') };
+}
+
+/** The line the Library footer prints for the owner, or '' before any offer was shown. */
+function dismissLine(measure) {
+  const r = dismissRate(measure);
+  if (!r.shown) return '';
+  const pct = Math.round(r.rate * 100);
+  return `Merge/split offers: ${r.shown} shown, ${r.dismissed} dismissed (${pct}%), ${r.made} made. ` +
+    (r.enough ? (r.ok ? `Within the ${DISMISS_BAR * 100}% bar.` : `Above the ${DISMISS_BAR * 100}% bar: the offers are too eager.`)
+      : `Not enough data yet (${r.shown} of ${DISMISS_MIN}); the bar is ${DISMISS_BAR * 100}% or fewer dismissed.`);
+}
+return { trackKey, mergeName, mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renamePart, includePart, writesOf, twinOffers, offerKey, DISMISS_BAR, DISMISS_MIN, readMeasure, recordOffer, dismissRate, dismissLine };
 })();
 /* ---- web/screens/lists.mjs ---- */
 __mod["web/screens/lists.mjs"] = (function () {
+const { mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renamePart, includePart, writesOf, twinOffers, offerKey, readMeasure, recordOffer, dismissLine } = __mod["core/playlists/mergesplit.mjs"];
 /* The Library tab (docs/BUILD-5-PLAN.md A4, UI-E): compact playlist rows, a Suggested playlists section, and a detail sheet per playlist. Was the Playlists screen: an ES module. Reaches nothing but `ctx`;
  * SCREEN_CTX.lists in app/screens.js builds it. playlistMixes, tagCoverage, the sound profiles
  * and the split job stay classic in app/screenjobs.js. */
+
+
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
 /** "64% genre · 19% mood" — what a playlist's tags are actually made of,
@@ -6676,7 +6531,7 @@ function plInfo(c, p, splitIds, undecidedIds) {
   const pl = c.LIB?.playlists?.find(x => x.id === p.id);
   const health = playlistHealth({ tracks: p.tracks,
     twins: twinsOf(c.twinPairs?.()).get(p.id) ?? [], repeats: repeatCount(pl?.tracks), staleDays: staleDays(pl?.tracks),
-    misfiled: (R.misfiled ?? []).filter(m => m.playlistId === p.id).length,
+    misfiled: (R.misfiled ?? []).filter(m => m.currentPlaylistId === p.id).length,
     drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
     split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
   return { vm, health };
@@ -6694,7 +6549,8 @@ const plRowHTML = (c, p, info, undecided) => {
 
 /** The playlist detail sheet's body (opened by plopen; shell.js draws it into #plSheet). */
 function sheetHTML(c, id) {
-  const { CFG, LIB, esc, profileRow, MIN_FOR_TARGET, BetterfyPlProfile, LPROF } = c;
+  const { CFG, LIB, esc, profileRow, MIN_FOR_TARGET, LPROF } = c;
+  if (WIZ && WIZ.sheet === id) return wizardHTML(c);
   const p = CFG[id], pl = LIB.playlists.find(x => x.id === id);
   if (!p || !pl) return '';
   const split = c.listsSplits().find(x => x.p.id === id)?.split;
@@ -6706,7 +6562,14 @@ function sheetHTML(c, id) {
   const few = p.tracks < MIN_FOR_TARGET;
   const canMix = c.mixHeardIn(pl.tracks) >= (c.BetterfyOrder?.MIN_MIX ?? 8);
   const made = LPROF?.made?.has(id);
-  const splitName = split ? BetterfyPlProfile.splitName(pl.name, split) : '';
+  const splitKey = offerKey('split', [id]);
+  const tagSplit = split ? null : (c.GAPS?.status === 'ready' ? (c.GAPS.splits ?? []).find(x => x.playlistId === id) : null);
+  const twins = twinOffers(c.twinPairs?.()).filter(o => o.a.id === id || o.b.id === id)
+    .filter(o => LIB.playlists.some(x => x.id === o.a.id) && LIB.playlists.some(x => x.id === o.b.id));
+  const ms = msMeasure(c);
+  if (split || tagSplit) noteShown(c, splitKey);
+  for (const o of twins) noteShown(c, o.key);
+  const notNow = key => ms.dismissed[key] || ms.made[key] ? '' : `<button class="b sm" data-act="wizdismiss" data-key="${esc(key)}">Not now</button>`;
   return `<div class="pls-head"><h2>${esc(pl.name)}</h2><button class="iconbtn" type="button" data-plclose aria-label="Close">✕</button></div>
     <div class="pls-body">
     <p class="plmeta"><span class="mono">${p.tracks}</span> tracks${mix ? ` · ${esc(mix)}` : ''}</p>
@@ -6722,8 +6585,16 @@ function sheetHTML(c, id) {
     ${prof ? `<section class="pls-sec"><h3>Sound</h3>${prof}</section>` : ''}
     ${split ? `<section class="pls-sec"><h3>Two genres?</h3>
       <p class="hint"><b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.
-        Making the new playlist copies the second group; nothing leaves this one.</p>
-      ${made ? '<span class="tag ok">Made</span>' : `<button class="b sm" data-act="lsplit" data-lsplit="${esc(id)}">Make “${esc(splitName)}”</button>`}</section>` : ''}
+        Splitting previews each half as a new playlist; nothing leaves this one.</p>
+      ${made || ms.made[splitKey] ? '<span class="tag ok">Made</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizsplit" data-pl="${esc(id)}" data-src="sound">Split into playlists…</button>${notNow(splitKey)}</div>`}</section>` : ''}
+    ${tagSplit ? `<section class="pls-sec"><h3>Two genres?</h3>
+      <p class="hint">By its artists’ tags: ${tagSplit.parts.map(x => `<b>${x.size}</b> ${x.rest ? 'the rest of ' : ''}${esc(x.label)}`).join(', ')}.
+        Splitting makes new playlists; nothing leaves this one.</p>
+      ${ms.made[splitKey] ? '<span class="tag ok">Made</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizsplit" data-pl="${esc(id)}" data-src="tags">Split into playlists…</button>${notNow(splitKey)}</div>`}</section>` : ''}
+    ${twins.length ? `<section class="pls-sec"><h3>Twins</h3>
+      ${twins.map(o => { const other = o.a.id === id ? o.b : o.a;
+        return `<p class="hint">The engine can’t tell this from <b>${esc(other.name)}</b> by the music in them.</p>
+      ${ms.made[o.key] ? '<span class="tag ok">Merged</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizmerge" data-a="${esc(id)}" data-b="${esc(other.id)}">Merge into a new playlist…</button>${notNow(o.key)}</div>`}`; }).join('')}</section>` : ''}
     ${fillHTML(c, id, pl)}
     ${pl.tracks.length >= 8 ? `<section class="pls-sec"><h3>Shuffle</h3>
       <p class="hint">Spaces out the same artist, then writes it as a playlist to play with Spotify’s shuffle off.</p>
@@ -6881,6 +6752,146 @@ async function fillCheck(c) {
   c.render();
 }
 
+/* ---------- Merge and split (BUILD-6 F4) ----------
+ * One wizard behind one preview for the two offers Library already makes: twins
+ * (playlists the engine can't tell apart, twinsOf) and "two genres" (a split by
+ * sound from plprofile, or by tags from the Gaps screen). The plan is
+ * core/playlists/mergesplit.mjs; this draws it into the playlist sheet, lets you
+ * rename parts and move tracks, and writes it. It only ever makes new private
+ * playlists: the originals are never edited. Every playlist it makes is one `add`
+ * entry with `created: true`, all in one History group, so one Undo (here, the
+ * toast, or History) takes every track out and deletes every playlist it made.
+ * Offers shown, dismissed and made are counted in `bf_mergesplit`, on this device
+ * only, for the dismiss-rate bar (≤ 25% over ≥ 10 offers). */
+const MS_KEY = 'bf_mergesplit';
+const WIZ_ROWS = 30;
+let WIZ = null;   // { sheet, kind, key, plan, title, status: 'preview'|'working'|'done'|'undone'|'error', err, at, made, more }
+
+function msMeasure(c) { try { return readMeasure(c.LS?.getItem?.(MS_KEY)); } catch { return readMeasure(null); } }
+function noteOffer(c, what, key) {
+  const next = recordOffer(msMeasure(c), what, key);
+  if (next) try { c.LS.setItem(MS_KEY, JSON.stringify(next)); } catch { /* private mode: the measure is a bonus */ }
+}
+const noteShown = (c, key) => noteOffer(c, 'shown', key);
+
+/** Open the wizard on a merge ({ kind:'merge', a, b }) or a split ({ kind:'split', id, src:'sound'|'tags' }). */
+function wizardOpen(c, spec) {
+  const lib = c.LIB?.playlists ?? [];
+  const byId = id => lib.find(x => x.id === id);
+  let plan = null, sheet = null, key = null, title = '';
+  if (spec?.kind === 'merge') {
+    const a = byId(spec.a), b = byId(spec.b);
+    if (!a || !b) return c.toast('Those playlists are not in your library any more.');
+    plan = mergePlan(a, b); sheet = a.id; key = offerKey('merge', [a.id, b.id]); title = 'Merge two playlists';
+  } else if (spec?.kind === 'split') {
+    const pl = byId(spec.id);
+    if (!pl) return c.toast('That playlist is not in your library any more.');
+    const parts = spec.src === 'tags'
+      ? partsFromTags((c.GAPS?.splits ?? []).find(x => x.playlistId === pl.id))
+      : partsFromSound(pl.name, c.listsSplits().find(x => x.p.id === pl.id)?.split);
+    if (parts.length < 2) return c.toast('That split is not on offer any more.');
+    plan = splitPlan(pl, parts, { restTo: 0 }); sheet = pl.id; key = offerKey('split', [pl.id]); title = `Split “${pl.name}”`;
+  } else return;
+  noteShown(c, key);
+  WIZ = { sheet, kind: spec.kind, key, plan, title, status: 'preview', err: null, at: null, made: [], more: new Set() };
+  if (c.S?.plSheet === sheet) c.render(); else c.openPlSheet(sheet);
+}
+
+/** What the name boxes say now: a repaint must not lose a name being typed. */
+function wizSyncNames(c) {
+  if (!WIZ) return;
+  WIZ.plan.parts.forEach((p, k) => { const v = c.$?.('#wiznm' + k)?.value; if (typeof v === 'string') WIZ.plan = renamePart(WIZ.plan, k, v); });
+}
+
+function wizardHTML(c) {
+  const { esc } = c, w = WIZ, plan = w.plan;
+  const busy = w.status === 'working';
+  const head = `<div class="pls-head"><h2>${esc(w.title)}</h2><button class="iconbtn" type="button" data-plclose aria-label="Close">✕</button></div>`;
+  if (w.status === 'done' || w.status === 'undone') {
+    return `${head}<div class="pls-body wiz" data-uh="lists"><section class="pls-sec" aria-live="polite">
+      ${w.status === 'done'
+        ? `<p>Made ${w.made.map(m => `<b>${esc(m.name)}</b> (<span class="mono">${m.n}</span>)`).join(' and ')}. Nothing in ${
+            plan.sources.map(s => `“${esc(s.name)}”`).join(' or ')} was changed.</p>
+           <p class="hint">One Undo deletes ${w.made.length === 1 ? 'it' : 'them'} again; it is in History too.</p>
+           <div class="rowbtns"><button class="b" data-act="wizundo">Undo</button><button class="b p" data-act="wizback">Done</button></div>`
+        : `<p>Undone: ${w.made.length === 1 ? 'the new playlist is' : 'the new playlists are'} gone and nothing else changed.</p>
+           <div class="rowbtns"><button class="b p" data-act="wizback">Done</button></div>`}</section></div>`;
+  }
+  const { writes, problems } = writesOf(plan);
+  const intro = plan.kind === 'merge'
+    ? `<p class="hint">One new private playlist with everything in both, each recording once. <b>${esc(plan.sources[0].name)}</b> and
+        <b>${esc(plan.sources[1].name)}</b> stay exactly as they are.</p>
+       <p class="hint"><span class="mono">${plan.counts.a}</span> from the first, <span class="mono">${plan.counts.b}</span> only in the second,
+        <span class="mono">${plan.counts.dupes}</span> duplicate${plan.counts.dupes === 1 ? '' : 's'} dropped.</p>`
+    : `<p class="hint">Each part becomes a new private playlist. Rename them, move tracks between them, or leave one out.
+        <b>${esc(plan.sources[0].name)}</b> stays exactly as it is.</p>`;
+  const parts = plan.parts.map((p, k) => {
+    const others = plan.parts.map((x, i) => [x, i]).filter(([, i]) => i !== k);
+    const all = w.more.has(k), rows = all ? p.rows : p.rows.slice(0, WIZ_ROWS);
+    const to = others[0];
+    return `<section class="pls-sec wizpart" aria-labelledby="wizh${k}">
+      <h3 id="wizh${k}">${plan.kind === 'merge' ? 'New playlist' : `Part ${k + 1}`} · <span class="mono">${p.rows.length}</span> track${p.rows.length === 1 ? '' : 's'}</h3>
+      <label class="pls-f wizname">Name <input id="wiznm${k}" value="${esc(p.name)}" maxlength="100" ${busy ? 'disabled' : ''}></label>
+      ${plan.kind === 'split' ? `<label class="pls-f"><input type="checkbox" data-act="wizinc" data-k="${k}" ${p.include ? 'checked' : ''} ${busy ? 'disabled' : ''}> make this one</label>` : ''}
+      <ol class="wizrows">${rows.map(r => `<li class="wizrow${r.from === 'rest' ? ' rest' : ''}"><span class="plmain"><span class="ttl">${esc(r.title)}</span>
+        <span class="plmeta">${esc(r.artist)}${r.from === 'b' ? ' · <span class="tag">only in the second</span>' : r.from === 'rest' ? ' · <span class="tag">not placed</span>' : ''}</span></span>${
+        to ? `<button class="b sm" data-act="wizmove" data-tid="${esc(r.id)}" data-to="${to[1]}" ${busy ? 'disabled' : ''}
+          aria-label="Move ${esc(r.title)} to ${esc(to[0].name || 'part ' + (to[1] + 1))}">Move</button>` : ''}</li>`).join('')}</ol>
+      ${!all && p.rows.length > WIZ_ROWS ? `<button class="b sm" data-act="wizmore" data-k="${k}">Show all ${p.rows.length}</button>` : ''}
+    </section>`;
+  }).join('');
+  const n = writes.length;
+  return `${head}<div class="pls-body wiz" data-uh="lists">${intro}${parts}
+    ${w.status === 'error' ? `<p class="hint warn" role="alert">That didn’t work: ${esc(w.err)}</p>` : ''}
+    ${problems.length ? `<p class="hint">${problems.map(esc).join(' ')}</p>` : ''}
+    <div class="rowbtns wizgo"><button class="b p" data-act="wizgo" ${busy || problems.length ? 'disabled' : ''}>${busy ? 'Making…'
+      : `Make ${n} playlist${n === 1 ? '' : 's'}`}</button><button class="b" data-act="wizback" ${busy ? 'disabled' : ''}>Cancel</button></div></div>`;
+}
+
+/** Write the plan: one new private playlist per part, one History group, rolled back whole if a write fails. */
+async function wizGo(c) {
+  if (!WIZ || WIZ.status === 'working') return;
+  wizSyncNames(c);
+  const w = WIZ, { writes, problems } = writesOf(w.plan);
+  if (problems.length) return c.toast(problems[0]);
+  w.status = 'working'; w.err = null; c.render();
+  const group = c.newGroup(), made = [];
+  const from = w.plan.sources.map(s => s.name).join(' and ');
+  const reason = w.kind === 'merge' ? `merged from ${from}` : `split from ${from}`;
+  let first = null;
+  try {
+    for (const x of writes) {
+      const pl = await c.sp('/me/playlists', { method: 'POST',
+        body: JSON.stringify({ name: x.name, public: false, description: `Made by Betterfy, ${reason}.` }) });
+      let err = null;
+      try { await c.addTracks(pl.id, x.ids); } catch (e) { err = e; }
+      const ids = err ? ((await c.landedIn?.(pl.id, x.ids)) ?? []) : x.ids;
+      // Logged even when the add broke half way: the playlist exists, so Undo has to know about it.
+      const at = await c.logAction({ op: 'add', group, playlistId: pl.id, playlistName: x.name, trackIds: ids, created: true, reason });
+      first ??= at;
+      made.push({ id: pl.id, name: x.name, n: ids.length });
+      if (err) throw err;
+    }
+  } catch (err) {
+    let back = '';
+    if (first) { try { await c.undoAction(first); back = ' Nothing was left behind.'; } catch { back = ' What was made is in History, to undo from there.'; } }
+    w.status = 'error'; w.err = (err?.message ?? String(err)) + back;
+    c.render();
+    return;
+  }
+  Object.assign(w, { status: 'done', at: first, made });
+  noteOffer(c, 'made', w.key);
+  c.toast(`Made ${made.length === 1 ? `“${made[0].name}”` : `${made.length} playlists`}. Nothing in ${from} was changed.`, () => wizUndo(c, w));
+  c.render();
+}
+
+async function wizUndo(c, w = WIZ) {
+  if (!w?.at || w.status === 'undone') return;
+  await c.undoAction(w.at);
+  w.status = 'undone';
+  c.render();
+}
+
 function view(c) {
   const { CFG, R, GAPS, esc, tagCoverage, NO_SIGNAL, listsSplits } = c;
   c.gapsKick?.();
@@ -6917,6 +6928,20 @@ function view(c) {
         <span class="plmeta"><span class="mono">${o.n}</span> tracks${o.played ? ` · ${o.played} you are playing` : ''} · ${esc(o.why)}</span></span>
         <button class="b sm" data-act="lnewg" data-newg="${i}">Start</button></div>`).join('')}</div>
     </section>` : '';
+  // Twins (SMARTER-GENRES phase 3: they used to live only on the Engine screen), as merge offers.
+  const ms = msMeasure(c);
+  const have = new Set((c.LIB?.playlists ?? []).map(x => x.id));
+  const twins = twinOffers(c.twinPairs?.()).filter(o => have.has(o.a.id) && have.has(o.b.id) && !ms.dismissed[o.key] && !ms.made[o.key]);
+  for (const o of twins.slice(0, 3)) noteShown(c, o.key);
+  const twinsHTML = twins.length ? `<section class="plsugg" aria-labelledby="pltwin-h">
+      <div class="plsugg-head"><h2 id="pltwin-h">Playlists that sound the same</h2></div>
+      <p class="hint">The engine can’t tell these apart by the music in them. Merging makes one new playlist; both stay as they are.</p>
+      <div class="plrows">${twins.slice(0, 3).map(o => `<div class="plrow"><span class="plmain"><span class="ttl">${esc(o.a.name)}</span>
+        <span class="plmeta">and ${esc(o.b.name)}</span></span>
+        <button class="b sm p" data-act="wizmerge" data-a="${esc(o.a.id)}" data-b="${esc(o.b.id)}">Merge…</button>
+        <button class="b sm" data-act="wizdismiss" data-key="${esc(o.key)}">Not now</button></div>`).join('')}</div>
+    </section>` : '';
+  const msLine = dismissLine(msMeasure(c));
   const suggHTML = sugg.length ? `<section class="plsugg" aria-labelledby="plsugg-h">
       <div class="plsugg-head"><h2 id="plsugg-h">Suggested playlists</h2>
         <button class="b sm" data-go="new">See all ${sugg.length}</button></div>
@@ -6926,17 +6951,18 @@ function view(c) {
     </section>` : '';
   return `<h1>Library</h1>
     <p class="lede">Tap a playlist for its axis, health and shuffle.</p>
-    ${ticksHTML}${coldHTML}${newgHTML}${suggHTML}
+    ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
       <button class="b sm" data-go="sources">Genre sources</button>
-      <button class="b sm" data-go="shuffle">Shuffle everything</button></p>`;
+      <button class="b sm" data-go="shuffle">Shuffle everything</button></p>${
+    msLine ? `\n    <p class="hint msline">${esc(msLine)}</p>` : ''}`;
 }
 
 
 const actions = {
   /** Tap a playlist: its detail sheet. */
-  plopen(c, el) { c.openPlSheet(el.dataset.pl); },
+  plopen(c, el) { if (WIZ?.status !== 'working') WIZ = null; c.openPlSheet(el.dataset.pl); },
 
   /** The sheet's Shuffle: the Shuffle screen on this playlist, as a spaced shuffle. */
   plshuffle(c, el) { return plShuffle(c, el.dataset.pl, ''); },
@@ -6948,6 +6974,22 @@ const actions = {
     el.disabled = true;
     try { await c.listsSplitMake(el.dataset.lsplit); } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
   },
+
+  /** Merge and split (F4): open the wizard on twins, or on a playlist's split. */
+  wizmerge(c, el) { return wizardOpen(c, { kind: 'merge', a: el.dataset.a, b: el.dataset.b }); },
+  wizsplit(c, el) { return wizardOpen(c, { kind: 'split', id: el.dataset.pl, src: el.dataset.src }); },
+  /** "Not now" on an offer: counted for the dismiss rate, and not offered in Library again. */
+  wizdismiss(c, el) { noteOffer(c, 'dismissed', el.dataset.key); c.render(); },
+  wizmove(c, el) { if (!WIZ || WIZ.status === 'working') return; wizSyncNames(c); WIZ.plan = moveTrack(WIZ.plan, el.dataset.tid, +el.dataset.to); c.render(); },
+  wizinc(c, el) { if (!WIZ || WIZ.status === 'working') return; wizSyncNames(c); WIZ.plan = includePart(WIZ.plan, +el.dataset.k, el.checked); c.render(); },
+  wizmore(c, el) { if (!WIZ) return; wizSyncNames(c); WIZ.more.add(+el.dataset.k); c.render(); },
+  wizgo(c) { return wizGo(c); },
+  async wizundo(c, el) {
+    el.disabled = true;
+    try { await wizUndo(c); c.toast('Restored.'); } catch (err) { el.disabled = false; c.toast('Undo failed: ' + err.message); }
+  },
+  /** Leave the wizard: back to the playlist's own sheet. */
+  wizback(c) { if (WIZ?.status === 'working') return; WIZ = null; c.render(); },
 
   /** One "looks like a genre playlist": confirmed. */
   ltick(c, el) { return setAxis(c, el.dataset.pl, { value: 'genre' }, null); },
@@ -7028,7 +7070,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, sheetHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, sheetHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -7405,7 +7447,7 @@ function gapsSections(c) {
       <div class="ttl">${esc(s.name)} <span class="tag">${n(s.total)} tracks</span></div>
       <div class="sub">${s.parts.map(x => `${x.rest ? 'the rest of ' : ''}${esc(x.label)} ${n(x.size)} (${Math.round(x.share * 100)}%)`).join(' · ')}.
         ${esc(s.name)} stays as it is.</div>
-    </div><div class="acts">${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
+    </div><div class="acts"><button class="b sm p" data-act="wizgap" data-wizgap="${i}">Split into playlists…</button> ${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
       : `<button class="b sm" data-act="split" data-split="${i}:${k}">Make “${esc(x.label)}” (${n(x.size)})</button>`).join(' ')}</div></div>`).join('');
   const untagged = GAPS.untagged ? `<p class="why" style="margin-top:8px">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
       outside your genre playlists have no genre in their artists' tags, so they can't be placed in one here.
@@ -7523,6 +7565,12 @@ const actions = {
     if (!name) return c.toast('Give it a name first.');
     el.disabled = true;
     try { await c.gapsCreate(name, g.ids); } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  },
+
+  /** The merge/split wizard (BUILD-6 F4) on this split: preview both halves, rename, move tracks, one undo. */
+  wizgap(c, el) {
+    const s = c.GAPS.splits?.[+el.dataset.wizgap];
+    if (s) c.mergeSplitOpen({ kind: 'split', id: s.playlistId, src: 'tags' });
   },
 
   /** Make one half of a playlist that is two genres. */
@@ -7987,7 +8035,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1552';
+const BUILD = '2026-11-16-1617';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -8325,7 +8373,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1552', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1617', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -9081,7 +9129,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1552');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1617');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9384,6 +9432,214 @@ async function libraryCall(method, ids) {
   catch (e) { if (!/^40[34]/.test(e.message)) throw e; return await sp('/me/tracks?ids=' + ids.join(','), { method }); }
 }
 
+/* ---------- offline: the cached shell and the decision queue (BUILD-6 F6) ----------
+ * Two things, both for a listener on a train:
+ *
+ * 1. The service worker (web/sw.js, built to docs/sw.js) keeps the page's shell
+ *    so a reload with no signal opens the app, not a browser error. It is
+ *    registered here, and a new one found waiting is offered through the
+ *    existing update bar (version.js's checkForUpdate), never forced.
+ *
+ * 2. Decisions made with no connection (File's filings and unlikes, Tidy's
+ *    removals and moves) are kept in IndexedDB instead of failing, and applied
+ *    once each when the page is next open and online. Not Background Sync: iOS
+ *    Safari and Firefox have none, so it could not be promised to everyone.
+ *
+ * How the queue sits on the existing write path, without touching it: the
+ * writes in actionlog.js (addTracks, plDelete, libraryCall) are wrapped. With
+ * no connection a write is queued and returns as if it had gone through, so the
+ * screen carries on exactly as it does online and its History entry is written
+ * as usual, marked `queued` until the write lands. Replay re-reads each
+ * playlist and sends only what is still missing (or still there, for a
+ * removal), so a decision is applied once however often replay runs. Undoing a
+ * decision that has not been sent yet just takes it out of the queue. */
+
+const OFFLINE_QUEUE = 'offline_queue';
+const OFFLINE = { n: 0, busy: false, unlogged: [], reg: null };
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+/** A failure that is the connection, not Spotify saying no (auth.js: NET_LOST is status 0). */
+const lostNet = e => !!e && e.status === 0;
+const queueRead = async () => (await idb.get(OFFLINE_QUEUE)) ?? [];
+async function queueWrite(q) { await idb.set(OFFLINE_QUEUE, q); offlineShow(q.length); }
+
+async function enqueue(item) {
+  const q = await queueRead();
+  const it = { id: 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), queuedAt: new Date().toISOString(), ...item };
+  q.push(it);
+  await queueWrite(q);
+  OFFLINE.unlogged.push(it);
+  return it;
+}
+
+/* The originals, for replay and for anything online. */
+const ONLINE_WRITE = { addTracks, plDelete, libraryCall, playlistIds, logAction, undoAction };
+
+/** Send it now, or keep it: with no connection, or when the connection drops
+ *  under the write (replay re-reads first, so a write that did land is not repeated). */
+async function sendOrKeep(item, send) {
+  if (isOffline()) { await enqueue(item); return null; }
+  try { return await send(); }
+  catch (e) { if (!lostNet(e)) throw e; await enqueue(item); return null; }
+}
+
+addTracks = function (id, ids) {
+  return sendOrKeep({ op: 'add', playlistId: id, trackIds: [...ids] }, () => ONLINE_WRITE.addTracks(id, ids));
+};
+// Only plain `{ uri }` removals (Tidy's): a removal by position (the shuffle's
+// prune) depends on a snapshot that will be stale by the time it is replayed.
+plDelete = function (id, objs) {
+  if (!objs.every(o => o && Object.keys(o).length === 1 && /^spotify:track:/.test(o.uri))) return ONLINE_WRITE.plDelete(id, objs);
+  return sendOrKeep({ op: 'remove', playlistId: id, trackIds: objs.map(o => o.uri.slice(14)) }, () => ONLINE_WRITE.plDelete(id, objs));
+};
+libraryCall = function (method, ids) {
+  if (method !== 'DELETE') return ONLINE_WRITE.libraryCall(method, ids);
+  return sendOrKeep({ op: 'unlike', trackIds: [...ids] }, () => ONLINE_WRITE.libraryCall(method, ids));
+};
+// Tidy reads a playlist before a removal, for the positions undo puts tracks
+// back at. Offline, the library this device already holds is that read.
+playlistIds = async function (id) {
+  if (isOffline()) {
+    const p = (typeof LIB !== 'undefined' && LIB?.playlists || []).find(x => x.id === id);
+    if (p) return (p.tracks ?? []).map(t => t?.id).filter(Boolean);
+  }
+  return ONLINE_WRITE.playlistIds(id);
+};
+
+const sameIds = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+/** The History entry for a queued write is written as usual, marked `queued`. */
+logAction = async function (entry) {
+  const i = OFFLINE.unlogged.findIndex(it => it.op === entry.op && sameIds(it.trackIds, entry.trackIds ?? [])
+                                         && (it.op === 'unlike' || it.playlistId === entry.playlistId));
+  if (i < 0) return ONLINE_WRITE.logAction(entry);
+  const [it] = OFFLINE.unlogged.splice(i, 1);
+  const at = await ONLINE_WRITE.logAction({ ...entry, queued: it.id });
+  const q = await queueRead(), hit = q.find(x => x.id === it.id);
+  if (hit) { hit.at = at; await queueWrite(q); }
+  return at;
+};
+
+/** Undo of a decision still in the queue: drop it from the queue rather than
+ *  reversing a write Spotify never saw. Anything already sent is undone as before. */
+undoAction = async function (at) {
+  const log = (await idb.get('actions')) ?? [];
+  const e = log.find(x => x.at === at);
+  const steps = !e ? [] : e.group ? log.filter(x => x.group === e.group && x.op !== 'undo') : [e];
+  const q = await queueRead(), waiting = new Set(q.map(x => x.id));
+  const held = steps.filter(x => x.queued && waiting.has(x.queued) && !isUndone(x, log));
+  if (!held.length) return ONLINE_WRITE.undoAction(at);
+  const drop = new Set(held.map(x => x.queued));
+  await queueWrite(q.filter(x => !drop.has(x.id)));
+  const when = new Date().toISOString();
+  for (const x of log) if (held.includes(x)) x.undoneAt = when;
+  await idb.set('actions', log);
+  const rest = steps.filter(x => !held.includes(x) && !isUndone(x, log));
+  if (rest.length) return ONLINE_WRITE.undoAction(rest[0].at);
+  const mv = steps.find(x => x.move)?.move;
+  if (mv && typeof unrecordMove === 'function') await unrecordMove(mv.trackId, mv.from, mv.to).catch(() => {});
+  await ONLINE_WRITE.logAction({ op: 'undo', of: at, ...(e.group ? { ofGroup: e.group } : {}), playlistId: e.playlistId, trackIds: e.trackIds });
+};
+
+/** Send one queued decision, sending only what Spotify does not hold yet. */
+async function replayOne(it) {
+  if (it.op === 'unlike') return ONLINE_WRITE.libraryCall('DELETE', it.trackIds);
+  const have = new Set(await ONLINE_WRITE.playlistIds(it.playlistId));
+  if (it.op === 'add') {
+    const missing = it.trackIds.filter(x => !have.has(x));
+    if (missing.length) await ONLINE_WRITE.addTracks(it.playlistId, missing);
+  } else if (it.op === 'remove') {
+    const there = it.trackIds.filter(x => have.has(x));
+    if (there.length) await ONLINE_WRITE.plDelete(it.playlistId, there.map(x => ({ uri: 'spotify:track:' + x })));
+  }
+}
+
+/** Mark the History entry: sent (or, for one Spotify refused, why not). */
+async function settleLog(it, patch) {
+  if (!it.at) return;
+  const log = (await idb.get('actions')) ?? [];
+  const hit = log.find(x => x.at === it.at && x.queued === it.id);
+  if (!hit) return;
+  delete hit.queued;
+  Object.assign(hit, patch);
+  await idb.set('actions', log);
+}
+
+/** Apply every queued decision, oldest first, once each. Stops at the first
+ *  connection failure and keeps the rest for next time. */
+async function replayQueue() {
+  if (OFFLINE.busy || isOffline()) return 0;
+  if (typeof token === 'function') { try { if (!(await token())) return 0; } catch { return 0; } }
+  OFFLINE.busy = true;
+  let sent = 0;
+  const refused = [];
+  try {
+    for (;;) {
+      const q = await queueRead();
+      const it = q[0];
+      if (!it || isOffline()) break;
+      try {
+        await replayOne(it);
+        await settleLog(it, { syncedAt: new Date().toISOString() });
+        sent++;
+      } catch (e) {
+        if (lostNet(e) || e.status === 429 || e.status >= 500 || isOffline()) break;
+        // Spotify said no (a playlist deleted since, say): it never will say
+        // yes, so it leaves the queue, and History says why.
+        refused.push(it);
+        await settleLog(it, { syncFailed: e.message });
+      }
+      const now = await queueRead();
+      await queueWrite(now.filter(x => x.id !== it.id));
+    }
+  } finally { OFFLINE.busy = false; }
+  if (sent) toast(`Synced ${sent} ${sent === 1 ? 'decision' : 'decisions'} made offline.`);
+  if (refused.length) toast(`Spotify refused ${refused.length} ${refused.length === 1 ? 'decision' : 'decisions'} made offline. History says which.`);
+  return sent;
+}
+
+/** The "N decisions waiting to sync" line. Drawn on its own, outside every screen. */
+function offlineShow(n) {
+  OFFLINE.n = n;
+  if (typeof document === 'undefined') return;
+  let el = document.getElementById('syncWait');
+  if (!n) { if (el) el.hidden = true; return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'syncWait'; el.className = 'syncwait'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+    document.body.appendChild(el);
+  }
+  el.hidden = false;
+  el.textContent = `${n} ${n === 1 ? 'decision' : 'decisions'} waiting to sync` + (isOffline() ? ' · offline' : '');
+}
+
+/* ---------- the service worker ---------- */
+async function swRegister() {
+  const sw = typeof navigator !== 'undefined' && navigator.serviceWorker;
+  if (!sw || !/^https?:$/.test(location.protocol)) return;
+  try {
+    const hadOne = !!sw.controller;
+    const reg = OFFLINE.reg = await sw.register('sw.js', { scope: './' });
+    // A worker from another build has taken over (offline.js's sw.js skips
+    // waiting): offer the newer page with the bar version.js already has.
+    sw.addEventListener('message', ev => {
+      const m = ev.data || {};
+      if (m.type === 'bf-sw' && m.build && m.build !== BUILD && hadOne) checkForUpdate(true).catch(() => {});
+    });
+    reg.addEventListener('updatefound', () => { if (hadOne) setTimeout(() => checkForUpdate(true).catch(() => {}), 500); });
+    // "Update now" deletes every cache; ask for the shell back.
+    (await sw.ready).active?.postMessage({ type: 'warm' });
+  } catch { /* no worker: the page works exactly as it did without one */ }
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('online', () => { offlineShow(OFFLINE.n); replayQueue().catch(() => {}); });
+  window.addEventListener('offline', () => offlineShow(OFFLINE.n));
+  window.addEventListener('load', () => {
+    swRegister();
+    queueRead().then(q => offlineShow(q.length)).catch(() => {});
+    // Open and online: whatever was decided offline goes now.
+    setTimeout(() => replayQueue().catch(() => {}), 1500);
+  });
+}
 /* ---------- player: Spotify Connect ----------
  * The Web Playback SDK does not run on iOS, so the card drives whatever device
  * the listener already has open — their phone's Spotify app, usually — and
@@ -10855,6 +11111,37 @@ async function appCheckToken() {
   return cachedAppCheckToken.token;
 }
 
+/* Who is voting (BUILD-6 H1). merge-tags.mjs publishes a tag only when two
+ * independent contributor ids name it for the same artist, so each document
+ * carries one, as `<artist id>_<contributor id>`.
+ *
+ * The id is not a stable install id. It is the first 16 hex characters of
+ * SHA-256(secret + ':' + artist id), where the secret is 128 random bits made
+ * on this device the first time it contributes and never sent anywhere. So the
+ * same install always casts the same one vote for an artist (Firestore refuses
+ * a second create of one document id), while the collection, which anyone can
+ * read, cannot group one install's contributions together: a stable id there
+ * would have published which artists one listener had in their library. */
+const TAGSHARE_SECRET_KEY = 'bf_tagshare_secret';
+let tagshareSecretMem = null;   // when storage is blocked: one secret for this visit
+function tagshareSecret() {
+  try {
+    const kept = LS.getItem(TAGSHARE_SECRET_KEY);
+    if (/^[0-9a-f]{32}$/.test(kept ?? '')) return kept;
+  } catch { /* storage blocked: fall through to a per-visit secret */ }
+  const fresh = tagshareSecretMem ?? [...crypto.getRandomValues(new Uint8Array(16))]
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  tagshareSecretMem = fresh;
+  try { LS.setItem(TAGSHARE_SECRET_KEY, fresh); } catch { /* kept in memory instead */ }
+  return fresh;
+}
+/** This install's contributor id for one artist: 16 hex characters, unlinkable across artists. */
+async function contributorId(artistId) {
+  const bytes = new TextEncoder().encode(`${tagshareSecret()}:${artistId}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return [...digest.slice(0, 8)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * Offer one artist's freshly-fetched tags to the shared table. Never awaited,
  * never retried: the tags are already saved locally, and this is a gift to
@@ -10869,30 +11156,75 @@ function contributeTags(artistId, tags) {
     if (!sharingTags() || !artistId || !tags?.length) return;
     // Already in the table everyone downloads, so there is nothing to give.
     if (RAW_TAGS?.[artistId]) return;
-    const url = `https://firestore.googleapis.com/v1/projects/${TAGS_PROJECT}/databases/(default)`
-      + `/documents/tagContributions?documentId=${encodeURIComponent(artistId)}&key=${TAGS_KEY}`;
-    // documentId= on a create means the first contribution for an artist wins
-    // and later ones are refused outright — no edits, no overwrites, nothing to
-    // reconcile. The refusal is a 409 nobody reads.
+    // No Web Crypto (an insecure context): no contributor id, so no vote to cast.
+    if (!globalThis.crypto?.subtle) return;
     const body = JSON.stringify({ fields: {
       tags:   { stringValue: JSON.stringify(tags.slice(0, 10)) },
       source: { stringValue: 'lastfm' },
       at:     { integerValue: String(Date.now()) },
     } });
-    const post = headers => fetchDeadline(url, { method: 'POST', headers, body }, 6000).catch(() => {});
-    if (!appCheckConfigured()) { post({ 'content-type': 'application/json' }); return; }
-    // Only when App Check is actually configured does fetching a token sit in
-    // front of the write. Even then, a slow or failed token fetch must never
-    // be the reason this listener's own tag fetch looks broken — so it still
-    // posts without the header rather than not posting at all; Firestore's own
-    // enforcement setting decides from there whether that write is accepted.
-    appCheckToken().then(
-      token => post({ 'content-type': 'application/json', 'X-Firebase-AppCheck': token }),
-      () => post({ 'content-type': 'application/json' }),
-    );
+    // documentId= on a create means this install's vote for an artist is cast
+    // once and a repeat is refused outright: no edits, no overwrites, nothing
+    // to reconcile. The refusal is a 409 nobody reads.
+    const post = (docId, headers) => fetchDeadline(
+      `https://firestore.googleapis.com/v1/projects/${TAGS_PROJECT}/databases/(default)`
+        + `/documents/tagContributions?documentId=${encodeURIComponent(docId)}&key=${TAGS_KEY}`,
+      { method: 'POST', headers, body }, 6000).catch(() => {});
+    contributorId(artistId).then(cid => {
+      const docId = `${artistId}_${cid}`;
+      if (!appCheckConfigured()) return post(docId, { 'content-type': 'application/json' });
+      // Only when App Check is actually configured does fetching a token sit in
+      // front of the write. Even then, a slow or failed token fetch must never
+      // be the reason this listener's own tag fetch looks broken — so it still
+      // posts without the header rather than not posting at all; Firestore's own
+      // enforcement setting decides from there whether that write is accepted.
+      return appCheckToken().then(
+        token => post(docId, { 'content-type': 'application/json', 'X-Firebase-AppCheck': token }),
+        () => post(docId, { 'content-type': 'application/json' }),
+      );
+    }).catch(() => { /* never the reason a tag fetch failed */ });
   } catch { /* never the reason a tag fetch failed */ }
 }
 
+
+/* ---------- what each source knows about this account (BUILD-6 H1) ----------
+ * The Sources coverage card's data: this account's artist ids and, for each,
+ * what tags_extra and bridge-raw already say. Read from this device's own
+ * IndexedDB; nothing is fetched or sent. web/screens/sources.mjs turns it into
+ * percentages (artistCoverage). Re-read at most every 30 seconds while the card
+ * is showing, since the bridge lookups fill in behind it. */
+const SRC_COV = { data: null, at: 0, pending: null };
+function sourceCoverage() {
+  if (!SRC_COV.pending && Date.now() - SRC_COV.at > 30000) {
+    SRC_COV.pending = loadSourceCoverage()
+      .then(changed => { if (changed && typeof underHoodRefresh === 'function') underHoodRefresh(); })
+      .catch(() => {})
+      .finally(() => { SRC_COV.pending = null; });
+  }
+  return SRC_COV.data;
+}
+async function loadSourceCoverage() {
+  SRC_COV.at = Date.now();
+  if (!LIB) return false;
+  const ids = new Set();
+  for (const p of LIB.playlists ?? []) for (const t of p.tracks ?? []) for (const a of t.artists ?? []) if (a?.id) ids.add(a.id);
+  for (const t of LIB.liked ?? []) for (const a of t.artists ?? []) if (a?.id) ids.add(a.id);
+  let extraAll = {}, bridgeAll = {};
+  try { extraAll = (await idb.get('tags_extra')) ?? {}; } catch { /* none kept */ }
+  try { bridgeAll = (await idb.get(BRIDGE_KEY))?.raw ?? {}; } catch { /* none kept */ }
+  // Only what the card reads, so the whole bridge cache is not held twice.
+  const extra = {}, bridge = {}, shipped = {};
+  for (const id of ids) {
+    const x = extraAll[id], b = bridgeAll[id];
+    if (x) extra[id] = { source: x.source ?? null, tags: x.tags?.length ? [0] : [] };
+    if (b) bridge[id] = { deezerId: b.deezerId ?? null, deezerAt: b.deezerAt, mbid: b.mbid ?? null, mbidAt: b.mbidAt };
+    if (RAW_TAGS?.[id]?.tags?.length) shipped[id] = [0];
+  }
+  const data = { ids: [...ids], shipped, extra, bridge };
+  const changed = JSON.stringify(data) !== JSON.stringify(SRC_COV.data);
+  SRC_COV.data = data;
+  return changed;
+}
 /* ---------- cross-device sync (Firestore) ----------
  * Skip/reject feedback is the one thing that did not survive a fresh sign-in
  * on a different device — the library itself re-syncs from Spotify either
@@ -11171,6 +11503,23 @@ const REASK_TAG_FLOOR = 3;
 const REASK_AFTER_MS = 1000 * 60 * 60 * 24 * 180; // ~6 months
 const worthReasking = e => !e || (e.tags?.length ?? 0) < REASK_TAG_FLOOR && (Date.now() - (e.checkedAt ?? 0)) > REASK_AFTER_MS;
 
+/* Listening-weighted enrichment (BUILD-6 D9). Every run that spends requests
+ * on artists one at a time (this tag-gap fill, Wikidata's genres, the similar-
+ * artist lookups for Score and File) asks in enrichOrder()'s order: what this
+ * account plays most, over Spotify's three top-artist windows and recently
+ * played, first. Read from the listening this page already fetched and kept
+ * (listening_raw), never fetched again for this. None kept, or none at all:
+ * null, and every run keeps the order it always had. */
+async function enrichWeights() {
+  try { return listenedWeights((await idb.get('listening_raw'))?.data); } catch { return null; }
+}
+/** `entries` in enrichOrder()'s order, or unchanged without listening. */
+async function inEnrichOrder(entries, nameOf) {
+  const weights = await enrichWeights();
+  if (!weights) return [...entries];
+  return enrichOrder(entries, { weights, tagCount: id => TAGS?.[id]?.tags?.length ?? 0, ...(nameOf ? { nameOf } : {}) });
+}
+
 /** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
 async function enrichMissing({ quiet = false, onProgress = null } = {}) {
   const key = lfmKey();
@@ -11192,6 +11541,10 @@ async function enrichMissing({ quiet = false, onProgress = null } = {}) {
   // first, so leaving the screen partway through still improves the
   // suggestions that matter most.
   try { todo = byListening(todo, (await getListening()).weights); } catch { /* library order is fine */ }
+  // Then by listening alone, with the least-known first at equal listening: the
+  // weights above carry a library floor that let a much-filed artist nobody
+  // plays go ahead of one played this month (D9).
+  todo = await inEnrichOrder(todo);
 
   const cached = (await idb.get('tags_extra')) ?? {};
   let done = 0, viaDiscogs = 0, failed = 0, blank = 0;
@@ -11272,11 +11625,14 @@ const untaggedArtists = () => {
 async function fillFromWikidata({ quiet = false } = {}) {
   const cached = (await idb.get('tags_extra')) ?? {};
   // Asked before and Wikidata had nothing: not asked again until that answer is stale.
-  const todo = [...untaggedArtists().keys()].filter(id => !(cached[id]?.source === 'wikidata' && !worthReasking(cached[id])));
+  const untagged = untaggedArtists();
+  const todo = [...untagged.keys()].filter(id => !(cached[id]?.source === 'wikidata' && !worthReasking(cached[id])));
   if (!todo.length) { if (!quiet) toast('Every artist Wikidata could know about has been asked already.'); return 0; }
   await engineLoad();
   const W = BetterfyWikidata;
-  const ids = todo.filter(W.isSpotifyId);
+  // Most-listened first (D9): Wikidata answers 300 at a time, so on a big
+  // library the first answer is the one that matters most.
+  const ids = (await inEnrichOrder(todo.filter(W.isSpotifyId).map(id => [id, untagged.get(id)]))).map(([id]) => id);
   let found = 0, failed = 0;
   for (let i = 0; i < ids.length; i += W.BATCH) {
     const batch = ids.slice(i, i + W.BATCH);
@@ -11976,7 +12332,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1552';
+    s.src = 'engine.js?v=2026-11-16-1617';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -11998,7 +12354,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1552');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1617');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12334,7 +12690,8 @@ function bridgeProgressText() {
 /** Look up the neighbours of the artists about to be scored, remembering every
  *  answer on this device so the next run only asks about what is new or stale. */
 async function engineBridge(tracks) {
-  const artists = BetterfyBridge.sourceArtists(tracks);
+  // Most-listened first (D9), so a run Deezer's quota cuts short has looked up what you play.
+  const artists = new Map(await inEnrichOrder(BetterfyBridge.sourceArtists(tracks), ([, a]) => a.name));
   let cache = null;
   try { cache = (await idb.get(BRIDGE_KEY))?.raw ?? null; } catch { /* no cache: ask everything */ }
   let last = 0;
@@ -12546,7 +12903,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1552';
+    s.src = 'audio.js?v=2026-11-16-1617';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -12582,7 +12939,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1552', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1617', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -12995,7 +13352,8 @@ async function blendFetch() {
     const playOf = t => Math.max(0, ...(t.artists ?? []).map(a => listen.get(String(a?.name ?? '').toLowerCase()) ?? 0));
     const tracks = R.backlog.map(b => liked.get(b.id)).filter(Boolean)
       .map((t, i) => ({ t, i, w: playOf(t) })).sort((a, b) => b.w - a.w || a.i - b.i).map(x => x.t);
-    const artists = BetterfyBridge.sourceArtists(tracks);
+    // Ordered by track above; by artist, listening alone and least-known first, here (D9).
+    const artists = new Map(await inEnrichOrder(BetterfyBridge.sourceArtists(tracks), ([, a]) => a.name));
     let raw = (await idb.get(BRIDGE_KEY))?.raw ?? {};
     const ttl = BetterfyBridgeFetch.TTL_MS, now = Date.now();
     const fresh = at => Number.isFinite(at) && now - at < ttl;
@@ -13316,7 +13674,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1552', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1617', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -13591,7 +13949,7 @@ const SCREEN_MODS = globalThis.BetterfyScreens ?? {};
 const SCREEN_CTX = {
   history: () => ({ S, esc, isUndone, emptyState, undoAction, getLog, toast, render }),
   sources: () => ({ LS, esc, lfmKey, $, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
-                    toast, render, enrichMissing, fillFromWikidata }),
+                    toast, render, enrichMissing, fillFromWikidata, sourceCoverage }),
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
@@ -13637,16 +13995,13 @@ SCREEN_CTX.tidy = () => ({
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get LISTENING_CACHE() { return LISTENING_CACHE; },
   get LISTENING_PENDING() { return LISTENING_PENDING; },
-  // The health report and keyboard sprint (BUILD-6 F9): Library's own score, read from its module.
-  LS, NO_SIGNAL, saveFeedback, go, openPlSheet, isMirrorPlaylist, twinPairs: () => ENG?.pairs ?? null,
-  healthSplits: () => (LPROF?.out ? listsSplits().map(x => x.p.id) : []),
-  get libHealth() { return SCREEN_MODS.lists; },
-  get document() { return globalThis.document; },
 });
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
   twinPairs: () => ENG?.pairs ?? null,
+  // Merge/split wizard (BUILD-6 F4): new private playlists, written through the History log.
+  sp, landedIn,
   // Fill this playlist (BUILD-6 F2): ranked by core/recommend/fill.mjs in the lazy engine, written through the History log.
   TAGS, addTracks, logAction, undoAction, newGroup, engineLoad,
   engineAudio: () => (typeof engineAudio === 'function' ? engineAudio() : null),
@@ -13662,6 +14017,7 @@ SCREEN_CTX.lists = () => ({
 });
 SCREEN_CTX.new = () => ({
   R, GAPS, esc, $, emptyState, fire, gapsCompute, gapsCreate, gapsFile, toast, render, sp, addTracks,
+  mergeSplitOpen: spec => SCREEN_MODS.lists.wizardOpen(screenCtx('lists'), spec),
   get BetterfyGaps() { return globalThis.BetterfyGaps; },
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
 });
@@ -13726,6 +14082,7 @@ const DATA_KEYS = [
   { where:'idb', key:'library', group:'Your library', why:'A copy of your playlists and liked songs as read from Spotify (track ids, names, artists, ISRCs, cover links, dates added), so the app opens without re-reading everything.' },
   { where:'idb', key:'part:', prefix:true, group:'Your library', why:'Pieces of a library read that was interrupted, so the next try resumes instead of starting again. Dropped once a read completes, or after a day.' },
   { where:'idb', key:'actions', group:'Your library', why:'History: every change Betterfy made to your Spotify playlists, with what is needed to undo it.' },
+  { where:'idb', key:'offline_queue', group:'Your library', why:'Decisions you made with no connection (filings, removals, unlikes), kept until the page is next open and online and then sent to Spotify once each. Empty the rest of the time. The page itself is kept for offline use in the browser\'s cache under "betterfy-shell-<build>".' },
   { where:'idb', key:'feedback', group:'Your library', why:'Tracks you skipped or turned down for a playlist, and filings you accepted, so the same suggestion is not made again.' },
   { where:'idb', key:'listening_raw', group:'Your library', why:'Your top artists and recently played tracks from Spotify, used to put what you actually play first.' },
   { where:'local', key:'bf_axes', group:'Your library', why:'What kind of playlist each one is (genre, mood, occasion...), as you set it.' },
@@ -13740,7 +14097,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
-  { where:'local', key:'bf_tidy_sprint', group:'Your library', why:'Your last 20 Tidy sprints: how many tracks you decided, how fast, and how many moves you kept. Counts only, kept here and never sent.' },
+  { where:'local', key:'bf_mergesplit', group:'Your library', why:'Which merge and split offers (twin playlists, playlists that are two genres) were shown, dismissed or made, and when. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 
   // --- genre data ---
@@ -13780,7 +14137,8 @@ const DATA_KEYS = [
   { where:'firestore', key:'linkCodes/{code}', group:'Sync', why:'A six-digit code you asked for to link another device. Expires after ten minutes and is deleted when used.' },
 
   // --- the shared tag table ---
-  { where:'firestore', key:'tagContributions/{artist}', group:'Shared tags', why:'When a Last.fm fetch finds tags for an artist the shipped table lacks: that artist\'s Spotify id and up to ten tags. No account, playlist or listening data, nothing that says who sent it.' },
+  { where:'local', key:'bf_tagshare_secret', group:'Shared tags', why:'A random number made on this device and never sent. Each tag you share carries a code worked out from it and the artist, so the shared table can count two different listeners agreeing, without those codes linking your shares to each other or to you.' },
+  { where:'firestore', key:'tagContributions/{artistAndCode}', group:'Shared tags', why:'When a Last.fm fetch finds tags for an artist the shipped table lacks: that artist\'s Spotify id, a code that is different for every artist (see bf_tagshare_secret), and up to ten tags. No account, playlist or listening data, nothing that says who sent it. A tag joins the shared table only once two listeners have sent it.' },
 
   // --- the look ---
   { where:'local', key:'betterfy-theme', keep:true, group:'Look', why:'Your colour, density and filter settings. Kept by "Wipe this device".' },

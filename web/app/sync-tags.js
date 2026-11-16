@@ -77,6 +77,23 @@ const REASK_TAG_FLOOR = 3;
 const REASK_AFTER_MS = 1000 * 60 * 60 * 24 * 180; // ~6 months
 const worthReasking = e => !e || (e.tags?.length ?? 0) < REASK_TAG_FLOOR && (Date.now() - (e.checkedAt ?? 0)) > REASK_AFTER_MS;
 
+/* Listening-weighted enrichment (BUILD-6 D9). Every run that spends requests
+ * on artists one at a time (this tag-gap fill, Wikidata's genres, the similar-
+ * artist lookups for Score and File) asks in enrichOrder()'s order: what this
+ * account plays most, over Spotify's three top-artist windows and recently
+ * played, first. Read from the listening this page already fetched and kept
+ * (listening_raw), never fetched again for this. None kept, or none at all:
+ * null, and every run keeps the order it always had. */
+async function enrichWeights() {
+  try { return listenedWeights((await idb.get('listening_raw'))?.data); } catch { return null; }
+}
+/** `entries` in enrichOrder()'s order, or unchanged without listening. */
+async function inEnrichOrder(entries, nameOf) {
+  const weights = await enrichWeights();
+  if (!weights) return [...entries];
+  return enrichOrder(entries, { weights, tagCount: id => TAGS?.[id]?.tags?.length ?? 0, ...(nameOf ? { nameOf } : {}) });
+}
+
 /** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
 async function enrichMissing({ quiet = false, onProgress = null } = {}) {
   const key = lfmKey();
@@ -98,6 +115,10 @@ async function enrichMissing({ quiet = false, onProgress = null } = {}) {
   // first, so leaving the screen partway through still improves the
   // suggestions that matter most.
   try { todo = byListening(todo, (await getListening()).weights); } catch { /* library order is fine */ }
+  // Then by listening alone, with the least-known first at equal listening: the
+  // weights above carry a library floor that let a much-filed artist nobody
+  // plays go ahead of one played this month (D9).
+  todo = await inEnrichOrder(todo);
 
   const cached = (await idb.get('tags_extra')) ?? {};
   let done = 0, viaDiscogs = 0, failed = 0, blank = 0;
