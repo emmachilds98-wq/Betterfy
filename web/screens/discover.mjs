@@ -35,7 +35,7 @@ export function pickRowsHTML(ctx, d, at) {
       <span class="dacts">
         ${ctx.S?.discLiked?.has(t.id) ? '<button class="b sm" type="button" disabled>Liked</button>'
           : `<button class="b sm" type="button" data-act="like" data-like="${esc(t.id)}" aria-label="Like ${esc(t.track)}">Like</button>`}
-        ${best ? `<button class="b sm go" type="button" data-act="dadd" data-tid="${esc(t.id)}" data-pl="${esc(best.id)}" aria-label="Add ${esc(t.track)} to ${esc(best.name)}">+ ${esc(best.name)}</button>` : ''}
+        ${best ? `<button class="b sm dadd" type="button" data-act="dadd" data-tid="${esc(t.id)}" data-pl="${esc(best.id)}" aria-label="Add ${esc(t.track)} to ${esc(best.name)}">+ ${esc(best.name)}</button>` : ''}
       </span></div>`;
   }).join('');
   return `<section class="drows" aria-labelledby="drows-h">

@@ -21,9 +21,9 @@
   .dsub{font-size:12.5px; color:var(--ink-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .dfit{color:var(--ink-2)}
   .dacts{display:flex; gap:6px; flex:none}
-  .dacts .go{max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dacts .dadd{max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   @media (max-width:520px){
     .drow{flex-wrap:wrap}
     .dacts{width:100%; padding-left:56px}
-    .dacts .go{max-width:none; flex:1}
+    .dacts .dadd{max-width:none; flex:1}
   }
