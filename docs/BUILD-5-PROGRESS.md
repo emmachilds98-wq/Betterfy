@@ -34,3 +34,8 @@ merge so a fresh session can pick up where the last one stopped.
 - Worktrees can start from a stale base: first `git checkout -B <branch> <current tip>`.
 - After merging branches, run `npm run build:web` once and commit the rebuilt `docs/` (build stamp must match across page and worker).
 - `test/pageload.test.mjs` loads the built page in Chromium: run it after any web/app load-order change.
+
+## Key + tempo model measurement (2026-11-16) — neither shipped
+Beatport EDM Key set, half B (held out), middle 30 s as a Deezer preview. Reproduce: `scripts/audio-dsp/beatport-eval.mjs ... --half B --beats <onnx>`; S-KEY via `skey-predict.py` + `score-skey.mjs`.
+- **S-KEY** (Deezer, code MIT, weights research/non-commercial; weights are `skey/models/skey.pt` in the deezer/s-key repo, 765 KB): n=635, exact **50.7%**, MIREX **61.1%** vs current DSP 55.3% / 64.6%. Below the bar (60/70) and below v3. Not exported to ONNX (its nnAudio VQT front end would also need a JS port). Rejected; key stays hidden.
+- **Beat This small0** (MIT; ONNX from HF `jenila-ai/beat-this-small0-onnx`, 10 MB, dynamic time; the JKU cloud checkpoint host was rate-limited from here): tempo n=387, DSP 80.9% ±1 BPM / 50 octave errors; Beat This every record 81.1% / 49 (moved 55: fixed 28, broke 27); flagged-only 82.7% / 43 (fixed 21, broke 14). Gain is inside the ±3.9 CI; not shipped. The #115 JS front end (beat-mel/beats.mjs) is kept as measurement tooling.
