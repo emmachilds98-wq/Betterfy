@@ -163,7 +163,7 @@ function deepPanelHTML() {
     ? `<p class="sub" style="margin:4px 0">${esc(globalThis.BetterfyAudio?.DEEP_TEXT?.[a] ?? a)}</p>` : ''; };
   return `<div id="deepPanel" style="margin-top:12px">
     <h3 id="src-deep-h">Deep listen (laptop)</h3>
-    <p class="srcline">Larger listening models, for a computer on Wi-Fi. Each is a one-off download and stays off until you tick it.</p>
+    <p class="srcline">Larger listening models, for a computer on Wi-Fi. Both are on: each downloads once, only on Wi-Fi. Untick one to skip it.</p>
     <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMaest" ${d.maest ? 'checked' : ''}> Second ear (MAEST, about 90 MB)</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP, about 77 MB)</label>

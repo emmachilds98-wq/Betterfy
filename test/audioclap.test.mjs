@@ -231,10 +231,10 @@ function memStore(init = []) {
   return { m, getAll: async () => new Map(m), put: async r => { m.set(r.id, r); }, count: async () => m.size };
 }
 
-test('the CLAP switch is off by default, and off means not allowed to download', () => {
-  assert.equal(DEFAULT_DEEP_SETTINGS.clap, false);
-  assert.equal(readDeepSettings({ getItem: () => null }).clap, false);
-  assert.equal(deepListenAllowed('clap', {}), 'off');
+test('the CLAP switch is on by default, and unticked means not allowed to download', () => {
+  assert.equal(DEFAULT_DEEP_SETTINGS.clap, true);
+  assert.equal(readDeepSettings({ getItem: () => null }).clap, true);
+  assert.equal(deepListenAllowed('clap', { settings: { clap: false }, connection: { type: 'wifi' } }), 'off');
   assert.equal(deepListenAllowed('clap', { settings: { clap: true }, connection: { type: 'wifi' } }), 'ok');
   assert.equal(deepListenAllowed('clap', { settings: { clap: true }, connection: { type: 'cellular' } }), 'metered');
 });

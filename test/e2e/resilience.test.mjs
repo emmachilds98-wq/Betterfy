@@ -21,6 +21,8 @@ async function makeSure(page, n = 3) {
     for (const c of all) if (pick.length < n && !pick.includes(c)) pick.push(c);
     const verdicts = new Map(pick.map(c => [c.id, { kind: 'confident', playlists: [] }]));
     window.engineDecisionOf = id => verdicts.get(id) ?? null;
+    // No sound in a synthetic account: stand in for the backing Sure needs (USER-REVIEW item 2).
+    window.backedBand = b => b ?? null;
     render();
     return pick;
   }, n);

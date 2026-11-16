@@ -15,7 +15,7 @@ export const FILEQUEUE_VERSION = '1.0.0';
 export const BAND_LOG = { HIGH: 'sure', LIKELY: 'likely', AMBIGUOUS: 'unsure' };
 
 /** The Engine's calibrated decide() kinds, as the bands the chip draws. */
-export const DECISION_BAND = { confident: 'HIGH', choose: 'LIKELY', unsure: 'AMBIGUOUS' };
+export const DECISION_BAND = { confident: 'HIGH', family: 'LIKELY', choose: 'LIKELY', unsure: 'AMBIGUOUS' };
 
 /** The band for a card: the calibrated verdict when the Engine has judged this
  *  track, else the leading pick's own band, else none. */
@@ -63,6 +63,24 @@ export function orderBacklog(rows, ctx = {}) {
   const v = new Map((rows ?? []).map(r => [r.id, valueOf(r, ctx)]));
   return [...(rows ?? [])].sort((a, b) => ((a.skips ?? 0) - (b.skips ?? 0))
     || (v.get(b.id) - v.get(a.id)) || (b.added ?? '').localeCompare(a.added ?? ''));
+}
+
+/**
+ * Is this pick backed by more than tags? Only sound (the track was heard) or
+ * filing history (this artist already sits in that playlist) can earn the green
+ * "Sure" look: a tags-only pick is a choice, never a commitment
+ * (docs/review/USER-REVIEW.md item 2).
+ */
+export function pickBacked(sg) {
+  if (!sg || typeof sg !== 'object') return false;
+  if (sg.via === 'history' || sg.via === 'sound' || sg.filed === true) return true;
+  const ev = sg.evidence;
+  return !!ev && ((Number(ev.sound) || 0) > 0 || (Number(ev.history) || 0) > 0 || (Number(ev.learned) || 0) > 0);
+}
+
+/** The band to show for a pick: a HIGH ("Sure") band the pick can't back drops to LIKELY. */
+export function backedBand(band, sg) {
+  return (band === 'HIGH' || band === 'high') && !pickBacked(sg) ? (band === 'HIGH' ? 'LIKELY' : 'medium') : band ?? null;
 }
 
 /**

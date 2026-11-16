@@ -191,7 +191,9 @@ function blendPicks(t, tagPicks) {
         // rescaled one the order comes from (whose leader is always near 100%).
         score: +(wt * (tagRaw.get(id) ?? 0) + (1 - wt) * (natRow.get(id)?.score ?? 0)).toFixed(4),
         untagged: !tagRaw.size,
-        similar: (natRow.get(id)?.parts?.bridge ?? 0) > 0 }));
+        similar: (natRow.get(id)?.parts?.bridge ?? 0) > 0,
+        // This artist already filed here: filing history backs the pick.
+        filed: (natRow.get(id)?.parts?.graph ?? 0) > 0 }));
     }
   }
   BLEND.memo.set(key, picks);

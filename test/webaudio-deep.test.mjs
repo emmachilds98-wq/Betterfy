@@ -6,23 +6,28 @@ import { readDeepSettings, writeDeepSettings, deepListenAllowed, DEFAULT_DEEP_SE
 const mem = (init = null) => { const m = new Map(init ? [[DEEP_SETTINGS_KEY, init]] : []); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), m }; };
 const WIFI = { type: 'wifi' };
 
-test('every deep ear is off by default, and junk reads as the defaults', () => {
-  assert.deepEqual(DEFAULT_DEEP_SETTINGS, { maest: false, clap: false, memoryOverride: false });
+test('every deep ear is on by default, and junk reads as the defaults', () => {
+  assert.deepEqual(DEFAULT_DEEP_SETTINGS, { maest: true, clap: true, memoryOverride: false });
   assert.deepEqual(readDeepSettings(mem()), DEFAULT_DEEP_SETTINGS);
   assert.deepEqual(readDeepSettings(null), DEFAULT_DEEP_SETTINGS);
   assert.deepEqual(readDeepSettings(mem('{nope')), DEFAULT_DEEP_SETTINGS);
   assert.deepEqual(readDeepSettings(mem(JSON.stringify({ maest: 'yes', clap: 1, memoryOverride: null }))), DEFAULT_DEEP_SETTINGS);
-  for (const ear of ['maest', 'clap'])
-    assert.equal(deepListenAllowed(ear, { connection: WIFI, deviceMemory: 8 }), 'off', `${ear} needs its own switch`);
+  for (const ear of ['maest', 'clap']) {
+    assert.equal(deepListenAllowed(ear, { connection: WIFI, deviceMemory: 8 }), 'ok', `${ear} is on unless unticked`);
+    assert.equal(deepListenAllowed(ear, { settings: { ...DEFAULT_DEEP_SETTINGS, [ear]: false }, connection: WIFI, deviceMemory: 8 }),
+      'off', `${ear} has its own switch`);
+    assert.equal(deepListenAllowed(ear, { connection: { type: 'cellular' }, deviceMemory: 8 }), 'metered', `${ear} waits for Wi-Fi`);
+  }
+  assert.equal(deepListenAllowed('maest', { connection: WIFI, deviceMemory: 4 }), 'low-memory', 'the memory rule still holds');
 });
 
 test('writing merges one change, drops unknown keys, and survives a throwing store', () => {
   const ls = mem();
-  assert.deepEqual(writeDeepSettings(ls, { maest: true }), { maest: true, clap: false, memoryOverride: false });
-  assert.deepEqual(writeDeepSettings(ls, { clap: true, extra: 1 }), { maest: true, clap: true, memoryOverride: false });
-  assert.deepEqual(JSON.parse(ls.m.get(DEEP_SETTINGS_KEY)), { maest: true, clap: true, memoryOverride: false });
+  assert.deepEqual(writeDeepSettings(ls, { maest: false }), { maest: false, clap: true, memoryOverride: false });
+  assert.deepEqual(writeDeepSettings(ls, { clap: false, extra: 1 }), { maest: false, clap: false, memoryOverride: false });
+  assert.deepEqual(JSON.parse(ls.m.get(DEEP_SETTINGS_KEY)), { maest: false, clap: false, memoryOverride: false });
   const bad = { getItem: () => null, setItem: () => { throw new Error('quota'); } };
-  assert.deepEqual(writeDeepSettings(bad, { clap: true }), { maest: false, clap: true, memoryOverride: false });
+  assert.deepEqual(writeDeepSettings(bad, { clap: false }), { maest: true, clap: false, memoryOverride: false });
 });
 
 test('MAEST: the device gate needs deviceMemory >= 8 or the override', () => {
