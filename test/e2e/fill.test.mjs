@@ -45,8 +45,10 @@ test('Fill this playlist: Add, Undo, and Add all as one History entry', { skip }
   assert.ok(shown.length > 1);
   await page.click('#plSheet [data-act="fillall"]');
   await until(() => shown.every(id => fake.playlist(pl).includes(id)), 'every shown track to be added');
-  assert.equal(await fillLog(page), 1, 'Add all is one History entry');
+  // The fake sees the tracks as soon as Spotify would, a moment before the page
+  // logs the write; the toast comes after the log, so count once it shows.
   await until(async () => new RegExp(`Added ${shown.length} tracks`).test(await page.locator('#toast').innerText()), 'the toast');
+  assert.equal(await fillLog(page), 1, 'Add all is one History entry');
   await page.click('#undoBtn');
   await until(() => shown.every(id => !fake.playlist(pl).includes(id)), 'one Undo to take them all out');
   assert.equal(fake.playlist(pl).length, before);
