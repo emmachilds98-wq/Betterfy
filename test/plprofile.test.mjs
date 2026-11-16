@@ -222,9 +222,9 @@ test('Playlists: once worked out, the profile shows the genre mix and BPM range,
   assert.ok(renders.length >= 1, 'the screen redraws when it is done');
   const html = sb.vSheet('house');
   assert.match(html, /<h3>Two genres\?<\/h3>/);
-  assert.match(html, /data-lsplit="house">Make “House — Drum &amp; Bass”/);
+  assert.match(html, /data-act="wizsplit" data-pl="house" data-src="sound">Split into playlists…/);
   assert.match(html, /<b>12<\/b> sound like House, <b>8<\/b> like Drum &amp; Bass/);
-  assert.ok(!sb.vSheet('techno').includes('data-lsplit'));
+  assert.ok(!sb.vSheet('techno').includes('wizsplit'));
   assert.match(sb.vSheet('techno'), /<div class="prof">132-132\|Techno<\/div>/);
   assert.match(sb.vLists(), /class="plspark"/, 'the row carries a sound strip once there is a profile');
 });
@@ -246,7 +246,7 @@ test('Playlists: the split makes a private playlist of the half that moves, and 
 test('Playlists without records: no sound at all; before the engine is loaded: the plain profile, no split', () => {
   const o = page({ recs: null }).sb;
   const off = o.vLists() + o.vSheet('house');
-  assert.ok(!off.includes('Two genres') && !off.includes('lsplit') && !off.includes('plspark') && !off.includes('prof'));
+  assert.ok(!off.includes('Two genres') && !off.includes('wizsplit') && !off.includes('plspark') && !off.includes('prof'));
   const loading = page({ withEngine: false }).sb;
   assert.ok(!loading.vSheet('house').includes('Two genres'));
   assert.match(loading.vSheet('house'), /<div class="prof">\|<\/div>/, 'the profile as it was, nothing added');
