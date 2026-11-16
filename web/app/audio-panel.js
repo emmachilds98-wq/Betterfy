@@ -16,7 +16,9 @@ async function audioTracks() {
   const A = BetterfyAudio, set = audioSettings();
   let listening = null;
   try { listening = await getListening(); } catch { listening = null; }
-  const targets = Object.entries(CFG ?? {}).filter(([, c]) => c.target).map(([id]) => id);
+  // Genre playlists, plus mood and context ones: each needs a few heard members
+  // before File can place by sound or offer an "also fits" chip (core/intrinsic/mood.mjs).
+  const targets = Object.entries(CFG ?? {}).filter(([, c]) => c.target || c.axis === 'mood' || c.axis === 'context').map(([id]) => id);
   const isMirror = p => isMirrorPlaylist(p);
   const store = AUDIO.records ?? new Map();
   const allowed = A.scopeIds(LIB, { scope: set.scope, listening, targets, isMirror });

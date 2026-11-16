@@ -121,7 +121,7 @@ async function enrichMissing({ quiet = false, onProgress = null } = {}) {
   todo = await inEnrichOrder(todo);
 
   const cached = (await idb.get('tags_extra')) ?? {};
-  let done = 0, viaDiscogs = 0, failed = 0, blank = 0;
+  let done = 0, viaDiscogs = 0, failed = 0, blank = 0, asked = 0;
   let seen = 0;
   for (const [id, name] of todo) {
     onProgress?.(seen++, todo.length);
@@ -136,6 +136,7 @@ async function enrichMissing({ quiet = false, onProgress = null } = {}) {
     // both wrote the network's bad afternoon into IndexedDB as a permanent
     // verdict: the artist was never asked about again, on any later run.
     let answered = false;
+    asked++;
     try {
       const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({
         method:'artist.gettoptags', artist:name, autocorrect:'1', api_key:key, format:'json' })).then(x => x.json());
@@ -164,8 +165,10 @@ async function enrichMissing({ quiet = false, onProgress = null } = {}) {
     // An empty Last.fm answer does not throw away genres Wikidata already gave.
     const keepWikidata = answered && !tags.length && cached[id]?.source === 'wikidata' && cached[id].tags?.length;
     if (answered && !keepWikidata) { cached[id] = { tags, checkedAt: Date.now() }; TAGS[id] = { tags }; done++; }
-    if (done && done % 25 === 0) { await idb.set('tags_extra', cached); stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
+    if (done && done % 25 === 0) { await idb.set('tags_extra', cached); if (!quiet) stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
   }
+  // The background run on each load: nothing new was asked, so nothing to rebuild.
+  if (quiet && !asked) { onProgress?.(todo.length, todo.length); return 0; }
   await idb.set('tags_extra', cached);
   R = buildReports(LIB, CFG, TAGS);
   $('#land').hidden = true; $('#app').hidden = false;

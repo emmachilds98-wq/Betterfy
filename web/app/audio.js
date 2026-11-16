@@ -38,7 +38,8 @@ function audioLoad() {
 function audioSettings() {
   if (globalThis.BetterfyAudio) return BetterfyAudio.readAudioSettings(LS);
   let s = null; try { s = JSON.parse(LS.getItem('bf_audio') || 'null'); } catch { s = null; }
-  return { on: s?.on !== false, wifiOnly: s?.wifiOnly !== false, scope: s?.scope === 'all' ? 'all' : 'playing+unfiled' };
+  // A saved off counts only when it was chosen (web/audio/settings.mjs offChosen).
+  return { on: !(s?.on === false && s?.offChosen === true), wifiOnly: s?.wifiOnly !== false, scope: s?.scope === 'all' ? 'all' : 'playing+unfiled' };
 }
 
 const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;
