@@ -72,6 +72,9 @@ async function undoStep(e) {
     }
   } else if (e.op === 'add') {
     await delTracks(e.playlistId, e.trackIds);
+    // a playlist this entry created (a backup restore) goes too, so undoing
+    // from History leaves no empty playlist behind
+    if (e.created) await sp(`/me/library?uris=spotify:playlist:${e.playlistId}`, { method: 'DELETE' });
   } else if (e.op === 'unlike') {
     await libraryCall('PUT', e.trackIds);
   } else throw new Error(`Cannot undo "${e.op}"`);

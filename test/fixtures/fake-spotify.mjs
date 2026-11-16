@@ -17,6 +17,11 @@
 //   sw.expireAfterWrites=k after k playlist writes, the next call with the old token answers 401 once
 //   sw.loseResponse  next N playlist adds are applied, then the connection is cut before the answer
 //
+// Optional on the account (test/backup.test.mjs): `catalog`, more tracks Spotify
+// knows that are in no playlist; `strictIds`, a playlist add holding an id the
+// fake does not know answers 400 and adds nothing, as Spotify does. GET
+// /search?q=isrc:X finds a known track by ISRC (any other search is empty).
+//
 // `.log` records every API call as { method, path, body } so a spec can assert
 // that a swipe really reached the server, and `.playlist(id)` reads the state.
 import http from 'node:http';
@@ -73,7 +78,8 @@ export async function startFakeSpotify(account) {
     if (p === '/me/playlists' && m === 'GET')
       return json(res, 200, page([...playlists.values(), ...created].map(({ tracks, ...x }) => x), q, p));
     if (p === '/me/playlists' && m === 'POST') {
-      const pl = { id: 'plnew' + String(created.length + 1).padStart(4, '0'), name: body?.name ?? 'New', owner: { id: account.me.id }, snapshot_id: 's1', tracks: [] };
+      const pl = { id: 'plnew' + String(created.length + 1).padStart(4, '0'), name: body?.name ?? 'New', owner: { id: account.me.id }, snapshot_id: 's1', tracks: [],
+        public: body?.public, description: body?.description ?? '' };
       created.push(pl); playlists.set(pl.id, pl);
       return json(res, 201, { id: pl.id, name: pl.name, snapshot_id: pl.snapshot_id, owner: pl.owner });
     }
@@ -84,6 +90,7 @@ export async function startFakeSpotify(account) {
       if (m === 'GET') return json(res, 200, page(pl.tracks.map(t => entry(t, '2024-03-01T00:00:00Z')), q, p));
       if (m === 'POST') {
         const ids = uriIds((body?.uris ?? []).join(','));
+        if (account.strictIds && ids.some(id => !findTrack(id))) return json(res, 400, { error: { status: 400, message: 'Payload contains a non-existing ID' } });
         // The real endpoint adds duplicates; so does this.
         for (const id of ids) { const t = findTrack(id); if (t) pl.tracks.push(t); }
         pl.snapshot_id = 's' + Date.now();
@@ -99,6 +106,13 @@ export async function startFakeSpotify(account) {
       }
     }
     if (p === '/me/tracks' && m === 'GET') return json(res, 200, page(liked.map(t => entry(t, likedAt.get(t.id))), q, p));
+    if (p === '/me/library' && m === 'DELETE' && /spotify:playlist:/.test(q.get('uris') ?? '')) {
+      for (const id of uriIds(q.get('uris'))) {
+        playlists.delete(id);
+        const at = created.findIndex(x => x.id === id); if (at >= 0) created.splice(at, 1);
+      }
+      return json(res, 200, {});
+    }
     if ((p === '/me/library' || p === '/me/tracks') && (m === 'PUT' || m === 'DELETE')) {
       const ids = uriIds(q.get('uris') ?? q.get('ids') ?? '');
       for (const id of ids) {
@@ -111,15 +125,21 @@ export async function startFakeSpotify(account) {
     if (p.startsWith('/me/top/') || p === '/me/player/recently-played') return json(res, 200, { items: [], total: 0, next: null });
     if (p === '/me/player') { res.writeHead(204); return res.end(); }
     if (p === '/me/player/devices') return json(res, 200, { devices: [] });
-    if (p === '/search') return json(res, 200, { tracks: { items: [] } });
+    if (p === '/search') {
+      const isrc = (q.get('q') ?? '').match(/^isrc:(\w+)$/i)?.[1]?.toUpperCase();
+      const hit = isrc ? allTracks().find(t => t.external_ids?.isrc === isrc) : null;
+      return json(res, 200, { tracks: { items: hit ? [hit] : [] } });
+    }
     json(res, 404, { error: { status: 404, message: 'fake-spotify: no route for ' + m + ' ' + p } });
   }
 
   function findTrack(id) {
     for (const t of liked) if (t.id === id) return t;
     for (const pl of playlists.values()) for (const t of pl.tracks) if (t.id === id) return t;
+    for (const t of account.catalog ?? []) if (t.id === id) return t;
     return null;
   }
+  const allTracks = () => [...(account.catalog ?? []), ...liked, ...[...playlists.values()].flatMap(pl => pl.tracks)];
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -151,6 +171,7 @@ export async function startFakeSpotify(account) {
   return {
     url: base, sw, log, account,
     playlist: id => playlists.get(id)?.tracks.map(t => t.id) ?? null,
+    playlists: () => [...playlists.values()].map(({ tracks, ...x }) => ({ ...x, tracks: tracks.map(t => ({ id: t.id, isrc: t.external_ids?.isrc ?? null })) })),
     liked: () => liked.map(t => t.id),
     writes: () => log.filter(l => l.method !== 'GET' && l.path !== '/api/token'),
     close: () => new Promise(r => { server.closeAllConnections?.(); server.close(r); }),

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-0609">
+<meta name="bf-build" content="2026-11-16-0620">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1392,6 +1392,35 @@ main:focus{outline:none}
   .fillscore .sub{font-weight:400}
   /* An Add's Undo toast must sit above the open sheet it came from (the toast is z 28, the sheet 30). */
   body:has(#plSheet.open) .toast{z-index:31}
+  /* ---------- Settings › Your data (BUILD-6 F7/F8; screens/sources.mjs yourDataHTML) ----------
+     Backup and restore of your playlists, every stored key and why, who hears
+     what, and the wipe. Sits under the source cards, full width. */
+  .yourdata{margin-top:14px}
+  .yourdata .bkh{font-size:14.5px; margin:18px 0 4px}
+  .yourdata .bkh:first-of-type{margin-top:12px}
+  .yourdata .vh{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
+  .yourdata .bkpick{position:relative; cursor:pointer}
+  .yourdata .bkpick:focus-within{outline:2px solid var(--accent); outline-offset:2px}
+  .yourdata .bkprev{margin-top:12px; padding:12px 14px; border:1px solid var(--line); border-radius:var(--r-2, 10px); background:var(--surface-2, var(--surface))}
+  .yourdata .bklist{list-style:none; margin:6px 0 4px; padding:0; max-height:280px; overflow:auto}
+  .yourdata .bklist li{padding:5px 0; border-bottom:1px solid var(--line); font-size:13.5px; min-width:0}
+  .yourdata .bklist li:last-child{border-bottom:0}
+  .yourdata .bklist label{display:flex; align-items:center; gap:8px; flex-wrap:wrap; cursor:pointer}
+  .yourdata .bkname{font-weight:600; overflow-wrap:anywhere}
+  .yourdata .bkerr{color:var(--warn)}
+  .yourdata .bkprog{margin-top:12px}
+  .yourdata details.bkkeys{margin-top:12px; border-top:1px solid var(--line); padding-top:10px}
+  .yourdata details.bkkeys summary{cursor:pointer; font-weight:600; font-size:14px}
+  .yourdata details.bkkeys h4{margin:12px 0 2px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3)}
+  .yourdata details.bkkeys dl{margin:4px 0 0}
+  .yourdata details.bkkeys dt{margin-top:8px; font-size:13px; overflow-wrap:anywhere}
+  .yourdata details.bkkeys dd{margin:2px 0 0; color:var(--ink-2); font-size:13px}
+  .yourdata .bkwipe{padding:12px 14px; border:1px solid var(--warn); border-radius:var(--r-2, 10px); background:var(--warn-soft)}
+  .yourdata .b.danger{background:var(--warn); border-color:var(--warn); color:var(--surface)}
+  /* The restore picker is a <label> around a hidden file input, drawn as a button. */
+  .yourdata label.b{display:inline-flex; align-items:center; justify-content:center; font-size:13.5px; font-weight:600; border:1px solid var(--line-2);
+       background:var(--surface); color:var(--ink); border-radius:var(--r); padding:9px 15px; min-height:40px}
+  .yourdata label.b:hover{border-color:var(--ink-3)}
 
   /* ================= iPhone and other narrow screens ================= */
   @media (max-width:820px){
@@ -1663,7 +1692,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-0609</span>
+    <span class="mono">build 2026-11-16-0620</span>
   </p>
 
   <div class="feat">
@@ -1756,7 +1785,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0609</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0620</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1873,7 +1902,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-0609. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-0620. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5073,7 +5102,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-0609`,
+    `Betterfy engine score — build 2026-11-16-0620`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5567,7 +5596,7 @@ function sourceCard(id, name, state, status, line, body) {
 /** Where genre data and (later) listening come from — moved out of Playlists,
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
-function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML }) {
+function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML, ...rest }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
@@ -5603,7 +5632,67 @@ function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes,
       </div>`)}
 
     <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>${labelCheckHTML()}
+    </div>${rest.DATA_KEYS ? '\n    ' + yourDataHTML({ esc, ...rest }) : ''}`;
+}
+
+const WHERE = { local: 'This browser', idb: 'This browser (database)', 'idb-db': 'This browser (database)', firestore: 'Firestore' };
+
+/** The restore preview, progress or outcome, by stage. */
+function restoreHTML(BK, esc) {
+  if (BK.stage === 'preview') {
+    const picked = BK.plan.filter(r => r.pick);
+    const exist = BK.plan.filter(r => r.exists).length;
+    return `<div class="bkprev" aria-live="polite">
+      <p class="srcline"><b>${esc(BK.file)}</b>: ${BK.plan.length} playlist${BK.plan.length === 1 ? '' : 's'}${exist ? `, ${exist} of which you still have (left unticked; ticking one makes a new copy named “… (restored)”, the one you have is not touched)` : ''}.</p>
+      <ul class="bklist">${BK.plan.map(r => `<li><label><input type="checkbox" data-act="bkPick" data-i="${r.i}" ${r.pick ? 'checked' : ''}>
+        <span class="bkname">${esc(r.name)}</span> <span class="sub mono">${r.n.toLocaleString()} track${r.n === 1 ? '' : 's'}</span>${r.exists ? ' <span class="tag warn">already exists</span>' : ''}</label></li>`).join('')}</ul>
+      <div class="rowbtns"><button class="b p" type="button" data-act="bkGo" ${picked.length ? '' : 'disabled'}>Restore ${picked.length} as private playlist${picked.length === 1 ? '' : 's'}</button>
+        <button class="b" type="button" data-act="bkCancel">Cancel</button></div>
     </div>`;
+  }
+  if (BK.stage === 'working') return `<p class="srcline bkprog" aria-live="polite">${esc(BK.progress)}</p>`;
+  const made = BK.result?.made ?? [];
+  const summary = made.length ? `<ul class="bklist">${made.map(m => `<li><span class="bkname">${esc(m.name)}</span>
+      <span class="sub mono">${m.added.toLocaleString()} of ${m.n.toLocaleString()}${m.byIsrc ? ` · ${m.byIsrc} found by ISRC` : ''}${m.missing ? ` · ${m.missing} not found` : ''}</span></li>`).join('')}</ul>
+      <div class="rowbtns"><button class="b" type="button" data-act="bkUndo">Undo this restore</button></div>` : '';
+  if (BK.stage === 'done') return `<div class="bkprev" aria-live="polite"><p class="srcline">Restored ${made.length} playlist${made.length === 1 ? '' : 's'}, private. They show in Library after the next library read.</p>${summary}</div>`;
+  if (BK.stage === 'error') return `<div class="bkprev" aria-live="polite"><p class="srcline bkerr">${esc(BK.error)}</p>${summary}</div>`;
+  return '';
+}
+
+/** Settings › Your data: backup and restore, every key kept and why, who hears what, and the wipe (BUILD-6 F7/F8). */
+function yourDataHTML({ esc, BK = { stage: 'idle' }, DATA_KEYS = [], DATA_SERVICES = [], myPlaylists = () => 0 }) {
+  const groups = new Map();
+  for (const k of DATA_KEYS) (groups.get(k.group) ?? groups.set(k.group, []).get(k.group)).push(k);
+  const n = myPlaylists();
+  return `<section class="srccard yourdata" id="src-data" aria-labelledby="src-data-h">
+    <div class="srchead"><h2 id="src-data-h">Your data</h2><span class="tag ok">On this device</span></div>
+    <p class="srcline">What Betterfy keeps lives in this browser. Nothing from your library is pooled with other accounts or uploaded anywhere
+      except to the services listed below, and only for the reason given.</p>
+
+    <h3 class="bkh">Back up and restore your playlists</h3>
+    <p class="srcline">The backup is a file of your ${n ? n.toLocaleString() + ' ' : ''}playlists: names, descriptions, track ids, ISRCs and dates added.
+      It is saved to this device and goes nowhere else. Restoring makes new private playlists from it and never changes one you have.</p>
+    <div class="rowbtns"><button class="b p" type="button" data-act="bkSave" ${n ? '' : 'disabled'}>Back up my playlists</button>
+      <label class="b bkpick">Restore from a backup…<input type="file" id="bkFile" accept=".json,application/json" class="vh"></label></div>
+    ${restoreHTML(BK, esc)}
+
+    <details class="bkkeys"><summary>What is kept, and why (${DATA_KEYS.length})</summary>
+      ${[...groups].map(([g, ks]) => `<h4>${esc(g)}</h4><dl>${ks.map(k => `<dt><code>${esc(k.key)}${k.prefix ? '…' : ''}</code> <span class="sub">${WHERE[k.where] ?? esc(k.where)}</span></dt><dd>${esc(k.why)}</dd>`).join('')}</dl>`).join('')}
+    </details>
+    <details class="bkkeys"><summary>Who hears from Betterfy (${DATA_SERVICES.length})</summary>
+      <dl>${DATA_SERVICES.map(s => `<dt>${esc(s.name)}</dt><dd>${esc(s.what)}</dd>`).join('')}</dl>
+    </details>
+
+    <h3 class="bkh">Wipe this device</h3>
+    ${BK.wipe ? `<div class="bkwipe" role="alert"><p class="srcline">This removes everything Betterfy keeps in this browser: your sign-in, the library copy,
+        History, skips, tags, engine and listening data. Only your theme stays. Your Spotify playlists are not touched, and a device you linked
+        keeps its own copy.</p>
+      <div class="rowbtns"><button class="b danger" type="button" data-act="wipeGo">Wipe everything</button>
+        <button class="b" type="button" data-act="wipeNo">Cancel</button></div></div>`
+      : `<p class="srcline">Signs you out and clears every key above from this browser, except the theme.</p>
+      <div class="rowbtns"><button class="b" type="button" data-act="wipeAsk">Wipe this device…</button></div>`}
+  </section>`;
 }
 
 const actions = {
@@ -5614,9 +5703,17 @@ const actions = {
     c.render();
   },
   enrich: c => c.enrichMissing(),
+  bkSave: c => c.backupDownload(),
+  bkPick(c, el) { const r = c.BK.plan?.[+el.dataset.i]; if (r) r.pick = el.checked; c.render(); },
+  bkGo: c => c.restoreGo(),
+  bkCancel: c => c.restoreCancel(),
+  bkUndo: c => c.restoreUndo(),
+  wipeAsk(c) { c.BK.wipe = true; c.render(); },
+  wipeNo(c) { c.BK.wipe = false; c.render(); },
+  wipeGo: c => c.wipeThisDevice(),
   fillWikidata: c => c.fillFromWikidata(),
 };
-return { view, actions };
+return { view, yourDataHTML, actions };
 })();
 /* ---- web/screens/tidy.mjs ---- */
 __mod["web/screens/tidy.mjs"] = (function () {
@@ -7395,7 +7492,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-0609';
+const BUILD = '2026-11-16-0620';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -7733,7 +7830,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-0609', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-0620', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -8489,7 +8586,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-0609');
+    const w = new Worker('reports-worker.js?v=2026-11-16-0620');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -8692,6 +8789,9 @@ async function undoStep(e) {
     }
   } else if (e.op === 'add') {
     await delTracks(e.playlistId, e.trackIds);
+    // a playlist this entry created (a backup restore) goes too, so undoing
+    // from History leaves no empty playlist behind
+    if (e.created) await sp(`/me/library?uris=spotify:playlist:${e.playlistId}`, { method: 'DELETE' });
   } else if (e.op === 'unlike') {
     await libraryCall('PUT', e.trackIds);
   } else throw new Error(`Cannot undo "${e.op}"`);
@@ -11381,7 +11481,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-0609';
+    s.src = 'engine.js?v=2026-11-16-0620';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -11403,7 +11503,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-0609');
+    const w = new Worker('engine-worker.js?v=2026-11-16-0620');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11951,7 +12051,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-0609';
+    s.src = 'audio.js?v=2026-11-16-0620';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -11987,7 +12087,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0609', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0620', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -12721,7 +12821,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0609', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0620', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -13094,6 +13194,406 @@ SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, disc
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
   runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember });
 // --- end shuffle/discover ---
+/* ---------- your data: every key this page writes, and why (BUILD-6 F7) ----------
+ * The one list of what Betterfy keeps on this device and in Firestore. The
+ * Settings sheet's "Your data" section is drawn from it, "Wipe this device"
+ * clears what it names, and test/datakeys.test.mjs scans web/ and core/ for
+ * storage writes and fails on any key that is not listed here. So a new key
+ * means a new row below, with a reason a listener can read.
+ *
+ *   where   'local'      localStorage (and sessionStorage for bf_verifier)
+ *           'idb'        a key in the IndexedDB database "betterfy", store "kv"
+ *           'idb-db'     a whole IndexedDB database (and its object stores)
+ *           'firestore'  a Firestore document path; {x} is any one segment
+ *   key     the exact key, or with `prefix: true` the start of a family of keys
+ *   keep    survives "Wipe this device" (only the theme does)
+ *   readOnly  read but never written by the page (a flag set by hand); still wiped
+ *
+ * Plain data, no logic: tests load this file on its own. */
+const DATA_KEYS = [
+  // --- signing in to Spotify ---
+  { where:'local', key:'bf_tok', group:'Signing in', why:'Your Spotify sign-in (an access token and the refresh token that renews it), so you stay signed in on this device.' },
+  { where:'local', key:'bf_verifier', group:'Signing in', why:'A one-time code used for a few seconds while Spotify sends you back after signing in. Also held in sessionStorage.' },
+  { where:'local', key:'bf_code_used', group:'Signing in', why:'The last sign-in code already exchanged, so a reload of the return page does not try to use it twice.' },
+  { where:'local', key:'bf_autoconnect', group:'Signing in', why:'Remembers that you signed in here, so the next visit reconnects without a tap.' },
+  { where:'local', key:'bf_client_id', group:'Signing in', why:'Your own Spotify app\'s client ID, only if you set one up under "use your own Spotify app".' },
+  { where:'local', key:'bf_setup', group:'Signing in', why:'Keeps the "use your own Spotify app" panel open once you have opened it.' },
+  { where:'local', key:'bf_gap', group:'Signing in', why:'How far apart to space requests to Spotify, learned from its rate limits, so the next visit starts at a safe pace.' },
+  { where:'local', key:'bf_ratelimit_streak', group:'Signing in', why:'How many visits in a row hit Spotify\'s rate limit, to know when to suggest your own Spotify app.' },
+  { where:'local', key:'__bf_probe', group:'Signing in', why:'A test write made and removed at once on load, to find out whether this browser allows storage at all.' },
+
+  // --- your library and what you did with it ---
+  { where:'idb', key:'library', group:'Your library', why:'A copy of your playlists and liked songs as read from Spotify (track ids, names, artists, ISRCs, cover links, dates added), so the app opens without re-reading everything.' },
+  { where:'idb', key:'part:', prefix:true, group:'Your library', why:'Pieces of a library read that was interrupted, so the next try resumes instead of starting again. Dropped once a read completes, or after a day.' },
+  { where:'idb', key:'actions', group:'Your library', why:'History: every change Betterfy made to your Spotify playlists, with what is needed to undo it.' },
+  { where:'idb', key:'feedback', group:'Your library', why:'Tracks you skipped or turned down for a playlist, and filings you accepted, so the same suggestion is not made again.' },
+  { where:'idb', key:'listening_raw', group:'Your library', why:'Your top artists and recently played tracks from Spotify, used to put what you actually play first.' },
+  { where:'local', key:'bf_axes', group:'Your library', why:'What kind of playlist each one is (genre, mood, occasion...), as you set it.' },
+  { where:'local', key:'bf_allsongs', group:'Your library', why:'The id of the "all songs" playlist Betterfy keeps for you, so it updates that one instead of making another.' },
+  { where:'local', key:'bf_shuf_', prefix:true, group:'Your library', why:'Per source playlist: which playlist its spaced shuffle was written to, so re-shuffling replaces it rather than adding a second.' },
+  { where:'local', key:'bf_mix_', prefix:true, group:'Your library', why:'Per source playlist: which playlist its DJ-order mix was written to, for the same reason.' },
+  { where:'local', key:'bf_shuf_mode', group:'Your library', why:'The shuffle mode you last picked.' },
+  { where:'local', key:'bf_shuf_flow', group:'Your library', why:'Whether shuffle should follow sound flow, as you last set it.' },
+  { where:'local', key:'bf_shuf_redisc', group:'Your library', why:'Whether shuffle should mix in rediscoveries, as you last set it.' },
+  { where:'local', key:'bf_disc_mem', group:'Your library', why:'Discover\'s memory: artist names you passed on (never offered again) and ones you liked or added from it (extra seeds).' },
+  { where:'local', key:'bf_analysed', group:'Your library', why:'That you have run "Analyse my library" once.' },
+  { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
+  { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
+  { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
+  { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
+
+  // --- genre data ---
+  { where:'idb', key:'tags_extra', group:'Genre data', why:'Genre tags fetched for artists in your library that the shipped table does not cover (Last.fm, Wikidata, Discogs).' },
+  { where:'idb', key:'tag_corrections', group:'Genre data', why:'Tags you corrected by hand for an artist.' },
+  { where:'idb', key:'bridge-raw', group:'Genre data', why:'Similar-artist lists fetched from Deezer, ListenBrainz and Wikidata for the artists in your library.' },
+  { where:'local', key:'bf_lfm', group:'Genre data', why:'Your own Last.fm API key, if you added one.' },
+  { where:'local', key:'bf_discogs', group:'Genre data', why:'Your Discogs personal access token, if you added one.' },
+  { where:'local', key:'bf_bridge_off', group:'Genre data', why:'Set when you turn similar-artist bridges off in Engine.' },
+
+  // --- the engine ---
+  { where:'idb', key:'engine-space-g', group:'Engine', why:'The engine\'s map of your library (how near each track sits to each playlist), so it does not rebuild on every visit.' },
+  { where:'idb', key:'engine-calibration', group:'Engine', why:'How sure the engine\'s picks turned out to be on your own playlists, used for the confidence words.' },
+  { where:'idb', key:'engine-blend', group:'Engine', why:'How File blends tag picks with the engine, from your Score run.' },
+  { where:'idb', key:'engine-weights', group:'Engine', why:'The engine weights fitted to your library by a Score run.' },
+  { where:'idb', key:'engine-tune', group:'Engine', why:'Tuning you saved from Engine › Tune.' },
+
+  // --- listening to your music ---
+  { where:'idb-db', key:'betterfy-audio', stores:['audio_v1'], group:'Listening', why:'What Listening heard: one record per track (a sound fingerprint, tempo, key). Never the audio itself or the preview link.' },
+  { where:'idb', key:'cluster_names', group:'Listening', why:'Names you gave to groups of tracks that sound alike.' },
+  { where:'idb', key:'labelchecks', group:'Listening', why:'Your answers when checking mood, voice and energy labels.' },
+  { where:'local', key:'bf_audio', group:'Listening', why:'Listening settings: on or off, and which tracks to listen to.' },
+  { where:'local', key:'bf_audio_deep', group:'Listening', why:'Deep listen settings.' },
+  { where:'local', key:'bf_audio_wifi_ok', group:'Listening', why:'That you said yes to listening on a metered connection.' },
+  { where:'local', key:'bf_sound_nudge', group:'Listening', why:'That you dismissed the "listen to my music" suggestion on File.' },
+  { where:'local', key:'bf_audio_labels', readOnly:true, group:'Listening', why:'Whether mood, voice and energy labels are shown (read only; set by hand for testing).' },
+  { where:'local', key:'bf_audio_dsp', readOnly:true, group:'Listening', why:'Whether tempo and key readings are shown (read only; set by hand for testing).' },
+
+  // --- the database itself ---
+  { where:'idb-db', key:'betterfy', stores:['kv'], group:'Your library', why:'The database that holds every "betterfy" key above.' },
+
+  // --- sync between your devices (only once you link a device) ---
+  { where:'local', key:'bf_sync_auth', group:'Sync', why:'An anonymous Firebase sign-in for this device (no email, no name, nothing tied to your Spotify account), only once you link devices.' },
+  { where:'local', key:'bf_sync_group', group:'Sync', why:'A random id for your group of linked devices, only once you link devices.' },
+  { where:'firestore', key:'syncGroups/{group}/members/{device}', group:'Sync', why:'An empty document saying this device belongs to your sync group.' },
+  { where:'firestore', key:'syncGroups/{group}/state/{doc}', group:'Sync', why:'Your skips and rejections (feedback), tag corrections (corrections), playlist types (axes) and sound-group names (clusterNames), so your linked devices agree. Readable only by devices in the group.' },
+  { where:'firestore', key:'linkCodes/{code}', group:'Sync', why:'A six-digit code you asked for to link another device. Expires after ten minutes and is deleted when used.' },
+
+  // --- the shared tag table ---
+  { where:'firestore', key:'tagContributions/{artist}', group:'Shared tags', why:'When a Last.fm fetch finds tags for an artist the shipped table lacks: that artist\'s Spotify id and up to ten tags. No account, playlist or listening data, nothing that says who sent it.' },
+
+  // --- the look ---
+  { where:'local', key:'betterfy-theme', keep:true, group:'Look', why:'Your colour, density and filter settings. Kept by "Wipe this device".' },
+];
+
+/** Who outside this device hears from the page, and what they are sent. */
+const DATA_SERVICES = [
+  { name:'Spotify', what:'Your sign-in. The page reads your profile, playlists, liked songs, top artists, recently played and playback; it writes to your playlists and liked songs only when you tap (every write is in History).' },
+  { name:'Last.fm', what:'Artist names, to fetch their genre tags and similar artists, with the shared key or your own.' },
+  { name:'Wikidata', what:'Spotify artist ids, in batches, to find genres and MusicBrainz ids. No key.' },
+  { name:'ListenBrainz', what:'MusicBrainz artist ids, for similar artists. No key.' },
+  { name:'Deezer', what:'Track ISRCs, to find related artists and, when Listening is on, the 30-second previews it listens to on this device. No key.' },
+  { name:'Discogs', what:'Artist names and your token, only if you saved a Discogs token.' },
+  { name:'Firestore (shared tags)', what:'An artist\'s Spotify id and tags, when you fetched tags the shipped table lacks. Nothing about you.' },
+  { name:'Firestore (sync)', what:'Only if you link devices: your feedback, tag corrections, playlist types and sound-group names, under a random group id.' },
+  { name:'Google reCAPTCHA', what:'Only when the shared tag table has App Check switched on: the reCAPTCHA check that proves a tag contribution comes from this page.' },
+  { name:'jsDelivr', what:'Nothing about you: the page downloads the listening runtime from it when Listening is on.' },
+  { name:'MusicBrainz', what:'Nothing from this page. Only the command-line tools (npm run enrich) call it.' },
+];
+/* ---------- your data: backup, restore and wipe (BUILD-6 F7, F8) ----------
+ * Settings › Listening and genre sources › Your data (screens/sources.mjs
+ * draws it). Three things, none of which sends anything anywhere new:
+ *
+ *   Back up     a JSON file of your own playlists, built from the library copy
+ *               the page already holds (plus one read of /me/playlists for the
+ *               descriptions), saved to your device by the browser. No upload.
+ *   Restore     read such a file, show what is in it and which of those
+ *               playlists you still have, then make the picked ones as new
+ *               private playlists: tracks added by id, by ISRC when an id no
+ *               longer resolves. One History group, so one Undo. An existing
+ *               playlist is never written to: ticking one that still exists
+ *               makes a new "(restored)" copy beside it.
+ *   Wipe        everything in DATA_KEYS (app/datakeys.js) on this device,
+ *               except the theme, then back to the landing screen.
+ *
+ * The pieces that do the work take their dependencies as arguments, so
+ * test/backup.test.mjs runs them against the fake Spotify server. */
+
+const BACKUP_FORMAT = 'betterfy-playlists';
+const BACKUP_VERSION = 1;
+const BACKUP_LIMITS = { playlists: 2000, tracks: 11000 };   // a Spotify playlist holds at most 10,000
+const RESTORED_SUFFIX = ' (restored)';
+
+/** What the Your data section shows: idle | preview | working | done | error. */
+const BK = { stage: 'idle', plan: null, file: '', progress: '', result: null, error: '', wipe: false, made: new Set() };
+
+/**
+ * The backup file for `lib` (the page's LIB: your own playlists only).
+ * @param descriptions {id: description} when known; a playlist without one gets ''.
+ */
+function backupBuild(lib, descriptions = {}, now = new Date()) {
+  return {
+    format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now.toISOString(),
+    user: { id: lib?.user?.id ?? null, name: lib?.user?.name ?? null },
+    playlists: (lib?.playlists ?? []).map(p => ({
+      id: p.id, name: p.name ?? '', description: descriptions[p.id] ?? '',
+      tracks: (p.tracks ?? []).map(t => ({
+        id: t.id ?? null, isrc: t.isrc ?? null, added_at: t.added_at ?? null,
+        name: t.name ?? '', artists: (t.artists ?? []).map(a => a.name).filter(Boolean),
+      })),
+    })),
+  };
+}
+
+const BK_ID_RE = /^[A-Za-z0-9]{22}$/, BK_ISRC_RE = /^[A-Za-z0-9]{12}$/;
+const bkStr = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+
+/** Read a backup file's text. Throws a sentence a listener can act on; keeps only the fields it knows. */
+function backupParse(text) {
+  let raw;
+  try { raw = JSON.parse(text); } catch { throw new Error('That file is not a Betterfy backup (it is not JSON).'); }
+  if (raw?.format !== BACKUP_FORMAT || !Array.isArray(raw.playlists))
+    throw new Error('That file is not a Betterfy playlist backup.');
+  if (!(raw.version >= 1 && raw.version <= BACKUP_VERSION))
+    throw new Error('That backup was made by a newer Betterfy. Reload the page to update, then try again.');
+  if (raw.playlists.length > BACKUP_LIMITS.playlists) throw new Error('That backup holds more playlists than Betterfy can restore at once.');
+  return {
+    format: BACKUP_FORMAT, version: raw.version, exported_at: bkStr(raw.exported_at, 40),
+    user: { id: bkStr(raw.user?.id, 200) || null, name: bkStr(raw.user?.name, 200) || null },
+    playlists: raw.playlists.map(p => ({
+      id: bkStr(p?.id, 64), name: bkStr(p?.name, 100).trim() || 'Untitled', description: bkStr(p?.description, 300),
+      tracks: (Array.isArray(p?.tracks) ? p.tracks : []).slice(0, BACKUP_LIMITS.tracks).map(t => ({
+        id: BK_ID_RE.test(t?.id ?? '') ? t.id : null, isrc: BK_ISRC_RE.test(t?.isrc ?? '') ? t.isrc.toUpperCase() : null,
+        added_at: bkStr(t?.added_at, 40) || null, name: bkStr(t?.name, 200),
+        artists: Array.isArray(t?.artists) ? t.artists.filter(a => typeof a === 'string').slice(0, 10) : [],
+      })),
+    })),
+  };
+}
+
+const plKey = s => String(s ?? '').trim().toLowerCase();
+
+/**
+ * One row per playlist in the backup: does it still exist (same id, or a
+ * playlist of yours with the same name), and is it picked? Existing ones
+ * start unticked.
+ * @param current [{id, name}] the playlists you have now
+ */
+function restorePlan(backup, current = []) {
+  const ids = new Set(current.map(p => p.id)), names = new Set(current.map(p => plKey(p.name)));
+  return backup.playlists.map((src, i) => {
+    const exists = ids.has(src.id) || names.has(plKey(src.name));
+    return { i, src, name: src.name, n: src.tracks.length, usable: src.tracks.filter(t => t.id || t.isrc).length,
+             exists, pick: !exists };
+  });
+}
+
+/** Spotify's answer to a batch holding an id it cannot add (a removed track, a bad id). */
+const isBadIdError = e => e?.status === 400 || /^400\b/.test(e?.message ?? '');
+
+/**
+ * Add `tracks` ([{id, isrc}]) to playlist `plId`, in order: by id, a hundred at
+ * a time; a batch Spotify refuses is halved until the one track it refuses is
+ * found, and that one is looked up by ISRC. Returns { ids, byIsrc, missing }:
+ * the ids that landed, how many came from the ISRC lookup, and how many could
+ * not be placed at all.
+ */
+async function restoreAdd(plId, tracks, { addChunk, findIsrc }) {
+  const out = { ids: [], byIsrc: 0, missing: 0 };
+  const viaIsrc = async t => {
+    const id = t.isrc ? await findIsrc(t.isrc).catch(() => null) : null;
+    if (!id || id === t.id) { out.missing++; return; }
+    try { await addChunk(plId, [id]); out.ids.push(id); out.byIsrc++; }
+    catch (e) { if (!isBadIdError(e)) throw e; out.missing++; }
+  };
+  const tryIds = async run => {
+    try { await addChunk(plId, run.map(t => t.id)); out.ids.push(...run.map(t => t.id)); }
+    catch (e) {
+      if (!isBadIdError(e)) throw e;
+      if (run.length === 1) return viaIsrc(run[0]);
+      const h = Math.ceil(run.length / 2);
+      await tryIds(run.slice(0, h)); await tryIds(run.slice(h));
+    }
+  };
+  // Runs of tracks with an id go in batches; one with only an ISRC is looked up where it stands.
+  let run = [];
+  const flush = async () => { for (let k = 0; k < run.length; k += 100) await tryIds(run.slice(k, k + 100)); run = []; };
+  for (const t of tracks) {
+    if (t.id) { run.push(t); continue; }
+    await flush();
+    await viaIsrc(t);
+  }
+  await flush();
+  return out;
+}
+
+/**
+ * Make every picked row of `plan` as a new private playlist and fill it.
+ * Each playlist is one `add` entry in History, all under one group, so a
+ * single Undo takes the whole restore back.
+ * @param deps { sp, addChunk, findIsrc, logAction, newGroup, onProgress? }
+ */
+async function restoreRun(plan, deps) {
+  const group = deps.newGroup();
+  const made = [];
+  const picked = plan.filter(r => r.pick);
+  for (const [k, r] of picked.entries()) {
+    deps.onProgress?.(r.name, k / picked.length);
+    const name = r.exists ? (r.name + RESTORED_SUFFIX).slice(0, 100) : r.name;
+    const pl = await deps.sp('/me/playlists', { method: 'POST',
+      body: JSON.stringify({ name, public: false, description: r.src.description || '' }) });
+    const row = { id: pl.id, name, from: r.src.id, n: r.n, added: 0, byIsrc: 0, missing: 0, at: null };
+    made.push(row);
+    let got = { ids: [], byIsrc: 0, missing: 0 }, err = null;
+    try { got = await restoreAdd(pl.id, r.src.tracks, deps); } catch (e) { err = e; }
+    Object.assign(row, { added: got.ids.length, byIsrc: got.byIsrc, missing: got.missing + (r.n - r.usable) });
+    // Logged even when the fill broke half way: the playlist exists, so Undo must know about it.
+    row.at = await deps.logAction({ op: 'add', group, playlistId: pl.id, playlistName: name, trackIds: got.ids,
+      created: true, reason: 'restored from backup' });
+    if (err) { err.made = made; err.group = group; throw err; }
+  }
+  return { group, made };
+}
+
+/** Take a whole restore back: every track out (History's undo), then the playlists themselves. */
+async function restoreUndoRun(group, { getLog, undoAction, sp }) {
+  const steps = (await getLog()).filter(x => x.group === group && x.op === 'add');
+  if (!steps.length) throw new Error('That restore is no longer in History.');
+  await undoAction(steps[steps.length - 1].at).catch(e => { if (!/Already undone/.test(e.message)) throw e; });
+  // DELETE /me/library with the playlist's URI is Spotify's "delete" for a playlist you own
+  // (the old /followers route was removed in February 2026).
+  for (const s of steps) await sp(`/me/library?uris=spotify:playlist:${s.playlistId}`, { method: 'DELETE' });
+}
+
+/**
+ * Everything Betterfy keeps on this device, gone, except the theme: every
+ * localStorage key DATA_KEYS lists (a prefix takes its whole family), any
+ * other bf_* key left by an older build, the sign-in code in sessionStorage,
+ * the "betterfy" key store, and the listening database.
+ * @param env { LS, local, session, idb, indexedDB, keys }
+ */
+async function wipeRun({ LS, local, session, idb, indexedDB, keys = DATA_KEYS }) {
+  const keep = new Set(keys.filter(k => k.keep).map(k => k.key));
+  const present = [];
+  try { for (let i = 0; i < (local?.length ?? 0); i++) present.push(local.key(i)); } catch { /* storage refused */ }
+  const gone = new Set();
+  for (const k of keys) {
+    if (k.where !== 'local' || k.keep) continue;
+    if (k.prefix) for (const p of present) { if (p?.startsWith(k.key) && !keep.has(p)) gone.add(p); }
+    else gone.add(k.key);
+  }
+  for (const p of present) if (p?.startsWith('bf_') && !keep.has(p)) gone.add(p);
+  for (const k of gone) { try { LS.removeItem(k); } catch {} try { local?.removeItem(k); } catch {} }
+  try { session?.removeItem('bf_verifier'); } catch {}
+  try { await idb.clear(); } catch {}
+  // A database this page still has open blocks its deletion until the page
+  // goes; the reload that follows closes it, and the deletion then completes.
+  for (const k of keys) if (k.where === 'idb-db' && k.key !== 'betterfy') {
+    await new Promise(done => {
+      let r = null;
+      try { r = indexedDB?.deleteDatabase(k.key); } catch { r = null; }
+      if (!r) return done();
+      r.onsuccess = r.onerror = r.onblocked = () => done();
+      setTimeout(done, 1500);
+    });
+  }
+  return [...gone];
+}
+
+/* ---- the page side: Settings › Your data ---- */
+
+const bkRedraw = () => { try { render(); } catch { /* before the app is up */ } };
+
+/** Save the backup file to this device. */
+async function backupDownload() {
+  if (!LIB?.playlists?.length) { toast('No playlists of yours to back up yet.'); return; }
+  let desc = {};
+  try {
+    for (const p of await paged('/me/playlists?limit=50'))
+      if (p?.id && p.owner?.id === LIB.user?.id && p.description) desc[p.id] = p.description;
+  } catch { desc = {}; /* names and tracks still go in; descriptions are a nicety */ }
+  const file = backupBuild(LIB, desc);
+  const blob = new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `betterfy-playlists-${file.exported_at.slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  const n = file.playlists.reduce((s, p) => s + p.tracks.length, 0);
+  toast(`Saved ${file.playlists.length} playlists (${n.toLocaleString()} tracks) to this device.`);
+}
+
+/** A file was picked: read it and show what restoring it would do. */
+async function restoreStart(file) {
+  if (!file) return;
+  BK.wipe = false; BK.result = null; BK.error = '';
+  try {
+    if (file.size > 50e6) throw new Error('That file is too big to be a Betterfy backup.');
+    const backup = backupParse(await file.text());
+    const current = [...(LIB?.playlists ?? []).map(p => ({ id: p.id, name: p.name })), ...[...BK.made].map(name => ({ id: '', name }))];
+    Object.assign(BK, { stage: 'preview', file: file.name ?? 'backup', backup, plan: restorePlan(backup, current) });
+  } catch (e) { Object.assign(BK, { stage: 'error', error: e.message, plan: null }); }
+  bkRedraw();
+}
+
+async function restoreGo() {
+  if (BK.stage !== 'preview' || !BK.plan?.some(r => r.pick)) return;
+  BK.stage = 'working'; BK.progress = 'Starting…'; bkRedraw();
+  const deps = { sp, addChunk, logAction, newGroup,
+    findIsrc: async isrc => (await sp(`/search?q=${encodeURIComponent('isrc:' + isrc)}&type=track&limit=1`))?.tracks?.items?.[0]?.id ?? null,
+    onProgress: (name, f) => { BK.progress = `Making “${name}” (${Math.round(f * 100)}%)`; bkRedraw(); } };
+  try {
+    const res = await restoreRun(BK.plan, deps);
+    res.made.forEach(m => BK.made.add(m.name));
+    Object.assign(BK, { stage: 'done', result: res, plan: null });
+    const n = res.made.reduce((s, m) => s + m.added, 0);
+    toast(`Restored ${res.made.length} playlists, ${n.toLocaleString()} tracks, as private playlists.`, () => restoreUndo());
+  } catch (e) {
+    (e.made ?? []).forEach(m => BK.made.add(m.name));
+    Object.assign(BK, { stage: 'error', error: 'Restore stopped: ' + e.message + (e.made?.length ? ' What was made so far is in History, with Undo.' : ''),
+      result: e.made?.length ? { group: e.group, made: e.made } : null, plan: null });
+  }
+  bkRedraw();
+}
+
+async function restoreUndo() {
+  const g = BK.result?.group;
+  if (!g) return;
+  try {
+    await restoreUndoRun(g, { getLog, undoAction, sp });
+    BK.result.made.forEach(m => BK.made.delete(m.name));
+    Object.assign(BK, { stage: 'idle', result: null });
+    toast('Restore undone: the restored playlists are gone.');
+  } catch (e) { toast('Undo failed: ' + e.message); }
+  bkRedraw();
+}
+
+function restoreCancel() { Object.assign(BK, { stage: 'idle', plan: null, backup: null, error: '' }); bkRedraw(); }
+
+async function wipeThisDevice() {
+  await wipeRun({ LS, idb, keys: DATA_KEYS,
+    local: (() => { try { return window.localStorage; } catch { return null; } })(),
+    session: (() => { try { return window.sessionStorage; } catch { return null; } })(),
+    indexedDB: (() => { try { return window.indexedDB; } catch { return null; } })() });
+  location.replace(REDIRECT);
+}
+
+// The Sources section is given these on top of what screens.js lists for it.
+if (typeof SCREEN_CTX !== 'undefined' && SCREEN_CTX.sources) {
+  const base = SCREEN_CTX.sources;
+  SCREEN_CTX.sources = () => Object.assign(base(), {
+    BK, DATA_KEYS, DATA_SERVICES, backupDownload, restoreGo, restoreUndo, restoreCancel, wipeThisDevice,
+    myPlaylists: () => LIB?.playlists?.length ?? 0,
+  });
+}
+
+// A file input fires `change`, which dispatchAct() leaves to checkboxes and
+// selects, so the restore picker is wired here.
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') document.addEventListener('change', e => {
+  if (e.target?.id !== 'bkFile') return;
+  const f = e.target.files?.[0];
+  e.target.value = '';
+  fire(restoreStart(f));
+});
 /* ---------- the shell: four tabs and the Settings sheet (docs/BUILD-5-PLAN.md §4.1, UI-D) ----------
  * File, Tidy, Discover and Library are the tabs. Everything that used to be a
  * screen of its own and is not one of those lives in the Settings sheet under
