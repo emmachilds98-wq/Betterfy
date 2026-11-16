@@ -1190,7 +1190,7 @@ async function fillDsp(deps, record, track = {}) {
   got = null;
 
   let dsp = null;
-  try { dsp = deps.dsp(parts); } catch { dsp = null; }
+  try { dsp = await deps.dsp(parts); } catch { dsp = null; }   // await: Beat This's dsp is async
   parts = null; // drop the audio
   if (!dsp) return { skip: 'nothing-measured' };
   return { record: { ...record, dsp } };
@@ -2436,12 +2436,433 @@ function needsDsp(rec) {
 }
 return { COMBINE_VERSION, DSP_VERSION, BPM_AGREE, DISAGREE_PENALTY, OCTAVE_PENALTY, combineTempo, combineKey, combineLoudness, measureWindows, needsDsp };
 })();
+/* ---- core/audio/dsp/beat-mel.mjs ---- */
+__mod["core/audio/dsp/beat-mel.mjs"] = (function () {
+// The log-mel front end for Beat This (core/audio/dsp/beats.mjs), in plain JS.
+//
+// Beat This (Foscarin, Schlüter, Widmer, ISMIR 2024; MIT code and weights)
+// was trained on one exact spectrogram, beat_this/preprocessing.py
+// LogMelSpect, which is torchaudio's MelSpectrogram with:
+//   22050 Hz mono · n_fft 1024 · hop 441 (50 frames/s) · periodic Hann
+//   · center=True with reflect padding · |STFT| / sqrt(n_fft) (normalized=
+//   "frame_length", power 1) · 128 Slaney-mel triangles, 30–11000 Hz, no
+//   area normalisation · log1p(1000·x)
+// A front end that is only roughly right still gives beats, just worse ones,
+// so this file is held to torchaudio's own output by test/audiobeats.test.mjs
+// (fixture: scripts/audio-dsp/make-beat-mel-fixture.py).
+//
+// Betterfy decodes previews to 16 kHz (core/audio/decode.mjs), so the input
+// is upsampled to 22050 Hz here with a windowed-sinc resampler. Nothing above
+// 8 kHz exists after that, so the top ~20 of the 128 bands stay near zero;
+// docs/models/beat-this.md has the measured cost of that (it is small).
+//
+// Isomorphic: no DOM, no Node APIs, no dependencies.
+
+const BEAT_MEL_VERSION = '1.0.0';
+const BEAT_SR = 22050;
+const BEAT_NFFT = 1024;
+const BEAT_HOP = 441;
+const BEAT_BANDS = 128;
+/** Spectrogram (and model output) frames per second. */
+const BEAT_FPS = BEAT_SR / BEAT_HOP; // 50
+
+const F_MIN = 30, F_MAX = 11000, LOG_MULT = 1000;
+const N_BINS = BEAT_NFFT / 2 + 1;
+
+// --- Slaney mel scale, as torchaudio's mel_scale="slaney" ---
+const LOG_STEP = Math.log(6.4) / 27;
+const hzToMel = f => (f < 1000 ? f / (200 / 3) : 15 + Math.log(f / 1000) / LOG_STEP);
+const melToHz = m => (m < 15 ? m * (200 / 3) : 1000 * Math.exp((m - 15) * LOG_STEP));
+
+/** torchaudio.functional.melscale_fbanks(513, 30, 11000, 128, 22050, norm=None, 'slaney'), sparse. */
+function buildFilterbank() {
+  const lo = hzToMel(F_MIN), hi = hzToMel(F_MAX);
+  const f = Array.from({ length: BEAT_BANDS + 2 }, (_, i) => melToHz(lo + (hi - lo) * i / (BEAT_BANDS + 1)));
+  const bands = [];
+  for (let b = 0; b < BEAT_BANDS; b++) {
+    const w = [];
+    let start = -1;
+    for (let k = 0; k < N_BINS; k++) {
+      const hz = k * (BEAT_SR / 2) / (N_BINS - 1);
+      const down = (hz - f[b]) / (f[b + 1] - f[b]);
+      const up = (f[b + 2] - hz) / (f[b + 2] - f[b + 1]);
+      const v = Math.max(0, Math.min(down, up));
+      if (v > 0) { if (start < 0) start = k; w[k - start] = v; }
+      else if (start >= 0) break;
+    }
+    bands.push({ start: Math.max(0, start), w: Float64Array.from(w.map(x => x ?? 0)) });
+  }
+  return bands;
+}
+
+let FB = null, WIN = null, TW = null, REV = null;
+function init() {
+  if (FB) return;
+  FB = buildFilterbank();
+  // periodic Hann (torch.hann_window default)
+  WIN = new Float64Array(BEAT_NFFT);
+  for (let i = 0; i < BEAT_NFFT; i++) WIN[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / BEAT_NFFT);
+  TW = new Float64Array(BEAT_NFFT);
+  for (let i = 0; i < BEAT_NFFT / 2; i++) { TW[2 * i] = Math.cos(-2 * Math.PI * i / BEAT_NFFT); TW[2 * i + 1] = Math.sin(-2 * Math.PI * i / BEAT_NFFT); }
+  REV = new Uint32Array(BEAT_NFFT);
+  const bits = Math.log2(BEAT_NFFT);
+  for (let i = 0; i < BEAT_NFFT; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); REV[i] = r; }
+}
+
+/** In-place radix-2 complex FFT of length BEAT_NFFT. */
+function fft(re, im) {
+  const n = BEAT_NFFT;
+  for (let i = 0; i < n; i++) { const j = REV[i]; if (j > i) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (let size = 2; size <= n; size *= 2) {
+    const half = size / 2, step = n / size;
+    for (let s = 0; s < n; s += size) {
+      for (let k = 0; k < half; k++) {
+        const wr = TW[2 * k * step], wi = TW[2 * k * step + 1];
+        const a = s + k, b = a + half;
+        const xr = re[b] * wr - im[b] * wi, xi = re[b] * wi + im[b] * wr;
+        re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi;
+      }
+    }
+  }
+}
+
+/** Number of frames torchaudio gives for n samples with center=True. */
+const beatFrameCount = n => (n > 0 ? 1 + Math.floor(n / BEAT_HOP) : 0);
+
+/**
+ * Log-mel spectrogram of 22050 Hz mono samples, row-major [frames × 128].
+ * @param {Float32Array|number[]} x
+ * @returns {{ frames: number, data: Float32Array }}
+ */
+function beatMel(x) {
+  init();
+  const n = x.length, pad = BEAT_NFFT / 2;
+  if (n <= pad) return { frames: 0, data: new Float32Array(0) };
+  const frames = beatFrameCount(n);
+  // reflect padding (torch: no edge repeat)
+  const at = i => (i < 0 ? x[-i] : i >= n ? x[2 * (n - 1) - i] : x[i]);
+  const out = new Float32Array(frames * BEAT_BANDS);
+  const re = new Float64Array(BEAT_NFFT), im = new Float64Array(BEAT_NFFT), mag = new Float64Array(N_BINS);
+  const norm = 1 / Math.sqrt(BEAT_NFFT);
+  for (let f = 0; f < frames; f++) {
+    const s0 = f * BEAT_HOP - pad;
+    for (let i = 0; i < BEAT_NFFT; i++) { re[i] = at(s0 + i) * WIN[i]; im[i] = 0; }
+    fft(re, im);
+    for (let k = 0; k < N_BINS; k++) mag[k] = Math.hypot(re[k], im[k]) * norm;
+    const o = f * BEAT_BANDS;
+    for (let b = 0; b < BEAT_BANDS; b++) {
+      const { start, w } = FB[b];
+      let s = 0;
+      for (let j = 0; j < w.length; j++) s += w[j] * mag[start + j];
+      out[o + b] = Math.log1p(LOG_MULT * s);
+    }
+  }
+  return { frames, data: out };
+}
+
+// --- 16 kHz → 22050 Hz: windowed-sinc (Blackman), cutoff just under 8 kHz ---
+const RS_HALF = 16; // taps each side, at the input rate
+
+/**
+ * Resample mono audio between rates with a Blackman-windowed sinc.
+ * Upsampling keeps everything below the source Nyquist; downsampling
+ * low-passes at the target Nyquist.
+ * @param {Float32Array|number[]} x
+ * @param {number} from
+ * @param {number} to
+ * @returns {Float32Array}
+ */
+function resampleSinc(x, from, to) {
+  if (from === to) return Float32Array.from(x);
+  const n = Math.floor(x.length * to / from), out = new Float32Array(n);
+  const ratio = from / to;                       // input samples per output sample
+  const cut = Math.min(1, 1 / ratio) * 0.97;     // fraction of input Nyquist
+  const half = Math.ceil(RS_HALF / Math.min(1, cut));
+  for (let i = 0; i < n; i++) {
+    const p = i * ratio, c = Math.floor(p);
+    let s = 0, ws = 0;
+    for (let j = c - half + 1; j <= c + half; j++) {
+      const t = p - j;
+      const u = t / (half + 1);
+      if (u <= -1 || u >= 1) continue;
+      const win = 0.42 + 0.5 * Math.cos(Math.PI * u) + 0.08 * Math.cos(2 * Math.PI * u);
+      const a = Math.PI * cut * t;
+      const h = (a === 0 ? 1 : Math.sin(a) / a) * win;
+      ws += h;
+      if (j >= 0 && j < x.length) s += x[j] * h;
+    }
+    out[i] = ws ? s / ws : 0;
+  }
+  return out;
+}
+return { BEAT_MEL_VERSION, BEAT_SR, BEAT_NFFT, BEAT_HOP, BEAT_BANDS, BEAT_FPS, beatFrameCount, beatMel, resampleSinc };
+})();
+/* ---- core/audio/dsp/beats.mjs ---- */
+__mod["core/audio/dsp/beats.mjs"] = (function () {
+const { beatMel, resampleSinc, BEAT_SR, BEAT_FPS, BEAT_BANDS } = __mod["core/audio/dsp/beat-mel.mjs"];
+const { SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
+// Beats, downbeats and a beat-derived tempo from Beat This, and the
+// half/double-time decision D1 can't make on its own (BUILD-5-PLAN §6.2).
+//
+// D1 (tempo.mjs) is right to ±1 BPM on 80% of the Beatport set, and most of
+// what it gets wrong is the octave: 87 for 174, 140 for 70. The periodicity
+// of a pulse train really is the same at T and T/2, so no autocorrelation
+// can settle it; a model that has heard where people tap can. Beat This
+// (Foscarin, Schlüter, Widmer, ISMIR 2024; MIT code and weights, `small0`
+// checkpoint, ~10 MB as ONNX) gives a beat and a downbeat activation per
+// 20 ms frame, and the spacing of its beats is the tempo level it heard.
+//
+// So the two are combined, each for what it is good at:
+//   - D1 keeps the number (its ±1 BPM precision comes from every harmonic in
+//     the autocorrelation; 20 ms beat frames are coarser than that);
+//   - Beat This picks the level: when its beats are clearly at D1's tempo ×2
+//     or ×½ the record moves there, and when they agree with D1 the
+//     ambiguity flag is cleared.
+// Measured on the Beatport set before it shipped: docs/models/beat-this.md.
+//
+// Pipeline per preview window (contiguous 16 kHz audio, as combine.mjs
+// gets it): upsample to 22050 Hz → beat-mel.mjs → the ONNX graph (zero-padded
+// by BORDER frames each side, as beat_this/inference.py does) → peak picking
+// exactly as beat_this's "minimal" postprocessor (max over ±3 frames, logit
+// above 0, adjacent peaks merged, downbeats snapped to the nearest beat).
+//
+// `ort` is injected, as in infer.mjs: onnxruntime-web in the page,
+// onnxruntime-node in scripts, a fake session in tests. The model URL is
+// configurable (BEAT_MODEL_URL is only the default), so the file can be
+// hosted anywhere.
+
+
+
+
+const BEATS_VERSION = '1.0.0';
+/** Default model location, relative to the page (docs/). Override with createBeatTracker({ modelUrl }). */
+const BEAT_MODEL_URL = 'models/beat-this-small0.onnx';
+/** The file under models/ (self-hosted, MIT, ~10 MB), as the other ears' *_FILE constants. */
+const BEAT_MODEL_FILE = 'beat-this-small0.onnx';
+/** Flagged records given Beat This per start(): ~1 s each on a laptop, so a run stays short. */
+const BEATS_FILL_PER_RUN = 40;
+/** Frames of zero padding each side; the model was not trained on its edges. */
+const BORDER = 6;
+/** Beats within this fraction of a level count as that level. */
+const LEVEL_TOL = 0.04;
+/** Fewer beats than this in a window: no beat tempo. */
+const MIN_BEATS = 6;
+/** Share of inter-beat intervals near the median below this: too irregular to judge. */
+const MIN_REGULARITY = 0.6;
+
+const r1 = x => Math.round(x * 10) / 10;
+const r3 = x => Math.round(x * 1000) / 1000;
+const ok = x => typeof x === 'number' && Number.isFinite(x);
+
+/**
+ * beat_this "minimal" postprocessing for one piece.
+ * @param {Float32Array|number[]} beat      logits per frame
+ * @param {Float32Array|number[]} downbeat  logits per frame
+ * @param {number} [fps]
+ * @returns {{ beats: number[], downbeats: number[] }} times in seconds
+ */
+function pickBeats(beat, downbeat, fps = BEAT_FPS) {
+  const frames = l => {
+    const n = l.length, idx = [];
+    for (let i = 0; i < n; i++) {
+      const v = l[i];
+      if (!(v > 0)) continue;
+      let m = -Infinity;
+      for (let j = Math.max(0, i - 3); j <= Math.min(n - 1, i + 3); j++) if (l[j] > m) m = l[j];
+      if (v === m) idx.push(i);
+    }
+    // merge runs of adjacent frames into their running mean (deduplicate_peaks, width 1)
+    const out = [];
+    let p = null, c = 0;
+    for (const q of idx) {
+      if (p !== null && q - p <= 1) { c++; p += (q - p) / c; }
+      else { if (p !== null) out.push(p); p = q; c = 1; }
+    }
+    if (p !== null) out.push(p);
+    return out;
+  };
+  const beats = frames(beat).map(f => f / fps);
+  let downbeats = frames(downbeat).map(f => f / fps);
+  if (beats.length) {
+    downbeats = downbeats.map(d => {
+      let best = beats[0];
+      for (const b of beats) if (Math.abs(b - d) < Math.abs(best - d)) best = b;
+      return best;
+    });
+    downbeats = [...new Set(downbeats)].sort((a, b) => a - b);
+  }
+  return { beats, downbeats };
+}
+
+/**
+ * Tempo from beat times: the median two-beat span, halved, refined by a
+ * least-squares line through the beats that sit on its grid.
+ * @param {number[]} beats seconds, ascending
+ * @returns {{ bpm: number|null, regularity: number, n: number }}
+ *   `regularity` is the share of intervals within 10% of the median (0–1).
+ */
+function tempoFromBeats(beats) {
+  const b = (beats ?? []).filter(ok);
+  if (b.length < MIN_BEATS) return { bpm: null, regularity: 0, n: b.length };
+  const ibi = [], two = [];
+  for (let i = 1; i < b.length; i++) ibi.push(b[i] - b[i - 1]);
+  for (let i = 2; i < b.length; i++) two.push((b[i] - b[i - 2]) / 2);
+  // median of two-beat spans: robust to swing (long-short pairs) as well as
+  // to a missed or doubled beat
+  const med = two.sort((x, y) => x - y)[Math.floor(two.length / 2)];
+  if (!(med > 0)) return { bpm: null, regularity: 0, n: b.length };
+  const regularity = ibi.filter(d => Math.abs(d - med) <= 0.1 * med).length / ibi.length;
+  // fit t = a + k·P on the beats within a quarter period of their grid slot,
+  // re-assigning grid slots from the last fit
+  let P = med, a = b[0];
+  for (let pass = 0; pass < 3; pass++) {
+    const pts = [];
+    for (const t of b) { const k = Math.round((t - a) / P); if (Math.abs(t - (a + k * P)) <= 0.25 * P) pts.push([k, t]); }
+    if (pts.length < MIN_BEATS) break;
+    const n = pts.length, mk = pts.reduce((s, p) => s + p[0], 0) / n, mt = pts.reduce((s, p) => s + p[1], 0) / n;
+    let sxy = 0, sxx = 0;
+    for (const [k, t] of pts) { sxy += (k - mk) * (t - mt); sxx += (k - mk) ** 2; }
+    if (!(sxx > 0)) break;
+    P = sxy / sxx; a = mt - P * mk;
+  }
+  return { bpm: r1(60 / P), regularity: r3(regularity), n: b.length };
+}
+
+/**
+ * Combine per-window beat tempi: windows that agree (within LEVEL_TOL) pool;
+ * otherwise the more regular window wins.
+ * @param {{ bpm: number|null, regularity: number }[]} ws
+ * @returns {{ bpm: number, regularity: number } | null}
+ */
+function combineBeatTempo(ws) {
+  const good = (ws ?? []).filter(w => w && ok(w.bpm) && w.regularity >= MIN_REGULARITY);
+  if (!good.length) return null;
+  good.sort((a, b) => b.regularity - a.regularity);
+  const a = good[0];
+  const same = good.filter(w => Math.abs(w.bpm / a.bpm - 1) <= LEVEL_TOL);
+  const bpm = same.reduce((s, w) => s + w.bpm, 0) / same.length;
+  return { bpm: r1(bpm), regularity: a.regularity, windows: same.length };
+}
+
+/**
+ * The half/double-time decision. `dsp` is combine.mjs's output (bpm,
+ * bpmConf, octaveAmbiguous, bpmAlt); `beat` is combineBeatTempo()'s.
+ * Returns a new dsp: the same object when Beat This has nothing to say.
+ *
+ *   beats at D1's level         → kept; octaveAmbiguous cleared
+ *   beats at ×2 or ×½ D1's      → bpm moves to that level (bpmAlt when it is
+ *                                  that partner, else exactly ×2/×½); the old
+ *                                  value becomes bpmAlt; octaveAmbiguous cleared
+ *   anything else               → unchanged
+ * `onlyAmbiguous` restricts changes to records D1 already flagged.
+ */
+function resolveOctave(dsp, beat, { onlyAmbiguous = false } = {}) {
+  if (!dsp || !ok(dsp.bpm) || !beat || !ok(beat.bpm)) return dsp;
+  if (onlyAmbiguous && !dsp.octaveAmbiguous) return dsp;
+  const near = (x, y) => Math.abs(x / y - 1) <= LEVEL_TOL;
+  const out = { ...dsp, beatBpm: beat.bpm };
+  if (near(beat.bpm, dsp.bpm)) {
+    out.octaveAmbiguous = false;
+    out.octaveBy = 'beats';
+    return out;
+  }
+  for (const k of [2, 0.5]) {
+    const level = dsp.bpm * k;
+    if (!near(beat.bpm, level)) continue;
+    const alt = ok(dsp.bpmAlt) && near(dsp.bpmAlt, level) ? dsp.bpmAlt : r1(level);
+    out.bpmAlt = dsp.bpm;
+    out.bpm = alt;
+    out.octaveAmbiguous = false;
+    out.octaveBy = 'beats';
+    return out;
+  }
+  return dsp;
+}
+
+/**
+ * Create a beat tracker on an ONNX session.
+ * @param {{ ort: { InferenceSession: { create(url: string|Uint8Array, opts?: object): Promise<any> }, Tensor: any },
+ *           modelUrl?: string|Uint8Array, sessionOptions?: object }} o
+ * @returns {Promise<{ run(samples16k: Float32Array, sampleRate?: number): Promise<{ beats: number[], downbeats: number[], tempo: object }>,
+ *                     measure(windows: Float32Array[]): Promise<object|null>, release(): Promise<void> }>}
+ */
+async function createBeatTracker({ ort, modelUrl = BEAT_MODEL_URL, sessionOptions } = {}) {
+  if (!ort?.InferenceSession) throw new Error('createBeatTracker needs ort');
+  const session = await ort.InferenceSession.create(modelUrl, sessionOptions ?? { executionProviders: ['wasm'] });
+  const inName = session.inputNames?.[0] ?? 'input_spectrogram';
+  const run = async (samples, sampleRate = SAMPLE_RATE) => {
+    const x = resampleSinc(samples, sampleRate, BEAT_SR);
+    const { frames, data } = beatMel(x);
+    if (frames < 2 * BEAT_FPS) return { beats: [], downbeats: [], tempo: { bpm: null, regularity: 0, n: 0 } };
+    const T = frames + 2 * BORDER;
+    const padded = new Float32Array(T * BEAT_BANDS);
+    padded.set(data, BORDER * BEAT_BANDS);
+    const res = await session.run({ [inName]: new ort.Tensor('float32', padded, [1, T, BEAT_BANDS]) });
+    const beat = res.beat.data.subarray(BORDER, BORDER + frames);
+    const down = res.downbeat.data.subarray(BORDER, BORDER + frames);
+    const picked = pickBeats(beat, down);
+    return { ...picked, tempo: tempoFromBeats(picked.beats) };
+  };
+  return {
+    run,
+    /** Beat tempo over preview windows (combine.mjs's input), combined. */
+    async measure(windows) {
+      const ts = [];
+      for (const w of windows ?? []) {
+        if (!w?.length) continue;
+        try { ts.push((await run(w)).tempo); } catch { /* one bad window never fails the track */ }
+      }
+      return combineBeatTempo(ts);
+    },
+    async release() { await session.release?.(); },
+  };
+}
+
+/**
+ * Wrap a synchronous dsp (combine.mjs measureWindows) so Beat This settles
+ * the tempo level. The result is still the record's `dsp` (same `v`), with
+ * `beatsV` once Beat This has listened, and `beatBpm` / `octaveBy: 'beats'`
+ * when it had something to say. If the tracker throws (no model, no WASM),
+ * the result is exactly what `dsp` returned, without `beatsV`, so a later
+ * run tries again (needsBeats()).
+ * @param {(windows: Float32Array[]) => object|null} dsp
+ * @param {{ measure(windows: Float32Array[]): Promise<object|null> } | null} tracker
+ * @param {{ onlyAmbiguous?: boolean }} [opts]
+ * @returns {(windows: Float32Array[]) => Promise<object|null>}
+ */
+function withBeats(dsp, tracker, opts) {
+  return async windows => {
+    const d = dsp(windows);
+    if (!d || !ok(d.bpm) || !tracker) return d;
+    let beat;
+    try { beat = await tracker.measure(windows); } catch { return d; }
+    return { ...resolveOctave(d, beat, opts), beatsV: BEATS_VERSION };
+  };
+}
+
+/**
+ * Beat This runs only where the DSP is unsure of the half/double-time level
+ * (BUILD-5-PROGRESS.md: flagged-only 82.7% ±1 BPM, 43 octave errors, against the
+ * DSP's 80.9% / 50; run on every record it was 81.1% / 49). Needs it: a tempo
+ * flagged octave-ambiguous that Beat This hasn't listened to yet.
+ */
+function needsBeatsFlagged(rec) {
+  return needsBeats(rec) && rec.dsp.octaveAmbiguous === true;
+}
+
+/** Does this record have a tempo that Beat This hasn't listened to yet (this BEATS_VERSION)? */
+function needsBeats(rec) {
+  return !!rec?.dsp && ok(rec.dsp.bpm) && rec.dsp.beatsV !== BEATS_VERSION;
+}
+return { BEATS_VERSION, BEAT_MODEL_URL, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, BORDER, LEVEL_TOL, pickBeats, tempoFromBeats, combineBeatTempo, resolveOctave, createBeatTracker, withBeats, needsBeatsFlagged, needsBeats };
+})();
 /* ---- web/audio/controller.mjs ---- */
 __mod["web/audio/controller.mjs"] = (function () {
 const { runQueue, fillDsp } = __mod["core/audio/worker.js"];
 const { MISS } = __mod["core/audio/record.mjs"];
 const { measureWindows, needsDsp } = __mod["core/audio/dsp/combine.mjs"];
 const { fillClap, needsClap, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
+const { withBeats, needsBeatsFlagged, BEATS_FILL_PER_RUN } = __mod["core/audio/dsp/beats.mjs"];
 // Runs "Listen to my music" in the page (WP-B2): queue → analyseOne → store.
 //
 // The page owns three things core/audio leaves to it: storage (store.mjs),
@@ -2468,6 +2889,7 @@ const { fillClap, needsClap, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 // the first such run, new records get their `clap` field in the same pass,
 // and records heard before are topped up after DSP, the same lazy way.
 // Without loadClap, or with clapOn() false, nothing here differs from before.
+
 
 
 
@@ -2511,6 +2933,13 @@ function createWorkerEar(worker, init) {
       return call('heads', { emb: emb.slice(), patches }); } },
     /** CLAP (WP-C2): load its encoder in the same Worker, once; then `embed`
      *  takes 48 kHz windows (transferred) and returns the record's clap field. */
+    /** Beat This (tempo): load its tracker in the same Worker, once. `measure` takes the
+     *  decoded 16 kHz windows (copied, since the DSP still reads them) and returns the beat tempo. */
+    loadBeats: async modelUrl => {
+      await ready;
+      await call('beatsInit', { modelUrl });
+      return { measure: windows => call('beats', { windows: windows.map(w => w.slice()) }) };
+    },
     loadClap: async modelUrl => {
       await ready;
       await call('clapInit', { modelUrl });
@@ -2536,6 +2965,10 @@ function createWorkerEar(worker, init) {
  *        CLAP (WP-C2): loads its encoder, once; { decode: 48 kHz decode, embed: windows → clap field }
  * @param {() => boolean} [deps.clapOn]  asked at each start(): may CLAP download and run now?
  * @param {number} [deps.clapFillPerRun] records given CLAP per start (default CLAP_FILL_PER_RUN)
+ * @param {() => Promise<{ measure: Function }>} [deps.loadBeats]
+ *        Beat This (tempo): loads its tracker, once; measure(windows) → beat tempo
+ * @param {() => boolean} [deps.beatsOn]  asked at each start(): may Beat This download and run now?
+ * @param {number} [deps.beatsFillPerRun] flagged records given Beat This per start (default BEATS_FILL_PER_RUN)
  */
 function createAudioController(deps) {
   const st = { state: 'off', done: 0, total: 0, reason: null, failed: 0, missed: {}, heard: 0, last: null };
@@ -2545,6 +2978,19 @@ function createAudioController(deps) {
   const noFill = new Set(); // ids whose dsp can't be filled this session (different recording now, nothing measured)
   const clapBudget = deps.clapFillPerRun ?? CLAP_FILL_PER_RUN;
   const noClap = new Set();  // the same, for CLAP
+  const beatsBudget = deps.beatsFillPerRun ?? BEATS_FILL_PER_RUN;
+  const noBeats = new Set(); // the same, for Beat This
+  let beatsTracker = null;
+
+  /** The Beat This tracker when it is switched on and loads; null otherwise (never fails a run). */
+  async function beatsNow() {
+    if (!deps.loadBeats || !deps.beatsOn?.()) return null;
+    if (beatsTracker) return beatsTracker;
+    st.reason = 'loading the tempo model'; emit();
+    try { beatsTracker = await deps.loadBeats(); } catch (e) { beatsTracker = null; st.beatsError = String(e?.message ?? e); }
+    st.reason = null; emit();
+    return beatsTracker;
+  }
 
   /** The CLAP ear when it is switched on and loads; null otherwise (never fails a run). */
   async function clapNow() {
@@ -2589,6 +3035,7 @@ function createAudioController(deps) {
           if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp }, signal);
           const clap = signal.aborted ? null : await clapNow();
           if (clap && clapBudget > 0) await topUpClap({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }, signal);
+          await topUpBeats({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }, signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -2611,6 +3058,7 @@ function createAudioController(deps) {
         } });
         if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
         if (!res.stopped && clap && clapBudget > 0) await topUpClap(analyse, signal);
+        if (!res.stopped) await topUpBeats(analyse, signal);
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
@@ -2646,6 +3094,28 @@ function createAudioController(deps) {
       if (r.record) { await deps.store.put(r.record); st.clapFilled = (st.clapFilled ?? 0) + 1; emit(); }
       else if (r.skip) noClap.add(rec.id);
       // a failed download is tried again on a later run
+    }
+  }
+
+  /** Beat This (opt-in): re-listen to records whose half/double time the DSP flagged, a few per run. */
+  async function topUpBeats(analyse, signal) {
+    if (signal.aborted || beatsBudget <= 0 || !dsp) return;
+    const all = await deps.store.getAll();
+    const due = [...all.values()].filter(r => needsBeatsFlagged(r) && !noBeats.has(r.id)).slice(0, beatsBudget);
+    if (!due.length) return;
+    const tracker = await beatsNow();
+    if (!tracker) return;
+    const withTempo = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
+                        dsp: withBeats(dsp, tracker, { onlyAmbiguous: true }) };
+    for (const rec of due) {
+      if (signal.aborted) return;
+      let r;
+      try { r = await fillDsp(withTempo, rec); } catch { r = { skip: 'error' }; }
+      if (r.record) {
+        await deps.store.put(r.record);
+        if (r.record.dsp?.beatsV) { st.beatsFilled = (st.beatsFilled ?? 0) + 1; emit(); }
+        else noBeats.add(rec.id);   // the tracker failed on it: not again this session
+      } else if (r.skip) noBeats.add(rec.id);
     }
   }
 
@@ -4396,20 +4866,27 @@ __mod["web/audio/dsp-view.mjs"] = (function () {
 //  - tempo: 80% within ±1 BPM overall, 86% when confidence ≥ 0.3, and most
 //    octave errors are flagged. Shown by default at confidence ≥ BPM_MIN_CONF,
 //    with "87/174?" when half/double time is unsure.
-//  - key: v1 30% exact; v3 (learned weights, 2026-11-15) 55.3% exact on the
-//    held-out half (61.8% at confidence ≥ 0.3). Still under the 60% bar, so
-//    hidden by default.
-// `localStorage.bf_audio_dsp = '1'` shows key too (for checking), '0' hides
+//  - key: v1 30% exact; v3 (learned weights, 2026-11-15) 55.3% exact / 64.6%
+//    MIREX on all of the held-out half: under the 60% / 70% bar, so never shown
+//    unconditionally. Shown only when sure (2026-11-16): at confidence >=
+//    KEY_MIN_CONF the held-out half is 62.4% exact / 72.0% MIREX on 53% of tracks
+//    (BUILD-5-PROGRESS.md). Unsure tracks show no key at all.
+// `localStorage.bf_audio_dsp = '1'` shows every reading (for checking), '0' hides
 // everything.
 //
 // Energy is never put in the view model yet: D3's weights are hand-picked and
 // unchecked on real previews.
 
-const DSP_UI_DEFAULT = false;       // key (and everything) — off until key passes
+const DSP_UI_DEFAULT = false;       // every reading, however unsure — only for checking
 const BPM_UI_DEFAULT = true;        // tempo alone — on, measured above
 /** Tempo shown by default only at or above this confidence (86% within ±1 BPM there). */
 const BPM_MIN_CONF = 0.3;
 const DSP_UI_KEY = 'bf_audio_dsp';
+
+/** The default key display: only readings at or above KEY_MIN_CONF. Off only when the override says '0'. */
+const KEY_UI_DEFAULT = true;
+/** A key is shown (and used for mixing) only at or above this; equal to match.mjs's KEY_MIN_CONF. */
+const KEY_MIN_CONF = 0.65;
 
 /** Below this confidence a reading is not shown at all. */
 const MIN_SHOW_CONF = 0.15;
@@ -4434,30 +4911,36 @@ function bpmShown(ls = globalThis.localStorage) {
   return override(ls) !== false && BPM_UI_DEFAULT;
 }
 
+/** Is the sure-only key shown? On unless the browser override says '0'. */
+function keyShown(ls = globalThis.localStorage) {
+  return override(ls) !== false && KEY_UI_DEFAULT;
+}
+
 /**
  * @param {object|null|undefined} record  a stored AudioRecord (or miss)
- * @param {{ show?: boolean, bpm?: boolean }} [o]  show: everything (default dspShown());
- *        bpm: tempo alone at BPM_MIN_CONF (default bpmShown())
+ * @param {{ show?: boolean, bpm?: boolean, key?: boolean }} [o]  show: everything (default dspShown());
+ *        bpm: tempo alone at BPM_MIN_CONF (default bpmShown());
+ *        key: the key alone, only at KEY_MIN_CONF (default keyShown())
  * @returns {{ bpm?: number, bpmAlt?: number, bpmConf?: number, key?: string, camelot?: string, keyConf?: number } | null}
  */
-function dspSoundVM(record, { show = dspShown(), bpm = bpmShown() } = {}) {
-  if (!show && !bpm) return null;
+function dspSoundVM(record, { show = dspShown(), bpm = bpmShown(), key = keyShown() } = {}) {
+  if (!show && !bpm && !key) return null;
   const d = record && !record.miss ? record.dsp : null;
   if (!d || typeof d !== 'object') return null;
   const vm = {};
-  if (Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= (show ? MIN_SHOW_CONF : BPM_MIN_CONF)) {
+  if ((show || bpm) && Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= (show ? MIN_SHOW_CONF : BPM_MIN_CONF)) {
     vm.bpm = Math.round(d.bpm);
     vm.bpmConf = d.bpmConf;
     if (d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0) vm.bpmAlt = Math.round(d.bpmAlt);
   }
-  if (show && typeof d.key === 'string' && d.key && (d.keyConf ?? 0) >= MIN_SHOW_CONF) {
+  if ((show || key) && typeof d.key === 'string' && d.key && (d.keyConf ?? 0) >= (show ? MIN_SHOW_CONF : KEY_MIN_CONF)) {
     vm.key = d.key;
     if (typeof d.camelot === 'string') vm.camelot = d.camelot;
     vm.keyConf = d.keyConf;
   }
   return Object.keys(vm).length ? vm : null;
 }
-return { DSP_UI_DEFAULT, BPM_UI_DEFAULT, BPM_MIN_CONF, DSP_UI_KEY, MIN_SHOW_CONF, dspShown, bpmShown, dspSoundVM };
+return { DSP_UI_DEFAULT, BPM_UI_DEFAULT, BPM_MIN_CONF, DSP_UI_KEY, KEY_UI_DEFAULT, KEY_MIN_CONF, MIN_SHOW_CONF, dspShown, bpmShown, keyShown, dspSoundVM };
 })();
 /* ---- web/audio/labels-view.mjs ---- */
 __mod["web/audio/labels-view.mjs"] = (function () {
@@ -4733,12 +5216,14 @@ const { connectionVerdict } = __mod["web/audio/settings.mjs"];
 //    "this computer has the memory" (memoryOverride). deviceMemory is
 //    Chromium-only and capped at 8, so a missing value is "unknown", and only
 //    the override lets it through. CLAP has no memory rule (its encoder runs
-//    fine on smaller machines, measured by WP-C2).
+//    fine on smaller machines, measured by WP-C2). Beat This (tempo, ~10 MB)
+//    has none either: it only re-listens to tracks whose half/double time the
+//    DSP flagged as unsure.
 
 
 const DEEP_SETTINGS_KEY = 'bf_audio_deep';
-const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: false, clap: false, memoryOverride: false });
-const DEEP_EARS = Object.freeze(['maest', 'clap']);
+const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: false, clap: false, beats: false, memoryOverride: false });
+const DEEP_EARS = Object.freeze(['maest', 'clap', 'beats']);
 /** GB of device memory MAEST needs (navigator.deviceMemory's top value). */
 const MAEST_MIN_MEMORY_GB = 8;
 
@@ -4769,7 +5254,7 @@ function writeDeepSettings(ls, change) {
  *  - 'metered'        cellular or Data Saver: wait for Wi-Fi
  *  - 'unknown'        the browser will not say whether it is on Wi-Fi: ask once
  *
- * @param {'maest'|'clap'} ear
+ * @param {'maest'|'clap'|'beats'} ear
  * @param {{ settings?: object, connection?: object, deviceMemory?: number, confirmed?: boolean }} o
  *        connection = navigator.connection, deviceMemory = navigator.deviceMemory,
  *        confirmed = the listener said "I'm on Wi-Fi" this session
@@ -5534,17 +6019,18 @@ const { analyseOne } = __mod["core/audio/worker.js"];
 const { MISS, validRecord, isCurrent, RECORD_VERSION, MODEL } = __mod["core/audio/record.mjs"];
 const { MEL_VERSION } = __mod["core/audio/mel.mjs"];
 const { HEADS, summariseHeads } = __mod["core/audio/heads.mjs"];
-const { dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, DSP_UI_KEY } = __mod["web/audio/dsp-view.mjs"];
+const { dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY } = __mod["web/audio/dsp-view.mjs"];
 const { measureWindows, needsDsp, DSP_VERSION } = __mod["core/audio/dsp/combine.mjs"];
 const { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf } = __mod["web/audio/labels-view.mjs"];
 const { readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB } = __mod["web/audio/deep-settings.mjs"];
 const { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } = __mod["core/audio/clap-search.mjs"];
 const { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN } = __mod["web/audio/maest-run.mjs"];
 const { MAEST_FILE, MAEST_LABELS_FILE, needsMaest } = __mod["core/audio/maest.mjs"];
+const { needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN } = __mod["core/audio/dsp/beats.mjs"];
 const { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 // What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
 // One namespace so the template reaches core/audio through a single name.
-return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
+return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
 })();
 /* ---- core/audio/infer.mjs ---- */
 __mod["core/audio/infer.mjs"] = (function () {

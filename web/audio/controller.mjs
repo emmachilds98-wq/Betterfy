@@ -28,6 +28,7 @@ import { runQueue, fillDsp } from '../../core/audio/worker.js';
 import { MISS } from '../../core/audio/record.mjs';
 import { measureWindows, needsDsp } from '../../core/audio/dsp/combine.mjs';
 import { fillClap, needsClap, CLAP_FILL_PER_RUN } from '../../core/audio/clap.mjs';
+import { withBeats, needsBeatsFlagged, BEATS_FILL_PER_RUN } from '../../core/audio/dsp/beats.mjs';
 
 /** Records topped up with dsp per start(), after the queue. */
 export const DSP_FILL_PER_RUN = 25;
@@ -67,6 +68,13 @@ export function createWorkerEar(worker, init) {
       return call('heads', { emb: emb.slice(), patches }); } },
     /** CLAP (WP-C2): load its encoder in the same Worker, once; then `embed`
      *  takes 48 kHz windows (transferred) and returns the record's clap field. */
+    /** Beat This (tempo): load its tracker in the same Worker, once. `measure` takes the
+     *  decoded 16 kHz windows (copied, since the DSP still reads them) and returns the beat tempo. */
+    loadBeats: async modelUrl => {
+      await ready;
+      await call('beatsInit', { modelUrl });
+      return { measure: windows => call('beats', { windows: windows.map(w => w.slice()) }) };
+    },
     loadClap: async modelUrl => {
       await ready;
       await call('clapInit', { modelUrl });
@@ -92,6 +100,10 @@ export function createWorkerEar(worker, init) {
  *        CLAP (WP-C2): loads its encoder, once; { decode: 48 kHz decode, embed: windows → clap field }
  * @param {() => boolean} [deps.clapOn]  asked at each start(): may CLAP download and run now?
  * @param {number} [deps.clapFillPerRun] records given CLAP per start (default CLAP_FILL_PER_RUN)
+ * @param {() => Promise<{ measure: Function }>} [deps.loadBeats]
+ *        Beat This (tempo): loads its tracker, once; measure(windows) → beat tempo
+ * @param {() => boolean} [deps.beatsOn]  asked at each start(): may Beat This download and run now?
+ * @param {number} [deps.beatsFillPerRun] flagged records given Beat This per start (default BEATS_FILL_PER_RUN)
  */
 export function createAudioController(deps) {
   const st = { state: 'off', done: 0, total: 0, reason: null, failed: 0, missed: {}, heard: 0, last: null };
@@ -101,6 +113,19 @@ export function createAudioController(deps) {
   const noFill = new Set(); // ids whose dsp can't be filled this session (different recording now, nothing measured)
   const clapBudget = deps.clapFillPerRun ?? CLAP_FILL_PER_RUN;
   const noClap = new Set();  // the same, for CLAP
+  const beatsBudget = deps.beatsFillPerRun ?? BEATS_FILL_PER_RUN;
+  const noBeats = new Set(); // the same, for Beat This
+  let beatsTracker = null;
+
+  /** The Beat This tracker when it is switched on and loads; null otherwise (never fails a run). */
+  async function beatsNow() {
+    if (!deps.loadBeats || !deps.beatsOn?.()) return null;
+    if (beatsTracker) return beatsTracker;
+    st.reason = 'loading the tempo model'; emit();
+    try { beatsTracker = await deps.loadBeats(); } catch (e) { beatsTracker = null; st.beatsError = String(e?.message ?? e); }
+    st.reason = null; emit();
+    return beatsTracker;
+  }
 
   /** The CLAP ear when it is switched on and loads; null otherwise (never fails a run). */
   async function clapNow() {
@@ -145,6 +170,7 @@ export function createAudioController(deps) {
           if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp }, signal);
           const clap = signal.aborted ? null : await clapNow();
           if (clap && clapBudget > 0) await topUpClap({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }, signal);
+          await topUpBeats({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }, signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -167,6 +193,7 @@ export function createAudioController(deps) {
         } });
         if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
         if (!res.stopped && clap && clapBudget > 0) await topUpClap(analyse, signal);
+        if (!res.stopped) await topUpBeats(analyse, signal);
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
@@ -202,6 +229,28 @@ export function createAudioController(deps) {
       if (r.record) { await deps.store.put(r.record); st.clapFilled = (st.clapFilled ?? 0) + 1; emit(); }
       else if (r.skip) noClap.add(rec.id);
       // a failed download is tried again on a later run
+    }
+  }
+
+  /** Beat This (opt-in): re-listen to records whose half/double time the DSP flagged, a few per run. */
+  async function topUpBeats(analyse, signal) {
+    if (signal.aborted || beatsBudget <= 0 || !dsp) return;
+    const all = await deps.store.getAll();
+    const due = [...all.values()].filter(r => needsBeatsFlagged(r) && !noBeats.has(r.id)).slice(0, beatsBudget);
+    if (!due.length) return;
+    const tracker = await beatsNow();
+    if (!tracker) return;
+    const withTempo = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
+                        dsp: withBeats(dsp, tracker, { onlyAmbiguous: true }) };
+    for (const rec of due) {
+      if (signal.aborted) return;
+      let r;
+      try { r = await fillDsp(withTempo, rec); } catch { r = { skip: 'error' }; }
+      if (r.record) {
+        await deps.store.put(r.record);
+        if (r.record.dsp?.beatsV) { st.beatsFilled = (st.beatsFilled ?? 0) + 1; emit(); }
+        else noBeats.add(rec.id);   // the tracker failed on it: not again this session
+      } else if (r.skip) noBeats.add(rec.id);
     }
   }
 

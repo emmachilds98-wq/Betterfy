@@ -167,9 +167,10 @@ function deepPanelHTML() {
     <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMaest" ${d.maest ? 'checked' : ''}> Second ear (MAEST, about 90 MB)</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP, about 77 MB)</label>
+      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepBeats" ${d.beats ? 'checked' : ''}> Better tempo (Beat This, about 10 MB)</label>
       <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has the memory (8 GB or more)</label>
     </div>
-    ${why('maest')}${d.maest ? maestLineHTML() : ''}${why('clap')}${clapStatusHTML(d)}
+    ${why('maest')}${d.maest ? maestLineHTML() : ''}${why('clap')}${clapStatusHTML(d)}${why('beats')}${beatsStatusHTML(d)}
   </div>`;
 }
 
@@ -181,6 +182,14 @@ function maestLineHTML() {
     ${run ? '<button class="b sm" id="maestStop">Stop</button>' : ok && audioSettings().on ? '<button class="b sm" id="maestGo">Listen with the second ear now</button>' : ''}
     ${deepAllowed('maest') === 'unknown' ? '<button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button>' : ''}</p>
     <p class="sub">It changes no suggestion until a Score run (More → Engine) shows it places your tracks better than the first ear.</p>`;
+}
+
+/** Beat This's line: how many octave-unsure tempos it has re-listened to. Nothing while off. */
+function beatsStatusHTML(d) {
+  if (!d.beats || deepAllowed('beats') !== 'ok' || !globalThis.BetterfyAudio?.needsBeatsFlagged) return '';
+  const flagged = [...(AUDIO.records?.values() ?? [])].filter(r => !r.miss && r.dsp?.octaveAmbiguous === true);
+  const left = flagged.filter(r => BetterfyAudio.needsBeatsFlagged(r)).length;
+  return `<p class="sub" style="margin:4px 0">${left ? `${left.toLocaleString()} track${left === 1 ? '' : 's'} where half or double time was unsure still to re-check, ${BetterfyAudio.BEATS_FILL_PER_RUN} more each time it listens.` : 'Every tempo that was unsure between half and double time has been re-checked.'} Tempos that were already clear are left alone. The model is about 10 MB, downloaded once.</p>`;
 }
 
 /** CLAP's line in the Deep listen block: how many heard tracks it has described. Nothing while off. */

@@ -7,7 +7,7 @@ const mem = (init = null) => { const m = new Map(init ? [[DEEP_SETTINGS_KEY, ini
 const WIFI = { type: 'wifi' };
 
 test('every deep ear is off by default, and junk reads as the defaults', () => {
-  assert.deepEqual(DEFAULT_DEEP_SETTINGS, { maest: false, clap: false, memoryOverride: false });
+  assert.deepEqual(DEFAULT_DEEP_SETTINGS, { maest: false, clap: false, beats: false, memoryOverride: false });
   assert.deepEqual(readDeepSettings(mem()), DEFAULT_DEEP_SETTINGS);
   assert.deepEqual(readDeepSettings(null), DEFAULT_DEEP_SETTINGS);
   assert.deepEqual(readDeepSettings(mem('{nope')), DEFAULT_DEEP_SETTINGS);
@@ -18,15 +18,15 @@ test('every deep ear is off by default, and junk reads as the defaults', () => {
 
 test('writing merges one change, drops unknown keys, and survives a throwing store', () => {
   const ls = mem();
-  assert.deepEqual(writeDeepSettings(ls, { maest: true }), { maest: true, clap: false, memoryOverride: false });
-  assert.deepEqual(writeDeepSettings(ls, { clap: true, extra: 1 }), { maest: true, clap: true, memoryOverride: false });
-  assert.deepEqual(JSON.parse(ls.m.get(DEEP_SETTINGS_KEY)), { maest: true, clap: true, memoryOverride: false });
+  assert.deepEqual(writeDeepSettings(ls, { maest: true }), { maest: true, clap: false, beats: false, memoryOverride: false });
+  assert.deepEqual(writeDeepSettings(ls, { clap: true, extra: 1 }), { maest: true, clap: true, beats: false, memoryOverride: false });
+  assert.deepEqual(JSON.parse(ls.m.get(DEEP_SETTINGS_KEY)), { maest: true, clap: true, beats: false, memoryOverride: false });
   const bad = { getItem: () => null, setItem: () => { throw new Error('quota'); } };
-  assert.deepEqual(writeDeepSettings(bad, { clap: true }), { maest: false, clap: true, memoryOverride: false });
+  assert.deepEqual(writeDeepSettings(bad, { clap: true }), { maest: false, clap: true, beats: false, memoryOverride: false });
 });
 
 test('MAEST: the device gate needs deviceMemory >= 8 or the override', () => {
-  const on = { maest: true, clap: false, memoryOverride: false };
+  const on = { maest: true, clap: false, beats: false, memoryOverride: false };
   assert.equal(MAEST_MIN_MEMORY_GB, 8);
   assert.equal(deepListenAllowed('maest', { settings: on, connection: WIFI, deviceMemory: 8 }), 'ok');
   assert.equal(deepListenAllowed('maest', { settings: on, connection: WIFI, deviceMemory: 4 }), 'low-memory');
@@ -38,7 +38,7 @@ test('MAEST: the device gate needs deviceMemory >= 8 or the override', () => {
 });
 
 test('CLAP has no memory rule', () => {
-  const on = { maest: false, clap: true, memoryOverride: false };
+  const on = { maest: false, clap: true, beats: false, memoryOverride: false };
   assert.equal(deepListenAllowed('clap', { settings: on, connection: WIFI, deviceMemory: 2 }), 'ok');
   assert.equal(deepListenAllowed('clap', { settings: on, connection: WIFI }), 'ok');
 });

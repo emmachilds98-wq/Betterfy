@@ -14,12 +14,14 @@
 //    "this computer has the memory" (memoryOverride). deviceMemory is
 //    Chromium-only and capped at 8, so a missing value is "unknown", and only
 //    the override lets it through. CLAP has no memory rule (its encoder runs
-//    fine on smaller machines, measured by WP-C2).
+//    fine on smaller machines, measured by WP-C2). Beat This (tempo, ~10 MB)
+//    has none either: it only re-listens to tracks whose half/double time the
+//    DSP flagged as unsure.
 import { connectionVerdict } from './settings.mjs';
 
 export const DEEP_SETTINGS_KEY = 'bf_audio_deep';
-export const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: false, clap: false, memoryOverride: false });
-export const DEEP_EARS = Object.freeze(['maest', 'clap']);
+export const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: false, clap: false, beats: false, memoryOverride: false });
+export const DEEP_EARS = Object.freeze(['maest', 'clap', 'beats']);
 /** GB of device memory MAEST needs (navigator.deviceMemory's top value). */
 export const MAEST_MIN_MEMORY_GB = 8;
 
@@ -50,7 +52,7 @@ export function writeDeepSettings(ls, change) {
  *  - 'metered'        cellular or Data Saver: wait for Wi-Fi
  *  - 'unknown'        the browser will not say whether it is on Wi-Fi: ask once
  *
- * @param {'maest'|'clap'} ear
+ * @param {'maest'|'clap'|'beats'} ear
  * @param {{ settings?: object, connection?: object, deviceMemory?: number, confirmed?: boolean }} o
  *        connection = navigator.connection, deviceMemory = navigator.deviceMemory,
  *        confirmed = the listener said "I'm on Wi-Fi" this session

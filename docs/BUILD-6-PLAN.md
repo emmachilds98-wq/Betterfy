@@ -65,7 +65,7 @@ real pointer, real browser or real Spotify account has exercised these:
 |---|---|---|
 | **Score run on the real library** (HANDOFF §2.1) | Still the highest-value ten minutes in the project. Everything in §3 below hangs off it | Owner |
 | `LASTFM_PUBLIC_KEY` set in the repo secret/variable the build reads | Not set; until it is, "Analyse my library" runs the keyless path only | Owner |
-| Key step 2 (S-KEY ONNX, ~325 KB) and Beat This tempo/beats | **Another agent is measuring both now.** This plan does not assign them. Wave 5's key work is "consume the verdict": if S-KEY clears §6.1's bar (≥ 60% exact and ≥ 70% MIREX on Beatport) key joins `mixesWith` and DJ order; if not it stays hidden and nothing here depends on it | In progress (other agent) |
+| Key step 2 (S-KEY ONNX) and Beat This | **Done.** Key above 0.65 confidence is shown and joins `mixesWith` and DJ order (no S-KEY needed); Beat This is an opt-in under Deep listen; S-KEY itself is held back on a VQT port and a weights licence (BUILD-5-PROGRESS.md) | Shipped / owner decision |
 | Mood/voice/energy labels | Hidden until the owner's label review passes 70% (BUILD-5 §1.1) | Owner |
 | MAEST export (#90), Rekordbox tempo/key check | Machine-bound; unchanged since HANDOFF §2 | Owner |
 | Shared tag table re-keying (SMARTER-GENRES §3, §8.3) | Unanswered. Touches multi-account hygiene (§4, H1) | Owner |
@@ -112,9 +112,13 @@ Playlist health score and twins data already exist for the Library sheet
    artists only.
 4. **Shared tag table**: re-key by MusicBrainz/Deezer id, or leave it and add
    the quorum rule in §4 H1 (the plan assumes *leave it + quorum* until told).
-5. **Which key/tempo verdict to wait for.** The S-KEY/Beat This measurement is
-   running. If it is not back before wave 5 starts, wave 5 ships without key
-   and tempo upgrades and picks them up in wave 6.
+5. **Key/tempo verdict: in (2026-11-16, BUILD-5-PROGRESS.md).** Key is shown and
+   used for mixing only at confidence >= 0.65 (held-out 62.4% exact / 72.0% MIREX
+   on 53% of tracks). Beat This is an opt-in under Deep listen (flagged-only,
+   82.7% vs 80.9%, inside the CI). S-KEY is not shipped: blended with the DSP it
+   adds 1-2 points overall; where the two agree it is 66.8 / 74.6 on 63% of
+   tracks, but it needs a VQT port and its weights are non-commercial. **Owner
+   decision:** whether to clear S-KEY's weight licence with Deezer.
 6. **Backup file** (§4, F8): confirm that a user-initiated download of their own
    playlist structure (names, track ids, ISRCs, from what the page already
    holds) is fine. It never leaves the device unless the user moves the file.
@@ -235,7 +239,7 @@ which rule matters.
 |---|---|---|---|---|---|
 | **Auto-file on sync (opt-in)** (F1) | **Reshape.** "On sync" is not available (no server, no background execution: a static page cannot run while closed, and Background Sync is not on Safari/Firefox). So: **on open, after sync, while the page is open**, if the setting is on, file the tracks the engine calls sure, as **one History group per day** with a digest on File ("Filed 14 for you · Undo all"). Hidden until the account has ≥ 30 batch filings with reversal ≤ 3% (D1 fixed). Never files a track with a skip, a reject for that playlist or a "keep here". Off by default; opt-in text says plainly it writes without a tap | R3 fine (own library). Departs from "written only on a tap" by consent only | M | Med–High | Reversal rate of auto-filed groups ≤ 3% (same measure as the batch); if it rises above 6% over a week the setting turns itself off and says why |
 | **Release radar for artists in your playlists** (RR) | **Keep, reshape.** Library artists only, no `user-follow-read`, no new scope (RELEASE-RADAR §1). Cold sync behind an explicit Start. New releases show with the engine's placement ("sounds like your Garage playlist") and a File/dismiss action. Lives in Discover. **Phase 0 re-verifies `GET /artists/{id}/albums` and `/albums?ids=` against a fresh Development Mode app, because the plan's checks date from September and the February–May 2026 changes moved other endpoints** | Library-derived requests per artist id: fine (R2: nothing sent but artist ids to Spotify itself). The pre-file suggestion is a count over the account's space (R3) | L | High for listeners who follow releases | (a) Phase 0: measured requests and minutes for the first sync of 1,000 artists, against RELEASE-RADAR §3's budget. (b) Fixture accuracy for the seven accuracy problems (§4.1–4.7 of that plan). (c) Real: share of radar rows the user files or likes within 14 days ≥ 15% |
-| **DJ set builder** (F3) | **Reshape to what exists plus an honest cap.** `core/audio/order.mjs` already orders by tempo and sound with an optional energy arc. Build on that: choose start/end track, BPM ramp, harmonic neighbours **only if S-KEY/step-2 clears §6.1's bar**. Energy: Spotify's is dead; the sound model's energy head is hidden until the owner's label review passes 70%. So energy curve **waits on that review**; BPM and genre-continuity ramps do not | No Spotify audio features; sound from Deezer previews (R1 fine) | M | Low–Med | Share of adjacent pairs within ±4 BPM (or a half/double relation) vs the same tracks shuffled; owner rates 10 sets 1–5 |
+| **DJ set builder** (F3) | **Reshape to what exists plus an honest cap.** `core/audio/order.mjs` already orders by tempo and sound with an optional energy arc. Build on that: choose start/end track, BPM ramp, harmonic neighbours **for tracks whose key is sure (confidence >= 0.65), already wired into DJ order**. Energy: Spotify's is dead; the sound model's energy head is hidden until the owner's label review passes 70%. So energy curve **waits on that review**; BPM and genre-continuity ramps do not | No Spotify audio features; sound from Deezer previews (R1 fine) | M | Low–Med | Share of adjacent pairs within ±4 BPM (or a half/double relation) vs the same tracks shuffled; owner rates 10 sets 1–5 |
 | **Merge/split wizard** (F4) | **Keep.** Split offers exist (S2 `plprofile`, Gaps first half); "twins" data exists (`lists.mjs:48 twinsOf`); a wizard puts both behind one preview, creates new private playlists, never edits the original, one undo group | Fine; writes only on tap | M | Med | Dismiss rate ≤ 25% over ≥ 10 offers; undo restores byte-for-byte (e2e) |
 | **Weekly digest on File** (F5) | **Keep, as "since you last opened".** Filed N, undone M; misfits found; new genres forming (`screenjobs.js` newGenre clusters); listening shift = overlap of `short_term` vs `long_term` top artists. Also folds in RELEASE-RADAR §9.5 "what changed" (snapshot diff). Dismissible, never a notification | Own history and Spotify's top windows only | S–M | Med–High | Every figure equals its source: tested to match History/log counts. User measure: digest dismissed vs expanded rate (local, not sent) |
 | **Library-wide health report & cleanup sprint** (F9) | **Keep, small.** The health score already ships on Library rows (418a24f). Add a one-screen report (worst five playlists, why, one tap into Tidy at that playlist) and a keyboard "sprint" through Tidy (←/→ keep/move, U undo), which is also D7's fix | Own library | S–M | Med | Sprint: decisions per minute vs pointer; kept rate ≥ today's Tidy tier rates |
@@ -378,8 +382,8 @@ today. Each says what would promote it.
 |---|---|---|
 | **Spotify Connect queue from DJ order / rediscover** | Needs Premium and an active device (D10); the DJ playlist covers every account | A measured request from Premium users, or Spotify opening the queue to free accounts |
 | **Energy curve for DJ sets** | Energy head hidden until label review ≥ 70% | The owner's label review |
-| **Key in `mixesWith` and DJ order** | Waits on S-KEY verdict | ≥ 60% exact and ≥ 70% MIREX (BUILD-5 §6.1) |
-| **Beat-aware cuts/downbeats for set transitions** | Waits on Beat This verdict | Its measured octave-error rate (31/203 today) |
+| **Key for the unsure 47% of tracks** | Only S-KEY agreement would add coverage; needs a VQT port and a weights licence. Key in `mixesWith` and DJ order is already live for sure keys | Owner clears S-KEY weights; ≥ 60% exact and ≥ 70% MIREX on the added tracks |
+| **Beat-aware cuts/downbeats for set transitions** | Beat This ships opt-in (tempo only); downbeats unused | Its measured octave-error rate (31/203 today) |
 | **Collaborative and followed playlists** (V2-PLAN §3 "Owned playlists only") | `snapshot.mjs:27` filters to owned; reading others needs `playlist-read-collaborative` (already requested) but writing needs owner consent | A design for non-owned playlists that never writes |
 | **Followed artists you own nothing by** | Needs `user-follow-read`, a re-auth of every account (RELEASE-RADAR §1) | An explicit opt-in re-auth flow, never silent |
 | **Radar × feed of label/series** | Discogs is a bonus source (CLAUDE.md) | Keyless Discogs confirmed |
