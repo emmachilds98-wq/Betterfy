@@ -15,7 +15,7 @@ const SCREEN_MODS = globalThis.BetterfyScreens ?? {};
 const SCREEN_CTX = {
   history: () => ({ S, esc, isUndone, emptyState, undoAction, getLog, toast, render }),
   sources: () => ({ LS, esc, lfmKey, $, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
-                    toast, render, enrichMissing, fillFromWikidata }),
+                    toast, render, enrichMissing, fillFromWikidata, sourceCoverage }),
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,

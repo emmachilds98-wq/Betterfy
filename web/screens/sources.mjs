@@ -9,10 +9,61 @@ function sourceCard(id, name, state, status, line, body) {
   </section>`;
 }
 
+/**
+ * How much each source knows about this account's own artists (BUILD-6 H1,
+ * SMARTER-GENRES §6): "Deezer knows N%, Wikidata M%, shared table K%". Worked
+ * out on this device from what the page already holds, so a source that is
+ * thin for one account's taste shows up as thin for that account, and nothing
+ * is sent anywhere to get it.
+ *
+ *   ids      the account's artist ids (playlists and liked songs)
+ *   shipped  the shared table as downloaded: id -> tags (either shape)
+ *   extra    tags_extra: id -> { source, tags }  (only `source` and `tags.length` are read)
+ *   bridge   bridge-raw's entries: id -> { deezerId, deezerAt, mbid, mbidAt }
+ *
+ * A source counts as knowing an artist when it answered with something:
+ * Deezer found the artist (its related-artists list hangs off that); Wikidata
+ * gave genres or a MusicBrainz id. `asked` is how many it has been asked
+ * about, since a source never asked has not said it does not know.
+ */
+export function artistCoverage({ ids = [], shipped = {}, extra = {}, bridge = {} } = {}) {
+  const all = [...new Set(ids)];
+  const n = all.length;
+  const tagsOf = e => (Array.isArray(e) ? e : e?.tags) ?? [];
+  let shared = 0, deezer = 0, deezerAsked = 0, wikidata = 0, wikidataAsked = 0;
+  for (const id of all) {
+    if (tagsOf(shipped?.[id]).length) shared++;
+    const b = bridge?.[id], x = extra?.[id];
+    if (Number.isFinite(b?.deezerAt)) { deezerAsked++; if (b.deezerId) deezer++; }
+    const wdGenres = x?.source === 'wikidata';
+    if (Number.isFinite(b?.mbidAt) || wdGenres) {
+      wikidataAsked++;
+      if (b?.mbid || (wdGenres && tagsOf(x).length)) wikidata++;
+    }
+  }
+  const pct = k => (n ? Math.round(100 * k / n) : 0);
+  return { total: n, shared, deezer, wikidata, deezerAsked, wikidataAsked,
+           sharedPct: pct(shared), deezerPct: pct(deezer), wikidataPct: pct(wikidata) };
+}
+
+/** The coverage card's body: one sentence, then what has not been asked yet.
+ *  Nothing to count (not read yet, or no artists): '' and no card at all, so
+ *  the screen is byte-identical to what it was before the card existed. */
+export function coverageHTML(cov) {
+  if (!cov?.total) return '';
+  const part = (name, pct, asked) => asked ? `${name} knows <b class="mono">${pct}%</b>` : `${name} <b>not asked yet</b>`;
+  const unasked = [['Deezer', cov.deezerAsked], ['Wikidata', cov.wikidataAsked]]
+    .filter(([, k]) => k && k < cov.total).map(([name, k]) => `${name} about ${k.toLocaleString()}`);
+  return `<p class="srcline srcknow">${part('Deezer', cov.deezerPct, cov.deezerAsked)}, ${part('Wikidata', cov.wikidataPct, cov.wikidataAsked)},
+      shared table <b class="mono">${cov.sharedPct}%</b> of your <span class="mono">${cov.total.toLocaleString()}</span> artists.</p>
+    ${unasked.length ? `<p class="srcline sub">Asked so far: ${unasked.join(', ')}. The rest are looked up as File, Score and Discover need them.</p>` : ''}`;
+}
+
 /** Where genre data and (later) listening come from — moved out of Playlists,
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
-export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML, ...rest }) {
+export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
+                       sourceCoverage = () => null, ...rest }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
@@ -29,7 +80,9 @@ export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlis
       artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
 
     <div class="srcgrid">
-    ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
+    ${(body => body ? sourceCard('coverage', 'Your artists', 'ok', 'This account',
+      'How much each source knows about the artists in your own library, worked out on this device.', body) + '\n\n    ' : '')(
+      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())))}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
       'Crowd genre tags for the artists the shipped set doesn\'t cover. '
         + (!lfmOwn && lfm ? 'Using Betterfy\'s shared Last.fm key — add your own to raise limits.' : 'Needs a free API key.'),
       `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : 'Connect Last.fm'}</button></div>
