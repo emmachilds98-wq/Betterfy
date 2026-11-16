@@ -187,6 +187,14 @@ export function view(ctx) {
   const { S, R, CFG, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip, tagChips, trackStrip,
           soundIdHTML, soundNote, pickEvidence, pickBand, matchMedia } = ctx;
   const rows = R.backlog;
+  // A new account has nothing to file yet: say what to do, not "that's the lot".
+  if (!rows.length && !ctx.LIB?.liked?.length) {
+    const hasPl = ctx.LIB?.playlists?.some(p => p.tracks?.length);
+    return `<h1>File</h1><div class="empty-state"><span class="es-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      <div class="es-body"><b>${hasPl ? 'No liked songs yet' : 'Your library is empty'}</b>
+      <p>${hasPl ? 'File sorts your liked songs into your playlists. Like a few songs in Spotify and they will show up here.'
+        : 'Like some songs in Spotify, or make a playlist, then reopen Betterfy. It files your liked songs into your playlists.'}</p></div></div>`;
+  }
   if (!rows.length) return `<h1>File</h1>
     <div class="empty done">
       <svg viewBox="0 0 32 32" aria-hidden="true">

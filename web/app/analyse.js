@@ -37,6 +37,8 @@ function analyseStatus(st) {
 
 /** Is there something worth offering? Gaps to fill, or listening that has not run. */
 function analyseWanted(d = {}) {
+  // Nothing in the library: nothing to read, nothing to listen to (File says what to do instead).
+  if (typeof LIB !== 'undefined' && LIB && !d.gaps && !LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return { gaps: 0, listen: false, any: false };
   const gaps = (d.gaps ?? analyseGapCount)();
   const ran = (d.listenRan ?? (() => typeof listenEverRan === 'function' && listenEverRan()))();
   const canListen = (d.canListen ?? (() => audioSettings().on))();
@@ -104,4 +106,45 @@ function analyseHTML() {
   return `<div class="analyse"><button class="b p" id="analyseGo" data-act="analyseGo">Analyse my library</button>
     ${LS.getItem('bf_analysed') ? '' : `<span class="d">Reads tags and listens to your liked songs, then suggests where each goes.</span>`}</div>
     <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
+}
+
+/* ---------- First run (docs/BUILD-6-PLAN.md O1) ----------
+ * A 3-step strip on File for a new account: connected, analysed, first five filed. It counts the
+ * filings from the History log (so it needs nothing stored but "done") and disappears for good once
+ * five have gone in, or at once for anyone who has already filed that many. */
+const ONB = { n: null, busy: false };
+const ONB_GOAL = 5;
+
+function onbCount() {
+  if (ONB.busy || LS.getItem('bf_onb_done')) return;
+  ONB.busy = true;
+  Promise.resolve(getLog()).then(log => {
+    const n = log.filter(e => e.op === 'add' && e.reason === 'filed from inbox' && !e.undone).length;
+    const changed = n !== ONB.n; ONB.n = n;
+    if (n >= ONB_GOAL) LS.setItem('bf_onb_done', '1');
+    if (changed && view === 'inbox') render();
+  }).catch(() => {}).finally(() => { ONB.busy = false; });
+}
+
+function onbHTML() {
+  if (typeof LIB === 'undefined' || !LIB || LS.getItem('bf_onb_done')) return '';
+  if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return '';
+  onbCount();
+  const n = ONB.n; if (n == null || n >= ONB_GOAL) return '';
+  const analysed = !!LS.getItem('bf_analysed') || ANALYSE.running || !analyseWanted().any;
+  const steps = [['Connected', true], [ANALYSE.running ? 'Analysing' : 'Analyse your library', analysed],
+    ['File your first five (' + n + '/' + ONB_GOAL + ')', false]];
+  const cur = steps.findIndex(x => !x[1]);
+  return `<ol class="onb" aria-label="Getting started">${steps.map(([t, done], i) =>
+    `<li class="${done ? 'done' : i === cur ? 'now' : ''}"${i === cur ? ' aria-current="step"' : ''}>${esc(t)}</li>`).join('')}</ol>`;
+}
+
+/** Cold start on File: no genre playlist at all, so offer the groups Library offers. [] otherwise. */
+function onbColdOffers() {
+  if (typeof CFG === 'undefined' || !LIB) return [];
+  const rows = Object.values(CFG);
+  const noGenre = rows.length > 0 && !rows.some(p => p.axis === 'genre');
+  if (!noGenre) return [];
+  coldKick(true);
+  return COLD.status === 'ready' ? BetterfyScreens.lists.coldStartOffers(COLD.found, 3) : [];
 }
