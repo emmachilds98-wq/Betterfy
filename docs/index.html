@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-0400">
+<meta name="bf-build" content="2026-11-16-0433">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1616,7 +1616,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-0400</span>
+    <span class="mono">build 2026-11-16-0433</span>
   </p>
 
   <div class="feat">
@@ -1709,7 +1709,7 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0400</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0433</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1826,7 +1826,7 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-0400. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-0433. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3695,6 +3695,8 @@ function syncAttributes(a, b) {
   const have = a.attributes;
   for (let i = have.length - 1; i >= 0; i--) {
     const { name } = have[i];
+    // A <details> the person opened (the card's ⋯ menu) stays open across a repaint.
+    if (name === 'open' && a.tagName === 'DETAILS') continue;
     if (!b.hasAttribute(name)) a.removeAttribute(name);
   }
 }
@@ -3968,6 +3970,11 @@ function sureBatchHTML(ctx) {
   const { S, esc } = ctx;
   if (S.roll) return '';
   const n = sureList(ctx).length;
+  // E1: a batch that stopped partway says what landed and offers the rest.
+  if (S.partial && n) return `<div class="card surebatch" role="status" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
+    <span><b>${esc(String(S.partial.landed))} of ${esc(String(S.partial.total))} landed.</b> <span class="sub">${esc(String(n))} didn't. What did land is in History as one group.</span></span>
+    <button class="b sm p" data-act="filesure">Retry the rest</button>
+  </div>`;
   if (n < 2) return '';
   return `<div class="card surebatch" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
     <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
@@ -3981,7 +3988,7 @@ function sureBatchHTML(ctx) {
  * and one undo takes the whole batch back.
  */
 async function fileSureOnes(ctx) {
-  const { S, R, CFG, addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, toast, render } = ctx;
+  const { S, R, CFG, addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, toast, render } = ctx;
   const now = Date.now();
   if (S.filing || now < (S.fileLockUntil ?? 0)) return;
   const batch = sureList(ctx);
@@ -3992,24 +3999,51 @@ async function fileSureOnes(ctx) {
     const at = R.backlog.findIndex(b => b.id === row.id);
     (byPl.get(playlistId) ?? byPl.set(playlistId, []).get(playlistId)).push({ id: row.id, at });
   });
-  const group = newGroup(), ats = [], done = [];
+  // E1: a retry after a partial failure carries on the same History group.
+  const prior = S.partial, before = prior?.done.length ?? 0;
+  const group = prior?.group ?? newGroup(), ats = [...(prior?.ats ?? [])], done = [...(prior?.done ?? [])];
+  const total = (prior?.total ?? 0) + batch.length;
+  const logAdd = async (pid, ids, rows, reason) => {
+    await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
+                      reason, band:'sure', queuePos:Math.min(...rows.map(r => r.at)), group });
+    ats.push((await getLog())[0]?.at);
+    done.push([pid, ids]);
+  };
+  const logged = new Set();
+  let failure = null;
   try {
     for (const [pid, rows] of byPl) {
       const ids = rows.map(r => r.id);
       await addTracks(pid, ids);
-      await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
-                        reason:'filed the sure ones', band:'sure', queuePos:Math.min(...rows.map(r => r.at)), group });
-      ats.push((await getLog())[0]?.at);
-      done.push([pid, ids]);
+      await logAdd(pid, ids, rows, 'filed the sure ones');
+      logged.add(pid);
     }
-    for (const [pid, ids] of done) for (const id of ids) await recordAccept(id, [pid]);
-  } catch (e) {
-    // Whatever was written comes back out, and the queue is untouched.
-    if (ats.length) { try { await undoAction(ats[0]); } catch { /* best effort */ } }
+  } catch (e) { failure = e; }
+  if (failure) {
+    // Re-read what Spotify actually holds for the playlists not yet logged, and
+    // log whatever landed (a write whose answer was lost, or a chunk that got in).
+    let unread = false;
+    for (const [pid, rows] of byPl) {
+      if (logged.has(pid)) continue;
+      const ids = rows.map(r => r.id), got = landedIn ? await landedIn(pid, ids) : null;
+      if (got === null) { unread = true; continue; }
+      if (got.length) await logAdd(pid, got, rows.filter(r => got.includes(r.id)), 'filed the sure ones (found after a failure)');
+    }
+    const landedIds = new Set(done.flatMap(([, ids]) => ids));
+    for (const [pid, ids] of done.slice(before)) for (const id of ids) await recordAccept(id, [pid]);
     S.filing = false;
-    toast('Failed: ' + e.message);
+    if (done.length === before) {
+      toast('Failed: ' + failure.message + (unread ? ' Could not check what landed.' : ''));
+      return render();
+    }
+    for (let k = R.backlog.length - 1; k >= 0; k--) if (landedIds.has(R.backlog[k].id)) R.backlog.splice(k, 1);
+    S.inboxAt = Math.max(0, Math.min(S.inboxAt, R.backlog.length - 1));
+    S.partial = { group, ats, done, total, landed: landedIds.size };
+    toast(`${landedIds.size} of ${total} landed. ${failure.message}`, null, { label: 'Retry the rest', run: () => fileSureOnes(ctx) });
     return render();
   }
+  for (const [pid, ids] of done.slice(before)) for (const id of ids) await recordAccept(id, [pid]);
+  S.partial = null;
   S.filing = false;
   const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(done.flatMap(([, ids]) => ids));
   for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
@@ -4288,7 +4322,15 @@ const actions = {
     render();
   },
 };
-return { rollForwardFor, rollForwardHTML, rollForwardGo, sureBatchHTML, fileSureOnes, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions };
+
+// E1: patch() keeps the menu open across a repaint of the same card (a late
+// listening re-sort used to close it); a different card starts with it shut.
+let menuFor = null;
+function mount(ctx) {
+  const id = inboxTrack(ctx)?.id ?? null;
+  if (id !== menuFor) { menuFor = id; document.querySelector("#swipeCard details.cardmore")?.removeAttribute("open"); }
+}
+return { rollForwardFor, rollForwardHTML, rollForwardGo, sureBatchHTML, fileSureOnes, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions, mount };
 })();
 /* ---- web/screens/engine.mjs ---- */
 __mod["web/screens/engine.mjs"] = (function () {
@@ -4497,7 +4539,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-0400`,
+    `Betterfy engine score — build 2026-11-16-0433`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -6593,7 +6635,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-0400';
+const BUILD = '2026-11-16-0433';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -6859,11 +6901,28 @@ async function pace() {
 /** Sit out a rate limit, counting down rather than going quiet. */
 async function hold(ms) {
   const until = Date.now() + ms;
-  for (let left = ms; left > 0; left = until - Date.now()) {
-    onHold?.(Math.ceil(left / 1000));
-    await sleep(Math.min(1000, left));
+  try {
+    for (let left = ms; left > 0; left = until - Date.now()) {
+      onHold?.(Math.ceil(left / 1000));
+      if (!onHold) slowNote(Math.ceil(left / 1000));
+      await sleep(Math.min(1000, left));
+    }
+  } finally { onHold?.(0); slowNote(0); }
+}
+
+/** E1: a pause outside the first sync is a visible state, not a silent wait. */
+function slowNote(secs) {
+  if (typeof document === 'undefined') return;
+  let el = document.getElementById('slowdown');
+  if (!secs) { el?.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'slowdown'; el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:76px;z-index:60;padding:10px 14px;border-radius:12px;'
+      + 'background:var(--surface,#222);color:var(--ink,#fff);border:1px solid var(--line,#888);font-size:13px;text-align:center';
+    document.body.appendChild(el);
   }
-  onHold?.(0);
+  el.textContent = `Spotify asked us to slow down \u2014 retrying in ${secs}s`;
 }
 
 // A 429 is worth sitting through quietly only while the wait is short — that
@@ -6914,7 +6973,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-0400', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-0433', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -6951,6 +7010,9 @@ async function sp(path, opts = {}) {
       // Offline, dropped, or hung past the deadline. Ask again — and if it keeps
       // failing, say so as something retryable, because it is the network, not
       // an empty playlist and not a dead sign-in.
+      // A POST that dropped may still have landed: never blindly resend it. The
+      // caller re-reads what is there and sends only what is missing.
+      if (opts.method === 'POST') throw Object.assign(authError(NET_LOST, 0), { ambiguous: true });
       if (++soft >= NET_TRIES) throw authError(NET_LOST, 0);
       setGap(gap * 2); await sleep(back); back *= 2; continue;
     }
@@ -6982,6 +7044,7 @@ async function sp(path, opts = {}) {
     // and if it will not settle, report it as something to come back to rather
     // than as the sign-in having failed.
     if (res.status >= 500) {
+      if (opts.method === 'POST') throw Object.assign(authError(`Spotify answered ${res.status}. It may or may not have saved that.`, res.status), { ambiguous: true });
       if (++soft >= NET_TRIES) throw authError(`Spotify answered ${res.status}. It will pick up where it stopped.`, res.status);
       setGap(gap * 2); await sleep(back); back *= 2; continue;
     }
@@ -7653,14 +7716,18 @@ function infoBtn(id, title, html) {
   return `<button class="info" type="button" data-info="${esc(id)}" aria-label="${esc(title)}: how this works">\u24D8</button>`;
 }
 let toastT;
-function toast(msg, undoFn) {
+function toast(msg, undoFn, action) {
   const el = $('#toast');
   // Every Undo toast also says where the full log is: the Settings sheet's History.
   el.innerHTML = esc(msg) + (undoFn ? ' <button id="undoBtn">Undo</button> <button id="histBtn">History</button>' : '');
   el.hidden = false;
   if (undoFn) $('#undoBtn').onclick = async () => { try { await undoFn(); toast('Restored.'); } catch(e){ toast('Undo failed: '+e.message); } };
   if (undoFn) $('#histBtn').onclick = () => { el.hidden = true; openUnderHood('history'); };
-  clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, undoFn ? 9000 : 3200);
+  if (action) {
+    el.insertAdjacentHTML('beforeend', ` <button id="actBtn">${esc(action.label)}</button>`);
+    $('#actBtn').onclick = () => { el.hidden = true; action.run(); };
+  }
+  clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, action ? 20000 : undoFn ? 9000 : 3200);
 }
 
 /* ---------- action log: every library change, reversible ---------- */
@@ -7778,7 +7845,28 @@ async function plCall(id, method, body) {
     catch (e) { if (!/^40[34]/.test(e.message) || seg === 'tracks') throw e; }
   }
 }
-const addTracks = (id, ids) => Promise.all(chunk(ids,100).map(c => plCall(id,'POST',{ uris:c.map(x=>'spotify:track:'+x) })));
+/** Add one chunk. If the answer was lost (dropped, 5xx) the write may still have
+ *  landed, so re-read the playlist and send only what is missing: no duplicates. */
+async function addChunk(id, c) {
+  const post = xs => plCall(id, 'POST', { uris: xs.map(x => 'spotify:track:' + x) });
+  try { return await post(c); }
+  catch (e) {
+    if (!e.ambiguous) throw e;
+    const have = new Set(await playlistIds(id));
+    const missing = c.filter(x => !have.has(x));
+    return missing.length ? post(missing) : null;
+  }
+}
+async function addTracks(id, ids) {
+  const out = [];
+  for (const c of chunk(ids, 100)) out.push(await addChunk(id, c));   // one after another: no race on a snapshot
+  return out;
+}
+/** Which of `ids` are really in the playlist now (null when it cannot be read). */
+async function landedIn(id, ids) {
+  try { const have = new Set(await playlistIds(id)); return ids.filter(x => have.has(x)); }
+  catch { return null; }
+}
 /**
  * DELETE /playlists/{id}/items, for up to 100 `{ uri }` objects at a time.
  * Spotify's reference now documents the body as `{ items: [{ uri }] }`, max
@@ -10398,7 +10486,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-0400';
+    s.src = 'engine.js?v=2026-11-16-0433';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -10420,7 +10508,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-0400');
+    const w = new Worker('engine-worker.js?v=2026-11-16-0433');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -10895,7 +10983,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-0400';
+    s.src = 'audio.js?v=2026-11-16-0433';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -10931,7 +11019,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0400', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0433', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -11665,7 +11753,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0400', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0433', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -11967,7 +12055,7 @@ Object.assign(SCREEN_CTX, {
                  render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
-                  addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
+                  addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
                   fileBand, fileSure, fileOrderKick,
                   rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,

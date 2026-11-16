@@ -131,6 +131,8 @@ function syncAttributes(a, b) {
   const have = a.attributes;
   for (let i = have.length - 1; i >= 0; i--) {
     const { name } = have[i];
+    // A <details> the person opened (the card's ⋯ menu) stays open across a repaint.
+    if (name === 'open' && a.tagName === 'DETAILS') continue;
     if (!b.hasAttribute(name)) a.removeAttribute(name);
   }
 }

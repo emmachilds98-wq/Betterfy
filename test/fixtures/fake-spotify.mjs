@@ -13,6 +13,9 @@
 //                    refresh through /api/token and try again)
 //   sw.failWrites    every playlist/library write answers 403 until cleared
 //   sw.latencyMs     extra delay on every API call
+//   sw.failAfterWrites=k   after k playlist writes have landed, every further write answers 403
+//   sw.expireAfterWrites=k after k playlist writes, the next call with the old token answers 401 once
+//   sw.loseResponse  next N playlist adds are applied, then the connection is cut before the answer
 //
 // `.log` records every API call as { method, path, body } so a spec can assert
 // that a swipe really reached the server, and `.playlist(id)` reads the state.
@@ -34,7 +37,9 @@ export async function startFakeSpotify(account) {
   const playlists = new Map(account.playlists.map(p => [p.id, { ...p, tracks: [...p.tracks] }]));
   const liked = [...account.liked];
   const created = [];
-  const sw = { rate429: 0, expire401: 0, failWrites: false, latencyMs: 0 };
+  const sw = { rate429: 0, expire401: 0, failWrites: false, latencyMs: 0,
+    failAfterWrites: -1, expireAfterWrites: -1, loseResponse: 0 };
+  let wrote = 0;
   const log = [];
   let issued = 0, base = '';
 
@@ -56,6 +61,10 @@ export async function startFakeSpotify(account) {
     if (sw.expire401 > 0 && /^Bearer /.test(req.headers.authorization ?? '') && !/^Bearer fresh/.test(req.headers.authorization)) {
       sw.expire401--; return json(res, 401, { error: { status: 401, message: 'The access token expired' } });
     }
+    if (sw.expireAfterWrites >= 0 && wrote >= sw.expireAfterWrites && !/^Bearer fresh/.test(req.headers.authorization ?? '')) {
+      sw.expireAfterWrites = -1; return json(res, 401, { error: { status: 401, message: 'The access token expired' } });
+    }
+    if (write && sw.failAfterWrites >= 0 && wrote >= sw.failAfterWrites) return json(res, 403, { error: { status: 403, message: 'write refused after ' + wrote + ' (test switch)' } });
     if (write && sw.failWrites) return json(res, 403, { error: { status: 403, message: 'write refused (test switch)' } });
 
     if (p === '/me' && m === 'GET') return json(res, 200, account.me);
@@ -76,6 +85,8 @@ export async function startFakeSpotify(account) {
         // The real endpoint adds duplicates; so does this.
         for (const id of ids) { const t = findTrack(id); if (t) pl.tracks.push(t); }
         pl.snapshot_id = 's' + Date.now();
+        wrote++;
+        if (sw.loseResponse > 0) { sw.loseResponse--; req.socket.destroy(); return; }
         return json(res, 201, { snapshot_id: pl.snapshot_id });
       }
       if (m === 'DELETE') {
