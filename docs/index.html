@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-0400">
+<meta name="bf-build" content="2026-11-16-0438">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -50,7 +50,7 @@
     --rail:#F7F1E7;
     --ink:#1B1815; --ink-2:#554D45; --ink-3:#6E655B;
     --line:#E9E1D6; --line-2:#DCD1C0;
-    --accent:#CD4825; --accent-ink:#FFF; --accent-soft:#FBEAE4; --accent-lift:#EC663E;
+    --accent:#BF3F1D; --accent-ink:#FFF; --accent-soft:#FBEAE4; --accent-lift:#EC663E;
     --ok:#0F7A4E; --ok-ink:#FFF; --ok-soft:#E3F2EA; --warn:#835B0A; --warn-soft:#F8EFD9;
     --idle:#A79C8E;
     /* The tick inside a checked box: drawn in the ink a filled control
@@ -169,6 +169,14 @@
     ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
   }
 
+
+/* ---- accessibility (BUILD-6 A1) ---- */
+.skip{position:fixed; left:12px; top:-60px; z-index:1000; padding:10px 16px; border-radius:10px; background:var(--accent); color:var(--accent-ink); font-weight:700; text-decoration:none}
+.skip:focus{top:12px}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+main:focus{outline:none}
+[data-rowfocus]:focus-visible, .rowkey:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+@media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto!important} }
   /* ---------- landing ---------- */
   /* A wash of the accent behind the hero, so the first screen carries the
      brand colour the viewer picked rather than being flat grey. Two more
@@ -554,12 +562,14 @@
   .pick .nm{display:block; font-weight:600; font-size:15.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .pick .ax{display:block; font-size:13px; color:var(--ink-2)}
   .pick .rt{flex:none; display:flex; flex-direction:column; align-items:flex-end; gap:6px}
-  /* Sits inside the pick button, so its handler stops propagation. */
-  .pick .nope{flex:none; width:22px; height:22px; display:grid; place-items:center; border-radius:6px;
-    color:var(--ink-3); font-size:12px; line-height:1; cursor:pointer; opacity:0; transition:opacity var(--dur-1)}
-  .pick:hover .nope, .pick:focus-within .nope{opacity:1}
-  .pick .nope:hover{background:var(--accent-soft); color:var(--accent)}
-  @media (hover:none){ .pick .nope{opacity:1} }
+  /* ✕ is a sibling button laid over the pick's corner (nested buttons are invalid). */
+  .pickw{position:relative}
+  .pickw .pick{padding-right:46px}
+  .pickw .nope{position:absolute; top:6px; right:6px; width:24px; height:24px; display:grid; place-items:center; border-radius:6px;
+    border:0; background:none; font:inherit; color:var(--ink-3); font-size:12px; line-height:1; cursor:pointer; opacity:0; transition:opacity var(--dur-1)}
+  .pickw:hover .nope, .pickw:focus-within .nope, .pickw .nope:focus-visible{opacity:1}
+  .pickw .nope:hover{background:var(--accent-soft); color:var(--accent)}
+  @media (hover:none){ .pickw .nope{opacity:1} }
   .pick .sc{font-family:var(--mono); font-size:13.5px; font-weight:600; color:var(--ink-2)}
   .pick .bar{display:block; width:62px; height:5px; border-radius:3px; overflow:hidden;
         background:color-mix(in srgb, var(--ink-3) 30%, transparent)}
@@ -612,7 +622,7 @@
   .vs{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:24px 0}
   .vs > div{border-radius:20px; padding:20px 22px; background:color-mix(in srgb, var(--vc) 14%, var(--surface-2));
         border:1px solid color-mix(in srgb, var(--vc) 28%, transparent)}
-  .vs .l{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+  .vs .l{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2); font-weight:600}
   .vs .n{font-family:var(--display); font-weight:800; font-size:40px; line-height:1.05; color:var(--vc); margin-top:6px}
   .vs .d{font-size:14px; color:var(--ink-2); margin-top:2px}
   .vs > .bad{--vc:var(--warn)} .vs > .good{--vc:var(--ok)}
@@ -1393,6 +1403,7 @@
     aside .nav .ic{width:24px; height:24px; border-radius:9px; transition:background var(--dur-1) ease, color var(--dur-1) ease}
     aside .nav .ic svg{width:19px; height:19px}
     aside .nav[aria-current="true"]{background:none; color:var(--vc); view-transition-name:none}
+    aside .nav[aria-current="true"] .lbl{color:var(--ink)}
     aside .nav[aria-current="true"] .ic{view-transition-name:vt-pill}
     aside .nav[aria-current="true"] .ic{background:color-mix(in srgb, var(--vc) 16%, transparent); color:var(--vc)}
     aside .nav:active{transform:scale(.94)}
@@ -1579,6 +1590,7 @@
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 
 <!-- The mark's five bars are the same five colours in every theme and at
      every accent: --m0..--m4 are the only tokens in the app that never turn.
@@ -1616,7 +1628,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-0400</span>
+    <span class="mono">build 2026-11-16-0438</span>
   </p>
 
   <div class="feat">
@@ -1697,11 +1709,11 @@
     <!-- Four tabs (docs/BUILD-5-PLAN.md §4.1). Sources, Engine and History live
          in the Settings sheet ("Under the hood"); New playlists and Shuffle are
          reached from Library. -->
-    <div class="navwrap">
-      <button class="nav" data-v="inbox"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/></svg></span><span class="lbl">File</span><span class="c" data-count="inbox"></span></button>
-      <button class="nav" data-v="tidy"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 4.5H6a2.5 2.5 0 0 0-2.5 2.5v9.5"/></svg></span><span class="lbl">Tidy</span><span class="c" data-count="tidy"></span></button>
-      <button class="nav" data-v="discover"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/></svg></span><span class="lbl">Discover</span></button>
-      <button class="nav" data-v="lists"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Library</span><span class="c" data-count="new"></span></button>
+    <div class="navwrap" role="tablist" aria-label="Sections" aria-orientation="horizontal">
+      <button class="nav" data-v="inbox" role="tab" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/></svg></span><span class="lbl">File</span><span class="c" data-count="inbox"></span></button>
+      <button class="nav" data-v="tidy" role="tab" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 4.5H6a2.5 2.5 0 0 0-2.5 2.5v9.5"/></svg></span><span class="lbl">Tidy</span><span class="c" data-count="tidy"></span></button>
+      <button class="nav" data-v="discover" role="tab" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/></svg></span><span class="lbl">Discover</span></button>
+      <button class="nav" data-v="lists" role="tab" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Library</span><span class="c" data-count="new"></span></button>
     </div>
     <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): on a desktop it
          sits at the end of the bar, so the tabs stay put when it appears (B8); on a
@@ -1709,17 +1721,17 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0400</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0438</span>
     </div>
   </aside>
-  <main id="main"></main>
+  <main id="main" tabindex="-1"></main>
 </div>
 
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
 <!-- A newer build is published: offered, never forced, since a reload in the
      middle of filing would lose the viewer's place. -->
-<div class="updatebar" id="updateBar" hidden>
+<div class="updatebar" id="updateBar" role="status" hidden>
   <span class="txt"><b>New version available.</b> <span id="updateFrom" class="mono" style="color:var(--ink-3);font-size:12px"></span></span>
   <button class="b sm p" id="doUpdate">Update now</button>
   <button class="iconbtn" id="dismissUpdate" aria-label="Dismiss">✕</button>
@@ -1729,11 +1741,11 @@
      inside the app afterwards — both toggle #land/#app visibility, but
      neither ever hides this. -->
 <div class="fabBar">
-  <button class="fab" id="btnSettings" title="Settings" aria-expanded="false" aria-controls="settingsPanel">⚙</button>
+  <button class="fab" id="btnSettings" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="settingsPanel">⚙</button>
 </div>
 <div class="scrim" id="scrim"></div>
 
-<div class="settings" id="settingsPanel" aria-hidden="true" aria-label="Settings">
+<div class="settings" id="settingsPanel" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Settings">
   <div class="grabber"></div>
   <div class="settings-head">
     <h2>Settings</h2>
@@ -1826,7 +1838,7 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-0400. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-0438. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -2315,7 +2327,10 @@ function buildProfiles(lib, tags, targets, axisOf = null) {
   for (const [k, d] of df) idf.set(k, Math.log(1 + N / d));
 
   const profiles = new Map();
-  for (const [id, p] of raw) profiles.set(id, { ...p, vec: applyIdf(p.vec, idf) });
+  // `mag` is the centroid's length, worked out once here: rank() compares a track
+  // with every playlist, and re-summing a long centroid for each comparison was
+  // a quarter of the time buildReports took on a 5k library.
+  for (const [id, p] of raw) { const vec = applyIdf(p.vec, idf); profiles.set(id, { ...p, vec, mag: mag(vec) }); }
   return { profiles, idf };
 }
 
@@ -2328,7 +2343,7 @@ function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis = null
   // must see the track the way its own centroid was built.
   const cache = new Map();
   const vecFor = a => {
-    if (!cache.has(a)) cache.set(a, applyIdf(weighFacets(flat, a), idf));
+    if (!cache.has(a)) { const v = applyIdf(weighFacets(flat, a), idf); cache.set(a, { v, mag: mag(v) }); }
     return cache.get(a);
   };
   const out = [];
@@ -2338,9 +2353,10 @@ function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis = null
     // playlists, a mood playlist with mood playlists. Comparing across axes
     // flags every track in a mood playlist as misfiled, which it is not.
     if (axis && p.axis && p.axis !== axis) continue;
-    const v = vecFor(p.axis);
+    const { v, mag: vm } = vecFor(p.axis);
     if (!v.size) continue;
-    const s = cosine(v, p.vec);
+    // cosine(v, p.vec), with the lengths already in hand (same product, same bits).
+    const s = p.mag != null ? (vm * p.mag ? dot(v, p.vec) / (vm * p.mag) : 0) : cosine(v, p.vec);
     if (s > 0) out.push({ id, name: p.name, score: s });
   }
   return out.sort((a, b) => b.score - a.score).slice(0, top);
@@ -2367,19 +2383,29 @@ const HISTORY_MIN_SHARE = 0.6;  // the leading playlist needs a real majority
  * rather than a similarity score, and mixing it into rank()'s cosine scale
  * would misrepresent both.
  */
-function artistHistory(track, lib, targets) {
+function artistHistory(track, lib, targets, index = null) {
   const artistId = track?.artists?.[0]?.id;
   if (!artistId) return [];
 
-  const counts = new Map(); // playlistId -> count
-  let total = 0;
-  for (const p of lib.playlists ?? []) {
-    if (!targets.has(p.id)) continue;
-    for (const t of p.tracks ?? []) {
-      if (t.id === track.id) continue;
-      if (t.artists?.[0]?.id !== artistId) continue;
-      counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
-      total++;
+  let counts, total;
+  if (index && !index.present.has(track.id)) {
+    // The same tally, read from a pass made once for the whole queue. A track
+    // that is itself in a target playlist is left to the scan below, which
+    // leaves it out of its own count.
+    const e = index.byArtist.get(artistId);
+    if (!e) return [];
+    ({ counts, total } = e);
+  } else {
+    counts = new Map(); // playlistId -> count
+    total = 0;
+    for (const p of lib.playlists ?? []) {
+      if (!targets.has(p.id)) continue;
+      for (const t of p.tracks ?? []) {
+        if (t.id === track.id) continue;
+        if (t.artists?.[0]?.id !== artistId) continue;
+        counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
+        total++;
+      }
     }
   }
   if (total < HISTORY_MIN_TRACKS) return [];
@@ -2390,6 +2416,26 @@ function artistHistory(track, lib, targets) {
 
   const home = lib.playlists.find(p => p.id === topId);
   return [{ id: topId, name: home?.name ?? topId, score: share, count: topCount, total }];
+}
+
+/** artistHistory's tally for every primary artist at once: one pass over the target
+ *  playlists instead of one per track. Pass it as artistHistory's fourth argument
+ *  when a whole queue is being scored against an unchanging library. */
+function artistHistoryIndex(lib, targets) {
+  const byArtist = new Map(), present = new Set();
+  for (const p of lib.playlists ?? []) {
+    if (!targets.has(p.id)) continue;
+    for (const t of p.tracks ?? []) {
+      present.add(t.id);
+      const a = t.artists?.[0]?.id;
+      if (!a) continue;
+      let e = byArtist.get(a);
+      if (!e) byArtist.set(a, e = { counts: new Map(), total: 0 });
+      e.counts.set(p.id, (e.counts.get(p.id) ?? 0) + 1);
+      e.total++;
+    }
+  }
+  return { byArtist, present };
 }
 
 /* ---------- rejections teach the tag engine (BUILD-5-PLAN §5.1) ----------
@@ -2675,7 +2721,7 @@ function findDrift(lib, tags, targets, idf) {
   drift.sort((a, b) => a.similarity - b.similarity);
   return drift;
 }
-return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, withoutTrack, findMisfiled, listeningWeights, byListening, findDrift };
+return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, artistHistoryIndex, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, withoutTrack, findMisfiled, listeningWeights, byListening, findDrift };
 })();
 /* ---- core/playlists/axes.mjs ---- */
 __mod["core/playlists/axes.mjs"] = (function () {
@@ -3695,6 +3741,8 @@ function syncAttributes(a, b) {
   const have = a.attributes;
   for (let i = have.length - 1; i >= 0; i--) {
     const { name } = have[i];
+    // A <details> the person opened (the card's ⋯ menu) stays open across a repaint.
+    if (name === 'open' && a.tagName === 'DETAILS') continue;
     if (!b.hasAttribute(name)) a.removeAttribute(name);
   }
 }
@@ -3968,6 +4016,11 @@ function sureBatchHTML(ctx) {
   const { S, esc } = ctx;
   if (S.roll) return '';
   const n = sureList(ctx).length;
+  // E1: a batch that stopped partway says what landed and offers the rest.
+  if (S.partial && n) return `<div class="card surebatch" role="status" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
+    <span><b>${esc(String(S.partial.landed))} of ${esc(String(S.partial.total))} landed.</b> <span class="sub">${esc(String(n))} didn't. What did land is in History as one group.</span></span>
+    <button class="b sm p" data-act="filesure">Retry the rest</button>
+  </div>`;
   if (n < 2) return '';
   return `<div class="card surebatch" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
     <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
@@ -3981,7 +4034,7 @@ function sureBatchHTML(ctx) {
  * and one undo takes the whole batch back.
  */
 async function fileSureOnes(ctx) {
-  const { S, R, CFG, addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, toast, render } = ctx;
+  const { S, R, CFG, addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, toast, render } = ctx;
   const now = Date.now();
   if (S.filing || now < (S.fileLockUntil ?? 0)) return;
   const batch = sureList(ctx);
@@ -3992,24 +4045,51 @@ async function fileSureOnes(ctx) {
     const at = R.backlog.findIndex(b => b.id === row.id);
     (byPl.get(playlistId) ?? byPl.set(playlistId, []).get(playlistId)).push({ id: row.id, at });
   });
-  const group = newGroup(), ats = [], done = [];
+  // E1: a retry after a partial failure carries on the same History group.
+  const prior = S.partial, before = prior?.done.length ?? 0;
+  const group = prior?.group ?? newGroup(), ats = [...(prior?.ats ?? [])], done = [...(prior?.done ?? [])];
+  const total = (prior?.total ?? 0) + batch.length;
+  const logAdd = async (pid, ids, rows, reason) => {
+    await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
+                      reason, band:'sure', queuePos:Math.min(...rows.map(r => r.at)), group });
+    ats.push((await getLog())[0]?.at);
+    done.push([pid, ids]);
+  };
+  const logged = new Set();
+  let failure = null;
   try {
     for (const [pid, rows] of byPl) {
       const ids = rows.map(r => r.id);
       await addTracks(pid, ids);
-      await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
-                        reason:'filed the sure ones', band:'sure', queuePos:Math.min(...rows.map(r => r.at)), group });
-      ats.push((await getLog())[0]?.at);
-      done.push([pid, ids]);
+      await logAdd(pid, ids, rows, 'filed the sure ones');
+      logged.add(pid);
     }
-    for (const [pid, ids] of done) for (const id of ids) await recordAccept(id, [pid]);
-  } catch (e) {
-    // Whatever was written comes back out, and the queue is untouched.
-    if (ats.length) { try { await undoAction(ats[0]); } catch { /* best effort */ } }
+  } catch (e) { failure = e; }
+  if (failure) {
+    // Re-read what Spotify actually holds for the playlists not yet logged, and
+    // log whatever landed (a write whose answer was lost, or a chunk that got in).
+    let unread = false;
+    for (const [pid, rows] of byPl) {
+      if (logged.has(pid)) continue;
+      const ids = rows.map(r => r.id), got = landedIn ? await landedIn(pid, ids) : null;
+      if (got === null) { unread = true; continue; }
+      if (got.length) await logAdd(pid, got, rows.filter(r => got.includes(r.id)), 'filed the sure ones (found after a failure)');
+    }
+    const landedIds = new Set(done.flatMap(([, ids]) => ids));
+    for (const [pid, ids] of done.slice(before)) for (const id of ids) await recordAccept(id, [pid]);
     S.filing = false;
-    toast('Failed: ' + e.message);
+    if (done.length === before) {
+      toast('Failed: ' + failure.message + (unread ? ' Could not check what landed.' : ''));
+      return render();
+    }
+    for (let k = R.backlog.length - 1; k >= 0; k--) if (landedIds.has(R.backlog[k].id)) R.backlog.splice(k, 1);
+    S.inboxAt = Math.max(0, Math.min(S.inboxAt, R.backlog.length - 1));
+    S.partial = { group, ats, done, total, landed: landedIds.size };
+    toast(`${landedIds.size} of ${total} landed. ${failure.message}`, null, { label: 'Retry the rest', run: () => fileSureOnes(ctx) });
     return render();
   }
+  for (const [pid, ids] of done.slice(before)) for (const id of ids) await recordAccept(id, [pid]);
+  S.partial = null;
   S.filing = false;
   const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(done.flatMap(([, ids]) => ids));
   for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
@@ -4087,7 +4167,7 @@ function view(ctx) {
           </div>
         </div>${trackStrip(t)}${soundIdHTML(t)}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
-          <button class="pick ${n === 0 ? 'best' : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
+          <div class="pickw"><button class="pick ${n === 0 ? 'best' : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
@@ -4098,9 +4178,8 @@ function view(ctx) {
               : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
             <span class="rt">${pickBand(n === 0 && topBand ? { ...sg, band: topBand } : sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
-            <span class="nope" data-act="reject" data-reject="${esc(sg.id)}" role="button" tabindex="0"
-              title="Never suggest ${esc(sg.name)} for this track">✕</span>
-          </button>`).join('')}</div>`
+          </button><button class="nope" type="button" data-act="reject" data-reject="${esc(sg.id)}"
+            title="Never suggest ${esc(sg.name)} for this track" aria-label="Never suggest ${esc(sg.name)} for this track"><span aria-hidden="true">✕</span></button></div>`).join('')}</div>`
         : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
         ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
           ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).map(id =>
@@ -4288,7 +4367,15 @@ const actions = {
     render();
   },
 };
-return { rollForwardFor, rollForwardHTML, rollForwardGo, sureBatchHTML, fileSureOnes, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions };
+
+// E1: patch() keeps the menu open across a repaint of the same card (a late
+// listening re-sort used to close it); a different card starts with it shut.
+let menuFor = null;
+function mount(ctx) {
+  const id = inboxTrack(ctx)?.id ?? null;
+  if (id !== menuFor) { menuFor = id; document.querySelector("#swipeCard details.cardmore")?.removeAttribute("open"); }
+}
+return { rollForwardFor, rollForwardHTML, rollForwardGo, sureBatchHTML, fileSureOnes, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions, mount };
 })();
 /* ---- web/screens/engine.mjs ---- */
 __mod["web/screens/engine.mjs"] = (function () {
@@ -4497,7 +4584,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-0400`,
+    `Betterfy engine score — build 2026-11-16-0438`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5724,7 +5811,7 @@ function view(ctx) {
       : `No single playlist has everything you own yet.`}
       <button class="b sm" data-act="syncAllSongs" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Build it'}</button></p>
     <div class="rowbtns" style="margin-bottom:22px">
-      <select id="shufPl" data-act="shufPl">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
+      <select id="shufPl" data-act="shufPl" aria-label="Playlist to shuffle">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
       <button class="b p" id="shufApply" ${S.shufOrder.length?'':'disabled'} data-act="shufApply">Create shuffled playlist</button>
       <button class="b" data-act="shufPlay" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
       <button class="b sm" data-act="shufAgain" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
@@ -5839,7 +5926,7 @@ function view(ctx) {
       <div class="rowbtns" style="margin-top:8px"><button class="b" type="button" data-lfmconnect>Connect Last.fm</button></div>
     </div>`}
     <div class="rowbtns" style="margin-bottom:16px">
-      <select data-act="discPl" id="discPl">
+      <select data-act="discPl" id="discPl" aria-label="Find new music from">
         <option value="">Everything I listen to</option>
         <optgroup label="Playlist radio">
           ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
@@ -6315,7 +6402,7 @@ const THEME_KEY = 'betterfy-theme';
 const ACCENTS = [
   // The light halves of the first six sit a few points darker than they first
   // did, just enough for white text on them (a primary button) to reach 4.5:1.
-  ['Ember',  '#FF7A52', '#CD4825'], ['Amber',  '#FFB43F', '#9F6A0F'],
+  ['Ember',  '#FF7A52', '#BF3F1D'], ['Amber',  '#FFB43F', '#9F6A0F'],
   ['Lime',   '#C3DE55', '#5C801F'], ['Mint',   '#7AE0A6', '#158557'],
   ['Jade',   '#43D2A6', '#0D8469'], ['Teal',   '#4CD0D6', '#118186'],
   ['Sky',    '#63C8FF', '#1F72C0'], ['Blue',   '#8AA6FF', '#3F55C4'],
@@ -6593,7 +6680,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-0400';
+const BUILD = '2026-11-16-0438';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -6859,11 +6946,28 @@ async function pace() {
 /** Sit out a rate limit, counting down rather than going quiet. */
 async function hold(ms) {
   const until = Date.now() + ms;
-  for (let left = ms; left > 0; left = until - Date.now()) {
-    onHold?.(Math.ceil(left / 1000));
-    await sleep(Math.min(1000, left));
+  try {
+    for (let left = ms; left > 0; left = until - Date.now()) {
+      onHold?.(Math.ceil(left / 1000));
+      if (!onHold) slowNote(Math.ceil(left / 1000));
+      await sleep(Math.min(1000, left));
+    }
+  } finally { onHold?.(0); slowNote(0); }
+}
+
+/** E1: a pause outside the first sync is a visible state, not a silent wait. */
+function slowNote(secs) {
+  if (typeof document === 'undefined') return;
+  let el = document.getElementById('slowdown');
+  if (!secs) { el?.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'slowdown'; el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:76px;z-index:60;padding:10px 14px;border-radius:12px;'
+      + 'background:var(--surface,#222);color:var(--ink,#fff);border:1px solid var(--line,#888);font-size:13px;text-align:center';
+    document.body.appendChild(el);
   }
-  onHold?.(0);
+  el.textContent = `Spotify asked us to slow down \u2014 retrying in ${secs}s`;
 }
 
 // A 429 is worth sitting through quietly only while the wait is short — that
@@ -6914,7 +7018,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-0400', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-0438', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -6951,6 +7055,9 @@ async function sp(path, opts = {}) {
       // Offline, dropped, or hung past the deadline. Ask again — and if it keeps
       // failing, say so as something retryable, because it is the network, not
       // an empty playlist and not a dead sign-in.
+      // A POST that dropped may still have landed: never blindly resend it. The
+      // caller re-reads what is there and sends only what is missing.
+      if (opts.method === 'POST') throw Object.assign(authError(NET_LOST, 0), { ambiguous: true });
       if (++soft >= NET_TRIES) throw authError(NET_LOST, 0);
       setGap(gap * 2); await sleep(back); back *= 2; continue;
     }
@@ -6982,6 +7089,7 @@ async function sp(path, opts = {}) {
     // and if it will not settle, report it as something to come back to rather
     // than as the sign-in having failed.
     if (res.status >= 500) {
+      if (opts.method === 'POST') throw Object.assign(authError(`Spotify answered ${res.status}. It may or may not have saved that.`, res.status), { ambiguous: true });
       if (++soft >= NET_TRIES) throw authError(`Spotify answered ${res.status}. It will pick up where it stopped.`, res.status);
       setGap(gap * 2); await sleep(back); back *= 2; continue;
     }
@@ -7473,16 +7581,34 @@ function buildReports(lib, cfg, tags) {
   const unfiled = lib.liked.filter(t => t?.id && !isFiled(t));
   // Rejections by artist, read once for the whole queue (backlogSuggest).
   const rejected = artistRejectMemory(FB, lib);
+  // Everything a card's picks and tags are made from is the track's artists
+  // (credits, tags, and where that artist is already filed) plus the playlists
+  // rejected for this one track, so two songs by the same artists with the
+  // same rejections get the same answer. A real backlog is thousands of tracks
+  // from a few hundred artists: scored once per artist set, not once per song
+  // (measured on 5k liked songs: the dominant cost of this function).
+  const byArtists = new Map();
+  const history = artistHistoryIndex(lib, targets);
+  const scored = t => {
+    // An artist with rejections on record is scored per track: rejectFactors
+    // leaves out the rejection made on the very track it is scoring.
+    const key = (t.artists ?? []).map(a => a.id).join(',') + '|' + (FB[t.id]?.rejected ?? []).join(',')
+      + (rejected?.size && rejected.get(t.artists?.[0]?.id) ? '|' + t.id : '');
+    let s = byArtists.get(key);
+    if (!s) byArtists.set(key, s = { suggest: backlogSuggest(t, lib, cfg, tags, profiles, idf, targets, rejected, history),
+                                      tags: topTags(t, tags, idf), thin: isThinSignal(t, tags) });
+    return s;
+  };
   const backlog = unfiled.map(t => {
     const fb = FB[t.id];
-    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets, rejected);
+    const s = scored(t);
     return { id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
       album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
-      tags: topTags(t, tags, idf),
-      thinData: isThinSignal(t, tags),
+      tags: s.tags.slice(),
+      thinData: s.thin,
       artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })),
       skips: fb?.skips ?? 0,
-      suggest };
+      suggest: s.suggest.map(x => ({ ...x })) };
   })
     // Newest first, but anything already skipped sinks below everything you
     // have not seen yet — so the queue moves on instead of reopening on the
@@ -7576,7 +7702,7 @@ function keptHere(trackId, playlistId) { return !!FB[trackId]?.kept?.includes(pl
  */
 function backlogSuggest(t, lib, cfg, tags, profiles, idf,
                         targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id)),
-                        rejected = artistRejectMemory(FB, lib)) {
+                        rejected = artistRejectMemory(FB, lib), history = null) {
   const fb = FB[t.id];
   // A playlist rejected for this artist's other tracks is lowered here, fading
   // with time and later accepts (profile.mjs rejectFactors, BUILD-5-PLAN §5.1).
@@ -7593,11 +7719,86 @@ function backlogSuggest(t, lib, cfg, tags, profiles, idf,
   // filing history only ever steps in when it hasn't — no fetch, no third
   // party, just where the user already put this artist's other tracks.
   return (ranked.length && ranked[0].score >= 0.30) ? ranked
-    : downweightRejected(artistHistory(t, lib, targets), down)
+    : downweightRejected(artistHistory(t, lib, targets, history), down)
         .filter(h => !fb?.rejected?.includes(h.id))
         .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
 }
 
+/* ---------- reports, off the main thread (page side) ---------- */
+/* buildReports is the biggest single piece of work the page does: on a 5k-liked,
+ * 60-playlist library it holds the main thread for over a second (scripts/perf.mjs,
+ * docs/BUILD-6-PLAN.md D4), at every sync, tag fill and correction. The same
+ * function, byte for byte, runs in docs/reports-worker.js (build-web.mjs cuts
+ * this file at the marker above) and the page asks it for the answer. The
+ * page-side state it reads — rejections, the pinned mirror, the listening weights,
+ * the engine's verdicts — travels with each request. With no Worker, or one that
+ * fails, the same call runs here, on the main thread, as it always did. */
+let REPORTS_WORKER = null, REPORTS_SEQ = 0, REPORTS_APPLY = 0;
+const REPORTS_WAIT = new Map();
+function reportsWorker() {
+  if (REPORTS_WORKER !== null) return REPORTS_WORKER;
+  try {
+    if (typeof Worker !== 'function') return REPORTS_WORKER = false;
+    const w = new Worker('reports-worker.js?v=2026-11-16-0438');
+    w.onmessage = e => {
+      const wait = REPORTS_WAIT.get(e.data?.id);
+      if (!wait) return;
+      REPORTS_WAIT.delete(e.data.id);
+      e.data.ok ? wait.ok(e.data.result) : wait.bad(new Error(e.data.error));
+    };
+    w.onerror = ev => {
+      ev?.preventDefault?.();
+      for (const wait of REPORTS_WAIT.values()) wait.bad(new Error(ev?.message || 'the reports worker stopped'));
+      REPORTS_WAIT.clear();
+      REPORTS_WORKER = false;
+      try { w.terminate(); } catch {}
+    };
+    return REPORTS_WORKER = w;
+  } catch { return REPORTS_WORKER = false; }
+}
+
+/** Same answer as buildReports(lib, cfg, tags), worked out off the main thread when it can be. */
+async function buildReportsAsync(lib, cfg, tags) {
+  const w = reportsWorker();
+  if (w) {
+    try {
+      const L = typeof LISTENING_CACHE !== 'undefined' ? LISTENING_CACHE : null;
+      const sh = typeof ENG !== 'undefined' ? ENG.shadow : null;
+      return await new Promise((ok, bad) => {
+        const id = ++REPORTS_SEQ;
+        REPORTS_WAIT.set(id, { ok, bad });
+        w.postMessage({ id, lib, cfg, tags, fb: FB, pinned: pinnedAllSongs(), allSongsName: ALL_SONGS_NAME,
+          listening: L?.weights ? { weights: L.weights, tracks: L.tracks ?? null } : null,
+          shadow: sh?.rows ? { rows: sh.rows.map(r => ({ id: r.id, decision: r.decision })) } : null });
+      });
+    } catch { /* fall through: build it here */ }
+  }
+  return buildReports(lib, cfg, tags);
+}
+
+/** What the reports are made of, cheaply: if it moved while a build was away, the answer is stale. */
+function reportsSignature() {
+  let n = 0;
+  for (const p of LIB.playlists) n += p.tracks?.length ?? 0;
+  let f = 0;
+  for (const k in FB) { const x = FB[k]; f += 1 + (x?.skips ?? 0) + (x?.rejected?.length ?? 0) + (x?.kept?.length ?? 0); }
+  return `${LIB.liked.length}/${n}/${f}`;
+}
+
+/** Rebuild R off the main thread and repaint what watches it. A newer call wins over an older one
+ *  still in flight, and an answer made from a library that has since changed is made again once. */
+async function refreshReports() {
+  const mine = ++REPORTS_APPLY;
+  for (let tries = 0; tries < 2; tries++) {
+    const lib = LIB, sig = reportsSignature();
+    const res = await buildReportsAsync(LIB, CFG, TAGS);
+    if (mine !== REPORTS_APPLY || lib !== LIB) return false;
+    if (sig !== reportsSignature() && tries === 0) continue;
+    R = res; store.set('reports', R);
+    return true;
+  }
+  return false;
+}
 /* ===================== UI ===================== */
 let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'inbox';
 const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null,
@@ -7653,14 +7854,18 @@ function infoBtn(id, title, html) {
   return `<button class="info" type="button" data-info="${esc(id)}" aria-label="${esc(title)}: how this works">\u24D8</button>`;
 }
 let toastT;
-function toast(msg, undoFn) {
+function toast(msg, undoFn, action) {
   const el = $('#toast');
   // Every Undo toast also says where the full log is: the Settings sheet's History.
   el.innerHTML = esc(msg) + (undoFn ? ' <button id="undoBtn">Undo</button> <button id="histBtn">History</button>' : '');
   el.hidden = false;
   if (undoFn) $('#undoBtn').onclick = async () => { try { await undoFn(); toast('Restored.'); } catch(e){ toast('Undo failed: '+e.message); } };
   if (undoFn) $('#histBtn').onclick = () => { el.hidden = true; openUnderHood('history'); };
-  clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, undoFn ? 9000 : 3200);
+  if (action) {
+    el.insertAdjacentHTML('beforeend', ` <button id="actBtn">${esc(action.label)}</button>`);
+    $('#actBtn').onclick = () => { el.hidden = true; action.run(); };
+  }
+  clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, action ? 20000 : undoFn ? 9000 : 3200);
 }
 
 /* ---------- action log: every library change, reversible ---------- */
@@ -7778,7 +7983,28 @@ async function plCall(id, method, body) {
     catch (e) { if (!/^40[34]/.test(e.message) || seg === 'tracks') throw e; }
   }
 }
-const addTracks = (id, ids) => Promise.all(chunk(ids,100).map(c => plCall(id,'POST',{ uris:c.map(x=>'spotify:track:'+x) })));
+/** Add one chunk. If the answer was lost (dropped, 5xx) the write may still have
+ *  landed, so re-read the playlist and send only what is missing: no duplicates. */
+async function addChunk(id, c) {
+  const post = xs => plCall(id, 'POST', { uris: xs.map(x => 'spotify:track:' + x) });
+  try { return await post(c); }
+  catch (e) {
+    if (!e.ambiguous) throw e;
+    const have = new Set(await playlistIds(id));
+    const missing = c.filter(x => !have.has(x));
+    return missing.length ? post(missing) : null;
+  }
+}
+async function addTracks(id, ids) {
+  const out = [];
+  for (const c of chunk(ids, 100)) out.push(await addChunk(id, c));   // one after another: no race on a snapshot
+  return out;
+}
+/** Which of `ids` are really in the playlist now (null when it cannot be read). */
+async function landedIn(id, ids) {
+  try { const have = new Set(await playlistIds(id)); return ids.filter(x => have.has(x)); }
+  catch { return null; }
+}
 /**
  * DELETE /playlists/{id}/items, for up to 100 `{ uri }` objects at a time.
  * Spotify's reference now documents the body as `{ items: [{ uri }] }`, max
@@ -7953,9 +8179,9 @@ function paintListen() {
   slot.innerHTML = html;
   if (html) {
     slot.setAttribute('role', 'button'); slot.tabIndex = 0;
-    slot.setAttribute('aria-label', 'Listening status — open Listening settings');
+    slot.title = 'Open Listening settings';
   } else {
-    slot.removeAttribute('role'); slot.removeAttribute('tabindex'); slot.removeAttribute('aria-label');
+    slot.removeAttribute('role'); slot.removeAttribute('tabindex'); slot.removeAttribute('title');
   }
 }
 {
@@ -9717,7 +9943,7 @@ async function fillFromWikidata({ quiet = false } = {}) {
     if (i + W.BATCH < ids.length) await new Promise(r => setTimeout(r, 1000));
   }
   await idb.set('tags_extra', cached);
-  if (found) R = buildReports(LIB, CFG, TAGS);
+  if (found) await refreshReports();
   if (!quiet || found) {
     $('#land').hidden = true; $('#app').hidden = false;
     toast(`Wikidata had genres for ${found.toLocaleString()} of ${ids.length.toLocaleString()} untagged artists.`
@@ -9764,7 +9990,7 @@ async function noteCorrection(id, tags) {
   const c = await loadCorrections();
   c[id] = { tags, at: Date.now() };
   await idb.set(CORR_KEY, c);
-  syncCorrections().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
+  syncCorrections().then(changed => { if (changed) refreshReports(); });
 }
 
 /** Corrections from linked devices, applied exactly as if made here. */
@@ -9970,7 +10196,7 @@ function render(dir) {
   for (const m of actScreens(view)) SCREEN_MODS[m]?.mount?.(screenCtx(m));
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
-  document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === tabOf(view))));
+  document.querySelectorAll('.nav').forEach(n => { const on = n.dataset.v === tabOf(view); n.setAttribute('aria-current', String(on)); n.setAttribute('aria-selected', String(on)); });
   // The Settings sheet's sections repaint with the page they sit on.
   underHoodRefresh();
   plSheetPaint();
@@ -10398,7 +10624,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-0400';
+    s.src = 'engine.js?v=2026-11-16-0438';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -10420,7 +10646,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-0400');
+    const w = new Worker('engine-worker.js?v=2026-11-16-0438');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -10895,7 +11121,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-0400';
+    s.src = 'audio.js?v=2026-11-16-0438';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -10931,7 +11157,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0400', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0438', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -11665,7 +11891,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0400', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0438', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -11967,7 +12193,7 @@ Object.assign(SCREEN_CTX, {
                  render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
-                  addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
+                  addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
                   fileBand, fileSure, fileOrderKick,
                   rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
@@ -12038,7 +12264,7 @@ function plSheetEl() {
   if (!el) {
     el = document.createElement('div');
     el.id = 'plSheet'; el.className = 'settings plsheet';
-    el.setAttribute('role', 'dialog'); el.setAttribute('aria-hidden', 'true'); el.setAttribute('aria-label', 'Playlist');
+    el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-hidden', 'true'); el.setAttribute('aria-label', 'Playlist');
     document.body.appendChild(el);
     // Wired once, when the sheet is first made.
     addEventListener('click', e => {
@@ -12055,22 +12281,28 @@ function plSheetPaint() {
   const b = el.querySelector('.pls-body'); if (b) b.scrollTop = top;
   if (!b) closePlSheet();
 }
+let plOpener = null; // focus goes back here when the sheet closes
 function openPlSheet(id) {
   if (!id) return;
+  if (!S.plSheet) plOpener = document.activeElement;
   S.plSheet = id;
   plSheetPaint();
   plSheetEl().classList.add('open'); plSheetEl().setAttribute('aria-hidden', 'false');
   $('#scrim').classList.add('open');
+  plSheetEl().setAttribute('aria-label', CFG[id]?.name ?? 'Playlist');
   plSheetEl().querySelector('[data-plclose]')?.focus();
   routeNote();
 }
 function closePlSheet() {
   if (!S.plSheet) return;
+  const closedId = S.plSheet;
   S.plSheet = null;
   const el = plSheetEl();
   el.classList.remove('open'); el.setAttribute('aria-hidden', 'true');
   if (!settingsOpen()) $('#scrim').classList.remove('open');
   routeNote();
+  const back = plOpener; plOpener = null;
+  if (!settingsOpen()) (back?.isConnected ? back : document.querySelector('[data-act="plopen"][data-pl="' + CSS.escape(closedId) + '"]'))?.focus();
 }
 
 function underHoodHTML() {
@@ -12267,6 +12499,61 @@ function cmpTable(o) {
     <td>${esc(x.album)}</td></tr>`).join('')}</tbody></table>`;
 }
 
+/* Keyboard paths beyond File (BUILD-6 A1 / D7). inbox-actions.js keeps File's own keys and
+ * the left/right tab walk; this adds, for anyone not using a pointer:
+ *   Up/Down (or k/j)  move between rows on Tidy and Library
+ *   1 2 3 / N / B     Discover: file under suggestion 1-3 (best first), next, back
+ *   Tab               stays inside an open sheet; Esc closes it (the sheets' own handlers)
+ * Rows are native buttons, so Enter and Space act with no code here. After a keyboard
+ * action repaints Tidy, focus lands on the neighbouring row instead of falling to <body>. */
+(() => {
+  const typing = t => t?.matches?.('input,select,textarea,[contenteditable]');
+  const sheetOpen = () => document.querySelector('#settingsPanel.open, #plSheet.open, dialog[open]');
+  const rowsOf = () => [...document.querySelectorAll('#main .row:not(.done), #main .plrow')].filter(r => r.offsetParent);
+  const primary = r => r.matches('.plrow') ? r : r.querySelector('.acts button:not([disabled]), button:not([disabled])');
+
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // Keep Tab inside whichever sheet is open.
+    if (e.key === 'Tab') {
+      const dlg = document.querySelector('dialog[open]') || document.querySelector('#plSheet.open') || document.querySelector('#settingsPanel.open');
+      if (!dlg) return;
+      const f = [...dlg.querySelectorAll('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter(x => !x.disabled && x.offsetParent);
+      if (!f.length) return;
+      const i = f.indexOf(document.activeElement);
+      if (i === -1 || (e.shiftKey && i === 0) || (!e.shiftKey && i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+      return;
+    }
+    if ($('#app').hidden || typing(e.target) || sheetOpen()) return;
+    if (view === 'discover') {
+      const k = e.key.toLowerCase();
+      const btn = k === 'n' ? document.querySelector('[data-act="dnav"][data-dnav="1"]')
+        : k === 'b' ? document.querySelector('[data-act="dnav"][data-dnav="-1"]')
+        : ['1', '2', '3'].includes(k) ? [...document.querySelectorAll('#main [data-act="dfile"]')][+k - 1] : null;
+      if (btn && !btn.disabled) { e.preventDefault(); btn.click(); return; }
+    }
+    if (!['ArrowUp', 'ArrowDown', 'j', 'k'].includes(e.key) || (view !== 'tidy' && view !== 'lists')) return;
+    const rows = rowsOf(); if (!rows.length) return;
+    const dir = e.key === 'ArrowDown' || e.key === 'j' ? 1 : -1;
+    const at = rows.findIndex(r => r.contains(document.activeElement));
+    if (at === -1 && e.key.startsWith('Arrow')) return; // arrows keep scrolling until focus is in a row
+    const next = rows[Math.max(0, Math.min(rows.length - 1, at === -1 ? 0 : at + dir))];
+    const b = primary(next); if (!b) return;
+    e.preventDefault(); b.focus(); b.scrollIntoView({ block: 'nearest' });
+  });
+
+  // A keyboard action on a Tidy row repaints it; hand focus to the row now in its place.
+  document.addEventListener('click', e => {
+    const btn = e.target.closest?.('#main .row .acts button');
+    if (!btn || e.detail !== 0) return;
+    const at = rowsOf().indexOf(btn.closest('.row'));
+    setTimeout(() => {
+      if (document.activeElement && document.activeElement !== document.body) return;
+      const after = rowsOf(), n = after[Math.min(at, after.length - 1)];
+      if (n) primary(n)?.focus();
+    }, 350);
+  });
+})();
 /* ---------- boot ---------- */
 $('#redirectShow').textContent = REDIRECT;
 $('#redirectShow2').value = REDIRECT;
@@ -12372,7 +12659,7 @@ $('#syncRedeem').onclick = async () => {
     input.value = '';
     toast('Linked — pulling in what the other device knows…');
     const changed = await syncEverything();
-    if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); }
+    if (changed) refreshReports();
   } catch (e) { toast('Could not link: ' + e.message); }
   finally { btn.disabled = false; }
 };
@@ -12510,6 +12797,7 @@ async function start(force) {
   try {
     stage('Reading your library…', 0.02);
     LIB = force ? null : await idb.get('library');
+    performance.mark('bf:library');
     if (!LIB) {
       let at = 0.02;
       // A pause at the very start of a read is not a busy moment, it is a quota
@@ -12521,6 +12809,7 @@ async function start(force) {
       try { LIB = await syncLibrary(force, (name, pct) => { at = pct; stage(`Reading ${name}…`, pct); }); }
       finally { onHold = null; }
     }
+    performance.mark('bf:tags-start');
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
       // 435KB over whatever signal a phone has at the time. This used to be a
@@ -12540,9 +12829,15 @@ async function start(force) {
     // Skips and rejections must be in hand before reports are built, since
     // buildReports filters rejected playlists out of each track's suggestions.
     await loadFeedback();
+    performance.mark('bf:feedback');
     stage('Working out where everything goes…', 0.99);
     CFG = classify(LIB, TAGS);
+    performance.mark('bf:classified');
+    // The first build stays on this thread: nothing else is waiting on the page yet, and a
+    // worker would add its start-up and a copy of the library to the one wait that matters.
+    // Every rebuild after this one (sync, tag fills, corrections) goes through refreshReports().
     R = buildReports(LIB, CFG, TAGS);
+    performance.mark('bf:reports');
     $('#land').hidden = true; $('#app').hidden = false;
     clearRateLimitStreak();
     // The rail that used to carry this is a bar now; the account line lives in
@@ -12557,7 +12852,7 @@ async function start(force) {
     // Background, after the first paint — never delays it, and only redraws
     // again if another device actually had feedback this one did not, rather
     // than resetting the screen on every load for nothing.
-    syncEverything().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
+    syncEverything().then(changed => { if (changed) refreshReports(); });
     // Keyless genres for artists nothing has tagged. Cached per artist, so after
     // the first load this asks only about artists that are new or stale.
     if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});

@@ -103,7 +103,7 @@ $('#syncRedeem').onclick = async () => {
     input.value = '';
     toast('Linked — pulling in what the other device knows…');
     const changed = await syncEverything();
-    if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); }
+    if (changed) refreshReports();
   } catch (e) { toast('Could not link: ' + e.message); }
   finally { btn.disabled = false; }
 };
@@ -241,6 +241,7 @@ async function start(force) {
   try {
     stage('Reading your library…', 0.02);
     LIB = force ? null : await idb.get('library');
+    performance.mark('bf:library');
     if (!LIB) {
       let at = 0.02;
       // A pause at the very start of a read is not a busy moment, it is a quota
@@ -252,6 +253,7 @@ async function start(force) {
       try { LIB = await syncLibrary(force, (name, pct) => { at = pct; stage(`Reading ${name}…`, pct); }); }
       finally { onHold = null; }
     }
+    performance.mark('bf:tags-start');
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
       // 435KB over whatever signal a phone has at the time. This used to be a
@@ -271,9 +273,15 @@ async function start(force) {
     // Skips and rejections must be in hand before reports are built, since
     // buildReports filters rejected playlists out of each track's suggestions.
     await loadFeedback();
+    performance.mark('bf:feedback');
     stage('Working out where everything goes…', 0.99);
     CFG = classify(LIB, TAGS);
+    performance.mark('bf:classified');
+    // The first build stays on this thread: nothing else is waiting on the page yet, and a
+    // worker would add its start-up and a copy of the library to the one wait that matters.
+    // Every rebuild after this one (sync, tag fills, corrections) goes through refreshReports().
     R = buildReports(LIB, CFG, TAGS);
+    performance.mark('bf:reports');
     $('#land').hidden = true; $('#app').hidden = false;
     clearRateLimitStreak();
     // The rail that used to carry this is a bar now; the account line lives in
@@ -288,7 +296,7 @@ async function start(force) {
     // Background, after the first paint — never delays it, and only redraws
     // again if another device actually had feedback this one did not, rather
     // than resetting the screen on every load for nothing.
-    syncEverything().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
+    syncEverything().then(changed => { if (changed) refreshReports(); });
     // Keyless genres for artists nothing has tagged. Cached per artist, so after
     // the first load this asks only about artists that are new or stale.
     if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});

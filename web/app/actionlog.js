@@ -113,7 +113,28 @@ async function plCall(id, method, body) {
     catch (e) { if (!/^40[34]/.test(e.message) || seg === 'tracks') throw e; }
   }
 }
-const addTracks = (id, ids) => Promise.all(chunk(ids,100).map(c => plCall(id,'POST',{ uris:c.map(x=>'spotify:track:'+x) })));
+/** Add one chunk. If the answer was lost (dropped, 5xx) the write may still have
+ *  landed, so re-read the playlist and send only what is missing: no duplicates. */
+async function addChunk(id, c) {
+  const post = xs => plCall(id, 'POST', { uris: xs.map(x => 'spotify:track:' + x) });
+  try { return await post(c); }
+  catch (e) {
+    if (!e.ambiguous) throw e;
+    const have = new Set(await playlistIds(id));
+    const missing = c.filter(x => !have.has(x));
+    return missing.length ? post(missing) : null;
+  }
+}
+async function addTracks(id, ids) {
+  const out = [];
+  for (const c of chunk(ids, 100)) out.push(await addChunk(id, c));   // one after another: no race on a snapshot
+  return out;
+}
+/** Which of `ids` are really in the playlist now (null when it cannot be read). */
+async function landedIn(id, ids) {
+  try { const have = new Set(await playlistIds(id)); return ids.filter(x => have.has(x)); }
+  catch { return null; }
+}
 /**
  * DELETE /playlists/{id}/items, for up to 100 `{ uri }` objects at a time.
  * Spotify's reference now documents the body as `{ items: [{ uri }] }`, max

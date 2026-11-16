@@ -85,7 +85,7 @@ export function view(ctx) {
       : `No single playlist has everything you own yet.`}
       <button class="b sm" data-act="syncAllSongs" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Build it'}</button></p>
     <div class="rowbtns" style="margin-bottom:22px">
-      <select id="shufPl" data-act="shufPl">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
+      <select id="shufPl" data-act="shufPl" aria-label="Playlist to shuffle">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
       <button class="b p" id="shufApply" ${S.shufOrder.length?'':'disabled'} data-act="shufApply">Create shuffled playlist</button>
       <button class="b" data-act="shufPlay" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
       <button class="b sm" data-act="shufAgain" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}

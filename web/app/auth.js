@@ -219,11 +219,28 @@ async function pace() {
 /** Sit out a rate limit, counting down rather than going quiet. */
 async function hold(ms) {
   const until = Date.now() + ms;
-  for (let left = ms; left > 0; left = until - Date.now()) {
-    onHold?.(Math.ceil(left / 1000));
-    await sleep(Math.min(1000, left));
+  try {
+    for (let left = ms; left > 0; left = until - Date.now()) {
+      onHold?.(Math.ceil(left / 1000));
+      if (!onHold) slowNote(Math.ceil(left / 1000));
+      await sleep(Math.min(1000, left));
+    }
+  } finally { onHold?.(0); slowNote(0); }
+}
+
+/** E1: a pause outside the first sync is a visible state, not a silent wait. */
+function slowNote(secs) {
+  if (typeof document === 'undefined') return;
+  let el = document.getElementById('slowdown');
+  if (!secs) { el?.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'slowdown'; el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:76px;z-index:60;padding:10px 14px;border-radius:12px;'
+      + 'background:var(--surface,#222);color:var(--ink,#fff);border:1px solid var(--line,#888);font-size:13px;text-align:center';
+    document.body.appendChild(el);
   }
-  onHold?.(0);
+  el.textContent = `Spotify asked us to slow down \u2014 retrying in ${secs}s`;
 }
 
 // A 429 is worth sitting through quietly only while the wait is short — that
@@ -311,6 +328,9 @@ async function sp(path, opts = {}) {
       // Offline, dropped, or hung past the deadline. Ask again — and if it keeps
       // failing, say so as something retryable, because it is the network, not
       // an empty playlist and not a dead sign-in.
+      // A POST that dropped may still have landed: never blindly resend it. The
+      // caller re-reads what is there and sends only what is missing.
+      if (opts.method === 'POST') throw Object.assign(authError(NET_LOST, 0), { ambiguous: true });
       if (++soft >= NET_TRIES) throw authError(NET_LOST, 0);
       setGap(gap * 2); await sleep(back); back *= 2; continue;
     }
@@ -342,6 +362,7 @@ async function sp(path, opts = {}) {
     // and if it will not settle, report it as something to come back to rather
     // than as the sign-in having failed.
     if (res.status >= 500) {
+      if (opts.method === 'POST') throw Object.assign(authError(`Spotify answered ${res.status}. It may or may not have saved that.`, res.status), { ambiguous: true });
       if (++soft >= NET_TRIES) throw authError(`Spotify answered ${res.status}. It will pick up where it stopped.`, res.status);
       setGap(gap * 2); await sleep(back); back *= 2; continue;
     }

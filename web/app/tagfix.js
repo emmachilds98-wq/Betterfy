@@ -35,7 +35,7 @@ async function noteCorrection(id, tags) {
   const c = await loadCorrections();
   c[id] = { tags, at: Date.now() };
   await idb.set(CORR_KEY, c);
-  syncCorrections().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
+  syncCorrections().then(changed => { if (changed) refreshReports(); });
 }
 
 /** Corrections from linked devices, applied exactly as if made here. */

@@ -44,6 +44,7 @@
 __STYLES__</style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 
 <!-- The mark's five bars are the same five colours in every theme and at
      every accent: --m0..--m4 are the only tokens in the app that never turn.
@@ -162,11 +163,11 @@ __STYLES__</style>
     <!-- Four tabs (docs/BUILD-5-PLAN.md §4.1). Sources, Engine and History live
          in the Settings sheet ("Under the hood"); New playlists and Shuffle are
          reached from Library. -->
-    <div class="navwrap">
-      <button class="nav" data-v="inbox"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/></svg></span><span class="lbl">File</span><span class="c" data-count="inbox"></span></button>
-      <button class="nav" data-v="tidy"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 4.5H6a2.5 2.5 0 0 0-2.5 2.5v9.5"/></svg></span><span class="lbl">Tidy</span><span class="c" data-count="tidy"></span></button>
-      <button class="nav" data-v="discover"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/></svg></span><span class="lbl">Discover</span></button>
-      <button class="nav" data-v="lists"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Library</span><span class="c" data-count="new"></span></button>
+    <div class="navwrap" role="tablist" aria-label="Sections" aria-orientation="horizontal">
+      <button class="nav" data-v="inbox" role="tab" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13.5h4.5l1.7 2.6h5.6l1.7-2.6H21"/><path d="M5.2 4.5h13.6l2.2 9v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4z"/></svg></span><span class="lbl">File</span><span class="c" data-count="inbox"></span></button>
+      <button class="nav" data-v="tidy" role="tab" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 4.5H6a2.5 2.5 0 0 0-2.5 2.5v9.5"/></svg></span><span class="lbl">Tidy</span><span class="c" data-count="tidy"></span></button>
+      <button class="nav" data-v="discover" role="tab" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/></svg></span><span class="lbl">Discover</span></button>
+      <button class="nav" data-v="lists" role="tab" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Library</span><span class="c" data-count="new"></span></button>
     </div>
     <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): on a desktop it
          sits at the end of the bar, so the tabs stay put when it appears (B8); on a
@@ -177,14 +178,14 @@ __STYLES__</style>
       <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build __BUILD__</span>
     </div>
   </aside>
-  <main id="main"></main>
+  <main id="main" tabindex="-1"></main>
 </div>
 
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
 <!-- A newer build is published: offered, never forced, since a reload in the
      middle of filing would lose the viewer's place. -->
-<div class="updatebar" id="updateBar" hidden>
+<div class="updatebar" id="updateBar" role="status" hidden>
   <span class="txt"><b>New version available.</b> <span id="updateFrom" class="mono" style="color:var(--ink-3);font-size:12px"></span></span>
   <button class="b sm p" id="doUpdate">Update now</button>
   <button class="iconbtn" id="dismissUpdate" aria-label="Dismiss">✕</button>
@@ -194,11 +195,11 @@ __STYLES__</style>
      inside the app afterwards — both toggle #land/#app visibility, but
      neither ever hides this. -->
 <div class="fabBar">
-  <button class="fab" id="btnSettings" title="Settings" aria-expanded="false" aria-controls="settingsPanel">⚙</button>
+  <button class="fab" id="btnSettings" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="settingsPanel">⚙</button>
 </div>
 <div class="scrim" id="scrim"></div>
 
-<div class="settings" id="settingsPanel" aria-hidden="true" aria-label="Settings">
+<div class="settings" id="settingsPanel" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Settings">
   <div class="grabber"></div>
   <div class="settings-head">
     <h2>Settings</h2>

@@ -12,7 +12,7 @@ const THEME_KEY = 'betterfy-theme';
 const ACCENTS = [
   // The light halves of the first six sit a few points darker than they first
   // did, just enough for white text on them (a primary button) to reach 4.5:1.
-  ['Ember',  '#FF7A52', '#CD4825'], ['Amber',  '#FFB43F', '#9F6A0F'],
+  ['Ember',  '#FF7A52', '#BF3F1D'], ['Amber',  '#FFB43F', '#9F6A0F'],
   ['Lime',   '#C3DE55', '#5C801F'], ['Mint',   '#7AE0A6', '#158557'],
   ['Jade',   '#43D2A6', '#0D8469'], ['Teal',   '#4CD0D6', '#118186'],
   ['Sky',    '#63C8FF', '#1F72C0'], ['Blue',   '#8AA6FF', '#3F55C4'],

@@ -53,13 +53,17 @@ function infoBtn(id, title, html) {
   return `<button class="info" type="button" data-info="${esc(id)}" aria-label="${esc(title)}: how this works">\u24D8</button>`;
 }
 let toastT;
-function toast(msg, undoFn) {
+function toast(msg, undoFn, action) {
   const el = $('#toast');
   // Every Undo toast also says where the full log is: the Settings sheet's History.
   el.innerHTML = esc(msg) + (undoFn ? ' <button id="undoBtn">Undo</button> <button id="histBtn">History</button>' : '');
   el.hidden = false;
   if (undoFn) $('#undoBtn').onclick = async () => { try { await undoFn(); toast('Restored.'); } catch(e){ toast('Undo failed: '+e.message); } };
   if (undoFn) $('#histBtn').onclick = () => { el.hidden = true; openUnderHood('history'); };
-  clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, undoFn ? 9000 : 3200);
+  if (action) {
+    el.insertAdjacentHTML('beforeend', ` <button id="actBtn">${esc(action.label)}</button>`);
+    $('#actBtn').onclick = () => { el.hidden = true; action.run(); };
+  }
+  clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, action ? 20000 : undoFn ? 9000 : 3200);
 }
 

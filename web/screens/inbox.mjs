@@ -96,6 +96,11 @@ export function sureBatchHTML(ctx) {
   const { S, esc } = ctx;
   if (S.roll) return '';
   const n = sureList(ctx).length;
+  // E1: a batch that stopped partway says what landed and offers the rest.
+  if (S.partial && n) return `<div class="card surebatch" role="status" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
+    <span><b>${esc(String(S.partial.landed))} of ${esc(String(S.partial.total))} landed.</b> <span class="sub">${esc(String(n))} didn't. What did land is in History as one group.</span></span>
+    <button class="b sm p" data-act="filesure">Retry the rest</button>
+  </div>`;
   if (n < 2) return '';
   return `<div class="card surebatch" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
     <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
@@ -109,7 +114,7 @@ export function sureBatchHTML(ctx) {
  * and one undo takes the whole batch back.
  */
 export async function fileSureOnes(ctx) {
-  const { S, R, CFG, addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, toast, render } = ctx;
+  const { S, R, CFG, addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, toast, render } = ctx;
   const now = Date.now();
   if (S.filing || now < (S.fileLockUntil ?? 0)) return;
   const batch = sureList(ctx);
@@ -120,24 +125,51 @@ export async function fileSureOnes(ctx) {
     const at = R.backlog.findIndex(b => b.id === row.id);
     (byPl.get(playlistId) ?? byPl.set(playlistId, []).get(playlistId)).push({ id: row.id, at });
   });
-  const group = newGroup(), ats = [], done = [];
+  // E1: a retry after a partial failure carries on the same History group.
+  const prior = S.partial, before = prior?.done.length ?? 0;
+  const group = prior?.group ?? newGroup(), ats = [...(prior?.ats ?? [])], done = [...(prior?.done ?? [])];
+  const total = (prior?.total ?? 0) + batch.length;
+  const logAdd = async (pid, ids, rows, reason) => {
+    await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
+                      reason, band:'sure', queuePos:Math.min(...rows.map(r => r.at)), group });
+    ats.push((await getLog())[0]?.at);
+    done.push([pid, ids]);
+  };
+  const logged = new Set();
+  let failure = null;
   try {
     for (const [pid, rows] of byPl) {
       const ids = rows.map(r => r.id);
       await addTracks(pid, ids);
-      await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
-                        reason:'filed the sure ones', band:'sure', queuePos:Math.min(...rows.map(r => r.at)), group });
-      ats.push((await getLog())[0]?.at);
-      done.push([pid, ids]);
+      await logAdd(pid, ids, rows, 'filed the sure ones');
+      logged.add(pid);
     }
-    for (const [pid, ids] of done) for (const id of ids) await recordAccept(id, [pid]);
-  } catch (e) {
-    // Whatever was written comes back out, and the queue is untouched.
-    if (ats.length) { try { await undoAction(ats[0]); } catch { /* best effort */ } }
+  } catch (e) { failure = e; }
+  if (failure) {
+    // Re-read what Spotify actually holds for the playlists not yet logged, and
+    // log whatever landed (a write whose answer was lost, or a chunk that got in).
+    let unread = false;
+    for (const [pid, rows] of byPl) {
+      if (logged.has(pid)) continue;
+      const ids = rows.map(r => r.id), got = landedIn ? await landedIn(pid, ids) : null;
+      if (got === null) { unread = true; continue; }
+      if (got.length) await logAdd(pid, got, rows.filter(r => got.includes(r.id)), 'filed the sure ones (found after a failure)');
+    }
+    const landedIds = new Set(done.flatMap(([, ids]) => ids));
+    for (const [pid, ids] of done.slice(before)) for (const id of ids) await recordAccept(id, [pid]);
     S.filing = false;
-    toast('Failed: ' + e.message);
+    if (done.length === before) {
+      toast('Failed: ' + failure.message + (unread ? ' Could not check what landed.' : ''));
+      return render();
+    }
+    for (let k = R.backlog.length - 1; k >= 0; k--) if (landedIds.has(R.backlog[k].id)) R.backlog.splice(k, 1);
+    S.inboxAt = Math.max(0, Math.min(S.inboxAt, R.backlog.length - 1));
+    S.partial = { group, ats, done, total, landed: landedIds.size };
+    toast(`${landedIds.size} of ${total} landed. ${failure.message}`, null, { label: 'Retry the rest', run: () => fileSureOnes(ctx) });
     return render();
   }
+  for (const [pid, ids] of done.slice(before)) for (const id of ids) await recordAccept(id, [pid]);
+  S.partial = null;
   S.filing = false;
   const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(done.flatMap(([, ids]) => ids));
   for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
@@ -215,7 +247,7 @@ export function view(ctx) {
           </div>
         </div>${trackStrip(t)}${soundIdHTML(t)}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
-          <button class="pick ${n === 0 ? 'best' : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
+          <div class="pickw"><button class="pick ${n === 0 ? 'best' : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
@@ -226,9 +258,8 @@ export function view(ctx) {
               : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
             <span class="rt">${pickBand(n === 0 && topBand ? { ...sg, band: topBand } : sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
-            <span class="nope" data-act="reject" data-reject="${esc(sg.id)}" role="button" tabindex="0"
-              title="Never suggest ${esc(sg.name)} for this track">✕</span>
-          </button>`).join('')}</div>`
+          </button><button class="nope" type="button" data-act="reject" data-reject="${esc(sg.id)}"
+            title="Never suggest ${esc(sg.name)} for this track" aria-label="Never suggest ${esc(sg.name)} for this track"><span aria-hidden="true">✕</span></button></div>`).join('')}</div>`
         : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
         ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
           ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).map(id =>
@@ -416,3 +447,11 @@ export const actions = {
     render();
   },
 };
+
+// E1: patch() keeps the menu open across a repaint of the same card (a late
+// listening re-sort used to close it); a different card starts with it shut.
+let menuFor = null;
+export function mount(ctx) {
+  const id = inboxTrack(ctx)?.id ?? null;
+  if (id !== menuFor) { menuFor = id; document.querySelector("#swipeCard details.cardmore")?.removeAttribute("open"); }
+}

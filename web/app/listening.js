@@ -33,9 +33,9 @@ function paintListen() {
   slot.innerHTML = html;
   if (html) {
     slot.setAttribute('role', 'button'); slot.tabIndex = 0;
-    slot.setAttribute('aria-label', 'Listening status — open Listening settings');
+    slot.title = 'Open Listening settings';
   } else {
-    slot.removeAttribute('role'); slot.removeAttribute('tabindex'); slot.removeAttribute('aria-label');
+    slot.removeAttribute('role'); slot.removeAttribute('tabindex'); slot.removeAttribute('title');
   }
 }
 {
