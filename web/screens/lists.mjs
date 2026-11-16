@@ -144,7 +144,7 @@ function plInfo(c, p, splitIds, undecidedIds) {
   const pl = c.LIB?.playlists?.find(x => x.id === p.id);
   const health = playlistHealth({ tracks: p.tracks,
     twins: twinsOf(c.twinPairs?.()).get(p.id) ?? [], repeats: repeatCount(pl?.tracks), staleDays: staleDays(pl?.tracks),
-    misfiled: (R.misfiled ?? []).filter(m => m.playlistId === p.id).length,
+    misfiled: (R.misfiled ?? []).filter(m => m.currentPlaylistId === p.id).length,
     drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
     split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
   return { vm, health };
