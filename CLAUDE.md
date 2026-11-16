@@ -29,6 +29,12 @@ over anything that needs a file most users won't have.
 
 ## Where the fuller context lives
 
+- `docs/review/HANDOFF-2026-11-16.md` — **start here after build 6**: what
+  is merged, what waits on the owner (Radar probe, Score + Tune paste, key,
+  teach queue), auto-file rejected, and the proposed next waves. With
+  `docs/review/USER-REVIEW.md` (screens, design, screenshots) and
+  `docs/review/ENGINE-REVIEW.md` (matching accuracy and the design to raise it).
+
 - `README.md` — what's actually wired, what was tried and rejected and why
   (read "Design decisions worth knowing" and "Data sources, and what
   they're worth" before assuming a new signal is worth adding).
