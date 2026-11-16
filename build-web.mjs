@@ -244,8 +244,12 @@ const AUDIO_INTRINSIC = readdirSync('core/intrinsic').filter(f => /^audio.*\.mjs
 // Engine-side lookups over the sound space (sound ID, sound-alikes, mixes):
 // they ship in engine.js, and would only add the genre ontology (~100 KB) here.
 const ENGINE_SIDE = new Set(ENGINE_ENTRIES.filter(f => f.startsWith('core/audio/')));
+// Measured but not shipped: Beat This did not clear its bar (BUILD-5-PROGRESS,
+// 2026-11-16), so its front end stays out of the listening bundle. Its tests
+// and the Beatport eval import these files directly.
+const RESEARCH_ONLY = new Set(['core/audio/dsp/beat-mel.mjs', 'core/audio/dsp/beats.mjs']);
 const AUDIO_ENTRIES = ['web/audio/index.mjs', ...listMjs('core/audio').filter(f => !ENGINE_SIDE.has(f)),
-                       ...listMjs('core/audio/dsp'), ...AUDIO_INTRINSIC];
+                       ...listMjs('core/audio/dsp').filter(f => !RESEARCH_ONLY.has(f)), ...AUDIO_INTRINSIC];
 const camel = f => f.replace(/^.*\//, '').replace(/\.m?js$/, '').split(/[-_]/).map(w => w[0].toUpperCase() + w.slice(1)).join('');
 const { code: audio, files: audioFiles } = bundleModules(AUDIO_ENTRIES, {
   namespace: {
