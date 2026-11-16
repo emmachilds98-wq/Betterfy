@@ -31,7 +31,11 @@ const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
 function filePicks(t) {
   const tags = typeof blendPicks === 'function' ? blendPicks(t, t?.suggest ?? []) : t?.suggest ?? [];
   const sound = typeof soundPicks === 'function' ? soundPicks(t) : [];
-  if (!sound.length) return tags;
+  if (!sound.length) {
+    // Nothing from tags or sound: where this artist's similar artists are filed.
+    if (!tags.length && typeof bridgePicks === 'function') { const b = bridgePicks(t); if (b.length) return b; }
+    return tags;
+  }
   const out = sound.slice(0, 2);
   for (const sg of [...tags, ...sound.slice(2)]) {
     if (out.length >= 3) break;

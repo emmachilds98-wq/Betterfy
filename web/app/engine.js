@@ -538,6 +538,8 @@ const engineValidate = guard(async () => {
     try { if (ENG.val.teach) teachRemember(ENG.val.teach); } catch { /* shown next run */ }
     // The fitted weights first: calibration is refitted on the engine they
     // make, and the comparison above is redone with them.
+    // File's similar artists follow this account's own verdict (web/app/bridgewarm.js).
+    if (typeof bridgeGateRemember === 'function') bridgeGateRemember(ENG.val);
     await weightsRemember(ENG.val);
     await engineCalibrate(ENG.val);
     // Kept for the File screen, which uses the blend only if this says it is ahead.

@@ -64,6 +64,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_lfm', group:'Genre data', why:'Your own Last.fm API key, if you added one.' },
   { where:'local', key:'bf_discogs', group:'Genre data', why:'Your Discogs personal access token, if you added one.' },
   { where:'local', key:'bf_bridge_off', group:'Genre data', why:'Set when you turn similar-artist bridges off in Engine.' },
+  { where:'local', key:'bf_bridge_gate', group:'Genre data', why:'What your last Score run said about similar artists, so File uses them only if they helped your picks.' },
 
   // --- the engine ---
   { where:'idb', key:'engine-space-g', group:'Engine', why:'The engine\'s map of your library (how near each track sits to each playlist), so it does not rebuild on every visit.' },

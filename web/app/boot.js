@@ -308,6 +308,10 @@ async function start(force) {
       if (LS.getItem('bf_analysed') && lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
         await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
       }
+      // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
+      // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
+      // don't compete with the tag lookups; resumes where the last load stopped.
+      if (typeof bridgeWarm === 'function') await bridgeWarm().catch(() => {});
     })();
     // Listening resumes by itself where it left off, if it was switched on — after the first paint.
     if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);

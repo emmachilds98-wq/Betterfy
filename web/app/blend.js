@@ -122,7 +122,8 @@ async function blendListening() {
 /** Gather similar artists for the tracks waiting to be filed, in the background,
  *  most-played artists first, saving after every chunk so nothing is asked twice. */
 async function blendFetch() {
-  if (BLEND.fetching || !bridgeOn() || !R?.backlog?.length) return;
+  // The library-wide background lookups (web/app/bridgewarm.js) already cover these.
+  if (BLEND.fetching || !bridgeOn() || !R?.backlog?.length || (typeof BRIDGE_WARM !== 'undefined' && BRIDGE_WARM.running)) return;
   BLEND.fetching = true;
   try {
     const listen = await blendListening();

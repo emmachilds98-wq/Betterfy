@@ -51,6 +51,7 @@ export const APP_FILES = [
   'app/audio.js',
   'app/soundfirst.js',
   'app/blend.js',
+  'app/bridgewarm.js',
   'app/teach.js',
   'app/clap.js',
   'app/audio-panel.js',

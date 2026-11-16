@@ -133,7 +133,8 @@ function learnNow(trackId, playlistIds) {
   let changed = false;
   for (const space of new Set([SOUND.space, typeof ENG !== 'undefined' ? ENG.space : null].filter(Boolean)))
     for (const pid of [].concat(playlistIds)) changed = BetterfyIntrinsic.learnFiled(space, raw, pid) || changed;
-  if (changed) { SOUND.memo = null; SOUND.idMemo = null; SOUND.moodMemo = new Map(); }
+  if (changed) { SOUND.memo = null; SOUND.idMemo = null; SOUND.moodMemo = new Map();
+                 if (typeof bridgeSpaceStale === 'function') bridgeSpaceStale(); }
 }
 
 /** Mood "also fits" chips for one heard track (core/intrinsic/mood.mjs): the mood
@@ -152,10 +153,11 @@ function moodChipsFor(t) {
 /** Sound-led picks for one track on the File screen, or [] when it hasn't been
  *  heard, the space isn't ready, or sound can't tell (too few heard members). */
 function soundPicks(t) {
-  const space = SOUND.space;
+  // With similar artists let in, once they are gathered (web/app/bridgewarm.js).
+  const space = typeof bridgedSpace === 'function' ? bridgedSpace(SOUND.space) : SOUND.space;
   if (!t?.id || !space?.audio || !globalThis.BetterfyIntrinsic) return [];
   const rejected = FB[t.id]?.rejected ?? [];
-  const key = `${t.id}|${rejected.join()}|${space.audio.index.size}`;
+  const key = `${t.id}|${rejected.join()}|${space.audio.index.size}${typeof bridgeVer === 'function' ? '|' + bridgeVer() : ''}`;
   if (SOUND.memo?.key === key) return SOUND.memo.picks;
   if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
   const raw = SOUND.byId.get(t.id);

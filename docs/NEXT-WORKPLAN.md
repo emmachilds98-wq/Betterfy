@@ -136,6 +136,11 @@ hand on the same build within a point (same folds, same tracks).
 
 ### Package 2: similar artists fetched in the background (approved)
 
+**Built** (`web/app/bridgewarm.js`): gathered after Wikidata and Last.fm on every
+load, unfiled artists first; File's sound picks and untagged, unheard cards
+use them with no Score run; a Score run whose `bridgeVerdict` fails switches
+File's use off (`bf_bridge_gate`). Settings row "Similar artists in File".
+
 **Why.** The Deezer/ListenBrainz/Wikidata neighbour bridge took never-filed
 artists from 11% to 49% top-1 on her library. Today it is fetched only for
 the tracks a Score run scores (`engineValidate` → `engineBridge`), so File
