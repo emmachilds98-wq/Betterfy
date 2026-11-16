@@ -60,14 +60,45 @@ test('Library without audio: compact rows, no sound strip, and the renderer is n
 
 test('Library rows say what needs a decision, and Shuffle stays reachable', () => {
   const html = load().vLists();
-  assert.match(html, /data-pl="P1"[^]*?<span class="tag ok">files here<\/span>/);
-  assert.match(html, /data-pl="P2"[^]*?<span class="tag warn">pick an axis<\/span>/);
+  assert.match(html, /data-pl="P1"[^]*?<span class="plscore plh-ok"[^>]*><b class="mono">100<\/b><span>Healthy<\/span>/);
+  assert.match(html, /data-pl="P2"[^]*?<span class="tag warn">what kind\?<\/span>/);
   assert.ok(html.includes('data-go="shuffle"') && html.includes('data-go="sources"'));
+  assert.match(html, /How well it knows you[^]*data-go="engine"|data-go="engine"[^]*How well it knows you/, 'Engine is reached from Library now');
+  assert.match(html, /Not measured yet/);
+});
+
+test('Library rows: misfiled, waiting, BPM range and top style; the ones needing a look come first', () => {
+  const sb = load();
+  const R = { drift: [], clusters: [], misfiled: Array.from({ length: 5 }, () => ({ currentPlaylistId: 'P3' })),
+    backlog: [{ suggest: [{ id: 'P1' }] }, { suggest: [{ id: 'P1' }] }, { suggest: [{ id: 'P3' }, { id: 'P1' }] }, { suggest: [] }] };
+  const CFG2 = { ...CFG, P3: { axis: 'genre', target: true, tracks: 12, why: 'x' } };
+  const LIB2 = { ...LIB, playlists: [...LIB.playlists, { id: 'P3', name: 'Halftime', tracks: tr('h', 12) }] };
+  const html = LISTS.view({ ...sb, R, CFG: CFG2, LIB: LIB2, store: { touch() {} }, fire() {} });
+  assert.ok(html.indexOf('data-pl="P3"') < html.indexOf('data-pl="P1"'), 'the misfiled playlist is listed first, although it is smaller');
+  assert.match(html, /data-pl="P3"[^]*?<span class="tag warn">5 misfiled<\/span> <span class="tag ok">1 to file<\/span>/);
+  assert.match(html, /data-pl="P1"[^]*?<span class="tag ok">2 to file<\/span>/);
+  assert.match(html, /1 playlist could use a look, listed first/);
+
+  assert.deepEqual(LISTS.rowFacts({ misfiled: 0, waiting: 0, vm: { bpm: [124, 129.6], styles: [['Tech House', 0.6], ['Techno', 0.2]] } }).map(f => f.text),
+    ['124–130 BPM', 'Tech House']);
+  assert.deepEqual(LISTS.rowFacts({ vm: { bpm: 172 } }).map(f => f.text), ['172 BPM']);
+  assert.deepEqual(LISTS.rowFacts({ vm: { bpm: null, styles: [] } }), [], 'nothing invented without a profile');
+  assert.deepEqual([...LISTS.waitingCounts(R.backlog)], [['P1', 2], ['P3', 1]]);
+});
+
+test('"How well it knows you" says the last measured score in words, or that there is none', () => {
+  assert.match(LISTS.knowsYouLine(null), /Not measured yet/);
+  const now = Date.parse('2026-11-16T12:00:00Z');
+  assert.equal(LISTS.knowsYouLine({ top1: 0.58, top3: 0.79, scored: 1412, at: now - 3 * 864e5 }, now),
+    'Right first time on 58% of your filed tracks, and in its top three on 79% (1,412 tracks, checked 3 days ago).');
+  assert.equal(LISTS.knowsYouLine({ top1: 0.5, at: now }, now), 'Right first time on 50% of your filed tracks (checked today).');
 });
 
 test('the detail sheet keeps the axis and receives-suggestions controls and offers Shuffle', () => {
   const sb = load();
   const sheet = LISTS.sheetHTML({ ...sb, store: { touch() {} }, fire() {}, mixHeardIn: () => 0 }, 'P1');
+  assert.ok(!/>receives suggestions|>Axis /.test(sheet), 'in plain words (USER-REVIEW item 8)');
+  assert.match(sheet, /Suggest new tracks for it/);
   assert.match(sheet, /<select data-act="axis" data-ax="P1"/);
   assert.match(sheet, /data-tg="P1" checked/);
   assert.match(sheet, /data-act="plshuffle" data-pl="P1"/);
@@ -152,6 +183,7 @@ test('health also reads twins, repeats and staleness, and says nothing without t
   assert.match(h.notes.join(' '), /Tech House B/);
   assert.match(h.notes.join(' '), /2 repeated tracks/);
   assert.match(h.notes.join(' '), /nothing added in 2\+ years/);
+  assert.equal(LISTS.playlistHealth({ tracks: 30, staleDays: 800 }).score, 100, 'age is a note, not a cost: health is fit');
   assert.equal(LISTS.playlistHealth({ tracks: 30, staleDays: null }).notes.length, 0);
   assert.equal(LISTS.repeatCount([{ id: 'a' }, { id: 'a' }, { id: 'b' }, {}]), 1);
   assert.equal(LISTS.staleDays([{ name: 'no date' }]), null);

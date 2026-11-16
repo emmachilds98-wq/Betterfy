@@ -8,8 +8,8 @@ import vm from 'node:vm';
 // against a fake History that behaves like the browser's.
 
 const SRC = readFileSync(new URL('../web/app/router.js', import.meta.url), 'utf8');
-const VIEWS = ['inbox', 'tidy', 'discover', 'lists', 'new', 'shuffle'];
-const MOVED = { home: { view: 'inbox' }, sources: { section: 'sources' }, engine: { section: 'engine' }, history: { section: 'history' } };
+const VIEWS = ['inbox', 'tidy', 'discover', 'lists', 'new', 'shuffle', 'engine'];
+const MOVED = { home: { view: 'inbox' }, sources: { section: 'sources' }, history: { section: 'history' } };
 const settle = () => new Promise(res => setImmediate(res));
 
 function rig(hash = '') {
@@ -104,7 +104,7 @@ test('old links to screens that moved land somewhere sensible (UI-D)', () => {
   const { r } = rig();
   assert.deepEqual({ ...r.parse('#/home') }, { view: 'inbox', sheet: null });
   assert.deepEqual({ ...r.parse('#/sources') }, { view: null, sheet: 'settings', section: 'sources' });
-  assert.equal(r.parse('#/engine').section, 'engine');
+  assert.equal(r.parse('#/engine').view, 'engine', 'Engine is a screen under Library again (Wave F)');
   assert.equal(r.parse('#/history').section, 'history');
   assert.equal(r.parse('#/constructor').view, null, 'inherited names are not screens');
   const t = rig('#/sources');

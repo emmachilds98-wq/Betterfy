@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1930">
+<meta name="bf-build" content="2026-11-16-1951">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1025,6 +1025,23 @@ main:focus{outline:none}
   .plhealth .mono{font-size:26px}
   .plh-ok .mono{color:var(--ok)} .plh-low .mono{color:var(--warn)}
   .plnotes{margin:0; padding-left:18px; color:var(--ink-2); font-size:14px}
+
+/* Wave F (USER-REVIEW items 7, 11): a face, plain facts and the health score on every row,
+   and the "How well it knows you" card that Engine is reached from. */
+  .plrow .thumb{width:40px; height:40px; border-radius:var(--r-1, 6px); flex:none; object-fit:cover}
+  .plrow .thumb.ph{display:grid; place-items:center; color:#fff; font-weight:700; font-size:15px}
+  .plf{color:var(--ink-2)}
+  .plf-style{font-style:italic}
+  .plscore{display:flex; flex-direction:column; align-items:flex-end; flex:none; min-width:58px; line-height:1.1}
+  .plscore .mono{font-size:17px; font-weight:600}
+  .plscore span{font-size:11px; color:var(--ink-3)}
+  .plscore.plh-ok .mono{color:var(--ok)} .plscore.plh-low .mono{color:var(--warn)}
+  .plknows{background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--m2);
+           border-radius:var(--r-3); padding:12px 14px; margin:0 0 22px}
+  .plknows .hint{margin:0}
+  @media (max-width:520px){ .plrow .plspark{display:none} }
+  .plknows-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px}
+  .plknows-head h2{margin:0}
 /* Playlists (axes table) and Sources — UI-3, docs/UI-BUILD-PLAN.md §6. */
   [data-v="sources"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
 
@@ -1316,6 +1333,35 @@ main:focus{outline:none}
   @keyframes vtIn{from{opacity:0; transform:translateX(var(--slide))}}
   @keyframes vtOutBack{to{opacity:0; transform:translateX(calc(var(--slide) * .5))}}
   @keyframes vtInBack{from{opacity:0; transform:translateX(calc(var(--slide) * -1))}}
+/* Discover's pick rows (Wave F, USER-REVIEW item 10): a cover that plays the 30-second
+   preview, the pick and where it fits, Like and "+ playlist". Owned by web/screens/discover.mjs. */
+  .drows{margin:22px 0 0}
+  .drows .plsugg-head .hint{margin:0; font-size:12.5px}
+  .drow{display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line); min-height:56px}
+  .drow:last-child{border-bottom:0}
+  .drow.on{background:var(--view-soft, var(--surface-2))}
+  .dprev{position:relative; appearance:none; border:0; padding:0; background:none; cursor:pointer; flex:none;
+         width:44px; height:44px; border-radius:var(--r-1, 6px); overflow:hidden}
+  .dprev .thumb{width:44px; height:44px; display:block; object-fit:cover}
+  .dprev .thumb.ph{display:grid; place-items:center; color:#fff; font-weight:700}
+  .dprev .dpi{position:absolute; inset:0; display:grid; place-items:center; color:#fff; font-size:15px;
+              background:rgb(0 0 0 / .38); opacity:.0; transition:opacity .15s}
+  .dprev:hover .dpi, .dprev:focus-visible .dpi, .drow.playing .dpi{opacity:1}
+  .dprev:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .dprev:disabled{cursor:default} .dprev:disabled .dpi{opacity:.6}
+  .drow.playing .dprev{box-shadow:0 0 0 2px var(--view, var(--accent))}
+  .dmain{appearance:none; border:0; background:none; font:inherit; color:inherit; text-align:left; cursor:pointer;
+         display:flex; flex-direction:column; gap:2px; min-width:0; flex:1; padding:4px 0}
+  .dmain .ttl{font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dsub{font-size:12.5px; color:var(--ink-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dfit{color:var(--ink-2)}
+  .dacts{display:flex; gap:6px; flex:none}
+  .dacts .dadd{max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  @media (max-width:520px){
+    .drow{flex-wrap:wrap}
+    .dacts{width:100%; padding-left:56px}
+    .dacts .dadd{max-width:none; flex:1}
+  }
 
   /* ---------- Shuffle: DJ order (core/audio/order.mjs) ----------
      Drawn only once listening has heard enough of the playlist and a DJ order
@@ -1450,6 +1496,61 @@ main:focus{outline:none}
   .yourdata label.b{display:inline-flex; align-items:center; justify-content:center; font-size:13.5px; font-weight:600; border:1px solid var(--line-2);
        background:var(--surface); color:var(--ink); border-radius:var(--r); padding:9px 15px; min-height:40px}
   .yourdata label.b:hover{border-color:var(--ink-3)}
+  /* Release radar: Discover's first section (web/screens/radar.mjs). */
+  .rr{margin:0 0 28px}
+  .rr h2{display:flex; align-items:center; gap:8px}
+  .rr .lede{margin-bottom:10px}
+  .rr-start{border:1px solid var(--line); border-radius:var(--r-3); padding:16px; background:var(--surface)}
+  .rr-start p{margin:0 0 12px; color:var(--ink-2); font-size:var(--fs-body)}
+  .rr-status{position:relative; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:10px 0 12px; font-size:var(--fs-small); color:var(--ink-2)}
+  .rr-status.warn .rr-line{color:var(--warn)}
+  .rr-line{flex:1 1 200px; min-width:0}
+  .rr-prog{position:absolute; left:0; right:0; bottom:4px; height:3px; border-radius:2px; background:var(--surface-3); overflow:hidden}
+  .rr-prog i{display:block; height:100%; background:var(--progress-accent); transition:width var(--dur-3) var(--ease-std)}
+  .rr-chips{display:flex; gap:8px; overflow-x:auto; padding:2px 0 10px; scrollbar-width:none; -webkit-overflow-scrolling:touch}
+  .rr-chips::-webkit-scrollbar{display:none}
+  .rr-chips .chip, .rr-hits .chip{flex:0 0 auto; min-height:44px; display:inline-flex; align-items:center}
+  .rr .chip.on{background:var(--accent-soft); border-color:var(--accent); color:var(--accent)}
+  .rr-search{margin:0 0 10px}
+  .rr-search input{width:100%; min-height:44px; box-sizing:border-box}
+  .rr-hits{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; align-items:center}
+  .rr-partial{font-size:var(--fs-small); color:var(--warn); margin:0 0 8px}
+  .rr-feed, .rr-rows{list-style:none; margin:0; padding:0}
+  .rr-month{position:sticky; top:0; z-index:3; margin:0; padding:10px 0 6px; background:var(--ground);
+    font-family:var(--mono); font-size:var(--fs-micro); letter-spacing:.12em; text-transform:uppercase; color:var(--view, var(--accent))}
+  .rr-row{display:flex; align-items:center; gap:8px; min-height:72px; border-bottom:1px solid var(--line)}
+  .rr-open{flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:12px; padding:8px 0; color:inherit; text-decoration:none}
+  .rr-art{flex:0 0 56px; width:56px; height:56px; border-radius:var(--r); object-fit:cover; background:var(--surface-3)}
+  .rr-txt{min-width:0; display:flex; flex-direction:column; gap:2px}
+  .rr-t{font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .rr-a, .rr-m{font-size:var(--fs-small); color:var(--ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .rr-m{display:flex; gap:8px; color:var(--ink-3)}
+  .rr-pill{display:inline-block; margin-left:6px; padding:1px 6px; border-radius:6px; vertical-align:2px;
+    font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; background:var(--surface-3); color:var(--ink-2)}
+  .rr-pill.rr-re{background:var(--warn-soft); color:var(--warn)}
+  .rr-own{color:var(--ok)}
+  .rr-acts{flex:0 0 auto; display:flex; align-items:center; gap:4px}
+  .rr-file{max-width:9.5em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-height:44px}
+  .rr-x{min-width:44px; min-height:44px; border:0; background:none; color:var(--ink-3); font-size:20px; cursor:pointer; border-radius:var(--r)}
+  .rr-x:hover{color:var(--ink)}
+  .rr-more{display:block; width:100%; margin-top:12px; min-height:44px}
+  .rr-feat{margin:0 0 12px; border:1px solid var(--line); border-radius:var(--r-2); padding:0 12px; background:var(--surface)}
+  .rr-feat summary{min-height:44px; display:flex; align-items:center; cursor:pointer; font-size:var(--fs-small); color:var(--ink-2)}
+  .rr-feat[open]{padding-bottom:12px}
+  .rr .vh{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
+  .disc-h2{margin-top:8px}
+  @media (prefers-reduced-motion: reduce){ .rr-prog i{transition:none} }
+
+/* "Check it works on this account": the Phase 0 probe, from the page. */
+  .rr-probe{margin:12px 0 0}
+  .rr-probe p{margin:0 0 8px}
+  .rr-probe.warn p b{color:var(--warn)} .rr-probe.ok p b{color:var(--ok)}
+  .rr-ptab{width:100%; border-collapse:collapse; font-size:12.5px; margin:0 0 10px}
+  .rr-ptab td{padding:4px 6px; border-top:1px solid var(--line); vertical-align:top; color:var(--ink-2)}
+  .rr-ptab td.mono{white-space:nowrap}
+  .rr-ptab tr.no td.mono{color:var(--warn)}
+  .rr-ptab tr.ok td.mono{color:var(--ok)}
   /* ---------- offline decision queue (BUILD-6 F6; app/offline.js offlineShow) ----------
      "N decisions waiting to sync": a small pill above the bottom edge, drawn on
      its own outside every screen, shown only while the queue holds something. */
@@ -1806,7 +1907,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1930</span>
+    <span class="mono">build 2026-11-16-1951</span>
   </p>
 
   <div class="feat">
@@ -1899,7 +2000,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1930</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1951</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2016,7 +2117,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1930. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1951. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5448,7 +5549,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1930`,
+    `Betterfy engine score — build 2026-11-16-1951`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5638,7 +5739,7 @@ const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 function view(c) {
   const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
   const head = `<h1>Engine</h1>
-    <p class="lede">A second opinion that reads only your own playlists. <b>It files nothing.</b>${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
+    <p class="lede">What Betterfy has learnt from your own playlists, and how often it gets your filing right. Learning and scoring here change nothing in Spotify.${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
       of record, from when. Everything here is what it <i>would</i> do, until the score below shows it, blended with today's engine,
       beating today's engine on your own filing. Then the File screen's picks come from the blend.</p>`) ?? ''}</p>`;
 
@@ -5646,10 +5747,10 @@ function view(c) {
   if (!engineTargets().length) return `${head}
     <div class="card">
       <h2 style="margin:0 0 12px; font-size:19px">No genre playlists yet</h2>
-      <p>Both engines only file into playlists marked <b>receives suggestions</b>, and none of yours are — none of
-        their names say what genre they are. Mark the ones that are genre playlists on the Playlists screen, then
+      <p>Both engines only file into playlists that take suggestions, and none of yours do yet — none of
+        their names say what genre they are. Mark the ones that are genre playlists in Library, then
         come back.</p>
-      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Playlists</button></div>
+      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Library</button></div>
     </div>`;
 
   if (ENG.status === 'idle') return `${head}
@@ -7139,6 +7240,9 @@ const { mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renamePa
 
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
+/** The axis names in plain words, for the sheet's picker (USER-REVIEW item 8). The values stay the axis ids. */
+const AXIS_WORDS = { genre: 'genre', mood: 'mood', era: 'era or year', event: 'an event', djset: 'a DJ set',
+  context: 'a time or place', inbox: 'an inbox to sort later' };
 /** "64% genre · 19% mood" — what a playlist's tags are actually made of,
  *  which is the evidence behind a content-guessed axis and a sanity check on
  *  every other one. Facets under a tenth are left out as noise. */
@@ -7191,19 +7295,22 @@ function twinsOf(pairs) {
 }
 
 /** 0-100 and the reasons, from what Betterfy already knows about one playlist: misfiled tracks,
- *  drift, a second genre, a twin it cannot be told from, repeats, staleness, an axis nobody has
- *  settled. Null under eight tracks (too few to judge). Every input is optional: no data, no mark. */
+ *  drift, a second genre, a twin it cannot be told from, repeats, an axis nobody has settled.
+ *  The score is about fit, not age (USER-REVIEW item 8): an old playlist that holds together is
+ *  healthy, so staleness is said as a note and costs nothing, while any misfiled track costs at
+ *  least 5, so strays show up sooner than their share alone would say. Null under eight tracks (too few to
+ *  judge). Every input is optional: no data, no mark. */
 function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false,
                                  twins = [], repeats = 0, staleDays: stale = null } = {}) {
   if (tracks < 8) return null;
   const notes = [];
   let score = 100;
-  if (misfiled) { score -= Math.min(45, Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
+  if (misfiled) { score -= Math.min(45, 5 + Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
   if (drifting) { score -= 15; notes.push('newest additions read differently from the rest'); }
   if (split) { score -= 20; notes.push('sounds like two genres'); }
   if (twins?.length) { score -= 10; notes.push(`hard to tell apart from ${twins.slice(0, 2).join(' and ')}`); }
   if (repeats > 0) { score -= Math.min(15, repeats * 3); notes.push(`${repeats} repeated track${repeats === 1 ? '' : 's'}`); }
-  if (stale !== null && stale >= 365) { score -= 5; notes.push(`nothing added in ${Math.floor(stale / 365)}+ year${stale >= 730 ? 's' : ''}`); }
+  if (stale !== null && stale >= 365) { notes.push(`nothing added in ${Math.floor(stale / 365)}+ year${stale >= 730 ? 's' : ''}`); }
   if (undecided) { score -= 10; notes.push('no axis decided yet'); }
   score = Math.max(0, score);
   return { score, word: score >= 85 ? 'Healthy' : score >= 65 ? 'Fine' : 'Needs a look', notes };
@@ -7269,27 +7376,80 @@ function sparkHTML(vm) {
   return '';
 }
 
+/** Unfiled tracks whose first pick is each playlist: what is waiting to be filed there, by playlist id. */
+function waitingCounts(backlog) {
+  const out = new Map();
+  for (const t of backlog ?? []) { const id = t?.suggest?.[0]?.id; if (id) out.set(id, (out.get(id) ?? 0) + 1); }
+  return out;
+}
+
+/** The plain-word facts on a Library row, in order: misfiled, waiting to be filed here, the BPM
+ *  range its heard tracks settle on, and its top style. Nothing is shown that is not known. */
+function rowFacts({ misfiled = 0, waiting = 0, vm = null } = {}) {
+  const out = [];
+  if (misfiled > 0) out.push({ k: 'warn', text: `${misfiled} misfiled` });
+  if (waiting > 0) out.push({ k: 'ok', text: `${waiting} to file` });
+  const b = vm?.bpm;
+  const r = Array.isArray(b) ? b : Number.isFinite(b) ? [b, b] : null;
+  if (r && r.every(x => Number.isFinite(x) && x > 0)) {
+    const [lo, hi] = [Math.round(Math.min(...r)), Math.round(Math.max(...r))];
+    out.push({ k: 'bpm', text: `${lo === hi ? lo : `${lo}–${hi}`} BPM` });
+  }
+  const top = (Array.isArray(vm?.styles) ? vm.styles : []).find(s => Array.isArray(s) && s[0] && s[1] > 0);
+  if (top) out.push({ k: 'style', text: String(top[0]) });
+  return out;
+}
+
+/** Library's order: what needs a look first (health under 85, lowest first, then most to fix), then
+ *  every other playlist by size. A playlist too small to judge sorts with the healthy ones. */
+function attentionOrder(rows, infoOf) {
+  const key = p => { const i = infoOf(p); const s = i?.health?.score;
+    return { need: s != null && s < 85, s: s ?? 100, fix: (i?.misfiled ?? 0) + (i?.waiting ?? 0) }; };
+  const k = new Map(rows.map(p => [p, key(p)]));
+  return [...rows].sort((a, b) => { const x = k.get(a), y = k.get(b);
+    if (x.need !== y.need) return x.need ? -1 : 1;
+    if (x.need && x.s !== y.s) return x.s - y.s;
+    if (x.need && x.fix !== y.fix) return y.fix - x.fix;
+    return (b.tracks ?? 0) - (a.tracks ?? 0) || String(a.name ?? '').localeCompare(String(b.name ?? '')); });
+}
+
+/** The words for a health score, and its colour class. */
+const healthClass = s => s >= 85 ? 'ok' : s >= 65 ? 'fine' : 'low';
+
+/** "How well it knows you": the last Score run on this account, in one line. Never a number nobody measured. */
+function knowsYouLine(sum, now = Date.now()) {
+  if (!sum || !Number.isFinite(sum.top1)) return 'Not measured yet. One run checks its picks against what you already filed.';
+  const pc = x => `${Math.round(x * 100)}%`;
+  const days = Number.isFinite(sum.at) ? Math.floor((now - sum.at) / 864e5) : null;
+  const when = days == null ? '' : days <= 0 ? ', checked today' : days === 1 ? ', checked yesterday' : `, checked ${days} days ago`;
+  return `Right first time on ${pc(sum.top1)} of your filed tracks${Number.isFinite(sum.top3) ? `, and in its top three on ${pc(sum.top3)}` : ''}`
+    + `${Number.isFinite(sum.scored) ? ` (${sum.scored.toLocaleString()} tracks${when})` : when ? ` (${when.slice(2)})` : ''}.`;
+}
+
 /** Everything the rows and the sheet need to know about one playlist, in one place. */
-function plInfo(c, p, splitIds, undecidedIds) {
+function plInfo(c, p, splitIds, undecidedIds, waiting = null) {
   const { R, LISTS_SOUND } = c;
   const vm = LISTS_SOUND.profile(p.id);
   const pl = c.LIB?.playlists?.find(x => x.id === p.id);
+  const misfiled = (R.misfiled ?? []).filter(m => m.currentPlaylistId === p.id).length;
   const health = playlistHealth({ tracks: p.tracks,
     twins: twinsOf(c.twinPairs?.()).get(p.id) ?? [], repeats: repeatCount(pl?.tracks), staleDays: staleDays(pl?.tracks),
-    misfiled: (R.misfiled ?? []).filter(m => m.currentPlaylistId === p.id).length,
-    drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
+    misfiled, drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
     split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
-  return { vm, health };
+  return { vm, health, misfiled, waiting: waiting?.get(p.id) ?? 0, face: pl?.tracks?.find(t => t?.art) ?? null };
 }
 
 const plRowHTML = (c, p, info, undecided) => {
   const { esc } = c;
   const spark = sparkHTML(info.vm), h = info.health;
-  return `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(p.id)}" aria-haspopup="dialog">
+  const facts = rowFacts(info).map(f => f.k === 'warn' || f.k === 'ok'
+    ? `<span class="tag ${f.k}">${esc(f.text)}</span>` : `<span class="plf plf-${f.k}">${esc(f.text)}</span>`).join(' ');
+  const face = c.thumbHTML ? c.thumbHTML({ id: p.id, title: p.name, art: info.face?.art }) : '';
+  return `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(p.id)}" aria-haspopup="dialog">${face}
     <span class="plmain"><span class="ttl">${esc(p.name)}</span>
-      <span class="plmeta"><span class="mono">${p.tracks}</span> tracks · <span class="tag">${esc(p.axis)}</span>${
-        undecided ? ' <span class="tag warn">pick an axis</span>' : p.target ? ' <span class="tag ok">files here</span>' : ''}${
-        h && h.score < 65 ? ' <span class="tag warn">needs a look</span>' : ''}</span></span>${spark}</button>`;
+      <span class="plmeta"><span class="mono">${p.tracks}</span> tracks${
+        undecided ? ' · <span class="tag warn">what kind?</span>' : ''}${facts ? ` · ${facts}` : ''}</span></span>${spark}${
+      h ? `<span class="plscore plh-${healthClass(h.score)}" title="Health: ${esc(h.word)}${h.notes.length ? ' · ' + esc(h.notes.join('; ')) : ''}"><b class="mono">${h.score}</b><span>${esc(h.word)}</span></span>` : ''}</button>`;
 };
 
 /** The playlist detail sheet's body (opened by plopen; shell.js draws it into #plSheet). */
@@ -7321,12 +7481,12 @@ function sheetHTML(c, id) {
     ${health ? `<section class="pls-sec"><h3>Health</h3>
       <p class="plhealth plh-${health.score >= 85 ? 'ok' : health.score >= 65 ? 'fine' : 'low'}"><b class="mono">${health.score}</b> ${esc(health.word)}</p>
       ${health.notes.length ? `<ul class="plnotes">${health.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : '<p class="hint">Nothing out of place.</p>'}</section>` : ''}
-    <section class="pls-sec"><h3>How it is treated</h3>
+    <section class="pls-sec"><h3>What kind of playlist</h3>
       <p class="hint">${esc(p.why ?? '')}</p>
-      <label class="pls-f">Axis <select data-act="axis" data-ax="${esc(id)}" aria-label="Axis of ${esc(pl.name)}">${AXES.map(a =>
-        `<option value="${a}" ${p.axis === a ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
-      <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to model"' : ''}>
-        receives suggestions</label></section>
+      <label class="pls-f">It groups by <select data-act="axis" data-ax="${esc(id)}" aria-label="What ${esc(pl.name)} groups by">${AXES.map(a =>
+        `<option value="${a}" ${p.axis === a ? 'selected' : ''}>${esc(AXIS_WORDS[a] ?? a)}</option>`).join('')}</select></label>
+      <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to learn from"' : ''}>
+        Suggest new tracks for it</label></section>
     ${prof ? `<section class="pls-sec"><h3>Sound</h3>${prof}</section>` : ''}
     ${split ? `<section class="pls-sec"><h3>Two genres?</h3>
       <p class="hint"><b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.
@@ -7640,10 +7800,14 @@ async function wizUndo(c, w = WIZ) {
 function view(c) {
   const { CFG, R, GAPS, esc, tagCoverage, NO_SIGNAL, listsSplits } = c;
   c.gapsKick?.();
-  const rows = Object.entries(CFG).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.tracks - a.tracks);
+  const all = Object.entries(CFG).map(([id, v]) => ({ id, ...v }));
   const cov = tagCoverage();
   const splitIds = new Set(listsSplits().map(x => x.p.id));
-  const undecidedIds = new Set(rows.filter(p => p.why === NO_SIGNAL).map(p => p.id));
+  const undecidedIds = new Set(all.filter(p => p.why === NO_SIGNAL).map(p => p.id));
+  const waiting = waitingCounts(R?.backlog);
+  const infos = new Map(all.map(p => [p.id, plInfo(c, p, splitIds, undecidedIds, waiting)]));
+  const rows = attentionOrder(all, p => infos.get(p.id));
+  const needN = rows.filter(p => (infos.get(p.id)?.health?.score ?? 100) < 85).length;
   const sugg = suggestionsOf(GAPS, R);
   const mixes = c.playlistMixes().mix;
   const ticks = genreTickSuggestions(rows.map(p => ({ ...p, mirror: c.isMirrorPlaylist?.({ id: p.id, name: p.name }) })), mixes, id => c.LISTS_SOUND.profile(id));
@@ -7694,10 +7858,16 @@ function view(c) {
         <span class="plmain"><span class="ttl">${esc(s.title)}</span>
           <span class="plmeta"><span class="mono">${s.n}</span> tracks · ${esc(s.why)}</span></span></button>`).join('')}</div>
     </section>` : '';
+  const eng = c.engineSummary?.() ?? null;
+  const knowsHTML = rows.some(p => p.target) ? `<section class="plknows" aria-labelledby="plknows-h">
+      <div class="plknows-head"><h2 id="plknows-h">How well it knows you</h2>
+        <button class="b sm" data-go="engine">${eng?.running ? 'Scoring…' : Number.isFinite(eng?.top1) ? 'Details' : 'Check it'}</button></div>
+      <p class="hint">${esc(knowsYouLine(eng))}</p></section>` : '';
   return `<h1>Library</h1>
-    <p class="lede">Tap a playlist for its axis, health and shuffle.</p>
+    <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
     ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${suggHTML}
-    <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
+    <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
+    ${knowsHTML}
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
       <button class="b sm" data-go="sources">Genre sources</button>
       <button class="b sm" data-go="shuffle">Shuffle everything</button></p>${
@@ -7815,7 +7985,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, sheetHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, waitingCounts, rowFacts, attentionOrder, knowsYouLine, sheetHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -7989,10 +8159,661 @@ async function build({ S, LIB, LS, MIX_MODES, paged, sp, plCall, chunk, logActio
 }
 return { mixBpmOf, view, actions };
 })();
+/* ---- core/release/dates.mjs ---- */
+__mod["core/release/dates.mjs"] = (function () {
+// Release dates at the precision Spotify gave them (docs/RELEASE-RADAR-PLAN.md §4.1).
+//
+// `release_date_precision` is `day`, `month` or `year`. The rule: keep the raw
+// string and the precision, sort by a resolved timestamp, and never display a
+// day (or a month) nobody told us. A year-only release is not "1 January".
+//
+// Sorting: an imprecise date never sorts above a precise one from the same
+// period. A month-only release sorts just below every dated day of that month,
+// a year-only release just below every dated release of that year, so neither
+// jumps to the top of the feed by accident. Grouping follows the same rule: a
+// month-only release sits under its month's header, a year-only one under its
+// own "2026, month not given" header after that year's months.
+
+const PRECISIONS = Object.freeze(['day', 'month', 'year']);
+const DAY_MS = 864e5;
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+
+const pad = n => String(n).padStart(2, '0');
+
+/**
+ * Read a release date. `raw` is Spotify's string ("2026-03-12", "2026-03",
+ * "2026"), `precision` its claimed precision. When they disagree the coarser
+ * one wins: Spotify's own reference sample pairs "1981-12" with `year`, and a
+ * string too short for its precision cannot be read finer than it is.
+ * Returns `{ raw, precision, y, m, d, ts, end, ok }`; `ok: false` (no usable
+ * year, or "0000") sorts last and is never in a time window.
+ */
+function parseDate(raw, precision) {
+  const s = String(raw ?? '').trim();
+  const mt = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(s);
+  const y = mt ? +mt[1] : 0;
+  if (!mt || !y) return { raw: s, precision: 'unknown', y: 0, m: 0, d: 0, ts: -Infinity, end: -Infinity, ok: false };
+  const given = mt[3] ? 'day' : mt[2] ? 'month' : 'year';
+  const claimed = PRECISIONS.includes(precision) ? precision : given;
+  const p = PRECISIONS[Math.max(PRECISIONS.indexOf(claimed), PRECISIONS.indexOf(given))];
+  const m = p === 'year' ? 0 : +mt[2];
+  const d = p === 'day' ? +mt[3] : 0;
+  if ((p !== 'year' && (m < 1 || m > 12)) || (p === 'day' && (d < 1 || d > 31))) return parseDate(String(y), 'year');
+  let ts, end;
+  if (p === 'day') { ts = Date.UTC(y, m - 1, d); end = ts + DAY_MS - 1; }
+  else if (p === 'month') { ts = Date.UTC(y, m - 1, 1) - 1; end = Date.UTC(y, m, 1) - 1; }
+  else { ts = Date.UTC(y, 0, 1) - 2; end = Date.UTC(y + 1, 0, 1) - 1; }
+  return { raw: s, precision: p, y, m, d, ts, end, ok: true };
+}
+
+/** Long form, exactly as precise as given: "12 March 2026", "March 2026", "2026". */
+function dateLabel(p) {
+  if (!p?.ok) return 'date unknown';
+  if (p.precision === 'day') return `${p.d} ${MONTHS[p.m - 1]} ${p.y}`;
+  if (p.precision === 'month') return `${MONTHS[p.m - 1]} ${p.y}`;
+  return String(p.y);
+}
+
+/** Short form for a row under its month header: "12 Mar", "Mar 2026", "2026". */
+function shortLabel(p) {
+  if (!p?.ok) return 'date unknown';
+  if (p.precision === 'day') return `${p.d} ${MONTHS[p.m - 1].slice(0, 3)}`;
+  if (p.precision === 'month') return `${MONTHS[p.m - 1].slice(0, 3)} ${p.y}`;
+  return String(p.y);
+}
+
+/** The feed's group: "2026-03" for day and month precision, "2026" for year, "unknown" otherwise. */
+const groupKey = p => !p?.ok ? 'unknown' : p.precision === 'year' ? String(p.y) : `${p.y}-${pad(p.m)}`;
+
+/** The header for a group key: "March 2026", "2026, month not given", "Date not given". */
+function groupLabel(key) {
+  const mt = /^(\d{4})(?:-(\d{2}))?$/.exec(key ?? '');
+  if (!mt) return 'Date not given';
+  return mt[2] ? `${MONTHS[+mt[2] - 1]} ${mt[1]}` : `${mt[1]}, month not given`;
+}
+
+/** The oldest moment the default feed shows: `years` back from `now` (UTC midnight). */
+function cutoffTs(now, years = 2) {
+  const t = new Date(now);
+  return Date.UTC(t.getUTCFullYear() - years, t.getUTCMonth(), t.getUTCDate());
+}
+
+/** Could this release fall on or after `cutoff`? Judged on the period's end, so a
+ *  year-only "2024" is still in a window that starts in November 2024. */
+const inWindow = (p, cutoff) => !!p?.ok && p.end >= cutoff;
+return { PRECISIONS, DAY_MS, parseDate, dateLabel, shortLabel, groupKey, groupLabel, cutoffTs, inWindow };
+})();
+/* ---- core/release/normalise.mjs ---- */
+__mod["core/release/normalise.mjs"] = (function () {
+const { norm } = __mod["norm.mjs"];
+const { parseDate } = __mod["core/release/dates.mjs"];
+// One release record per real release (docs/RELEASE-RADAR-PLAN.md §4.2, §4.3, §5).
+//
+// §4.2 — the same release appears once per market. Every request passes
+// `market=from_token`, and the survivors are deduplicated on
+// (normalised name, release year, total tracks, primary artist id). The plan
+// put the full release date in the key; the year is used instead, because the
+// market copies this rule exists for can carry different days (an earlier
+// territory, a pre-order date) and the name + track count + primary artist
+// already separate two genuinely different releases in the same year. The
+// earliest date seen is kept, and every id seen is kept, so a later pass
+// recognises the release whichever id it is handed.
+//
+// §4.3 — `appears_on` is mostly compilations but also where remixes and guest
+// verses live. Two lanes, never one chronology: `main` and `features`.
+// Spotify removed `album_group` from album objects in February 2026, so the
+// lane cannot be read off the item any more. It is decided from the album's
+// own artists instead, which is what `album_group` used to encode: an item is
+// `main` when the artist we asked about is one of the album's credited
+// artists (and the album is not a Various Artists compilation), `features`
+// otherwise. That holds whichever `include_groups` the item arrived through.
+
+
+
+/** Spotify's "Various Artists": one id on thousands of compilations. Excluded by id, never by name. */
+const VARIOUS_ARTISTS_ID = '0LyfQWJT6nXafLPZqxe9Of';
+
+/** Bumped whenever a stored record's format changes; anything older is re-read. */
+const SHAPE = 1;
+
+/** The `include_groups` values the sync asks for, one request each (see plan.mjs). */
+const GROUPS = Object.freeze(['album', 'single', 'appears_on']);
+
+/** §4.2's dedupe key. */
+function releaseKey({ name, year, totalTracks, primaryArtistId }) {
+  return `${norm(name)}|${year || 0}|${totalTracks ?? 0}|${primaryArtistId ?? ''}`;
+}
+
+/** The smallest cover at least 64px wide (rows are 56px), else whatever there is. */
+function pickImage(images) {
+  const ok = (images ?? []).filter(i => i?.url);
+  if (!ok.length) return null;
+  const big = ok.filter(i => (i.width ?? 0) >= 64).sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
+  return (big[0] ?? ok[0]).url;
+}
+
+/**
+ * One item of `/artists/{id}/albums` (a simplified album object) as a release
+ * record. `artistId` is the artist the request was for. Null for anything
+ * that is not an album object with an id.
+ */
+function normaliseItem(item, { artistId, at = 0 } = {}) {
+  if (!item?.id || (item.type && item.type !== 'album')) return null;
+  const artists = (item.artists ?? []).filter(a => a?.id).map(a => ({ id: a.id, name: a.name ?? '' }));
+  const primary = artists[0]?.id ?? null;
+  const various = primary === VARIOUS_ARTISTS_ID;
+  const own = !various && artists.some(a => a.id === artistId);
+  const date = parseDate(item.release_date, item.release_date_precision);
+  return {
+    shape: SHAPE,
+    key: releaseKey({ name: item.name, year: date.y, totalTracks: item.total_tracks, primaryArtistId: primary }),
+    ids: [item.id],
+    name: item.name ?? '',
+    artists,
+    releaseDate: date.raw,
+    precision: date.precision,
+    ts: date.ts,
+    albumType: item.album_type ?? 'album',
+    totalTracks: item.total_tracks ?? 0,
+    img: pickImage(item.images),
+    lane: own ? 'main' : 'features',
+    various,
+    via: artistId ? [artistId] : [],
+    owned: 'none',
+    ownedBasis: null,
+    reissue: false,
+    reissueBasis: null,
+    firstSeenAt: at,
+  };
+}
+
+const union = (a = [], b = []) => [...new Set([...a, ...b])];
+
+/**
+ * Two records with the same key, as one. The earliest date wins (with its raw
+ * string and precision), ids and the artists that surfaced it are unioned,
+ * `main` beats `features` (one artist's own release is another's guest spot),
+ * and the first sighting is kept: it cannot be backfilled (§4.5).
+ */
+function mergeRelease(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const early = (b.ts < a.ts) ? b : a;
+  return {
+    ...a,
+    ...b,
+    key: a.key,
+    ids: union(a.ids, b.ids),
+    via: union(a.via, b.via),
+    releaseDate: early.releaseDate, precision: early.precision, ts: early.ts,
+    lane: a.lane === 'main' || b.lane === 'main' ? 'main' : 'features',
+    img: a.img ?? b.img,
+    firstSeenAt: Math.min(a.firstSeenAt ?? Infinity, b.firstSeenAt ?? Infinity),
+    // Verdicts and the track list belong to whichever record has them; a fresh
+    // sighting from the list endpoint carries neither.
+    tracks: a.tracks ?? b.tracks,
+    detailAt: a.detailAt ?? b.detailAt,
+    probes: { ...(a.probes ?? {}), ...(b.probes ?? {}) },
+    owned: a.owned, ownedBasis: a.ownedBasis, reissue: a.reissue, reissueBasis: a.reissueBasis,
+    dismissed: a.dismissed ?? b.dismissed,
+  };
+}
+
+/** A compact track list from `/albums/{id}` (simplified tracks: no ISRC unless Spotify adds one). */
+function compactTracks(album) {
+  return (album?.tracks?.items ?? []).filter(t => t?.id || t?.name).map(t => ({
+    id: t.id ?? null,
+    name: t.name ?? '',
+    ms: t.duration_ms ?? 0,
+    no: t.track_number ?? 0,
+    artists: (t.artists ?? []).map(a => a.id).filter(Boolean),
+    isrc: t.external_ids?.isrc ?? null,
+  }));
+}
+return { VARIOUS_ARTISTS_ID, SHAPE, GROUPS, releaseKey, pickImage, normaliseItem, mergeRelease, compactTracks };
+})();
+/* ---- core/release/plan.mjs ---- */
+__mod["core/release/plan.mjs"] = (function () {
+const { DAY_MS } = __mod["core/release/dates.mjs"];
+const { SHAPE, GROUPS } = __mod["core/release/normalise.mjs"];
+// What to ask Spotify, in what order, and when not to ask at all
+// (docs/RELEASE-RADAR-PLAN.md §3, §5).
+//
+// There is no bulk "new releases for these artists" endpoint: it is requests
+// per artist. Since February 2026 that is more than the plan assumed, because
+// `/artists/{id}/albums` pages at most 10 items and its items no longer say
+// which `include_groups` group they came from. So each artist is read as one
+// request per group (album, single, appears_on), newest first, stopping at the
+// first page that reaches back past the window: a group asked for alone comes
+// back newest first, so one page usually answers it. Two passes: every
+// artist's own releases (album, single) first, in listening order, so a sync
+// interrupted half way has the main feed for the artists you play; then the
+// features lane (appears_on), which is collapsed by default anyway.
+//
+// Cadence (§3, a declared prior until Phase 0 measures it):
+//   last release within 90 days  -> re-check after 7 days
+//   within 2 years               -> 30 days
+//   older, or nothing found      -> 90 days
+// Two refinements, both declared, both measured by simulate.mjs:
+//   - each artist's interval is stretched by a fixed 0-25% (a hash of its id),
+//     so a thousand artists first read on the same day do not all fall due on
+//     the same day again (without it, day 30 of the simulation asked for ~2,300
+//     requests in one go);
+//   - the features lane (appears_on) waits twice as long as the main lane: it
+//     is the collapsed strip, and it is a third of every re-check's cost.
+// A group that failed is due again at once; a record of an older `shape` is
+// treated as never read.
+//
+// Storage keys (IndexedDB `betterfy`/`kv` in the page, a JSON file for the CLI):
+//   radar:artist:{id}    per-artist state, below
+//   radar:release:{key}  one release (normalise.mjs)
+//   radar:index          { shape, at, artists, releases, done, total, complete, stopped, cold }
+
+
+
+
+const KEY = Object.freeze({
+  artist: id => `radar:artist:${id}`,
+  release: key => `radar:release:${key}`,
+  index: 'radar:index',
+  prefix: 'radar:',
+  releasePrefix: 'radar:release:',
+});
+
+/** The main lane's groups and the features lane's, in the order the passes run. */
+const MAIN_GROUPS = Object.freeze(['album', 'single']);
+const FEATURE_GROUPS = Object.freeze(['appears_on']);
+
+/** Spotify's page size for `/artists/{id}/albums` since February 2026 (was 50). */
+const PAGE_LIMIT = 10;
+/** Never page one group further back than this in one sync. */
+const MAX_PAGES = 20;
+
+const CADENCE = Object.freeze([
+  Object.freeze({ within: 90 * DAY_MS, after: 7 * DAY_MS }),
+  Object.freeze({ within: 730 * DAY_MS, after: 30 * DAY_MS }),
+  Object.freeze({ within: Infinity, after: 90 * DAY_MS }),
+]);
+
+/** The features lane's interval, as a multiple of the main lane's. */
+const FEATURES_SLOWER = 2;
+/** The most an artist's interval is stretched to spread re-checks out. */
+const SPREAD = 0.25;
+
+/** A stable number in [0, 1) from an artist id (FNV-1a). */
+function spreadOf(id) {
+  let h = 0x811c9dc5;
+  for (const c of String(id ?? '')) { h ^= c.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h / 4294967296;
+}
+
+/** How long after a check to check again, from the artist's newest release. */
+function recheckAfter(lastReleaseTs, now, { id = null, group = 'album' } = {}) {
+  const age = Number.isFinite(lastReleaseTs) ? now - lastReleaseTs : Infinity;
+  const base = CADENCE.find(c => age <= c.within).after;
+  return base * (FEATURE_GROUPS.includes(group) ? FEATURES_SLOWER : 1) * (1 + SPREAD * (id == null ? 0 : spreadOf(id)));
+}
+
+/** A fresh per-artist state. */
+const newArtistState = a => ({ shape: SHAPE, id: a.id, name: a.name ?? '', checked: {},
+  lastReleaseTs: null, releaseKeys: [], errors: {} });
+
+/** Is this artist's `group` due for a check at `now`? */
+function isDue(state, group, now) {
+  if (!state || state.shape !== SHAPE) return true;
+  if (state.errors?.[group]) return true;
+  const at = state.checked?.[group];
+  if (!Number.isFinite(at)) return true;
+  return now - at >= recheckAfter(state.lastReleaseTs, now, { id: state.id, group });
+}
+
+/**
+ * The list requests to make, in order: `[{ artistId, name, group }]`.
+ * `artists` is artistSet()'s order (most listened first); `states` a Map of
+ * artist id -> stored state. `groups` narrows the groups (e.g. main lane only).
+ */
+function planTasks(artists, states, now, { groups = GROUPS } = {}) {
+  const want = g => groups.includes(g);
+  const out = [];
+  for (const pass of [MAIN_GROUPS, FEATURE_GROUPS])
+    for (const a of artists) for (const g of pass)
+      if (want(g) && isDue(states.get(a.id), g, now)) out.push({ artistId: a.id, name: a.name, group: g });
+  return out;
+}
+
+/** Seconds per request the page actually sustains: `sp()`'s floor gap is 250ms, plus the round trip. */
+const SEC_PER_REQUEST = 0.35;
+
+/**
+ * An honest time estimate before a sync starts: one request per due group
+ * (most fit in one page), plus a share of track-list reads. `detailRate` is
+ * the expected `/albums/{id}` reads per artist on a cold sync, measured on the
+ * simulated library (simulate.mjs) until Phase 0 replaces it with a real one.
+ */
+function estimate(tasks, { detailRate = 0.5, artists = null, secPerRequest = SEC_PER_REQUEST } = {}) {
+  const n = artists ?? new Set(tasks.map(t => t.artistId)).size;
+  const requests = Math.round(tasks.length * 1.04 + n * detailRate);
+  return { requests, minutes: Math.max(1, Math.round(requests * secPerRequest / 60)) };
+}
+return { KEY, MAIN_GROUPS, FEATURE_GROUPS, PAGE_LIMIT, MAX_PAGES, CADENCE, FEATURES_SLOWER, SPREAD, spreadOf, recheckAfter, newArtistState, isDue, planTasks, SEC_PER_REQUEST, estimate, SHAPE, GROUPS };
+})();
+/* ---- web/screens/radar.mjs ---- */
+__mod["web/screens/radar.mjs"] = (function () {
+const { parseDate, shortLabel, groupKey, groupLabel, cutoffTs, inWindow } = __mod["core/release/dates.mjs"];
+const { estimate, planTasks } = __mod["core/release/plan.mjs"];
+const { VARIOUS_ARTISTS_ID } = __mod["core/release/normalise.mjs"];
+const { norm } = __mod["norm.mjs"];
+/* Release Radar: the first section of the Discover tab (docs/RELEASE-RADAR-PLAN.md §6,
+ * BUILD-6-PLAN §2.3). Not a screen of its own: discover.mjs imports this module and
+ * draws radarView() above "Find new music", and spreads radarActions into its own.
+ * Like a screen module it reaches nothing but ctx; ctx.radar comes from
+ * web/app/radar.js (the sync job, IndexedDB, filing), and is absent in tests and
+ * on a page without it, in which case nothing is drawn.
+ *
+ * The feed's rules (§4) are all decided upstream, in core/release/: this module
+ * only filters, groups and windows the stored rows. What it promises:
+ *   - a partial radar is never presented as complete: while a sync runs, or
+ *     after one stopped, the status line says how far it got;
+ *   - dates are shown as precisely as Spotify gave them, under month headers;
+ *   - reissues and the features lane are never in the main chronology;
+ *   - owned is a quiet marker, never a filter by default;
+ *   - the feed is windowed: PAGE rows at a time, more as you scroll. */
+
+
+
+
+
+const PAGE = 60;
+const FILTERS = Object.freeze([
+  ['all', 'All'], ['month', 'This month'], ['unheard', 'Unheard'], ['singles', 'Singles'],
+  ['albums', 'Albums'], ['features', 'Features'], ['reissues', 'Reissues'],
+]);
+const FILTER_EMPTY = { all: 'Nothing new in the last two years', month: 'Nothing new this month',
+  unheard: 'Nothing unheard', singles: 'No singles', albums: 'No albums', features: 'No features',
+  reissues: 'No reissues spotted' };
+
+/** Every distinct credited artist in the library, Various Artists excluded: the radar's set before listening reorders it. */
+function libraryArtists(LIB) {
+  const by = new Map();
+  const add = a => { if (a?.id && a.id !== VARIOUS_ARTISTS_ID && !by.has(a.id)) by.set(a.id, { id: a.id, name: a.name ?? '' }); };
+  for (const p of LIB?.playlists ?? []) for (const t of p?.tracks ?? []) for (const a of t?.artists ?? []) add(a);
+  for (const t of LIB?.liked ?? []) for (const a of t?.artists ?? []) add(a);
+  return [...by.values()];
+}
+
+const ARTISTS = new WeakMap();
+/** libraryArtists(), once per library object. */
+const artistsOf = LIB => {
+  if (!LIB || typeof LIB !== 'object') return [];
+  if (!ARTISTS.has(LIB)) ARTISTS.set(LIB, libraryArtists(LIB));
+  return ARTISTS.get(LIB);
+};
+
+/** The artists the search offers: the library's, plus any the stored rows credit. */
+function searchArtists(LIB, rows) {
+  const seen = new Map(artistsOf(LIB).map(a => [a.id, a]));
+  for (const r of rows ?? []) for (const a of r.artists ?? []) if (a.id && a.id !== VARIOUS_ARTISTS_ID && !seen.has(a.id)) seen.set(a.id, a);
+  return [...seen.values()];
+}
+
+/** The cold sync's honest estimate for these artists (core/release/plan.mjs, measured on the simulation). */
+function coldEstimate(artists, now = Date.now()) {
+  const e = estimate(planTasks(artists, new Map(), now), { artists: artists.length });
+  return { artists: artists.length, ...e };
+}
+
+const kindOf = r => r.albumType === 'album' ? 'album' : r.albumType === 'compilation' ? 'compilation'
+  : (r.totalTracks ?? 0) >= 4 ? 'ep' : 'single';
+
+/**
+ * The rows a filter shows, newest first. `all` is the main lane without
+ * reissues; `features` and `reissues` are the only ways those appear.
+ * Dismissed (and filed) rows never show. `artistId` narrows to one artist.
+ */
+function feedRows(rows, { filter = 'all', artistId = null, dismissed = new Set(), now = Date.now(), years = 2 } = {}) {
+  const cut = cutoffTs(now, years);
+  const month = groupKey(parseDate(new Date(now).toISOString().slice(0, 10), 'day'));
+  return (rows ?? []).filter(r => {
+    if (!r || dismissed.has(r.key)) return false;
+    const d = parseDate(r.releaseDate, r.precision);
+    if (!inWindow(d, cut)) return false;
+    if (artistId && !(r.via ?? []).includes(artistId) && !(r.artists ?? []).some(a => a.id === artistId)) return false;
+    if (filter === 'features') return r.lane === 'features';
+    if (r.lane !== 'main') return false;
+    if (filter === 'reissues') return !!r.reissue;
+    if (r.reissue) return false;
+    if (filter === 'month') return groupKey(d) === month;
+    if (filter === 'unheard') return r.owned === 'none';
+    if (filter === 'singles') return kindOf(r) === 'single' || kindOf(r) === 'ep';
+    if (filter === 'albums') return kindOf(r) === 'album' || kindOf(r) === 'compilation';
+    return true;
+  }).sort((a, b) => (b.ts - a.ts) || String(a.key).localeCompare(String(b.key)));
+}
+
+/** Consecutive rows under their month header: [{ key, label, rows }]. */
+function groupByMonth(rows) {
+  const out = [];
+  for (const r of rows) {
+    const k = groupKey(parseDate(r.releaseDate, r.precision));
+    if (out.at(-1)?.key !== k) out.push({ key: k, label: groupLabel(k), rows: [] });
+    out.at(-1).rows.push(r);
+  }
+  return out;
+}
+
+/** Type-ahead over the artist set by normalised name: at most `n`, prefix matches first. */
+function artistMatches(artists, q, n = 8) {
+  const k = norm(q ?? '');
+  if (!k) return [];
+  const hits = (artists ?? []).filter(a => norm(a.name).includes(k));
+  return hits.sort((a, b) => (norm(b.name).startsWith(k) - norm(a.name).startsWith(k)) || a.name.localeCompare(b.name)).slice(0, n);
+}
+
+/** "2 hours ago", "3 days ago", "just now". */
+function ago(ts, now = Date.now()) {
+  const s = Math.max(0, (now - ts) / 1000);
+  if (s < 90) return 'just now';
+  const [n, u] = s < 5400 ? [Math.round(s / 60), 'minute'] : s < 129600 ? [Math.round(s / 3600), 'hour'] : [Math.round(s / 86400), 'day'];
+  return `${n} ${u}${n === 1 ? '' : 's'} ago`;
+}
+
+const STOP_WORDS = {
+  'rate-limit': 'Spotify asked for a pause',
+  'signed-out': 'the Spotify sign-in stopped working',
+  offline: 'the connection dropped',
+  budget: 'it reached its request budget',
+  aborted: 'you stopped it',
+};
+
+/**
+ * The one honest status line, and whether the radar may be called complete.
+ * `R` is web/app/radar.js's RADAR state.
+ */
+function statusLine(R, now = Date.now()) {
+  const n = (x) => Number(x ?? 0).toLocaleString('en-GB');
+  const ix = R.index;
+  if (R.running) {
+    const p = R.progress;
+    if (!p) return { text: 'Starting…', complete: false };
+    return { text: p.phase === 'features'
+      ? `Reading features: ${n(p.done)} of ${n(p.total)} checks`
+      : `Reading ${n(p.artistsDone)} of ${n(p.artistsTotal)} artists`, complete: false, frac: p.total ? p.done / p.total : 0 };
+  }
+  if (!ix) return { text: 'Not started', complete: false };
+  if (R.stopped || ix.stopped) {
+    const st = R.stopped ?? ix.stopped;
+    const msg = R.err ? ` (${R.err})` : '';
+    return { text: `Stopped after ${n(ix.done)} of ${n(ix.total)} checks: ${STOP_WORDS[st.why] ?? 'it stopped'}${msg}. Start again picks up where it stopped.`,
+             complete: false, warn: true };
+  }
+  if (!ix.coldDone) return { text: `Partly read: ${n(ix.done)} of ${n(ix.total)} checks. Start again to finish.`, complete: false, warn: true };
+  return { text: `${n(ix.artists)} artists · last checked ${ago(ix.at, now)}`, complete: true };
+}
+
+const pill = (t, cls = '') => `<span class="rr-pill${cls ? ' ' + cls : ''}">${t}</span>`;
+
+function rowHTML(r, { esc, suggest }) {
+  const d = parseDate(r.releaseDate, r.precision);
+  const k = kindOf(r);
+  const pills = [k === 'single' ? pill('Single') : k === 'ep' ? pill('EP') : k === 'compilation' ? pill('Compilation') : '',
+    r.lane === 'features' ? pill('Feature') : '',
+    r.reissue ? pill(r.reissueBasis === 'isrc' ? 'Reissue' : 'Reissue?', 'rr-re') : ''].join('');
+  const owned = r.owned === 'all' ? '<span class="rr-own">owned</span>' : r.owned === 'some' ? '<span class="rr-own">own some</span>' : '';
+  const who = (r.artists ?? []).map(a => a.name).join(', ');
+  const best = r.lane === 'main' && !r.reissue ? suggest?.(r) : null;
+  const art = r.img ? `<img class="rr-art" src="${esc(r.img)}" alt="" loading="lazy" decoding="async" width="56" height="56">`
+    : `<span class="rr-art ph" aria-hidden="true"></span>`;
+  return `<li class="rr-row" data-key="${esc(r.key)}">
+    <a class="rr-open" href="https://open.spotify.com/album/${esc(r.ids?.[0] ?? '')}" target="_blank" rel="noopener">${art}
+      <span class="rr-txt"><span class="rr-t">${esc(r.name)}${pills}</span>
+        <span class="rr-a">${esc(who)}</span>
+        <span class="rr-m"><time datetime="${esc(d.raw)}">${esc(shortLabel(d))}</time>${owned}</span></span></a>
+    <span class="rr-acts">
+      ${best ? `<button class="b sm rr-file" type="button" data-act="rrFile" data-key="${esc(r.key)}" data-pl="${esc(best.id)}"
+          title="${esc(best.why ?? '')}">File → ${esc(best.name)}</button>` : ''}
+      <button class="rr-x" type="button" data-act="rrDismiss" data-key="${esc(r.key)}" aria-label="Dismiss ${esc(r.name)}">×</button>
+    </span>
+  </li>`;
+}
+
+/** The whole section. '' when the page gives no radar (tests of the rest of Discover, old builds). */
+/** The "Check it works on this account" block: a button, then the answer in words and the table. */
+function probeHTML(R, esc) {
+  const P = R?.probe;
+  const btn = `<button class="b sm" type="button" data-act="rrProbe"${P?.running ? ' disabled' : ''}>${P?.running ? 'Checking…' : P ? 'Check again' : 'Check it works on this account'}</button>`;
+  if (!P || P.running) return `<div class="rr-probe">${btn}</div>`;
+  if (P.err) return `<div class="rr-probe"><p class="why">The check couldn’t run: ${esc(P.err)}</p>${btn}</div>`;
+  const v = P.verdict ?? { ok: false, missing: [] };
+  const words = v.ok ? 'Spotify answers everything the radar needs on this account.'
+    : `Spotify refused what the radar needs (${v.missing.map(esc).join(', ')}), so it can’t run on this account yet.`;
+  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p><b>${v.ok ? 'Works.' : 'Doesn’t work yet.'}</b> ${words}</p>
+    <table class="rr-ptab"><tbody>${(P.rows ?? []).map(r => `<tr class="${r.ok ? 'ok' : 'no'}"><td>${esc(r.label)}</td><td class="mono">${esc(r.status)}</td><td>${esc(r.note)}</td></tr>`).join('')}</tbody></table>
+    <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></div>`;
+}
+
+function radarView(ctx) {
+  const rad = ctx.radar;
+  if (!rad) return '';
+  const { esc } = ctx;
+  const R = rad.R, now = rad.now?.() ?? Date.now();
+  const empty = ctx.emptyState ?? ((t, b) => `<p class="why"><b>${t}</b> ${b}</p>`);
+  const ib = ctx.infoBtn ?? (() => '');
+  const head = `<section class="rr" id="radar" aria-labelledby="rrTitle">
+    <h2 id="rrTitle">Release radar${ib('radar', 'Release radar', `<p>New releases by every artist in your playlists, liked songs and listening, newest first, two years back.</p>
+      <p>Reissues of records you already own are kept out of the main list (find them under Reissues), and guest spots and remixes sit under Features. Spotify reads one artist at a time, so the first read takes a while; after that only the artists due a check are read again.</p>`)}</h2>`;
+
+  // Never synced: an explainer, one button, an honest estimate.
+  if (!R.index && !R.running && !(R.rows ?? []).length) {
+    const est = coldEstimate(artistsOf(ctx.LIB), now);
+    if (!est.artists) return head + empty('No artists yet', 'Once your library has songs in it, the radar can follow their artists.', { compact: true }) + '</section>';
+    return head + `<p class="lede">New releases from the ${est.artists.toLocaleString('en-GB')} artists in your library, newest first.</p>
+      <div class="rr-start">
+        <p>The first read asks Spotify about each artist in turn: about <b>${est.minutes} minute${est.minutes === 1 ? '' : 's'}</b> (${est.requests.toLocaleString('en-GB')} requests). You can keep using the app, and what has been read shows as it arrives.</p>
+        <div class="rowbtns"><button class="b p" type="button" data-act="rrStart" id="rrStart">Start the radar</button></div>
+        ${probeHTML(R, esc)}
+      </div></section>`;
+  }
+
+  const st = statusLine(R, now);
+  const status = `<div class="rr-status${st.warn ? ' warn' : ''}" role="status">
+      <span class="rr-line" id="rrLine">${esc(st.text)}</span>
+      ${R.running ? `<button class="b sm" type="button" data-act="rrStop">Stop</button>`
+        : `<button class="b sm" type="button" data-act="rrStart" id="rrStart">${st.complete ? 'Check again' : 'Start again'}</button>`}
+      ${R.running ? `<span class="rr-prog" aria-hidden="true"><i style="width:${((st.frac ?? 0) * 100).toFixed(1)}%"></i></span>` : ''}
+    </div>`;
+
+  const filter = R.filter ?? 'all';
+  const chips = `<div class="rr-chips" role="group" aria-label="Show">${FILTERS.map(([id, label]) =>
+    `<button class="chip${filter === id ? ' on' : ''}" type="button" data-act="rrFilter" data-f="${id}" aria-pressed="${filter === id}">${label}</button>`).join('')}</div>`;
+
+  const artists = searchArtists(ctx.LIB, R.rows);
+  const pinned = R.artist ? artists.find(a => a.id === R.artist) ?? { id: R.artist, name: 'that artist' } : null;
+  const matches = pinned ? [] : artistMatches(artists, R.q);
+  const search = `<div class="rr-search">
+      <input id="rrSearch" type="search" autocomplete="off" placeholder="Find an artist" aria-label="Find an artist" value="${esc(R.q ?? '')}">
+      ${matches.length ? `<div class="rr-hits">${matches.map(a => `<button class="chip" type="button" data-act="rrArtist" data-id="${esc(a.id)}">${esc(a.name)}</button>`).join('')}</div>` : ''}
+      ${pinned ? `<div class="rr-hits"><button class="chip on" type="button" data-act="rrArtistClear" aria-label="Show every artist again">${esc(pinned.name)} ×</button>
+        <button class="b sm" type="button" data-act="rrOlder" data-id="${esc(pinned.id)}" ${R.running ? 'disabled' : ''}>Read older releases</button></div>` : ''}
+    </div>`;
+
+  const opts = { filter, artistId: R.artist, dismissed: R.dismissed ?? new Set(), now, years: R.artist && R.olderFor?.has(R.artist) ? 60 : 2 };
+  const rows = feedRows(R.rows, opts);
+  const shown = rows.slice(0, R.shown ?? PAGE);
+  const sugg = rad.suggest;
+  let feed;
+  if (!rows.length) {
+    if (R.running && !(R.rows ?? []).length) feed = (ctx.skeleton?.('row', 4) ?? '');
+    else if (filter !== 'all' || R.artist) feed = empty(FILTER_EMPTY[filter] + (R.artist ? ` for ${pinned?.name ?? 'this artist'}` : filter === 'month' ? '' : ' in the last two years'),
+      '', { compact: true, acts: `<button class="b sm" type="button" data-act="rrFilter" data-f="all" data-clear="1">Show everything</button>` });
+    else feed = empty(st.complete ? `Nothing new since ${new Date(R.index.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}` : 'Nothing found yet',
+      st.complete ? 'No artist in your library has released anything in the last two years.' : 'Releases appear here as artists are read.', { compact: true });
+  } else {
+    feed = `<ol class="rr-feed">${groupByMonth(shown).map(g => `<li class="rr-group"><h3 class="rr-month">${esc(g.label)}</h3>
+        <ul class="rr-rows">${g.rows.map(r => rowHTML(r, { esc, suggest: sugg })).join('')}</ul></li>`).join('')}</ol>
+      ${rows.length > shown.length ? `<button class="b rr-more" type="button" data-act="rrMore" id="rrMore">Show more (${(rows.length - shown.length).toLocaleString('en-GB')} left)</button>` : ''}`;
+  }
+  // The features lane: a collapsed strip under All, never mixed into it.
+  const feats = filter === 'all' && !R.artist ? feedRows(R.rows, { ...opts, filter: 'features' }) : [];
+  const strip = feats.length ? `<details class="rr-feat"><summary>Features and remixes · ${feats.length.toLocaleString('en-GB')}</summary>
+      <ul class="rr-rows">${feats.slice(0, 10).map(r => rowHTML(r, { esc, suggest: null })).join('')}</ul>
+      ${feats.length > 10 ? `<button class="b sm" type="button" data-act="rrFilter" data-f="features">See all ${feats.length.toLocaleString('en-GB')}</button>` : ''}
+    </details>` : '';
+  const partial = !st.complete && rows.length ? `<p class="rr-partial">Not the whole radar yet: ${R.running ? 'still reading' : 'some artists are still to be read'}.</p>` : '';
+  const count = `<p class="rr-count vh" aria-live="polite">${rows.length.toLocaleString('en-GB')} release${rows.length === 1 ? '' : 's'}</p>`;
+  return head + status + (R.probe ? probeHTML(R, esc) : '') + chips + search + count + partial + strip + feed + '</section>';
+}
+
+const radarActions = {
+  rrStart: ({ radar }) => radar?.start(),
+  rrStop: ({ radar }) => radar?.stop(),
+  rrProbe: ({ radar }) => radar?.probe?.(),
+  rrProbeCopy: ({ radar }) => radar?.probeCopy?.(),
+  rrFilter({ radar, render }, el) {
+    if (!radar) return;
+    radar.R.filter = el.dataset.f || 'all';
+    if (el.dataset.clear) { radar.R.artist = null; radar.R.q = ''; }
+    radar.R.shown = PAGE;
+    render();
+  },
+  rrArtist({ radar, render }, el) { if (!radar) return; radar.R.artist = el.dataset.id; radar.R.q = ''; radar.R.shown = PAGE; render(); },
+  rrArtistClear({ radar, render }) { if (!radar) return; radar.R.artist = null; radar.R.shown = PAGE; render(); },
+  rrMore({ radar, render }) { if (!radar) return; radar.R.shown = (radar.R.shown ?? PAGE) + PAGE; render(); },
+  rrOlder: ({ radar }, el) => radar?.start({ deep: { ids: [el.dataset.id], years: 60 } }),
+  rrDismiss: ({ radar }, el) => radar?.dismiss(el.dataset.key),
+  rrFile: ({ radar }, el) => radar?.file(el.dataset.key, el.dataset.pl),
+};
+
+/** After paint: type-ahead on the search field, and more rows as the end comes into view. */
+function radarMount(ctx) {
+  const rad = ctx.radar;
+  if (!rad) return;
+  rad.load?.();
+  const doc = ctx.document ?? globalThis.document;
+  const input = doc?.getElementById?.('rrSearch');
+  if (input && !input.dataset.bound) {
+    input.dataset.bound = '1';
+    input.addEventListener('input', () => { rad.R.q = input.value; if (rad.R.artist) rad.R.artist = null; ctx.render(); });
+  }
+  const more = doc?.getElementById?.('rrMore');
+  if (more && globalThis.IntersectionObserver && !more.dataset.bound) {
+    more.dataset.bound = '1';
+    const io = new IntersectionObserver(es => {
+      if (es.some(e => e.isIntersecting)) { io.disconnect(); rad.R.shown = (rad.R.shown ?? PAGE) + PAGE; ctx.render(); }
+    }, { rootMargin: '400px' });
+    io.observe(more);
+  }
+}
+return { PAGE, FILTERS, libraryArtists, searchArtists, coldEstimate, feedRows, groupByMonth, artistMatches, ago, statusLine, probeHTML, radarView, radarActions, radarMount };
+})();
 /* ---- web/screens/discover.mjs ---- */
 __mod["web/screens/discover.mjs"] = (function () {
+const { radarView, radarActions, radarMount } = __mod["web/screens/radar.mjs"];
 /* The Discover screen (docs/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
  * ranking stay classic in web/app/discover-engine.js; ctx comes from SCREEN_CTX.discover. */
+
+
 /** A fit score in the same words as everywhere else, not a percentage. */
 const fitWord = v => v >= 0.7 ? 'Sure' : v >= 0.45 ? 'Likely' : 'Unsure';
 
@@ -8004,6 +8825,37 @@ function whyLine(t, esc) {
   return `<p class="why discwhy">Because you listen to <b>${names}</b>.</p>`;
 }
 
+/** The preview button's face and words for one state (app/preview.js). */
+function previewBtn(state) {
+  return { playing: { icon: '❚❚', label: 'Pause preview' }, loading: { icon: '…', label: 'Loading preview' },
+    none: { icon: '–', label: 'No preview for this track' }, error: { icon: '!', label: 'Preview failed, tap to try again' } }[state]
+    ?? { icon: '▶', label: 'Play a 30-second preview' };
+}
+
+/** Every pick as a row: play its preview, Like it, add it where it fits best, or open it on the card above.
+ *  The row on the card is marked. Nothing here writes until a button is tapped. */
+function pickRowsHTML(ctx, d, at) {
+  const { esc, thumbHTML, previewState } = ctx;
+  if (!d?.length) return '';
+  const rows = d.map((t, i) => {
+    const best = (t.suggest ?? [])[0];
+    const st = !t.isrc ? 'none' : previewState ? previewState(t.id) : 'idle', pb = previewBtn(st);
+    const face = thumbHTML ? thumbHTML({ id: t.id, title: t.track, art: t.art }) : '';
+    return `<div class="drow${i === at ? ' on' : ''}${st === 'playing' ? ' playing' : ''}" data-drow="${esc(t.id)}">
+      <button class="dprev" type="button" data-act="dprev" data-tid="${esc(t.id)}" aria-label="${esc(pb.label)}: ${esc(t.track)}" title="${esc(pb.label)}"${st === 'none' ? ' disabled' : ''}>${face}<span class="dpi" aria-hidden="true">${pb.icon}</span></button>
+      <button class="dmain" type="button" data-act="dshow" data-at="${i}"${i === at ? ' aria-current="true"' : ''}>
+        <span class="ttl">${esc(t.track)}</span><span class="dsub">${esc(t.artist ?? '')}${best ? ` · <span class="dfit">${esc(fitWord(best.score))} in ${esc(best.name)}</span>` : ''}</span></button>
+      <span class="dacts">
+        ${ctx.S?.discLiked?.has(t.id) ? '<button class="b sm" type="button" disabled>Liked</button>'
+          : `<button class="b sm" type="button" data-act="like" data-like="${esc(t.id)}" aria-label="Like ${esc(t.track)}">Like</button>`}
+        ${best ? `<button class="b sm dadd" type="button" data-act="dadd" data-tid="${esc(t.id)}" data-pl="${esc(best.id)}" aria-label="Add ${esc(t.track)} to ${esc(best.name)}">+ ${esc(best.name)}</button>` : ''}
+      </span></div>`;
+  }).join('');
+  return `<section class="drows" aria-labelledby="drows-h">
+    <div class="plsugg-head"><h2 id="drows-h">All ${d.length} picks</h2><span class="hint">▶ plays a 30-second preview here</span></div>
+    <div class="plrows">${rows}</div></section>`;
+}
+
 function view(ctx) {
   const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
@@ -8011,7 +8863,9 @@ function view(ctx) {
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
   const hasKey = !!lfmKey();
-  const head = `<h1>Discover</h1>
+  // Release radar is Discover's first section (BUILD-6-PLAN §2.3); '' without ctx.radar.
+  const radar = radarView(ctx);
+  const head = `<h1>Discover</h1>${radar}${radar ? '<h2 class="disc-h2">Find new music</h2>' : ''}
     <p class="lede">New music, with everything you already own taken out.${ib('discover', 'Discover', `<p>Every artist and track you already own is subtracted before ranking, including each artist named inside a collaboration, so nothing here recycles your library.</p>
       <p><b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>`)}</p>
     ${hasKey ? '' : `<div class="note discnokey">
@@ -8031,7 +8885,9 @@ function view(ctx) {
 
   // WP-C3: "find tracks that sound like ___". '' without CLAP records.
   const sounds = soundSearchHTML();
-  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'Pick what to seed from above, then hit Find new music. A run takes a minute or two.');
+  // Every empty state gets a button (USER-REVIEW): here it is the Find button itself.
+  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'One run takes a minute or two, and leaves out everything you already own.',
+    { acts: '<button class="b p" type="button" data-act="discRun">Find new music from what I play</button>' });
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
   const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
@@ -8086,17 +8942,40 @@ function view(ctx) {
           <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
           <a class="b sm" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
           <select data-act="discAnyPl" id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+          ${t.isrc ? `<button class="b sm" type="button" data-act="dprev" data-tid="${esc(t.id)}">${ctx.previewState?.(t.id) === 'playing' ? 'Pause preview' : 'Preview'}</button>` : ''}
         </div>
       </div>
-    </div>`;
+    </div>
+    ${pickRowsHTML(ctx, d, i)}`;
 }
 
 
+/** After paint: the radar's search field and windowed feed. */
+function mount(ctx) { radarMount(ctx); }
+
 const actions = {
+  ...radarActions,
   discRun: ({ S, runDiscovery }) => runDiscovery(S.discSeed || null),
   discPl({ S }, el) { S.discSeed = el.value; },
   discAnyPl(ctx, el) { if (el.value) return discAdd(ctx, el.value); },
   dfile(ctx, el) { return discAdd(ctx, el.dataset.dfile); },
+  /** A row's "+ playlist": that pick, into the playlist it fits best. */
+  dadd(ctx, el) {
+    const at = (ctx.S.discover ?? []).findIndex(x => x.id === el.dataset.tid);
+    if (at >= 0) return discAdd(ctx, el.dataset.pl, at);
+  },
+  /** A row's ▶: its 30-second preview, in the page. */
+  dprev(ctx, el) {
+    const t = (ctx.S.discover ?? []).find(x => x.id === el.dataset.tid);
+    if (t && ctx.previewToggle) return ctx.previewToggle(t);
+  },
+  /** Tap a row's title: that pick on the card. */
+  dshow({ S, render }, el) {
+    const d = S.discover ?? [];
+    S.discAt = Math.max(0, Math.min(+el.dataset.at || 0, d.length - 1));
+    render();
+    globalThis.document?.querySelector?.('.deck')?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  },
   dnav({ S, render }, el) {
     const d = S.discover ?? [];
     S.discAt = Math.max(0, Math.min((S.discAt ?? 0) + (+el.dataset.dnav), d.length - 1));
@@ -8117,14 +8996,15 @@ const actions = {
       const t = (S.discover ?? []).find(x => x.id === el.dataset.like);
       if (t && discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
       await logAction({ op:'add-liked', trackIds:[el.dataset.like], reason:'from discovery' });
+      (S.discLiked ??= new Set()).add(el.dataset.like);
       el.textContent = 'Liked'; el.disabled = true; toast('Added to your Liked Songs.'); }
     catch (err) { toast('Failed: '+err.message); }
   },
 };
 
-/** Add the track on the card to a playlist, and take it off the pile. */
-async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId) {
-  const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
+/** Add a pick (the one on the card, unless `pick` says which) to a playlist, and take it off the pile. */
+async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId, pick = null) {
+  const d = S.discover ?? [], cur = Math.min(S.discAt ?? 0, d.length - 1), at = pick ?? cur, t = d[at];
   if (!t) return;
   const name = CFG[playlistId]?.name ?? playlistId;
   try {
@@ -8134,11 +9014,11 @@ async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction
     toast(`Added “${t.track}” to ${name}.`, () => undoAction(when));
     if (discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
     d.splice(at, 1);
-    S.discAt = Math.max(0, Math.min(at, d.length - 1));
+    S.discAt = Math.max(0, Math.min(at < cur ? cur - 1 : pick == null ? at : cur, d.length - 1));
     render();
   } catch (e) { toast('Failed: ' + e.message); }
 }
-return { fitWord, whyLine, view, actions };
+return { fitWord, whyLine, previewBtn, pickRowsHTML, view, mount, actions };
 })();
 /* ---- web/screens/new.mjs ---- */
 __mod["web/screens/new.mjs"] = (function () {
@@ -8476,7 +9356,7 @@ const STORE_SCREENS = ['inbox', 'tidy', 'new', 'discover', 'shuffle', 'lists', '
 const STORE_WATCH = {
   lib:     STORE_SCREENS,
   reports: STORE_SCREENS,
-  eng:     ['engine'],
+  eng:     ['engine', 'lists'],   // lists: the "How well it knows you" card
   sound:   ['inbox'],
   audio:   ['inbox', 'tidy', 'sources'],
   gaps:    ['new', 'lists', 'inbox'],   // inbox: File's cold-start offers (O1)
@@ -8489,7 +9369,7 @@ for (const screen of STORE_SCREENS)
 
 /** Repaint the current screen if it is one of `screens` and the page is up. */
 function storeRepaint(screens) {
-  // Engine, History and Sources are sections of the Settings sheet now: repaint
+  // History and Sources are sections of the Settings sheet now: repaint
   // the one that is open, and not the page behind it.
   if (typeof settingsOpen === 'function' && settingsOpen() && screens.includes(S.uhOpen)) underHoodRefresh();
   if (typeof view === 'undefined' || !screens.includes(view) || !document.getElementById('main')) return;
@@ -8787,7 +9667,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1930';
+const BUILD = '2026-11-16-1951';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -9125,7 +10005,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1930', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1951', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -9883,7 +10763,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1930');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1951');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9966,25 +10846,26 @@ function moreButton(key, total) {
 
 // Bar order: the four tabs, which is also swipe order. Swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
-// New playlists and Shuffle follow Library: they are reached from it, and a
-// swipe on from Library lands on them. Sources, Engine and History are not
-// screens any more: they are sections of the Settings sheet (app/shell.js).
+// New playlists, Shuffle and Engine follow Library: they are reached from it, and a
+// swipe on from Library lands on them. Sources and History are not screens any
+// more: they are sections of the Settings sheet (app/shell.js). Engine was one
+// too, until it moved to Library's "How well it knows you" card (Wave F).
 const TABS = ['inbox','tidy','discover','lists'];
-const VORDER = [...TABS, 'new', 'shuffle'];
+const VORDER = [...TABS, 'new', 'shuffle', 'engine'];
 // The five colours of the mark, one per screen — see the [data-v=…] rules in
 // the stylesheet, which have to agree with this.
-const VHUE = { inbox:'m0', tidy:'m1', discover:'m3', lists:'m4', new:'m2', shuffle:'m4' };
+const VHUE = { inbox:'m0', tidy:'m1', discover:'m3', lists:'m4', new:'m2', shuffle:'m4', engine:'m2' };
 const VTITLE = { inbox:'File', tidy:'Tidy', discover:'Discover', lists:'Library',
-                 new:'New playlists', shuffle:'Shuffle' };
+                 new:'New playlists', shuffle:'Shuffle', engine:'Engine' };
 // Screens that sit under another tab on the bar.
-const TAB_OF = { new:'lists', shuffle:'lists' };
+const TAB_OF = { new:'lists', shuffle:'lists', engine:'lists' };
 const tabOf = v => TAB_OF[v] ?? v;
-// Old screen names and where they went: Home became File; Sources, Engine and
-// History became sections of the Settings sheet. go() and the router use it.
+// Old screen names and where they went: Home became File; Sources and History
+// became sections of the Settings sheet. go() and the router use it. Engine is
+// a screen again, under Library, so #/engine needs no entry here.
 const LEGACY_VIEWS = {
   home:    { view: 'inbox' },
   sources: { section: 'sources' },
-  engine:  { section: 'engine' },
   history: { section: 'history' },
 };
 /* ---------- ⓘ: "how this works" lives behind a button, not in the page ----------
@@ -11797,6 +12678,273 @@ function discFitHTML(t) {
     .filter(x => x?.title).map(x => `${esc(x.title)} — ${esc(x.artist)}`);
   return `<div class="discfit ${cls}" title="${(f * 100).toFixed(0)}% — 100% is as close as ${name}’s own tracks are to each other"><span class="tag snd">by sound</span> ${say}${near.length ? `<span class="sub">closest: ${near.join('; ')}</span>` : ''}</div>`;
 }
+/* ---------- 30-second previews (Wave F, USER-REVIEW item 10) ----------
+ * Discover's rows play a pick's 30-second Deezer preview right in the page,
+ * found by the ISRC Spotify already gives. It needs no Premium, no open
+ * Spotify app and no Spotify request, so it works for every account. The
+ * preview address is signed and expires within minutes, so it is looked up on
+ * each play and never stored (the rule core/audio/fetch.mjs keeps). One
+ * preview plays at a time; the screen repaints through store 'ui.discover'.
+ * ISRC or nothing: a name match picks the wrong recording too often. */
+const PREVIEW = { id: null, state: 'idle', el: null, err: null };
+
+/** idle | loading | playing | none (nothing to play) | error, for one track id. */
+function previewState(id) {
+  return PREVIEW.id === id ? PREVIEW.state : 'idle';
+}
+
+function previewSet(id, state, err = null) {
+  Object.assign(PREVIEW, { id, state, err });
+  try { store.touch('ui.discover'); } catch { /* before the store is up */ }
+}
+
+function previewEl() {
+  if (PREVIEW.el) return PREVIEW.el;
+  const el = new Audio();
+  el.preload = 'none';
+  el.addEventListener('ended', () => { if (PREVIEW.state === 'playing') previewSet(PREVIEW.id, 'idle'); });
+  el.addEventListener('error', () => { if (PREVIEW.state === 'playing' || PREVIEW.state === 'loading') previewSet(PREVIEW.id, 'error', 'could not play'); });
+  return PREVIEW.el = el;
+}
+
+function previewStop() {
+  if (PREVIEW.el) { try { PREVIEW.el.pause(); } catch { /* not started */ } }
+  if (PREVIEW.state === 'playing' || PREVIEW.state === 'loading') previewSet(PREVIEW.id, 'idle');
+}
+
+/** Deezer's answer for one ISRC → the preview address, or null. Same checks as listening's lookup. */
+function previewUrlFrom(json, isrc) {
+  if (!json || typeof json !== 'object' || json.error || !json.preview) return null;
+  const n = s => String(s ?? '').replace(/-/g, '').toUpperCase();
+  if (json.isrc && n(json.isrc) !== n(isrc)) return null;
+  if (json.readable === false) return null;
+  return /^https:\/\//.test(json.preview) ? json.preview : null;
+}
+
+/** Play `t` ({ id, isrc }), or pause it when it is the one playing. */
+async function previewToggle(t) {
+  if (!t?.id) return;
+  if (PREVIEW.id === t.id && (PREVIEW.state === 'playing' || PREVIEW.state === 'loading')) return previewStop();
+  previewStop();
+  if (!t.isrc) return previewSet(t.id, 'none');
+  previewSet(t.id, 'loading');
+  try {
+    await engineLoad();   // deezerJsonp checks addresses with the engine bundle's BetterfyDeezer
+    const url = previewUrlFrom(await deezerJsonp(`https://api.deezer.com/track/isrc:${encodeURIComponent(String(t.isrc).replace(/-/g, '').toUpperCase())}`), t.isrc);
+    if (PREVIEW.id !== t.id) return;   // another row was tapped meanwhile
+    if (!url) return previewSet(t.id, 'none');
+    // Spotify Connect playback, if any, keeps going: this is the page's own audio.
+    const el = previewEl();
+    el.src = url;
+    await el.play();
+    if (PREVIEW.id === t.id) previewSet(t.id, 'playing');
+  } catch (e) {
+    if (PREVIEW.id === t.id) previewSet(t.id, 'error', String(e?.message ?? e));
+  }
+}
+/* ---------- Release Radar: the in-app sync (docs/RELEASE-RADAR-PLAN.md phase 5) ----------
+ * The sync is core/release/sync.mjs, loaded with the lazy engine bundle as
+ * BetterfyRadar only when somebody presses Start, and run inside the page's own
+ * machinery rather than around it: every request goes through sp(), so it is
+ * paced, sits out short 429s, and stops with sp()'s own honest message when
+ * Spotify's quota is gone. Everything it reads is banked in IndexedDB as it
+ * lands (radar:artist:{id}, radar:release:{key}, radar:index), so a stop, a
+ * locked phone or a closed tab costs nothing already read, and Start picks up
+ * where it stopped. The rows show while it runs; the status line never calls a
+ * partial radar complete (web/screens/radar.mjs).
+ *
+ * Library artists only, no new scope (BUILD-6-PLAN §2.3): the artist set is
+ * LIB's credited artists plus the top-artist windows and recently played that
+ * the existing scopes already read, ordered by the same listening weights.
+ * Nothing here leaves the device but artist and album ids sent to Spotify. */
+const RADAR = { rows: [], byKey: new Map(), index: null, loaded: false, loading: null, running: false,
+                progress: null, stopped: null, err: null, filter: 'all', artist: null, q: '', shown: 60,
+                dismissed: new Set(), olderFor: new Set(), ctl: null, sugg: new Map(), suggFor: null };
+/** Release keys the listener dismissed or filed from the radar: hidden from the feed for good. */
+const RADAR_DISMISSED = 'radar:dismissed';
+const RADAR_PREFIX = 'radar:release:';
+const RADAR_ARTIST = 'radar:artist:';
+const RADAR_INDEX = 'radar:index';
+
+/** Read the stored radar once per session (and again after a sync), with no request. */
+function radarLoad(force = false) {
+  if (RADAR.loaded && !force) return Promise.resolve();
+  return RADAR.loading ??= (async () => {
+    try {
+      RADAR.index = (await idb.get(RADAR_INDEX)) ?? null;
+      RADAR.dismissed = new Set((await idb.get(RADAR_DISMISSED)) ?? []);
+      const keys = ((await idb.keys()) ?? []).filter(k => typeof k === 'string' && k.startsWith(RADAR_PREFIX));
+      for (const k of keys) {
+        const r = await idb.get(k);
+        if (r && (!RADAR.index || r.shape === RADAR.index.shape)) RADAR.byKey.set(r.key, r);
+      }
+      RADAR.rows = [...RADAR.byKey.values()];
+    } catch (e) { RADAR.err = e?.message ?? String(e); }
+    RADAR.loaded = true; RADAR.loading = null;
+    store.touch('ui.discover');
+  })();
+}
+
+let radarPaintAt = 0, radarPaintTimer = null;
+/** Repaint Discover at most every 700ms while a sync streams rows in. */
+function radarPaint(now = false) {
+  clearTimeout(radarPaintTimer);
+  const due = radarPaintAt + 700 - Date.now();
+  if (now || due <= 0) { radarPaintAt = Date.now(); store.touch('ui.discover'); return; }
+  radarPaintTimer = setTimeout(() => radarPaint(true), due);
+}
+
+/** Top artists (three windows) and recently played, with ids: the listening half of the artist set. */
+async function radarListening() {
+  const top = {};
+  for (const range of ['short_term', 'medium_term', 'long_term']) {
+    try { top[range] = ((await sp(`/me/top/artists?limit=50&time_range=${range}`))?.items ?? []).map(a => ({ id: a.id, name: a.name })); }
+    catch { top[range] = []; }
+  }
+  let recent = [];
+  try { recent = ((await sp('/me/player/recently-played?limit=50'))?.items ?? []).map(p => ({ artists: p.track?.artists ?? [] })); }
+  catch { /* the library alone still makes a radar */ }
+  let weights;
+  try { weights = (await getListening())?.weights; } catch { weights = undefined; }
+  return { top, recent, weights };
+}
+
+/** Run a sync now. `deep`: `{ ids, years }` reads those artists further back ("older on demand"). */
+async function radarStart({ deep = null } = {}) {
+  if (RADAR.running || !LIB) return;
+  RADAR.running = true; RADAR.stopped = null; RADAR.err = null; RADAR.progress = null;
+  RADAR.ctl = new AbortController();
+  // A read of its own: sp()'s whole-read hold budget starts again, as it does for a library read.
+  heldRun = 0;
+  if (deep) for (const id of deep.ids ?? []) RADAR.olderFor.add(id);
+  radarPaint(true);
+  try {
+    await radarLoad();
+    await engineLoad();
+    const BR = globalThis.BetterfyRadar;
+    if (!BR) throw new Error('the radar did not load');
+    const { top, recent, weights } = await radarListening();
+    const artists = BR.artistSet(LIB, { top, recent, weights });
+    const kv = {
+      get: k => idb.get(k),
+      // Only the radar's own keys are written (and each is declared in datakeys.js).
+      set: async (k, v) => {
+        if (k.startsWith(RADAR_PREFIX)) {
+          await idb.set(`radar:release:${k.slice(RADAR_PREFIX.length)}`, v);
+          RADAR.byKey.set(v.key, v); RADAR.rows = [...RADAR.byKey.values()]; radarPaint();
+        } else if (k.startsWith(RADAR_ARTIST)) await idb.set(`radar:artist:${k.slice(RADAR_ARTIST.length)}`, v);
+        else if (k === RADAR_INDEX) { await idb.set(RADAR_INDEX, v); RADAR.index = v; }
+      },
+      keys: () => idb.keys(),
+    };
+    // The library may have changed since the last read: re-judge owned and
+    // reissue on what is stored (no request) before reading anything new.
+    try { await BR.rescore(kv, LIB); } catch { /* the sync re-judges what it touches anyway */ }
+    const r = await BR.syncRadar({ lib: LIB, artists, store: kv, get: path => sp(path), signal: RADAR.ctl.signal, deep,
+      onProgress: p => { RADAR.progress = p; radarPaint(); } });
+    RADAR.stopped = r.stopped;
+    if (r.stopped && r.stopped.why !== 'aborted' && r.stopped.why !== 'budget') RADAR.err = r.stopped.message || null;
+    if (r.errors && !r.stopped) toast(`${r.errors} artist${r.errors === 1 ? '' : 's'} could not be read; they are tried again next time.`);
+  } catch (e) {
+    RADAR.err = e?.message ?? String(e);
+    RADAR.stopped = { why: 'error', message: RADAR.err };
+    toast('The radar stopped: ' + RADAR.err);
+  } finally {
+    RADAR.running = false; RADAR.ctl = null; RADAR.sugg.clear();
+    radarPaint(true);
+  }
+}
+
+function radarStop() { RADAR.ctl?.abort(); }
+
+/** "Check it works on this account": the Phase 0 probe (core/release/probe.mjs) from the page,
+ *  with this account's own sign-in, so nobody needs `node radar.mjs --probe`. Seven reads, one
+ *  artist, nothing stored but the answer for this session. */
+async function radarProbe() {
+  if (RADAR.probe?.running || !LIB) return;
+  RADAR.probe = { running: true, rows: null, verdict: null, err: null, artist: null };
+  radarPaint(true);
+  try {
+    await engineLoad();
+    const BR = globalThis.BetterfyRadar;
+    if (!BR?.probeEndpoints) throw new Error('the radar did not load');
+    const artist = BR.artistSet(LIB, {})[0];
+    if (!artist) throw new Error('your library names no artist yet');
+    const rows = await BR.probeEndpoints(path => sp(path), artist.id);
+    Object.assign(RADAR.probe, { rows, verdict: BR.probeVerdict(rows), table: BR.probeTable(rows), artist: artist.name });
+  } catch (e) {
+    RADAR.probe.err = e?.message ?? String(e);
+  } finally {
+    RADAR.probe.running = false;
+    radarPaint(true);
+  }
+}
+
+/** Copy the probe's table, to paste where it is asked for. */
+async function radarProbeCopy() {
+  const t = RADAR.probe?.table;
+  if (!t) return;
+  try { await navigator.clipboard.writeText(`Radar check (${RADAR.probe.artist ?? ''})\n${t}`); toast('Copied.'); }
+  catch { toast('Couldn’t copy. Select the table and copy it instead.'); }
+}
+
+/** Hide a release from the feed for good (on this device). */
+async function radarDismiss(key, quiet = false) {
+  RADAR.dismissed.add(key);
+  try { await idb.set(RADAR_DISMISSED, [...RADAR.dismissed]); } catch { /* still hidden this session */ }
+  if (!quiet) toast('Dismissed.', async () => { RADAR.dismissed.delete(key); await idb.set(RADAR_DISMISSED, [...RADAR.dismissed]); radarPaint(true); });
+  radarPaint(true);
+}
+
+/** Where the File queue's own model would put a release: the same picks a File card gets
+ *  (tags, else where you file this artist already). No request; null when it has no answer. */
+function radarSuggest(row) {
+  if (!R || !CFG || !LIB) return null;
+  if (RADAR.suggFor !== R) { RADAR.sugg.clear(); RADAR.suggFor = R; }
+  if (RADAR.sugg.has(row.key)) return RADAR.sugg.get(row.key);
+  let best = null;
+  try {
+    const t = { id: 'radar:' + row.key, name: row.name, artists: row.artists ?? [] };
+    const pick = backlogSuggest(t, LIB, CFG, TAGS, R.profiles, R.idf)[0];
+    if (pick && CFG[pick.id]) best = { id: pick.id, name: CFG[pick.id].name ?? pick.name,
+      why: pick.via === 'history' ? 'Where you already file this artist' : 'By its artist’s tags, the way File places a track' };
+  } catch { best = null; }
+  RADAR.sugg.set(row.key, best);
+  return best;
+}
+
+/** Add a release's tracks to a playlist, logged and undoable like any other filing. */
+async function radarFile(key, playlistId) {
+  const r = RADAR.byKey.get(key);
+  if (!r) return;
+  try {
+    let ids = (r.tracks ?? []).map(t => t.id).filter(Boolean);
+    if (!ids.length) ids = ((await sp(`/albums/${encodeURIComponent(r.ids[0])}/tracks?market=from_token&limit=50`))?.items ?? []).map(t => t.id).filter(Boolean);
+    if (!ids.length) throw new Error('Spotify listed no tracks for it');
+    await addTracks(playlistId, ids);
+    const name = CFG?.[playlistId]?.name ?? playlistId;
+    await logAction({ op: 'add', playlistId, playlistName: name, trackIds: ids, reason: 'filed from radar' });
+    const when = (await getLog())[0]?.at;
+    await radarDismiss(key, true);
+    toast(`Filed “${r.name}” in ${name}.`, () => undoAction(when));
+  } catch (e) { toast('Failed: ' + (e?.message ?? e)); }
+}
+
+/** What web/screens/radar.mjs is given as ctx.radar. */
+function radarCtx() {
+  return {
+    R: RADAR,
+    now: () => Date.now(),
+    load: () => { if (!RADAR.loaded) radarLoad(); },
+    start: o => fire(radarStart(o)),
+    stop: radarStop,
+    probe: () => fire(radarProbe()),
+    probeCopy: () => fire(radarProbeCopy()),
+    dismiss: k => fire(radarDismiss(k)),
+    file: (k, pl) => fire(radarFile(k, pl)),
+    suggest: radarSuggest,
+  };
+}
 /** Release styles for an artist Last.fm has nothing on at all — never called
  *  otherwise, since a real Last.fm tag always wins outright. */
 /* ---------- giving a tag back ----------
@@ -12635,7 +13783,8 @@ let paintedView = null;
 const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
                 lists:screenView('lists'),
                 new:() => libBack('new') + screenView('new')(),
-                shuffle:() => libBack('shuffle') + screenView('shuffle')() };
+                shuffle:() => libBack('shuffle') + screenView('shuffle')(),
+                engine:() => libBack('engine') + screenView('engine')() };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -13093,7 +14242,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1930';
+    s.src = 'engine.js?v=2026-11-16-1951';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -13115,7 +14264,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1930');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1951');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -13722,7 +14871,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1930';
+    s.src = 'audio.js?v=2026-11-16-1951';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -13759,7 +14908,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1930', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1951', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -14672,7 +15821,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1930', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1951', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -14999,9 +16148,26 @@ SCREEN_CTX.tidy = () => ({
   get libHealth() { return SCREEN_MODS.lists; },
   get document() { return globalThis.document; },
 });
+/** Library's "How well it knows you" (Wave F): the last Score run's headline, kept on this device so the
+ *  card still has it after a reload. Read from ENG.val, never computed here; nothing until one run. */
+function engineSummary() {
+  const m = typeof ENG !== 'undefined' ? ENG.val?.mine : null;
+  if (m && Number.isFinite(m.top1)) {
+    const sum = { top1: m.top1, top3: m.top3 ?? null, scored: m.scored ?? null, at: ENG.val.at ?? Date.now() };
+    try {
+      const old = JSON.parse(LS.getItem('bf_engscore') || 'null');
+      if (!old || old.top1 !== sum.top1 || old.scored !== sum.scored) LS.setItem('bf_engscore', JSON.stringify(sum));
+      else sum.at = old.at;
+    } catch { /* private mode: shown this session only */ }
+    return sum;
+  }
+  let saved = null;
+  try { saved = JSON.parse(LS.getItem('bf_engscore') || 'null'); } catch { /* none */ }
+  return { ...(saved ?? {}), running: typeof ENG !== 'undefined' && !!ENG.valRunning };
+}
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
-  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
+  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate, thumbHTML, engineSummary,
   twinPairs: () => ENG?.pairs ?? null,
   // Merge/split wizard (BUILD-6 F4): new private playlists, written through the History log.
   sp, landedIn,
@@ -15053,7 +16219,12 @@ SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, ded
 SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
   soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
-  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember });
+  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember,
+  thumbHTML, previewToggle, previewState,
+  // Release radar, Discover's first section (web/app/radar.js, web/screens/radar.mjs).
+  radar: typeof radarCtx === 'function' ? radarCtx() : null,
+  get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
+  get document() { return globalThis.document; } });
 // --- end shuffle/discover ---
 /* ---------- your data: every key this page writes, and why (BUILD-6 F7) ----------
  * The one list of what Betterfy keeps on this device and in Firestore. The
@@ -15101,11 +16272,18 @@ const DATA_KEYS = [
   { where:'local', key:'bf_analysed', group:'Your library', why:'That you have run "Analyse my library" once.' },
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
+  { where:'local', key:'bf_engscore', group:'Your library', why:'The headline of the last Score run (right first time, top three, how many tracks), for Library\'s "How well it knows you" card.' },
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
   { where:'local', key:'bf_teach', group:'Your library', why:'This account\'s own teach-queue measurement from the last Score run (the engine\'s score on your filed tracks before and after 20 simulated answers), which decides whether File shows the teach questions.' },
   { where:'local', key:'bf_tidy_sprint', group:'Your library', why:'Your last 20 Tidy sprints: how many tracks you decided, how fast, and how many moves you kept. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_mergesplit', group:'Your library', why:'Which merge and split offers (twin playlists, playlists that are two genres) were shown, dismissed or made, and when. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
+
+  // --- release radar (Discover) ---
+  { where:'idb', key:'radar:artist:', prefix:true, group:'Release radar', why:'Per artist in your library: when the radar last asked Spotify about their releases and the date of their newest, so it only asks again when one is due.' },
+  { where:'idb', key:'radar:release:', prefix:true, group:'Release radar', why:'Each release the radar found by an artist in your library (name, date, cover link, track list where it was read), with whether you own it and whether it is a reissue.' },
+  { where:'idb', key:'radar:index', group:'Release radar', why:'How far the radar\'s last read got, so a stopped read picks up where it stopped.' },
+  { where:'idb', key:'radar:dismissed', group:'Release radar', why:'Releases you dismissed or filed from the radar, so they stay out of it.' },
 
   // --- genre data ---
   { where:'idb', key:'tags_extra', group:'Genre data', why:'Genre tags fetched for artists in your library that the shipped table does not cover (Last.fm, Wikidata, Discogs).' },
@@ -15466,8 +16644,8 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 /* ---------- the shell: four tabs and the Settings sheet (docs/BUILD-5-PLAN.md §4.1, UI-D) ----------
  * File, Tidy, Discover and Library are the tabs. Everything that used to be a
  * screen of its own and is not one of those lives in the Settings sheet under
- * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs),
- * Engine and History. Their modules (screens/sources|engine|history.mjs) are
+ * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs)
+ * and History. (Engine moved to Library in Wave F.) Their modules are
  * unchanged: this file paints each one's view into the sheet, one section open
  * at a time, and dispatchAct() (screens.js) finds their actions through the
  * [data-uh] wrapper. Anything still asking for the old screens by name is sent
@@ -15481,7 +16659,6 @@ const UH_SECTIONS = [
     try { key = !!lfmKey(); } catch { /* no key */ }
     return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? 'connected' : 'no key'} · Wikidata · Discogs`;
   }],
-  ['engine', 'Engine', () => 'How picks are scored, and how well'],
   ['history', 'History', () => 'Everything Betterfy wrote to Spotify, with undo'],
 ];
 

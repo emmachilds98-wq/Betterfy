@@ -34,6 +34,8 @@ export const APP_FILES = [
   'app/screenjobs.js',
   'app/shuffle-engine.js',
   'app/discover-engine.js',
+  'app/preview.js',
+  'app/radar.js',
   'app/tagshare.js',
   'app/sync.js',
   'app/sync-tags.js',

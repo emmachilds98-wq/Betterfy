@@ -16,8 +16,9 @@ import { normaliseItem, mergeRelease, compactTracks, SHAPE } from './normalise.m
 import { libraryIndex, verdict, needsDetail, probeIds } from './library.mjs';
 import { KEY, MAIN_GROUPS, PAGE_LIMIT, MAX_PAGES, planTasks, newArtistState } from './plan.mjs';
 
-/** Statuses after which no later request in this run would fare better. */
-export const FATAL_STATUS = Object.freeze([401, 429]);
+/** Statuses after which no later request in this run would fare better: the
+ *  page's sp() throws status 0 once a dropped connection has failed its retries. */
+export const FATAL_STATUS = Object.freeze([0, 401, 429]);
 
 export const isFatal = e => e?.name === 'AbortError' || e?.radarStop || FATAL_STATUS.includes(e?.status);
 
@@ -83,6 +84,8 @@ export async function syncRadar({ lib, artists, store, get, now = Date.now(), ye
              ...tasks.filter(t => !deepIds.has(t.artistId))];
   }
   const total = tasks.length;
+  const artistsTotal = new Set(tasks.map(t => t.artistId)).size;
+  const artistsSeen = new Set();
 
   const cache = new Map();
   const touched = new Set();
@@ -200,7 +203,9 @@ export async function syncRadar({ lib, artists, store, get, now = Date.now(), ye
       while (j < tasks.length && tasks[j].artistId === t.artistId && MAIN_GROUPS.includes(tasks[j].group) === main) {
         keys.push(...await readGroup(tasks[j]));
         done++; j++;
-        onProgress?.({ phase: main ? 'main' : 'features', done, total, requests, artist: t.name });
+        if (main) artistsSeen.add(t.artistId);
+        onProgress?.({ phase: main ? 'main' : 'features', done, total, requests, artist: t.name,
+                       artistsDone: artistsSeen.size, artistsTotal });
       }
       if (main && details && keys.length) await readDetails(keys, cutFor(t.artistId));
       if (j === i) j++;   // cannot happen; never loop forever
@@ -209,7 +214,8 @@ export async function syncRadar({ lib, artists, store, get, now = Date.now(), ye
     }
   } catch (e) {
     if (!isFatal(e)) throw e;
-    stopped = e.radarStop ?? (e.status === 429 ? 'rate-limit' : e.status === 401 ? 'signed-out' : 'aborted');
+    stopped = e.radarStop ?? (e.status === 429 ? 'rate-limit' : e.status === 401 ? 'signed-out'
+      : e.status === 0 ? 'offline' : 'aborted');
     stopped = { why: stopped, message: String(e.message ?? '').slice(0, 200) };
   }
 

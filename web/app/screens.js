@@ -67,9 +67,26 @@ SCREEN_CTX.tidy = () => ({
   get libHealth() { return SCREEN_MODS.lists; },
   get document() { return globalThis.document; },
 });
+/** Library's "How well it knows you" (Wave F): the last Score run's headline, kept on this device so the
+ *  card still has it after a reload. Read from ENG.val, never computed here; nothing until one run. */
+function engineSummary() {
+  const m = typeof ENG !== 'undefined' ? ENG.val?.mine : null;
+  if (m && Number.isFinite(m.top1)) {
+    const sum = { top1: m.top1, top3: m.top3 ?? null, scored: m.scored ?? null, at: ENG.val.at ?? Date.now() };
+    try {
+      const old = JSON.parse(LS.getItem('bf_engscore') || 'null');
+      if (!old || old.top1 !== sum.top1 || old.scored !== sum.scored) LS.setItem('bf_engscore', JSON.stringify(sum));
+      else sum.at = old.at;
+    } catch { /* private mode: shown this session only */ }
+    return sum;
+  }
+  let saved = null;
+  try { saved = JSON.parse(LS.getItem('bf_engscore') || 'null'); } catch { /* none */ }
+  return { ...(saved ?? {}), running: typeof ENG !== 'undefined' && !!ENG.valRunning };
+}
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
-  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
+  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate, thumbHTML, engineSummary,
   twinPairs: () => ENG?.pairs ?? null,
   // Merge/split wizard (BUILD-6 F4): new private playlists, written through the History log.
   sp, landedIn,
@@ -121,5 +138,10 @@ SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, ded
 SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
   soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
-  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember });
+  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember,
+  thumbHTML, previewToggle, previewState,
+  // Release radar, Discover's first section (web/app/radar.js, web/screens/radar.mjs).
+  radar: typeof radarCtx === 'function' ? radarCtx() : null,
+  get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
+  get document() { return globalThis.document; } });
 // --- end shuffle/discover ---

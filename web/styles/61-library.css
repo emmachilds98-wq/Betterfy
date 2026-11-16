@@ -39,3 +39,20 @@
   .plhealth .mono{font-size:26px}
   .plh-ok .mono{color:var(--ok)} .plh-low .mono{color:var(--warn)}
   .plnotes{margin:0; padding-left:18px; color:var(--ink-2); font-size:14px}
+
+/* Wave F (USER-REVIEW items 7, 11): a face, plain facts and the health score on every row,
+   and the "How well it knows you" card that Engine is reached from. */
+  .plrow .thumb{width:40px; height:40px; border-radius:var(--r-1, 6px); flex:none; object-fit:cover}
+  .plrow .thumb.ph{display:grid; place-items:center; color:#fff; font-weight:700; font-size:15px}
+  .plf{color:var(--ink-2)}
+  .plf-style{font-style:italic}
+  .plscore{display:flex; flex-direction:column; align-items:flex-end; flex:none; min-width:58px; line-height:1.1}
+  .plscore .mono{font-size:17px; font-weight:600}
+  .plscore span{font-size:11px; color:var(--ink-3)}
+  .plscore.plh-ok .mono{color:var(--ok)} .plscore.plh-low .mono{color:var(--warn)}
+  .plknows{background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--m2);
+           border-radius:var(--r-3); padding:12px 14px; margin:0 0 22px}
+  .plknows .hint{margin:0}
+  @media (max-width:520px){ .plrow .plspark{display:none} }
+  .plknows-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px}
+  .plknows-head h2{margin:0}

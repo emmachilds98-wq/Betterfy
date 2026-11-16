@@ -403,7 +403,7 @@ const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 export function view(c) {
   const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
   const head = `<h1>Engine</h1>
-    <p class="lede">A second opinion that reads only your own playlists. <b>It files nothing.</b>${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
+    <p class="lede">What Betterfy has learnt from your own playlists, and how often it gets your filing right. Learning and scoring here change nothing in Spotify.${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
       of record, from when. Everything here is what it <i>would</i> do, until the score below shows it, blended with today's engine,
       beating today's engine on your own filing. Then the File screen's picks come from the blend.</p>`) ?? ''}</p>`;
 
@@ -411,10 +411,10 @@ export function view(c) {
   if (!engineTargets().length) return `${head}
     <div class="card">
       <h2 style="margin:0 0 12px; font-size:19px">No genre playlists yet</h2>
-      <p>Both engines only file into playlists marked <b>receives suggestions</b>, and none of yours are — none of
-        their names say what genre they are. Mark the ones that are genre playlists on the Playlists screen, then
+      <p>Both engines only file into playlists that take suggestions, and none of yours do yet — none of
+        their names say what genre they are. Mark the ones that are genre playlists in Library, then
         come back.</p>
-      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Playlists</button></div>
+      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Library</button></div>
     </div>`;
 
   if (ENG.status === 'idle') return `${head}
