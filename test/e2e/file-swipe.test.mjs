@@ -27,7 +27,7 @@ test('swiping right files the card into its best playlist, and the write reaches
 test('a fast short flick files too', { skip }, async () => {
   const { page } = app;
   const c = await fileCard(page);
-  await swipe(page, "#swipeCard", 66, 40);   // under the 76px distance, but fast enough to survive a loaded CI box
+  await swipe(page, '#swipeCard', 66, 40, { exact: true });   // under the 76px distance; exact timing so load can't slow the flick
   await until(() => filedInto(app, c.best, c.track), 'the flick to file');
 });
 

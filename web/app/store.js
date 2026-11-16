@@ -31,7 +31,7 @@ const STORE_WATCH = {
   eng:     ['engine'],
   sound:   ['inbox'],
   audio:   ['inbox', 'tidy', 'sources'],
-  gaps:    ['new', 'lists'],
+  gaps:    ['new', 'lists', 'inbox'],   // inbox: File's cold-start offers (O1)
   player:  [],
 };
 for (const [slice, screens] of Object.entries(STORE_WATCH))

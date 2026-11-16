@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-0438">
+<meta name="bf-build" content="2026-11-16-0502">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -431,6 +431,15 @@ main:focus{outline:none}
 .analyse { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; }
 .analyse .d { color: var(--ink-3); font-size: 13px; flex: 1 1 240px; }
 .analyse[role="status"] { padding: 10px 14px; border-radius: 12px; background: var(--card, rgba(127,127,127,.1)); font-variant-numeric: tabular-nums; }
+
+/* First-run strip (BUILD-6 O1): three steps, gone once five are filed. */
+.onb { display: flex; gap: 8px; list-style: none; margin: 0 0 14px; padding: 0; flex-wrap: wrap; }
+.onb li { font-size: 13px; color: var(--ink-3); padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(127,127,127,.25); }
+.onb li.done { color: var(--ok); }
+.onb li.now { color: var(--ink); border-color: var(--accent); }
+.panel.cold { margin: 0 0 16px; }
+.panel.cold .plrow { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+.panel.cold .plmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
   /* ================= the shell (UI-D) =================
      The File tab's status line and Up next strip, Library's segmented switch,
      and the Settings sheet's "Under the hood" sections. */
@@ -1628,7 +1637,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-0438</span>
+    <span class="mono">build 2026-11-16-0502</span>
   </p>
 
   <div class="feat">
@@ -1721,7 +1730,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0438</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0502</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1838,7 +1847,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-0438. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-0502. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3842,16 +3851,44 @@ function upNextHTML({ S, R, esc, hueOf, filePicks }) {
     }).join('')}</div>`;
 }
 
+/** No genre playlist yet: the groups already sitting together in the library, startable right on File. */
+function coldHTML({ esc, onbColdOffers }) {
+  const offers = onbColdOffers?.() ?? [];
+  if (!offers.length) return '';
+  return `<section class="panel cold" aria-labelledby="fcold-h">
+    <h2 id="fcold-h">Start these playlists</h2>
+    <p class="hint">You have no genre playlists yet, so File has little to go on. These groups already sit together in your library.</p>
+    ${offers.map((o, i) => `<div class="plrow"><span class="plmain">
+      <input id="fcoldnm${i}" aria-label="Name for this playlist" value="${esc(o.title)}">
+      <span class="plmeta"><span class="mono">${o.n}</span> tracks · ${esc(o.why)}</span></span>
+      <button class="b sm p" data-act="coldStart" data-cold="${i}">Start</button></div>`).join('')}</section>`;
+}
+
 function view(ctx) {
-  const { R, analyseHTML, deck } = ctx;
-  const head = statusHTML(ctx) + analyseHTML();
+  const { R, LIB, analyseHTML, deck } = ctx;
+  const head = statusHTML(ctx) + (ctx.onbHTML?.() ?? '') + analyseHTML();
+  // A brand-new account: File's own message says what to do; no bar of zeros under it.
+  if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return `${head}${deck()}`;
   // Nothing to file: the deck's own done card, then where the library stands.
   if (!R.backlog.length) return `${head}${deck()}${libraryBarHTML(ctx)}`;
-  return `${head}${deck()}${upNextHTML(ctx)}`;
+  return `${head}${coldHTML(ctx)}${deck()}${upNextHTML(ctx)}`;
 }
 
 const actions = {
   analyseGo: ({ analyseGo }) => analyseGo(),
+  /** Make the playlist for one offered group, then the deck has somewhere to file into. */
+  async coldStart({ COLD, gapsCreate, onbColdOffers, $, toast, render }, el) {
+    const i = +el.dataset.cold, o = onbColdOffers()[i], name = $('#fcoldnm' + i)?.value.trim();
+    if (!o) return;
+    if (!name) return toast('Give it a name first.');
+    el.disabled = true;
+    try {
+      await gapsCreate(name, o.ids);
+      COLD.found.proposals = COLD.found.proposals.filter(p => p.ids !== o.ids);
+      COLD.found.clusters = COLD.found.clusters.filter(p => (p.ids ?? p.tracks?.map(t => t.id)) !== o.ids);
+      render();
+    } catch (err) { el.disabled = false; toast('Failed: ' + err.message); }
+  },
   openlisten: ({ openUnderHood }) => openUnderHood('sources'),
   // A card under "Up next" opens the queue on that track, not at the top.
   // Its index is an absolute position in the queue, not an offset from wherever
@@ -3862,7 +3899,7 @@ const actions = {
     return morphArt ? morphArt(el.querySelector?.('.cov'), R.backlog[S.inboxAt]?.id, render) : render();
   },
 };
-return { statusParts, statusHTML, libraryBarHTML, upNextHTML, view, actions };
+return { statusParts, statusHTML, libraryBarHTML, upNextHTML, coldHTML, view, actions };
 })();
 /* ---- web/screens/history.mjs ---- */
 __mod["web/screens/history.mjs"] = (function () {
@@ -4107,6 +4144,14 @@ function view(ctx) {
   const { S, R, CFG, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip, tagChips, trackStrip,
           soundIdHTML, soundNote, pickEvidence, pickBand, matchMedia } = ctx;
   const rows = R.backlog;
+  // A new account has nothing to file yet: say what to do, not "that's the lot".
+  if (!rows.length && !ctx.LIB?.liked?.length) {
+    const hasPl = ctx.LIB?.playlists?.some(p => p.tracks?.length);
+    return `<h1>File</h1><div class="empty-state"><span class="es-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      <div class="es-body"><b>${hasPl ? 'No liked songs yet' : 'Your library is empty'}</b>
+      <p>${hasPl ? 'File sorts your liked songs into your playlists. Like a few songs in Spotify and they will show up here.'
+        : 'Like some songs in Spotify, or make a playlist, then reopen Betterfy. It files your liked songs into your playlists.'}</p></div></div>`;
+  }
   if (!rows.length) return `<h1>File</h1>
     <div class="empty done">
       <svg viewBox="0 0 32 32" aria-hidden="true">
@@ -4292,6 +4337,7 @@ async function inboxAct(ctx, a) {
   if (a === 'play') { try { toast('Playing on ' + await playTrack(t.id)); } catch(e){ toast(e.message); } return; }
   if (a === 'skip') {
     await recordSkip(t.id);
+    try { await logAction({ op:'skip', trackIds:[t.id], reason:'skipped from inbox', queuePos:at, deck:R.backlog.length }); } catch { /* the measure only */ }
     // Move it to the back rather than stepping past it, so the rest of the
     // queue advances now and the skip still holds after a reload.
     t.skips = (t.skips ?? 0) + 1;
@@ -4579,12 +4625,12 @@ function weakBuckets(v, LIB, n = 5) {
  * names of the user's own weakest playlists — so pasting it somewhere shares
  * how the engine did, not what the library holds beyond that.
  */
-function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
+function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, log) {
   const v = ENG.val, r = ENG.rung;
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-0438`,
+    `Betterfy engine score — build 2026-11-16-0502`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -4605,6 +4651,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
     ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
+  if (TUNE?.res && tuneBlock) lines.push('', tuneBlock(TUNE.res));
   return lines.filter(Boolean).join('\n');
 }
 
@@ -4917,6 +4964,7 @@ function view(c) {
     <div class="rowbtns" style="margin-top:10px">
       <button class="b ${v ? '' : 'go'}" data-act="validate" ${ENG.valRunning ? 'disabled' : ''}>${
         ENG.valRunning ? 'Scoring…' : v ? 'Run it again' : 'Score both engines'}</button>
+      <button class="b" data-act="scoreTune" ${ENG.valRunning || c.TUNE?.running ? 'disabled' : ''}>Score + Tune</button>
       ${v && !v.error && !ENG.valRunning ? `<button class="b" data-act="copy">Copy results</button>` : ''}
     </div>
     ${ENG.valRunning && ENG.valStage === 'bridge' ? `<p class="why" style="margin-top:12px" id="bridgeProgress" aria-live="polite">${esc(bridgeProgressText())}</p>
@@ -4929,6 +4977,8 @@ function view(c) {
       Capping the tracks scored does not make it quicker: the rebuilds are the cost, and there are ten of
       them either way.</p>` : ''}
   </div>`;
+
+  const tuneCard = tuneCardHtml(c, esc);
 
   const pairCard = ENG.pairs?.length ? `<div class="card">
     <h2 style="margin:0 0 12px; font-size:19px">Playlists it can't tell apart</h2>
@@ -4954,16 +5004,65 @@ function view(c) {
     ${rungCard}
     ${shadowCard}
     ${valCard}
+    ${tuneCard}
     ${pairCard}
     <div class="rowbtns" style="margin:20px 0 0">
       <button class="b sm" data-act="reset">Forget and learn again</button>
     </div>`;
 }
 
+const TUNE_STAGE = { sound: 'filing by sound', ident: 'naming genres by sound', misfit: 'Tidy by sound' };
+
+/**
+ * The Tune card (BUILD-6 T1): per constant, the shipped value, the best of a small
+ * grid on this account's own held-out tracks, and the measured change. Only rows
+ * that clear the bar can be kept, and only on this device.
+ */
+function tuneCardHtml(c, esc) {
+  const T = c.TUNE;
+  if (!T || (!T.res && !T.running && !T.err && !T.saved)) return '';
+  const rows = T.res?.rows ?? [];
+  const nPass = rows.filter(r => r.pass).length;
+  const kept = Object.entries(T.over ?? {}).flatMap(([g, o]) => Object.entries(o).map(([k, v]) => `${g}.${k} ${v}`));
+  const body = T.running
+    ? `<p class="why" aria-live="polite">Trying each constant over a small range on your own held-out tracks, one group at a time${
+        T.stage ? ` (now: ${esc(TUNE_STAGE[T.stage] ?? T.stage)})` : ''}. It runs ${c.engineInBackground() ? 'in the background' : 'on the page, which may stutter'}.</p>`
+    : T.err ? `<p class="why">The sweep could not finish: ${esc(T.err)}</p>`
+    : T.res ? `${rows.length ? `<div class="rows">${rows.map(r => `<div class="row"><div class="main">
+        <div class="ttl">${esc(r.label)}</div>
+        <div class="sub">${r.best === r.current ? `keep ${esc(r.current)}` : `now ${esc(r.current)}, best ${esc(r.best)}: ${esc(r.delta)}`}</div>
+      </div><span class="tag ${r.pass ? 'ok' : 'warn'}">${r.pass ? 'clears the bar' : r.best === r.current ? 'keep' : 'not enough'}</span></div>`).join('')}</div>` : ''}
+      ${(T.res.skipped ?? []).map(s => `<p class="why">${esc(s.title)}: not swept, ${esc(s.why)}.</p>`).join('')}
+      <p class="why">A change only counts if it beats today's value on both halves of your held-out tracks by the bar for its group.
+        Nothing here is shared, and nothing changes until you choose to keep it.</p>` : '';
+  return `<div class="card" id="tuneCard">
+    <h2 style="margin:0 0 12px; font-size:19px">Tune</h2>
+    ${body}
+    ${kept.length ? `<p class="why">In use on this device: ${esc(kept.join(', '))}.</p>` : ''}
+    <div class="rowbtns" style="margin-top:10px">
+      ${T.res && nPass && !T.running ? `<button class="b go" data-act="tuneApply">Use the ${nPass} that cleared the bar</button>` : ''}
+      ${T.res && !T.running ? `<button class="b" data-act="tuneCopy">Copy tune results</button>` : ''}
+      ${T.saved ? `<button class="b sm" data-act="tuneReset">Reset to default</button>` : ''}
+    </div>
+  </div>`;
+}
+
 /** `data-act` -> handler(ctx, el, ev). Click, except the checkbox, which is `change`. */
 const actions = {
   go: c => c.engineAnalyse(),
   validate: c => c.engineValidate(),
+  scoreTune: c => c.engineScoreTune(),
+  tuneApply: async c => { await c.tuneApply(); c.toast('Kept on this device. Reset to default undoes it.'); c.render(); },
+  async tuneReset(c) { await c.tuneForget(); c.toast('Back to the defaults.'); c.render(); },
+  /** Copy the sweep as one block, to paste next to the Score card. */
+  async tuneCopy(c) {
+    const text = c.tuneBlock(c.TUNE?.res);
+    if (!text) return;
+    try { await c.navigator.clipboard.writeText(text); return c.toast('Copied: paste it with the score.'); }
+    catch { /* fall through to share */ }
+    try { if (c.navigator.share) { await c.navigator.share({ text }); return; } } catch { return; }
+    c.prompt('Copy this:', text);
+  },
   lists: c => c.go('lists'),
   bridgeToggle: (c, el) => {
     if (el.checked) c.LS.removeItem('bf_bridge_off'); else c.LS.setItem('bf_bridge_off', '1');
@@ -4987,13 +5086,14 @@ const actions = {
     try { await c.idb.del(c.BLEND_KEY); } catch {}
     c.blendForget();
     await c.weightsForget();
+    await c.tuneForget?.();
     Object.assign(c.ENG, { status:'idle', space:null, rung:null, shadow:null,
                            pairs:null, val:null, calib:null, ms:0, from:null });
     c.toast('Cleared. The next analysis rebuilds from your library.');
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, audioCard, weakBuckets, summary, blendVerdict, view, actions };
+return { bridgeVerdict, decisionHtml, audioCard, weakBuckets, summary, blendVerdict, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -6372,7 +6472,7 @@ const STORE_WATCH = {
   eng:     ['engine'],
   sound:   ['inbox'],
   audio:   ['inbox', 'tidy', 'sources'],
-  gaps:    ['new', 'lists'],
+  gaps:    ['new', 'lists', 'inbox'],   // inbox: File's cold-start offers (O1)
   player:  [],
 };
 for (const [slice, screens] of Object.entries(STORE_WATCH))
@@ -6680,7 +6780,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-0438';
+const BUILD = '2026-11-16-0502';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -7018,7 +7118,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-0438', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-0502', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -7311,6 +7411,7 @@ const shapeTrack = t => t && ({
  * pieces from an older shape are re-read rather than kept forever. */
 const SHAPE = 1;
 const PART = id => 'part:' + id;
+const LIKED_FULL_EVERY = 7 * 24 * 3600 * 1000;   // a full liked re-read catches unlikes the head cannot see
 const PART_LIFE = 24 * 3600 * 1000;
 
 async function bankedParts() {
@@ -7386,21 +7487,55 @@ async function syncLibrary(force, onProgress) {
   // Liked songs come back fifty at a time with no snapshot id of their own, so
   // they are banked by page instead — every tenth, which is often enough to be
   // worth resuming and rare enough not to rewrite the pile on every page.
-  const liked = banked[PART('liked')]?.liked ?? { rows: [], next: '/me/tracks?limit=50' };
+  const likedRow = i => ({ added_at:i.added_at, ...shapeTrack(i.track ?? i.item) });
+  const hasId = i => (i.track ?? i.item)?.id;
+  // Liked songs arrive newest-first with an added_at, so a read that already
+  // holds a list only needs the head: page from the start until the first row
+  // it already has (same id, same added_at), then stop. That is one request for
+  // an unchanged library instead of a hundred. A removal leaves no trace at the
+  // head, so the head read is checked against Spotify's own total, and the whole
+  // list is re-read anyway once a week.
+  const prev = await idb.get('library');   // kept on a forced re-read too: that is the button people press when nothing changed
+  const cached = prev?.liked_shape === SHAPE && Array.isArray(prev.liked) && prev.liked_total != null
+    && Date.now() - (prev.liked_full_at ?? 0) < LIKED_FULL_EVERY ? prev : null;
+  let likedTotal = null, fullAt = Date.now();
+  let liked = banked[PART('liked')]?.liked;
+  if (!liked && cached) {
+    const fresh = [], seen = cached.liked[0];
+    let url = '/me/tracks?limit=50', raw = 0, hit = !seen, total = null;
+    for (let page = 0; url && !hit && page < 20; page++) {
+      onProgress?.('liked songs', 0.95);
+      const box = await sp(url);
+      total = box?.total ?? total;
+      for (const i of box?.items ?? []) {
+        if (hasId(i) && seen && (i.track ?? i.item).id === seen.id && i.added_at === seen.added_at) { hit = true; break; }
+        raw++; if (hasId(i)) fresh.push(likedRow(i));
+      }
+      url = box?.next ?? null;
+    }
+    // Trust the head only if it reached a known row (or the list ended) and the
+    // count Spotify reports is exactly what this read expects.
+    if ((hit || !url) && total != null && total === cached.liked_total + raw) {
+      const ids = new Set(fresh.map(r => r.id));
+      liked = { rows: [...fresh, ...cached.liked.filter(r => !ids.has(r.id))], next: null };
+      likedTotal = total; fullAt = cached.liked_full_at;
+    }
+  }
+  if (!liked) liked = { rows: [], next: '/me/tracks?limit=50' };
   for (let page = 0; liked.next; page++) {
     // Thousands of liked songs is dozens of pages, and they all used to report
     // the same "liked songs" at the same 95% — several silent minutes that look
     // identical to a hang. A number that moves is the difference.
     onProgress?.(liked.rows.length ? `liked songs — ${liked.rows.length.toLocaleString()} so far` : 'liked songs', 0.95);
     const box = await sp(liked.next);
-    liked.rows.push(...(box?.items ?? []).filter(i => (i.track ?? i.item)?.id)
-      .map(i => ({ added_at:i.added_at, ...shapeTrack(i.track ?? i.item) })));
+    likedTotal = box?.total ?? likedTotal;
+    liked.rows.push(...(box?.items ?? []).filter(hasId).map(likedRow));
     liked.next = box?.next ?? null;
     if (!liked.next || page % 10 === 9) await idb.set(PART('liked'), { shape:SHAPE, at:Date.now(), liked });
   }
 
   const lib = { captured_at:new Date().toISOString(), user:{ id:me.id, name:me.display_name },
-                playlists, liked: liked.rows };
+                playlists, liked: liked.rows, liked_total: likedTotal, liked_shape: SHAPE, liked_full_at: fullAt };
   await idb.set('library', lib);
   await dropParts();
   return lib;
@@ -7739,7 +7874,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-0438');
+    const w = new Worker('reports-worker.js?v=2026-11-16-0502');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -7882,10 +8017,16 @@ async function logAction(entry) {
   const last = log.at(-1)?.at;
   if (last && at <= last) at = new Date(Date.parse(last) + 1).toISOString();
   log.push({ at, ...entry });
-  await idb.set('actions', log.slice(-500));
+  // Skips (BUILD-6 D2) are lightweight entries for the queue measure only: kept
+  // in their own, smaller allowance so they can never push real changes out.
+  const real = log.filter(x => x.op !== 'skip').slice(-500), skips = log.filter(x => x.op === 'skip').slice(-300);
+  await idb.set('actions', log.length > 500 ? [...real, ...skips].sort((a, b) => (a.at < b.at ? -1 : 1)) : log);
   return at;
 }
-const getLog = async () => ((await idb.get('actions')) ?? []).slice().reverse();
+/** Newest first. Skips are the queue measure's, not History's, so they are
+ *  left out unless asked for (`{ all: true }`). */
+const getLog = async ({ all = false } = {}) =>
+  ((await idb.get('actions')) ?? []).filter(x => all || x.op !== 'skip').reverse();
 const newGroup = () => 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 /** True once an entry has been undone: `undoneAt` on the entry, or (for a log
@@ -8363,11 +8504,11 @@ async function tidySoundBuild(key) {
     const audio = await engineAudio();
     let res = null;
     if (audio) {
-      try { res = (await inEngineWorker('misfits', { lib: LIB, audio: engineAudioIn(audio) }))?.result ?? null; }
+      try { res = (await inEngineWorker('misfits', { lib: LIB, audio: engineAudioIn(audio), misfitOpts: typeof tuneMisfitOpts === 'function' ? tuneMisfitOpts() : null }))?.result ?? null; }
       catch { res = null; }
       if (!res) {
         await yieldToPaint();
-        res = BetterfyMisfit.soundMisfitsFor(LIB, engineAudioIn(audio), { targets: engineTargets(), isMirror: isMirrorPlaylist });
+        res = BetterfyMisfit.soundMisfitsFor(LIB, engineAudioIn(audio), { targets: engineTargets(), isMirror: isMirrorPlaylist, opts: (typeof tuneMisfitOpts === 'function' ? tuneMisfitOpts() : null) ?? undefined });
       }
     }
     Object.assign(TSOUND, { status: 'ready', key, res, err: null });
@@ -10621,10 +10762,11 @@ const fire = p => { Promise.resolve(p).catch(actionFailed); };
  *  the ~145 KB for it. Null again on failure, so a retry actually retries. */
 let ENGINE_JS = null;
 function engineLoad() {
+  tuneLoad().catch(() => {});
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-0438';
+    s.src = 'engine.js?v=2026-11-16-0502';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -10646,7 +10788,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-0438');
+    const w = new Worker('engine-worker.js?v=2026-11-16-0502');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11092,6 +11234,75 @@ const engineValidate = guard(async () => {
 
 /** Whether long engine work will run off the main thread. */
 const engineInBackground = () => typeof Worker === 'function' && ENGINE_WORKER !== false;
+
+
+/* ---------- Engine > Tune (BUILD-6 T1) ----------
+ * Sweeps the Score run's constants on THIS account's own held-out tracks and
+ * shows the best value next to the shipped one with the measured delta. A tuned
+ * value is stored on this device only, and only for rows that cleared the bar on
+ * both halves of the account's tracks (core/validate/tune.mjs). Nothing is
+ * shared; "Reset to default" removes it. */
+const TUNE_KEY = 'engine-tune';
+const TUNE = { over: {}, loaded: false, res: null, running: false, stage: null, err: null, saved: false };
+
+/** Read the stored overrides once. Ignored when the playlists it was fitted to have changed. */
+async function tuneLoad() {
+  if (TUNE.loaded) return TUNE.over;
+  TUNE.loaded = true;
+  try {
+    const rec = await idb.get(TUNE_KEY);
+    if (rec && JSON.stringify(rec.targets ?? null) === JSON.stringify(engineTargets()) && globalThis.BetterfyTune) {
+      TUNE.over = BetterfyTune.cleanOverrides(rec.over); TUNE.saved = Object.keys(TUNE.over).length > 0;
+    }
+  } catch { /* defaults */ }
+  return TUNE.over;
+}
+const tuneSoundFirst = () => (globalThis.BetterfyTune ? BetterfyTune.soundFirstFor(TUNE.over) : null);
+const tuneIdentOpts = () => (globalThis.BetterfyTune ? BetterfyTune.identifyOptsFor(TUNE.over) : null);
+const tuneMisfitOpts = () => (globalThis.BetterfyTune ? BetterfyTune.misfitOptsFor(TUNE.over) : null);
+
+/** Sweep each group in the worker (the page's own thread when there is none). */
+const engineTune = guard(async () => {
+  TUNE.running = true; TUNE.res = null; TUNE.err = null; TUNE.stage = null; store.touch('eng');
+  try {
+    await engineLoad();
+    const audio = engineAudioScore(await engineAudio());
+    const parts = [];
+    for (const g of BetterfyTune.TUNE_GROUPS) {
+      TUNE.stage = g; store.touch('eng');
+      let part = null;
+      try { part = (await inEngineWorker('tune', { lib: LIB, audio, groups: [g], limit: 300 }))?.result ?? null; }
+      catch { part = null; }
+      if (!part) {
+        await yieldToPaint();
+        part = BetterfyTune.tuneSweep(LIB, { audio, targets: engineTargets(), isMirror: isMirrorPlaylist, groups: [g], limit: 300 });
+      }
+      parts.push(part);
+    }
+    TUNE.res = { ...BetterfyTune.mergeTune(parts), at: Date.now() };
+  } catch (e) { TUNE.err = e?.message ?? String(e); }
+  TUNE.running = false; TUNE.stage = null; store.touch('eng');
+});
+
+/** One action for the owner's paste: the Score run, then the sweep. */
+async function engineScoreTune() { await engineValidate(); await engineTune(); }
+
+/** Keep the rows that cleared the bar, on this device. */
+async function tuneApply() {
+  const over = TUNE.res ? BetterfyTune.tuneOverrides(TUNE.res) : {};
+  TUNE.over = BetterfyTune.cleanOverrides(over); TUNE.saved = Object.keys(TUNE.over).length > 0;
+  try { if (TUNE.saved) await idb.set(TUNE_KEY, { at: Date.now(), targets: engineTargets(), over: TUNE.over }); else await idb.del(TUNE_KEY); }
+  catch { /* applies until the page is closed */ }
+  if (typeof TSOUND !== 'undefined') TSOUND.key = null;   // Tidy by sound is re-read with the new numbers
+  store.touch('eng');
+}
+/** "Reset to default". */
+async function tuneForget() {
+  TUNE.over = {}; TUNE.saved = false;
+  try { await idb.del(TUNE_KEY); } catch {}
+  if (typeof TSOUND !== 'undefined') TSOUND.key = null;
+  store.touch('eng');
+}
 /* ===========================================================================
  * "Listen to my music" (docs/AUDIO-BUILD-PLAN.md WP-B2)
  *
@@ -11121,7 +11332,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-0438';
+    s.src = 'audio.js?v=2026-11-16-0502';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -11157,7 +11368,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0438', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0502', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -11399,7 +11610,7 @@ function soundIdOf(t) {
   if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
   const raw = SOUND.byId.get(t.id);
   const tags = [...new Set((raw?.artists ?? []).map(a => BetterfyGaps.artistGenre(TAGS?.[a?.id]?.tags)).filter(Boolean))];
-  const id = BetterfyIdentify.identify(row.rec, { neighbours, tags, playlistName: pid => CFG[pid]?.name ?? pid });
+  const id = BetterfyIdentify.identify(row.rec, { neighbours, tags, playlistName: pid => CFG[pid]?.name ?? pid, ...((typeof tuneIdentOpts === 'function' ? tuneIdentOpts() : null) ?? {}) });
   const mix = BetterfyMatch.mixesWith(t.id, index, { k: 5, bpm: id?.bpm?.value ?? null });
   const v = { id, neighbours: neighbours.slice(0, 5), mix };
   SOUND.idMemo = { key, v };
@@ -11419,9 +11630,9 @@ function soundPicks(t) {
   let picks = [];
   if (raw) {
     soundHear(t.id);
-    const out = BetterfyIntrinsic.placements(raw, space, { limit: 3, soundFirst: true,
+    const out = BetterfyIntrinsic.placements(raw, space, { limit: 3, soundFirst: (typeof tuneSoundFirst === 'function' ? tuneSoundFirst() : null) ?? true,
                                                          exclude: rejected.length ? new Set(rejected) : null });
-    const W = BetterfyIntrinsic.SOUND_FIRST_WEIGHTS;
+    const W = { ...BetterfyIntrinsic.SOUND_FIRST_WEIGHTS, ...((typeof tuneSoundFirst === 'function' ? tuneSoundFirst() : null) ?? {}) };
     const tagIds = new Set((t.suggest ?? []).map(sg => sg.id));
     if (!out.declined) picks = (out.results ?? [])
       .filter(r => r.parts && ('audio' in r.parts || 'learned' in r.parts))
@@ -11891,7 +12102,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0438', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0502', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -12038,6 +12249,8 @@ function analyseStatus(st) {
 
 /** Is there something worth offering? Gaps to fill, or listening that has not run. */
 function analyseWanted(d = {}) {
+  // Nothing in the library: nothing to read, nothing to listen to (File says what to do instead).
+  if (typeof LIB !== 'undefined' && LIB && !d.gaps && !LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return { gaps: 0, listen: false, any: false };
   const gaps = (d.gaps ?? analyseGapCount)();
   const ran = (d.listenRan ?? (() => typeof listenEverRan === 'function' && listenEverRan()))();
   const canListen = (d.canListen ?? (() => audioSettings().on))();
@@ -12106,6 +12319,47 @@ function analyseHTML() {
     ${LS.getItem('bf_analysed') ? '' : `<span class="d">Reads tags and listens to your liked songs, then suggests where each goes.</span>`}</div>
     <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
 }
+
+/* ---------- First run (docs/BUILD-6-PLAN.md O1) ----------
+ * A 3-step strip on File for a new account: connected, analysed, first five filed. It counts the
+ * filings from the History log (so it needs nothing stored but "done") and disappears for good once
+ * five have gone in, or at once for anyone who has already filed that many. */
+const ONB = { n: null, busy: false };
+const ONB_GOAL = 5;
+
+function onbCount() {
+  if (ONB.busy || LS.getItem('bf_onb_done')) return;
+  ONB.busy = true;
+  Promise.resolve(getLog()).then(log => {
+    const n = log.filter(e => e.op === 'add' && e.reason === 'filed from inbox' && !e.undone).length;
+    const changed = n !== ONB.n; ONB.n = n;
+    if (n >= ONB_GOAL) LS.setItem('bf_onb_done', '1');
+    if (changed && view === 'inbox') render();
+  }).catch(() => {}).finally(() => { ONB.busy = false; });
+}
+
+function onbHTML() {
+  if (typeof LIB === 'undefined' || !LIB || LS.getItem('bf_onb_done')) return '';
+  if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return '';
+  onbCount();
+  const n = ONB.n; if (n == null || n >= ONB_GOAL) return '';
+  const analysed = !!LS.getItem('bf_analysed') || ANALYSE.running || !analyseWanted().any;
+  const steps = [['Connected', true], [ANALYSE.running ? 'Analysing' : 'Analyse your library', analysed],
+    ['File your first five (' + n + '/' + ONB_GOAL + ')', false]];
+  const cur = steps.findIndex(x => !x[1]);
+  return `<ol class="onb" aria-label="Getting started">${steps.map(([t, done], i) =>
+    `<li class="${done ? 'done' : i === cur ? 'now' : ''}"${i === cur ? ' aria-current="step"' : ''}>${esc(t)}</li>`).join('')}</ol>`;
+}
+
+/** Cold start on File: no genre playlist at all, so offer the groups Library offers. [] otherwise. */
+function onbColdOffers() {
+  if (typeof CFG === 'undefined' || !LIB) return [];
+  const rows = Object.values(CFG);
+  const noGenre = rows.length > 0 && !rows.some(p => p.axis === 'genre');
+  if (!noGenre) return [];
+  coldKick(true);
+  return COLD.status === 'ready' ? BetterfyScreens.lists.coldStartOffers(COLD.found, 3) : [];
+}
 /* ---------- screen modules (docs/BUILD-5-PLAN.md A4) ----------
  * A migrated screen is web/screens/<name>.mjs: an ES module that build-web.mjs
  * bundles (its `// @bundle screens <name> <order>` header is the whole
@@ -12127,9 +12381,11 @@ const SCREEN_CTX = {
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
+                   TUNE, engineScoreTune, engineTune, tuneApply, tuneForget,
+                   tuneBlock: r => (globalThis.BetterfyTune ? BetterfyTune.tuneBlock(r) : ''),
                    blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
                    maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,
-                   getLog: () => (typeof getLog === 'function' ? getLog() : Promise.resolve(null)),
+                   getLog: () => (typeof getLog === 'function' ? getLog({ all: true }) : Promise.resolve(null)),
                    measureLines: log => globalThis.BetterfyMeasure ? BetterfyMeasure.measureLines(BetterfyMeasure.measureHistory(log)) : [],
                    get navigator() { return globalThis.navigator; }, prompt: (...a) => prompt(...a) }),
 };
@@ -12189,7 +12445,7 @@ SCREEN_CTX.new = () => ({
 // --- home/inbox ---
 Object.assign(SCREEN_CTX, {
   // The File tab: the status line and Up next around the `inbox` module's deck.
-  home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks,
+  home: () => ({ S, R, LIB, esc, onbHTML, onbColdOffers, gapsCreate, COLD, toast, $, go, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks,
                  render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,

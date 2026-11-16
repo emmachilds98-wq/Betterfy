@@ -36,6 +36,8 @@ const json = (res, status, body, headers = {}) => {
 export async function startFakeSpotify(account) {
   const playlists = new Map(account.playlists.map(p => [p.id, { ...p, tracks: [...p.tracks] }]));
   const liked = [...account.liked];
+  // Newest first, one minute apart, so a client can tell a head it has from one it has not.
+  const likedAt = new Map(liked.map((t, i) => [t.id, new Date(Date.UTC(2024, 4, 1) - i * 60000).toISOString()]));
   const created = [];
   const sw = { rate429: 0, expire401: 0, failWrites: false, latencyMs: 0,
     failAfterWrites: -1, expireAfterWrites: -1, loseResponse: 0 };
@@ -96,13 +98,13 @@ export async function startFakeSpotify(account) {
         return json(res, 200, { snapshot_id: pl.snapshot_id });
       }
     }
-    if (p === '/me/tracks' && m === 'GET') return json(res, 200, page(liked.map(t => entry(t, '2024-05-01T00:00:00Z')), q, p));
+    if (p === '/me/tracks' && m === 'GET') return json(res, 200, page(liked.map(t => entry(t, likedAt.get(t.id))), q, p));
     if ((p === '/me/library' || p === '/me/tracks') && (m === 'PUT' || m === 'DELETE')) {
       const ids = uriIds(q.get('uris') ?? q.get('ids') ?? '');
       for (const id of ids) {
         const at = liked.findIndex(t => t.id === id);
         if (m === 'DELETE' && at >= 0) liked.splice(at, 1);
-        if (m === 'PUT' && at < 0) { const t = findTrack(id); if (t) liked.unshift(t); }
+        if (m === 'PUT' && at < 0) { const t = findTrack(id); if (t) { liked.unshift(t); likedAt.set(t.id, new Date(Date.now() + liked.length).toISOString()); } }
       }
       return json(res, 200, {});
     }

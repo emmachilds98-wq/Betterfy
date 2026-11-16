@@ -73,16 +73,44 @@ export function upNextHTML({ S, R, esc, hueOf, filePicks }) {
     }).join('')}</div>`;
 }
 
+/** No genre playlist yet: the groups already sitting together in the library, startable right on File. */
+export function coldHTML({ esc, onbColdOffers }) {
+  const offers = onbColdOffers?.() ?? [];
+  if (!offers.length) return '';
+  return `<section class="panel cold" aria-labelledby="fcold-h">
+    <h2 id="fcold-h">Start these playlists</h2>
+    <p class="hint">You have no genre playlists yet, so File has little to go on. These groups already sit together in your library.</p>
+    ${offers.map((o, i) => `<div class="plrow"><span class="plmain">
+      <input id="fcoldnm${i}" aria-label="Name for this playlist" value="${esc(o.title)}">
+      <span class="plmeta"><span class="mono">${o.n}</span> tracks · ${esc(o.why)}</span></span>
+      <button class="b sm p" data-act="coldStart" data-cold="${i}">Start</button></div>`).join('')}</section>`;
+}
+
 export function view(ctx) {
-  const { R, analyseHTML, deck } = ctx;
-  const head = statusHTML(ctx) + analyseHTML();
+  const { R, LIB, analyseHTML, deck } = ctx;
+  const head = statusHTML(ctx) + (ctx.onbHTML?.() ?? '') + analyseHTML();
+  // A brand-new account: File's own message says what to do; no bar of zeros under it.
+  if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return `${head}${deck()}`;
   // Nothing to file: the deck's own done card, then where the library stands.
   if (!R.backlog.length) return `${head}${deck()}${libraryBarHTML(ctx)}`;
-  return `${head}${deck()}${upNextHTML(ctx)}`;
+  return `${head}${coldHTML(ctx)}${deck()}${upNextHTML(ctx)}`;
 }
 
 export const actions = {
   analyseGo: ({ analyseGo }) => analyseGo(),
+  /** Make the playlist for one offered group, then the deck has somewhere to file into. */
+  async coldStart({ COLD, gapsCreate, onbColdOffers, $, toast, render }, el) {
+    const i = +el.dataset.cold, o = onbColdOffers()[i], name = $('#fcoldnm' + i)?.value.trim();
+    if (!o) return;
+    if (!name) return toast('Give it a name first.');
+    el.disabled = true;
+    try {
+      await gapsCreate(name, o.ids);
+      COLD.found.proposals = COLD.found.proposals.filter(p => p.ids !== o.ids);
+      COLD.found.clusters = COLD.found.clusters.filter(p => (p.ids ?? p.tracks?.map(t => t.id)) !== o.ids);
+      render();
+    } catch (err) { el.disabled = false; toast('Failed: ' + err.message); }
+  },
   openlisten: ({ openUnderHood }) => openUnderHood('sources'),
   // A card under "Up next" opens the queue on that track, not at the top.
   // Its index is an absolute position in the queue, not an offset from wherever

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { measureHistory, measureLines, QUEUE_HEAD, MIN_N } from '../core/measure/history.mjs';
+import { measureHistory, measureLines, QUEUE_HEAD, MIN_N, HEAD_GAP } from '../core/measure/history.mjs';
 
 const t0 = Date.parse('2026-11-01T00:00:00Z');
 let tick = 0;
@@ -10,21 +10,27 @@ const filing = (o = {}) => ({ at: at(), op: 'add', playlistId: 'p1', trackIds: [
 test('empty, null and malformed logs give nulls, not NaN', () => {
   for (const l of [[], null, undefined, [{}, null, { op: 'add' }]]) {
     const m = measureHistory(l);
-    assert.equal(m.queue.share, null); assert.equal(m.batch.precision, null);
+    assert.equal(m.queue.gap, null); assert.equal(m.batch.precision, null);
     assert.equal(m.tidy.sure.rate, null); assert.equal(m.discover.rate, null);
   }
 });
 
-test('queue share counts only filings that recorded a position', () => {
+const skip = (o = {}) => ({ at: at(), op: 'skip', trackIds: ['k' + tick], reason: 'skipped from inbox', ...o });
+
+test('queue decisions are single-card filings and skips that recorded a position', () => {
   const log = [
     ...Array.from({ length: 6 }, (_, i) => filing({ queuePos: i, deck: 200 })),
+    skip({ queuePos: 2, deck: 200 }),
     ...Array.from({ length: 2 }, () => filing({ queuePos: QUEUE_HEAD, deck: 200 })),
+    skip({ queuePos: 30 }), skip({ queuePos: 31 }),
     filing(), // pre-queuePos entry: excluded
     { at: at(), op: 'add', playlistId: 'p', trackIds: ['x'], reason: 'moved from A', group: 'g' }, // not a filing
   ];
   const m = measureHistory(log);
-  assert.equal(m.queue.n, 8); assert.equal(m.queue.head, 6); assert.equal(m.queue.share, 0.75); assert.equal(m.queue.of, 9);
-  assert.ok(Math.abs(m.queue.baseline - 0.1) < 1e-9); assert.ok(m.queue.beatsRandom);
+  assert.equal(m.queue.n, 11);
+  assert.deepEqual([m.queue.head.n, m.queue.head.skips], [7, 1]);
+  assert.deepEqual([m.queue.tail.n, m.queue.tail.skips], [4, 2]);
+  assert.ok(Math.abs(m.queue.gap - (0.5 - 1 / 7)) < 1e-9); assert.ok(m.queue.beatsTail);
 });
 
 test('batch precision: undone (undoneAt or undo entry) and later removal both count', () => {
@@ -85,7 +91,7 @@ test('lines say "not enough data yet" below each minimum and numbers above', () 
   assert.match(few[0], new RegExp(`0 of ${MIN_N.queue}`));
   const log = Array.from({ length: 10 }, (_, i) => filing({ queuePos: i < 7 ? i : 40, deck: 100, band: 'sure', trackIds: ['k' + i] }));
   const lines = measureLines(measureHistory(log));
-  assert.match(lines[0], /70% of 10 filings came from the first 20 cards \(20% expected/);
+  assert.match(lines[0], /skip rate 0% in the first 20 cards \(7\), 0% in the rest \(3\)/);
   assert.match(lines[1], /0% of 10 sure-band/);
   assert.match(lines[2], /not enough/);
 });
@@ -110,16 +116,22 @@ test('D1: a batch filing counts, and a grouped undo undoes every member', () => 
   assert.equal(m.batch.back, 1); assert.equal(m.batch.precision, 0.5);
 });
 
-test('D2: queue order can fail, a deck with no skipping does not beat random when the deck is small', () => {
-  // Deck of 25: random order already puts 80% in the first 20.
-  const small = Array.from({ length: 10 }, (_, i) => filing({ queuePos: i, deck: 25, trackIds: ['s' + i] }));
-  let m = measureHistory(small);
-  assert.equal(m.queue.share, 1); assert.ok(Math.abs(m.queue.baseline - 0.8) < 1e-9);
-  // Filings forced deep into a big deck (bad order): share below baseline-plus-margin.
-  const bad = Array.from({ length: 10 }, (_, i) => filing({ queuePos: i < 1 ? 0 : 150, deck: 200, trackIds: ['b' + i] }));
-  m = measureHistory(bad);
-  assert.equal(m.queue.beatsRandom, false); assert.ok(m.queue.lift < 0.05);
-  assert.match(measureLines(m)[0], /no better than random/);
-  // Entries without a deck length are left out.
-  assert.equal(measureHistory([filing({ queuePos: 0 })]).queue.n, 0);
+test('D2: queue order can fail: a head skipped as often as the tail does not beat it', () => {
+  const mk = (headSkips, tailSkips) => [
+    ...Array.from({ length: 10 }, (_, i) => (i < headSkips ? skip({ queuePos: i }) : filing({ queuePos: i, deck: 100, trackIds: ['h' + i] }))),
+    ...Array.from({ length: 10 }, (_, i) => (i < tailSkips ? skip({ queuePos: 40 + i }) : filing({ queuePos: 40 + i, deck: 100, trackIds: ['t' + i] }))),
+  ];
+  let m = measureHistory(mk(1, 6));       // head 10%, tail 60%: the order is working
+  assert.equal(m.queue.beatsTail, true);
+  assert.doesNotMatch(measureLines(m)[0], /not helping/);
+  m = measureHistory(mk(5, 5));           // no difference: it fails
+  assert.equal(m.queue.beatsTail, false); assert.equal(m.queue.gap, 0);
+  assert.match(measureLines(m)[0], /order is not helping/);
+  m = measureHistory(mk(6, 2));           // worse than the tail
+  assert.equal(m.queue.beatsTail, false); assert.ok(m.queue.gap < 0);
+  // One side empty: no verdict, "not enough data yet".
+  m = measureHistory(Array.from({ length: 12 }, (_, i) => filing({ queuePos: i, deck: 30, trackIds: ['e' + i] })));
+  assert.equal(m.queue.beatsTail, null); assert.match(measureLines(m)[0], /not enough data yet/);
+  // Entries without a position are left out.
+  assert.equal(measureHistory([filing(), skip(), skip({ queuePos: 0 })]).queue.n, 1);
 });

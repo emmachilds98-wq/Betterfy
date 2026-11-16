@@ -19,9 +19,11 @@ const SCREEN_CTX = {
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
+                   TUNE, engineScoreTune, engineTune, tuneApply, tuneForget,
+                   tuneBlock: r => (globalThis.BetterfyTune ? BetterfyTune.tuneBlock(r) : ''),
                    blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
                    maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,
-                   getLog: () => (typeof getLog === 'function' ? getLog() : Promise.resolve(null)),
+                   getLog: () => (typeof getLog === 'function' ? getLog({ all: true }) : Promise.resolve(null)),
                    measureLines: log => globalThis.BetterfyMeasure ? BetterfyMeasure.measureLines(BetterfyMeasure.measureHistory(log)) : [],
                    get navigator() { return globalThis.navigator; }, prompt: (...a) => prompt(...a) }),
 };
@@ -81,7 +83,7 @@ SCREEN_CTX.new = () => ({
 // --- home/inbox ---
 Object.assign(SCREEN_CTX, {
   // The File tab: the status line and Up next around the `inbox` module's deck.
-  home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks,
+  home: () => ({ S, R, LIB, esc, onbHTML, onbColdOffers, gapsCreate, COLD, toast, $, go, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks,
                  render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,

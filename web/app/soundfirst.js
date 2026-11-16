@@ -114,7 +114,7 @@ function soundIdOf(t) {
   if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
   const raw = SOUND.byId.get(t.id);
   const tags = [...new Set((raw?.artists ?? []).map(a => BetterfyGaps.artistGenre(TAGS?.[a?.id]?.tags)).filter(Boolean))];
-  const id = BetterfyIdentify.identify(row.rec, { neighbours, tags, playlistName: pid => CFG[pid]?.name ?? pid });
+  const id = BetterfyIdentify.identify(row.rec, { neighbours, tags, playlistName: pid => CFG[pid]?.name ?? pid, ...((typeof tuneIdentOpts === 'function' ? tuneIdentOpts() : null) ?? {}) });
   const mix = BetterfyMatch.mixesWith(t.id, index, { k: 5, bpm: id?.bpm?.value ?? null });
   const v = { id, neighbours: neighbours.slice(0, 5), mix };
   SOUND.idMemo = { key, v };
@@ -134,9 +134,9 @@ function soundPicks(t) {
   let picks = [];
   if (raw) {
     soundHear(t.id);
-    const out = BetterfyIntrinsic.placements(raw, space, { limit: 3, soundFirst: true,
+    const out = BetterfyIntrinsic.placements(raw, space, { limit: 3, soundFirst: (typeof tuneSoundFirst === 'function' ? tuneSoundFirst() : null) ?? true,
                                                          exclude: rejected.length ? new Set(rejected) : null });
-    const W = BetterfyIntrinsic.SOUND_FIRST_WEIGHTS;
+    const W = { ...BetterfyIntrinsic.SOUND_FIRST_WEIGHTS, ...((typeof tuneSoundFirst === 'function' ? tuneSoundFirst() : null) ?? {}) };
     const tagIds = new Set((t.suggest ?? []).map(sg => sg.id));
     if (!out.declined) picks = (out.results ?? [])
       .filter(r => r.parts && ('audio' in r.parts || 'learned' in r.parts))
