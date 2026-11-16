@@ -43,6 +43,6 @@
     .hrow{padding:12px 13px}
   }
   @media (prefers-reduced-motion: no-preference){
-    .sprintcard{animation:sprintIn var(--dur-1, 120ms) var(--ease-out, ease-out)}
+    .sprintcard{animation:sprintIn var(--dur-1) var(--ease-out)}
     @keyframes sprintIn{from{opacity:.4; transform:translateX(8px)} to{opacity:1; transform:none}}
   }
