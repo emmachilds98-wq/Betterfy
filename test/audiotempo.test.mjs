@@ -46,7 +46,7 @@ const policy = (r, truth) => assert.ok(right(r, truth), `truth ${truth}: ${JSON.
 
 test('result shape and version', () => {
   const r = tempo(kicks(120));
-  assert.deepEqual(Object.keys(r).sort(), ['alternates', 'bpm', 'confidence', 'octaveAmbiguous', 'version']);
+  assert.deepEqual(Object.keys(r).sort(), ['alternates', 'bpm', 'confidence', 'octaveAmbiguous', 'pulse', 'version']);
   assert.equal(r.version, TEMPO_VERSION);
   assert.ok(r.confidence >= 0 && r.confidence <= 1);
   for (const a of r.alternates) assert.ok(a.bpm >= 60 && a.bpm <= 200 && a.score > 0 && a.score <= 1, JSON.stringify(a));
@@ -198,4 +198,11 @@ test('bandAutocorrelations: four groups, 1 at lag 0, a kick pulse peaks at its b
   const P = Math.round(60 * FPS / 120);   // 31 frames at 120 BPM
   assert.ok(kick[P] > kick[Math.round(P / 2)], `A(P)=${kick[P]} vs A(P/2)=${kick[Math.round(P / 2)]}`);
   assert.equal(bandAutocorrelations(melFrames(new Float32Array(SR))), null, 'under 4 s: nothing');
+});
+
+test('pulse: a steady four-on-the-floor reads high, noise reads low', () => {
+  const k = tempo(kicks(128));
+  assert.ok(k.pulse > 0.38, `kicks pulse ${k.pulse}`);
+  const n = tempo(noise(new Float32Array(10 * SR), 0.3));
+  if (n.bpm) assert.ok(n.pulse < 0.38, `noise pulse ${n.pulse}`);
 });

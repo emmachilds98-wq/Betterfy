@@ -1305,7 +1305,7 @@ const { melFrames, SAMPLE_RATE, HOP_SIZE, N_BANDS } = __mod["core/audio/mel.mjs"
 
 
 
-const TEMPO_VERSION = '1.0.0';
+const TEMPO_VERSION = '1.1.0';
 
 /** Envelope frame rate: one log-mel frame per hop. */
 const FPS = SAMPLE_RATE / HOP_SIZE; // 62.5
@@ -1357,7 +1357,8 @@ function tempo(samples, { sampleRate = SAMPLE_RATE, min = 60, max = 200 } = {}) 
 function tempoFromMel(mel, { min = 60, max = 200 } = {}) {
   checkRange(min, max);
   if (!mel || mel.frames < MIN_SECONDS * FPS) return none();
-  const acf = autocorrelation(onsetEnvelopes(mel), Math.min(Math.round(MAX_LAG_S * FPS), Math.floor(mel.frames / 2)));
+  const envs = onsetEnvelopes(mel), lagCap = Math.min(Math.round(MAX_LAG_S * FPS), Math.floor(mel.frames / 2));
+  const acf = autocorrelation(envs, lagCap);
   if (!acf) return none();
 
   const at = lag => interp(acf, lag);
@@ -1466,6 +1467,7 @@ function tempoFromMel(mel, { min = 60, max = 200 } = {}) {
     confidence: round(conf, 3),
     alternates: alternates.map(c => ({ bpm: round(c.bpm, 1), score: round(c.score / best.score, 3) })),
     octaveAmbiguous,
+    pulse: round(pulseAt(envs, lagCap, best.bpm), 3),
     version: TEMPO_VERSION,
   };
 }
@@ -1480,6 +1482,21 @@ function bandAutocorrelations(mel, maxLagS = MAX_LAG_S) {
   const envs = onsetEnvelopes(mel);
   const maxLag = Math.min(Math.round(maxLagS * FPS), Math.floor(mel.frames / 2));
   return envs.map(e => autocorrelation([e], maxLag));
+}
+
+/**
+ * How steady a dance pulse sits on `bpm`: the mean of each band group's own
+ * onset autocorrelation at the beat period P (kick, body, snare, hats) and of
+ * snare and hats at P/2 (the off-beats a half-time reading would hide).
+ * Around 0.5 for a four-on-the-floor track read at half time, around 0.25 for
+ * a ballad or swung jazz at its real slow tempo; combine.mjs gates SLOW_FOLD
+ * on it (PULSE_FOLD). Bands with no onset activity count 0.
+ */
+function pulseAt(envs, maxLag, bpm) {
+  const P = 60 * FPS / bpm;
+  const lin = (a, lag) => { const i = Math.floor(lag), f = lag - i; return a && i + 1 < a.length ? a[i] * (1 - f) + a[i + 1] * f : 0; };
+  const a = envs.map(e => autocorrelation([e], maxLag));
+  return (lin(a[0], P) + lin(a[1], P) + lin(a[2], P) + lin(a[3], P) + lin(a[2], P / 2) + lin(a[3], P / 2)) / 6;
 }
 
 function checkRange(min, max) {
@@ -2341,15 +2358,20 @@ const DSP_VERSION = `${COMBINE_VERSION}+t${TEMPO_VERSION}+k${KEY_VERSION}+l${LOU
 
 /**
  * A combined tempo under this many BPM is read at double time (×2, while that
- * stays ≤ 200). The D1 search spans 60–200 with a prior at 120, and its most
- * common octave error on dance music is a 124–145 track heard at half time
- * (64 for house, 70 for dubstep). Fitted on the Beatport EDM Key set's half A
- * (scripts/audio-dsp/keytempo-lab.mjs); on the held-out half B (n=387) it
- * takes ±1 BPM from 80.9% (±3.9) to 88.9% (±3.1), octave errors 50 → 19
- * (docs/BUILD-5-PROGRESS.md, 2026-11-16). Only slow readings are moved: a
- * DnB 174 stays 174.
+ * stays ≤ 200) — but only when the windows hear a steady dance pulse there
+ * (tempo.mjs `pulse` ≥ PULSE_FOLD). The D1 search spans 60–200 with a prior
+ * at 120, and its most common octave error on dance music is a 124–145 track
+ * heard at half time (64 for house, 70 for dubstep). Ungated, the fold took
+ * Beatport half B from 80.9% to 88.9% within ±1 BPM but broke genuinely slow
+ * music: GTZAN 61.5% → 59.0% (fixed 4, broke 29; blues, country, jazz, pop).
+ * The gate keeps the fold off ballads, swung jazz and slow soul, whose pulse
+ * measures ~0.25 against ~0.5 for a four-on-the-floor track at half time.
+ * Both numbers were picked on Beatport half A + GTZAN odd-numbered clips; the
+ * held-out results are in docs/BUILD-5-PROGRESS.md (2026-11-16, second try).
+ * Only slow readings ever move: a DnB 174 stays 174.
  */
 const SLOW_FOLD = 74;
+const PULSE_FOLD = 0.38;
 /** Two windows within this many BPM agree. */
 const BPM_AGREE = 1;
 /** How far a ratio may sit from exactly 2 (in BPM at the slower tempo) and still count as half/double time. */
@@ -2375,16 +2397,21 @@ function octaveApart(a, b) {
  * @param {Array<{ bpm: number|null, confidence: number, alternates?: {bpm:number,score:number}[], octaveAmbiguous?: boolean }>} ws
  * @returns {{ bpm: number, bpmConf: number, octaveAmbiguous: boolean, bpmAlt?: number, agree: boolean|null } | null}
  */
-function combineTempo(ws, { slowFold = SLOW_FOLD } = {}) {
+function combineTempo(ws, { slowFold = SLOW_FOLD, pulseFold = PULSE_FOLD } = {}) {
   const good = (ws ?? []).filter(w => w && ok(w.bpm) && w.bpm > 0 && ok(w.confidence));
   if (!good.length) return null;
   const partnerOf = w => {
     const p = (w.alternates ?? []).find(a => ok(a?.bpm) && octaveApart(w.bpm, a.bpm));
     return p ? p.bpm : null;
   };
+  // The pulse of the windows that heard this tempo (within 3%); none measured counts as no pulse.
+  const pulseOf = bpm => {
+    const ps = good.filter(w => Math.abs(w.bpm - bpm) / bpm <= 0.03 && ok(w.pulse)).map(w => w.pulse);
+    return ps.length ? ps.reduce((x, y) => x + y, 0) / ps.length : -Infinity;
+  };
   const finish = (w, bpm, conf, octave, alt, agree) => {
     let a = octave ? alt ?? partnerOf(w) : null;
-    if (bpm < slowFold && bpm * 2 <= 200) { a = octave ? bpm : null; bpm *= 2; }
+    if (bpm < slowFold && bpm * 2 <= 200 && pulseOf(bpm) >= pulseFold) { a = octave ? bpm : null; bpm *= 2; }
     const out = { bpm: r1(bpm), bpmConf: r3(Math.max(0, Math.min(1, conf))), octaveAmbiguous: !!octave, agree };
     if (octave && ok(a)) out.bpmAlt = r1(a);
     return out;
@@ -2464,7 +2491,7 @@ function measureWindows(windows, est = {}) {
 function needsDsp(rec) {
   return !!rec && !rec.miss && (!rec.dsp || rec.dsp.v !== DSP_VERSION);
 }
-return { COMBINE_VERSION, DSP_VERSION, SLOW_FOLD, BPM_AGREE, DISAGREE_PENALTY, OCTAVE_PENALTY, combineTempo, combineKey, combineLoudness, measureWindows, needsDsp };
+return { COMBINE_VERSION, DSP_VERSION, SLOW_FOLD, PULSE_FOLD, BPM_AGREE, DISAGREE_PENALTY, OCTAVE_PENALTY, combineTempo, combineKey, combineLoudness, measureWindows, needsDsp };
 })();
 /* ---- web/audio/controller.mjs ---- */
 __mod["web/audio/controller.mjs"] = (function () {
