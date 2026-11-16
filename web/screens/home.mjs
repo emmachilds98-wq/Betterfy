@@ -52,14 +52,15 @@ export function libraryBarHTML({ R, LIB, esc, isMirrorPlaylist }) {
 }
 
 /** The next few after the one on the deck, as a strip you can scroll sideways. */
-export function upNextHTML({ S, R, esc, hueOf, filePicks }) {
+export function upNextHTML({ S, R, esc, hueOf, filePicks, pickBacked }) {
   const at = Math.min(S.inboxAt ?? 0, R.backlog.length - 1);
   const upNext = R.backlog.map((t, i) => [t, i]).slice(at + 1, at + 9);
   if (!upNext.length) return '';
   return `<div class="seehead"><h2 style="margin:0">Up next</h2></div>
     <div class="upnext strip">${upNext.map(([t, i]) => {
       const best = (filePicks ? filePicks(t) : t.suggest ?? [])[0];
-      const strong = best && best.score >= 0.7;
+      // Green and "Sure" only for a pick sound or filing history backs (USER-REVIEW item 2).
+      const strong = best && best.score >= 0.7 && (pickBacked ? pickBacked(best) : true);
       const h = hueOf(t.id ?? t.title ?? '');
       const cover = t.art
         ? `<img class="cov" src="${esc(t.art)}" alt="" loading="lazy" decoding="async">`
@@ -68,7 +69,7 @@ export function upNextHTML({ S, R, esc, hueOf, filePicks }) {
         <span class="t">${esc(t.title)}</span>
         <span class="a">${esc(t.artist)}</span>
         <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
-          ? `→ ${esc(best.name)} · ${best.score >= 0.7 ? 'Sure' : best.score >= 0.45 ? 'Likely' : 'Unsure'}` : '→ no confident pick'}</span>
+          ? `→ ${esc(best.name)} · ${strong ? 'Sure' : best.score >= 0.45 ? 'Likely' : 'Unsure'}` : '→ no confident pick'}</span>
       </span></button>`;
     }).join('')}</div>`;
 }

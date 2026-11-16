@@ -2521,7 +2521,7 @@ const { fillClap, needsClap, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 // flag is on.
 //
 // CLAP (WP-C2), only with deps.loadClap AND deps.clapOn() saying yes (the
-// "Deep listen" switch, off by default, Wi-Fi only): its encoder is loaded on
+// "Deep listen" switch, on by default, Wi-Fi only): its encoder is loaded on
 // the first such run, new records get their `clap` field in the same pass,
 // and records heard before are topped up after DSP, the same lazy way.
 // Without loadClap, or with clapOn() false, nothing here differs from before.
@@ -4778,12 +4778,13 @@ const { connectionVerdict } = __mod["web/audio/settings.mjs"];
 // CLAP (WP-C2), each a large extra download on top of "Listen to my music".
 //
 // One settings object for both so the page has one block and one writer:
-// localStorage `bf_audio_deep` = { maest, clap, memoryOverride }, all off by
-// default. Nothing here downloads anything; it only answers "may this ear
+// localStorage `bf_audio_deep` = { maest, clap, memoryOverride }. Both ears are
+// on by default (owner's call, 2026-11-16); the Wi-Fi and memory rules below
+// still decide whether they may download. Nothing here downloads anything; it only answers "may this ear
 // download and run right now?".
 //
 // The rules (docs/AUDIO-BUILD-PLAN.md, Option C):
-//  - each ear only on its own explicit switch;
+//  - each ear has its own switch, on unless the listener unticks it;
 //  - Wi-Fi only, always: unlike listening there is no "Wi-Fi only" switch to
 //    turn off, because the models are ~90 MB (MAEST) and ~71 MB (CLAP);
 //  - MAEST also needs navigator.deviceMemory >= 8, or the listener saying
@@ -4794,7 +4795,7 @@ const { connectionVerdict } = __mod["web/audio/settings.mjs"];
 
 
 const DEEP_SETTINGS_KEY = 'bf_audio_deep';
-const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: false, clap: false, memoryOverride: false });
+const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: true, clap: true, memoryOverride: false });
 const DEEP_EARS = Object.freeze(['maest', 'clap']);
 /** GB of device memory MAEST needs (navigator.deviceMemory's top value). */
 const MAEST_MIN_MEMORY_GB = 8;

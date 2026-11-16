@@ -144,6 +144,20 @@
     .swipecard > .rowbtns:has(> [data-filesel]){position:sticky; z-index:4; bottom:calc(var(--tabh) + var(--sab));
       margin-left:-6px; margin-right:-6px; padding:12px 6px 10px;
       background:linear-gradient(to bottom, transparent, var(--surface) 12px)}
+    /* Picks 2 and 3 stay in view above the pinned row (USER-REVIEW item 3):
+       at 390x844 they sat under File/Skip and the tab bar until you scrolled.
+       The card drops its question heading, the artwork shrinks, the picks sit
+       closer, and the setup lines above the card lose their explanations. */
+    .swipecard > h2{display:none}
+    .swipecard .now .art{width:96px; height:96px; font-size:40px}
+    .swipecard .now .t{font-size:22px}
+    .swipecard .now .a{font-size:15px}
+    .swipecard .picks{margin-top:14px; gap:6px}
+    .swipecard .pick{padding-top:9px; padding-bottom:9px}
+    .analyse{margin-bottom:12px}
+    .analyse .d{display:none}
+    .onb{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; margin-bottom:10px}
+    .onb li{white-space:nowrap}
     /* The undo toast rises above the pinned row instead of covering File. */
     body:has(.swipecard > .rowbtns > [data-filesel]) .toast{bottom:calc(var(--tabh) + var(--sab) + 90px)}
   }

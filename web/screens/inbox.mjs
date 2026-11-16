@@ -272,6 +272,7 @@ export async function fileSureOnes(ctx) {
 export function view(ctx) {
   const { S, R, CFG, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip, tagChips, trackStrip,
           soundIdHTML, soundNote, pickEvidence, pickBand, matchMedia } = ctx;
+  const pickBacked = ctx.pickBacked ?? (() => true);
   const rows = R.backlog;
   // A new account has nothing to file yet: say what to do, not "that's the lot".
   if (!rows.length && !ctx.LIB?.liked?.length) {
@@ -342,7 +343,7 @@ export function view(ctx) {
           </div>
         </div>${trackStrip(t)}${soundIdHTML(t)}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
-          <div class="pickw"><button class="pick ${n === 0 ? 'best' : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
+          <div class="pickw"><button class="pick ${n === 0 ? (pickBacked(sg) ? 'best' : 'lead') : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'

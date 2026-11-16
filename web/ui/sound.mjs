@@ -238,6 +238,18 @@ const sPauseWhy = reason => {
   if (reason === 'ask') return 'waiting for you to say it’s Wi-Fi';
   return reason;
 };
+/* The pill's version: a few words at most, never an error message. The full
+ * reason (a failed model load, say) is on the Listening card in Settings, which
+ * tapping the pill opens. */
+const sPillWhy = reason => {
+  const why = sPauseWhy(reason);
+  if (!why) return null;
+  if (why === 'waiting for you to say it’s Wi-Fi') return 'Wi-Fi?';
+  if (/wi-?fi|metered|cellular/i.test(why)) return 'no Wi-Fi';
+  if (/offline/i.test(why)) return 'offline';
+  if (/couldn|fail|error/i.test(why)) return 'tap for details';
+  return null;
+};
 const sBars = () => `<span class="lp-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>`;
 const sIsListen = vm => vm && typeof vm === 'object' && ['running', 'paused', 'done'].includes(vm.state);
 
@@ -252,7 +264,7 @@ export function listenPill(vm) {
   const done = sNum(vm.done) ? vm.done : 0, total = sNum(vm.total) ? vm.total : 0;
   let text;
   if (vm.state === 'running') text = total ? `Listening · ${sInt(Math.min(done, total))} / ${sInt(total)}` : 'Listening…';
-  else if (vm.state === 'paused') { const why = sPauseWhy(vm.reason); text = `Paused${why ? ` · ${why}` : ''}`; }
+  else if (vm.state === 'paused') { const why = sPillWhy(vm.reason); text = `Paused${why ? ` · ${why}` : ''}`; }
   else text = sNum(vm.heard) && vm.heard > 0 ? `Listened · ${sPlural(vm.heard, 'track')} heard` : 'Listened · up to date';
   return `<span class="lpill lpill-${vm.state}" role="status">${sBars()}<span class="lp-txt">${sEsc(text)}</span></span>`;
 }

@@ -116,9 +116,18 @@ test('listenPill: running counts, paused gives the reason, done', () => {
   assert.match(S.listenPill(LISTEN.running), /Listening · 412 \/ 1,980/);
   assert.equal((S.listenPill(LISTEN.running).match(/<i><\/i>/g) ?? []).length, 5, 'the mark’s five bars');
   assert.match(S.listenPill(LISTEN.starting), /Listening…/);
-  assert.match(S.listenPill(LISTEN.paused), /lpill-paused.*Paused · waiting for Wi-Fi/);
+  assert.match(S.listenPill(LISTEN.paused), /lpill-paused.*Paused · no Wi-Fi/);
   assert.match(S.listenPill(LISTEN.stopped), />Paused<\/span>/, '"stopped" is not a reason worth showing');
-  assert.match(S.listenPill({ state: 'paused', done: 0, total: 9, reason: 'ask' }), /waiting for you to say it’s Wi-Fi/);
+  assert.match(S.listenPill({ state: 'paused', done: 0, total: 9, reason: 'ask' }), />Paused · Wi-Fi\?</);
+  const err = S.listenPill({ state: 'paused', done: 0, total: 9,
+    reason: 'couldn’t load the model: Failed to fetch dynamically imported module: https://cdn.jsdelivr.net/npm/x.mjs' });
+  assert.match(err, />Paused · tap for details</, 'an error is a few words, not the message');
+  assert.doesNotMatch(err, /jsdelivr|Failed/);
+  assert.match(S.listenPill({ state: 'paused', reason: 'hearing Discover picks' }), />Paused</);
+  for (const r of ['ask', 'waiting for Wi-Fi', 'offline', 'couldn’t load the model: boom', 'a new run', 'stopped']) {
+    const words = S.listenPill({ state: 'paused', reason: r }).replace(/<[^>]+>/g, '').replace(/·/g, ' ').trim().split(/\s+/);
+    assert.ok(words.length <= 4, `${r}: ${words.join(' ')}`);
+  }
   assert.match(S.listenPill(LISTEN.done), /Listened · 1,802 tracks heard/);
   assert.match(S.listenPill({ state: 'running', done: 12, total: 10 }), /10 \/ 10/, 'never more done than total');
 });
