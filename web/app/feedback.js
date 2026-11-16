@@ -133,6 +133,7 @@ const shapeTrack = t => t && ({
  * pieces from an older shape are re-read rather than kept forever. */
 const SHAPE = 1;
 const PART = id => 'part:' + id;
+const LIKED_FULL_EVERY = 7 * 24 * 3600 * 1000;   // a full liked re-read catches unlikes the head cannot see
 const PART_LIFE = 24 * 3600 * 1000;
 
 async function bankedParts() {
@@ -208,21 +209,55 @@ async function syncLibrary(force, onProgress) {
   // Liked songs come back fifty at a time with no snapshot id of their own, so
   // they are banked by page instead — every tenth, which is often enough to be
   // worth resuming and rare enough not to rewrite the pile on every page.
-  const liked = banked[PART('liked')]?.liked ?? { rows: [], next: '/me/tracks?limit=50' };
+  const likedRow = i => ({ added_at:i.added_at, ...shapeTrack(i.track ?? i.item) });
+  const hasId = i => (i.track ?? i.item)?.id;
+  // Liked songs arrive newest-first with an added_at, so a read that already
+  // holds a list only needs the head: page from the start until the first row
+  // it already has (same id, same added_at), then stop. That is one request for
+  // an unchanged library instead of a hundred. A removal leaves no trace at the
+  // head, so the head read is checked against Spotify's own total, and the whole
+  // list is re-read anyway once a week.
+  const prev = await idb.get('library');   // kept on a forced re-read too: that is the button people press when nothing changed
+  const cached = prev?.liked_shape === SHAPE && Array.isArray(prev.liked) && prev.liked_total != null
+    && Date.now() - (prev.liked_full_at ?? 0) < LIKED_FULL_EVERY ? prev : null;
+  let likedTotal = null, fullAt = Date.now();
+  let liked = banked[PART('liked')]?.liked;
+  if (!liked && cached) {
+    const fresh = [], seen = cached.liked[0];
+    let url = '/me/tracks?limit=50', raw = 0, hit = !seen, total = null;
+    for (let page = 0; url && !hit && page < 20; page++) {
+      onProgress?.('liked songs', 0.95);
+      const box = await sp(url);
+      total = box?.total ?? total;
+      for (const i of box?.items ?? []) {
+        if (hasId(i) && seen && (i.track ?? i.item).id === seen.id && i.added_at === seen.added_at) { hit = true; break; }
+        raw++; if (hasId(i)) fresh.push(likedRow(i));
+      }
+      url = box?.next ?? null;
+    }
+    // Trust the head only if it reached a known row (or the list ended) and the
+    // count Spotify reports is exactly what this read expects.
+    if ((hit || !url) && total != null && total === cached.liked_total + raw) {
+      const ids = new Set(fresh.map(r => r.id));
+      liked = { rows: [...fresh, ...cached.liked.filter(r => !ids.has(r.id))], next: null };
+      likedTotal = total; fullAt = cached.liked_full_at;
+    }
+  }
+  if (!liked) liked = { rows: [], next: '/me/tracks?limit=50' };
   for (let page = 0; liked.next; page++) {
     // Thousands of liked songs is dozens of pages, and they all used to report
     // the same "liked songs" at the same 95% — several silent minutes that look
     // identical to a hang. A number that moves is the difference.
     onProgress?.(liked.rows.length ? `liked songs — ${liked.rows.length.toLocaleString()} so far` : 'liked songs', 0.95);
     const box = await sp(liked.next);
-    liked.rows.push(...(box?.items ?? []).filter(i => (i.track ?? i.item)?.id)
-      .map(i => ({ added_at:i.added_at, ...shapeTrack(i.track ?? i.item) })));
+    likedTotal = box?.total ?? likedTotal;
+    liked.rows.push(...(box?.items ?? []).filter(hasId).map(likedRow));
     liked.next = box?.next ?? null;
     if (!liked.next || page % 10 === 9) await idb.set(PART('liked'), { shape:SHAPE, at:Date.now(), liked });
   }
 
   const lib = { captured_at:new Date().toISOString(), user:{ id:me.id, name:me.display_name },
-                playlists, liked: liked.rows };
+                playlists, liked: liked.rows, liked_total: likedTotal, liked_shape: SHAPE, liked_full_at: fullAt };
   await idb.set('library', lib);
   await dropParts();
   return lib;
