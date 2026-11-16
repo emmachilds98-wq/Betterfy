@@ -14,7 +14,7 @@ const n = x => (Number.isFinite(x) ? x.toLocaleString('en-GB') : '0');
  * The rows, in the order they matter to filing. `s` is the page's state (any
  * part may be missing): { lib: { playlists, liked }, listening: { artists },
  * cov: { pct, have, total }, lfm: { key, own, asked }, bridge: { on, deezerAsked,
- * deezerPct, wikidataAsked, wikidataPct }, audio: { on, state, heard, reason },
+ * deezerPct, wikidataAsked, wikidataPct, warm: { asked, total, running, quota, gate } }, audio: { on, state, heard, reason },
  * deep: { maest, clap }, discogs, engine: { status } }.
  * Each row: { id, name, on, kind: 'ok'|'idle'|'warn'|'off', status, did, optional? }.
  */
@@ -41,6 +41,14 @@ export function helperRows(s = {}) {
     did: `Similar artists${b.deezerAsked ? ` (knows ${b.deezerPct}% of your artists)` : ''}, Discover picks without a key, and the 30-second previews Listening and Discover play.` });
   rows.push({ id: 'listenbrainz', name: 'ListenBrainz', on: b.on !== false, kind: b.on === false ? 'off' : 'ok', status: b.on === false ? 'Off' : 'On · no key',
     did: 'Similar artists from real listening sessions, for artists you have not filed yet and for Discover.' });
+  const w = b.warm ?? {};
+  const simOff = b.on === false, simGate = w.gate === false;
+  rows.push({ id: 'similar', name: 'Similar artists in File', on: !simOff, kind: simOff ? 'off' : simGate ? 'idle' : 'ok',
+    status: simOff ? 'Off' : w.running ? 'On · looking up' : simGate ? 'On · not used' : 'On',
+    did: simOff ? 'Turned off in Engine.'
+      : `${w.total ? `Similar artists: ${n(w.asked)} of ${n(w.total)} artists looked up` : 'Looked up by itself after the library loads'}${w.quota ? ', paused by Deezer for now' : ''}. `
+        + (simGate ? 'Your last Score run said they didn’t help your picks, so File leaves them out.'
+                   : 'File uses them for artists you haven’t filed yet, no Score run needed.') });
   const a = s.audio ?? {};
   const aKind = !a.on ? 'off' : a.problem ? 'warn' : 'ok';
   rows.push({ id: 'sound', name: 'Listening (sound)', on: !!a.on, kind: aKind,

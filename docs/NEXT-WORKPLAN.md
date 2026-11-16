@@ -136,6 +136,11 @@ hand on the same build within a point (same folds, same tracks).
 
 ### Package 2: similar artists fetched in the background (approved)
 
+**Built** (`web/app/bridgewarm.js`): gathered after Wikidata and Last.fm on every
+load, unfiled artists first; File's sound picks and untagged, unheard cards
+use them with no Score run; a Score run whose `bridgeVerdict` fails switches
+File's use off (`bf_bridge_gate`). Settings row "Similar artists in File".
+
 **Why.** The Deezer/ListenBrainz/Wikidata neighbour bridge took never-filed
 artists from 11% to 49% top-1 on her library. Today it is fetched only for
 the tracks a Score run scores (`engineValidate` → `engineBridge`), so File
@@ -166,6 +171,21 @@ existing bridge comparison.
 the File screen's live kept-rate from History (`core/measure/history.mjs`).
 
 ### Package 3: song-level tags (approved; coverage check first)
+
+**Measured 2026-11-16, fails the coverage bar; step 2 not built.** 200 real
+tracks with ISRCs, 20 each from Deezer playlists for jungle, drum and bass,
+UK garage, speed garage, dancehall, late night house, deep house, chill rap,
+indie rock and bassline. A tag counts if it is a genre in the shipped table
+(not junk, not the artist's name; Last.fm count ≥ 10). Last.fm
+`track.getTopTags` (built-in key): 8% of songs had any tag at all, and 8% a
+genre tag. Even Goldie, "Inner City Life" returns none. MusicBrainz by ISRC:
+39% resolve to a recording, 11% carry a genre. Either source: **14%**.
+Scene genres: 0% on jungle, D&B, UKG, speed garage, dancehall and house;
+chill rap 5%; bassline 20/30%; indie rock 55% (Last.fm) / 75% (MusicBrainz).
+MusicBrainz does answer CORS (`Access-Control-Allow-Origin: *`) but needs two
+requests per song at 1/s (the `isrc` resource takes no `genres` inc). The gain
+would land on indie/rock only, which artist tags already handle. Revisit only if
+the owner's library turns out mostly indie/rock.
 
 **Why.** Nearly every tag is about the artist. A diverse artist gives the
 same cloud to every record (ENGINE-REVIEW "the honest limit"; V2-PLAN §4.1).

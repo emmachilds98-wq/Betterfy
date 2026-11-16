@@ -65,6 +65,7 @@ by screen in A4.
 | `app/audio.js` | listening glue: lazy `audio.js`, settings, mood/voice/energy |
 | `app/soundfirst.js` | sound-first filing, sound ID and matches |
 | `app/blend.js` | File's picks from tags blended with the engine and similar artists, once the Score run says so; the engine's per-account fitted weights (`engine-weights`, `withFittedWeights`) |
+| `app/bridgewarm.js` | similar artists (Deezer, ListenBrainz) gathered in the background after load for the whole library, and File's use of them without a Score run (`bridgeWarm`, `bridgedSpace`, `bridgePicks`, gate `bf_bridge_gate`) |
 | `app/teach.js` | File's teach questions (BUILD-6 SG): `teachHTML`, `teachStart`, one-tap answers through `fileCurrent`; shown only where the Score run's `teachGate` passed (`bf_teach`) |
 | `app/clap.js` | CLAP cluster names and "sounds like" search |
 | `app/audio-panel.js` | the Listening and Deep listen panels |
