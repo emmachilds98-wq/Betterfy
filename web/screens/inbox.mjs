@@ -307,6 +307,12 @@ export function view(ctx) {
   const best = picks[0];
   // The calibrated band for the leading pick on every card, not only the sound ones.
   const topBand = ctx.fileBand?.(t, picks) ?? best?.band ?? null;
+  // Family first (ENGINE-REVIEW layer 3): the family is settled, only which
+  // playlist inside it is asked. Those picks are shown as equals.
+  const dec = ctx.fileDecision?.(t) ?? null;
+  const fam = dec?.kind === 'family' && dec.family ? dec : null;
+  const famIds = new Set(fam?.playlists?.map(p => p.id ?? p) ?? []);
+  const famName = fam ? String(fam.family).replace(/-/g, ' ').replace(/^./, c => c.toUpperCase()) : '';
   ctx.fileOrderKick?.();
   const canFile = S.fileSel.size > 0 || !!best;
   const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
@@ -342,8 +348,9 @@ export function view(ctx) {
             ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
           </div>
         </div>${trackStrip(t)}${soundIdHTML(t)}
+        ${fam ? `<p class="famline" data-family="${esc(fam.family)}"><b>${esc(famName)}</b> for sure. Which one?</p>` : ''}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
-          <div class="pickw"><button class="pick ${n === 0 ? (pickBacked(sg) ? 'best' : 'lead') : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
+          <div class="pickw"><button class="pick ${fam ? (famIds.has(sg.id) ? 'twoway' : '') : n === 0 ? (pickBacked(sg) ? 'best' : 'lead') : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'

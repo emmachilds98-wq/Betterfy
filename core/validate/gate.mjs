@@ -123,7 +123,8 @@ export function earChoice(acc, opts = {}) {
   const w = acc?.withAudio ?? null;
   const first = w?.gate ?? (w ? audioGate(acc) : null);
   const keep = (reason, text, vsFirst = {}) => ({ ear: 'effnet', gate: first, reason, text, vsFirst, bar });
-  const arms = w?.arms ? Object.entries(w.arms) : [];
+  // 'near' is the first ear scored another way, not an ear: nearChoice reads it.
+  const arms = w?.arms ? Object.entries(w.arms).filter(([ear]) => ear !== 'near') : [];
   if (!arms.length) return keep('NO_ARMS', 'Only the first ear was scored.');
 
   const vsFirst = {};
@@ -147,4 +148,29 @@ export function earChoice(acc, opts = {}) {
   const v = vsFirst[best.ear];
   return { ear: best.ear, gate: best.gate, reason: 'SECOND_EAR', vsFirst, bar,
            text: `${best.ear === 'maest' ? 'The second ear' : 'Both ears together'} ${pts(v.lift)} on never-filed artists over the first ear, ${pts(v.overall)} overall.` };
+}
+
+/**
+ * Nearest members (docs/review/ENGINE-REVIEW.md layer 1): may the first ear's
+ * score mix in the playlist's closest heard members (core/intrinsic/audio.mjs
+ * nearMix)? Read from the `near` arm of one Score run, against the first ear
+ * on the same tracks. The bar was set before the owner's numbers:
+ *   1. the arm passes the same gate against no sound at all, and
+ *   2. at least `minLift` more top-1 overall, and no loss on never-filed
+ *      artists (a placement change that only moves already-filed artists).
+ * Returns `{ use, reason, text, lift, neverFiled, bar }`.
+ */
+export const NEAR_GATE = Object.freeze({ minLift: 0.02 });
+
+export function nearChoice(acc, opts = {}) {
+  const bar = { ...NEAR_GATE, ...opts };
+  const w = acc?.withAudio ?? null, a = w?.arms?.near ?? null;
+  if (!a) return { use: false, reason: 'NO_ARM', text: 'Nearest tracks were not scored.', bar };
+  const lift = (a.top1 ?? 0) - (w.top1 ?? 0);
+  const nf = (a.neverFiled?.top1 ?? 0) - (w.neverFiled?.top1 ?? 0);
+  const out = { lift: +lift.toFixed(4), neverFiled: +nf.toFixed(4), bar };
+  if (a.gate?.pass == null) return { ...out, use: false, reason: 'UNDECIDED', text: 'Too few tracks heard to judge nearest tracks yet.' };
+  const use = a.gate.pass === true && lift + EPS >= bar.minLift && nf >= -EPS;
+  return { ...out, use, reason: use ? 'NEAR_USED' : 'NEAR_NOT_USED',
+           text: `Comparing with each playlist's nearest tracks: ${pts(lift)} overall, ${pts(nf)} on never-filed artists — ${use ? 'used' : 'not used'}.` };
 }

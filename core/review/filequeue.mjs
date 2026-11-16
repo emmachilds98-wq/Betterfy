@@ -15,7 +15,7 @@ export const FILEQUEUE_VERSION = '1.0.0';
 export const BAND_LOG = { HIGH: 'sure', LIKELY: 'likely', AMBIGUOUS: 'unsure' };
 
 /** The Engine's calibrated decide() kinds, as the bands the chip draws. */
-export const DECISION_BAND = { confident: 'HIGH', choose: 'LIKELY', unsure: 'AMBIGUOUS' };
+export const DECISION_BAND = { confident: 'HIGH', family: 'LIKELY', choose: 'LIKELY', unsure: 'AMBIGUOUS' };
 
 /** The band for a card: the calibrated verdict when the Engine has judged this
  *  track, else the leading pick's own band, else none. */

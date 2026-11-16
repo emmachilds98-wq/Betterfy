@@ -46,13 +46,13 @@ export function withAnswers(lib, answers) {
 }
 
 /** Top-1 of the engine (a built space) on `tracks`, against `truth` (id -> playlist ids). */
-export function scoreOn(space, tracks, truth) {
+export function scoreOn(space, tracks, truth, { soundFirst = false } = {}) {
   let right = 0, n = 0;
   for (const t of tracks) {
     const want = truth.get(t.id);
     if (!want?.length) continue;
     n++;
-    const top = placements(t, space, { limit: 1 }).results?.[0];
+    const top = placements(t, space, { limit: 1, soundFirst }).results?.[0];
     if (top && want.includes(top.playlistId)) right++;
   }
   return { n, right, top1: n ? +(right / n).toFixed(4) : null };
@@ -60,10 +60,10 @@ export function scoreOn(space, tracks, truth) {
 
 /** The engine's calibrated verdict for each waiting track, and its best
  *  guesses (the top three, the card's picks): id -> { decision, guesses }. */
-export function decisionsFor(space, tracks, cal) {
+export function decisionsFor(space, tracks, cal, { soundFirst = false } = {}) {
   const out = new Map();
   for (const t of tracks) {
-    const results = placements(t, space, { limit: Infinity }).results ?? [];
+    const results = placements(t, space, { limit: Infinity, soundFirst }).results ?? [];
     out.set(t.id, { decision: decide(scoresOf(results), cal),
                     guesses: results.slice(0, TEACH.guesses).map(r => ({ id: r.playlistId, name: r.name })) });
   }
@@ -83,10 +83,14 @@ export function decisionsFor(space, tracks, cal) {
  */
 export function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH.batch, strategy = 'teach',
                                     folds = 5, targets = null, genreGraph = false, cal = null, calLimit = null,
-                                    isMirror = null } = {}) {
-  const spaceOpts = { targets: targets ? new Set(targets) : null, genreGraph, isMirror };
+                                    isMirror = null, audio = null } = {}) {
+  // With `audio` (ENGINE-REVIEW layer 5) the engine is the one File places heard
+  // tracks with: sound-first, and each answer joins its playlist's sound, so a
+  // single answer counts for every track that sounds like it.
+  const spaceOpts = { targets: targets ? new Set(targets) : null, genreGraph, isMirror, ...(audio ? { audio } : {}) };
+  const sf = { soundFirst: !!audio };
   // "How sure may it be", fitted once on the library's own filing, as the Score run does.
-  cal ??= calibrationReport(placementAccuracy(lib, { folds, collect: true, limit: calLimit, ...spaceOpts }).rows).cal;
+  cal ??= calibrationReport(placementAccuracy(lib, { folds, collect: true, limit: calLimit, targets: spaceOpts.targets, genreGraph, isMirror }).rows).cal;
   const pending = (waiting ?? []).filter(t => truth.get(t.id)?.length);
   const asked = [];
   const first = buildSpace(lib, spaceOpts);
@@ -96,7 +100,7 @@ export function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH
     const left = pending.filter(t => !done.has(t.id));
     if (!left.length) break;
     const want = Math.min(batch, answers - asked.length);
-    const dec = decisionsFor(space, left, cal);
+    const dec = decisionsFor(space, left, cal, sf);
     const rows = left.map(rowOf);
     const byId = new Map(left.map(t => [t.id, t]));
     let picks;
@@ -125,8 +129,8 @@ export function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH
   }
   const done = new Set(asked.map(([t]) => t.id));
   const rest = pending.filter(t => !done.has(t.id));
-  const before = scoreOn(first, rest, truth), after = scoreOn(space, rest, truth);
-  return { version: TEACH_SIM_VERSION, strategy, asked: asked.length, inList, before, after,
+  const before = scoreOn(first, rest, truth, sf), after = scoreOn(space, rest, truth, sf);
+  return { version: TEACH_SIM_VERSION, strategy, asked: asked.length, inList, before, after, ...(audio ? { sound: true } : {}),
            answered: asked.map(([t, pid]) => [t.id, pid]),
            gain: before.top1 != null && after.top1 != null ? +(after.top1 - before.top1).toFixed(4) : null };
 }
@@ -150,7 +154,7 @@ export const TEACH_GATE = { answers: 20, minScored: 30, waitingCap: 400, calLimi
  * right after than before ("beats", not "ties"). Otherwise the teach card stays
  * hidden, and `why` says which.
  */
-export function teachGate(lib, { targets = null, isMirror = null, genreGraph = false, ...over } = {}) {
+export function teachGate(lib, { targets = null, isMirror = null, genreGraph = false, audio = null, ...over } = {}) {
   const o = { ...TEACH_GATE, ...over };
   const allowed = targets ? new Set(targets) : null;
   const truthAll = truthOf(lib, { isMirror });
@@ -166,8 +170,9 @@ export function teachGate(lib, { targets = null, isMirror = null, genreGraph = f
   if (truth.size < o.answers + o.minScored) return { ...out, why: `not enough filed tracks yet (${truth.size} of ${o.answers + o.minScored})` };
   const base = libraryWithout(lib, new Set(truth.keys()));
   const r = simulateTeach(base, { waiting: hidden, truth, answers: o.answers, targets, genreGraph, isMirror,
-                                  folds: o.calFolds, calLimit: o.calLimit });
+                                  folds: o.calFolds, calLimit: o.calLimit, audio });
   Object.assign(out, { asked: r.asked, inList: r.inList, scored: r.before.n, before: r.before.top1, after: r.after.top1,
+                       ...(r.sound ? { sound: true } : {}),
                        gain: r.gain, right: [r.before.right, r.after.right] });
   return teachVerdict(out, o);
 }

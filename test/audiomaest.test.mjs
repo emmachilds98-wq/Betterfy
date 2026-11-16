@@ -437,8 +437,9 @@ test('chosenEar: only a passed Score verdict for a second ear, with records that
   assert.equal(chosenEar({ ear: 'maest', gate: { pass: null } }, recs), 'effnet');
   assert.equal(chosenEar({ ear: 'effnet', gate: { pass: true } }, recs), 'effnet');
   assert.equal(chosenEar(null, recs), 'effnet', 'switching Deep listen on changes nothing by itself');
-  assert.deepEqual(scoreArms(recs), ['maest', 'both']);
-  assert.equal(scoreArms(none), null);
+  assert.deepEqual(scoreArms(recs), ['maest', 'both', 'near']);
+  assert.deepEqual(scoreArms(none), ['near'], 'nearest tracks are scored on the first ear alone');
+  assert.equal(scoreArms([]), null);
   assert.equal(scoreArms(null), null);
 });
 

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1834">
+<meta name="bf-build" content="2026-11-16-1856">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -567,6 +567,10 @@ main:focus{outline:none}
   .pick.best .k{background:var(--ok); color:var(--ok-ink)}
   .pick.best .sc{color:var(--ok)} .pick.best .ax{color:color-mix(in srgb, var(--ok) 60%, var(--ink-2))}
   .pick.best .bar i{background:var(--ok)}
+  /* Family first: the family is settled and the picks inside it are equals. */
+  .famline{margin:18px 0 -10px; font-size:15px; color:var(--ink-2)}
+  .famline b{color:var(--ok)}
+  .pick.twoway{border-color:color-mix(in srgb, var(--ok) 35%, var(--line))}
   /* The leading pick that only tags back: first, but a choice, not a commitment.
      Accent outline, no green (USER-REVIEW item 2). */
   .pick.lead{border-color:color-mix(in srgb, var(--accent) 45%, var(--line))}
@@ -1797,7 +1801,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1834</span>
+    <span class="mono">build 2026-11-16-1856</span>
   </p>
 
   <div class="feat">
@@ -1890,7 +1894,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1834</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1856</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2007,7 +2011,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1834. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1856. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3424,7 +3428,7 @@ const FILEQUEUE_VERSION = '1.0.0';
 const BAND_LOG = { HIGH: 'sure', LIKELY: 'likely', AMBIGUOUS: 'unsure' };
 
 /** The Engine's calibrated decide() kinds, as the bands the chip draws. */
-const DECISION_BAND = { confident: 'HIGH', choose: 'LIKELY', unsure: 'AMBIGUOUS' };
+const DECISION_BAND = { confident: 'HIGH', family: 'LIKELY', choose: 'LIKELY', unsure: 'AMBIGUOUS' };
 
 /** The band for a card: the calibrated verdict when the Engine has judged this
  *  track, else the leading pick's own band, else none. */
@@ -4952,6 +4956,12 @@ function view(ctx) {
   const best = picks[0];
   // The calibrated band for the leading pick on every card, not only the sound ones.
   const topBand = ctx.fileBand?.(t, picks) ?? best?.band ?? null;
+  // Family first (ENGINE-REVIEW layer 3): the family is settled, only which
+  // playlist inside it is asked. Those picks are shown as equals.
+  const dec = ctx.fileDecision?.(t) ?? null;
+  const fam = dec?.kind === 'family' && dec.family ? dec : null;
+  const famIds = new Set(fam?.playlists?.map(p => p.id ?? p) ?? []);
+  const famName = fam ? String(fam.family).replace(/-/g, ' ').replace(/^./, c => c.toUpperCase()) : '';
   ctx.fileOrderKick?.();
   const canFile = S.fileSel.size > 0 || !!best;
   const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
@@ -4987,8 +4997,9 @@ function view(ctx) {
             ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
           </div>
         </div>${trackStrip(t)}${soundIdHTML(t)}
+        ${fam ? `<p class="famline" data-family="${esc(fam.family)}"><b>${esc(famName)}</b> for sure. Which one?</p>` : ''}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
-          <div class="pickw"><button class="pick ${n === 0 ? (pickBacked(sg) ? 'best' : 'lead') : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
+          <div class="pickw"><button class="pick ${fam ? (famIds.has(sg.id) ? 'twoway' : '') : n === 0 ? (pickBacked(sg) ? 'best' : 'lead') : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
@@ -5259,6 +5270,14 @@ function calibLine(label, rep, pc) {
     + `not sure ${pc(c.unsureShare)}${rep.holds === true ? '; holds' : rep.holds === false ? "; doesn't hold yet" : ''}`;
 }
 
+/** Family first (ENGINE-REVIEW layer 3): the Score line. Counts and rates only. */
+function familyLine(f, pc) {
+  const sure = f.sure?.confidentN ? `family confident on ${pc(f.sure.confidentShare)} of tracks, right ${pc(f.sure.confidentRight)}`
+    : 'family confident: none earned yet';
+  return `Family first (${f.families} families): family top-1 ${pc(f.family)}, right playlist inside the right family ${pc(f.within)} `
+    + `(flat top-1 ${pc(f.flat)}, ${f.n} tracks); ${sure} — ${f.use ? 'used' : 'not used (family top-1 under 85%)'}`;
+}
+
 /** "How sure it is", checked on tracks the thresholds were not fitted on. */
 function calibCard(p, calib) {
   const c = calib;
@@ -5373,6 +5392,7 @@ function audioCard(v, p, esc, maestScoreText) {
         : (g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.')}</b>
       ${esc(g.text ?? '')}</p>
     ${w.arms?.maest && maestScoreText ? `<p class="why" id="maestScore" style="margin-top:8px">${esc(maestScoreText(w))}</p>` : ''}
+    ${w.nearChoice?.text ? `<p class="why" id="nearScore" style="margin-top:8px">${esc(w.nearChoice.text)}</p>` : ''}
     ${identifyHTML(v.identify, p, esc)}
   </div>`;
 }
@@ -5417,7 +5437,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1834`,
+    `Betterfy engine score — build 2026-11-16-1856`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5435,6 +5455,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
+    ...(v.family ? [familyLine(v.family, pc)] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),
     ...(log && measureLines ? measureLines(log) : []),
@@ -5460,7 +5481,7 @@ function fillRow(f, p) {
 function teachLine(t, pc) {
   if (!t) return null;
   if (t.before == null) return `Teach questions: off (${t.why})`;
-  return `Teach questions: top-1 ${pc(t.before)} -> ${pc(t.after)} after ${t.asked} simulated answers, ${t.scored} hidden tracks — ${
+  return `Teach questions${t.sound ? " (with sound)" : ""}: top-1 ${pc(t.before)} -> ${pc(t.after)} after ${t.asked} simulated answers, ${t.scored} hidden tracks — ${
     t.pass ? 'shown on File' : `off (${t.why})`}`;
 }
 function teachRow(t, p) {
@@ -5589,6 +5610,7 @@ function audioLines(v, pc, maestScoreText) {
       + `${w.analysed} analysed in all; had a say on ${w.judged}, changed ${w.changed} top answers`,
     `Audio gate: ${g.pass === true ? 'PASS' : g.pass === false ? 'not yet' : 'undecided'} (${g.reason ?? '—'}) — ${g.text ?? ''}`,
     ...(w.arms?.maest && maestScoreText ? [maestScoreText(w, pc)] : []),
+    ...(w.nearChoice?.text ? [w.nearChoice.text] : []),
     ...(v.identify?.scored ? [
       `Naming genres by sound (${v.identify.scored} filed tracks): genre ${pc(v.identify.genre)}, sub-genre ${pc(v.identify.specific)}; `
         + `model alone ${pc(v.identify.modelOnly.genre)} / ${pc(v.identify.modelOnly.specific)}; `
@@ -5909,7 +5931,7 @@ const actions = {
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, audioCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, view, tuneCardHtml, actions };
+return { bridgeVerdict, decisionHtml, familyLine, audioCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -8753,7 +8775,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1834';
+const BUILD = '2026-11-16-1856';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -9091,7 +9113,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1834', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1856', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -9305,6 +9327,8 @@ async function recordAccept(trackId, playlistIds) {
   f.accepted = [...new Set([...(f.accepted ?? []), ...ids])];
   f.rejected = f.rejected.filter(p => !ids.includes(p));
   fbStamp(f, 'acceptedAt', ids); fbUnstamp(f, 'rejectedAt', ids);
+  // The next card already knows (app/soundfirst.js learnNow).
+  try { if (typeof learnNow === 'function') learnNow(trackId, ids); } catch { /* the rebuild catches up */ }
   await saveFeedback();
 }
 
@@ -9847,7 +9871,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1834');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1856');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -13054,7 +13078,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1834';
+    s.src = 'engine.js?v=2026-11-16-1856';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -13076,7 +13100,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1834');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1856');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -13198,8 +13222,28 @@ async function engineLoadCalibration() {
     if (c && c.stamp === calStamp() && c.fingerprint === BetterfyPersist.fingerprint(LIB)
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
       ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, audioGate: c.audioGate ?? null,
-                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), at: c.at ?? null };
+                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), ...(c.family ? { family: c.family } : {}), at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
+}
+
+/* ---------- family first, then sub-genre (docs/review/ENGINE-REVIEW.md layer 3) ----------
+ * Each genre playlist's family from the genre its name names; how often the
+ * family is right on held-out rows, and the family-level "confident" threshold,
+ * fitted and checked the way the playlist level is. File commits to a family
+ * only once this account's Score run says family top-1 reaches 85%. */
+function engineFamilies() {
+  return BetterfyFamily.playlistFamilies(engineTargets().map(id => [id, CFG[id]?.name ?? id]));
+}
+function engineFamilyFit(rows) {
+  if (!rows?.length || typeof BetterfyFamily === 'undefined') return null;
+  const families = engineFamilies();
+  const acc = BetterfyFamily.familyAccuracy(rows, families, { report: r => BetterfyCalibrate.calibrationReport(r) });
+  if (!acc) return null;
+  const use = BetterfyFamily.familyInUse(acc);
+  const cal = BetterfyFamily.fitFamilyCalibration(acc.rows);
+  const summary = { n: acc.n, family: acc.family, within: acc.within, flat: acc.flat, families: acc.families,
+                    sure: acc.sure?.checked ?? null, holds: acc.sure?.holds ?? null, use };
+  return { summary, keep: { use, cal, family: acc.family, families: acc.families } };
 }
 
 /** Fit from a score run's rows, keep it, and drop the rows: they are only for this. */
@@ -13221,20 +13265,26 @@ async function engineCalibrate(v) {
   // WP-C1: which ear this run chose. The first ear unless a second ear passed
   // the gate and beat it; its calibration then comes from that ear's rows.
   const choice = mine.withAudio?.choice ?? null;
-  const soundChoice = choice ? { ear: choice.ear, reason: choice.reason, gate: choice.gate ?? null } : null;
-  const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows : mine.withAudio?.rows;
+  const near = choice?.ear === 'effnet' && mine.withAudio?.nearChoice?.use === true;
+  const soundChoice = choice ? { ear: choice.ear, reason: choice.reason, gate: choice.gate ?? null, ...(near ? { near: true } : {}) } : null;
+  // Calibrated on the engine that will place: the chosen ear, or the first ear with its nearest tracks.
+  const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows
+    : near ? mine.withAudio.arms?.near?.rows : mine.withAudio?.rows;
   const audio = soundRows ? BetterfyCalibrate.calibrationReport(soundRows) : null;
+  // Family first (ENGINE-REVIEW layer 3), measured on the rows of the engine that places.
+  const family = engineFamilyFit(soundRows ?? baseRows);
+  if (family) v.family = family.summary;
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
   if (mine.withAudio) delete mine.withAudio.rows;
   for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
-  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), at: Date.now() };
+  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}), at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
                              targets: engineTargets(), base, bridge, audio, audioGate,
-                             ...(soundChoice ? { soundChoice } : {}), at: ENG.calib.at });
+                             ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}), at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }
@@ -13248,17 +13298,23 @@ function engineDecorate() {
   if (!sh || !space) return;
   const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
   const count = { confident: 0, choose: 0, unsure: 0 };
+  let families = null;
   for (const row of sh.rows) {
     row.decision = null;
     const raw = cal && likedById.get(row.id);
     if (!raw) continue;
     const full = BetterfyIntrinsic.placements(raw, space, withFittedWeights({ limit: Infinity, soundFirst: true }, 'plain'));
     const p = full.results?.[0]?.parts ?? {};
-    const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []),
-                                       'audio' in p || 'learned' in p ? soundCal : cal);
-    row.decision = { kind: d.kind,
+    const scores = BetterfyCalibrate.scoresOf(full.results ?? []);
+    const useCal = 'audio' in p || 'learned' in p ? soundCal : cal;
+    // Family first, once this account's Score run earned it: commit to the
+    // family and ask only which playlist inside it.
+    const fam = ENG.calib?.family?.use ? ENG.calib.family : null;
+    const dc = fam ? BetterfyFamily.decideCard(scores, useCal, fam.cal, families ??= engineFamilies()) : null;
+    const d = dc ? { ...dc, kind: dc.kind === 'sure' ? 'confident' : dc.kind } : BetterfyCalibrate.decide(scores, useCal);
+    row.decision = { kind: d.kind, ...(d.family ? { family: d.family } : {}),
                      playlists: d.playlists.map(id => ({ id, name: space.destinations.get(id)?.name ?? id })) };
-    count[d.kind]++;
+    count[d.kind] = (count[d.kind] ?? 0) + 1;
   }
   sh.decided = cal ? count : null;
 }
@@ -13509,7 +13565,7 @@ const engineValidate = guard(async () => {
       let fill = null;
       try { fill = BetterfyFill.fillRecall(LIB, { tags, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist }); } catch { fill = null; }
       let teach = null;
-      try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true }); } catch { teach = null; }
+      try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true, audio: engineAudioIn(audio) }); } catch { teach = null; }
       ENG.val = { mine, base, blend, identify, weights, fill, teach, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).
@@ -13629,7 +13685,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1834';
+    s.src = 'audio.js?v=2026-11-16-1856';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -13665,7 +13721,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1834', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1856', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -13778,6 +13834,9 @@ const engineAudioBase = audio => (audio ? { records: audio, model: ENGINE_LEARN_
 const engineAudioIn = audio => {
   const base = engineAudioBase(audio);
   const ear = audio ? engineEar(audio) : 'effnet';
+  // Nearest tracks (ENGINE-REVIEW layer 1): only once a Score run chose them.
+  if (ear === 'effnet' && audio && globalThis.BetterfyAudio?.nearInUse?.(ENG.calib?.soundChoice ?? null, ear))
+    return { ...base, near: BetterfyAudio.NEAR_SETTING };
   return ear === 'effnet' ? base : { ...base, ear };
 };
 /** Which ear places tracks: the first, unless a Score run chose a second ear. */
@@ -13912,6 +13971,21 @@ function soundIdOf(t) {
   const v = { id, neighbours: neighbours.slice(0, 5), mix };
   SOUND.idMemo = { key, v };
   return v;
+}
+
+/** Learn from a filing now (ENGINE-REVIEW layer 5): the track joins the
+ *  playlist in the File and Engine spaces before the next card, so another
+ *  track by that artist, or one that sounds like it, already counts it. The
+ *  background rebuild replaces this with the exact space later. */
+function learnNow(trackId, playlistIds) {
+  if (!globalThis.BetterfyIntrinsic?.learnFiled) return;
+  if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
+  const raw = SOUND.byId.get(trackId);
+  if (!raw) return;
+  let changed = false;
+  for (const space of new Set([SOUND.space, typeof ENG !== 'undefined' ? ENG.space : null].filter(Boolean)))
+    for (const pid of [].concat(playlistIds)) changed = BetterfyIntrinsic.learnFiled(space, raw, pid) || changed;
+  if (changed) { SOUND.memo = null; SOUND.idMemo = null; }
 }
 
 /** Sound-led picks for one track on the File screen, or [] when it hasn't been
@@ -14545,7 +14619,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1834', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1856', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -14906,6 +14980,7 @@ Object.assign(SCREEN_CTX, {
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand, pickBacked,
                   addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
                   fileBand, fileSure, fileOrderKick, teachHTML, teachAct,
+                  fileDecision: t => (typeof engineDecisionOf === 'function' ? engineDecisionOf(t?.id) : null),
                   rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
                   saveFeedback, toast, render, flyCard,

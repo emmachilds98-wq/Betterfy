@@ -54,6 +54,8 @@ async function recordAccept(trackId, playlistIds) {
   f.accepted = [...new Set([...(f.accepted ?? []), ...ids])];
   f.rejected = f.rejected.filter(p => !ids.includes(p));
   fbStamp(f, 'acceptedAt', ids); fbUnstamp(f, 'rejectedAt', ids);
+  // The next card already knows (app/soundfirst.js learnNow).
+  try { if (typeof learnNow === 'function') learnNow(trackId, ids); } catch { /* the rebuild catches up */ }
   await saveFeedback();
 }
 

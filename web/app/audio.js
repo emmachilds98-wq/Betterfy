@@ -176,6 +176,9 @@ const engineAudioBase = audio => (audio ? { records: audio, model: ENGINE_LEARN_
 const engineAudioIn = audio => {
   const base = engineAudioBase(audio);
   const ear = audio ? engineEar(audio) : 'effnet';
+  // Nearest tracks (ENGINE-REVIEW layer 1): only once a Score run chose them.
+  if (ear === 'effnet' && audio && globalThis.BetterfyAudio?.nearInUse?.(ENG.calib?.soundChoice ?? null, ear))
+    return { ...base, near: BetterfyAudio.NEAR_SETTING };
   return ear === 'effnet' ? base : { ...base, ear };
 };
 /** Which ear places tracks: the first, unless a Score run chose a second ear. */

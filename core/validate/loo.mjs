@@ -34,8 +34,8 @@
 import { buildSpace, placements, withAudioLayer, componentParts, BANDS, WEIGHTS } from '../intrinsic/space.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
 import { scoresOf } from '../intrinsic/calibrate.mjs';
-import { audioIndex } from '../intrinsic/audio.mjs';
-import { audioGate, earChoice } from './gate.mjs';
+import { audioIndex, NEAR_DEFAULT } from '../intrinsic/audio.mjs';
+import { audioGate, earChoice, nearChoice } from './gate.mjs';
 
 // 4.1.0: `audio` (WP-E2). Without it the result is key for key what 4.0.0 gave.
 // `audio.arms` (WP-C1) adds `withAudio.arms` and nothing else, so the version
@@ -409,17 +409,23 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     }
     // Which ear may place tracks, read from this same run (gate.mjs).
     withAudio.choice = earChoice(result);
+    // And whether the nearest members may join the first ear's score.
+    if (withAudio.arms.near) withAudio.nearChoice = nearChoice(result);
   }
   return result;
 }
 
 /** `audio.arms` → [{ ear, opts, t }] with an index per ear, built once like the first ear's. */
 function armsOf(audio, base, collect) {
-  const list = audio && typeof audio === 'object' && Array.isArray(audio.arms) ? audio.arms : [];
-  if (!list.length || !audio.records) return [];
+  let list = audio && typeof audio === 'object' && Array.isArray(audio.arms) ? audio.arms : [];
+  if (!list.length) return [];
+  if (!audio.records) list = list.filter(ear => ear === 'near');
+  // 'near' is not an ear: the first ear's index, scored with its nearest
+  // members mixed in (core/intrinsic/audio.mjs nearMix). gate.mjs nearChoice reads it.
   return [...new Set(list)].filter(ear => ear !== 'effnet').map(ear => ({
     ear,
-    opts: { ...base, index: audioIndex(audio.records, { mel: audio.mel, ear }) },
+    opts: ear === 'near' ? { ...base, near: audio.near ?? NEAR_DEFAULT }
+      : { ...base, index: audioIndex(audio.records, { mel: audio.mel, ear }) },
     t: { all: tally(), neverFiled: tally(), heard: 0, heardNeverFiled: 0, judged: 0, changed: 0, rows: collect ? [] : null },
   }));
 }
