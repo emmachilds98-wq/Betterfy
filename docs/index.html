@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1610">
+<meta name="bf-build" content="2026-11-16-1617">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1711,7 +1711,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1610</span>
+    <span class="mono">build 2026-11-16-1617</span>
   </p>
 
   <div class="feat">
@@ -1804,7 +1804,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1610</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1617</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1921,7 +1921,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1610. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1617. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3269,7 +3269,54 @@ function analysisPriority({ profile }, { weights = null, reach = null, track } =
   const spread = 1 + Math.min(3, (reach?.get?.(track?.id) ?? 1) - 1) * 0.25;
   return +(uncertainty * played * spread).toFixed(4);
 }
-return { RELEVANCE_VERSION, UNCERTAINTY, uncertaintyOf, relevanceOf, playlistReach, analysisPriority, listeningWeights };
+
+/** What the engine knows about an artist from its tag count, on the confidence scale. */
+const artistConfidence = n => (n <= 0 ? CONFIDENCE.INSUFFICIENT_DATA : n < 3 ? CONFIDENCE.AMBIGUOUS : CONFIDENCE.LIKELY);
+
+/**
+ * The order to spend enrichment requests in (BUILD-6 D9): the tag-gap fill and
+ * the similar-artist lookups, most-listened and least-known artists first, by
+ * analysisPriority, so a run cut short by a closed tab, a quota or a five-minute
+ * attention span has already covered what this listener actually plays.
+ *
+ * `weights` are listening only — Spotify's top artists over three windows and
+ * recently played, by name (listenedWeights below: no library floor). When there
+ * are none (no listening data, or it failed) the entries come back in exactly
+ * the order they went in: byte-identical to not calling this at all.
+ *
+ * No `reach` (spread) term, deliberately, though analysisPriority takes one:
+ * measured on the large non-owner fixture (test/enrichorder.test.mjs), adding
+ * the number of playlists an artist is filed in let widely-filed artists nobody
+ * plays push listened ones out of the first 100 Last.fm requests (96% -> 88%
+ * of the top-100 listened covered). Uncertainty stays: an artist with no tags
+ * at all goes before one with a thin answer, at equal listening.
+ *
+ * @param {Iterable} entries     e.g. [artistId, name] pairs, or [id, {name}] for a bridge Map
+ * @param {object}   o
+ * @param {Map<string, number>} [o.weights]  listening weight by artist name
+ * @param {(id: string) => number} [o.tagCount]  tags the artist already has
+ * @param {(e) => string} [o.idOf]
+ * @param {(e) => string} [o.nameOf]
+ */
+function enrichOrder(entries, { weights = null, tagCount = () => 0,
+                                       idOf = e => e[0], nameOf = e => e[1] } = {}) {
+  const list = [...(entries ?? [])];
+  if (!weights?.size) return list;
+  const scored = list.map((e, i) => {
+    const id = idOf(e);
+    const p = analysisPriority({ profile: { genre: { confidence: artistConfidence(tagCount(id)) } } },
+                               { weights, track: { id, artists: [{ name: nameOf(e) }] } });
+    return [e, i, p];
+  });
+  return scored.sort((a, b) => (b[2] - a[2]) || (a[1] - b[1])).map(x => x[0]);
+}
+
+/** Listening-only weights from the raw listening fetch ({ topWindows, recentArtists }), or null when there is none. */
+function listenedWeights(raw) {
+  const w = listeningWeights({ topWindows: raw?.topWindows ?? [], recentArtists: raw?.recentArtists ?? [] });
+  return w.size ? w : null;
+}
+return { RELEVANCE_VERSION, UNCERTAINTY, uncertaintyOf, relevanceOf, playlistReach, analysisPriority, enrichOrder, listenedWeights, listeningWeights };
 })();
 /* ---- core/review/filequeue.mjs ---- */
 __mod["core/review/filequeue.mjs"] = (function () {
@@ -5121,7 +5168,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1610`,
+    `Betterfy engine score — build 2026-11-16-1617`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7988,7 +8035,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1610';
+const BUILD = '2026-11-16-1617';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -8326,7 +8373,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1610', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1617', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -9082,7 +9129,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1610');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1617');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11456,6 +11503,23 @@ const REASK_TAG_FLOOR = 3;
 const REASK_AFTER_MS = 1000 * 60 * 60 * 24 * 180; // ~6 months
 const worthReasking = e => !e || (e.tags?.length ?? 0) < REASK_TAG_FLOOR && (Date.now() - (e.checkedAt ?? 0)) > REASK_AFTER_MS;
 
+/* Listening-weighted enrichment (BUILD-6 D9). Every run that spends requests
+ * on artists one at a time (this tag-gap fill, Wikidata's genres, the similar-
+ * artist lookups for Score and File) asks in enrichOrder()'s order: what this
+ * account plays most, over Spotify's three top-artist windows and recently
+ * played, first. Read from the listening this page already fetched and kept
+ * (listening_raw), never fetched again for this. None kept, or none at all:
+ * null, and every run keeps the order it always had. */
+async function enrichWeights() {
+  try { return listenedWeights((await idb.get('listening_raw'))?.data); } catch { return null; }
+}
+/** `entries` in enrichOrder()'s order, or unchanged without listening. */
+async function inEnrichOrder(entries, nameOf) {
+  const weights = await enrichWeights();
+  if (!weights) return [...entries];
+  return enrichOrder(entries, { weights, tagCount: id => TAGS?.[id]?.tags?.length ?? 0, ...(nameOf ? { nameOf } : {}) });
+}
+
 /** Fill tag gaps for artists the shipped set doesn't cover, using the viewer's own key. */
 async function enrichMissing({ quiet = false, onProgress = null } = {}) {
   const key = lfmKey();
@@ -11477,6 +11541,10 @@ async function enrichMissing({ quiet = false, onProgress = null } = {}) {
   // first, so leaving the screen partway through still improves the
   // suggestions that matter most.
   try { todo = byListening(todo, (await getListening()).weights); } catch { /* library order is fine */ }
+  // Then by listening alone, with the least-known first at equal listening: the
+  // weights above carry a library floor that let a much-filed artist nobody
+  // plays go ahead of one played this month (D9).
+  todo = await inEnrichOrder(todo);
 
   const cached = (await idb.get('tags_extra')) ?? {};
   let done = 0, viaDiscogs = 0, failed = 0, blank = 0;
@@ -11557,11 +11625,14 @@ const untaggedArtists = () => {
 async function fillFromWikidata({ quiet = false } = {}) {
   const cached = (await idb.get('tags_extra')) ?? {};
   // Asked before and Wikidata had nothing: not asked again until that answer is stale.
-  const todo = [...untaggedArtists().keys()].filter(id => !(cached[id]?.source === 'wikidata' && !worthReasking(cached[id])));
+  const untagged = untaggedArtists();
+  const todo = [...untagged.keys()].filter(id => !(cached[id]?.source === 'wikidata' && !worthReasking(cached[id])));
   if (!todo.length) { if (!quiet) toast('Every artist Wikidata could know about has been asked already.'); return 0; }
   await engineLoad();
   const W = BetterfyWikidata;
-  const ids = todo.filter(W.isSpotifyId);
+  // Most-listened first (D9): Wikidata answers 300 at a time, so on a big
+  // library the first answer is the one that matters most.
+  const ids = (await inEnrichOrder(todo.filter(W.isSpotifyId).map(id => [id, untagged.get(id)]))).map(([id]) => id);
   let found = 0, failed = 0;
   for (let i = 0; i < ids.length; i += W.BATCH) {
     const batch = ids.slice(i, i + W.BATCH);
@@ -12261,7 +12332,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1610';
+    s.src = 'engine.js?v=2026-11-16-1617';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -12283,7 +12354,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1610');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1617');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12619,7 +12690,8 @@ function bridgeProgressText() {
 /** Look up the neighbours of the artists about to be scored, remembering every
  *  answer on this device so the next run only asks about what is new or stale. */
 async function engineBridge(tracks) {
-  const artists = BetterfyBridge.sourceArtists(tracks);
+  // Most-listened first (D9), so a run Deezer's quota cuts short has looked up what you play.
+  const artists = new Map(await inEnrichOrder(BetterfyBridge.sourceArtists(tracks), ([, a]) => a.name));
   let cache = null;
   try { cache = (await idb.get(BRIDGE_KEY))?.raw ?? null; } catch { /* no cache: ask everything */ }
   let last = 0;
@@ -12831,7 +12903,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1610';
+    s.src = 'audio.js?v=2026-11-16-1617';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -12867,7 +12939,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1610', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1617', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -13280,7 +13352,8 @@ async function blendFetch() {
     const playOf = t => Math.max(0, ...(t.artists ?? []).map(a => listen.get(String(a?.name ?? '').toLowerCase()) ?? 0));
     const tracks = R.backlog.map(b => liked.get(b.id)).filter(Boolean)
       .map((t, i) => ({ t, i, w: playOf(t) })).sort((a, b) => b.w - a.w || a.i - b.i).map(x => x.t);
-    const artists = BetterfyBridge.sourceArtists(tracks);
+    // Ordered by track above; by artist, listening alone and least-known first, here (D9).
+    const artists = new Map(await inEnrichOrder(BetterfyBridge.sourceArtists(tracks), ([, a]) => a.name));
     let raw = (await idb.get(BRIDGE_KEY))?.raw ?? {};
     const ttl = BetterfyBridgeFetch.TTL_MS, now = Date.now();
     const fresh = at => Number.isFinite(at) && now - at < ttl;
@@ -13601,7 +13674,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1610', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1617', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
