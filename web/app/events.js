@@ -12,8 +12,7 @@ document.addEventListener('click', guard(async e => {
   // The File screen's "listen to my music" nudge: the same switch as Sources'.
   if (e.target.closest('[data-soundon]')) {
     await audioLoad().catch(() => {});
-    if (globalThis.BetterfyAudio) BetterfyAudio.writeAudioSettings(LS, { on: true });
-    else LS.setItem('bf_audio', JSON.stringify({ ...audioSettings(), on: true }));
+    audioSettingsWrite({ on: true });
     toast('Listening is on. Picks switch to sound as tracks are heard — see Sources for progress.');
     audioStart();
     return render();
@@ -94,9 +93,7 @@ document.addEventListener('change', guard(async e => {
     await audioLoad().catch(() => {});
     const change = e.target.id === 'audioOn' ? { on: e.target.checked }
       : e.target.id === 'audioWifi' ? { wifiOnly: e.target.checked } : { scope: e.target.value };
-    if (globalThis.BetterfyAudio) BetterfyAudio.writeAudioSettings(LS, change);
-    else { const next = { ...audioSettings(), ...change };
-           LS.setItem('bf_audio', JSON.stringify(next.on === false ? { ...next, offChosen: true } : next)); }
+    audioSettingsWrite(change);
     const set = audioSettings();
     // Turning it off, narrowing the scope or tightening Wi-Fi stops the run; the next start re-reads all three.
     if (AUDIO.ctrl?.running) await AUDIO.ctrl.stop(set.on ? 'settings changed' : 'stopped');

@@ -101,7 +101,7 @@ const UI_MODULES = ['web/ui/sound.mjs', 'web/app/patch.mjs'];
 
 /* The File queue's order and sure batch (BUILD-5-PLAN §5.2): relevance.mjs's listening-x-uncertainty
  * pieces and the pure ordering built on them. Exposed as globals like v1. */
-const FILE_MODULES = ['core/personal/relevance.mjs', 'core/review/filequeue.mjs', 'core/review/teach.mjs'];
+const FILE_MODULES = ['core/personal/relevance.mjs', 'core/review/filequeue.mjs', 'core/review/teach.mjs', 'core/review/autoscore.mjs'];
 
 /* Screen modules (docs/BUILD-5-PLAN.md A4): web/screens/<name>.mjs, each opting
  * in with `// @bundle screens <name> <order>` (see bundler.mjs discoverBundles;

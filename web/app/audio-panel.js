@@ -37,7 +37,7 @@ async function audioTracks() {
 function audioWifiKnown() {
   if (AUDIO.wifiOk) return true;
   try { if (LS.getItem('bf_audio_wifi_ok') === '1') return true; } catch { /* storage off */ }
-  try { return matchMedia('(pointer: fine)').matches && !(navigator.maxTouchPoints > 0); } catch { return false; }
+  return audioOnComputer();
 }
 function audioConnection() {
   const set = audioSettings();

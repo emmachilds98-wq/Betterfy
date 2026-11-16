@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-2329">
+<meta name="bf-build" content="2026-11-16-2340">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1924,7 +1924,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-2329</span>
+    <span class="mono">build 2026-11-16-2340</span>
   </p>
 
   <div class="feat">
@@ -2017,7 +2017,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-2329</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-2340</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2134,7 +2134,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-2329. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-2340. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3776,6 +3776,127 @@ function teachQueue(rows, { decisionOf = null, guesses = null, weights = null, t
   return batch;
 }
 return { TEACH_VERSION, TEACH, artistKeyOf, artistSpread, choicesOf, teachValue, teachQueue };
+})();
+/* ---- core/review/autoscore.mjs ---- */
+__mod["core/review/autoscore.mjs"] = (function () {
+// Score + Tune, run by itself (docs/NEXT-WORKPLAN.md package 1).
+//
+// Every gate that switches a part of the engine on (sound in the blend, the
+// deep ear, nearest members, family first, mood chips, fitted weights, teach,
+// Fill this playlist) is decided by this account's own Score run. Until now
+// that needed someone to find Library ▸ Engine and press a button, so an
+// account that never did kept every gate shut, and a gate decided on 200 heard
+// tracks never heard about the next 2,000.
+//
+// This file decides only *whether a run is due*; web/app/autoscore.js runs it.
+// Pure, no storage, no clock of its own, so every branch is a unit test.
+//
+// `last` is the record the page keeps in localStorage `bf_autoscore`:
+//   { at, heard, why, ok }   when the last run (automatic or by hand) ended,
+//                            how many tracks listening had heard then, why it
+//                            ran, and whether it finished.
+// Bundled into the page and exposed as globals, like filequeue.mjs.
+
+const AUTOSCORE = Object.freeze({
+  /** A first run needs this many tracks filed in genre playlists to score anything worth keeping. */
+  minFiled: 60,
+  /** Listening finished and heard at least this many more since the last run. */
+  listenedMore: 50,
+  /** Listening still going, but heard this many more ... */
+  heardMore: 200,
+  /** ... and this much more, as a share of what it had heard last time. */
+  heardGrowth: 0.25,
+  /** The weekly check. Also the longest a running listen can hold a run back. */
+  weekMs: 7 * 24 * 3600e3,
+  /** A run that failed is not tried again for this long. */
+  retryMs: 6 * 3600e3,
+});
+
+const HOUR = 3600e3, DAY = 24 * HOUR;
+
+/**
+ * Why a Score + Tune run is due now, or null when it is not.
+ *
+ * @param {object} o
+ * @param {{at:number, heard?:number, why?:string, ok?:boolean}|null} o.last
+ * @param {number} o.now
+ * @param {number} [o.heard]      tracks listening has heard so far
+ * @param {number} [o.filed]      distinct tracks in genre (target) playlists
+ * @param {string|null} [o.listening]  listening state: 'running' | 'done' | 'paused' | null
+ * @param {boolean} [o.busy]      a Score or Tune run (or the first analysis) already going
+ * @returns {'first'|'listened'|'heard'|'weekly'|null}
+ */
+function autoScoreWhy({ last = null, now, heard = 0, filed = 0, listening = null, busy = false } = {}) {
+  if (busy || !Number.isFinite(now)) return null;
+  if (filed < AUTOSCORE.minFiled) return null;
+  const at = Number.isFinite(last?.at) ? last.at : null;
+  if (at == null) return 'first';
+  const age = now - at;
+  // A run that did not finish: leave it for a while, then try again for the reason it first ran.
+  if (last.ok === false) {
+    if (age < AUTOSCORE.retryMs) return null;
+    return ['first', 'listened', 'heard', 'weekly'].includes(last.why) ? last.why : 'weekly';
+  }
+  const was = Number(last.heard) || 0, more = heard - was;
+  const grew = more >= AUTOSCORE.heardMore && heard >= was * (1 + AUTOSCORE.heardGrowth);
+  // Listening and a Score run both want the computer: let listening finish, unless that is
+  // taking all week. A long listen still earns a run on the way once it has heard a lot more.
+  if (listening === 'running' && age < AUTOSCORE.weekMs) return grew ? 'heard' : null;
+  if (listening === 'done' && more >= AUTOSCORE.listenedMore) return 'listened';
+  if (grew) return 'heard';
+  if (age >= AUTOSCORE.weekMs) return 'weekly';
+  return null;
+}
+
+/** "2 h ago", "3 days ago", "just now". */
+function agoWords(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return 'just now';
+  if (ms < 90e3) return 'just now';
+  if (ms < HOUR) return `${Math.round(ms / 60e3)} min ago`;
+  if (ms < DAY) return `${Math.round(ms / HOUR)} h ago`;
+  const d = Math.round(ms / DAY);
+  return d === 1 ? 'yesterday' : `${d} days ago`;
+}
+
+const WHY_WORDS = {
+  first: 'on its first check',
+  listened: 'after listening finished',
+  heard: 'after listening heard more of your library',
+  weekly: 'on its weekly check',
+  manual: 'when you ran it',
+};
+
+/**
+ * The line under the Score buttons on the Engine screen.
+ * @param {object|null} last  the `bf_autoscore` record
+ * @param {number} now
+ * @param {{filed?: number, running?: boolean}} [o]
+ */
+function autoScoreLine(last, now, { filed = null, running = false } = {}) {
+  if (running) return 'Scoring and tuning by itself now. It runs in the background; the app stays usable.';
+  const next = 'Runs again by itself when listening finishes or has heard 200+ more tracks, or in ';
+  if (!Number.isFinite(last?.at)) {
+    if (filed != null && filed < AUTOSCORE.minFiled)
+      return `Runs by itself once ${AUTOSCORE.minFiled} tracks are filed in your genre playlists (${filed} so far), then weekly.`;
+    return 'Runs by itself a minute after the app opens, then again after listening and weekly. No need to press anything.';
+  }
+  const age = now - last.at;
+  if (last.ok === false) {
+    const wait = Math.max(0, AUTOSCORE.retryMs - age);
+    return `The last run ${agoWords(age)} didn't finish. It tries again by itself ${wait > 0 ? `in about ${Math.max(1, Math.round(wait / HOUR))} h` : 'soon'}.`;
+  }
+  const left = Math.max(0, AUTOSCORE.weekMs - age);
+  const days = Math.max(1, Math.ceil(left / DAY));
+  return `Last scored ${agoWords(age)}, ${WHY_WORDS[last.why] ?? 'by itself'}. ${next}${days === 1 ? 'a day' : `${days} days`}.`;
+}
+
+/** The Settings row's short status: "scored 2 h ago" / "waiting". */
+function autoScoreStatus(last, now) {
+  if (!Number.isFinite(last?.at)) return 'On · first run soon';
+  if (last.ok === false) return 'On · retrying';
+  return `On · scored ${agoWords(now - last.at)}`;
+}
+return { AUTOSCORE, autoScoreWhy, agoWords, autoScoreLine, autoScoreStatus };
 })();
 /* ---- web/ui/sound.mjs ---- */
 __mod["web/ui/sound.mjs"] = (function () {
@@ -5577,7 +5698,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-2329`,
+    `Betterfy engine score — build 2026-11-16-2340`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5948,6 +6069,7 @@ function view(c) {
       <button class="b" data-act="scoreTune" ${ENG.valRunning || c.TUNE?.running ? 'disabled' : ''}>Score + Tune</button>
       ${v && !v.error && !ENG.valRunning ? `<button class="b" data-act="copy">Copy results</button>` : ''}
     </div>
+    ${c.autoScoreText ? `<p class="why" id="autoScore" style="margin-top:10px">${esc(c.autoScoreText())}</p>` : ''}
     ${ENG.valRunning && ENG.valStage === 'bridge' ? `<p class="why" style="margin-top:12px" id="bridgeProgress" aria-live="polite">${esc(bridgeProgressText())}</p>
       <p class="why">The first run asks about each artist being scored — a few hundred, a minute or two. Every answer is
         remembered on this device for two months, so later runs only ask about what's new.</p>` : ''}
@@ -7090,7 +7212,7 @@ function helperRows(s = {}) {
   rows.push({ id: 'sound', name: 'Listening (sound)', on: !!a.on, kind: aKind,
     status: !a.on ? 'Off' : a.problem ? 'On · paused' : a.state === 'running' ? 'On · listening' : 'On',
     did: !a.on ? 'Places tracks by how they sound. Switch it on in Listening.' : a.problem ? `Paused: ${a.problem}` :
-      `Places tracks by how they sound against your playlists${a.heard ? `; ${n(a.heard)} tracks heard` : ''}.` });
+      `Places tracks by how they sound against your playlists${a.all ? ', hearing your whole library' : ''}${a.heard ? `; ${n(a.heard)} tracks heard` : ''}.` });
   const d = s.deep ?? {};
   const deepOn = d.maest || d.clap;
   rows.push({ id: 'deep', name: 'Deep listen', on: !!deepOn, kind: !deepOn ? 'off' : d.blocked ? 'idle' : 'ok',
@@ -7099,6 +7221,12 @@ function helperRows(s = {}) {
   rows.push({ id: 'engine', name: 'Learning from your playlists', on: true, kind: s.engine?.status === 'error' ? 'warn' : 'ok',
     status: s.engine?.status === 'ready' ? 'On · learnt' : s.engine?.status === 'error' ? 'Problem' : 'On',
     did: 'Who you file together and where, plus every File and Skip tap, so picks follow your own filing.' });
+  // Score + Tune by itself (NEXT-WORKPLAN package 1): the gates and fitted weights decide themselves.
+  const au = s.auto ?? {};
+  rows.push({ id: 'autoscore', name: 'Checks itself weekly', on: true, kind: au.at && !au.ok ? 'idle' : 'ok',
+    status: au.running ? 'On · scoring now' : !au.at ? 'On · first run soon' : !au.ok ? 'On · retrying' : `On · ran ${au.ago ?? 'recently'}`,
+    did: `Scores itself on your own filing after listening finishes and every week, and switches on the parts that measure better for you${
+      au.at && au.ago ? `; last run ${au.ago}` : ''}. No button to press.` });
   rows.push({ id: 'discogs', name: 'Discogs', on: !!s.discogs, kind: s.discogs ? 'ok' : 'idle', status: s.discogs ? 'On · your token' : 'Optional', optional: true,
     did: 'Release styles for artists nothing else knows. Needs a personal token, so it stays an extra.' });
   return rows;
@@ -9401,6 +9529,7 @@ Object.assign(globalThis, __mod["core/playlists/axes.mjs"]);
 Object.assign(globalThis, __mod["core/personal/relevance.mjs"]);
 Object.assign(globalThis, __mod["core/review/filequeue.mjs"]);
 Object.assign(globalThis, __mod["core/review/teach.mjs"]);
+Object.assign(globalThis, __mod["core/review/autoscore.mjs"]);
 Object.assign(globalThis, __mod["web/ui/sound.mjs"]);
 Object.assign(globalThis, __mod["web/app/patch.mjs"]);
 globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], tidy: __mod["web/screens/tidy.mjs"], helpers: __mod["web/screens/helpers.mjs"], lists: __mod["web/screens/lists.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"], new: __mod["web/screens/new.mjs"] };
@@ -9803,7 +9932,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-2329';
+const BUILD = '2026-11-16-2340';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10141,7 +10270,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-2329', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-2340', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -10899,7 +11028,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-2329');
+    const w = new Worker('reports-worker.js?v=2026-11-16-2340');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14398,7 +14527,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-2329';
+    s.src = 'engine.js?v=2026-11-16-2340';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -14420,7 +14549,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-2329');
+    const w = new Worker('engine-worker.js?v=2026-11-16-2340');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14976,6 +15105,8 @@ const engineValidate = guard(async () => {
     await engineCalibrate(ENG.val);
     // Kept for the File screen, which uses the blend only if this says it is ahead.
     await blendRemember(ENG.val);
+    // A run by hand counts as this week's run, so the automatic one (app/autoscore.js) counts from it.
+    if (typeof autoScoreNote === 'function' && !AUTOSCORE_RUN.running) autoScoreNote('manual', !ENG.val?.error);
     if (ENG.space && ENG.status === 'ready') { try { engineShadow(); } catch { /* the old comparison stays */ } }
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
@@ -15083,7 +15214,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-2329';
+    s.src = 'audio.js?v=2026-11-16-2340';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -15092,10 +15223,27 @@ function audioLoad() {
 
 /** The saved settings; readable before audio.js has loaded, with the same defaults. */
 function audioSettings() {
-  if (globalThis.BetterfyAudio) return BetterfyAudio.readAudioSettings(LS);
+  const computer = audioOnComputer();
+  if (globalThis.BetterfyAudio) return BetterfyAudio.readAudioSettings(LS, { computer });
   let s = null; try { s = JSON.parse(LS.getItem('bf_audio') || 'null'); } catch { s = null; }
-  // A saved off counts only when it was chosen (web/audio/settings.mjs offChosen).
-  return { on: !(s?.on === false && s?.offChosen === true), wifiOnly: s?.wifiOnly !== false, scope: s?.scope === 'all' ? 'all' : 'playing+unfiled' };
+  // A saved off counts only when it was chosen (web/audio/settings.mjs offChosen); a saved
+  // narrow scope only when it was picked (scopeChosen), else a computer hears everything.
+  const narrow = s?.scope === 'playing+unfiled' && s?.scopeChosen === true;
+  return { on: !(s?.on === false && s?.offChosen === true), wifiOnly: s?.wifiOnly !== false,
+           scope: s?.scope === 'all' || (computer && !narrow) ? 'all' : 'playing+unfiled' };
+}
+/** A computer: a fine pointer and no touch screen (the test Listening uses for Wi-Fi, too). */
+function audioOnComputer() {
+  try { return matchMedia('(pointer: fine)').matches && !(navigator.maxTouchPoints > 0); } catch { return false; }
+}
+/** Save a Listening settings change, the same way whether or not audio.js has loaded. */
+function audioSettingsWrite(change) {
+  if (globalThis.BetterfyAudio) return BetterfyAudio.writeAudioSettings(LS, change, { computer: audioOnComputer() });
+  let s = null; try { s = JSON.parse(LS.getItem('bf_audio') || 'null'); } catch { s = null; }
+  const next = { ...audioSettings(), ...change };
+  if ('scope' in change || s?.scopeChosen === true) next.scopeChosen = true; else delete next.scope;
+  if (next.on === false) next.offChosen = true;
+  LS.setItem('bf_audio', JSON.stringify(next));
 }
 
 const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;
@@ -15120,7 +15268,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-2329', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-2340', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -16211,7 +16359,7 @@ async function audioTracks() {
 function audioWifiKnown() {
   if (AUDIO.wifiOk) return true;
   try { if (LS.getItem('bf_audio_wifi_ok') === '1') return true; } catch { /* storage off */ }
-  try { return matchMedia('(pointer: fine)').matches && !(navigator.maxTouchPoints > 0); } catch { return false; }
+  return audioOnComputer();
 }
 function audioConnection() {
   const set = audioSettings();
@@ -16259,7 +16407,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-2329', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-2340', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -16526,6 +16674,88 @@ function onbColdOffers() {
   coldKick(true);
   return COLD.status === 'ready' ? BetterfyScreens.lists.coldStartOffers(COLD.found, 3) : [];
 }
+/* ---------- Score + Tune, by itself (docs/NEXT-WORKPLAN.md package 1) ----------
+ * core/review/autoscore.mjs decides whether a run is due; this runs it. A
+ * minute after the app opens, then every five minutes while the tab is in
+ * front, it asks autoScoreWhy() and, when a run is due, does what the owner's
+ * "Score + Tune" button does: engineValidate() (which refits the weights, the
+ * calibration and the blend, and decides every gate), then engineTune(), then
+ * keeps only the tuned rows that cleared their bar on both halves of this
+ * account's tracks (tuneApply). Nothing here writes to Spotify; it only decides
+ * which parts of the engine File uses, exactly as a run by hand does.
+ * Skipped with Data Saver on. Kept on this device in bf_autoscore. */
+const AUTOSCORE_KEY = 'bf_autoscore';
+const AUTOSCORE_RUN = { running: false, started: false, firstMs: 60e3, everyMs: 5 * 60e3 };
+
+function autoScoreLast() {
+  try { return JSON.parse(LS.getItem(AUTOSCORE_KEY) || 'null'); } catch { return null; }
+}
+
+/** Remember a run that just ended, automatic or by hand, so the timer counts from it. */
+function autoScoreNote(why, ok = true) {
+  const rec = { at: Date.now(), heard: typeof listenHeard === 'function' ? listenHeard() : 0, why, ok: !!ok };
+  try { LS.setItem(AUTOSCORE_KEY, JSON.stringify(rec)); } catch { /* private mode: counts this session only */ }
+  return rec;
+}
+
+/** Distinct tracks in genre playlists: what a Score run has to score. */
+function autoScoreFiled() {
+  if (!LIB?.playlists) return 0;
+  const targets = new Set(engineTargets()), ids = new Set();
+  for (const p of LIB.playlists) if (targets.has(p.id)) for (const t of p.tracks ?? []) if (t?.id) ids.add(t.id);
+  return ids.size;
+}
+
+const autoScoreBusy = () => AUTOSCORE_RUN.running || !!ENG.valRunning || !!TUNE.running || ENG.status === 'working'
+  || (typeof ANALYSE !== 'undefined' && !!ANALYSE.running);
+
+/** Why a run is due now (or null), from what the page holds. */
+function autoScoreDue(now = Date.now()) {
+  if (typeof autoScoreWhy !== 'function') return null;
+  return autoScoreWhy({ last: autoScoreLast(), now, heard: typeof listenHeard === 'function' ? listenHeard() : 0,
+    filed: autoScoreFiled(), listening: LISTEN?.state ?? null, busy: autoScoreBusy() });
+}
+
+/** One check: run Score + Tune when one is due. Returns why it ran, or null. */
+async function autoScoreTick() {
+  if (typeof document !== 'undefined' && document.hidden) return null;
+  if (navigator.connection?.saveData) return null;
+  const why = autoScoreDue();
+  if (!why) return null;
+  AUTOSCORE_RUN.running = true; store.touch('eng');
+  let ok = false;
+  try {
+    await engineLoad();
+    // The learnt map first (remembered on this device), so the Engine screen shows the results, not "Learn my library".
+    if (ENG.status !== 'ready') await engineAnalyse();
+    await engineValidate();
+    ok = !!ENG.val && !ENG.val.error;
+    if (ok) {
+      await engineTune();
+      if (TUNE.res && !TUNE.err) await tuneApply();
+    }
+  } catch { ok = false; }
+  finally {
+    autoScoreNote(why, ok);
+    AUTOSCORE_RUN.running = false; store.touch('eng');
+  }
+  return why;
+}
+
+/** Started once from boot, after the first paint. */
+function autoScoreStart() {
+  if (AUTOSCORE_RUN.started) return;
+  AUTOSCORE_RUN.started = true;
+  const first = Number.isFinite(globalThis.BF_AUTOSCORE_MS) ? globalThis.BF_AUTOSCORE_MS : AUTOSCORE_RUN.firstMs;
+  const tick = () => fire(autoScoreTick());
+  setTimeout(() => { tick(); setInterval(tick, AUTOSCORE_RUN.everyMs); }, first);
+}
+
+/** The Engine screen's line under the Score buttons. */
+function autoScoreText() {
+  if (typeof autoScoreLine !== 'function') return '';
+  return autoScoreLine(autoScoreLast(), Date.now(), { filed: LIB ? autoScoreFiled() : null, running: AUTOSCORE_RUN.running });
+}
 /* ---------- screen modules (docs/BUILD-5-PLAN.md A4) ----------
  * A migrated screen is web/screens/<name>.mjs: an ES module that build-web.mjs
  * bundles (its `// @bundle screens <name> <order>` header is the whole
@@ -16548,7 +16778,7 @@ const SCREEN_CTX = {
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
-                   TUNE, engineScoreTune, engineTune, tuneApply, tuneForget,
+                   TUNE, engineScoreTune, engineTune, tuneApply, tuneForget, autoScoreText,
                    tuneBlock: r => (globalThis.BetterfyTune ? BetterfyTune.tuneBlock(r) : ''),
                    blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
                    maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,
@@ -16748,6 +16978,7 @@ const DATA_KEYS = [
   { where:'idb', key:'engine-blend', group:'Engine', why:'How File blends tag picks with the engine, from your Score run.' },
   { where:'idb', key:'engine-weights', group:'Engine', why:'The engine weights fitted to your library by a Score run.' },
   { where:'idb', key:'engine-tune', group:'Engine', why:'Tuning you saved from Engine › Tune.' },
+  { where:'local', key:'bf_autoscore', group:'Engine', why:'When Score + Tune last ran (by itself or by hand), how many tracks listening had heard then, and whether it finished, so it runs again by itself after listening or in a week.' },
 
   // --- listening to your music ---
   { where:'idb-db', key:'betterfy-audio', stores:['audio_v1'], group:'Listening', why:'What Listening heard: one record per track (a sound fingerprint, tempo, key). Never the audio itself or the preview link.' },
@@ -17243,7 +17474,7 @@ function helpersState() {
   try {
     const set = audioSettings(), vm = AUDIO.vm;
     const why = vm?.reason && !['stopped', 'ask', 'waiting for Wi-Fi', 'offline'].includes(vm.reason) && vm.state !== 'running' && vm.state !== 'done' ? vm.reason : null;
-    audio = { on: !!set.on, state: vm?.state ?? null, heard: listenHeard() || vm?.heard || 0,
+    audio = { on: !!set.on, all: set.scope === 'all', state: vm?.state ?? null, heard: listenHeard() || vm?.heard || 0,
       problem: why ? String(why).replace(/https?:\/\/\S+/g, '').slice(0, 60).trim() : null };
   } catch { /* before the audio glue */ }
   let deep = {};
@@ -17261,6 +17492,9 @@ function helpersState() {
     audio, deep,
     discogs: !!LS.getItem('bf_discogs'),
     engine: { status: typeof ENG !== 'undefined' ? ENG.status : null },
+    auto: (() => { try { const l = autoScoreLast(); return { at: l?.at ?? null, ok: l?.ok !== false,
+      ago: l?.at && typeof agoWords === 'function' ? agoWords(Date.now() - l.at) : null, running: AUTOSCORE_RUN.running }; }
+      catch { return {}; } })(),
   };
 }
 
@@ -17350,8 +17584,7 @@ document.addEventListener('click', guard(async e => {
   // The File screen's "listen to my music" nudge: the same switch as Sources'.
   if (e.target.closest('[data-soundon]')) {
     await audioLoad().catch(() => {});
-    if (globalThis.BetterfyAudio) BetterfyAudio.writeAudioSettings(LS, { on: true });
-    else LS.setItem('bf_audio', JSON.stringify({ ...audioSettings(), on: true }));
+    audioSettingsWrite({ on: true });
     toast('Listening is on. Picks switch to sound as tracks are heard — see Sources for progress.');
     audioStart();
     return render();
@@ -17432,9 +17665,7 @@ document.addEventListener('change', guard(async e => {
     await audioLoad().catch(() => {});
     const change = e.target.id === 'audioOn' ? { on: e.target.checked }
       : e.target.id === 'audioWifi' ? { wifiOnly: e.target.checked } : { scope: e.target.value };
-    if (globalThis.BetterfyAudio) BetterfyAudio.writeAudioSettings(LS, change);
-    else { const next = { ...audioSettings(), ...change };
-           LS.setItem('bf_audio', JSON.stringify(next.on === false ? { ...next, offChosen: true } : next)); }
+    audioSettingsWrite(change);
     const set = audioSettings();
     // Turning it off, narrowing the scope or tightening Wi-Fi stops the run; the next start re-reads all three.
     if (AUDIO.ctrl?.running) await AUDIO.ctrl.stop(set.on ? 'settings changed' : 'stopped');
@@ -17857,6 +18088,8 @@ async function start(force) {
     if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
     // One-tap analysis runs once by itself when a Last.fm key (shared or own) is there.
     setTimeout(() => { try { analyseAuto(); } catch { /* optional */ } }, 4000);
+    // Score + Tune by itself: first look a minute in, then every five minutes while the tab is in front.
+    try { autoScoreStart(); } catch { /* optional */ }
   } catch (e) {
     if (retryable(e)) {
       const streak = e.status === 429 ? noteRateLimited() : 0;

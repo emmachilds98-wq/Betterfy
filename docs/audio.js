@@ -322,7 +322,8 @@ __mod["web/audio/settings.mjs"] = (function () {
 //
 // Defaults: on (the owner's call, 2026-11-15: the engine files better once it
 // has heard your tracks, so nobody should have to find the switch first), Wi-Fi
-// only, and the scope "what I'm playing + unfiled". Switching it off is saved
+// only, and the scope "what I'm playing + unfiled" on a phone, the whole library
+// on a computer (2026-11-16, below). Switching it off is saved
 // and always wins. Nothing downloads until after the first paint, and only on
 // Wi-Fi unless the listener says otherwise.
 // That scope also takes up to 20 examples from each genre playlist, because
@@ -344,25 +345,48 @@ const SCOPES = Object.freeze({
 // "it should listen by default".
 const DEFAULT_AUDIO_SETTINGS = Object.freeze({ on: true, wifiOnly: true, scope: 'playing+unfiled' });
 
-/** Settings from a localStorage-like store, each field checked; anything odd falls back to its default. */
-function readAudioSettings(ls) {
+// On a computer the default scope is the whole library (docs/NEXT-WORKPLAN.md
+// package 6): sound placement and mood chips get better with every heard member
+// of a playlist, and a laptop on Wi-Fi can afford it. A phone keeps the narrow
+// scope. `computer` is the page's own test (a fine pointer and no touch screen,
+// the one Listening already uses for Wi-Fi); the queue still puts played and
+// unfiled tracks first (core/audio/queue.mjs), so nothing useful waits longer.
+/** The default settings for this device. */
+const defaultAudioSettings = ({ computer = false } = {}) =>
+  computer ? { ...DEFAULT_AUDIO_SETTINGS, scope: 'all' } : { ...DEFAULT_AUDIO_SETTINGS };
+
+/**
+ * Settings from a localStorage-like store, each field checked; anything odd falls back to its default.
+ * A saved scope counts when the listener picked it (`scopeChosen`), or is the whole library (which
+ * was never a default before 2026-11-16, so it was picked). Older builds saved the narrow scope with
+ * any other change, so a narrow one without `scopeChosen` reads as this device's default.
+ */
+function readAudioSettings(ls, { computer = false } = {}) {
   let raw = null;
   try { raw = JSON.parse(ls?.getItem?.(AUDIO_SETTINGS_KEY) ?? 'null'); } catch { raw = null; }
-  const d = DEFAULT_AUDIO_SETTINGS;
-  if (!raw || typeof raw !== 'object') return { ...d };
+  const d = defaultAudioSettings({ computer });
+  if (!raw || typeof raw !== 'object') return d;
+  const scopeSaved = Object.hasOwn(SCOPES, raw.scope) && (raw.scopeChosen === true || raw.scope === 'all');
   return {
     on: raw.on === true ? true : raw.on === false && raw.offChosen === true ? false : d.on,
     wifiOnly: typeof raw.wifiOnly === 'boolean' ? raw.wifiOnly : d.wifiOnly,
-    scope: Object.hasOwn(SCOPES, raw.scope) ? raw.scope : d.scope,
+    scope: scopeSaved ? raw.scope : d.scope,
   };
 }
 
 /** Merge a change in and save it. Returns the saved settings. */
-function writeAudioSettings(ls, change) {
-  const next = { ...readAudioSettings(ls), ...change };
+function writeAudioSettings(ls, change, { computer = false } = {}) {
+  let was = null;
+  try { was = JSON.parse(ls?.getItem?.(AUDIO_SETTINGS_KEY) ?? 'null'); } catch { was = null; }
+  const next = { ...readAudioSettings(ls, { computer }), ...change };
+  // A scope set here is the listener's pick, and so is one picked before.
+  const scopeChosen = Object.hasOwn(change ?? {}, 'scope') || was?.scopeChosen === true;
   // A write that leaves it off is the listener's own choice: it came from the switch, or kept one.
-  const clean = readAudioSettings({ getItem: () => JSON.stringify(next.on === false ? { ...next, offChosen: true } : next) });
-  const stored = clean.on === false ? { ...clean, offChosen: true } : clean;
+  const clean = readAudioSettings({ getItem: () => JSON.stringify({ ...next, scopeChosen, ...(next.on === false ? { offChosen: true } : {}) }) },
+                                  { computer });
+  // A scope nobody picked is not saved, so it follows the device it is read on.
+  const { scope, ...rest } = clean;
+  const stored = { ...rest, ...(scopeChosen ? { scope, scopeChosen: true } : {}), ...(clean.on === false ? { offChosen: true } : {}) };
   try { ls?.setItem?.(AUDIO_SETTINGS_KEY, JSON.stringify(stored)); } catch { /* memory only */ }
   return clean;
 }
@@ -424,7 +448,7 @@ function scopeIds(lib, { scope = DEFAULT_AUDIO_SETTINGS.scope, listening = null,
   }
   return out;
 }
-return { AUDIO_SETTINGS_KEY, SCOPES, DEFAULT_AUDIO_SETTINGS, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds };
+return { AUDIO_SETTINGS_KEY, SCOPES, DEFAULT_AUDIO_SETTINGS, defaultAudioSettings, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds };
 })();
 /* ---- core/audio/mel.mjs ---- */
 __mod["core/audio/mel.mjs"] = (function () {
@@ -6405,7 +6429,7 @@ return { MAEST_PER_RUN, createWorkerMaest, createMaestRunner, maestStatusText, c
 /* ---- web/audio/index.mjs ---- */
 __mod["web/audio/index.mjs"] = (function () {
 const { openAudioStore, AUDIO_DB, AUDIO_STORE } = __mod["web/audio/store.mjs"];
-const { readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY } = __mod["web/audio/settings.mjs"];
+const { readAudioSettings, writeAudioSettings, defaultAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY } = __mod["web/audio/settings.mjs"];
 const { createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN } = __mod["web/audio/controller.mjs"];
 const { audioQueue } = __mod["core/audio/queue.mjs"];
 const { lookup, fetchPreview } = __mod["core/audio/fetch.mjs"];
@@ -6425,7 +6449,7 @@ const { needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN } = __
 const { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 // What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
 // One namespace so the template reaches core/audio through a single name.
-return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
+return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, defaultAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
 })();
 /* ---- core/audio/infer.mjs ---- */
 __mod["core/audio/infer.mjs"] = (function () {

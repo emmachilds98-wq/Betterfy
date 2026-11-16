@@ -317,6 +317,8 @@ async function start(force) {
     if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
     // One-tap analysis runs once by itself when a Last.fm key (shared or own) is there.
     setTimeout(() => { try { analyseAuto(); } catch { /* optional */ } }, 4000);
+    // Score + Tune by itself: first look a minute in, then every five minutes while the tab is in front.
+    try { autoScoreStart(); } catch { /* optional */ }
   } catch (e) {
     if (retryable(e)) {
       const streak = e.status === 429 ? noteRateLimited() : 0;

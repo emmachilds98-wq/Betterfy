@@ -28,8 +28,7 @@ export async function openApp(browser, { kind = 'small', account, phone = true, 
     : { viewport: { width: 1280, height: 860 } };
   const ctx = await browser.newContext({ ...vp, serviceWorkers: serviceWorkers ? 'allow' : 'block' });
   await ctx.addInitScript(ms => {
-    // Init scripts run in every frame, the sandboxed Deezer lookup frame too,
-    // which has no storage: sign in from the page itself only.
+    // Init scripts run in every frame, and the Deezer lookups' sandboxed frame has no storage to read.
     if (window !== window.top) return;
     if (localStorage.getItem('bf_tok')) return;   // only the first load of a context signs in
     localStorage.setItem('bf_tok', JSON.stringify({ access_token: 'x', refresh_token: 'y', expires_at: Date.now() + ms }));
@@ -52,13 +51,9 @@ export async function openApp(browser, { kind = 'small', account, phone = true, 
   await routeAll();
   const page = await ctx.newPage();
   const errors = [];
-  page.on('pageerror', e => {
-    // The sandboxed Deezer lookup frame (web/app/engine.js deezerFrame) has no
-    // storage or service worker on purpose; the browser's own injected setup
-    // tripping over that there is not the page's error.
-    if (/context is sandboxed and lacks the 'allow-same-origin' flag/.test(e.message)) return;
-    errors.push(e.message);
-  });
+  // Playwright's own init scripts also run inside the Deezer lookups' sandboxed frame (engine.js
+  // deezerFrame), where reading storage or service workers throws. Those are the harness's, not the page's.
+  page.on('pageerror', e => { if (!/sandboxed and lacks the 'allow-same-origin' flag/.test(e.message)) errors.push(e.message); });
   await page.goto(fake.url + '/index.html');
   // Airplane mode for a page with its service worker (serviceWorkers: true).
   // Playwright bypasses service workers while any route is installed, so the
