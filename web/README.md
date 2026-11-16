@@ -46,6 +46,7 @@ by screen in A4.
 | `screens/new.js` | gaps, `vNew` |
 | `screens/shuffle.js` | spacing shuffle, DJ order, `vShuffle` |
 | `screens/discover.js` | discovery, keyless and by-sound Discover, `vDiscover` |
+| `app/radar.js` | Release Radar's in-app sync (core/release via the lazy engine bundle, through `sp()` and IndexedDB), dismiss and File; its section of Discover is `screens/radar.mjs`, imported by `screens/discover.mjs` |
 | `screens/history.mjs` | History: screen module (see below) |
 | `screens/lists.js` | playlist mixes and sound profiles, "two genres?", `vLists` |
 | `screens/sources.mjs` | Sources: screen module (`tagCoverage()` lives in `lists.js`) |

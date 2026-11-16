@@ -1,6 +1,8 @@
 // @bundle screens discover 60
 /* The Discover screen (docs/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
  * ranking stay classic in web/app/discover-engine.js; ctx comes from SCREEN_CTX.discover. */
+import { radarView, radarActions, radarMount } from './radar.mjs';
+
 /** A fit score in the same words as everywhere else, not a percentage. */
 export const fitWord = v => v >= 0.7 ? 'Sure' : v >= 0.45 ? 'Likely' : 'Unsure';
 
@@ -50,7 +52,9 @@ export function view(ctx) {
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
   const hasKey = !!lfmKey();
-  const head = `<h1>Discover</h1>
+  // Release radar is Discover's first section (BUILD-6-PLAN §2.3); '' without ctx.radar.
+  const radar = radarView(ctx);
+  const head = `<h1>Discover</h1>${radar}${radar ? '<h2 class="disc-h2">Find new music</h2>' : ''}
     <p class="lede">New music, with everything you already own taken out.${ib('discover', 'Discover', `<p>Every artist and track you already own is subtracted before ranking, including each artist named inside a collaboration, so nothing here recycles your library.</p>
       <p><b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>`)}</p>
     ${hasKey ? '' : `<div class="note discnokey">
@@ -135,7 +139,11 @@ export function view(ctx) {
 }
 
 
+/** After paint: the radar's search field and windowed feed. */
+export function mount(ctx) { radarMount(ctx); }
+
 export const actions = {
+  ...radarActions,
   discRun: ({ S, runDiscovery }) => runDiscovery(S.discSeed || null),
   discPl({ S }, el) { S.discSeed = el.value; },
   discAnyPl(ctx, el) { if (el.value) return discAdd(ctx, el.value); },

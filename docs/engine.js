@@ -11282,6 +11282,1055 @@ function tuneBlock(result) {
 }
 return { TUNE_VERSION, TUNE_MIN, NOT_SWEPT, TUNE_GROUPS, tuneSweep, mergeTune, tuneOverrides, cleanOverrides, soundFirstFor, identifyOptsFor, misfitOptsFor, tuneLines, tuneBlock };
 })();
+/* ---- core/release/dates.mjs ---- */
+__mod["core/release/dates.mjs"] = (function () {
+// Release dates at the precision Spotify gave them (docs/RELEASE-RADAR-PLAN.md §4.1).
+//
+// `release_date_precision` is `day`, `month` or `year`. The rule: keep the raw
+// string and the precision, sort by a resolved timestamp, and never display a
+// day (or a month) nobody told us. A year-only release is not "1 January".
+//
+// Sorting: an imprecise date never sorts above a precise one from the same
+// period. A month-only release sorts just below every dated day of that month,
+// a year-only release just below every dated release of that year, so neither
+// jumps to the top of the feed by accident. Grouping follows the same rule: a
+// month-only release sits under its month's header, a year-only one under its
+// own "2026, month not given" header after that year's months.
+
+const PRECISIONS = Object.freeze(['day', 'month', 'year']);
+const DAY_MS = 864e5;
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+
+const pad = n => String(n).padStart(2, '0');
+
+/**
+ * Read a release date. `raw` is Spotify's string ("2026-03-12", "2026-03",
+ * "2026"), `precision` its claimed precision. When they disagree the coarser
+ * one wins: Spotify's own reference sample pairs "1981-12" with `year`, and a
+ * string too short for its precision cannot be read finer than it is.
+ * Returns `{ raw, precision, y, m, d, ts, end, ok }`; `ok: false` (no usable
+ * year, or "0000") sorts last and is never in a time window.
+ */
+function parseDate(raw, precision) {
+  const s = String(raw ?? '').trim();
+  const mt = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(s);
+  const y = mt ? +mt[1] : 0;
+  if (!mt || !y) return { raw: s, precision: 'unknown', y: 0, m: 0, d: 0, ts: -Infinity, end: -Infinity, ok: false };
+  const given = mt[3] ? 'day' : mt[2] ? 'month' : 'year';
+  const claimed = PRECISIONS.includes(precision) ? precision : given;
+  const p = PRECISIONS[Math.max(PRECISIONS.indexOf(claimed), PRECISIONS.indexOf(given))];
+  const m = p === 'year' ? 0 : +mt[2];
+  const d = p === 'day' ? +mt[3] : 0;
+  if ((p !== 'year' && (m < 1 || m > 12)) || (p === 'day' && (d < 1 || d > 31))) return parseDate(String(y), 'year');
+  let ts, end;
+  if (p === 'day') { ts = Date.UTC(y, m - 1, d); end = ts + DAY_MS - 1; }
+  else if (p === 'month') { ts = Date.UTC(y, m - 1, 1) - 1; end = Date.UTC(y, m, 1) - 1; }
+  else { ts = Date.UTC(y, 0, 1) - 2; end = Date.UTC(y + 1, 0, 1) - 1; }
+  return { raw: s, precision: p, y, m, d, ts, end, ok: true };
+}
+
+/** Long form, exactly as precise as given: "12 March 2026", "March 2026", "2026". */
+function dateLabel(p) {
+  if (!p?.ok) return 'date unknown';
+  if (p.precision === 'day') return `${p.d} ${MONTHS[p.m - 1]} ${p.y}`;
+  if (p.precision === 'month') return `${MONTHS[p.m - 1]} ${p.y}`;
+  return String(p.y);
+}
+
+/** Short form for a row under its month header: "12 Mar", "Mar 2026", "2026". */
+function shortLabel(p) {
+  if (!p?.ok) return 'date unknown';
+  if (p.precision === 'day') return `${p.d} ${MONTHS[p.m - 1].slice(0, 3)}`;
+  if (p.precision === 'month') return `${MONTHS[p.m - 1].slice(0, 3)} ${p.y}`;
+  return String(p.y);
+}
+
+/** The feed's group: "2026-03" for day and month precision, "2026" for year, "unknown" otherwise. */
+const groupKey = p => !p?.ok ? 'unknown' : p.precision === 'year' ? String(p.y) : `${p.y}-${pad(p.m)}`;
+
+/** The header for a group key: "March 2026", "2026, month not given", "Date not given". */
+function groupLabel(key) {
+  const mt = /^(\d{4})(?:-(\d{2}))?$/.exec(key ?? '');
+  if (!mt) return 'Date not given';
+  return mt[2] ? `${MONTHS[+mt[2] - 1]} ${mt[1]}` : `${mt[1]}, month not given`;
+}
+
+/** The oldest moment the default feed shows: `years` back from `now` (UTC midnight). */
+function cutoffTs(now, years = 2) {
+  const t = new Date(now);
+  return Date.UTC(t.getUTCFullYear() - years, t.getUTCMonth(), t.getUTCDate());
+}
+
+/** Could this release fall on or after `cutoff`? Judged on the period's end, so a
+ *  year-only "2024" is still in a window that starts in November 2024. */
+const inWindow = (p, cutoff) => !!p?.ok && p.end >= cutoff;
+return { PRECISIONS, DAY_MS, parseDate, dateLabel, shortLabel, groupKey, groupLabel, cutoffTs, inWindow };
+})();
+/* ---- norm.mjs ---- */
+__mod["norm.mjs"] = (function () {
+// Shared track-identity normalisation.
+// Deliberately conservative: remixes, edits, VIPs and live cuts are treated as
+// DIFFERENT records (they are, for DJing), while cosmetic release noise —
+// remaster tags, feat. credits, punctuation, casing — is stripped.
+
+const COSMETIC = /\s*[-(\[]\s*(\d{4}\s+)?(digital\s+)?remaster(ed)?(\s+\d{4})?( version)?\s*[)\]]?\s*$/i;
+const FEAT     = /\s*[\(\[]?\s*(feat\.?|ft\.?|featuring)\s[^)\]]*[\)\]]?/ig;
+const VERSION  = /\s*[-(\[]\s*([^)\]]*(mix|edit|version|remix|dub|vip|instrumental|live|acoustic|bootleg|rework|flip)[^)\]]*)\s*[)\]]?\s*$/i;
+
+const norm = s => (s ?? '').toLowerCase()
+  .replace(COSMETIC, '')
+  .replace(FEAT, '')
+  .replace(/[’'`]/g, '')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
+const versionOf = s => ((s ?? '').match(VERSION)?.[1] ?? '').trim().toLowerCase();
+const baseTitle = s => norm((s ?? '').replace(VERSION, ''));
+
+/** Identity key that survives re-releases but keeps distinct versions apart. */
+const trackKey = t =>
+  norm(t.artists?.[0]?.name ?? '') + ' :: ' + baseTitle(t.name) + ' :: ' + versionOf(t.name);
+
+/** Collapse a track list to one entry per distinct record, preferring the earliest release. */
+function dedupe(tracks) {
+  const best = new Map();
+  for (const t of tracks) {
+    if (!t?.id) continue;
+    const k = trackKey(t);
+    const cur = best.get(k);
+    if (!cur || (t.released ?? '9999') < (cur.released ?? '9999')) best.set(k, t);
+  }
+  return [...best.values()];
+}
+return { norm, versionOf, baseTitle, trackKey, dedupe };
+})();
+/* ---- core/release/normalise.mjs ---- */
+__mod["core/release/normalise.mjs"] = (function () {
+const { norm } = __mod["norm.mjs"];
+const { parseDate } = __mod["core/release/dates.mjs"];
+// One release record per real release (docs/RELEASE-RADAR-PLAN.md §4.2, §4.3, §5).
+//
+// §4.2 — the same release appears once per market. Every request passes
+// `market=from_token`, and the survivors are deduplicated on
+// (normalised name, release year, total tracks, primary artist id). The plan
+// put the full release date in the key; the year is used instead, because the
+// market copies this rule exists for can carry different days (an earlier
+// territory, a pre-order date) and the name + track count + primary artist
+// already separate two genuinely different releases in the same year. The
+// earliest date seen is kept, and every id seen is kept, so a later pass
+// recognises the release whichever id it is handed.
+//
+// §4.3 — `appears_on` is mostly compilations but also where remixes and guest
+// verses live. Two lanes, never one chronology: `main` and `features`.
+// Spotify removed `album_group` from album objects in February 2026, so the
+// lane cannot be read off the item any more. It is decided from the album's
+// own artists instead, which is what `album_group` used to encode: an item is
+// `main` when the artist we asked about is one of the album's credited
+// artists (and the album is not a Various Artists compilation), `features`
+// otherwise. That holds whichever `include_groups` the item arrived through.
+
+
+
+/** Spotify's "Various Artists": one id on thousands of compilations. Excluded by id, never by name. */
+const VARIOUS_ARTISTS_ID = '0LyfQWJT6nXafLPZqxe9Of';
+
+/** Bumped whenever a stored record's format changes; anything older is re-read. */
+const SHAPE = 1;
+
+/** The `include_groups` values the sync asks for, one request each (see plan.mjs). */
+const GROUPS = Object.freeze(['album', 'single', 'appears_on']);
+
+/** §4.2's dedupe key. */
+function releaseKey({ name, year, totalTracks, primaryArtistId }) {
+  return `${norm(name)}|${year || 0}|${totalTracks ?? 0}|${primaryArtistId ?? ''}`;
+}
+
+/** The smallest cover at least 64px wide (rows are 56px), else whatever there is. */
+function pickImage(images) {
+  const ok = (images ?? []).filter(i => i?.url);
+  if (!ok.length) return null;
+  const big = ok.filter(i => (i.width ?? 0) >= 64).sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
+  return (big[0] ?? ok[0]).url;
+}
+
+/**
+ * One item of `/artists/{id}/albums` (a simplified album object) as a release
+ * record. `artistId` is the artist the request was for. Null for anything
+ * that is not an album object with an id.
+ */
+function normaliseItem(item, { artistId, at = 0 } = {}) {
+  if (!item?.id || (item.type && item.type !== 'album')) return null;
+  const artists = (item.artists ?? []).filter(a => a?.id).map(a => ({ id: a.id, name: a.name ?? '' }));
+  const primary = artists[0]?.id ?? null;
+  const various = primary === VARIOUS_ARTISTS_ID;
+  const own = !various && artists.some(a => a.id === artistId);
+  const date = parseDate(item.release_date, item.release_date_precision);
+  return {
+    shape: SHAPE,
+    key: releaseKey({ name: item.name, year: date.y, totalTracks: item.total_tracks, primaryArtistId: primary }),
+    ids: [item.id],
+    name: item.name ?? '',
+    artists,
+    releaseDate: date.raw,
+    precision: date.precision,
+    ts: date.ts,
+    albumType: item.album_type ?? 'album',
+    totalTracks: item.total_tracks ?? 0,
+    img: pickImage(item.images),
+    lane: own ? 'main' : 'features',
+    various,
+    via: artistId ? [artistId] : [],
+    owned: 'none',
+    ownedBasis: null,
+    reissue: false,
+    reissueBasis: null,
+    firstSeenAt: at,
+  };
+}
+
+const union = (a = [], b = []) => [...new Set([...a, ...b])];
+
+/**
+ * Two records with the same key, as one. The earliest date wins (with its raw
+ * string and precision), ids and the artists that surfaced it are unioned,
+ * `main` beats `features` (one artist's own release is another's guest spot),
+ * and the first sighting is kept: it cannot be backfilled (§4.5).
+ */
+function mergeRelease(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const early = (b.ts < a.ts) ? b : a;
+  return {
+    ...a,
+    ...b,
+    key: a.key,
+    ids: union(a.ids, b.ids),
+    via: union(a.via, b.via),
+    releaseDate: early.releaseDate, precision: early.precision, ts: early.ts,
+    lane: a.lane === 'main' || b.lane === 'main' ? 'main' : 'features',
+    img: a.img ?? b.img,
+    firstSeenAt: Math.min(a.firstSeenAt ?? Infinity, b.firstSeenAt ?? Infinity),
+    // Verdicts and the track list belong to whichever record has them; a fresh
+    // sighting from the list endpoint carries neither.
+    tracks: a.tracks ?? b.tracks,
+    detailAt: a.detailAt ?? b.detailAt,
+    probes: { ...(a.probes ?? {}), ...(b.probes ?? {}) },
+    owned: a.owned, ownedBasis: a.ownedBasis, reissue: a.reissue, reissueBasis: a.reissueBasis,
+    dismissed: a.dismissed ?? b.dismissed,
+  };
+}
+
+/** A compact track list from `/albums/{id}` (simplified tracks: no ISRC unless Spotify adds one). */
+function compactTracks(album) {
+  return (album?.tracks?.items ?? []).filter(t => t?.id || t?.name).map(t => ({
+    id: t.id ?? null,
+    name: t.name ?? '',
+    ms: t.duration_ms ?? 0,
+    no: t.track_number ?? 0,
+    artists: (t.artists ?? []).map(a => a.id).filter(Boolean),
+    isrc: t.external_ids?.isrc ?? null,
+  }));
+}
+return { VARIOUS_ARTISTS_ID, SHAPE, GROUPS, releaseKey, pickImage, normaliseItem, mergeRelease, compactTracks };
+})();
+/* ---- core/release/library.mjs ---- */
+__mod["core/release/library.mjs"] = (function () {
+const { baseTitle, versionOf } = __mod["norm.mjs"];
+const { parseDate, inWindow, DAY_MS } = __mod["core/release/dates.mjs"];
+const { releaseKey } = __mod["core/release/normalise.mjs"];
+// What the account already has, held against each release
+// (docs/RELEASE-RADAR-PLAN.md §4.4–4.6).
+//
+// §4.6 owned: every release carries `owned: none | some | all`. With the
+// release's track list (one `/albums/{id}` call) it is counted per track:
+// same track id, same ISRC, or the weak match below. Without it, it is counted
+// from the library's own album ids and album keys, which costs nothing and is
+// marked `ownedBasis: 'album'`.
+//
+// §4.4 reissues: a release whose tracks you already own *from an earlier
+// release* is not new to you. Decided by ISRC where an ISRC is known, else by
+// (same credited artist, same base title and version, duration within 2s),
+// which is marked `weak`. Never by "Remastered"/"Deluxe" in a title: that is
+// one library's vocabulary and fails on the next account.
+//
+// What the API hands us (February 2026): `/albums/{id}` lists simplified
+// tracks, which carry no ISRC, and `GET /tracks?ids=` is gone. So a match
+// starts weak and is upgraded by probing a matched track with `/tracks/{id}`
+// (`probeIds` says which, at most PROBE_MAX per release): the same ISRC as the
+// library's copy makes it `isrc`; a different ISRC means a different
+// recording (a re-recording, a new mix under the old title) and the match is
+// dropped. A weak match is kept as weak, never promoted on a guess.
+
+
+
+
+/** A library copy must predate the release by this much for the release to be a reissue of it. */
+const REISSUE_GAP_MS = 180 * DAY_MS;
+/** Share of a release's tracks owned from earlier releases above which it is a reissue. */
+const REISSUE_SHARE = 0.5;
+/** Weak match: durations this close count as the same recording. */
+const DURATION_SLACK_MS = 2000;
+/** At most this many `/tracks/{id}` probes per release. */
+const PROBE_MAX = 2;
+
+/** A release key without its track count: name, year and primary artist. */
+const looseKey = (name, year, artistId) => releaseKey({ name, year, totalTracks: 'n', primaryArtistId: artistId });
+
+const titleKey = (artistId, name) => `${artistId}|${baseTitle(name)}|${versionOf(name)}`;
+
+/**
+ * Index the library once per sync: `lib` is library.json's shape (`playlists[].tracks`,
+ * `liked`), or the page's LIB. Tracks are `{ id, name, artists:[{id,name}], album,
+ * albumId, albumTracks, trackNo, released, duration_ms, isrc }`.
+ */
+function libraryIndex(lib) {
+  const seen = new Map();
+  for (const p of lib?.playlists ?? []) for (const t of p?.tracks ?? []) if (t?.id && !seen.has(t.id)) seen.set(t.id, t);
+  for (const t of lib?.liked ?? []) if (t?.id && !seen.has(t.id)) seen.set(t.id, t);
+  const tracks = [...seen.values()];
+
+  const isrcs = new Map(), byAlbumId = new Map(), byAlbumKey = new Map(), byLooseKey = new Map(), byTitle = new Map(),
+        byArtist = new Map(), albumNames = new Map();
+  const push = (m, k, v) => { if (!m.has(k)) m.set(k, []); m.get(k).push(v); };
+  for (const t of tracks) {
+    const rel = parseDate(t.released);
+    const row = { t, ts: rel.ok ? rel.ts : null };
+    if (t.isrc) push(isrcs, t.isrc, row);
+    if (t.albumId) push(byAlbumId, t.albumId, row);
+    // The page's library carries no album id or track count (feedback.js
+    // shapeTrack), so a copy without a count is indexed by name, year and
+    // artist alone, and found by looseKey() below.
+    if (t.album && t.albumTracks != null) push(byAlbumKey, releaseKey({ name: t.album, year: rel.y, totalTracks: t.albumTracks,
+      primaryArtistId: t.artists?.[0]?.id }), row);
+    else if (t.album) push(byLooseKey, looseKey(t.album, rel.y, t.artists?.[0]?.id), row);
+    for (const a of t.artists ?? []) {
+      if (!a?.id) continue;
+      push(byTitle, titleKey(a.id, t.name), row);
+      push(byArtist, a.id, row);
+      if (t.album) push(albumNames, `${a.id}|${baseTitle(t.album)}`, row);
+    }
+  }
+  return { tracks, trackIds: new Set(seen.keys()), isrcs, byAlbumId, byAlbumKey, byLooseKey, byTitle, byArtist, albumNames };
+}
+
+/** The library rows a release track matches, strongest first: [{ row, how: 'id'|'isrc'|'weak' }]. */
+function matchTrack(rt, artistIds, idx) {
+  const out = [];
+  if (rt.id && idx.trackIds.has(rt.id)) {
+    for (const row of idx.byArtist.get(artistIds[0]) ?? []) if (row.t.id === rt.id) { out.push({ row, how: 'id' }); break; }
+    if (!out.length) out.push({ row: { t: { id: rt.id }, ts: null }, how: 'id' });
+  }
+  if (rt.isrc) for (const row of idx.isrcs.get(rt.isrc) ?? []) out.push({ row, how: 'isrc' });
+  const who = [...new Set([...(rt.artists ?? []), ...artistIds])];
+  for (const a of who) for (const row of idx.byTitle.get(titleKey(a, rt.name)) ?? []) {
+    if (Math.abs((row.t.duration_ms ?? 0) - (rt.ms ?? 0)) > DURATION_SLACK_MS) continue;
+    // A probe that came back with a different ISRC from the library's copy: a
+    // different recording under the same title. Not a match.
+    if (rt.isrc && row.t.isrc && rt.isrc !== row.t.isrc) continue;
+    out.push({ row, how: rt.isrc && row.t.isrc === rt.isrc ? 'isrc' : 'weak' });
+  }
+  return out;
+}
+
+const fromEarlier = (row, release) =>
+  !release.ids.includes(row.t.albumId) && row.ts != null && row.ts < release.ts - REISSUE_GAP_MS;
+
+/** A release's tracks with any probed ISRCs filled in. */
+const withProbes = r => (r.tracks ?? []).map(t => (t.id && r.probes?.[t.id] && !t.isrc) ? { ...t, isrc: r.probes[t.id] } : t);
+
+/**
+ * `{ owned, ownedBasis, reissue, reissueBasis, overlap }` for a release record
+ * (normalise.mjs) against the library index. Pure; recomputed every sync, so a
+ * library that changed since the release was read is reflected without a request.
+ */
+function verdict(release, idx) {
+  const artistIds = (release.artists ?? []).map(a => a.id);
+  const tracks = withProbes(release);
+  if (!tracks.length) {
+    // No track list: count the library's tracks on this very release.
+    const rows = new Map();
+    for (const id of release.ids ?? []) for (const row of idx.byAlbumId.get(id) ?? []) rows.set(row.t.id, row);
+    for (const row of idx.byAlbumKey.get(release.key) ?? []) rows.set(row.t.id, row);
+    const y = parseDate(release.releaseDate, release.precision).y;
+    for (const row of idx.byLooseKey.get(looseKey(release.name, y, release.artists?.[0]?.id)) ?? []) rows.set(row.t.id, row);
+    const n = new Set([...rows.values()].map(r => r.t.trackNo ?? r.t.id)).size;
+    const total = release.totalTracks || 1;
+    // A single whose one title you own from an older release, with no track
+    // list to check durations against: the weakest call this makes, kept weak.
+    const nameOnly = release.totalTracks <= 3 && artistIds.some(a =>
+      (idx.byTitle.get(titleKey(a, release.name)) ?? []).some(row => fromEarlier(row, release)));
+    return { owned: n >= total ? 'all' : n ? 'some' : 'none', ownedBasis: 'album',
+             reissue: !n && nameOnly, reissueBasis: !n && nameOnly ? 'weak' : null, overlap: null };
+  }
+  let owned = 0, earlier = 0, earlierIsrc = 0;
+  for (const rt of tracks) {
+    const m = matchTrack(rt, artistIds, idx);
+    if (!m.length) continue;
+    owned++;
+    const old = m.filter(x => x.how !== 'id' && fromEarlier(x.row, release));
+    if (old.length) { earlier++; if (old.some(x => x.how === 'isrc')) earlierIsrc++; }
+  }
+  const total = Math.max(tracks.length, 1);
+  const overlap = earlier / total;
+  const reissue = overlap >= REISSUE_SHARE;
+  return {
+    owned: owned >= tracks.length ? 'all' : owned ? 'some' : 'none',
+    ownedBasis: 'tracks',
+    reissue,
+    // ISRC-backed only when most of the evidence is: one probed track out of ten
+    // weak matches is still a weak call.
+    reissueBasis: !reissue ? null : earlierIsrc * 2 >= earlier ? 'isrc' : 'weak',
+    overlap,
+  };
+}
+
+/**
+ * Is this release's track list worth one `/albums/{id}` request? Only for the
+ * main lane, inside the window, not yet read, and only when the library holds
+ * something it could be a repackage of: an older track by one of its artists
+ * (a multi-track release), or an older track or album with its very title.
+ */
+function needsDetail(release, idx, cutoff) {
+  if (release.lane !== 'main' || release.tracks || release.detailAt) return false;
+  if (!inWindow(parseDate(release.releaseDate, release.precision), cutoff)) return false;
+  const ids = (release.artists ?? []).map(a => a.id);
+  const older = row => fromEarlier(row, release);
+  if (ids.some(a => (idx.byTitle.get(titleKey(a, release.name)) ?? []).some(older))) return true;
+  if (ids.some(a => (idx.albumNames.get(`${a}|${baseTitle(release.name)}`) ?? []).some(older))) return true;
+  return release.totalTracks > 3 && ids.some(a => (idx.byArtist.get(a) ?? []).some(older));
+}
+
+/**
+ * Which of a release's tracks to probe with `/tracks/{id}` for an ISRC: weak
+ * matches against a library copy that has an ISRC, at most PROBE_MAX, none
+ * already probed.
+ */
+function probeIds(release, idx) {
+  const artistIds = (release.artists ?? []).map(a => a.id);
+  const out = [];
+  for (const rt of release.tracks ?? []) {
+    if (out.length >= PROBE_MAX) break;
+    if (!rt.id || rt.isrc || release.probes?.[rt.id] !== undefined) continue;
+    const m = matchTrack(rt, artistIds, idx);
+    if (m.some(x => x.how === 'weak' && x.row.t.isrc)) out.push(rt.id);
+  }
+  return out;
+}
+return { REISSUE_GAP_MS, REISSUE_SHARE, DURATION_SLACK_MS, PROBE_MAX, libraryIndex, matchTrack, verdict, needsDetail, probeIds };
+})();
+/* ---- core/release/plan.mjs ---- */
+__mod["core/release/plan.mjs"] = (function () {
+const { DAY_MS } = __mod["core/release/dates.mjs"];
+const { SHAPE, GROUPS } = __mod["core/release/normalise.mjs"];
+// What to ask Spotify, in what order, and when not to ask at all
+// (docs/RELEASE-RADAR-PLAN.md §3, §5).
+//
+// There is no bulk "new releases for these artists" endpoint: it is requests
+// per artist. Since February 2026 that is more than the plan assumed, because
+// `/artists/{id}/albums` pages at most 10 items and its items no longer say
+// which `include_groups` group they came from. So each artist is read as one
+// request per group (album, single, appears_on), newest first, stopping at the
+// first page that reaches back past the window: a group asked for alone comes
+// back newest first, so one page usually answers it. Two passes: every
+// artist's own releases (album, single) first, in listening order, so a sync
+// interrupted half way has the main feed for the artists you play; then the
+// features lane (appears_on), which is collapsed by default anyway.
+//
+// Cadence (§3, a declared prior until Phase 0 measures it):
+//   last release within 90 days  -> re-check after 7 days
+//   within 2 years               -> 30 days
+//   older, or nothing found      -> 90 days
+// Two refinements, both declared, both measured by simulate.mjs:
+//   - each artist's interval is stretched by a fixed 0-25% (a hash of its id),
+//     so a thousand artists first read on the same day do not all fall due on
+//     the same day again (without it, day 30 of the simulation asked for ~2,300
+//     requests in one go);
+//   - the features lane (appears_on) waits twice as long as the main lane: it
+//     is the collapsed strip, and it is a third of every re-check's cost.
+// A group that failed is due again at once; a record of an older `shape` is
+// treated as never read.
+//
+// Storage keys (IndexedDB `betterfy`/`kv` in the page, a JSON file for the CLI):
+//   radar:artist:{id}    per-artist state, below
+//   radar:release:{key}  one release (normalise.mjs)
+//   radar:index          { shape, at, artists, releases, done, total, complete, stopped, cold }
+
+
+
+
+const KEY = Object.freeze({
+  artist: id => `radar:artist:${id}`,
+  release: key => `radar:release:${key}`,
+  index: 'radar:index',
+  prefix: 'radar:',
+  releasePrefix: 'radar:release:',
+});
+
+/** The main lane's groups and the features lane's, in the order the passes run. */
+const MAIN_GROUPS = Object.freeze(['album', 'single']);
+const FEATURE_GROUPS = Object.freeze(['appears_on']);
+
+/** Spotify's page size for `/artists/{id}/albums` since February 2026 (was 50). */
+const PAGE_LIMIT = 10;
+/** Never page one group further back than this in one sync. */
+const MAX_PAGES = 20;
+
+const CADENCE = Object.freeze([
+  Object.freeze({ within: 90 * DAY_MS, after: 7 * DAY_MS }),
+  Object.freeze({ within: 730 * DAY_MS, after: 30 * DAY_MS }),
+  Object.freeze({ within: Infinity, after: 90 * DAY_MS }),
+]);
+
+/** The features lane's interval, as a multiple of the main lane's. */
+const FEATURES_SLOWER = 2;
+/** The most an artist's interval is stretched to spread re-checks out. */
+const SPREAD = 0.25;
+
+/** A stable number in [0, 1) from an artist id (FNV-1a). */
+function spreadOf(id) {
+  let h = 0x811c9dc5;
+  for (const c of String(id ?? '')) { h ^= c.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h / 4294967296;
+}
+
+/** How long after a check to check again, from the artist's newest release. */
+function recheckAfter(lastReleaseTs, now, { id = null, group = 'album' } = {}) {
+  const age = Number.isFinite(lastReleaseTs) ? now - lastReleaseTs : Infinity;
+  const base = CADENCE.find(c => age <= c.within).after;
+  return base * (FEATURE_GROUPS.includes(group) ? FEATURES_SLOWER : 1) * (1 + SPREAD * (id == null ? 0 : spreadOf(id)));
+}
+
+/** A fresh per-artist state. */
+const newArtistState = a => ({ shape: SHAPE, id: a.id, name: a.name ?? '', checked: {},
+  lastReleaseTs: null, releaseKeys: [], errors: {} });
+
+/** Is this artist's `group` due for a check at `now`? */
+function isDue(state, group, now) {
+  if (!state || state.shape !== SHAPE) return true;
+  if (state.errors?.[group]) return true;
+  const at = state.checked?.[group];
+  if (!Number.isFinite(at)) return true;
+  return now - at >= recheckAfter(state.lastReleaseTs, now, { id: state.id, group });
+}
+
+/**
+ * The list requests to make, in order: `[{ artistId, name, group }]`.
+ * `artists` is artistSet()'s order (most listened first); `states` a Map of
+ * artist id -> stored state. `groups` narrows the groups (e.g. main lane only).
+ */
+function planTasks(artists, states, now, { groups = GROUPS } = {}) {
+  const want = g => groups.includes(g);
+  const out = [];
+  for (const pass of [MAIN_GROUPS, FEATURE_GROUPS])
+    for (const a of artists) for (const g of pass)
+      if (want(g) && isDue(states.get(a.id), g, now)) out.push({ artistId: a.id, name: a.name, group: g });
+  return out;
+}
+
+/** Seconds per request the page actually sustains: `sp()`'s floor gap is 250ms, plus the round trip. */
+const SEC_PER_REQUEST = 0.35;
+
+/**
+ * An honest time estimate before a sync starts: one request per due group
+ * (most fit in one page), plus a share of track-list reads. `detailRate` is
+ * the expected `/albums/{id}` reads per artist on a cold sync, measured on the
+ * simulated library (simulate.mjs) until Phase 0 replaces it with a real one.
+ */
+function estimate(tasks, { detailRate = 0.5, artists = null, secPerRequest = SEC_PER_REQUEST } = {}) {
+  const n = artists ?? new Set(tasks.map(t => t.artistId)).size;
+  const requests = Math.round(tasks.length * 1.04 + n * detailRate);
+  return { requests, minutes: Math.max(1, Math.round(requests * secPerRequest / 60)) };
+}
+return { KEY, MAIN_GROUPS, FEATURE_GROUPS, PAGE_LIMIT, MAX_PAGES, CADENCE, FEATURES_SLOWER, SPREAD, spreadOf, recheckAfter, newArtistState, isDue, planTasks, SEC_PER_REQUEST, estimate, SHAPE, GROUPS };
+})();
+/* ---- core/release/sync.mjs ---- */
+__mod["core/release/sync.mjs"] = (function () {
+const { parseDate, cutoffTs, inWindow } = __mod["core/release/dates.mjs"];
+const { normaliseItem, mergeRelease, compactTracks, SHAPE } = __mod["core/release/normalise.mjs"];
+const { libraryIndex, verdict, needsDetail, probeIds } = __mod["core/release/library.mjs"];
+const { KEY, MAIN_GROUPS, PAGE_LIMIT, MAX_PAGES, planTasks, newArtistState } = __mod["core/release/plan.mjs"];
+// The Release Radar sync (docs/RELEASE-RADAR-PLAN.md §3), with no network and
+// no storage of its own: `get(path)` is the caller's Spotify GET (the page's
+// `sp()`, with its pacing and 429 handling; the CLI's `api()`; a fixture in
+// tests) and `store` is `{ get(key), set(key, value), keys?() }` (IndexedDB in
+// the page, a JSON file for the CLI, a Map in tests).
+//
+// Resumable by construction: every artist's state is written as soon as each
+// of its groups is read, so a sync stopped at artist 400 starts at 401 next
+// time, and the index says how far it got. One artist failing never fails the
+// run: it is marked and due again next time. Only a stop that would fail every
+// later request too ends the run early (a 429 that `sp()` gave up holding
+// through, the app's quota being gone, a dead sign-in, the request budget, the
+// caller's abort), and what was read stays usable.
+
+
+
+
+
+/** Statuses after which no later request in this run would fare better: the
+ *  page's sp() throws status 0 once a dropped connection has failed its retries. */
+const FATAL_STATUS = Object.freeze([0, 401, 429]);
+
+const isFatal = e => e?.name === 'AbortError' || e?.radarStop || FATAL_STATUS.includes(e?.status);
+
+const stopErr = why => Object.assign(new Error(why), { radarStop: why });
+
+/** The list request for one artist and group. */
+const albumsPath = (artistId, group, limit = PAGE_LIMIT) =>
+  `/artists/${encodeURIComponent(artistId)}/albums?include_groups=${group}&market=from_token&limit=${limit}`;
+
+/**
+ * Run one sync. Returns `{ requests, byKind, done, total, stopped, errors, releases, cold, complete }`.
+ *
+ * @param o.lib       library.json's shape (or the page's LIB): for ownership and reissues
+ * @param o.artists   artistSet()'s output, most listened first
+ * @param o.store     key-value store, async or not
+ * @param o.get       async Spotify GET; throws errors carrying `.status`
+ * @param o.now       the clock, in ms
+ * @param o.years     how far back the feed reads (2 by default: BUILD-6-PLAN §2.3)
+ * @param o.groups    which `include_groups` to read
+ * @param o.deep      `{ ids, years }`: read these artists further back now, due or not ("older on demand")
+ * @param o.details   read track lists where §4.4 needs them (default true)
+ * @param o.maxRequests stop cleanly after this many requests
+ * @param o.signal    an AbortSignal
+ * @param o.onProgress called after every artist group: `{ phase, done, total, requests, artist }`
+ */
+async function syncRadar({ lib, artists, store, get, now = Date.now(), years = 2, groups,
+                                  deep = null, details = true, maxRequests = Infinity, signal = null,
+                                  onProgress = null } = {}) {
+  const idx = libraryIndex(lib);
+  const counts = { list: 0, detail: 0, probe: 0 };
+  let requests = 0;
+  const call = async (kind, path) => {
+    if (signal?.aborted) throw stopErr('aborted');
+    if (requests >= maxRequests) throw stopErr('budget');
+    requests++; counts[kind]++;
+    return get(path);
+  };
+
+  const prev = await store.get(KEY.index);
+  /* Releases whose track list or probes are still owed. Kept in the index, so a
+   * stop between an artist's list and its track lists is not forgotten: the
+   * artist is not due again for days, but the next sync reads these first. */
+  const pending = new Set((prev?.shape === SHAPE && prev.pending) || []);
+  const cold = !prev || prev.shape !== SHAPE || !prev.complete && !prev.coldDone;
+  const states = new Map();
+  for (const a of artists) {
+    const s = await store.get(KEY.artist(a.id));
+    states.set(a.id, s?.shape === SHAPE ? s : null);
+  }
+
+  const deepIds = new Set(deep?.ids ?? []);
+  const baseCut = cutoffTs(now, years);
+  const deepCut = cutoffTs(now, deep?.years ?? 20);
+  const cutFor = id => deepIds.has(id) ? deepCut : baseCut;
+
+  let tasks = planTasks(artists, states, now, { groups });
+  if (deepIds.size) {
+    const have = new Set(tasks.map(t => t.artistId + '|' + t.group));
+    const extra = artists.filter(a => deepIds.has(a.id)).flatMap(a => [...MAIN_GROUPS, 'appears_on']
+      .filter(g => (!groups || groups.includes(g)) && !have.has(a.id + '|' + g))
+      .map(g => ({ artistId: a.id, name: a.name, group: g })));
+    tasks = [...tasks.filter(t => deepIds.has(t.artistId)), ...extra,
+             ...tasks.filter(t => !deepIds.has(t.artistId))];
+  }
+  const total = tasks.length;
+  const artistsTotal = new Set(tasks.map(t => t.artistId)).size;
+  const artistsSeen = new Set();
+
+  const cache = new Map();
+  const touched = new Set();
+  const load = async key => {
+    if (!cache.has(key)) {
+      const r = await store.get(KEY.release(key));
+      cache.set(key, r?.shape === SHAPE ? r : null);
+    }
+    return cache.get(key);
+  };
+  const save = async rec => {
+    const out = { ...rec, ...verdict(rec, idx) };
+    cache.set(rec.key, out);
+    touched.add(rec.key);
+    await store.set(KEY.release(rec.key), out);
+    return out;
+  };
+
+  let done = 0, errors = 0, stopped = null;
+  let lastWrite = 0;
+  const writeIndex = async complete => {
+    lastWrite = done;
+    const n = (await allReleaseKeys(store)).length;
+    // The cold sync is over once every artist's own releases have been read
+    // once, whatever failed on the way; until then nothing calls the radar complete.
+    const coldDone = !!prev?.coldDone || artists.every(a => MAIN_GROUPS.every(g =>
+      (groups && !groups.includes(g)) ? true : Number.isFinite(states.get(a.id)?.checked?.[g])));
+    await store.set(KEY.index, { shape: SHAPE, at: now, artists: artists.length, releases: n, done, total,
+      complete, stopped, cold, coldDone, years, requests, pending: [...pending] });
+  };
+
+  /** Read one artist's group, newest first, until the page reaches past its window. */
+  const readGroup = async t => {
+    const st = states.get(t.artistId) ?? newArtistState({ id: t.artistId, name: t.name });
+    const cut = cutFor(t.artistId);
+    const keys = [];
+    let newest = null;
+    try {
+      let path = albumsPath(t.artistId, t.group), pages = 0;
+      while (path && pages++ < MAX_PAGES) {
+        const page = await call('list', path);
+        const items = page?.items ?? [];
+        let sorted = true, prevTs = Infinity, last = null;
+        for (const item of items) {
+          const rec = normaliseItem(item, { artistId: t.artistId, at: now });
+          if (!rec) continue;
+          const d = parseDate(rec.releaseDate, rec.precision);
+          if (d.ts > prevTs) sorted = false;
+          prevTs = d.ts; last = d;
+          if (rec.lane === 'main' && d.ok && (newest == null || d.ts > newest)) newest = d.ts;
+          if (!inWindow(d, cut)) continue;
+          if (cold) rec.seenCold = true;
+          const merged = mergeRelease(await load(rec.key), rec);
+          await save(merged);
+          keys.push(rec.key);
+          // Owed a look at its track list from now on, even if the run stops
+          // before this artist's details are read.
+          if (details && MAIN_GROUPS.includes(t.group)) pending.add(rec.key);
+        }
+        // Spotify does not promise the order. Stop early only on a page that
+        // was newest first and already reaches past the window; otherwise read on.
+        if (!page?.next || !items.length || (sorted && last && last.end < cut)) break;
+        path = page.next;
+      }
+      st.checked = { ...st.checked, [t.group]: now };
+      const { [t.group]: _, ...rest } = st.errors ?? {};
+      st.errors = rest;
+      if (MAIN_GROUPS.includes(t.group) && newest != null) st.lastReleaseTs = Math.max(st.lastReleaseTs ?? -Infinity, newest);
+      st.releaseKeys = [...new Set([...(st.releaseKeys ?? []), ...keys])];
+    } catch (e) {
+      if (isFatal(e)) { states.set(t.artistId, st); await store.set(KEY.artist(t.artistId), st); throw e; }
+      errors++;
+      st.errors = { ...st.errors, [t.group]: { at: now, status: e?.status ?? 0, message: String(e?.message ?? e).slice(0, 120) } };
+    }
+    st.shape = SHAPE;
+    states.set(t.artistId, st);
+    await store.set(KEY.artist(t.artistId), st);
+    return keys;
+  };
+
+  /** §4.4: track lists (and ISRC probes) for releases that need them. */
+  const readDetails = async (keys, cut) => {
+    for (const key of keys) pending.add(key);
+    for (const key of new Set(keys)) {
+      let rec = await load(key);
+      const wantList = rec && needsDetail(rec, idx, cut);
+      if (!rec || (!wantList && !(rec.tracks && probeIds(rec, idx).length))) { pending.delete(key); continue; }
+      try {
+        if (wantList) {
+          const album = await call('detail', `/albums/${encodeURIComponent(rec.ids[0])}?market=from_token`);
+          rec = await save({ ...rec, tracks: compactTracks(album), detailAt: now });
+        }
+        for (const id of probeIds(rec, idx)) {
+          const tr = await call('probe', `/tracks/${encodeURIComponent(id)}?market=from_token`);
+          rec = await save({ ...rec, probes: { ...(rec.probes ?? {}), [id]: tr?.external_ids?.isrc ?? null } });
+        }
+        pending.delete(key);
+      } catch (e) {
+        if (isFatal(e)) throw e;
+        errors++;   // no detailAt: asked again next sync
+        pending.delete(key);
+      }
+    }
+  };
+
+  try {
+    if (details && pending.size) await readDetails([...pending], baseCut);
+    let i = 0;
+    while (i < tasks.length) {
+      const t = tasks[i];
+      const main = MAIN_GROUPS.includes(t.group);
+      // One artist's consecutive main-lane groups, then its track lists, so a
+      // reissue is recognised before the next artist starts.
+      let j = i, keys = [];
+      while (j < tasks.length && tasks[j].artistId === t.artistId && MAIN_GROUPS.includes(tasks[j].group) === main) {
+        keys.push(...await readGroup(tasks[j]));
+        done++; j++;
+        if (main) artistsSeen.add(t.artistId);
+        onProgress?.({ phase: main ? 'main' : 'features', done, total, requests, artist: t.name,
+                       artistsDone: artistsSeen.size, artistsTotal });
+      }
+      if (main && details && keys.length) await readDetails(keys, cutFor(t.artistId));
+      if (j === i) j++;   // cannot happen; never loop forever
+      i = j;
+      if (done - lastWrite >= 25) await writeIndex(false);
+    }
+  } catch (e) {
+    if (!isFatal(e)) throw e;
+    stopped = e.radarStop ?? (e.status === 429 ? 'rate-limit' : e.status === 401 ? 'signed-out'
+      : e.status === 0 ? 'offline' : 'aborted');
+    stopped = { why: stopped, message: String(e.message ?? '').slice(0, 200) };
+  }
+
+  const complete = !stopped && errors === 0 && done === total && !pending.size;
+  await writeIndex(complete);
+  return { requests, byKind: counts, done, total, stopped, errors, releases: touched.size, cold, complete };
+}
+
+/** Every stored release key, from the store's `keys()` (the CLI's and the page's stores have it). */
+async function allReleaseKeys(store) {
+  const ks = (await store.keys?.()) ?? [];
+  return ks.filter(k => typeof k === 'string' && k.startsWith(KEY.releasePrefix));
+}
+
+/** Every stored release record of the current shape. */
+async function loadReleases(store) {
+  const out = [];
+  for (const k of await allReleaseKeys(store)) {
+    const r = await store.get(k);
+    if (r?.shape === SHAPE) out.push(r);
+  }
+  return out;
+}
+
+/**
+ * Re-judge ownership and reissues for every stored release against a library
+ * that has changed since. No requests: the verdicts are pure (library.mjs).
+ */
+async function rescore(store, lib) {
+  const idx = libraryIndex(lib);
+  let changed = 0;
+  for (const k of await allReleaseKeys(store)) {
+    const r = await store.get(k);
+    if (r?.shape !== SHAPE) continue;
+    const v = verdict(r, idx);
+    if (v.owned !== r.owned || v.reissue !== r.reissue || v.reissueBasis !== r.reissueBasis) {
+      await store.set(k, { ...r, ...v }); changed++;
+    }
+  }
+  return changed;
+}
+
+/** A Map-backed store with the same interface, for tests, the CLI and the simulator. */
+function memoryStore(init = null) {
+  const m = new Map(init ? Object.entries(init) : []);
+  return {
+    map: m,
+    get: async k => m.get(k) ?? null,
+    set: async (k, v) => { m.set(k, v); },
+    del: async k => { m.delete(k); },
+    keys: async () => [...m.keys()],
+    toJSON: () => Object.fromEntries(m),
+  };
+}
+return { FATAL_STATUS, isFatal, albumsPath, syncRadar, allReleaseKeys, loadReleases, rescore, memoryStore };
+})();
+/* ---- credits.mjs ---- */
+__mod["credits.mjs"] = (function () {
+const { norm } = __mod["norm.mjs"];
+// Splitting collaboration credits into individual artists.
+// "Shy FX & T Power" and "dwarde & Tim Reaper" must not slip past an ownership
+// test just because the combined string isn't in the library — otherwise a seed
+// artist re-enters discovery as one half of a duo.
+
+
+const SPLIT = /\s*(?:&|\+|,|\/|\bx\b|\bvs\.?\b|\bversus\b|\bfeat\.?\b|\bft\.?\b|\bwith\b|\bpres\.?\b|\bpresents\b)\s*/i;
+
+/** Every individual artist named in a credit string, normalised. */
+const parts = name => String(name ?? '').split(SPLIT).map(norm).filter(Boolean);
+
+/**
+ * True if the credit is already owned — tested as the WHOLE name first, then
+ * each component. Checking only the components would let a band whose own name
+ * contains a separator ("Chase & Status") slip through as unowned.
+ */
+const ownsAnyOf = (name, owned) =>
+  owned.has(norm(name)) || parts(name).some(p => owned.has(p));
+return { parts, ownsAnyOf };
+})();
+/* ---- core/release/artists.mjs ---- */
+__mod["core/release/artists.mjs"] = (function () {
+const { norm } = __mod["norm.mjs"];
+const { parts } = __mod["credits.mjs"];
+const { listeningWeights } = __mod["profile.mjs"];
+const { VARIOUS_ARTISTS_ID } = __mod["core/release/normalise.mjs"];
+// The artists Release Radar watches (docs/RELEASE-RADAR-PLAN.md §2, §4.7).
+//
+// Distinct artist ids across every owned playlist, liked songs, the three
+// top-artist windows and recently played: credited artists, not just the
+// first-billed one, so a producer you own one track by is watched too. No
+// `user-follow-read`, no new scope: what the library and listening history
+// already name, nothing else (BUILD-6-PLAN §2.3).
+//
+// Order is by listening, so an interrupted first sync has already covered the
+// artists you actually play: the same `listeningWeights()` the tag enrichment
+// sorts by (profile.mjs, `byListening`), keyed by artist name as it is
+// everywhere else. Ties go to the artist with more tracks in the library, then
+// to first appearance.
+//
+// "Various Artists" is excluded by id (normalise.mjs). A collaboration credit
+// that is its own artist id ("Shy FX & T Power" as one profile) is watched as
+// that id, and flagged `collab`; its members are watched when the library
+// credits them by their own ids too. Names are never resolved to ids here:
+// that would take a search request per name and could pick the wrong person.
+//
+// §4.7, an id is not a person. Spotify links nothing: aliases (Aphex Twin /
+// AFX) are separate ids with separate catalogues, and two different people can
+// share one name. The heuristic, documented and tested rather than guessed at:
+//   - never merge two ids, whatever their names; report per credited id;
+//   - two ids with the same normalised name are flagged `homonym` (with each
+//     other's ids in `alsoIds`), so the feed can tell them apart by a track you
+//     own rather than showing two identical names;
+//   - a release reached through several ids (an alias pair credited together,
+//     a duo and its member) is still one row, because rows are keyed by
+//     release (normalise.mjs §4.2), not by artist.
+// Alias resolution (MusicBrainz) is a later, optional bonus, never this.
+
+
+
+
+
+const WINDOWS = [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]];
+
+/**
+ * Listening weights from library.json alone (its `top_artists` and
+ * `recently_played`), weighted exactly as listening.mjs and the page weight them.
+ */
+function weightsFromLibrary(lib) {
+  const topWindows = WINDOWS.map(([range, weight]) => ({
+    weight, items: (lib?.top_artists?.[range] ?? []).map(a => a?.name).filter(Boolean) }));
+  const recentArtists = (lib?.recently_played ?? []).flatMap(t => (t?.artists ?? []).map(a => a?.name)).filter(Boolean);
+  const libraryArtists = [];
+  for (const p of lib?.playlists ?? []) for (const t of p?.tracks ?? []) for (const a of t?.artists ?? []) libraryArtists.push(a?.name);
+  for (const t of lib?.liked ?? []) for (const a of t?.artists ?? []) libraryArtists.push(a?.name);
+  return listeningWeights({ topWindows, recentArtists, libraryArtists: libraryArtists.filter(Boolean) });
+}
+
+/**
+ * `[{ id, name, sources, tracks, weight, collab, homonym, alsoIds }]`, most
+ * listened first. `lib` is library.json's shape; `top` and `recent` (optional)
+ * override its `top_artists` / `recently_played` with fresher reads
+ * (`{ short_term: [{id,name}], ... }` and `[{ artists:[{id,name}] }]`);
+ * `weights` (optional) overrides the listening weights.
+ */
+function artistSet(lib, { top = lib?.top_artists, recent = lib?.recently_played, weights } = {}) {
+  const by = new Map();
+  let order = 0;
+  const add = (a, source, isTrack) => {
+    if (!a?.id || a.id === VARIOUS_ARTISTS_ID) return;
+    let e = by.get(a.id);
+    if (!e) by.set(a.id, e = { id: a.id, name: a.name ?? '', sources: [], tracks: 0, weight: 0, order: order++ });
+    if (!e.name && a.name) e.name = a.name;
+    if (!e.sources.includes(source)) e.sources.push(source);
+    if (isTrack) e.tracks++;
+  };
+  for (const p of lib?.playlists ?? []) for (const t of p?.tracks ?? []) for (const a of t?.artists ?? []) add(a, 'playlist', true);
+  for (const t of lib?.liked ?? []) for (const a of t?.artists ?? []) add(a, 'liked', true);
+  for (const [range] of WINDOWS) for (const a of top?.[range] ?? []) add(a, 'top', false);
+  for (const t of recent ?? []) for (const a of t?.artists ?? []) add(a, 'recent', false);
+
+  const w = weights ?? weightsFromLibrary({ ...lib, top_artists: top, recently_played: recent });
+  const byName = new Map();
+  for (const e of by.values()) {
+    e.weight = w?.get?.(e.name) ?? 0;
+    e.collab = parts(e.name).length > 1;
+    const k = norm(e.name);
+    if (k) { if (!byName.has(k)) byName.set(k, []); byName.get(k).push(e.id); }
+  }
+  for (const e of by.values()) {
+    const same = byName.get(norm(e.name)) ?? [];
+    e.homonym = same.length > 1;
+    e.alsoIds = e.homonym ? same.filter(id => id !== e.id) : [];
+  }
+  return [...by.values()]
+    .sort((a, b) => (b.weight - a.weight) || (b.tracks - a.tracks) || (a.order - b.order))
+    .map(({ order: _, ...e }) => e);
+}
+
+/**
+ * A word to tell two same-named ids apart in the feed (§4.7): the title of a
+ * track you own by that id, or null when the library has none.
+ */
+function disambiguator(artistId, lib) {
+  for (const p of lib?.playlists ?? []) for (const t of p?.tracks ?? [])
+    if ((t?.artists ?? []).some(a => a?.id === artistId)) return t.name ?? null;
+  for (const t of lib?.liked ?? []) if ((t?.artists ?? []).some(a => a?.id === artistId)) return t.name ?? null;
+  return null;
+}
+return { weightsFromLibrary, artistSet, disambiguator };
+})();
+/* ---- core/release/probe.mjs ---- */
+__mod["core/release/probe.mjs"] = (function () {
+const { PAGE_LIMIT } = __mod["core/release/plan.mjs"];
+const { parseDate } = __mod["core/release/dates.mjs"];
+// The Phase 0 endpoint check (docs/RELEASE-RADAR-PLAN.md), shared by
+// `node radar.mjs --probe` and the page's "Check it works on this account"
+// button, so any account can run it from the hosted app, with nothing to
+// install. Seven reads, one artist: what Spotify allows this app, today.
+
+
+
+/** What the sync needs to answer, by row id. The rest are informational: the sync never relies on them. */
+const NEEDED = ['list', 'album', 'track'];
+
+/**
+ * Run the probe. `get(path)` resolves to Spotify's JSON or rejects with `.status`.
+ * @returns {Promise<Array<{ id: string, label: string, ok: boolean, status: string, note: string }>>}
+ */
+async function probeEndpoints(get, artistId) {
+  const rows = [];
+  const a = encodeURIComponent(artistId);
+  const tryGet = async (id, label, path, look = () => '') => {
+    try { const b = await get(path); rows.push({ id, label, ok: true, status: 'ok', note: look(b) }); return b; }
+    catch (e) { rows.push({ id, label, ok: false, status: String(e?.status || 'error'), note: String(e?.message ?? e).split('\n')[0].slice(0, 70) }); return null; }
+  };
+  const page = await tryGet('list', `albums, limit=${PAGE_LIMIT}`, `/artists/${a}/albums?include_groups=single&market=from_token&limit=${PAGE_LIMIT}`,
+    b => {
+      const items = b?.items ?? [];
+      const ts = items.map(i => parseDate(i.release_date, i.release_date_precision).ts);
+      const sorted = ts.every((t, i) => i === 0 || t <= ts[i - 1]);
+      return `${items.length} items, total ${b?.total}, newest first: ${sorted}, album_group present: ${items.some(i => 'album_group' in i)}`;
+    });
+  await tryGet('cap', 'albums, limit=50 (cap check)', `/artists/${a}/albums?include_groups=single&market=from_token&limit=50`,
+    b => `${b?.items?.length} items: the 10 cap is lifted`);
+  await tryGet('groups', 'albums, all groups at once', `/artists/${a}/albums?include_groups=album,single,appears_on&market=from_token&limit=${PAGE_LIMIT}`,
+    b => `${b?.items?.length} items`);
+  const first = page?.items?.[0]?.id, second = page?.items?.[1]?.id ?? first;
+  const album = first ? await tryGet('album', 'album detail /albums/{id}', `/albums/${encodeURIComponent(first)}?market=from_token`,
+    b => `${b?.tracks?.items?.length} tracks, track ISRCs present: ${(b?.tracks?.items ?? []).some(t => t.external_ids?.isrc)}`) : null;
+  if (first) await tryGet('albums', 'several albums /albums?ids=', `/albums?ids=${first},${second}`, b => `${b?.albums?.length} albums: still served`);
+  const tid = album?.tracks?.items?.[0]?.id;
+  if (tid) await tryGet('track', 'track /tracks/{id}', `/tracks/${encodeURIComponent(tid)}?market=from_token`, b => `ISRC: ${b?.external_ids?.isrc ?? 'absent'}`);
+  if (tid) await tryGet('tracks', 'several tracks /tracks?ids=', `/tracks?ids=${tid}`, b => `${b?.tracks?.length} tracks: still served`);
+  return rows;
+}
+
+/** Whether the radar can run as built: every read it relies on answered. `missing` names the ones that did not. */
+function probeVerdict(rows) {
+  const by = new Map((rows ?? []).map(r => [r.id, r]));
+  const missing = NEEDED.filter(id => !by.get(id)?.ok);
+  return { ok: missing.length === 0, missing };
+}
+
+/** The table as text: what `--probe` prints and what the page copies. */
+function probeTable(rows) {
+  const w = Math.max(0, ...(rows ?? []).map(r => r.label.length));
+  return (rows ?? []).map(r => `${r.label.padEnd(w)}  ${r.status.padEnd(5)}  ${r.note}`).join('\n');
+}
+return { NEEDED, probeEndpoints, probeVerdict, probeTable };
+})();
+/* ---- core/release/index.mjs ---- */
+__mod["core/release/index.mjs"] = (function () {
+const { syncRadar, loadReleases, rescore, allReleaseKeys } = __mod["core/release/sync.mjs"];
+const { artistSet } = __mod["core/release/artists.mjs"];
+const { planTasks, estimate, isDue, KEY, SHAPE } = __mod["core/release/plan.mjs"];
+const { probeEndpoints, probeVerdict, probeTable } = __mod["core/release/probe.mjs"];
+// Release Radar for the page: the sync and what it needs, in the lazy engine
+// bundle (docs/engine.js) as `BetterfyRadar`, so a listener who never presses
+// Start never downloads it. web/app/radar.js loads it on Start; the feed itself
+// is read straight from IndexedDB and drawn by web/screens/radar.mjs.
+return { syncRadar, loadReleases, rescore, allReleaseKeys, artistSet, planTasks, estimate, isDue, KEY, SHAPE, probeEndpoints, probeVerdict, probeTable };
+})();
 /* ---- core/analysis/confidence.mjs ---- */
 __mod["core/analysis/confidence.mjs"] = (function () {
 // The four confidence labels, on their own so a module that only needs the
@@ -11918,4 +12967,5 @@ globalThis["BetterfyDiscover"] = __mod["core/audio/discover.mjs"];
 globalThis["BetterfyFill"] = __mod["core/recommend/fill.mjs"];
 globalThis["BetterfyMeasure"] = __mod["core/measure/history.mjs"];
 globalThis["BetterfyTune"] = __mod["core/validate/tune.mjs"];
+globalThis["BetterfyRadar"] = __mod["core/release/index.mjs"];
 globalThis["BetterfyTeach"] = __mod["core/validate/teach.mjs"];
