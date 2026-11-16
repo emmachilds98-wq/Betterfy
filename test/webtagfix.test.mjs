@@ -163,7 +163,7 @@ test('choosing an axis by hand marks it "set by you" immediately, not just after
 
 test('the Playlists view surfaces playlists classify() defaulted with no real signal, and only those', () => {
   const body = readFileSync(new URL('../web/screens/lists.mjs', import.meta.url), 'utf8');
-  assert.match(body, /pick an axis/);
+  assert.match(body, /what kind\?/);
   assert.match(body, /p\.why === NO_SIGNAL/);
 });
 

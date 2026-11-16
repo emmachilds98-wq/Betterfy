@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1758">
+<meta name="bf-build" content="2026-11-16-1906">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -996,6 +996,23 @@ main:focus{outline:none}
   .plhealth .mono{font-size:26px}
   .plh-ok .mono{color:var(--ok)} .plh-low .mono{color:var(--warn)}
   .plnotes{margin:0; padding-left:18px; color:var(--ink-2); font-size:14px}
+
+/* Wave F (USER-REVIEW items 7, 11): a face, plain facts and the health score on every row,
+   and the "How well it knows you" card that Engine is reached from. */
+  .plrow .thumb{width:40px; height:40px; border-radius:var(--r-1, 6px); flex:none; object-fit:cover}
+  .plrow .thumb.ph{display:grid; place-items:center; color:#fff; font-weight:700; font-size:15px}
+  .plf{color:var(--ink-2)}
+  .plf-style{font-style:italic}
+  .plscore{display:flex; flex-direction:column; align-items:flex-end; flex:none; min-width:58px; line-height:1.1}
+  .plscore .mono{font-size:17px; font-weight:600}
+  .plscore span{font-size:11px; color:var(--ink-3)}
+  .plscore.plh-ok .mono{color:var(--ok)} .plscore.plh-low .mono{color:var(--warn)}
+  .plknows{background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--m2);
+           border-radius:var(--r-3); padding:12px 14px; margin:0 0 22px}
+  .plknows .hint{margin:0}
+  @media (max-width:520px){ .plrow .plspark{display:none} }
+  .plknows-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px}
+  .plknows-head h2{margin:0}
 /* Playlists (axes table) and Sources — UI-3, docs/UI-BUILD-PLAN.md §6. */
   [data-v="sources"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
 
@@ -1287,6 +1304,35 @@ main:focus{outline:none}
   @keyframes vtIn{from{opacity:0; transform:translateX(var(--slide))}}
   @keyframes vtOutBack{to{opacity:0; transform:translateX(calc(var(--slide) * .5))}}
   @keyframes vtInBack{from{opacity:0; transform:translateX(calc(var(--slide) * -1))}}
+/* Discover's pick rows (Wave F, USER-REVIEW item 10): a cover that plays the 30-second
+   preview, the pick and where it fits, Like and "+ playlist". Owned by web/screens/discover.mjs. */
+  .drows{margin:22px 0 0}
+  .drows .plsugg-head .hint{margin:0; font-size:12.5px}
+  .drow{display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line); min-height:56px}
+  .drow:last-child{border-bottom:0}
+  .drow.on{background:var(--view-soft, var(--surface-2))}
+  .dprev{position:relative; appearance:none; border:0; padding:0; background:none; cursor:pointer; flex:none;
+         width:44px; height:44px; border-radius:var(--r-1, 6px); overflow:hidden}
+  .dprev .thumb{width:44px; height:44px; display:block; object-fit:cover}
+  .dprev .thumb.ph{display:grid; place-items:center; color:#fff; font-weight:700}
+  .dprev .dpi{position:absolute; inset:0; display:grid; place-items:center; color:#fff; font-size:15px;
+              background:rgb(0 0 0 / .38); opacity:.0; transition:opacity .15s}
+  .dprev:hover .dpi, .dprev:focus-visible .dpi, .drow.playing .dpi{opacity:1}
+  .dprev:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .dprev:disabled{cursor:default} .dprev:disabled .dpi{opacity:.6}
+  .drow.playing .dprev{box-shadow:0 0 0 2px var(--view, var(--accent))}
+  .dmain{appearance:none; border:0; background:none; font:inherit; color:inherit; text-align:left; cursor:pointer;
+         display:flex; flex-direction:column; gap:2px; min-width:0; flex:1; padding:4px 0}
+  .dmain .ttl{font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dsub{font-size:12.5px; color:var(--ink-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dfit{color:var(--ink-2)}
+  .dacts{display:flex; gap:6px; flex:none}
+  .dacts .go{max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  @media (max-width:520px){
+    .drow{flex-wrap:wrap}
+    .dacts{width:100%; padding-left:56px}
+    .dacts .go{max-width:none; flex:1}
+  }
 
   /* ---------- Shuffle: DJ order (core/audio/order.mjs) ----------
      Drawn only once listening has heard enough of the playlist and a DJ order
@@ -1777,7 +1823,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1758</span>
+    <span class="mono">build 2026-11-16-1906</span>
   </p>
 
   <div class="feat">
@@ -1870,7 +1916,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1758</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1906</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1987,7 +2033,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1758. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1906. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5365,7 +5411,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1758`,
+    `Betterfy engine score — build 2026-11-16-1906`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5552,7 +5598,7 @@ const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 function view(c) {
   const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
   const head = `<h1>Engine</h1>
-    <p class="lede">A second opinion that reads only your own playlists. <b>It files nothing.</b>${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
+    <p class="lede">What Betterfy has learnt from your own playlists, and how often it gets your filing right. Learning and scoring here change nothing in Spotify.${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
       of record, from when. Everything here is what it <i>would</i> do, until the score below shows it, blended with today's engine,
       beating today's engine on your own filing. Then the File screen's picks come from the blend.</p>`) ?? ''}</p>`;
 
@@ -5560,10 +5606,10 @@ function view(c) {
   if (!engineTargets().length) return `${head}
     <div class="card">
       <h2 style="margin:0 0 12px; font-size:19px">No genre playlists yet</h2>
-      <p>Both engines only file into playlists marked <b>receives suggestions</b>, and none of yours are — none of
-        their names say what genre they are. Mark the ones that are genre playlists on the Playlists screen, then
+      <p>Both engines only file into playlists that take suggestions, and none of yours do yet — none of
+        their names say what genre they are. Mark the ones that are genre playlists in Library, then
         come back.</p>
-      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Playlists</button></div>
+      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Library</button></div>
     </div>`;
 
   if (ENG.status === 'idle') return `${head}
@@ -7053,6 +7099,9 @@ const { mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renamePa
 
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
+/** The axis names in plain words, for the sheet's picker (USER-REVIEW item 8). The values stay the axis ids. */
+const AXIS_WORDS = { genre: 'genre', mood: 'mood', era: 'era or year', event: 'an event', djset: 'a DJ set',
+  context: 'a time or place', inbox: 'an inbox to sort later' };
 /** "64% genre · 19% mood" — what a playlist's tags are actually made of,
  *  which is the evidence behind a content-guessed axis and a sanity check on
  *  every other one. Facets under a tenth are left out as noise. */
@@ -7105,19 +7154,22 @@ function twinsOf(pairs) {
 }
 
 /** 0-100 and the reasons, from what Betterfy already knows about one playlist: misfiled tracks,
- *  drift, a second genre, a twin it cannot be told from, repeats, staleness, an axis nobody has
- *  settled. Null under eight tracks (too few to judge). Every input is optional: no data, no mark. */
+ *  drift, a second genre, a twin it cannot be told from, repeats, an axis nobody has settled.
+ *  The score is about fit, not age (USER-REVIEW item 8): an old playlist that holds together is
+ *  healthy, so staleness is said as a note and costs nothing, while any misfiled track costs at
+ *  least 5, so strays show up sooner than their share alone would say. Null under eight tracks (too few to
+ *  judge). Every input is optional: no data, no mark. */
 function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false,
                                  twins = [], repeats = 0, staleDays: stale = null } = {}) {
   if (tracks < 8) return null;
   const notes = [];
   let score = 100;
-  if (misfiled) { score -= Math.min(45, Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
+  if (misfiled) { score -= Math.min(45, 5 + Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
   if (drifting) { score -= 15; notes.push('newest additions read differently from the rest'); }
   if (split) { score -= 20; notes.push('sounds like two genres'); }
   if (twins?.length) { score -= 10; notes.push(`hard to tell apart from ${twins.slice(0, 2).join(' and ')}`); }
   if (repeats > 0) { score -= Math.min(15, repeats * 3); notes.push(`${repeats} repeated track${repeats === 1 ? '' : 's'}`); }
-  if (stale !== null && stale >= 365) { score -= 5; notes.push(`nothing added in ${Math.floor(stale / 365)}+ year${stale >= 730 ? 's' : ''}`); }
+  if (stale !== null && stale >= 365) { notes.push(`nothing added in ${Math.floor(stale / 365)}+ year${stale >= 730 ? 's' : ''}`); }
   if (undecided) { score -= 10; notes.push('no axis decided yet'); }
   score = Math.max(0, score);
   return { score, word: score >= 85 ? 'Healthy' : score >= 65 ? 'Fine' : 'Needs a look', notes };
@@ -7183,27 +7235,80 @@ function sparkHTML(vm) {
   return '';
 }
 
+/** Unfiled tracks whose first pick is each playlist: what is waiting to be filed there, by playlist id. */
+function waitingCounts(backlog) {
+  const out = new Map();
+  for (const t of backlog ?? []) { const id = t?.suggest?.[0]?.id; if (id) out.set(id, (out.get(id) ?? 0) + 1); }
+  return out;
+}
+
+/** The plain-word facts on a Library row, in order: misfiled, waiting to be filed here, the BPM
+ *  range its heard tracks settle on, and its top style. Nothing is shown that is not known. */
+function rowFacts({ misfiled = 0, waiting = 0, vm = null } = {}) {
+  const out = [];
+  if (misfiled > 0) out.push({ k: 'warn', text: `${misfiled} misfiled` });
+  if (waiting > 0) out.push({ k: 'ok', text: `${waiting} to file` });
+  const b = vm?.bpm;
+  const r = Array.isArray(b) ? b : Number.isFinite(b) ? [b, b] : null;
+  if (r && r.every(x => Number.isFinite(x) && x > 0)) {
+    const [lo, hi] = [Math.round(Math.min(...r)), Math.round(Math.max(...r))];
+    out.push({ k: 'bpm', text: `${lo === hi ? lo : `${lo}–${hi}`} BPM` });
+  }
+  const top = (Array.isArray(vm?.styles) ? vm.styles : []).find(s => Array.isArray(s) && s[0] && s[1] > 0);
+  if (top) out.push({ k: 'style', text: String(top[0]) });
+  return out;
+}
+
+/** Library's order: what needs a look first (health under 85, lowest first, then most to fix), then
+ *  every other playlist by size. A playlist too small to judge sorts with the healthy ones. */
+function attentionOrder(rows, infoOf) {
+  const key = p => { const i = infoOf(p); const s = i?.health?.score;
+    return { need: s != null && s < 85, s: s ?? 100, fix: (i?.misfiled ?? 0) + (i?.waiting ?? 0) }; };
+  const k = new Map(rows.map(p => [p, key(p)]));
+  return [...rows].sort((a, b) => { const x = k.get(a), y = k.get(b);
+    if (x.need !== y.need) return x.need ? -1 : 1;
+    if (x.need && x.s !== y.s) return x.s - y.s;
+    if (x.need && x.fix !== y.fix) return y.fix - x.fix;
+    return (b.tracks ?? 0) - (a.tracks ?? 0) || String(a.name ?? '').localeCompare(String(b.name ?? '')); });
+}
+
+/** The words for a health score, and its colour class. */
+const healthClass = s => s >= 85 ? 'ok' : s >= 65 ? 'fine' : 'low';
+
+/** "How well it knows you": the last Score run on this account, in one line. Never a number nobody measured. */
+function knowsYouLine(sum, now = Date.now()) {
+  if (!sum || !Number.isFinite(sum.top1)) return 'Not measured yet. One run checks its picks against what you already filed.';
+  const pc = x => `${Math.round(x * 100)}%`;
+  const days = Number.isFinite(sum.at) ? Math.floor((now - sum.at) / 864e5) : null;
+  const when = days == null ? '' : days <= 0 ? ', checked today' : days === 1 ? ', checked yesterday' : `, checked ${days} days ago`;
+  return `Right first time on ${pc(sum.top1)} of your filed tracks${Number.isFinite(sum.top3) ? `, and in its top three on ${pc(sum.top3)}` : ''}`
+    + `${Number.isFinite(sum.scored) ? ` (${sum.scored.toLocaleString()} tracks${when})` : when ? ` (${when.slice(2)})` : ''}.`;
+}
+
 /** Everything the rows and the sheet need to know about one playlist, in one place. */
-function plInfo(c, p, splitIds, undecidedIds) {
+function plInfo(c, p, splitIds, undecidedIds, waiting = null) {
   const { R, LISTS_SOUND } = c;
   const vm = LISTS_SOUND.profile(p.id);
   const pl = c.LIB?.playlists?.find(x => x.id === p.id);
+  const misfiled = (R.misfiled ?? []).filter(m => m.currentPlaylistId === p.id).length;
   const health = playlistHealth({ tracks: p.tracks,
     twins: twinsOf(c.twinPairs?.()).get(p.id) ?? [], repeats: repeatCount(pl?.tracks), staleDays: staleDays(pl?.tracks),
-    misfiled: (R.misfiled ?? []).filter(m => m.currentPlaylistId === p.id).length,
-    drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
+    misfiled, drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
     split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
-  return { vm, health };
+  return { vm, health, misfiled, waiting: waiting?.get(p.id) ?? 0, face: pl?.tracks?.find(t => t?.art) ?? null };
 }
 
 const plRowHTML = (c, p, info, undecided) => {
   const { esc } = c;
   const spark = sparkHTML(info.vm), h = info.health;
-  return `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(p.id)}" aria-haspopup="dialog">
+  const facts = rowFacts(info).map(f => f.k === 'warn' || f.k === 'ok'
+    ? `<span class="tag ${f.k}">${esc(f.text)}</span>` : `<span class="plf plf-${f.k}">${esc(f.text)}</span>`).join(' ');
+  const face = c.thumbHTML ? c.thumbHTML({ id: p.id, title: p.name, art: info.face?.art }) : '';
+  return `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(p.id)}" aria-haspopup="dialog">${face}
     <span class="plmain"><span class="ttl">${esc(p.name)}</span>
-      <span class="plmeta"><span class="mono">${p.tracks}</span> tracks · <span class="tag">${esc(p.axis)}</span>${
-        undecided ? ' <span class="tag warn">pick an axis</span>' : p.target ? ' <span class="tag ok">files here</span>' : ''}${
-        h && h.score < 65 ? ' <span class="tag warn">needs a look</span>' : ''}</span></span>${spark}</button>`;
+      <span class="plmeta"><span class="mono">${p.tracks}</span> tracks${
+        undecided ? ' · <span class="tag warn">what kind?</span>' : ''}${facts ? ` · ${facts}` : ''}</span></span>${spark}${
+      h ? `<span class="plscore plh-${healthClass(h.score)}" title="Health: ${esc(h.word)}${h.notes.length ? ' · ' + esc(h.notes.join('; ')) : ''}"><b class="mono">${h.score}</b><span>${esc(h.word)}</span></span>` : ''}</button>`;
 };
 
 /** The playlist detail sheet's body (opened by plopen; shell.js draws it into #plSheet). */
@@ -7235,12 +7340,12 @@ function sheetHTML(c, id) {
     ${health ? `<section class="pls-sec"><h3>Health</h3>
       <p class="plhealth plh-${health.score >= 85 ? 'ok' : health.score >= 65 ? 'fine' : 'low'}"><b class="mono">${health.score}</b> ${esc(health.word)}</p>
       ${health.notes.length ? `<ul class="plnotes">${health.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : '<p class="hint">Nothing out of place.</p>'}</section>` : ''}
-    <section class="pls-sec"><h3>How it is treated</h3>
+    <section class="pls-sec"><h3>What kind of playlist</h3>
       <p class="hint">${esc(p.why ?? '')}</p>
-      <label class="pls-f">Axis <select data-act="axis" data-ax="${esc(id)}" aria-label="Axis of ${esc(pl.name)}">${AXES.map(a =>
-        `<option value="${a}" ${p.axis === a ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
-      <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to model"' : ''}>
-        receives suggestions</label></section>
+      <label class="pls-f">It groups by <select data-act="axis" data-ax="${esc(id)}" aria-label="What ${esc(pl.name)} groups by">${AXES.map(a =>
+        `<option value="${a}" ${p.axis === a ? 'selected' : ''}>${esc(AXIS_WORDS[a] ?? a)}</option>`).join('')}</select></label>
+      <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to learn from"' : ''}>
+        Suggest new tracks for it</label></section>
     ${prof ? `<section class="pls-sec"><h3>Sound</h3>${prof}</section>` : ''}
     ${split ? `<section class="pls-sec"><h3>Two genres?</h3>
       <p class="hint"><b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.
@@ -7554,10 +7659,14 @@ async function wizUndo(c, w = WIZ) {
 function view(c) {
   const { CFG, R, GAPS, esc, tagCoverage, NO_SIGNAL, listsSplits } = c;
   c.gapsKick?.();
-  const rows = Object.entries(CFG).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.tracks - a.tracks);
+  const all = Object.entries(CFG).map(([id, v]) => ({ id, ...v }));
   const cov = tagCoverage();
   const splitIds = new Set(listsSplits().map(x => x.p.id));
-  const undecidedIds = new Set(rows.filter(p => p.why === NO_SIGNAL).map(p => p.id));
+  const undecidedIds = new Set(all.filter(p => p.why === NO_SIGNAL).map(p => p.id));
+  const waiting = waitingCounts(R?.backlog);
+  const infos = new Map(all.map(p => [p.id, plInfo(c, p, splitIds, undecidedIds, waiting)]));
+  const rows = attentionOrder(all, p => infos.get(p.id));
+  const needN = rows.filter(p => (infos.get(p.id)?.health?.score ?? 100) < 85).length;
   const sugg = suggestionsOf(GAPS, R);
   const mixes = c.playlistMixes().mix;
   const ticks = genreTickSuggestions(rows.map(p => ({ ...p, mirror: c.isMirrorPlaylist?.({ id: p.id, name: p.name }) })), mixes, id => c.LISTS_SOUND.profile(id));
@@ -7608,10 +7717,16 @@ function view(c) {
         <span class="plmain"><span class="ttl">${esc(s.title)}</span>
           <span class="plmeta"><span class="mono">${s.n}</span> tracks · ${esc(s.why)}</span></span></button>`).join('')}</div>
     </section>` : '';
+  const eng = c.engineSummary?.() ?? null;
+  const knowsHTML = rows.some(p => p.target) ? `<section class="plknows" aria-labelledby="plknows-h">
+      <div class="plknows-head"><h2 id="plknows-h">How well it knows you</h2>
+        <button class="b sm" data-go="engine">${eng?.running ? 'Scoring…' : Number.isFinite(eng?.top1) ? 'Details' : 'Check it'}</button></div>
+      <p class="hint">${esc(knowsYouLine(eng))}</p></section>` : '';
   return `<h1>Library</h1>
-    <p class="lede">Tap a playlist for its axis, health and shuffle.</p>
+    <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
     ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${suggHTML}
-    <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
+    <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
+    ${knowsHTML}
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
       <button class="b sm" data-go="sources">Genre sources</button>
       <button class="b sm" data-go="shuffle">Shuffle everything</button></p>${
@@ -7729,7 +7844,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, sheetHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, waitingCounts, rowFacts, attentionOrder, knowsYouLine, sheetHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -7918,6 +8033,37 @@ function whyLine(t, esc) {
   return `<p class="why discwhy">Because you listen to <b>${names}</b>.</p>`;
 }
 
+/** The preview button's face and words for one state (app/preview.js). */
+function previewBtn(state) {
+  return { playing: { icon: '❚❚', label: 'Pause preview' }, loading: { icon: '…', label: 'Loading preview' },
+    none: { icon: '–', label: 'No preview for this track' }, error: { icon: '!', label: 'Preview failed, tap to try again' } }[state]
+    ?? { icon: '▶', label: 'Play a 30-second preview' };
+}
+
+/** Every pick as a row: play its preview, Like it, add it where it fits best, or open it on the card above.
+ *  The row on the card is marked. Nothing here writes until a button is tapped. */
+function pickRowsHTML(ctx, d, at) {
+  const { esc, thumbHTML, previewState } = ctx;
+  if (!d?.length) return '';
+  const rows = d.map((t, i) => {
+    const best = (t.suggest ?? [])[0];
+    const st = !t.isrc ? 'none' : previewState ? previewState(t.id) : 'idle', pb = previewBtn(st);
+    const face = thumbHTML ? thumbHTML({ id: t.id, title: t.track, art: t.art }) : '';
+    return `<div class="drow${i === at ? ' on' : ''}${st === 'playing' ? ' playing' : ''}" data-drow="${esc(t.id)}">
+      <button class="dprev" type="button" data-act="dprev" data-tid="${esc(t.id)}" aria-label="${esc(pb.label)}: ${esc(t.track)}" title="${esc(pb.label)}"${st === 'none' ? ' disabled' : ''}>${face}<span class="dpi" aria-hidden="true">${pb.icon}</span></button>
+      <button class="dmain" type="button" data-act="dshow" data-at="${i}"${i === at ? ' aria-current="true"' : ''}>
+        <span class="ttl">${esc(t.track)}</span><span class="dsub">${esc(t.artist ?? '')}${best ? ` · <span class="dfit">${esc(fitWord(best.score))} in ${esc(best.name)}</span>` : ''}</span></button>
+      <span class="dacts">
+        ${ctx.S?.discLiked?.has(t.id) ? '<button class="b sm" type="button" disabled>Liked</button>'
+          : `<button class="b sm" type="button" data-act="like" data-like="${esc(t.id)}" aria-label="Like ${esc(t.track)}">Like</button>`}
+        ${best ? `<button class="b sm go" type="button" data-act="dadd" data-tid="${esc(t.id)}" data-pl="${esc(best.id)}" aria-label="Add ${esc(t.track)} to ${esc(best.name)}">+ ${esc(best.name)}</button>` : ''}
+      </span></div>`;
+  }).join('');
+  return `<section class="drows" aria-labelledby="drows-h">
+    <div class="plsugg-head"><h2 id="drows-h">All ${d.length} picks</h2><span class="hint">▶ plays a 30-second preview here</span></div>
+    <div class="plrows">${rows}</div></section>`;
+}
+
 function view(ctx) {
   const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
@@ -7945,7 +8091,9 @@ function view(ctx) {
 
   // WP-C3: "find tracks that sound like ___". '' without CLAP records.
   const sounds = soundSearchHTML();
-  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'Pick what to seed from above, then hit Find new music. A run takes a minute or two.');
+  // Every empty state gets a button (USER-REVIEW): here it is the Find button itself.
+  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'One run takes a minute or two, and leaves out everything you already own.',
+    { acts: '<button class="b p" type="button" data-act="discRun">Find new music from what I play</button>' });
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
   const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
@@ -8000,9 +8148,11 @@ function view(ctx) {
           <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
           <a class="b sm" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
           <select data-act="discAnyPl" id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+          ${t.isrc ? `<button class="b sm" type="button" data-act="dprev" data-tid="${esc(t.id)}">${ctx.previewState?.(t.id) === 'playing' ? 'Pause preview' : 'Preview'}</button>` : ''}
         </div>
       </div>
-    </div>`;
+    </div>
+    ${pickRowsHTML(ctx, d, i)}`;
 }
 
 
@@ -8011,6 +8161,23 @@ const actions = {
   discPl({ S }, el) { S.discSeed = el.value; },
   discAnyPl(ctx, el) { if (el.value) return discAdd(ctx, el.value); },
   dfile(ctx, el) { return discAdd(ctx, el.dataset.dfile); },
+  /** A row's "+ playlist": that pick, into the playlist it fits best. */
+  dadd(ctx, el) {
+    const at = (ctx.S.discover ?? []).findIndex(x => x.id === el.dataset.tid);
+    if (at >= 0) return discAdd(ctx, el.dataset.pl, at);
+  },
+  /** A row's ▶: its 30-second preview, in the page. */
+  dprev(ctx, el) {
+    const t = (ctx.S.discover ?? []).find(x => x.id === el.dataset.tid);
+    if (t && ctx.previewToggle) return ctx.previewToggle(t);
+  },
+  /** Tap a row's title: that pick on the card. */
+  dshow({ S, render }, el) {
+    const d = S.discover ?? [];
+    S.discAt = Math.max(0, Math.min(+el.dataset.at || 0, d.length - 1));
+    render();
+    globalThis.document?.querySelector?.('.deck')?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  },
   dnav({ S, render }, el) {
     const d = S.discover ?? [];
     S.discAt = Math.max(0, Math.min((S.discAt ?? 0) + (+el.dataset.dnav), d.length - 1));
@@ -8031,14 +8198,15 @@ const actions = {
       const t = (S.discover ?? []).find(x => x.id === el.dataset.like);
       if (t && discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
       await logAction({ op:'add-liked', trackIds:[el.dataset.like], reason:'from discovery' });
+      (S.discLiked ??= new Set()).add(el.dataset.like);
       el.textContent = 'Liked'; el.disabled = true; toast('Added to your Liked Songs.'); }
     catch (err) { toast('Failed: '+err.message); }
   },
 };
 
-/** Add the track on the card to a playlist, and take it off the pile. */
-async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId) {
-  const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
+/** Add a pick (the one on the card, unless `pick` says which) to a playlist, and take it off the pile. */
+async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId, pick = null) {
+  const d = S.discover ?? [], cur = Math.min(S.discAt ?? 0, d.length - 1), at = pick ?? cur, t = d[at];
   if (!t) return;
   const name = CFG[playlistId]?.name ?? playlistId;
   try {
@@ -8048,11 +8216,11 @@ async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction
     toast(`Added “${t.track}” to ${name}.`, () => undoAction(when));
     if (discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
     d.splice(at, 1);
-    S.discAt = Math.max(0, Math.min(at, d.length - 1));
+    S.discAt = Math.max(0, Math.min(at < cur ? cur - 1 : pick == null ? at : cur, d.length - 1));
     render();
   } catch (e) { toast('Failed: ' + e.message); }
 }
-return { fitWord, whyLine, view, actions };
+return { fitWord, whyLine, previewBtn, pickRowsHTML, view, actions };
 })();
 /* ---- web/screens/new.mjs ---- */
 __mod["web/screens/new.mjs"] = (function () {
@@ -8390,7 +8558,7 @@ const STORE_SCREENS = ['inbox', 'tidy', 'new', 'discover', 'shuffle', 'lists', '
 const STORE_WATCH = {
   lib:     STORE_SCREENS,
   reports: STORE_SCREENS,
-  eng:     ['engine'],
+  eng:     ['engine', 'lists'],   // lists: the "How well it knows you" card
   sound:   ['inbox'],
   audio:   ['inbox', 'tidy', 'sources'],
   gaps:    ['new', 'lists', 'inbox'],   // inbox: File's cold-start offers (O1)
@@ -8403,7 +8571,7 @@ for (const screen of STORE_SCREENS)
 
 /** Repaint the current screen if it is one of `screens` and the page is up. */
 function storeRepaint(screens) {
-  // Engine, History and Sources are sections of the Settings sheet now: repaint
+  // History and Sources are sections of the Settings sheet now: repaint
   // the one that is open, and not the page behind it.
   if (typeof settingsOpen === 'function' && settingsOpen() && screens.includes(S.uhOpen)) underHoodRefresh();
   if (typeof view === 'undefined' || !screens.includes(view) || !document.getElementById('main')) return;
@@ -8701,7 +8869,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1758';
+const BUILD = '2026-11-16-1906';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -9039,7 +9207,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1758', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1906', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -9795,7 +9963,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1758');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1906');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9878,25 +10046,26 @@ function moreButton(key, total) {
 
 // Bar order: the four tabs, which is also swipe order. Swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
-// New playlists and Shuffle follow Library: they are reached from it, and a
-// swipe on from Library lands on them. Sources, Engine and History are not
-// screens any more: they are sections of the Settings sheet (app/shell.js).
+// New playlists, Shuffle and Engine follow Library: they are reached from it, and a
+// swipe on from Library lands on them. Sources and History are not screens any
+// more: they are sections of the Settings sheet (app/shell.js). Engine was one
+// too, until it moved to Library's "How well it knows you" card (Wave F).
 const TABS = ['inbox','tidy','discover','lists'];
-const VORDER = [...TABS, 'new', 'shuffle'];
+const VORDER = [...TABS, 'new', 'shuffle', 'engine'];
 // The five colours of the mark, one per screen — see the [data-v=…] rules in
 // the stylesheet, which have to agree with this.
-const VHUE = { inbox:'m0', tidy:'m1', discover:'m3', lists:'m4', new:'m2', shuffle:'m4' };
+const VHUE = { inbox:'m0', tidy:'m1', discover:'m3', lists:'m4', new:'m2', shuffle:'m4', engine:'m2' };
 const VTITLE = { inbox:'File', tidy:'Tidy', discover:'Discover', lists:'Library',
-                 new:'New playlists', shuffle:'Shuffle' };
+                 new:'New playlists', shuffle:'Shuffle', engine:'Engine' };
 // Screens that sit under another tab on the bar.
-const TAB_OF = { new:'lists', shuffle:'lists' };
+const TAB_OF = { new:'lists', shuffle:'lists', engine:'lists' };
 const tabOf = v => TAB_OF[v] ?? v;
-// Old screen names and where they went: Home became File; Sources, Engine and
-// History became sections of the Settings sheet. go() and the router use it.
+// Old screen names and where they went: Home became File; Sources and History
+// became sections of the Settings sheet. go() and the router use it. Engine is
+// a screen again, under Library, so #/engine needs no entry here.
 const LEGACY_VIEWS = {
   home:    { view: 'inbox' },
   sources: { section: 'sources' },
-  engine:  { section: 'engine' },
   history: { section: 'history' },
 };
 /* ---------- ⓘ: "how this works" lives behind a button, not in the page ----------
@@ -11705,6 +11874,70 @@ function discFitHTML(t) {
     .filter(x => x?.title).map(x => `${esc(x.title)} — ${esc(x.artist)}`);
   return `<div class="discfit ${cls}" title="${(f * 100).toFixed(0)}% — 100% is as close as ${name}’s own tracks are to each other"><span class="tag snd">by sound</span> ${say}${near.length ? `<span class="sub">closest: ${near.join('; ')}</span>` : ''}</div>`;
 }
+/* ---------- 30-second previews (Wave F, USER-REVIEW item 10) ----------
+ * Discover's rows play a pick's 30-second Deezer preview right in the page,
+ * found by the ISRC Spotify already gives. It needs no Premium, no open
+ * Spotify app and no Spotify request, so it works for every account. The
+ * preview address is signed and expires within minutes, so it is looked up on
+ * each play and never stored (the rule core/audio/fetch.mjs keeps). One
+ * preview plays at a time; the screen repaints through store 'ui.discover'.
+ * ISRC or nothing: a name match picks the wrong recording too often. */
+const PREVIEW = { id: null, state: 'idle', el: null, err: null };
+
+/** idle | loading | playing | none (nothing to play) | error, for one track id. */
+function previewState(id) {
+  return PREVIEW.id === id ? PREVIEW.state : 'idle';
+}
+
+function previewSet(id, state, err = null) {
+  Object.assign(PREVIEW, { id, state, err });
+  try { store.touch('ui.discover'); } catch { /* before the store is up */ }
+}
+
+function previewEl() {
+  if (PREVIEW.el) return PREVIEW.el;
+  const el = new Audio();
+  el.preload = 'none';
+  el.addEventListener('ended', () => { if (PREVIEW.state === 'playing') previewSet(PREVIEW.id, 'idle'); });
+  el.addEventListener('error', () => { if (PREVIEW.state === 'playing' || PREVIEW.state === 'loading') previewSet(PREVIEW.id, 'error', 'could not play'); });
+  return PREVIEW.el = el;
+}
+
+function previewStop() {
+  if (PREVIEW.el) { try { PREVIEW.el.pause(); } catch { /* not started */ } }
+  if (PREVIEW.state === 'playing' || PREVIEW.state === 'loading') previewSet(PREVIEW.id, 'idle');
+}
+
+/** Deezer's answer for one ISRC → the preview address, or null. Same checks as listening's lookup. */
+function previewUrlFrom(json, isrc) {
+  if (!json || typeof json !== 'object' || json.error || !json.preview) return null;
+  const n = s => String(s ?? '').replace(/-/g, '').toUpperCase();
+  if (json.isrc && n(json.isrc) !== n(isrc)) return null;
+  if (json.readable === false) return null;
+  return /^https:\/\//.test(json.preview) ? json.preview : null;
+}
+
+/** Play `t` ({ id, isrc }), or pause it when it is the one playing. */
+async function previewToggle(t) {
+  if (!t?.id) return;
+  if (PREVIEW.id === t.id && (PREVIEW.state === 'playing' || PREVIEW.state === 'loading')) return previewStop();
+  previewStop();
+  if (!t.isrc) return previewSet(t.id, 'none');
+  previewSet(t.id, 'loading');
+  try {
+    await engineLoad();   // deezerJsonp checks addresses with the engine bundle's BetterfyDeezer
+    const url = previewUrlFrom(await deezerJsonp(`https://api.deezer.com/track/isrc:${encodeURIComponent(String(t.isrc).replace(/-/g, '').toUpperCase())}`), t.isrc);
+    if (PREVIEW.id !== t.id) return;   // another row was tapped meanwhile
+    if (!url) return previewSet(t.id, 'none');
+    // Spotify Connect playback, if any, keeps going: this is the page's own audio.
+    const el = previewEl();
+    el.src = url;
+    await el.play();
+    if (PREVIEW.id === t.id) previewSet(t.id, 'playing');
+  } catch (e) {
+    if (PREVIEW.id === t.id) previewSet(t.id, 'error', String(e?.message ?? e));
+  }
+}
 /** Release styles for an artist Last.fm has nothing on at all — never called
  *  otherwise, since a real Last.fm tag always wins outright. */
 /* ---------- giving a tag back ----------
@@ -12540,7 +12773,8 @@ let paintedView = null;
 const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
                 lists:screenView('lists'),
                 new:() => libBack('new') + screenView('new')(),
-                shuffle:() => libBack('shuffle') + screenView('shuffle')() };
+                shuffle:() => libBack('shuffle') + screenView('shuffle')(),
+                engine:() => libBack('engine') + screenView('engine')() };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new
@@ -12998,7 +13232,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1758';
+    s.src = 'engine.js?v=2026-11-16-1906';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -13020,7 +13254,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1758');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1906');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -13573,7 +13807,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1758';
+    s.src = 'audio.js?v=2026-11-16-1906';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -13609,7 +13843,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1758', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1906', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -14487,7 +14721,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1758', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1906', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -14814,9 +15048,26 @@ SCREEN_CTX.tidy = () => ({
   get libHealth() { return SCREEN_MODS.lists; },
   get document() { return globalThis.document; },
 });
+/** Library's "How well it knows you" (Wave F): the last Score run's headline, kept on this device so the
+ *  card still has it after a reload. Read from ENG.val, never computed here; nothing until one run. */
+function engineSummary() {
+  const m = typeof ENG !== 'undefined' ? ENG.val?.mine : null;
+  if (m && Number.isFinite(m.top1)) {
+    const sum = { top1: m.top1, top3: m.top3 ?? null, scored: m.scored ?? null, at: ENG.val.at ?? Date.now() };
+    try {
+      const old = JSON.parse(LS.getItem('bf_engscore') || 'null');
+      if (!old || old.top1 !== sum.top1 || old.scored !== sum.scored) LS.setItem('bf_engscore', JSON.stringify(sum));
+      else sum.at = old.at;
+    } catch { /* private mode: shown this session only */ }
+    return sum;
+  }
+  let saved = null;
+  try { saved = JSON.parse(LS.getItem('bf_engscore') || 'null'); } catch { /* none */ }
+  return { ...(saved ?? {}), running: typeof ENG !== 'undefined' && !!ENG.valRunning };
+}
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
-  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
+  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate, thumbHTML, engineSummary,
   twinPairs: () => ENG?.pairs ?? null,
   // Merge/split wizard (BUILD-6 F4): new private playlists, written through the History log.
   sp, landedIn,
@@ -14866,7 +15117,8 @@ SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, ded
 SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
   soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
-  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember });
+  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember,
+  thumbHTML, previewToggle, previewState });
 // --- end shuffle/discover ---
 /* ---------- your data: every key this page writes, and why (BUILD-6 F7) ----------
  * The one list of what Betterfy keeps on this device and in Firestore. The
@@ -14914,6 +15166,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_analysed', group:'Your library', why:'That you have run "Analyse my library" once.' },
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
+  { where:'local', key:'bf_engscore', group:'Your library', why:'The headline of the last Score run (right first time, top three, how many tracks), for Library\'s "How well it knows you" card.' },
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
   { where:'local', key:'bf_teach', group:'Your library', why:'This account\'s own teach-queue measurement from the last Score run (the engine\'s score on your filed tracks before and after 20 simulated answers), which decides whether File shows the teach questions.' },
   { where:'local', key:'bf_tidy_sprint', group:'Your library', why:'Your last 20 Tidy sprints: how many tracks you decided, how fast, and how many moves you kept. Counts only, kept here and never sent.' },
@@ -15279,8 +15532,8 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 /* ---------- the shell: four tabs and the Settings sheet (docs/BUILD-5-PLAN.md §4.1, UI-D) ----------
  * File, Tidy, Discover and Library are the tabs. Everything that used to be a
  * screen of its own and is not one of those lives in the Settings sheet under
- * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs),
- * Engine and History. Their modules (screens/sources|engine|history.mjs) are
+ * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs)
+ * and History. (Engine moved to Library in Wave F.) Their modules are
  * unchanged: this file paints each one's view into the sheet, one section open
  * at a time, and dispatchAct() (screens.js) finds their actions through the
  * [data-uh] wrapper. Anything still asking for the old screens by name is sent
@@ -15294,7 +15547,6 @@ const UH_SECTIONS = [
     try { key = !!lfmKey(); } catch { /* no key */ }
     return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? 'connected' : 'no key'} · Wikidata · Discogs`;
   }],
-  ['engine', 'Engine', () => 'How picks are scored, and how well'],
   ['history', 'History', () => 'Everything Betterfy wrote to Spotify, with undo'],
 ];
 
