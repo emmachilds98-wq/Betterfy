@@ -294,7 +294,8 @@ data yet (N of M)" wording build 5 introduced. The card is local only.
 
 ### 5.2 Guardrails (all in CI after Q1)
 
-1. `node --test` including the Chromium page-load and e2e specs; CI installs
+1. `npm test` (unit tests and the Chromium page-load check) and `npm run e2e`
+   (the browser specs under `test/e2e`), as two CI steps; CI installs
    Chromium; a canary test proves the page-load test can fail.
 2. `npm run build:web` then `git diff --exit-code docs/` so a stale generated
    page, engine, workers or build stamp fails the build (the stamp must match

@@ -1,0 +1,10 @@
+/* Fill this playlist (BUILD-6 F2): the suggestions list in the Library detail sheet. */
+  .plfill .fillrows{list-style:none; margin:0; padding:0; background:var(--surface); border:1px solid var(--line);
+          border-radius:var(--r-3); overflow:hidden}
+  .plfill .fillrow{display:flex; align-items:center; gap:12px; padding:10px 12px; min-height:52px; border-bottom:1px solid var(--line)}
+  .plfill .fillrow:last-child{border-bottom:0}
+  .plfill .fillrow .b{flex:none}
+  .plfill .rowbtns{margin-top:10px}
+  .fillscore .sub{font-weight:400}
+  /* An Add's Undo toast must sit above the open sheet it came from (the toast is z 28, the sheet 30). */
+  body:has(#plSheet.open) .toast{z-index:31}

@@ -66,6 +66,10 @@ SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
   twinPairs: () => ENG?.pairs ?? null,
+  // Fill this playlist (BUILD-6 F2): ranked by core/recommend/fill.mjs in the lazy engine, written through the History log.
+  TAGS, addTracks, logAction, undoAction, newGroup, engineLoad,
+  engineAudio: () => (typeof engineAudio === 'function' ? engineAudio() : null),
+  get BetterfyFill() { return globalThis.BetterfyFill; },
   coldKick: needCold => coldKick(needCold),
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
@@ -92,6 +96,8 @@ Object.assign(SCREEN_CTX, {
                   rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
                   saveFeedback, toast, render, flyCard,
+                  // The "since you last opened" card (F5): reads only what is already held.
+                  LS, COLD, isMirrorPlaylist, listeningRaw: async () => (await idb.get('listening_raw'))?.data ?? null,
                   rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
                   matchMedia: q => globalThis.matchMedia(q) }),
 });

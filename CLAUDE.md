@@ -76,5 +76,6 @@ over anything that needs a file most users won't have.
   content into AI/ML models, no pooling it across accounts). Read §3 before
   proposing any LLM feature or anything shared between users.
 - Tests are the source of truth for behavior, not comments: `npm test`
+  (unit tests, ~2.5 min) and `npm run e2e` (browser specs),
   before and after any change to `profile.mjs`, `axes.mjs`, or the browser
   build's mirrored classify()/buildReports() logic.
