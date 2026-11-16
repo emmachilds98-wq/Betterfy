@@ -70,6 +70,37 @@ async function appCheckToken() {
   return cachedAppCheckToken.token;
 }
 
+/* Who is voting (BUILD-6 H1). merge-tags.mjs publishes a tag only when two
+ * independent contributor ids name it for the same artist, so each document
+ * carries one, as `<artist id>_<contributor id>`.
+ *
+ * The id is not a stable install id. It is the first 16 hex characters of
+ * SHA-256(secret + ':' + artist id), where the secret is 128 random bits made
+ * on this device the first time it contributes and never sent anywhere. So the
+ * same install always casts the same one vote for an artist (Firestore refuses
+ * a second create of one document id), while the collection, which anyone can
+ * read, cannot group one install's contributions together: a stable id there
+ * would have published which artists one listener had in their library. */
+const TAGSHARE_SECRET_KEY = 'bf_tagshare_secret';
+let tagshareSecretMem = null;   // when storage is blocked: one secret for this visit
+function tagshareSecret() {
+  try {
+    const kept = LS.getItem(TAGSHARE_SECRET_KEY);
+    if (/^[0-9a-f]{32}$/.test(kept ?? '')) return kept;
+  } catch { /* storage blocked: fall through to a per-visit secret */ }
+  const fresh = tagshareSecretMem ?? [...crypto.getRandomValues(new Uint8Array(16))]
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  tagshareSecretMem = fresh;
+  try { LS.setItem(TAGSHARE_SECRET_KEY, fresh); } catch { /* kept in memory instead */ }
+  return fresh;
+}
+/** This install's contributor id for one artist: 16 hex characters, unlinkable across artists. */
+async function contributorId(artistId) {
+  const bytes = new TextEncoder().encode(`${tagshareSecret()}:${artistId}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return [...digest.slice(0, 8)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * Offer one artist's freshly-fetched tags to the shared table. Never awaited,
  * never retried: the tags are already saved locally, and this is a gift to
@@ -84,27 +115,72 @@ function contributeTags(artistId, tags) {
     if (!sharingTags() || !artistId || !tags?.length) return;
     // Already in the table everyone downloads, so there is nothing to give.
     if (RAW_TAGS?.[artistId]) return;
-    const url = `https://firestore.googleapis.com/v1/projects/${TAGS_PROJECT}/databases/(default)`
-      + `/documents/tagContributions?documentId=${encodeURIComponent(artistId)}&key=${TAGS_KEY}`;
-    // documentId= on a create means the first contribution for an artist wins
-    // and later ones are refused outright — no edits, no overwrites, nothing to
-    // reconcile. The refusal is a 409 nobody reads.
+    // No Web Crypto (an insecure context): no contributor id, so no vote to cast.
+    if (!globalThis.crypto?.subtle) return;
     const body = JSON.stringify({ fields: {
       tags:   { stringValue: JSON.stringify(tags.slice(0, 10)) },
       source: { stringValue: 'lastfm' },
       at:     { integerValue: String(Date.now()) },
     } });
-    const post = headers => fetchDeadline(url, { method: 'POST', headers, body }, 6000).catch(() => {});
-    if (!appCheckConfigured()) { post({ 'content-type': 'application/json' }); return; }
-    // Only when App Check is actually configured does fetching a token sit in
-    // front of the write. Even then, a slow or failed token fetch must never
-    // be the reason this listener's own tag fetch looks broken — so it still
-    // posts without the header rather than not posting at all; Firestore's own
-    // enforcement setting decides from there whether that write is accepted.
-    appCheckToken().then(
-      token => post({ 'content-type': 'application/json', 'X-Firebase-AppCheck': token }),
-      () => post({ 'content-type': 'application/json' }),
-    );
+    // documentId= on a create means this install's vote for an artist is cast
+    // once and a repeat is refused outright: no edits, no overwrites, nothing
+    // to reconcile. The refusal is a 409 nobody reads.
+    const post = (docId, headers) => fetchDeadline(
+      `https://firestore.googleapis.com/v1/projects/${TAGS_PROJECT}/databases/(default)`
+        + `/documents/tagContributions?documentId=${encodeURIComponent(docId)}&key=${TAGS_KEY}`,
+      { method: 'POST', headers, body }, 6000).catch(() => {});
+    contributorId(artistId).then(cid => {
+      const docId = `${artistId}_${cid}`;
+      if (!appCheckConfigured()) return post(docId, { 'content-type': 'application/json' });
+      // Only when App Check is actually configured does fetching a token sit in
+      // front of the write. Even then, a slow or failed token fetch must never
+      // be the reason this listener's own tag fetch looks broken — so it still
+      // posts without the header rather than not posting at all; Firestore's own
+      // enforcement setting decides from there whether that write is accepted.
+      return appCheckToken().then(
+        token => post(docId, { 'content-type': 'application/json', 'X-Firebase-AppCheck': token }),
+        () => post(docId, { 'content-type': 'application/json' }),
+      );
+    }).catch(() => { /* never the reason a tag fetch failed */ });
   } catch { /* never the reason a tag fetch failed */ }
 }
 
+
+/* ---------- what each source knows about this account (BUILD-6 H1) ----------
+ * The Sources coverage card's data: this account's artist ids and, for each,
+ * what tags_extra and bridge-raw already say. Read from this device's own
+ * IndexedDB; nothing is fetched or sent. web/screens/sources.mjs turns it into
+ * percentages (artistCoverage). Re-read at most every 30 seconds while the card
+ * is showing, since the bridge lookups fill in behind it. */
+const SRC_COV = { data: null, at: 0, pending: null };
+function sourceCoverage() {
+  if (!SRC_COV.pending && Date.now() - SRC_COV.at > 30000) {
+    SRC_COV.pending = loadSourceCoverage()
+      .then(changed => { if (changed && typeof underHoodRefresh === 'function') underHoodRefresh(); })
+      .catch(() => {})
+      .finally(() => { SRC_COV.pending = null; });
+  }
+  return SRC_COV.data;
+}
+async function loadSourceCoverage() {
+  SRC_COV.at = Date.now();
+  if (!LIB) return false;
+  const ids = new Set();
+  for (const p of LIB.playlists ?? []) for (const t of p.tracks ?? []) for (const a of t.artists ?? []) if (a?.id) ids.add(a.id);
+  for (const t of LIB.liked ?? []) for (const a of t.artists ?? []) if (a?.id) ids.add(a.id);
+  let extraAll = {}, bridgeAll = {};
+  try { extraAll = (await idb.get('tags_extra')) ?? {}; } catch { /* none kept */ }
+  try { bridgeAll = (await idb.get(BRIDGE_KEY))?.raw ?? {}; } catch { /* none kept */ }
+  // Only what the card reads, so the whole bridge cache is not held twice.
+  const extra = {}, bridge = {}, shipped = {};
+  for (const id of ids) {
+    const x = extraAll[id], b = bridgeAll[id];
+    if (x) extra[id] = { source: x.source ?? null, tags: x.tags?.length ? [0] : [] };
+    if (b) bridge[id] = { deezerId: b.deezerId ?? null, deezerAt: b.deezerAt, mbid: b.mbid ?? null, mbidAt: b.mbidAt };
+    if (RAW_TAGS?.[id]?.tags?.length) shipped[id] = [0];
+  }
+  const data = { ids: [...ids], shipped, extra, bridge };
+  const changed = JSON.stringify(data) !== JSON.stringify(SRC_COV.data);
+  SRC_COV.data = data;
+  return changed;
+}

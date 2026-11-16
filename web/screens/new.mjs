@@ -49,7 +49,7 @@ function gapsSections(c) {
       <div class="ttl">${esc(s.name)} <span class="tag">${n(s.total)} tracks</span></div>
       <div class="sub">${s.parts.map(x => `${x.rest ? 'the rest of ' : ''}${esc(x.label)} ${n(x.size)} (${Math.round(x.share * 100)}%)`).join(' · ')}.
         ${esc(s.name)} stays as it is.</div>
-    </div><div class="acts">${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
+    </div><div class="acts"><button class="b sm p" data-act="wizgap" data-wizgap="${i}">Split into playlists…</button> ${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
       : `<button class="b sm" data-act="split" data-split="${i}:${k}">Make “${esc(x.label)}” (${n(x.size)})</button>`).join(' ')}</div></div>`).join('');
   const untagged = GAPS.untagged ? `<p class="why" style="margin-top:8px">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
       outside your genre playlists have no genre in their artists' tags, so they can't be placed in one here.
@@ -167,6 +167,12 @@ export const actions = {
     if (!name) return c.toast('Give it a name first.');
     el.disabled = true;
     try { await c.gapsCreate(name, g.ids); } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  },
+
+  /** The merge/split wizard (BUILD-6 F4) on this split: preview both halves, rename, move tracks, one undo. */
+  wizgap(c, el) {
+    const s = c.GAPS.splits?.[+el.dataset.wizgap];
+    if (s) c.mergeSplitOpen({ kind: 'split', id: s.playlistId, src: 'tags' });
   },
 
   /** Make one half of a playlist that is two genres. */

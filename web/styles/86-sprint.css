@@ -1,0 +1,48 @@
+  /* ---------- Tidy: library health report and keyboard sprint (BUILD-6 F9) ----------
+     The report is Tidy's Health section (.hrep); the sprint replaces a list with one
+     track at a time (.sprint). The score's own look (.plhealth, .plnotes) is
+     61-library.css's, shared with the Library sheet. */
+  .seg.tidysecs{flex-wrap:wrap}
+
+  .hrep{list-style:none; margin:0; padding:0; display:grid; gap:10px; counter-reset:hrep}
+  .hrow{counter-increment:hrep; display:flex; gap:14px; align-items:flex-start; background:var(--surface);
+    border:1px solid var(--line); border-radius:20px; padding:14px 16px}
+  .hrow::before{content:counter(hrep); font-family:var(--mono); color:var(--ink-3); min-width:1.2em; padding-top:2px}
+  .hmain{flex:1; min-width:0}
+  .hmain .ttl{font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:4px}
+  .hmain .plhealth .mono{font-size:20px}
+  .hrow>.b{flex:none; align-self:center}
+
+  .tidypl{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 14px; color:var(--ink-2)}
+  .tidypl b{color:var(--ink)}
+
+  .sprintbar{display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; margin:0 0 14px}
+  .sprintbar .hint, .sprint .hint{color:var(--ink-2); font-size:var(--fs-small, 13px)}
+  .sprintbar .sub{flex-basis:100%; color:var(--ink-2); font-size:var(--fs-small, 13px)}
+  .sprint kbd, .sprintbar kbd{font-family:var(--mono); font-size:.85em; padding:0 5px; border:1px solid var(--line-2, var(--line));
+    border-bottom-width:2px; border-radius:6px; background:var(--surface-2); color:var(--ink)}
+
+  .sprint h2{display:flex; align-items:baseline; gap:10px; margin:0 0 10px}
+  .sprint h2 .mono{font-size:14px; color:var(--ink-2); font-weight:500}
+  .sprintcard{display:flex; gap:14px; align-items:flex-start; background:var(--surface); border:1px solid var(--line);
+    border-radius:20px; padding:16px 18px; margin:0 0 12px}
+  /* Focus sits on the track being decided: shown plainly, not only on :focus-visible,
+     since the sprint puts it there itself after every key. */
+  .sprintcard:focus{outline:3px solid var(--accent); outline-offset:3px}
+  .sprintcard .main{flex:1; min-width:0}
+  .sprintcard .ttl{font-weight:700; font-size:18px}
+  .sprintcard .swap{margin-top:6px}
+  .sprintcard.sprintdone p{margin:0}
+  .sprintacts{display:flex; flex-wrap:wrap; gap:8px; margin:0 0 8px}
+  .sprintacts .b:not(.sm){min-height:var(--ctl-h, 44px)}
+  .sprintstat{color:var(--ink-2); font-size:var(--fs-small, 13px); margin:6px 0 0}
+  .sprint-live{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap}
+
+  @media (max-width: 760px){
+    .sprintacts>.b:not(.sm){flex:1 1 40%; justify-content:center}
+    .hrow{padding:12px 13px}
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .sprintcard{animation:sprintIn var(--dur-1) var(--ease-out)}
+    @keyframes sprintIn{from{opacity:.4; transform:translateX(8px)} to{opacity:1; transform:none}}
+  }

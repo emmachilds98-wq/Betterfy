@@ -1,0 +1,18 @@
+  /* ---------- File: the teach questions (BUILD-6 SG, web/app/teach.js teachHTML) ----------
+     A card above the deck, only on an account whose Score run measured that answers help. */
+  .teach{margin:0 0 16px; padding:14px 16px}
+  .teach .teach-h{display:flex; align-items:center; justify-content:space-between; gap:12px}
+  .teach h2{margin:0; font-family:var(--mono); font-size:11.5px; font-weight:600; letter-spacing:.12em;
+            text-transform:uppercase; color:var(--accent)}
+  .teach .teach-x{flex:none; display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px;
+                  border:0; border-radius:var(--r); background:none; color:var(--ink-3); cursor:pointer; font-size:14px}
+  .teach .teach-x:hover{color:var(--ink); background:var(--surface-2)}
+  .teach .teach-sub{margin:6px 0 0; color:var(--ink-2)}
+  .teach .rowbtns{margin-top:10px}
+  .teach .teach-list{list-style:none; margin:12px 0 0; padding:0; display:grid; gap:10px}
+  .teach .teach-q{padding:10px 0 0; border-top:1px solid var(--line)}
+  .teach .teach-t{overflow-wrap:anywhere}
+  .teach .teach-how{margin:2px 0 8px; font-size:12px; color:var(--ink-3)}
+  .teach .teach-choices{display:flex; flex-wrap:wrap; gap:8px}
+  .teach .teach-choices .b{min-height:44px; max-width:100%; overflow-wrap:anywhere; text-align:left}
+  .teach .teach-pass{color:var(--ink-2)}

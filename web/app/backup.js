@@ -269,6 +269,9 @@ async function restoreUndo() {
 function restoreCancel() { Object.assign(BK, { stage: 'idle', plan: null, backup: null, error: '' }); bkRedraw(); }
 
 async function wipeThisDevice() {
+  // Seal first: an in-flight Spotify call would otherwise remember its pace
+  // (bf_gap) after the wipe and before the reload.
+  LS.seal?.();
   await wipeRun({ LS, idb, keys: DATA_KEYS,
     local: (() => { try { return window.localStorage; } catch { return null; } })(),
     session: (() => { try { return window.sessionStorage; } catch { return null; } })(),

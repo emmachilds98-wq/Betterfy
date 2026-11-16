@@ -4,7 +4,7 @@ const FILE_GLUE = {
   track: () => SCREEN_MODS.inbox.inboxTrack(screenCtx('inbox')),
   toggle: id => SCREEN_MODS.inbox.toggleFileSel(screenCtx('inbox'), id),
 };
-const fileCurrent = ids => SCREEN_MODS.inbox.fileCurrent(screenCtx('inbox'), ids);
+const fileCurrent = (ids, opts) => SCREEN_MODS.inbox.fileCurrent(screenCtx('inbox'), ids, opts);
 const inboxAct = a => SCREEN_MODS.inbox.inboxAct(screenCtx('inbox'), a);
 
 // Keyboard parity for the swipe: the same walk through VORDER, for anyone not

@@ -130,7 +130,8 @@ async function blendFetch() {
     const playOf = t => Math.max(0, ...(t.artists ?? []).map(a => listen.get(String(a?.name ?? '').toLowerCase()) ?? 0));
     const tracks = R.backlog.map(b => liked.get(b.id)).filter(Boolean)
       .map((t, i) => ({ t, i, w: playOf(t) })).sort((a, b) => b.w - a.w || a.i - b.i).map(x => x.t);
-    const artists = BetterfyBridge.sourceArtists(tracks);
+    // Ordered by track above; by artist, listening alone and least-known first, here (D9).
+    const artists = new Map(await inEnrichOrder(BetterfyBridge.sourceArtists(tracks), ([, a]) => a.name));
     let raw = (await idb.get(BRIDGE_KEY))?.raw ?? {};
     const ttl = BetterfyBridgeFetch.TTL_MS, now = Date.now();
     const fresh = at => Number.isFinite(at) && now - at < ttl;

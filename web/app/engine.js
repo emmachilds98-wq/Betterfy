@@ -378,7 +378,8 @@ function bridgeProgressText() {
 /** Look up the neighbours of the artists about to be scored, remembering every
  *  answer on this device so the next run only asks about what is new or stale. */
 async function engineBridge(tracks) {
-  const artists = BetterfyBridge.sourceArtists(tracks);
+  // Most-listened first (D9), so a run Deezer's quota cuts short has looked up what you play.
+  const artists = new Map(await inEnrichOrder(BetterfyBridge.sourceArtists(tracks), ([, a]) => a.name));
   let cache = null;
   try { cache = (await idb.get(BRIDGE_KEY))?.raw ?? null; } catch { /* no cache: ask everything */ }
   let last = 0;
@@ -473,10 +474,14 @@ const engineValidate = guard(async () => {
       catch { identify = null; }
       let fill = null;
       try { fill = BetterfyFill.fillRecall(LIB, { tags, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist }); } catch { fill = null; }
-      ENG.val = { mine, base, blend, identify, weights, fill, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      let teach = null;
+      try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true }); } catch { teach = null; }
+      ENG.val = { mine, base, blend, identify, weights, fill, teach, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).
     try { if (ENG.val.fill?.recall != null) LS.setItem('bf_fill', JSON.stringify({ ...ENG.val.fill, at: Date.now() })); } catch { /* shown next run */ }
+    // File's teach questions show only once this account's own measurement beats (BUILD-6 SG).
+    try { if (ENG.val.teach) teachRemember(ENG.val.teach); } catch { /* shown next run */ }
     // The fitted weights first: calibration is refitted on the engine they
     // make, and the comparison above is redone with them.
     await weightsRemember(ENG.val);

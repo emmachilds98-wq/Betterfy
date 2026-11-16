@@ -582,6 +582,19 @@ only backlog clusters before. There's no separate Gaps screen.
   one-tap choices. That would put the account-native engine into the main
   filing flow before its gate has been run on a real library, which is the
   thing every phase so far has refused to do.
+- **Teach queue, built behind its gate (BUILD-6 SG, 2026-11-16).**
+  `core/review/teach.mjs` picks up to ten one-tap questions (the checked
+  short list, or the card's guesses said as guesses; listening x uncertainty
+  x the artist's other waiting tracks; one per artist) and File shows them
+  above the deck (`web/app/teach.js`); an answer is an ordinary filing.
+  `core/validate/teach.mjs` measured "Score after 20 answers beats before"
+  on the synthetic accounts and found no reliable gain (small 21.1% -> 26.3%
+  on 19 tracks, typical 82.1% -> 80.4%, large 73.7% -> 74.2%): one answer
+  barely moves the account-native engine, since an artist only enters the
+  co-occurrence graph from two playlists. So the card is shown only where
+  this account's own Score run measures a gain (`teachGate`, kept in
+  `bf_teach`; at least a point and two tracks on a hidden fold of its own
+  filing). `test/teach.test.mjs` holds the numbers.
 
 **Dropped or downgraded by this plan:** shared filing across users (R2), any
 runtime LLM over Spotify data (R1), Chrome's Prompt API (R1, and not
