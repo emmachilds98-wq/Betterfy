@@ -35,6 +35,9 @@ export const DEFAULTS = {
   maxChoices: 3,
   /** One-sided 95% for the Wilson bound. */
   z: 1.645,
+  /** What "confident" must mean inside one agreement level (agree.mjs): a
+   *  little above `target`, so the held-out check (AGREE_GATE, 95%) has room. */
+  agreeTarget: 0.92,
 };
 
 /** Probability step the confident threshold is fitted on (see fitCalibration). */
@@ -176,9 +179,35 @@ export function fitCalibration(rows, opts = {}) {
   const rank = Math.ceil((n + 1) * (1 - alpha));
   const qhat = n && rank <= n ? scores[rank - 1] : 1;
 
-  return { version: CALIBRATE_VERSION, n, T, tau: tau == null ? null : +tau.toFixed(5),
-           pmin: +(1 - qhat).toFixed(5), target, alpha, confidentN, confidentRight };
+  const out = { version: CALIBRATE_VERSION, n, T, tau: tau == null ? null : +tau.toFixed(5),
+                pmin: +(1 - qhat).toFixed(5), target, alpha, confidentN, confidentRight };
+  // Package 4 (docs/NEXT-WORKPLAN.md): rows that carry an agreement level
+  // (core/intrinsic/agree.mjs) get a "confident" threshold of their own per
+  // level, fitted the same way on only that level's rows. A card where sound,
+  // filing history and tags all rank the same playlist first is right far
+  // more often than its margin says; this is where that is measured.
+  if (opts.byLevel !== false && usable.some(r => r.agree)) {
+    const byLevel = {};
+    for (const level of AGREE_LEVELS) {
+      const mine = usable.filter(r => r.agree === level);
+      if (mine.length < minConfident) continue;
+      const c = fitCalibration(mine, { ...opts, target: opts.agreeTarget ?? DEFAULTS.agreeTarget, byLevel: false });
+      if (c.tau != null) byLevel[level] = { T: c.T, tau: c.tau, n: c.n, confidentN: c.confidentN, confidentRight: c.confidentRight };
+    }
+    if (Object.keys(byLevel).length) out.byLevel = byLevel;
+  }
+  return out;
 }
+
+/** The agreement levels that may earn their own "confident" (agree.mjs LEVELS minus `split`). */
+export const AGREE_LEVELS = Object.freeze(['agree', 'single']);
+
+/**
+ * What agreement-earned "Sure" must do on held-out rows before it is used:
+ * right at least `minPrecision` of the time over at least `minN` cards.
+ * Set before any owner run (docs/NEXT-WORKPLAN.md package 4 gate).
+ */
+export const AGREE_GATE = Object.freeze({ minPrecision: 0.95, minN: 20, coverage: 0.25 });
 
 /**
  * What to say about one track: { kind, playlists, p }.
@@ -193,6 +222,13 @@ export function decide(scores, cal, opts = {}) {
   const [lead, p] = top[0];
   const r = x => +x.toFixed(4);
   if (cal.tau != null && p >= cal.tau) return { kind: 'confident', playlists: [lead], p: r(p) };
+  // The sources agree (opts.agree, a level from agree.mjs) and this account's
+  // held-out cards at that level were right often enough: confident on that.
+  const lv = opts.agree ? cal.byLevel?.[opts.agree] : null;
+  if (lv && lv.tau != null) {
+    const pl = softmax(scores, lv.T)[0][1];
+    if (pl >= lv.tau) return { kind: 'confident', playlists: [lead], p: r(pl), via: 'agree' };
+  }
   const set = top.filter(([, q]) => q >= cal.pmin && q > 0).map(([id]) => id);
   if (set.length >= 1 && set.length <= maxChoices) return { kind: 'choose', playlists: set, p: r(p) };
   return { kind: 'unsure', playlists: [], p: r(p) };
@@ -200,12 +236,18 @@ export function decide(scores, cal, opts = {}) {
 
 /** How the decisions did on rows they were not fitted on. */
 export function evaluate(rows, cal, opts = {}) {
-  const out = { n: 0, confident: { n: 0, right: 0 }, choose: { n: 0, contains: 0, size: 0 }, unsure: { n: 0 } };
+  const out = { n: 0, confident: { n: 0, right: 0 }, choose: { n: 0, contains: 0, size: 0 }, unsure: { n: 0 },
+                agree: { n: 0, right: 0 }, levels: {} };
   for (const r of rows ?? []) {
     if (!r?.scores?.length || !r.truth?.length) continue;
     out.n++;
-    const d = decide(r.scores, cal, opts);
-    if (d.kind === 'confident') { out.confident.n++; if (inTruth(r, d.playlists[0])) out.confident.right++; }
+    if (r.agree) out.levels[r.agree] = (out.levels[r.agree] ?? 0) + 1;
+    const d = decide(r.scores, cal, r.agree ? { ...opts, agree: r.agree } : opts);
+    if (d.kind === 'confident') {
+      const ok = inTruth(r, d.playlists[0]);
+      out.confident.n++; if (ok) out.confident.right++;
+      if (d.via === 'agree') { out.agree.n++; if (ok) out.agree.right++; }
+    }
     else if (d.kind === 'choose') {
       out.choose.n++; out.choose.size += d.playlists.length;
       if (d.playlists.some(id => inTruth(r, id))) out.choose.contains++;
@@ -236,6 +278,37 @@ const rate = (a, b) => (b > 0 ? +(a / b).toFixed(4) : null);
 export function calibrationReport(rows, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
   const usable = (rows ?? []).filter(r => r?.id && r.scores?.length && r.truth?.length);
+  const hasLevels = usable.some(r => r.agree);
+  let run = crossCheck(usable, o);
+  let agree = null;
+  if (hasLevels) {
+    // The agreement gate (AGREE_GATE): cards made "Sure" only by agreement,
+    // checked on the half they were not fitted on. When it fails, the
+    // per-level thresholds are not used, and everything reported (and the
+    // calibration handed back) is exactly what it would be without levels.
+    const { n, right } = run.agreeSure;
+    const precision = rate(right, n);
+    const fitted = !!run.cal.byLevel;
+    const use = fitted && n >= AGREE_GATE.minN && precision != null && precision >= AGREE_GATE.minPrecision;
+    const why = use ? null
+      : !fitted ? 'no agreement level cleared its bar'
+      : !n ? 'no held-out card earned it'
+      : n < AGREE_GATE.minN ? `only ${n} held-out cards, ${AGREE_GATE.minN} needed`
+      : `held-out precision ${Math.round(precision * 100)}%, ${Math.round(AGREE_GATE.minPrecision * 100)}% needed`;
+    const levels = Object.fromEntries(Object.entries(run.levels).map(([k, v]) => [k, rate(v, run.checked.n)]));
+    agree = { use, n, right: precision, share: rate(n, run.checked.n), why, levels };
+    if (!use) run = crossCheck(usable, { ...o, byLevel: false });
+    // Every Sure card together (by margin or by agreement), as File shows them.
+    agree.sure = { share: run.checked.confidentShare, right: run.checked.confidentRight, n: run.checked.confidentN };
+  }
+  const { checked, cal } = run;
+  const holds = checked.confidentN >= o.minConfident && checked.confidentRight != null
+    ? checked.confidentRight >= o.target - 0.03 : null;
+  return { version: CALIBRATE_VERSION, cal, checked, holds, target: o.target, ...(agree ? { agree } : {}) };
+}
+
+/** Fit on one half, check on the other, both ways, pooled; plus the fit on everything. */
+function crossCheck(usable, o) {
   const a = usable.filter(r => half(r.id) === 0), b = usable.filter(r => half(r.id) === 1);
   const ea = evaluate(a, fitCalibration(b, o), o), eb = evaluate(b, fitCalibration(a, o), o);
   const pool = {
@@ -255,7 +328,8 @@ export function calibrationReport(rows, opts = {}) {
     chooseSize: pool.choose.n ? +(pool.choose.size / pool.choose.n).toFixed(2) : null,
     unsureShare: rate(pool.unsure.n, pool.n),
   };
-  const holds = checked.confidentN >= o.minConfident && checked.confidentRight != null
-    ? checked.confidentRight >= o.target - 0.03 : null;
-  return { version: CALIBRATE_VERSION, cal: fitCalibration(usable, o), checked, holds, target: o.target };
+  const levels = {};
+  for (const e of [ea, eb]) for (const [k, v] of Object.entries(e.levels)) levels[k] = (levels[k] ?? 0) + v;
+  return { checked, cal: fitCalibration(usable, o), levels,
+           agreeSure: { n: ea.agree.n + eb.agree.n, right: ea.agree.right + eb.agree.right } };
 }

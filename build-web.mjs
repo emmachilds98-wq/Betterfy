@@ -214,6 +214,10 @@ self.onmessage = function (e) {
               folds: common.folds, targets: common.targets, isMirror: isMirror, nativeFit: fit }); }
       catch (e) { result.blend = null; }
       result.weights = BetterfyWeightFit.fitSummary(fit);
+      // The tag engine's own top picks per track, for the agreement check
+      // (core/intrinsic/agree.mjs, package 4): small, unlike the rows.
+      try { result.tagTops = result.base && result.base.rows ? BetterfyAgree.tagTopsOf(result.base.rows) : null; }
+      catch (e) { result.tagTops = null; }
       if (result.base) delete result.base.rows;
       // How well it names genres by sound, on the same filed tracks.
       try { result.identify = m.audio ? BetterfyIdentify.identifyAccuracyFor(m.lib, m.audio,

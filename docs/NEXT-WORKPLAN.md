@@ -205,6 +205,12 @@ reporting overall top-1, top-1 on multi-playlist artists, and coverage.
 
 ### Package 4: "Sure" only when sources agree (approved)
 
+**Built** (this thread's PR): `core/intrinsic/agree.mjs` reads sound, filing
+history, similar artists and tags as separate sources; `calibrate.mjs` fits
+"confident" per agreement level and keeps it only when the cross-fitted
+held-out check is ≥ 95% on ≥ 20 cards (`AGREE_GATE`). Score's paste line:
+"Sure when sources agree: …". Off by itself until her Score run clears it.
+
 **Why.** Nothing has ever earned "Sure" on her library. Calibration today
 (`core/intrinsic/calibrate.mjs`) reads only the top score's margin. Sound,
 tags and filing history make different mistakes, and a card where all three
@@ -234,6 +240,12 @@ holds, but say so.
 History's kept-rate on Sure filings over 30 days (≥ 95%).
 
 ### Package 5: the playlists it confuses (next)
+
+**Built** (same PR): `core/intrinsic/pairs.mjs`, pairs taken from the
+held-out rows' own confusions plus "Can't tell apart", same family only;
+`PAIR_GATE` 70% two-way on ≥ 20 heard, and all pairs switch off if top-1 on
+the Score rows would drop. Orders File's top two picks only, never on a Sure
+card. Score's paste line: "Pair checks: …".
 
 **Why.** Her weakest playlists are neighbours: rollers vs jungle, UKG vs
 speed garage, Late Night House vs house. Family first (#145) already asks
