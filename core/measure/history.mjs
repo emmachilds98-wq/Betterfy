@@ -33,15 +33,15 @@ const rate = (k, n) => (n > 0 ? k / n : null);
 // A filing is one card filed from the inbox, or one step of "File the sure ones"
 // (a group, one entry per playlist). Only single cards say anything about queue
 // order: a batch's `queuePos` is its earliest card, not a card the user chose.
-const isFiling = e => e.op === 'add' && /^filed (from inbox|with the rest of|the sure ones)/.test(e.reason ?? '');
+export const isFiling = e => e.op === 'add' && /^filed (from inbox|with the rest of|the sure ones)/.test(e.reason ?? '');
 const isCard = e => isFiling(e) && !e.group;
 const isDiscover = e => (e.op === 'add' || e.op === 'add-liked') && /discovery/.test(e.reason ?? '');
 
 /** Everything in `log` (any order), oldest first, without malformed entries. */
-const clean = log => (Array.isArray(log) ? log : []).filter(e => e && typeof e.at === 'string' && e.op)
+export const clean = log => (Array.isArray(log) ? log : []).filter(e => e && typeof e.at === 'string' && e.op)
   .slice().sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 
-function undoneSet(log) {
+export function undoneSet(log) {
   const s = new Set(), groups = new Set();
   for (const e of log) if (e.op === 'undo') { if (e.of) s.add(e.of); if (e.ofGroup) groups.add(e.ofGroup); }
   // A grouped undo undoes every member, whichever one the undo entry names.
@@ -51,7 +51,7 @@ function undoneSet(log) {
 }
 
 /** Was this entry undone, or its track later taken out of the same playlist? */
-function reversed(e, log, undone) {
+export function reversed(e, log, undone) {
   if (e.undoneAt || undone.has(e.at)) return true;
   if (!e.playlistId) return false;
   const mine = new Set(ids(e));

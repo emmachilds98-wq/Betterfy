@@ -2375,7 +2375,7 @@ function octaveApart(a, b) {
  * @param {Array<{ bpm: number|null, confidence: number, alternates?: {bpm:number,score:number}[], octaveAmbiguous?: boolean }>} ws
  * @returns {{ bpm: number, bpmConf: number, octaveAmbiguous: boolean, bpmAlt?: number, agree: boolean|null } | null}
  */
-function combineTempo(ws) {
+function combineTempo(ws, { slowFold = SLOW_FOLD } = {}) {
   const good = (ws ?? []).filter(w => w && ok(w.bpm) && w.bpm > 0 && ok(w.confidence));
   if (!good.length) return null;
   const partnerOf = w => {
@@ -2384,7 +2384,7 @@ function combineTempo(ws) {
   };
   const finish = (w, bpm, conf, octave, alt, agree) => {
     let a = octave ? alt ?? partnerOf(w) : null;
-    if (bpm < SLOW_FOLD && bpm * 2 <= 200) { a = octave ? bpm : null; bpm *= 2; }
+    if (bpm < slowFold && bpm * 2 <= 200) { a = octave ? bpm : null; bpm *= 2; }
     const out = { bpm: r1(bpm), bpmConf: r3(Math.max(0, Math.min(1, conf))), octaveAmbiguous: !!octave, agree };
     if (octave && ok(a)) out.bpmAlt = r1(a);
     return out;
