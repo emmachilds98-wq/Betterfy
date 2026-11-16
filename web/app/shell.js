@@ -11,10 +11,10 @@
 /** The sections of "Under the hood", in order, and what each says when closed. */
 const UH_SECTIONS = [
   ['sources', 'Listening and genre sources', () => {
-    let on = false, key = false;
+    let on = false, key = false, own = false;
     try { on = !!audioSettings().on; } catch { /* before the audio glue loads */ }
-    try { key = !!lfmKey(); } catch { /* no key */ }
-    return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? 'connected' : 'no key'} · Wikidata · Discogs`;
+    try { key = !!lfmKey(); own = !!LS.getItem('bf_lfm'); } catch { /* no key */ }
+    return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? (own ? 'on, your key' : 'on, built-in key') : 'off'} · Wikidata on · Deezer on · ListenBrainz on`;
   }],
   ['history', 'History', () => 'Everything Betterfy wrote to Spotify, with undo'],
 ];
@@ -90,7 +90,8 @@ function closePlSheet() {
 }
 
 function underHoodHTML() {
-  return UH_SECTIONS.map(([name, title, sub]) => {
+  // Every source and engine part, on or off, at the top: always shown, never folded (app/helpers.js).
+  return (typeof helpersPanelHTML === 'function' ? helpersPanelHTML() : '') + UH_SECTIONS.map(([name, title, sub]) => {
     const open = S.uhOpen === name;
     let body = '';
     if (open) {

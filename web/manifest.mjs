@@ -59,6 +59,7 @@ export const APP_FILES = [
   'app/datakeys.js',
   'app/backup.js',
   'app/shell.js',
+  'app/helpers.js',
   'app/events.js',
   'screens/inbox-actions.js',
   'app/keys.js',

@@ -63,7 +63,7 @@ export function coverageHTML(cov) {
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
 export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
-                       sourceCoverage = () => null, ...rest }) {
+                       sourceCoverage = () => null, helpersPanelHTML = () => '', ...rest }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
@@ -76,19 +76,20 @@ export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlis
       ${genreShare === null ? '' : `<p>Of all the tag weight across your library, <b>${genreShare}%</b> describes a
         sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
         evidence of genre.</p>`}`)}</p>
+    ${helpersPanelHTML()}
     <p class="srccov"><b class="mono">${cov.have.toLocaleString()}</b> of <span class="mono">${cov.total.toLocaleString()}</span>
       artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
 
     <div class="srcgrid">
     ${(body => body ? sourceCard('coverage', 'Your artists', 'ok', 'This account',
       'How much each source knows about the artists in your own library, worked out on this device.', body) + '\n\n    ' : '')(
-      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())))}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
+      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())))}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'On · your key' : lfm ? 'On · built-in key' : 'Off',
       'Crowd genre tags for the artists the shipped set doesn\'t cover. '
-        + (!lfmOwn && lfm ? 'Using Betterfy\'s shared Last.fm key — add your own to raise limits.' : 'Needs a free API key.'),
-      `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : 'Connect Last.fm'}</button></div>
+        + (!lfmOwn && lfm ? 'On for everyone with Betterfy\'s built-in key, and asked again by itself as your library grows. Your own key is optional.' : lfm ? 'Asked again by itself as your library grows.' : 'Needs a free API key.'),
+      `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : lfm ? 'Use my own key' : 'Connect Last.fm'}</button></div>
       <div class="rowbtns"><button class="b p" id="enrich" data-act="enrich" ${lfm ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button></div>`)}
 
-    ${sourceCard('wikidata', 'Wikidata', 'ok', 'Free · no key',
+    ${sourceCard('wikidata', 'Wikidata', 'ok', 'On · no key',
       'Genres for about a third of artists, mostly established ones. Runs once by itself after the library loads.',
       `<div class="rowbtns"><button class="b" id="fillWikidata" data-act="fillWikidata">Fill missing genres free</button></div>`)}
 

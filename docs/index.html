@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1951">
+<meta name="bf-build" content="2026-11-16-2006">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1688,6 +1688,23 @@ main:focus{outline:none}
     .acts4{grid-template-columns:1fr}
     aside .nav .lbl{font-size:9.5px}
   }
+/* "What's helping your picks" (web/screens/helpers.mjs): every source and engine part,
+   on or off, at the top of the Settings sheet and of Sources. */
+  .helpers{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); padding:12px 14px; margin:0 0 16px}
+  .helpers-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px}
+  .helpers-head h3{margin:0; font-size:15px; letter-spacing:0; text-transform:none; color:var(--ink)}
+  .hlist{list-style:none; margin:0 0 10px; padding:0}
+  .hrow2{display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-top:1px solid var(--line)}
+  .hrow2:first-child{border-top:0}
+  .hdot{width:9px; height:9px; border-radius:50%; flex:none; margin-top:6px; background:var(--line-2)}
+  .h-ok .hdot{background:var(--ok)} .h-warn .hdot, .h-fail .hdot{background:var(--warn)}
+  .hmain{display:flex; flex-direction:column; gap:2px; min-width:0; flex:1}
+  .hname{font-weight:600; color:var(--ink); font-size:14px}
+  .hdid{font-size:12.5px; color:var(--ink-3)}
+  .hcheck{font-size:12px; color:var(--ink-2)}
+  .hcheck.good{color:var(--ok)} .hcheck.bad{color:var(--warn)}
+  .hrow2 .tag{flex:none; white-space:nowrap}
+  .h-off .hname{color:var(--ink-2)}
 /* Merge and split (BUILD-6 F4): the wizard drawn into the playlist sheet (lists.mjs wizardHTML). */
   .wiz .wizpart{border:1px solid var(--line); border-radius:var(--r-3); padding:12px 12px 10px; background:var(--surface-2)}
   .wiz .wizname input{flex:1; min-width:0}
@@ -1907,7 +1924,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1951</span>
+    <span class="mono">build 2026-11-16-2006</span>
   </p>
 
   <div class="feat">
@@ -2000,7 +2017,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1951</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-2006</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2117,7 +2134,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1951. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-2006. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5549,7 +5566,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1951`,
+    `Betterfy engine score — build 2026-11-16-2006`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -6112,7 +6129,7 @@ function coverageHTML(cov) {
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
 function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
-                       sourceCoverage = () => null, ...rest }) {
+                       sourceCoverage = () => null, helpersPanelHTML = () => '', ...rest }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
@@ -6125,19 +6142,20 @@ function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes,
       ${genreShare === null ? '' : `<p>Of all the tag weight across your library, <b>${genreShare}%</b> describes a
         sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
         evidence of genre.</p>`}`)}</p>
+    ${helpersPanelHTML()}
     <p class="srccov"><b class="mono">${cov.have.toLocaleString()}</b> of <span class="mono">${cov.total.toLocaleString()}</span>
       artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
 
     <div class="srcgrid">
     ${(body => body ? sourceCard('coverage', 'Your artists', 'ok', 'This account',
       'How much each source knows about the artists in your own library, worked out on this device.', body) + '\n\n    ' : '')(
-      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())))}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
+      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())))}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'On · your key' : lfm ? 'On · built-in key' : 'Off',
       'Crowd genre tags for the artists the shipped set doesn\'t cover. '
-        + (!lfmOwn && lfm ? 'Using Betterfy\'s shared Last.fm key — add your own to raise limits.' : 'Needs a free API key.'),
-      `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : 'Connect Last.fm'}</button></div>
+        + (!lfmOwn && lfm ? 'On for everyone with Betterfy\'s built-in key, and asked again by itself as your library grows. Your own key is optional.' : lfm ? 'Asked again by itself as your library grows.' : 'Needs a free API key.'),
+      `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : lfm ? 'Use my own key' : 'Connect Last.fm'}</button></div>
       <div class="rowbtns"><button class="b p" id="enrich" data-act="enrich" ${lfm ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button></div>`)}
 
-    ${sourceCard('wikidata', 'Wikidata', 'ok', 'Free · no key',
+    ${sourceCard('wikidata', 'Wikidata', 'ok', 'On · no key',
       'Genres for about a third of artists, mostly established ones. Runs once by itself after the library loads.',
       `<div class="rowbtns"><button class="b" id="fillWikidata" data-act="fillWikidata">Fill missing genres free</button></div>`)}
 
@@ -7001,6 +7019,103 @@ function mount(c) {
   else if (want === 'rows') (doc.querySelector('#main .rows .row .acts button:not([disabled])') ?? doc.querySelector('#main .tidypl button'))?.focus();
 }
 return { secDupes, secCross, tagMisfiles, secSound, secMisfile, view, actions, healthReport, secHealth, sprintRows, mount };
+})();
+/* ---- web/screens/helpers.mjs ---- */
+__mod["web/screens/helpers.mjs"] = (function () {
+/* "What's helping your picks" (2026-11-16, emma: every part that makes the
+ * engine better should be on, and show as on). One list of every source and
+ * engine part, each with whether it is on and what it has done for this
+ * account, plus a live check that each one answers right now. The rows are
+ * worked out from what the page already holds (web/app/helpers.js gathers it),
+ * so drawing the list costs no request; only "Check they all answer" asks
+ * anything, one small request per source. Shown at the top of the Settings
+ * sheet and of Sources. */
+
+const n = x => (Number.isFinite(x) ? x.toLocaleString('en-GB') : '0');
+
+/**
+ * The rows, in the order they matter to filing. `s` is the page's state (any
+ * part may be missing): { lib: { playlists, liked }, listening: { artists },
+ * cov: { pct, have, total }, lfm: { key, own, asked }, bridge: { on, deezerAsked,
+ * deezerPct, wikidataAsked, wikidataPct }, audio: { on, state, heard, reason },
+ * deep: { maest, clap }, discogs, engine: { status } }.
+ * Each row: { id, name, on, kind: 'ok'|'idle'|'warn'|'off', status, did, optional? }.
+ */
+function helperRows(s = {}) {
+  const rows = [];
+  const lib = s.lib ?? {};
+  rows.push({ id: 'spotify', name: 'Your Spotify library', on: true, kind: lib.playlists ? 'ok' : 'idle',
+    status: lib.playlists ? 'Read' : 'Not read yet',
+    did: lib.playlists ? `${n(lib.playlists)} playlists and ${n(lib.liked)} liked songs, the base everything else builds on.` : 'Read once you sign in.' });
+  const la = s.listening?.artists ?? 0;
+  rows.push({ id: 'listening-history', name: 'What you play', on: true, kind: la ? 'ok' : 'idle', status: la ? 'On' : 'On · waiting',
+    did: la ? `Your top and recent artists (${n(la)}) go first everywhere: tags, sound, Discover.` : 'Your top and recent artists, read with the library.' });
+  const cov = s.cov ?? {};
+  rows.push({ id: 'shared', name: 'Shared genre table', on: true, kind: 'ok', status: 'On',
+    did: cov.total ? `${n(cov.have)} of your ${n(cov.total)} artists have genre tags (${cov.pct}%).` : 'Genre tags shipped with Betterfy.' });
+  const lfm = s.lfm ?? {};
+  rows.push({ id: 'lastfm', name: 'Last.fm', on: !!lfm.key, kind: lfm.key ? 'ok' : 'off',
+    status: !lfm.key ? 'Off' : lfm.own ? 'On · your key' : 'On · built-in key',
+    did: lfm.key ? `Crowd genre tags for artists the table misses${lfm.asked ? `; ${n(lfm.asked)} artists asked so far` : ''}. Asked again by itself as your library grows.` : 'Add a key to get crowd genre tags.' });
+  const b = s.bridge ?? {};
+  rows.push({ id: 'wikidata', name: 'Wikidata', on: true, kind: 'ok', status: 'On · no key',
+    did: b.wikidataAsked ? `Genres and MusicBrainz ids: knows ${b.wikidataPct}% of your artists (${n(b.wikidataAsked)} asked).` : 'Genres for untagged artists, asked by itself after the library loads.' });
+  rows.push({ id: 'deezer', name: 'Deezer', on: b.on !== false, kind: b.on === false ? 'off' : 'ok', status: b.on === false ? 'Off' : 'On · no key',
+    did: `Similar artists${b.deezerAsked ? ` (knows ${b.deezerPct}% of your artists)` : ''}, Discover picks without a key, and the 30-second previews Listening and Discover play.` });
+  rows.push({ id: 'listenbrainz', name: 'ListenBrainz', on: b.on !== false, kind: b.on === false ? 'off' : 'ok', status: b.on === false ? 'Off' : 'On · no key',
+    did: 'Similar artists from real listening sessions, for artists you have not filed yet and for Discover.' });
+  const a = s.audio ?? {};
+  const aKind = !a.on ? 'off' : a.problem ? 'warn' : 'ok';
+  rows.push({ id: 'sound', name: 'Listening (sound)', on: !!a.on, kind: aKind,
+    status: !a.on ? 'Off' : a.problem ? 'On · paused' : a.state === 'running' ? 'On · listening' : 'On',
+    did: !a.on ? 'Places tracks by how they sound. Switch it on in Listening.' : a.problem ? `Paused: ${a.problem}` :
+      `Places tracks by how they sound against your playlists${a.heard ? `; ${n(a.heard)} tracks heard` : ''}.` });
+  const d = s.deep ?? {};
+  const deepOn = d.maest || d.clap;
+  rows.push({ id: 'deep', name: 'Deep listen', on: !!deepOn, kind: !deepOn ? 'off' : d.blocked ? 'idle' : 'ok',
+    status: !deepOn ? 'Off' : d.blocked ? `On · ${d.blocked}` : 'On',
+    did: `A second, finer ear for genre${d.clap ? ' and “sounds like” search' : ''}. Big one-off download, on Wi-Fi.` });
+  rows.push({ id: 'engine', name: 'Learning from your playlists', on: true, kind: s.engine?.status === 'error' ? 'warn' : 'ok',
+    status: s.engine?.status === 'ready' ? 'On · learnt' : s.engine?.status === 'error' ? 'Problem' : 'On',
+    did: 'Who you file together and where, plus every File and Skip tap, so picks follow your own filing.' });
+  rows.push({ id: 'discogs', name: 'Discogs', on: !!s.discogs, kind: s.discogs ? 'ok' : 'idle', status: s.discogs ? 'On · your token' : 'Optional', optional: true,
+    did: 'Release styles for artists nothing else knows. Needs a personal token, so it stays an extra.' });
+  return rows;
+}
+
+/** "9 of 10 on", counting the optional extras only when they are on. */
+function helperSummary(rows, checks = {}) {
+  const core = rows.filter(r => !r.optional || r.on);
+  const on = core.filter(r => r.on).length;
+  const failed = Object.values(checks ?? {}).filter(c => c && c.ok === false).length;
+  const checked = Object.values(checks ?? {}).filter(c => c && c.ok != null).length;
+  return `${on} of ${core.length} on${checked ? failed ? ` · ${failed} not answering` : ' · all answering' : ''}`;
+}
+
+/** What a live check says, in a few words. */
+function checkWords(c) {
+  if (!c) return '';
+  if (c.running) return 'checking…';
+  if (c.ok) return `answering${Number.isFinite(c.ms) ? ` · ${c.ms} ms` : ''}`;
+  if (c.skip) return c.skip;
+  return `not answering${c.err ? `: ${c.err}` : ''}`;
+}
+
+/** The panel. `checks` are the live results by row id; `running` while a check is out. */
+function helpersHTML(rows, { checks = {}, running = false, at = null, esc = s => String(s ?? '') } = {}) {
+  return `<section class="helpers" id="helpers" aria-labelledby="helpers-h">
+    <div class="helpers-head"><h3 id="helpers-h">What's helping your picks</h3><span class="tag ok">${esc(helperSummary(rows, checks))}</span></div>
+    <ul class="hlist">${rows.map(r => { const c = checks?.[r.id];
+      return `<li class="hrow2 h-${r.kind}${c?.ok === false ? ' h-fail' : ''}" data-helper="${esc(r.id)}">
+        <span class="hdot" aria-hidden="true"></span>
+        <span class="hmain"><span class="hname">${esc(r.name)}</span><span class="hdid">${esc(r.did)}</span>${
+          c ? `<span class="hcheck${c.ok === false ? ' bad' : c.ok ? ' good' : ''}">${esc(checkWords(c))}</span>` : ''}</span>
+        <span class="tag ${r.kind === 'off' ? 'idle' : r.kind}">${esc(r.status)}</span></li>`; }).join('')}</ul>
+    <div class="rowbtns"><button class="b sm" type="button" data-hcheck${running ? ' disabled' : ''}>${running ? 'Checking…' : at ? 'Check again' : 'Check they all answer'}</button>
+      <button class="b sm" type="button" data-uhgo="sources">Listening and sources</button></div>
+  </section>`;
+}
+return { helperRows, helperSummary, checkWords, helpersHTML };
 })();
 /* ---- core/playlists/mergesplit.mjs ---- */
 __mod["core/playlists/mergesplit.mjs"] = (function () {
@@ -9267,7 +9382,7 @@ Object.assign(globalThis, __mod["core/review/filequeue.mjs"]);
 Object.assign(globalThis, __mod["core/review/teach.mjs"]);
 Object.assign(globalThis, __mod["web/ui/sound.mjs"]);
 Object.assign(globalThis, __mod["web/app/patch.mjs"]);
-globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], tidy: __mod["web/screens/tidy.mjs"], lists: __mod["web/screens/lists.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"], new: __mod["web/screens/new.mjs"] };
+globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], tidy: __mod["web/screens/tidy.mjs"], helpers: __mod["web/screens/helpers.mjs"], lists: __mod["web/screens/lists.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"], new: __mod["web/screens/new.mjs"] };
 /* =============================================================== */
 
 const $ = s => document.querySelector(s);
@@ -9667,7 +9782,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1951';
+const BUILD = '2026-11-16-2006';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10005,7 +10120,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1951', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-2006', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -10763,7 +10878,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1951');
+    const w = new Worker('reports-worker.js?v=2026-11-16-2006');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14242,7 +14357,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1951';
+    s.src = 'engine.js?v=2026-11-16-2006';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -14264,7 +14379,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1951');
+    const w = new Worker('engine-worker.js?v=2026-11-16-2006');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14871,7 +14986,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1951';
+    s.src = 'audio.js?v=2026-11-16-2006';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -14908,7 +15023,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1951', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-2006', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -15821,7 +15936,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1951', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-2006', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -15866,7 +15981,7 @@ function audioPanelHTML() {
   return `<div id="audioPanel">
     <div class="srchead"><h2 id="src-listening-h">Listen to my music</h2><span class="tag ${!set.on ? 'idle' : running || vm.state === 'done' ? 'ok' : 'idle'}">${
       !set.on ? 'Off' : running ? 'Listening' : vm.state === 'done' ? 'Up to date' : 'Paused'}</span></div>
-    <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. Off until you switch it on.</p>
+    <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. On by default; untick it to stop.</p>
     ${infoBtn('listen', 'Listening', `<p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
       30-second preview, found by the track’s ISRC) and remembers what it sounds like. The audio is never stored, only a
       ~2.5 KB summary on this device. Switching it on downloads the listening model once (about 37 MB),
@@ -16096,7 +16211,8 @@ const SCREEN_MODS = globalThis.BetterfyScreens ?? {};
 const SCREEN_CTX = {
   history: () => ({ S, esc, isUndone, emptyState, undoAction, getLog, toast, render }),
   sources: () => ({ LS, esc, lfmKey, $, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
-                    toast, render, enrichMissing, fillFromWikidata, sourceCoverage }),
+                    toast, render, enrichMissing, fillFromWikidata, sourceCoverage,
+                    helpersPanelHTML: () => (typeof helpersPanelHTML === 'function' ? helpersPanelHTML() : '') }),
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
@@ -16654,10 +16770,10 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 /** The sections of "Under the hood", in order, and what each says when closed. */
 const UH_SECTIONS = [
   ['sources', 'Listening and genre sources', () => {
-    let on = false, key = false;
+    let on = false, key = false, own = false;
     try { on = !!audioSettings().on; } catch { /* before the audio glue loads */ }
-    try { key = !!lfmKey(); } catch { /* no key */ }
-    return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? 'connected' : 'no key'} · Wikidata · Discogs`;
+    try { key = !!lfmKey(); own = !!LS.getItem('bf_lfm'); } catch { /* no key */ }
+    return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? (own ? 'on, your key' : 'on, built-in key') : 'off'} · Wikidata on · Deezer on · ListenBrainz on`;
   }],
   ['history', 'History', () => 'Everything Betterfy wrote to Spotify, with undo'],
 ];
@@ -16733,7 +16849,8 @@ function closePlSheet() {
 }
 
 function underHoodHTML() {
-  return UH_SECTIONS.map(([name, title, sub]) => {
+  // Every source and engine part, on or off, at the top: always shown, never folded (app/helpers.js).
+  return (typeof helpersPanelHTML === 'function' ? helpersPanelHTML() : '') + UH_SECTIONS.map(([name, title, sub]) => {
     const open = S.uhOpen === name;
     let body = '';
     if (open) {
@@ -16780,6 +16897,111 @@ document.addEventListener('click', guard(async e => {
   S.uhOpen = S.uhOpen === name ? null : name;
   await underHoodOpen();
 }));
+/* ---------- "What's helping your picks": the page's half (web/screens/helpers.mjs draws it) ----------
+ * helpersState() reads what the page already holds, with no request.
+ * helpersCheck() asks each source one small question, in parallel, through
+ * the same transports the features use (sp(), deezerJsonp(), corsJson(),
+ * fetch), and keeps the answers for this session. A source that is off is
+ * not asked. Nothing is stored. */
+const HELPERS = { checks: {}, running: false, at: null };
+
+function helpersState() {
+  let audio = { on: false };
+  try {
+    const set = audioSettings(), vm = AUDIO.vm;
+    const why = vm?.reason && !['stopped', 'ask', 'waiting for Wi-Fi', 'offline'].includes(vm.reason) && vm.state !== 'running' && vm.state !== 'done' ? vm.reason : null;
+    audio = { on: !!set.on, state: vm?.state ?? null, heard: listenHeard() || vm?.heard || 0,
+      problem: why ? String(why).replace(/https?:\/\/\S+/g, '').slice(0, 60).trim() : null };
+  } catch { /* before the audio glue */ }
+  let deep = {};
+  try { const d = deepSettings(); const why = deepAllowed('maest');
+    deep = { maest: d.maest, clap: d.clap, blocked: why === 'ok' || why === 'off' ? null : String(why).replace(/-/g, ' ') }; } catch { /* none */ }
+  let cov = null; try { cov = tagCoverage(); } catch { /* no library */ }
+  let br = null; try { const d = sourceCoverage(); br = d ? SCREEN_MODS.sources.artistCoverage(d) : null; } catch { br = null; }
+  return {
+    lib: LIB ? { playlists: LIB.playlists?.length ?? 0, liked: LIB.liked?.length ?? 0 } : {},
+    listening: { artists: LISTENING_CACHE?.recentlyActive?.size ?? 0 },
+    cov,
+    lfm: { key: !!lfmKey(), own: !!LS.getItem('bf_lfm') },
+    bridge: { on: typeof bridgeOn === 'function' ? bridgeOn() : true, ...(br ?? {}) },
+    audio, deep,
+    discogs: !!LS.getItem('bf_discogs'),
+    engine: { status: typeof ENG !== 'undefined' ? ENG.status : null },
+  };
+}
+
+const helperRowsNow = () => SCREEN_MODS.helpers.helperRows(helpersState());
+
+/** The panel, as the Settings sheet and Sources draw it. */
+function helpersPanelHTML() {
+  try { return SCREEN_MODS.helpers.helpersHTML(helperRowsNow(), { ...HELPERS, esc }); }
+  catch (e) { return `<p class="hint">Couldn’t list the sources: ${esc(e.message)}</p>`; }
+}
+
+/* One question per source. Each resolves true, or throws with a short reason. */
+const HELPER_PROBES = {
+  spotify: async () => !!(await sp('/me'))?.id,
+  lastfm: async () => {
+    const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({ method: 'artist.gettoptags', artist: 'Radiohead', api_key: lfmKey(), format: 'json' }));
+    const j = await r.json();
+    if (j?.error) throw new Error(j.message || `error ${j.error}`);
+    return !!j?.toptags;
+  },
+  wikidata: async () => {
+    await engineLoad();
+    const req = BetterfyWikidata.genreRequest(['4Z8W4fKeB5YxbusRsdQVPb']);
+    return !!BetterfyWikidata.genresFrom(await corsJson(req.url, req.init)).answered;
+  },
+  deezer: async () => { await engineLoad(); return !!(await deezerJsonp('https://api.deezer.com/artist/399'))?.id; },
+  listenbrainz: async () => Array.isArray(await corsJson('https://labs.api.listenbrainz.org/similar-artists/json?' + new URLSearchParams({
+    artist_mbids: 'a74b1b7f-71a5-4011-9441-d0b5e4122711',
+    algorithm: 'session_based_days_7500_session_300_contribution_5_threshold_10_limit_100_filter_True_skip_30' }))),
+  sound: async () => {
+    // The two downloads listening needs before it can hear anything: the runtime and the model.
+    for (const u of [ORT_BASE + 'ort.wasm.bundle.min.mjs', audioModelUrl(AUDIO_MODEL_FILE)]) {
+      const r = await fetch(u, { method: 'HEAD' });
+      if (!r.ok) throw new Error(`${new URL(u).host} answered ${r.status}`);
+    }
+    return true;
+  },
+  discogs: async () => {
+    const r = await fetch('https://api.discogs.com/oauth/identity', { headers: { Authorization: 'Discogs token=' + LS.getItem('bf_discogs') } });
+    if (!r.ok) throw new Error(`answered ${r.status}`);
+    return true;
+  },
+};
+
+async function helpersCheck() {
+  if (HELPERS.running) return;
+  const rows = helperRowsNow();
+  HELPERS.running = true; HELPERS.checks = {};
+  const live = rows.filter(r => HELPER_PROBES[r.id]);
+  for (const r of live) HELPERS.checks[r.id] = r.on ? { running: true } : { skip: 'off, not asked' };
+  helpersRepaint();
+  await Promise.all(live.filter(r => r.on).map(async r => {
+    const t0 = performance.now();
+    try {
+      const ok = await Promise.race([HELPER_PROBES[r.id](), new Promise((_, bad) => setTimeout(() => bad(new Error('no answer in 15 s')), 15000))]);
+      HELPERS.checks[r.id] = ok ? { ok: true, ms: Math.round(performance.now() - t0) } : { ok: false, err: 'unexpected answer' };
+    } catch (e) {
+      HELPERS.checks[r.id] = { ok: false, err: String(e?.message ?? e).replace(/https?:\/\/\S+/g, '').slice(0, 80) };
+    }
+    helpersRepaint();
+  }));
+  HELPERS.running = false; HELPERS.at = Date.now();
+  helpersRepaint();
+}
+
+function helpersRepaint() {
+  if (typeof underHoodRefresh === 'function') underHoodRefresh();
+  try { store.touch('ui.sources'); } catch { /* before the store */ }
+}
+
+document.addEventListener('click', e => {
+  if (e.target.closest?.('[data-hcheck]')) return void helpersCheck();
+  const go = e.target.closest?.('[data-uhgo]');
+  if (go) { S.uhOpen = go.dataset.uhgo; S.uhJump = true; if (typeof underHoodOpen === 'function') underHoodOpen(); }
+});
 document.addEventListener('click', guard(async e => {
   if (await dispatchAct(e)) return;
   const nav = e.target.closest('.nav');

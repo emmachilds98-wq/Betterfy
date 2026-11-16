@@ -130,7 +130,7 @@ function audioPanelHTML() {
   return `<div id="audioPanel">
     <div class="srchead"><h2 id="src-listening-h">Listen to my music</h2><span class="tag ${!set.on ? 'idle' : running || vm.state === 'done' ? 'ok' : 'idle'}">${
       !set.on ? 'Off' : running ? 'Listening' : vm.state === 'done' ? 'Up to date' : 'Paused'}</span></div>
-    <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. Off until you switch it on.</p>
+    <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. On by default; untick it to stop.</p>
     ${infoBtn('listen', 'Listening', `<p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
       30-second preview, found by the track’s ISRC) and remembers what it sounds like. The audio is never stored, only a
       ~2.5 KB summary on this device. Switching it on downloads the listening model once (about 37 MB),
