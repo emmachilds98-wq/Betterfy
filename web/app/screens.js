@@ -61,6 +61,11 @@ SCREEN_CTX.tidy = () => ({
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get LISTENING_CACHE() { return LISTENING_CACHE; },
   get LISTENING_PENDING() { return LISTENING_PENDING; },
+  // The health report and keyboard sprint (BUILD-6 F9): Library's own score, read from its module.
+  LS, NO_SIGNAL, saveFeedback, go, openPlSheet, isMirrorPlaylist, twinPairs: () => ENG?.pairs ?? null,
+  healthSplits: () => (LPROF?.out ? listsSplits().map(x => x.p.id) : []),
+  get libHealth() { return SCREEN_MODS.lists; },
+  get document() { return globalThis.document; },
 });
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
