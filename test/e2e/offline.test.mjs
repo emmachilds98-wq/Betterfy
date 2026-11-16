@@ -133,7 +133,15 @@ test('the update check is never answered by the worker', { skip, timeout: 120000
     await c.put(new URL('./', location.href).href, new Response('<meta name="bf-build" content="2000-01-01-0000">', { headers: { 'content-type': 'text/html' } }));
   });
   await airplane(true); await ctx.setOffline(false);   // routes off, so the worker is in the path; signal on
-  assert.equal(await page.evaluate(() => publishedBuild()), await pageBuild(page), 'the check reads the server');
+  // Coming back online reaches the service worker a moment after the page, so
+  // a fetch through it can still fail at first. Wait for it to answer (or give
+  // up after 10 s), then check what it answered: the server's build, not the copy.
+  let seen;
+  for (const until = Date.now() + 10000; Date.now() < until; await page.waitForTimeout(200)) {
+    seen = await page.evaluate(() => publishedBuild().then(b => ({ b }), e => ({ e: String(e?.message ?? e) })));
+    if (!seen.e) break;
+  }
+  assert.equal(seen.b, await pageBuild(page), 'the check reads the server' + (seen.e ? ' (last error: ' + seen.e + ')' : ''));
   assert.equal(await page.evaluate(() => checkForUpdate(true)), false);
   await ctx.setOffline(true);
   assert.match(await page.evaluate(() => publishedBuild().then(b => 'answered ' + b, e => 'failed ' + e.message)), /^failed/,

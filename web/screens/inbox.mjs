@@ -317,7 +317,8 @@ export function view(ctx) {
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
     : '';
 
-  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+  // The teach questions (BUILD-6 SG, app/teach.js): '' unless this account's Score run said they help.
+  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
@@ -399,7 +400,7 @@ export const inboxTrack = ctx => ctx.R.backlog[inboxIndex(ctx)] ?? null;
  *  a single id (the swipe gesture, keyboard 1-3 followed by Enter's fallback)
  *  or an array (the multi-select confirm button) — either way nothing is
  *  written until this actually runs. */
-export async function fileCurrent(ctx, playlistIds) {
+export async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
   const { S, R, CFG, FB, addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, toast, render } = ctx;
   const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
   if (!ids.length) return;
@@ -433,7 +434,7 @@ export async function fileCurrent(ctx, playlistIds) {
   try {
     for (const id of ids) {
       await addTracks(id, [t.id]);
-      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, deck:deckLen, band:bandOf(id) });
+      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, deck:deckLen, band:bandOf(id), ...(via ? { via } : {}) });
       ats.push((await getLog())[0]?.at);
     }
     // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so
@@ -496,6 +497,7 @@ export const actions = {
   selfile: (ctx, el) => toggleFileSel(ctx, el.dataset.selfile),
   anyPl: (ctx, el) => { if (el.value) toggleFileSel(ctx, el.value); },
   filesure: (ctx) => fileSureOnes(ctx),
+  teach: (ctx, el) => ctx.teachAct?.(el),
   digestMore(ctx) {
     const D = ctx.S.digest; if (!D) return;
     if (!D.expandedOnce) { D.expandedOnce = true; bumpMeasure(ctx, 'expanded'); }

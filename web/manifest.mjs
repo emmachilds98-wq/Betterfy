@@ -49,6 +49,7 @@ export const APP_FILES = [
   'app/audio.js',
   'app/soundfirst.js',
   'app/blend.js',
+  'app/teach.js',
   'app/clap.js',
   'app/audio-panel.js',
   'app/analyse.js',
