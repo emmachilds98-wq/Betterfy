@@ -32,8 +32,11 @@ export async function openApp(browser, { kind = 'small', account, phone = true, 
   }, tokenExpiresIn);
   await ctx.route(/^https:\/\/(api|accounts)\.spotify\.com\//, async route => {
     const req = route.request(), u = new URL(req.url());
-    const r = await fetch(fake.url + u.pathname + u.search, {
-      method: req.method(), headers: req.headers(), body: ['GET', 'HEAD'].includes(req.method()) ? undefined : req.postDataBuffer() ?? undefined });
+    let r;
+    try {
+      r = await fetch(fake.url + u.pathname + u.search, {
+        method: req.method(), headers: req.headers(), body: ['GET', 'HEAD'].includes(req.method()) ? undefined : req.postDataBuffer() ?? undefined });
+    } catch { return route.abort('connectionreset').catch(() => {}); }   // the fake cut the connection on purpose
     const headers = Object.fromEntries(r.headers);
     delete headers['content-encoding']; delete headers['content-length'];
     await route.fulfill({ status: r.status, headers, body: Buffer.from(await r.arrayBuffer()) });
