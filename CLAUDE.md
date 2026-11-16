@@ -29,7 +29,13 @@ over anything that needs a file most users won't have.
 
 ## Where the fuller context lives
 
-- `docs/review/HANDOFF-2026-11-16.md` — **start here after build 6**: what
+- `docs/NEXT-WORKPLAN.md` — **start here (2026-11-16, after #149)**: state
+  of main, the owner's standing rules (on by default and shown as on, hosted
+  checks only, merge when green, tap-only filing), what waits on her (Score +
+  Tune paste, Radar check), and six ranked engine packages with files, gates
+  and how each is measured. Supersedes the HANDOFF below for what to build.
+
+- `docs/review/HANDOFF-2026-11-16.md` — background after build 6: what
   is merged, what waits on the owner (Radar probe, Score + Tune paste, key,
   teach queue), auto-file rejected, and the proposed next waves. With
   `docs/review/USER-REVIEW.md` (screens, design, screenshots) and
