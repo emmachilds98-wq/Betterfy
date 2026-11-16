@@ -26,6 +26,10 @@ const LS = (() => {
     real = window.localStorage;
   } catch { real = null; }
   const fallback = k => mem.has(k) ? mem.get(k) : null;
+  // Set by "Wipe this device": from then on nothing reaches real storage, so a
+  // request still in flight (the pacer remembering bf_gap) cannot write a key
+  // back between the wipe and the reload.
+  let sealed = false;
   return {
     /** False when nothing written here outlives the page. */
     durable: !!real,
@@ -37,7 +41,9 @@ const LS = (() => {
       try { const v = real?.getItem(k); if (v != null) return v; } catch {}
       return fallback(k);
     },
-    setItem(k, v) { mem.set(k, String(v)); try { real?.setItem(k, String(v)); } catch {} },
+    setItem(k, v) { mem.set(k, String(v)); if (sealed) return; try { real?.setItem(k, String(v)); } catch {} },
+    /** Stop writing to real storage for the rest of this page's life. */
+    seal() { sealed = true; },
     removeItem(k) { mem.delete(k); try { real?.removeItem(k); } catch {} },
   };
 })();
