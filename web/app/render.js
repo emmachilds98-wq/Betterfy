@@ -35,7 +35,7 @@ function render(dir) {
   for (const m of actScreens(view)) SCREEN_MODS[m]?.mount?.(screenCtx(m));
 
   $('#mtitle').textContent = VTITLE[view] ?? '';
-  document.querySelectorAll('.nav').forEach(n => n.setAttribute('aria-current', String(n.dataset.v === tabOf(view))));
+  document.querySelectorAll('.nav').forEach(n => { const on = n.dataset.v === tabOf(view); n.setAttribute('aria-current', String(on)); n.setAttribute('aria-selected', String(on)); });
   // The Settings sheet's sections repaint with the page they sit on.
   underHoodRefresh();
   plSheetPaint();

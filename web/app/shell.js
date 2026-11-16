@@ -49,7 +49,7 @@ function plSheetEl() {
   if (!el) {
     el = document.createElement('div');
     el.id = 'plSheet'; el.className = 'settings plsheet';
-    el.setAttribute('role', 'dialog'); el.setAttribute('aria-hidden', 'true'); el.setAttribute('aria-label', 'Playlist');
+    el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-hidden', 'true'); el.setAttribute('aria-label', 'Playlist');
     document.body.appendChild(el);
     // Wired once, when the sheet is first made.
     addEventListener('click', e => {
@@ -66,22 +66,28 @@ function plSheetPaint() {
   const b = el.querySelector('.pls-body'); if (b) b.scrollTop = top;
   if (!b) closePlSheet();
 }
+let plOpener = null; // focus goes back here when the sheet closes
 function openPlSheet(id) {
   if (!id) return;
+  if (!S.plSheet) plOpener = document.activeElement;
   S.plSheet = id;
   plSheetPaint();
   plSheetEl().classList.add('open'); plSheetEl().setAttribute('aria-hidden', 'false');
   $('#scrim').classList.add('open');
+  plSheetEl().setAttribute('aria-label', CFG[id]?.name ?? 'Playlist');
   plSheetEl().querySelector('[data-plclose]')?.focus();
   routeNote();
 }
 function closePlSheet() {
   if (!S.plSheet) return;
+  const closedId = S.plSheet;
   S.plSheet = null;
   const el = plSheetEl();
   el.classList.remove('open'); el.setAttribute('aria-hidden', 'true');
   if (!settingsOpen()) $('#scrim').classList.remove('open');
   routeNote();
+  const back = plOpener; plOpener = null;
+  if (!settingsOpen()) (back?.isConnected ? back : document.querySelector('[data-act="plopen"][data-pl="' + CSS.escape(closedId) + '"]'))?.focus();
 }
 
 function underHoodHTML() {

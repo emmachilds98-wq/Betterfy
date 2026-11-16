@@ -74,12 +74,14 @@
   .pick .nm{display:block; font-weight:600; font-size:15.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .pick .ax{display:block; font-size:13px; color:var(--ink-2)}
   .pick .rt{flex:none; display:flex; flex-direction:column; align-items:flex-end; gap:6px}
-  /* Sits inside the pick button, so its handler stops propagation. */
-  .pick .nope{flex:none; width:22px; height:22px; display:grid; place-items:center; border-radius:6px;
-    color:var(--ink-3); font-size:12px; line-height:1; cursor:pointer; opacity:0; transition:opacity var(--dur-1)}
-  .pick:hover .nope, .pick:focus-within .nope{opacity:1}
-  .pick .nope:hover{background:var(--accent-soft); color:var(--accent)}
-  @media (hover:none){ .pick .nope{opacity:1} }
+  /* ✕ is a sibling button laid over the pick's corner (nested buttons are invalid). */
+  .pickw{position:relative}
+  .pickw .pick{padding-right:46px}
+  .pickw .nope{position:absolute; top:6px; right:6px; width:24px; height:24px; display:grid; place-items:center; border-radius:6px;
+    border:0; background:none; font:inherit; color:var(--ink-3); font-size:12px; line-height:1; cursor:pointer; opacity:0; transition:opacity var(--dur-1)}
+  .pickw:hover .nope, .pickw:focus-within .nope, .pickw .nope:focus-visible{opacity:1}
+  .pickw .nope:hover{background:var(--accent-soft); color:var(--accent)}
+  @media (hover:none){ .pickw .nope{opacity:1} }
   .pick .sc{font-family:var(--mono); font-size:13.5px; font-weight:600; color:var(--ink-2)}
   .pick .bar{display:block; width:62px; height:5px; border-radius:3px; overflow:hidden;
         background:color-mix(in srgb, var(--ink-3) 30%, transparent)}
@@ -132,7 +134,7 @@
   .vs{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:24px 0}
   .vs > div{border-radius:20px; padding:20px 22px; background:color-mix(in srgb, var(--vc) 14%, var(--surface-2));
         border:1px solid color-mix(in srgb, var(--vc) 28%, transparent)}
-  .vs .l{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+  .vs .l{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2); font-weight:600}
   .vs .n{font-family:var(--display); font-weight:800; font-size:40px; line-height:1.05; color:var(--vc); margin-top:6px}
   .vs .d{font-size:14px; color:var(--ink-2); margin-top:2px}
   .vs > .bad{--vc:var(--warn)} .vs > .good{--vc:var(--ok)}
