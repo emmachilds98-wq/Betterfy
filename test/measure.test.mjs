@@ -24,7 +24,7 @@ test('queue share counts only filings that recorded a position', () => {
   ];
   const m = measureHistory(log);
   assert.equal(m.queue.n, 8); assert.equal(m.queue.head, 6); assert.equal(m.queue.share, 0.75); assert.equal(m.queue.of, 9);
-  assert.equal(m.queue.baseline, 0.1); assert.ok(m.queue.beatsRandom);
+  assert.ok(Math.abs(m.queue.baseline - 0.1) < 1e-9); assert.ok(m.queue.beatsRandom);
 });
 
 test('batch precision: undone (undoneAt or undo entry) and later removal both count', () => {
