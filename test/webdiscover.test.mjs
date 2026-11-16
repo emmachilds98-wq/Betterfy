@@ -125,7 +125,7 @@ test('the suggested playlists are ranked, with the best one marked', () => {
   // the recommendation, not one option among three — but it still files in one
   // tap, and the runners-up stay behind it in order.
   assert.match(html, /class="fitcall" data-act="dfile" data-dfile="p1"/, 'the top pick leads');
-  assert.match(html, /61% fit/);
+  assert.match(html, /class="sc">Likely/);
   // The runners-up carry a score bar rather than the words, so the number is
   // all that is asserted here.
   assert.match(html, /data-dfile="p2"/);

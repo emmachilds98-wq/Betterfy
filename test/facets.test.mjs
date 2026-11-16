@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tagFacet, axisVec, facetMix, trackVec, applyIdf, cosine,
-         buildProfiles, findMisfiled, isThinSignal, tagGate, gateTags } from '../profile.mjs';
+         buildProfiles, findMisfiled, isThinSignal, tagGate, gateTags, withoutTrack } from '../profile.mjs';
 
 /*
  * Last.fm hands back one flat cloud per artist with no type on any of it, and
@@ -161,7 +161,8 @@ test('a track is scored against its home the same way it is scored against the a
   const { profiles, idf } = buildProfiles(lib, tags, targets, genre);
   const hit = findMisfiled(lib, tags, targets, profiles, idf, genre).find(m => m.track.id === 'misfit');
   const v = applyIdf(axisVec(lib.playlists[0].tracks[0], tags, 'genre'), idf);
-  assert.ok(Math.abs(cosine(v, profiles.get('p-house').vec) - hit.ownScore) < 1e-9);
+  // Home is judged with this track left out of its own centroid.
+  assert.ok(Math.abs(cosine(v, withoutTrack(profiles.get('p-house'), v)) - hit.ownScore) < 1e-9);
   assert.ok(Math.abs(cosine(v, profiles.get('p-jungle').vec) - hit.suggest[0].score) < 1e-9);
 });
 

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-15-1111">
+<meta name="bf-build" content="2026-11-15-1129">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1616,7 +1616,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-15-1111</span>
+    <span class="mono">build 2026-11-15-1129</span>
   </p>
 
   <div class="feat">
@@ -1660,6 +1660,7 @@
   <p class="lede" style="font-size:13px">
     <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
     genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a>
+    and, with Listening on, from how your tracks sound
     (Spotify no longer provides genre — top yours up under Settings) ·
     release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
     <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.
@@ -1708,7 +1709,7 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1111</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-15-1129</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1825,9 +1826,9 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-15-1111. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-15-1129. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
-        genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> ·
+        genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
         release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
         <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.</p>
@@ -2523,6 +2524,18 @@ const MISFILE_FLOOR = 0.25;
  * doesn't take suggestions at all, is never treated as a home to be misfiled
  * from or a destination to be misfiled to.
  */
+/** A home centroid with one member's (already weighted) vector taken back out. */
+function withoutTrack(home, v) {
+  const n = home.n ?? 0;
+  if (n < 2) return home.vec;
+  const out = new Map();
+  for (const [k, x] of home.vec) {
+    const y = (x * n - (v.get(k) ?? 0)) / (n - 1);
+    if (y > 1e-9) out.set(k, y);
+  }
+  return out.size ? out : home.vec;
+}
+
 function findMisfiled(lib, tags, targets, profiles, idf, axisOf) {
   const misfiled = [];
   for (const p of lib.playlists) {
@@ -2537,7 +2550,11 @@ function findMisfiled(lib, tags, targets, profiles, idf, axisOf) {
       // would be comparing two differently-weighted numbers.
       const v = applyIdf(weighFacets(flat, home.axis), idf);
       if (!v.size) continue;
-      const own = cosine(v, home.vec);
+      // Left out of its own home: the centroid is the mean of every track in the
+      // playlist, this one included, so scored against it whole the track is
+      // flattered by its own copy (worst in a small playlist). Taking it out
+      // first is the fair comparison with the alternatives it is ranked against.
+      const own = cosine(v, withoutTrack(home, v));
       const best = rank(t, tags, profiles, idf, { exclude: p.id, top: 3, axis: axisOf(p.id) });
       if (!best.length) continue;
       if (best[0].score > own * MISFILE_MARGIN && best[0].score > MISFILE_FLOOR) {
@@ -2658,7 +2675,7 @@ function findDrift(lib, tags, targets, idf) {
   drift.sort((a, b) => a.similarity - b.similarity);
   return drift;
 }
-return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, findMisfiled, listeningWeights, byListening, findDrift };
+return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, withoutTrack, findMisfiled, listeningWeights, byListening, findDrift };
 })();
 /* ---- core/playlists/axes.mjs ---- */
 __mod["core/playlists/axes.mjs"] = (function () {
@@ -2910,6 +2927,319 @@ function classifyAxes(lib, { tags = null, now = Date.now(), genreWords = null,
   return cfg;
 }
 return { NAME_RULES, MIN_FOR_TARGET, NO_SIGNAL, genreInName, addedShape, nameAxis, classifyAxes };
+})();
+/* ---- core/analysis/confidence.mjs ---- */
+__mod["core/analysis/confidence.mjs"] = (function () {
+// The four confidence labels, on their own so a module that only needs the
+// names (core/personal/relevance.mjs, bundled into the page) does not pull the
+// whole classifier and ontology in with them. classify.mjs re-exports it.
+const CONFIDENCE = {
+  HIGH: 'HIGH',
+  LIKELY: 'LIKELY',
+  AMBIGUOUS: 'AMBIGUOUS',
+  INSUFFICIENT_DATA: 'INSUFFICIENT_DATA',
+};
+return { CONFIDENCE };
+})();
+/* ---- core/playlists/mirror.mjs ---- */
+__mod["core/playlists/mirror.mjs"] = (function () {
+// Playlists that are a record of everything, not a filing decision.
+//
+// A playlist holding (nearly) your whole library is not a place you filed
+// anything — it is a copy of the library wearing a playlist's clothes.
+// Betterfy makes one itself ("All Songs"), and listeners make their own:
+// "Remember Everything", "Archive", "The Lot". Left in, one does four kinds
+// of damage at once, all of them silent:
+//
+//   1. every track reads as FILED, so nothing is ever offered a home
+//   2. every track's blast radius gains one, so the review queue thinks a
+//      wrong answer spreads further than it does
+//   3. it is a superset of every other playlist, so it buries every real
+//      relationship under "contains"
+//   4. it is a centroid of everything you own, so it wins every filing
+//      comparison it is allowed into
+//
+// The whole engine's plumbing already accepts an `isMirror` predicate — and
+// nothing ever passed one, so the default `() => false` meant all four were
+// happening on any real library.
+//
+// Detected by SHAPE, not by name. v1's browser build matches the exact string
+// "All Songs — Betterfy", which catches the one Betterfy makes and misses
+// every one a listener made themselves — the same failure as axes.mjs's venue
+// regex, one layer down. A playlist that holds nearly everything you own
+// cannot be telling you where anything belongs, whatever it is called and
+// whatever language it is called it in.
+const MIRROR_VERSION = '3.0.0';
+
+/* Declared priors, not fitted — there is no benchmark for this yet, and this
+ * comment is the honest label on them.
+ *
+ * COVERAGE is deliberately high. The cost of a false positive is a real
+ * bucket silently stopping taking suggestions; the cost of a false negative
+ * is the four failures above. At 0.9 a playlist has to hold nine of every ten
+ * distinct tracks you own, which no genre bucket does in a library with more
+ * than one genre in it — and in a library with only one, a playlist holding
+ * 90% of everything still cannot discriminate between anywhere. */
+const MIRROR_COVERAGE = 0.9;
+/* Below this, "holds 90% of the library" is an accident of a small library
+ * rather than a fact about the playlist. */
+const MIRROR_MIN_LIBRARY = 50;
+
+/** Every distinct track id in the library — playlists and liked songs. */
+function libraryTrackIds(lib) {
+  const ids = new Set();
+  for (const p of lib?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id) ids.add(t.id);
+  for (const t of lib?.liked ?? []) if (t?.id) ids.add(t.id);
+  return ids;
+}
+
+/**
+ * Which playlists are records of everything.
+ *
+ * @param {object} lib
+ * @param {{coverage?: number, minLibrary?: number, also?: (p: object) => boolean}} [opts]
+ *        `also` marks extra playlists a caller already knows are mirrors — the
+ *        app remembers its own All Songs by id, which is better evidence than
+ *        any threshold and should not have to clear one.
+ * @returns {{ids: Set<string>, rows: {id, name, covers, share}[], library: number}}
+ */
+function mirrorsOf(lib, { coverage = MIRROR_COVERAGE, minLibrary = MIRROR_MIN_LIBRARY,
+                                 also = null } = {}) {
+  const all = libraryTrackIds(lib);
+  const rows = [], ids = new Set();
+
+  for (const p of lib?.playlists ?? []) {
+    if (!p?.id) continue;
+    const own = new Set();
+    for (const t of p.tracks ?? []) if (t?.id) own.add(t.id);
+    const share = all.size ? own.size / all.size : 0;
+    const known = !!also?.(p);
+    // A caller's own knowledge is not subject to the size floor: an app that
+    // built the playlist knows what it is even in a library of twelve tracks.
+    if (!known && (all.size < minLibrary || share < coverage)) continue;
+    ids.add(p.id);
+    rows.push({ id: p.id, name: p.name ?? '', covers: own.size,
+                share: +share.toFixed(4), by: known ? 'caller' : 'coverage' });
+  }
+
+  rows.sort((a, b) => b.share - a.share);
+  return { ids, rows, library: all.size, version: MIRROR_VERSION };
+}
+
+/**
+ * A predicate for the `isMirror` hook the rest of the engine already takes.
+ *
+ * Matches on id, which is the only stable handle — two playlists can share a
+ * name and a renamed playlist is still the same playlist.
+ */
+function mirrorPredicate(lib, opts = {}) {
+  const { ids } = mirrorsOf(lib, opts);
+  return p => !!p?.id && ids.has(p.id);
+}
+return { MIRROR_VERSION, MIRROR_COVERAGE, MIRROR_MIN_LIBRARY, libraryTrackIds, mirrorsOf, mirrorPredicate };
+})();
+/* ---- core/personal/relevance.mjs ---- */
+__mod["core/personal/relevance.mjs"] = (function () {
+const { listeningWeights } = __mod["profile.mjs"];
+const { CONFIDENCE } = __mod["core/analysis/confidence.mjs"];
+const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
+// Listening behaviour as a *priority* signal — §22.
+//
+// "It must NOT automatically determine objective genre." That sentence is why
+// this module is here rather than in core/analysis, and why nothing in the
+// classifier imports it. Two questions that look similar and are not:
+//
+//     What is this track?          -> evidence. Listening says nothing.
+//     Is it worth my attention?    -> listening, almost entirely.
+//
+// v1 already fetches the raw numbers (listening.mjs) and combines them
+// (listeningWeights in profile.mjs). Both are reused verbatim — this adds the
+// second half §28 asks for, which is combining relevance with *uncertainty*
+// so that expensive work goes to tracks that are both played a lot and badly
+// understood, rather than to whichever came first in playlist order.
+
+
+
+
+const RELEVANCE_VERSION = '3.0.0';
+
+
+/**
+ * How little the engine knows about a track, 0 (certain) to 1 (nothing).
+ *
+ * Deliberately steep between AMBIGUOUS and LIKELY. A LIKELY answer is usually
+ * right and re-asking about it is close to wasted; an AMBIGUOUS one is a
+ * coin-flip the listener will eventually be shown, and every one of those
+ * resolved is a misfile that never happens.
+ */
+const UNCERTAINTY = {
+  [CONFIDENCE.INSUFFICIENT_DATA]: 1.0,
+  [CONFIDENCE.AMBIGUOUS]: 0.9,
+  [CONFIDENCE.LIKELY]: 0.45,
+  [CONFIDENCE.HIGH]: 0.05,
+};
+
+const uncertaintyOf = profile => UNCERTAINTY[profile?.genre?.confidence] ?? 0.5;
+
+/**
+ * How much this listener actually plays a track, as a multiplier on a floor
+ * of 1 rather than a term added to a 0-1 uncertainty.
+ *
+ * Listening weights are unbounded and relative (see listeningWeights), so
+ * adding them would let one heavily-played artist swamp the uncertainty
+ * signal entirely and turn the whole queue into "your top artist, forty
+ * times".
+ */
+function relevanceOf(track, weights) {
+  const w = weights?.get?.(track?.artists?.[0]?.name) ?? 0;
+  return 1 + w;
+}
+
+/**
+ * How many playlists a track sits in — its blast radius.
+ *
+ * §35 ranks "tracks affecting many playlists" highly, and rightly: getting
+ * one wrong about a track filed in six places is six wrong answers, and it
+ * also drags six centroids.
+ */
+function playlistReach(lib, { isMirror = null } = {}) {
+  const mirror = isMirror ?? mirrorPredicate(lib);
+  const reach = new Map();
+  for (const p of lib?.playlists ?? []) {
+    // A record-of-everything playlist adds one to every track alike, which is
+    // not blast radius — it is a constant, and it pushed the whole library
+    // over the queue's MANY_PLAYLISTS threshold at once.
+    if (mirror(p)) continue;
+    // Distinct playlists, not placements. A playlist that contains the same
+    // track twice is a duplicate — which this project has a whole report
+    // about — and counting it twice inflated the blast radius of exactly the
+    // tracks most likely to be duplicated.
+    const seen = new Set();
+    for (const t of p.tracks ?? []) {
+      if (!t?.id || seen.has(t.id)) continue;
+      seen.add(t.id);
+      reach.set(t.id, (reach.get(t.id) ?? 0) + 1);
+    }
+  }
+  return reach;
+}
+
+/**
+ * §28's priority: high-use and uncertain first, rare and already-confident
+ * last. The number expensive analysis is spent in order of.
+ *
+ * @param {{profile: object}} entry
+ * @param {{weights?: Map, reach?: Map, track: object}} ctx
+ */
+function analysisPriority({ profile }, { weights = null, reach = null, track } = {}) {
+  const uncertainty = uncertaintyOf(profile);
+  const played = relevanceOf(track, weights);
+  // Reach is capped: a track in twelve playlists is not twelve times more
+  // important than one in six, and without a cap the mirror playlist's
+  // contents would sort to the top of everything.
+  const spread = 1 + Math.min(3, (reach?.get?.(track?.id) ?? 1) - 1) * 0.25;
+  return +(uncertainty * played * spread).toFixed(4);
+}
+return { RELEVANCE_VERSION, UNCERTAINTY, uncertaintyOf, relevanceOf, playlistReach, analysisPriority, listeningWeights };
+})();
+/* ---- core/review/filequeue.mjs ---- */
+__mod["core/review/filequeue.mjs"] = (function () {
+const { relevanceOf, UNCERTAINTY } = __mod["core/personal/relevance.mjs"];
+// The File queue's order and its sure batch (docs/BUILD-5-PLAN.md §5.2).
+//
+// Pure counts over what Spotify already gives every account: the three
+// top-artist windows, recently played and /me/top/tracks. Nothing here is
+// trained, fetched or pooled. Bundled into the page and exposed as globals.
+//
+// Order = how much you play it x how little the engine knows it, the same two
+// halves core/personal/relevance.mjs names (relevanceOf, UNCERTAINTY). Listening
+// only decides what to ask about first, never what a track is.
+
+
+const FILEQUEUE_VERSION = '1.0.0';
+
+/** What the card's band is called in the History log, which Score reads (core/measure/history.mjs). */
+const BAND_LOG = { HIGH: 'sure', LIKELY: 'likely', AMBIGUOUS: 'unsure' };
+
+/** The Engine's calibrated decide() kinds, as the bands the chip draws. */
+const DECISION_BAND = { confident: 'HIGH', choose: 'LIKELY', unsure: 'AMBIGUOUS' };
+
+/** The band for a card: the calibrated verdict when the Engine has judged this
+ *  track, else the leading pick's own band, else none. */
+function cardBand(picks, decision = null) {
+  return DECISION_BAND[decision?.kind] ?? picks?.[0]?.band ?? null;
+}
+
+/**
+ * Track-level listening, as a count: a place in each /me/top/tracks window
+ * (weighted like the artist windows) plus how often it turns up in recently
+ * played. Map of track id -> weight.
+ */
+function trackWeights({ topTracks = [], recentTracks = [] } = {}) {
+  const w = new Map();
+  const bump = (id, x) => { if (id) w.set(id, (w.get(id) ?? 0) + x); };
+  for (const { items, weight } of topTracks) (items ?? []).forEach((id, i) => bump(id, weight * (1 - i / 60)));
+  for (const id of recentTracks) bump(id, 0.6);
+  return w;
+}
+
+/**
+ * How little is known about where a row goes, 0..1. The band when there is one
+ * (relevance.mjs's UNCERTAINTY), else the top pick's own score, else nothing.
+ */
+function rowUncertainty(row, band = null) {
+  if (band && band in UNCERTAINTY) return UNCERTAINTY[band];
+  const s = row?.suggest?.[0]?.score;
+  return Number.isFinite(s) ? Math.max(0.05, 1 - Math.min(1, s)) : 1;
+}
+
+/** Listening weight x uncertainty, for one backlog row. */
+function valueOf(row, { weights = null, tracks = null, bandOf = null } = {}) {
+  const played = relevanceOf(row, weights) + (tracks?.get?.(row?.id) ?? 0);
+  return +(played * rowUncertainty(row, bandOf?.(row) ?? null)).toFixed(4);
+}
+
+/**
+ * The queue in order of value. Skipped tracks stay below everything unseen
+ * (the old rule); within a skip count, most valuable first, ties newest-liked
+ * first. Without any listening data every weight is the same 1, so this is the
+ * uncertainty order alone, and with neither it is the old newest-first order.
+ * Returns a new array.
+ */
+function orderBacklog(rows, ctx = {}) {
+  const v = new Map((rows ?? []).map(r => [r.id, valueOf(r, ctx)]));
+  return [...(rows ?? [])].sort((a, b) => ((a.skips ?? 0) - (b.skips ?? 0))
+    || (v.get(b.id) - v.get(a.id)) || (b.added ?? '').localeCompare(a.added ?? ''));
+}
+
+/**
+ * The cards that are sure, each with where it goes: a calibrated HIGH band and
+ * a leading pick, not skipped, not rejected for that playlist. In queue order.
+ * `picksOf(row)` and `bandOf(row, picks)` come from the page.
+ * @returns {{row: object, playlistId: string, name: string}[]}
+ */
+function sureOnes(rows, { picksOf, bandOf, limit = 300 } = {}) {
+  const out = [];
+  for (const row of (rows ?? []).slice(0, limit)) {
+    if ((row.skips ?? 0) > 0) continue;
+    const picks = picksOf(row) ?? [];
+    const top = picks[0];
+    if (!top?.id || bandOf(row, picks) !== 'HIGH') continue;
+    out.push({ row, playlistId: top.id, name: top.name });
+  }
+  return out;
+}
+
+/**
+ * The label code in an ISRC: country + registrant, its first five characters
+ * (the same reading core/intrinsic/features.mjs registrantOf makes, kept here
+ * so File does not need the lazy Engine bundle). Null when malformed.
+ */
+function registrantOfIsrc(isrc) {
+  const raw = String(isrc ?? '').replace(/-/g, '').toUpperCase();
+  return /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(raw) ? raw.slice(0, 5) : null;
+}
+return { FILEQUEUE_VERSION, BAND_LOG, DECISION_BAND, cardBand, trackWeights, rowUncertainty, valueOf, orderBacklog, sureOnes, registrantOfIsrc };
 })();
 /* ---- web/ui/sound.mjs ---- */
 __mod["web/ui/sound.mjs"] = (function () {
@@ -3459,7 +3789,7 @@ function upNextHTML({ S, R, esc, hueOf, filePicks }) {
         <span class="t">${esc(t.title)}</span>
         <span class="a">${esc(t.artist)}</span>
         <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
-          ? `→ ${esc(best.name)} ${(best.score * 100).toFixed(0)}%` : '→ no confident pick'}</span>
+          ? `→ ${esc(best.name)} · ${best.score >= 0.7 ? 'Sure' : best.score >= 0.45 ? 'Likely' : 'Unsure'}` : '→ no confident pick'}</span>
       </span></button>`;
     }).join('')}</div>`;
 }
@@ -3547,16 +3877,40 @@ __mod["web/screens/inbox.mjs"] = (function () {
  * and untick, never a silent bulk move. Tracks already turned down for that
  * playlist are left out: a rejection is an answer. */
 const ROLL_MAX = 40;
+const BAND_LOG = { HIGH: 'sure', LIKELY: 'likely', AMBIGUOUS: 'unsure' };
 /** How long after a filing another one is ignored: the card's flight, about. */
 const FLIGHT_MS = 300;
 
-/** Other backlog tracks by `track`'s first-billed artist that could follow it into `playlistIds`. */
-function rollForwardFor(track, backlog, playlistIds, fb = {}) {
-  const lead = track?.artists?.[0]?.id;
-  if (!lead || !playlistIds?.length) return [];
-  return (backlog ?? []).filter(b => b.id !== track.id && b.artists?.[0]?.id === lead
-      && !playlistIds.some(pid => fb?.[b.id]?.rejected?.includes(pid)))
-    .slice(0, ROLL_MAX);
+/** How many other cards are looked at for a matching sound ID (each is a lookup). */
+const SOUND_SCAN = 200;
+
+/**
+ * Other backlog tracks that could follow `track` into `playlistIds`, each with
+ * why (`how`): by the same first-billed artist; by the same sure sound ID (its
+ * most specific genre, when both have been heard); or from the same label (ISRC
+ * registrant) when the engine's own top pick for it is one of these playlists,
+ * since a label alone says too little. `by.sound(t)` and `by.registrant(t)` come
+ * from the page; without them it is the artist roll-forward it always was.
+ * Tracks already turned down for that playlist are left out.
+ */
+function rollForwardFor(track, backlog, playlistIds, fb = {}, by = {}) {
+  if (!playlistIds?.length || !track) return [];
+  const lead = track.artists?.[0]?.id;
+  const open = b => b.id !== track.id && !playlistIds.some(pid => fb?.[b.id]?.rejected?.includes(pid));
+  const out = [], seen = new Set();
+  const add = (b, how) => { if (!seen.has(b.id)) { seen.add(b.id); out.push({ ...b, how }); } };
+  if (lead) for (const b of backlog ?? []) if (open(b) && b.artists?.[0]?.id === lead) add(b, 'artist');
+  const leaf = by.sound ? by.sound(track) : null, reg = by.registrant ? by.registrant(track) : null;
+  if (leaf || reg) {
+    let scanned = 0;
+    for (const b of backlog ?? []) {
+      if (out.length >= ROLL_MAX) break;
+      if (!open(b) || seen.has(b.id)) continue;
+      if (leaf && scanned++ < SOUND_SCAN && by.sound(b) === leaf) add(b, 'sound');
+      else if (reg && by.registrant(b) === reg && playlistIds.includes(b.suggest?.[0]?.id)) add(b, 'label');
+    }
+  }
+  return out.slice(0, ROLL_MAX);
 }
 
 function rollForwardHTML({ S, esc }) {
@@ -3564,12 +3918,16 @@ function rollForwardHTML({ S, esc }) {
   if (!rf?.rows?.length) return '';
   const on = rf.rows.filter(r => !rf.off.has(r.id)).length;
   const where = rf.names.length > 1 ? `those ${rf.names.length} playlists` : esc(rf.names[0]);
+  const alike = rf.rows.filter(r => r.how === 'sound' || r.how === 'label').length;
+  const head = alike ? `<b>${rf.rows.length} more</b> waiting, by ${esc(rf.artist)} or sounding or released alike`
+    : `<b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed`;
+  const note = r => r.how === 'sound' ? ' <span class="sub">sounds alike</span>' : r.how === 'label' ? ' <span class="sub">same label</span>' : '';
   return `<div class="card" id="rollCard" style="margin:0 0 16px">
-    <p style="margin:0 0 8px"><b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed. Put ${
+    <p style="margin:0 0 8px">${head}. Put ${
       rf.rows.length === 1 ? 'it' : 'them'} in ${where} too?</p>
     <div class="rows" style="max-height:220px; overflow:auto">${rf.rows.map(r => `
       <label class="check-row"><input type="checkbox" data-act="rollpick" data-rollpick="${esc(r.id)}" ${rf.off.has(r.id) ? '' : 'checked'}>
-        ${esc(r.title)}</label>`).join('')}</div>
+        ${esc(r.title)}${note(r)}</label>`).join('')}</div>
     <div class="rowbtns" style="margin-top:10px">
       <button class="b sm p" data-act="roll" data-roll="go" ${on ? '' : 'disabled'}>File ${on} into ${where}</button>
       <button class="b sm" data-act="roll" data-roll="no">Not now</button>
@@ -3601,6 +3959,70 @@ async function rollForwardGo(ctx) {
   render();
 }
 
+/* ---------- "File the N sure ones": docs/BUILD-5-PLAN.md §5.2 ----------
+ * The cards whose leading pick is calibrated sure, filed in one go: one History
+ * group (a step per playlist), one undo. Only among the first cards of the queue. */
+const sureList = ctx => { try { return ctx.fileSure?.() ?? []; } catch { return []; } };
+
+function sureBatchHTML(ctx) {
+  const { S, esc } = ctx;
+  if (S.roll) return '';
+  const n = sureList(ctx).length;
+  if (n < 2) return '';
+  return `<div class="card surebatch" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
+    <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
+    <button class="b sm p" data-act="filesure">File the ${esc(String(n))} sure ones</button>
+  </div>`;
+}
+
+/**
+ * File every sure card into its playlist: one add per playlist, all logged under
+ * one group with `band:'sure'` (Score's §7 reads it), so History shows one row
+ * and one undo takes the whole batch back.
+ */
+async function fileSureOnes(ctx) {
+  const { S, R, CFG, addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, toast, render } = ctx;
+  const now = Date.now();
+  if (S.filing || now < (S.fileLockUntil ?? 0)) return;
+  const batch = sureList(ctx);
+  if (!batch.length) return;
+  S.filing = true;
+  const byPl = new Map();
+  batch.forEach(({ row, playlistId }) => {
+    const at = R.backlog.findIndex(b => b.id === row.id);
+    (byPl.get(playlistId) ?? byPl.set(playlistId, []).get(playlistId)).push({ id: row.id, at });
+  });
+  const group = newGroup(), ats = [], done = [];
+  try {
+    for (const [pid, rows] of byPl) {
+      const ids = rows.map(r => r.id);
+      await addTracks(pid, ids);
+      await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
+                        reason:'filed the sure ones', band:'sure', queuePos:Math.min(...rows.map(r => r.at)), group });
+      ats.push((await getLog())[0]?.at);
+      done.push([pid, ids]);
+    }
+    for (const [pid, ids] of done) for (const id of ids) await recordAccept(id, [pid]);
+  } catch (e) {
+    // Whatever was written comes back out, and the queue is untouched.
+    if (ats.length) { try { await undoAction(ats[0]); } catch { /* best effort */ } }
+    S.filing = false;
+    toast('Failed: ' + e.message);
+    return render();
+  }
+  S.filing = false;
+  const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(done.flatMap(([, ids]) => ids));
+  for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
+  S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+  S.roll = null; S.fileSel = new Set();
+  const n = gone.size;
+  toast(`Filed ${n} sure ${n === 1 ? 'one' : 'ones'}.`, async () => {
+    if (ats[0]) await undoAction(ats[0]);
+    for (const [pid, ids] of done) for (const id of ids) await forgetAccept(id, [pid]);
+  });
+  render();
+}
+
 function view(ctx) {
   const { S, R, CFG, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip, tagChips, trackStrip,
           soundIdHTML, soundNote, pickEvidence, pickBand, matchMedia } = ctx;
@@ -3628,6 +4050,9 @@ function view(ctx) {
     .sort((a, b) => a.name.localeCompare(b.name));
   const nameOf = id => opts.find(o => o.id === id)?.name ?? picks.find(s => s.id === id)?.name ?? id;
   const best = picks[0];
+  // The calibrated band for the leading pick on every card, not only the sound ones.
+  const topBand = ctx.fileBand?.(t, picks) ?? best?.band ?? null;
+  ctx.fileOrderKick?.();
   const canFile = S.fileSel.size > 0 || !!best;
   const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
     : S.fileSel.size === 1 ? `File in ${esc(nameOf([...S.fileSel][0]))}`
@@ -3638,7 +4063,7 @@ function view(ctx) {
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
     : '';
 
-  return `${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+  return `${sureBatchHTML(ctx)}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
@@ -3671,7 +4096,7 @@ function view(ctx) {
               : sg.via === 'blend' ? (sg.untagged ? 'where you file this artist and ones like them'
                 : sg.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record')
               : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
-            <span class="rt">${pickBand(sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
+            <span class="rt">${pickBand(n === 0 && topBand ? { ...sg, band: topBand } : sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
             <span class="nope" data-act="reject" data-reject="${esc(sg.id)}" role="button" tabindex="0"
               title="Never suggest ${esc(sg.name)} for this track">✕</span>
@@ -3738,7 +4163,10 @@ async function fileCurrent(ctx, playlistIds) {
   // where in the queue it was filed from, and the band File showed for it.
   let picks = [];
   try { picks = ctx.filePicks?.(t) ?? []; } catch { /* no band, still filed */ }
-  const bandOf = id => picks.find(p => p.id === id)?.band;
+  // 'sure' / 'likely' / 'unsure': the words core/measure/history.mjs counts.
+  const lead = ctx.fileBand?.(t, picks) ?? picks[0]?.band;
+  const bandOf = id => { const b = id === picks[0]?.id ? lead : picks.find(p => p.id === id)?.band;
+                         return BAND_LOG[b]; };
   const picked = new Set(S.fileSel);
   try { ctx.flyCard?.(1); } catch { /* the animation is a bonus */ }
   S.fileSel = new Set();
@@ -3773,9 +4201,9 @@ async function fileCurrent(ctx, playlistIds) {
   const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
                                 await forgetAccept(t.id, ids); };
   toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
-  const more = rollForwardFor(t, R.backlog, ids, FB);
+  const more = rollForwardFor(t, R.backlog, ids, FB, { sound: ctx.rollSound, registrant: ctx.rollRegistrant });
   S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
-                           rows: more.map(b => ({ id: b.id, title: b.title })), off: new Set() } : null;
+                           rows: more.map(b => ({ id: b.id, title: b.title, how: b.how })), off: new Set() } : null;
   render();
 }
 async function inboxAct(ctx, a) {
@@ -3812,6 +4240,7 @@ async function inboxAct(ctx, a) {
 const actions = {
   selfile: (ctx, el) => toggleFileSel(ctx, el.dataset.selfile),
   anyPl: (ctx, el) => { if (el.value) toggleFileSel(ctx, el.value); },
+  filesure: (ctx) => fileSureOnes(ctx),
   filesel: (ctx) => fileCurrent(ctx, ctx.S.fileSel.size ? [...ctx.S.fileSel] : ctx.filePicks(inboxTrack(ctx))[0]?.id),
   play: (ctx) => inboxAct(ctx, 'play'),
   skip: (ctx) => inboxAct(ctx, 'skip'),
@@ -3858,7 +4287,7 @@ const actions = {
     render();
   },
 };
-return { rollForwardFor, rollForwardHTML, rollForwardGo, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions };
+return { rollForwardFor, rollForwardHTML, rollForwardGo, sureBatchHTML, fileSureOnes, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions };
 })();
 /* ---- web/screens/engine.mjs ---- */
 __mod["web/screens/engine.mjs"] = (function () {
@@ -4067,7 +4496,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-15-1111`,
+    `Betterfy engine score — build 2026-11-15-1129`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -4499,7 +4928,7 @@ function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes,
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
   const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
   return `<h1>Sources</h1>
-    <p class="lede">Where your genre data comes from.${infoBtn('sources', 'Genre sources', `<p>Spotify provides no genre data, so tags come from Last.fm. This page ships a prebuilt set covering many
+    <p class="lede">Where your genre data comes from.${infoBtn('sources', 'Genre sources', `<p>Spotify provides no genre data, so tags come from Last.fm and Wikidata, and, once Listening is on, from how your tracks sound. This page ships a prebuilt set covering many
         artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
         Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
         <b>Wrong tags?</b> under it on a Tidy or File row.</p>
@@ -4582,18 +5011,26 @@ function secDupes(c) {
     ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash')}`;
 }
 
+/** Why a cross-filed row is ranked where it is: the reading behind its suspicion. */
+function crossNote(x) {
+  return x.suspicion === 3 ? '<div class="why">Two genre playlists: usually one is a slip.</div>'
+    : x.suspicion === 2 ? '<div class="why">Two playlists of the same kind.</div>' : '';
+}
+
 function secCross(c) {
   const ib = c.infoBtn ?? (() => '');
   const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton } = c;
   const a = R.across.filter(x => x.placements.length >= S.crossMin);
-  return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is preselected.${ib('tidy-cross', 'Cross-filed', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
+  return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is removed unless you tap. The likeliest slips come first, with the best-fitting playlist starred.${ib('tidy-cross', 'Cross-filed', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
     <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
       `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-act="cmin" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
     <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
+      ${crossNote(c)}
       <div class="acts" style="margin-top:8px">${c.placements.map(p =>
-        `<button class="chip" data-act="xpl" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}">${esc(p.playlist)}</button>`).join('')}</div>
+        `<button class="chip${p.playlistId === c.keeper ? ' keeper' : ''}" data-act="xpl" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}${p.playlistId === c.keeper ? ' — the best fit' : ''}">${p.playlistId === c.keeper ? '★ ' : ''}${esc(p.playlist)}</button>`).join('')}
+        ${c.keeper && c.suspicion >= 2 ? `<button class="b sm" data-act="xkeep" data-xkeeper="${esc(c.keeper)}" data-xtr="${esc(c.placements[0].trackId)}" data-xall="${esc(c.placements.map(p => p.playlistId).join(','))}">Keep only in ${esc(c.placements.find(p => p.playlistId === c.keeper)?.playlist ?? '')}</button>` : ''}</div>
     </div></div>`).join('')
       || (R.across.length
         ? emptyState(`Nothing at ${S.crossMin}+ playlists`, 'Lower the threshold to see tracks filed in fewer places.', { compact: true })
@@ -4612,6 +5049,21 @@ function mfBandChip(c, b) {
   const [, vm, cls, word] = MF_BANDS.find(x => x[0] === b) ?? MF_BANDS[0];
   return (typeof c.bandChip === 'function' && c.bandChip(vm)) || `<span class="band band-${cls}">${word}</span>`;
 }
+
+/** The tag tier's rows, minus any the sound tier judged differently: where the two
+ *  disagree about a track in a playlist, sound wins and the tag row is dropped. */
+function tagMisfiles(c) {
+  const sound = (typeof c.tidySoundRows === 'function' ? c.tidySoundRows() : null) ?? [];
+  if (!sound.length) return c.R.misfiled;
+  const heard = new Map(sound.map(x => [`${x.id}|${x.from}`, x.to]));
+  return c.R.misfiled.filter(m => {
+    const to = heard.get(`${m.id}|${m.currentPlaylistId}`);
+    return to == null || to === m.suggest.find(sg => sg.id)?.id;
+  });
+}
+
+/** A cosine fit in words, not a percentage nobody can calibrate. */
+const mfFitWord = v => v >= 0.5 ? 'strong' : v >= 0.25 ? 'fair' : v >= 0.1 ? 'weak' : 'barely';
 
 function tidySections(c) {
   return c.tidySoundOn() ? [...TIDY_SECTIONS, ['sound', 'By sound']] : TIDY_SECTIONS;
@@ -4664,8 +5116,9 @@ function secMisfile(c) {
   const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton, tagChips, tagEditorHTML, store, getListening } = c;
   const LISTENING_CACHE = c.LISTENING_CACHE, LISTENING_PENDING = c.LISTENING_PENDING;
   const counts = { high: 0, medium: 0, low: 0 };
-  for (const x of R.misfiled) counts[x.confidence]++;
-  const m = R.misfiled.filter(x => x.confidence === S.mfBand);
+  const MF = tagMisfiles(c);
+  for (const x of MF) counts[x.confidence]++;
+  const m = MF.filter(x => x.confidence === S.mfBand);
   // Best-effort, fetched once and reused: a "misfiled" track you actually
   // play a lot is more likely a deliberate keep than a mistake. Doesn't
   // change the confidence tier — just gives you the context to judge it —
@@ -4677,7 +5130,7 @@ function secMisfile(c) {
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
   return `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p>')}</p>
-    ${R.misfiled.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
+    ${MF.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
       `<button type="button" aria-pressed="${S.mfBand === b}" data-act="mfb" data-mfb="${b}">${mfBandChip(c, b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
     <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
       const to = x.suggest.filter(sg => sg.id)[0];
@@ -4686,8 +5139,8 @@ function secMisfile(c) {
       return `<div class="row ${done ? 'done' : ''}" data-flip data-key="${esc(`mf:${x.id}:${x.currentPlaylistId}`)}">${thumbHTML(x)}<div class="main">
         <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
         ${to ? `<div class="swap"><span class="from">${esc(x.current)}</span><span class="arw">→</span><span class="to">${esc(to.name)}</span>
-          <span class="mono" style="color:var(--ink-3)">${(x.currentScore * 100).toFixed(0)}% → ${(to.score * 100).toFixed(0)}%</span></div>`
-        : `<div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${(x.currentScore * 100).toFixed(0)}% fit</span></div>`}
+          <span class="mono" style="color:var(--ink-3)">${esc(mfFitWord(x.currentScore))} → ${esc(mfFitWord(to.score))} fit</span></div>`
+        : `<div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${esc(mfFitWord(x.currentScore))} fit</span></div>`}
         ${playedALot ? `<div class="sub" style="color:var(--accent)">You play this a lot right now — might be deliberate.</div>` : ''}
       </div><div class="acts">
         ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-act="move" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}" data-mvtier="${MF_TIER[S.mfBand] ?? ""}">${done ? 'Moved' : 'Move'}</button>` : ''}
@@ -4703,7 +5156,7 @@ function secMisfile(c) {
           ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
       </div>` : ''}</div>`;
     }).join('')
-      || (R.misfiled.length
+      || (MF.length
         ? emptyState(`Nothing ${mfBandWord(S.mfBand)}`, S.mfBand === 'high'
             ? 'Nothing is clearly in the wrong place. Likely has the more speculative ones.' : 'Try another of the three.', { compact: true })
         : emptyState('Everything fits where it is', 'No track sits in a playlist that fits far worse than another one on the same axis. New ones show up here after a sync.'))}</div>
@@ -4713,7 +5166,7 @@ function secMisfile(c) {
 function view(c) {
   const { S, R, esc } = c;
   c.tidySoundWarm();
-  const n = { misfile: R.misfiled.length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount() };
+  const n = { misfile: tagMisfiles(c).length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount() };
   const secs = tidySections(c);
   // Opens on the first section with something in it rather than on "Wrong
   // place 0" while Repeats has work. A section the listener picked (S.tidySec,
@@ -4794,6 +5247,25 @@ const actions = {
     } catch (err) { c.toast('Failed: ' + err.message); }
   },
 
+  /** Cross-filed: keep the track in the suggested playlist only, out of every other. */
+  async xkeep(c, el) {
+    const keeper = el.dataset.xkeeper, tr = el.dataset.xtr;
+    const drops = el.dataset.xall.split(',').filter(id => id && id !== keeper);
+    try {
+      const group = c.newGroup();
+      for (const pl of drops) {
+        const before = await c.playlistIds(pl);
+        const positions = {}; before.forEach((id, i) => { if (id === tr) (positions[id] ??= []).push(i); });
+        await c.delTracks(pl, [tr]);
+        await c.logAction({ op:'remove', playlistId:pl, playlistName:c.CFG[pl]?.name ?? pl, trackIds:[tr], positions, reason:'cross-file trim', group });
+      }
+      const at = (await c.getLog())[0]?.at;
+      c.toast(`Kept only in ${c.CFG[keeper]?.name ?? keeper}.`, () => c.undoAction(at));
+      c.R.across = c.R.across.filter(x => !x.placements.some(p => p.trackId === tr));
+      c.render();
+    } catch (err) { c.toast('Failed: ' + err.message); }
+  },
+
   async move(c, el) {
     el.disabled = true;
     const { mvto:to, mvfrom:from, mvtr:tr, mvtier:tier } = el.dataset;
@@ -4821,7 +5293,7 @@ const actions = {
     } catch (err) { c.toast('Failed: ' + err.message); el.disabled = false; }
   },
 };
-return { secDupes, secCross, secSound, secMisfile, view, actions };
+return { secDupes, secCross, tagMisfiles, secSound, secMisfile, view, actions };
 })();
 /* ---- web/screens/lists.mjs ---- */
 __mod["web/screens/lists.mjs"] = (function () {
@@ -4857,18 +5329,93 @@ function suggestionsOf(GAPS, R) {
   return out;
 }
 
+/** Tracks that appear more than once in a playlist (same Spotify id): the surplus copies. */
+function repeatCount(tracks) {
+  const seen = new Set(); let n = 0;
+  for (const t of tracks ?? []) { if (!t?.id) continue; if (seen.has(t.id)) n++; else seen.add(t.id); }
+  return n;
+}
+
+/** Days since the newest track was added, or null when no track says when (nothing is guessed). */
+function staleDays(tracks, now = Date.now()) {
+  let newest = -Infinity;
+  for (const t of tracks ?? []) { const x = Date.parse(t?.added_at); if (Number.isFinite(x) && x > newest) newest = x; }
+  return Number.isFinite(newest) ? Math.max(0, Math.floor((now - newest) / 864e5)) : null;
+}
+
+/** Playlists the engine could not tell apart (bucketPairs' "indistinguishable" verdict), by playlist id: the names of its twins. */
+function twinsOf(pairs) {
+  const out = new Map();
+  for (const p of Array.isArray(pairs) ? pairs : []) {
+    if (p?.verdict !== 'indistinguishable' || !p.a?.id || !p.b?.id) continue;
+    for (const [x, y] of [[p.a, p.b], [p.b, p.a]]) out.set(x.id, [...(out.get(x.id) ?? []), y.name ?? y.id]);
+  }
+  return out;
+}
+
 /** 0-100 and the reasons, from what Betterfy already knows about one playlist: misfiled tracks,
- *  drift, a second genre, an axis nobody has settled. Null under eight tracks (too few to judge). */
-function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false } = {}) {
+ *  drift, a second genre, a twin it cannot be told from, repeats, staleness, an axis nobody has
+ *  settled. Null under eight tracks (too few to judge). Every input is optional: no data, no mark. */
+function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false,
+                                 twins = [], repeats = 0, staleDays: stale = null } = {}) {
   if (tracks < 8) return null;
   const notes = [];
   let score = 100;
   if (misfiled) { score -= Math.min(45, Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
   if (drifting) { score -= 15; notes.push('newest additions read differently from the rest'); }
   if (split) { score -= 20; notes.push('sounds like two genres'); }
+  if (twins?.length) { score -= 10; notes.push(`hard to tell apart from ${twins.slice(0, 2).join(' and ')}`); }
+  if (repeats > 0) { score -= Math.min(15, repeats * 3); notes.push(`${repeats} repeated track${repeats === 1 ? '' : 's'}`); }
+  if (stale !== null && stale >= 365) { score -= 5; notes.push(`nothing added in ${Math.floor(stale / 365)}+ year${stale >= 730 ? 's' : ''}`); }
   if (undecided) { score -= 10; notes.push('no axis decided yet'); }
   score = Math.max(0, score);
   return { score, word: score >= 85 ? 'Healthy' : score >= 65 ? 'Fine' : 'Needs a look', notes };
+}
+
+/** "These look like genre playlists": playlists not yet called genre (and not set by you) whose tags are mostly
+ *  genre, or somewhat genre with a sound profile that is mostly one style. One tap to confirm, none to ignore. */
+function genreTickSuggestions(rows, mixes, sounds) {
+  const out = [];
+  for (const p of rows ?? []) {
+    if (p.axis === 'genre' || p.why === 'set by you' || !(p.tracks >= 8) || p.mirror) continue;
+    const mix = mixes?.get?.(p.id);
+    if (!mix?.tracks) continue;
+    const topStyle = sounds?.(p.id)?.styles?.[0]?.[1] ?? 0;
+    const g = mix.genre ?? 0;
+    if (g >= 0.5 || (g >= 0.3 && topStyle >= 0.5))
+      out.push({ id: p.id, name: p.name, why: `${Math.round(g * 100)}% of its tags are genre${g < 0.5 ? ' and it sounds like one style' : ''}` });
+  }
+  return out;
+}
+
+/** "Start these playlists" for an account with no genre playlist: groups made only of what Spotify gives
+ *  (artist/format/era, plus unnamed sound clusters named by sound ID when the engine and CLAP have run). Nothing is made until tapped. */
+function coldStartOffers({ proposals = [], clusters = [] } = {}, limit = 6) {
+  const out = [];
+  for (const c of clusters) {
+    const ids = c.ids ?? (c.tracks ?? []).map(t => t.id);
+    if (ids.length < 4) continue;
+    const name = c.confirmed ?? c.suggest?.name ?? null;
+    out.push({ title: name ?? 'Group that sounds alike', named: !!name, n: ids.length, ids, why: 'sounds alike',
+      eg: (c.tracks ?? []).slice(0, 3).map(t => t.name).filter(Boolean) });
+  }
+  for (const p of proposals)
+    if ((p.ids?.length ?? 0) >= 4) out.push({ title: p.label, named: false, n: p.ids.length, ids: p.ids,
+      why: p.kind === 'artist' ? 'one artist you collect' : 'same era and length',
+      eg: (p.examples ?? []).slice(0, 3).map(e => e.name).filter(Boolean) });
+  return out.slice(0, limit);
+}
+
+/** New-genre candidates: clusters of the tracks the calibration is "unsure" about, most listened-to first
+ *  (artists in `active`, Spotify's recent and short-term top), each named by sound ID where CLAP has a name. */
+function newGenreOffers(clusters, active) {
+  const played = c => (c.tracks ?? []).filter(t => (t.artists ?? []).some(a => active?.has?.(a))).length;
+  return (clusters ?? []).map(c => ({ ...c, ids: c.ids ?? (c.tracks ?? []).map(t => t.id), played: played(c) }))
+    .filter(c => c.ids.length >= 4)
+    .sort((a, b) => b.played - a.played || b.ids.length - a.ids.length)
+    .map(c => { const name = c.confirmed ?? c.suggest?.name ?? null;
+      return { title: name ? `${name}?` : 'New genre?', n: c.ids.length, ids: c.ids, played: c.played, named: !!name,
+        why: 'tracks Betterfy is unsure where to file, sitting together' }; });
 }
 
 /** A thin strip of how a playlist sounds: its top styles as a stacked bar, else its energy range. '' without a profile. */
@@ -4889,7 +5436,9 @@ function sparkHTML(vm) {
 function plInfo(c, p, splitIds, undecidedIds) {
   const { R, LISTS_SOUND } = c;
   const vm = LISTS_SOUND.profile(p.id);
+  const pl = c.LIB?.playlists?.find(x => x.id === p.id);
   const health = playlistHealth({ tracks: p.tracks,
+    twins: twinsOf(c.twinPairs?.()).get(p.id) ?? [], repeats: repeatCount(pl?.tracks), staleDays: staleDays(pl?.tracks),
     misfiled: (R.misfiled ?? []).filter(m => m.playlistId === p.id).length,
     drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
     split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
@@ -4953,6 +5502,34 @@ function view(c) {
   const splitIds = new Set(listsSplits().map(x => x.p.id));
   const undecidedIds = new Set(rows.filter(p => p.why === NO_SIGNAL).map(p => p.id));
   const sugg = suggestionsOf(GAPS, R);
+  const mixes = c.playlistMixes().mix;
+  const ticks = genreTickSuggestions(rows.map(p => ({ ...p, mirror: c.isMirrorPlaylist?.({ id: p.id, name: p.name }) })), mixes, id => c.LISTS_SOUND.profile(id));
+  const ticksHTML = ticks.length ? `<section class="plsugg" aria-labelledby="pltick-h">
+      <div class="plsugg-head"><h2 id="pltick-h">These look like genre playlists</h2>
+        <button class="b sm p" data-act="ltickall">Mark all ${ticks.length} as genre</button></div>
+      <div class="plrows">${ticks.slice(0, 5).map(t => `<div class="plrow"><span class="plmain"><span class="ttl">${esc(t.name)}</span>
+        <span class="plmeta">${esc(t.why)}</span></span><button class="b sm" data-act="ltick" data-pl="${esc(t.id)}">Genre</button></div>`).join('')}</div>
+    </section>` : '';
+  // Cold start: no genre playlist at all. Offers come from what Spotify gives every account; nothing is made until tapped.
+  const noGenre = rows.length > 0 && !rows.some(p => p.axis === 'genre');
+  c.coldKick?.(noGenre);
+  const cold = c.COLD?.status === 'ready' && noGenre ? coldStartOffers(c.COLD.found) : [];
+  const coldHTML = cold.length ? `<section class="plsugg" aria-labelledby="plcold-h">
+      <div class="plsugg-head"><h2 id="plcold-h">Start these playlists</h2></div>
+      <p class="hint">You have no genre playlists yet. These groups already sit together in your library.</p>
+      <div class="plrows">${cold.map((o, i) => `<div class="plrow"><span class="plmain">
+        <input id="coldnm${i}" aria-label="Name for this playlist" value="${esc(o.title)}">
+        <span class="plmeta"><span class="mono">${o.n}</span> tracks · ${esc(o.why)}${o.eg.length ? ` · e.g. ${esc(o.eg.join(', '))}` : ''}</span></span>
+        <button class="b sm p" data-act="lcold" data-cold="${i}">Start</button></div>`).join('')}</div>
+    </section>` : '';
+  const newg = c.COLD?.status === 'ready' ? newGenreOffers(c.COLD.newGenre, c.COLD.active).slice(0, 3) : [];
+  const newgHTML = newg.length ? `<section class="plsugg" aria-labelledby="plnewg-h">
+      <div class="plsugg-head"><h2 id="plnewg-h">Possible new genres</h2></div>
+      <div class="plrows">${newg.map((o, i) => `<div class="plrow"><span class="plmain">
+        <input id="newgnm${i}" aria-label="Name for this playlist" ${o.named ? `value="${esc(o.title.replace(/\?$/, ''))}"` : 'placeholder="Name it"'}>
+        <span class="plmeta"><span class="mono">${o.n}</span> tracks${o.played ? ` · ${o.played} you are playing` : ''} · ${esc(o.why)}</span></span>
+        <button class="b sm" data-act="lnewg" data-newg="${i}">Start</button></div>`).join('')}</div>
+    </section>` : '';
   const suggHTML = sugg.length ? `<section class="plsugg" aria-labelledby="plsugg-h">
       <div class="plsugg-head"><h2 id="plsugg-h">Suggested playlists</h2>
         <button class="b sm" data-go="new">See all ${sugg.length}</button></div>
@@ -4962,7 +5539,7 @@ function view(c) {
     </section>` : '';
   return `<h1>Library</h1>
     <p class="lede">Tap a playlist for its axis, health and shuffle.</p>
-    ${suggHTML}
+    ${ticksHTML}${coldHTML}${newgHTML}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
       <button class="b sm" data-go="sources">Genre sources</button>
@@ -4985,13 +5562,43 @@ const actions = {
     try { await c.listsSplitMake(el.dataset.lsplit); } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
   },
 
+  /** One "looks like a genre playlist": confirmed. */
+  ltick(c, el) { return setAxis(c, el.dataset.pl, { value: 'genre' }, null); },
+  /** Every suggested one at once. */
+  ltickall(c) {
+    const rows = Object.entries(c.CFG).map(([id, v]) => ({ id, ...v, mirror: c.isMirrorPlaylist?.({ id, name: v.name }) }));
+    const ids = genreTickSuggestions(rows, c.playlistMixes().mix, id => c.LISTS_SOUND.profile(id)).map(t => t.id);
+    for (const id of ids) setAxis(c, id, { value: 'genre' }, null, true);
+    return finishAxes(c, `${ids.length} marked as genre`);
+  },
+  /** Cold start: make the playlist for one offered group. */
+  async lcold(c, el) {
+    const i = +el.dataset.cold, o = coldStartOffers(c.COLD.found)[i], name = c.$('#coldnm' + i)?.value.trim();
+    if (!o) return;
+    if (!name) return c.toast('Give it a name first.');
+    el.disabled = true;
+    try { await c.gapsCreate(name, o.ids); c.COLD.found.proposals = c.COLD.found.proposals.filter(p => p.ids !== o.ids);
+      c.COLD.found.clusters = c.COLD.found.clusters.filter(p => (p.ids ?? p.tracks?.map(t => t.id)) !== o.ids); c.render(); }
+    catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  },
+  /** A possible new genre: make it, and remember the name for CLAP when it is one. */
+  async lnewg(c, el) {
+    const i = +el.dataset.newg, o = newGenreOffers(c.COLD.newGenre, c.COLD.active)[i], name = c.$('#newgnm' + i)?.value.trim();
+    if (!o) return;
+    if (!name) return c.toast('Give it a name first.');
+    el.disabled = true;
+    try { await c.gapsCreate(name, o.ids); if (c.clapConfirm) c.clapConfirm(o.ids, name).catch(() => {});
+      c.COLD.newGenre = c.COLD.newGenre.filter(x => (x.ids ?? x.tracks?.map(t => t.id)) !== o.ids); c.render(); }
+    catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  },
+
   /** Axis edit: per-viewer, persisted on this device. */
   axis(c, el) { return setAxis(c, el.dataset.ax, el, null); },
   /** Receives-suggestions tick. */
   target(c, el) { return setAxis(c, el.dataset.tg, null, el); },
 };
 
-function setAxis(c, id, ax, tg) {
+function setAxis(c, id, ax, tg, quiet = false) {
   const { CFG, LS } = c;
   if (ax) {
     CFG[id].axis = ax.value;
@@ -5009,8 +5616,12 @@ function setAxis(c, id, ax, tg) {
   const saved = JSON.parse(LS.getItem('bf_axes') || '{}');
   saved[id] = { axis: CFG[id].axis, target: CFG[id].target, at: Date.now() };
   LS.setItem('bf_axes', JSON.stringify(saved));
+  if (!quiet) finishAxes(c, 'Updated');
+}
+
+function finishAxes(c, said) {
   c.rebuildReports();
-  c.toast('Updated — suggestions recomputed.');
+  c.toast(`${said} — suggestions recomputed.`);
   c.render();
   // Shared with linked devices straight away, not only at the next load.
   c.syncAxes().then(changed => { if (changed) c.store.set('reports', c.rebuildReports()); });
@@ -5022,7 +5633,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, playlistHealth, sparkHTML, sheetHTML, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, sheetHTML, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -5083,9 +5694,16 @@ function view(ctx) {
   // every single redraw of this screen — including the redraw after an
   // unrelated toast — and it is by some distance the most expensive thing the
   // app computes. "Shuffle again" below is how you deliberately re-roll it.
-  if (S.shufCache?.id !== sel || S.shufCache?.n !== tracks.length) {
-    S.shufCache = { id: sel, n: tracks.length,
-      order: tracks.length ? spacedShuffle(tracks) : [],
+  if (S.shufFlow === undefined) { try { S.shufFlow = LS.getItem('bf_shuf_flow') === '1'; S.shufRedisc = LS.getItem('bf_shuf_redisc') === '1'; } catch { S.shufFlow = S.shufRedisc = false; } }
+  // Flow needs a sound reading or a genre tag on half the list; without that the option is not offered.
+  const canFlow = !!ctx.flowReady?.(tracks), flow = canFlow && S.shufFlow;
+  const redisc = !!S.shufRedisc && S.shufActive?.size > 0;
+  if (S.shufRedisc && !S.shufActive && ctx.rediscoverKick) ctx.rediscoverKick();
+  if (S.shufCache?.id !== sel || S.shufCache?.n !== tracks.length || S.shufCache.flow !== flow || S.shufCache.redisc !== redisc) {
+    S.shufCache = { id: sel, n: tracks.length, flow, redisc,
+      order: tracks.length ? (ctx.shuffleOrder
+        ? ctx.shuffleOrder(tracks, { rediscover: redisc ? S.shufActive : null, near: flow ? ctx.flowNear() : null })
+        : spacedShuffle(tracks)) : [],
       naive: tracks.length ? shuffleStats(rnd([...tracks])) : null };
   }
   const order = S.shufCache.order, naive = S.shufCache.naive;
@@ -5110,6 +5728,9 @@ function view(ctx) {
       <button class="b" data-act="shufPlay" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
       <button class="b sm" data-act="shufAgain" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
     </div>
+    ${order.length ? `<div class="rowbtns" style="margin:-12px 0 18px">${canFlow ? `
+      <label class="pls-f"><input type="checkbox" data-act="shufFlow" ${flow ? 'checked' : ''}> keep neighbours alike</label>` : ''}
+      <label class="pls-f"><input type="checkbox" data-act="shufRedisc" ${S.shufRedisc ? 'checked' : ''}> rediscover: what you have not been playing first</label></div>` : ''}
     ${mix ? mixHTML(mix, tracks, p, ctx) : good ? `<div class="vs">
       <div class="bad"><div class="l">Spotify's shuffle</div><div class="n">${naive.minGap}</div>
         <div class="d">${naive.minGap === 1 ? 'slot' : 'slots'} between the same artist, ${naive.within3} ${naive.within3 === 1 ? 'pair' : 'pairs'} within three</div></div>
@@ -5134,6 +5755,11 @@ const actions = {
   shufPl({ S, render }, el) { S.shufPl = el.value; S.shufCache = null; render(); },
   shufMode({ S, LS, render }, el) { S.shufMode = el.value; try { LS.setItem('bf_shuf_mode', S.shufMode); } catch {} render(); },
   shufAgain({ S, render }) { S.shufCache = null; render(); },
+  shufFlow({ S, LS, render }, el) { S.shufFlow = el.checked; try { LS.setItem('bf_shuf_flow', el.checked ? '1' : '0'); } catch {} S.shufCache = null; render(); },
+  shufRedisc({ S, LS, render, rediscoverKick }, el) {
+    S.shufRedisc = el.checked; try { LS.setItem('bf_shuf_redisc', el.checked ? '1' : '0'); } catch {}
+    S.shufCache = null; if (el.checked) rediscoverKick?.(); render();
+  },
   shufApply(ctx, btn) { return build(ctx, btn, false); },
   shufPlay(ctx, btn) { return build(ctx, btn, true); },
 };
@@ -5185,6 +5811,17 @@ return { mixBpmOf, view, actions };
 __mod["web/screens/discover.mjs"] = (function () {
 /* The Discover screen (docs/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
  * ranking stay classic in web/app/discover-engine.js; ctx comes from SCREEN_CTX.discover. */
+/** A fit score in the same words as everywhere else, not a percentage. */
+const fitWord = v => v >= 0.7 ? 'Sure' : v >= 0.45 ? 'Likely' : 'Unsure';
+
+/** "Because you listen to A and B": the pick's own neighbours in this account's listening. */
+function whyLine(t, esc) {
+  const v = [...new Set((t.via ?? []).filter(Boolean))];
+  if (!v.length) return '';
+  const names = v.length > 1 ? `${v.slice(0, -1).map(esc).join(', ')} and ${esc(v[v.length - 1])}` : esc(v[0]);
+  return `<p class="why discwhy">Because you listen to <b>${names}</b>.</p>`;
+}
+
 function view(ctx) {
   const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
@@ -5243,16 +5880,17 @@ function view(ctx) {
         </div>
         <p class="pdev" id="pDev"></p>
 
+        ${whyLine(t, esc)}
         ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
         ${best ? `<button class="fitcall" data-act="dfile" data-dfile="${esc(best.id)}">
             <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
               <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ${best.via === 'sound' ? 'by how it sounds next to what you filed there' : 'ranked by the same model the file queue uses'}</span>${pickEvidence(best)}</span>
-            ${pickBand(best)}<span class="sc">${(best.score*100).toFixed(0)}% fit</span>
+            ${pickBand(best)}<span class="sc">${fitWord(best.score)}</span>
           </button>` : ''}
         ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
           `<button class="pick" data-act="dfile" data-dfile="${esc(sg.id)}"><span class="k">${n+2}</span>
            <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span>${pickEvidence(sg)}</span>
-           <span class="rt">${pickBand(sg)}<span class="sc">${(sg.score*100).toFixed(0)}%</span>
+           <span class="rt">${pickBand(sg)}<span class="sc">${fitWord(sg.score)}</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
         ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
 
@@ -5262,6 +5900,7 @@ function view(ctx) {
         </div>
         <div class="rowbtns" style="margin-top:10px">
           <button class="b sm" data-act="dnav" data-dnav="-1" ${i===0?'disabled':''}>← Back</button>
+          <button class="b sm" data-act="dpass" data-dpass="${esc(t.id)}" title="Not for me: this artist won't be offered again">Not for me</button>
           <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
           <a class="b sm" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
           <select data-act="discAnyPl" id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
@@ -5281,8 +5920,20 @@ const actions = {
     S.discAt = Math.max(0, Math.min((S.discAt ?? 0) + (+el.dataset.dnav), d.length - 1));
     render();
   },
-  async like({ libraryCall, logAction, toast }, el) {
+  /** Pass on this artist for good (kept on this device) and move to the next card. */
+  dpass({ S, render, toast, discRemember }) {
+    const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
+    if (!t) return;
+    discRemember('pass', t.artist ?? t.artists?.[0]?.name);
+    S.discover = d.filter(x => (x.artist ?? '') !== (t.artist ?? ''));
+    S.discAt = Math.max(0, Math.min(at, S.discover.length - 1));
+    toast(`Won’t offer ${t.artist ?? 'them'} again.`);
+    render();
+  },
+  async like({ S, libraryCall, logAction, toast, discRemember }, el) {
     try { await libraryCall('PUT', [el.dataset.like]);
+      const t = (S.discover ?? []).find(x => x.id === el.dataset.like);
+      if (t && discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
       await logAction({ op:'add-liked', trackIds:[el.dataset.like], reason:'from discovery' });
       el.textContent = 'Liked'; el.disabled = true; toast('Added to your Liked Songs.'); }
     catch (err) { toast('Failed: '+err.message); }
@@ -5290,7 +5941,7 @@ const actions = {
 };
 
 /** Add the track on the card to a playlist, and take it off the pile. */
-async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render }, playlistId) {
+async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId) {
   const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
   if (!t) return;
   const name = CFG[playlistId]?.name ?? playlistId;
@@ -5299,12 +5950,13 @@ async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction
     await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'added from discovery' });
     const when = (await getLog())[0]?.at;
     toast(`Added “${t.track}” to ${name}.`, () => undoAction(when));
+    if (discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
     d.splice(at, 1);
     S.discAt = Math.max(0, Math.min(at, d.length - 1));
     render();
   } catch (e) { toast('Failed: ' + e.message); }
 }
-return { view, actions };
+return { fitWord, whyLine, view, actions };
 })();
 /* ---- web/screens/new.mjs ---- */
 __mod["web/screens/new.mjs"] = (function () {
@@ -5542,6 +6194,8 @@ Object.assign(globalThis, __mod["norm.mjs"]);
 Object.assign(globalThis, __mod["credits.mjs"]);
 Object.assign(globalThis, __mod["profile.mjs"]);
 Object.assign(globalThis, __mod["core/playlists/axes.mjs"]);
+Object.assign(globalThis, __mod["core/personal/relevance.mjs"]);
+Object.assign(globalThis, __mod["core/review/filequeue.mjs"]);
 Object.assign(globalThis, __mod["web/ui/sound.mjs"]);
 Object.assign(globalThis, __mod["web/app/patch.mjs"]);
 globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], tidy: __mod["web/screens/tidy.mjs"], lists: __mod["web/screens/lists.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"], new: __mod["web/screens/new.mjs"] };
@@ -5630,7 +6284,7 @@ const STORE_WATCH = {
   eng:     ['engine'],
   sound:   ['inbox'],
   audio:   ['inbox', 'tidy', 'sources'],
-  gaps:    ['new'],
+  gaps:    ['new', 'lists'],
   player:  [],
 };
 for (const [slice, screens] of Object.entries(STORE_WATCH))
@@ -5938,7 +6592,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-15-1111';
+const BUILD = '2026-11-15-1129';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -6259,7 +6913,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-15-1111', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-15-1129', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -6709,6 +7363,27 @@ function describe(rows) {
   return { verdict:'unknown', why:'Same title; no identifier to separate them.' };
 }
 
+/** Merge name-groups whose tracks share an ISRC (union-find over the groups). */
+function mergeByIsrc(groups) {
+  const parent = groups.map((_, i) => i);
+  const find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  const seen = new Map();
+  groups.forEach((rows, i) => { for (const t of rows) if (t.isrc) {
+    if (seen.has(t.isrc)) parent[find(i)] = find(seen.get(t.isrc)); else seen.set(t.isrc, i); } });
+  const out = new Map();
+  groups.forEach((rows, i) => { const r = find(i); if (!out.has(r)) out.set(r, []); out.get(r).push(...rows); });
+  return [...out.values()];
+}
+
+/** How likely a cross-filed track is a mistake, not a choice: two genre playlists is the
+ *  suspicious case, two on another shared axis next, genre plus mood (deliberate) last. */
+function crossSuspicion(placements) {
+  const by = new Map();
+  for (const p of placements) by.set(p.axis, (by.get(p.axis) ?? 0) + 1);
+  if ((by.get('genre') ?? 0) >= 2) return 3;
+  return [...by.values()].some(n => n >= 2) ? 2 : 1;
+}
+
 function buildReports(lib, cfg, tags) {
   // Same gate classify() applies, recomputed fresh here since tags can change
   // mid-session (a fetch, a correction) without cfg being rebuilt.
@@ -6735,7 +7410,10 @@ function buildReports(lib, cfg, tags) {
       if (!where.has(k)) where.set(k, []);
       where.get(k).push({ playlist:p.name, playlistId:p.id, ...shape(t) });
     }
-    for (const [, rows] of groups) {
+    // Repeats group by ISRC first, then by name: two groups that share a
+    // recording id are the same track filed under two spellings of its title.
+    const merged = mergeByIsrc([...groups.values()]);
+    for (const rows of merged) {
       if (rows.length < 2) continue;
       const shaped = rows.map(shape);
       const d = describe(shaped);
@@ -6754,11 +7432,20 @@ function buildReports(lib, cfg, tags) {
                                    trackId:r.id, dur:r.dur })),
       mixedReleases: new Set(rows.map(r=>r.id)).size > 1,
       mixedRecordings: new Set(rows.map(r=>r.isrc).filter(Boolean)).size > 1 };
-  }).sort((a,b) => b.placements.length - a.placements.length);
+  });
 
   const targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id));
   const axisOf = id => cfg[id]?.axis ?? null;
   const { profiles, idf } = buildProfiles(lib, tags, targets, axisOf);
+  // Cross-filed, most suspicious first, each with the playlist it fits best as the keeper.
+  for (const x of across) {
+    x.suspicion = crossSuspicion(x.placements);
+    const fit = new Map(rank(meta.get(x.id), tags, profiles, idf, { top: 999 }).map(r => [r.id, r.score]));
+    const genre = x.placements.filter(p => p.axis === 'genre');
+    const pool = x.suspicion === 3 ? genre : x.placements;
+    x.keeper = pool.reduce((best, p) => (fit.get(p.playlistId) ?? -1) > (fit.get(best.playlistId) ?? -1) ? p : best, pool[0]).playlistId;
+  }
+  across.sort((a, b) => (b.suspicion - a.suspicion) || (b.placements.length - a.placements.length));
 
   // Shared with the Node pipeline (misfile.mjs) via profile.mjs, bundled in
   // verbatim — the two builds cannot silently drift into different answers.
@@ -6801,6 +7488,9 @@ function buildReports(lib, cfg, tags) {
     // same track you passed on last time.
     .sort((a,b) => (a.skips - b.skips) || (b.added??'').localeCompare(a.added??''));
 
+  // Listening x uncertainty, once listening has landed (fileOrderCtx below).
+  { const oc = fileOrderCtx(); if (oc) backlog.splice(0, backlog.length, ...orderBacklog(backlog, oc)); }
+
   // clusters with no home
   const homeless = backlog.filter(b => !b.suggest.length || b.suggest[0].score < 0.30);
   // Indexed rather than searched: unfiled.find() inside a map over the homeless
@@ -6833,6 +7523,41 @@ function buildReports(lib, cfg, tags) {
   // library at all, and must score them against the same centroids the inbox
   // uses rather than a second, subtly different model.
   return { within, across, misfiled, backlog, clusters, drift, profiles, idf };
+}
+
+/* ---------- File's queue order (BUILD-5-PLAN §5.2) ----------
+ * How much you play it x how little the engine knows it, from the listening
+ * fetch every account already has (top artists, top tracks, recently played).
+ * Until that has landed the queue keeps its newest-first order; fileOrderKick()
+ * asks for it once and re-sorts in place, keeping the card on screen where it is. */
+const engineDecisions = new WeakMap();
+/** The Engine's calibrated verdict for one liked track, when it has judged it. */
+function engineDecisionOf(id) {
+  const sh = typeof ENG !== 'undefined' ? ENG.shadow : null;
+  if (!sh?.rows) return null;
+  let m = engineDecisions.get(sh);
+  if (!m) { m = new Map(sh.rows.map(r => [r.id, r.decision])); engineDecisions.set(sh, m); }
+  return m.get(id) ?? null;
+}
+function fileOrderCtx() {
+  const L = typeof LISTENING_CACHE !== 'undefined' ? LISTENING_CACHE : null;
+  if (!L?.weights) return null;
+  return { weights: L.weights, tracks: L.tracks ?? null,
+           bandOf: row => DECISION_BAND[engineDecisionOf(row.id)?.kind] ?? null };
+}
+function fileReorder() {
+  const oc = fileOrderCtx();
+  if (!oc || !R?.backlog?.length) return false;
+  const keep = R.backlog[Math.min(S.inboxAt | 0, R.backlog.length - 1)]?.id;
+  R.backlog = orderBacklog(R.backlog, oc);
+  S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+  return true;
+}
+/** Once per library load: fetch listening if it is not here yet, then re-sort and repaint. */
+function fileOrderKick() {
+  if (!R || R.ordered || typeof getListening !== 'function') return;
+  R.ordered = true;
+  getListening().then(() => { if (fileReorder()) store.touch('ui.inbox'); }).catch(() => { /* ordered newest-first, as before */ });
 }
 
 /** "Keep here" was said for this track in this playlist (recordKeep). */
@@ -7297,6 +8022,23 @@ function filePicks(t) {
   }
   return out;
 }
+/* The band the File card shows for its leading pick: the Engine's calibrated
+ * verdict on this track when it has judged it, else the pick's own band. */
+const fileBand = (t, picks) => typeof cardBand === 'function' && typeof engineDecisionOf === 'function' ? cardBand(picks, engineDecisionOf(t?.id)) : picks?.[0]?.band ?? null;
+/* The cards that are sure, with where each goes: "File the N sure ones". */
+const fileSure = () => typeof sureOnes !== 'function' ? [] : sureOnes(R.backlog, { picksOf: filePicks, bandOf: (t, picks) => fileBand(t, picks) });
+/* The sound ID's most specific genre for a track, only when it is a sure reading
+ * (the same 0.7 the band uses), else null. File's roll-forward matches on it. */
+function fileRollSound(t) {
+  const id = typeof soundIdOf === 'function' ? soundIdOf(t)?.id : null;
+  return id?.genre && id.genre.conf >= 0.7 ? id.path?.at?.(-1)?.name ?? null : null;
+}
+let LIKED_ISRC = null, LIKED_ISRC_FOR = null;
+/** A liked track's ISRC by id (backlog rows do not carry it). */
+function likedIsrc(id) {
+  if (LIKED_ISRC_FOR !== LIB) { LIKED_ISRC = new Map((LIB.liked ?? []).map(x => [x.id, x.isrc])); LIKED_ISRC_FOR = LIB; }
+  return LIKED_ISRC.get(id);
+}
 /* What the track sounds like: "Drum & Bass › Jungle · 172 BPM", with why, the
  * filed tracks it sounds most like and the heard tracks it mixes with behind a
  * tap. Nothing at all until it has been heard and the sound space is ready. */
@@ -7578,6 +8320,48 @@ async function gapsCompute() {
   store.touch('gaps');
 }
 
+/* ---------- Library: cold start and new genres (docs/BUILD-5-PLAN.md 5.4) ----------
+ * Both read only what every account has. Cold start (no genre playlist at all) groups the library by
+ * artist, era and length with proposeBuckets, plus unnamed sound clusters on the intrinsic space when the
+ * engine has run. New genres cluster the tracks the calibration is "unsure" about, most listened-to first.
+ * Names come from CLAP (sound ID) when it has heard the group. Nothing is written until a button is tapped. */
+const COLD = { status:'idle', for:null, found:{ proposals:[], clusters:[] }, newGenre:[], active:null, made:new Set() };
+
+function coldKick(needCold) {
+  if (COLD.status === 'working' || (COLD.status === 'ready' && COLD.for === R) || COLD.status === 'error') return;
+  COLD.status = 'working'; COLD.for = R;
+  fire(coldCompute(needCold));
+}
+
+async function coldCompute(needCold) {
+  try {
+    await engineLoad();
+    const tracks = allLibraryTracks();
+    const found = { proposals: needCold ? BetterfyColdStart.proposeBuckets(tracks) : [], clusters: [] };
+    let newGenre = [];
+    const space = ENG.space;
+    let active = null;
+    try { active = (await getListening())?.recentlyActive ?? null; } catch { active = null; }
+    if (space) {
+      try {
+        // Bounded: placing every track is the expensive part, and the first few thousand are plenty to find groups in.
+        if (needCold) found.clusters = BetterfyReports.unnamedClusters(tracks.slice(0, 3000), space, { limit: 6 })
+          .map(c => ({ ...c, ids: c.tracks.map(t => t.id) }));
+        const unsure = new Set((ENG.shadow?.rows ?? []).filter(r => r.decision?.kind === 'unsure').map(r => r.id));
+        if (unsure.size >= 8) newGenre = BetterfyReports.unnamedClusters(tracks.filter(t => unsure.has(t.id)), space, { limit: 6 })
+          .map(c => ({ ...c, ids: c.tracks.map(t => t.id) }));
+      } catch { /* the groups are a bonus: none is better than a wrong one */ }
+    }
+    const records = await gapsRecords();
+    if (records && typeof clapNameOrphans === 'function') {
+      const all = [...found.clusters, ...newGenre];
+      if (all.length) await clapNameOrphans(all, records);
+    }
+    Object.assign(COLD, { status:'ready', found, newGenre, active });
+  } catch { COLD.status = 'error'; }
+  store.touch('gaps');
+}
+
 /** Make a private playlist holding these tracks. Nothing else in the library changes. */
 async function gapsCreate(name, ids) {
   const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
@@ -7683,6 +8467,76 @@ function spacedShuffle(items) {
   }
   return out;
 }
+/**
+ * Soft continuity inside the spaced order: walking the shuffle, each slot takes the most alike of the next few
+ * candidates (by `near`, higher is closer) instead of simply the next one, but never one whose artist played in
+ * the last `gap` slots, so the spacing is kept and only the flow improves. Nothing is dropped or added; the
+ * look-ahead is short, so it stays a shuffle rather than turning into a sort.
+ */
+function flowOrder(order, near, { window = 8, gap = 3 } = {}) {
+  const rest = order.slice(), out = [];
+  while (rest.length) {
+    const prev = out[out.length - 1];
+    const recent = new Set(out.slice(-gap).map(artistOf));
+    let best = -1, bestS = -Infinity;
+    for (let i = 0, lim = Math.min(window, rest.length); i < lim; i++) {
+      if (recent.has(artistOf(rest[i]))) continue;
+      // The small index penalty keeps the original order on ties.
+      const s = (prev ? near(prev, rest[i]) : 0) - i * 0.01;
+      if (s > bestS) { best = i; bestS = s; }
+    }
+    out.push(rest.splice(best < 0 ? 0 : best, 1)[0]);
+  }
+  return out;
+}
+
+/** How alike two tracks are, 0..1.5: their sound (the embedding both heard tracks have, a cosine) plus the genre
+ *  tags their lead artists share. Whichever half either track lacks simply counts nothing. */
+function flowNear() {
+  const idx = globalThis.BetterfyOrder && typeof AUDIO !== 'undefined' && AUDIO.records?.size ? mixIndexNow() : null;
+  const tagSet = t => { const id = t.artists?.[0]?.id; const tg = id && typeof TAGS !== 'undefined' ? TAGS[id]?.tags : null;
+    return tg?.length ? new Set(tg.slice(0, 6).map(x => String(x[0]).toLowerCase())) : null; };
+  const cache = new Map();
+  const tagsOf = t => { if (!cache.has(t.id)) cache.set(t.id, tagSet(t)); return cache.get(t.id); };
+  return (a, b) => {
+    let s = 0;
+    const x = idx?.get(a.id)?.emb, y = idx?.get(b.id)?.emb;
+    if (x && y && x.length === y.length) { let d = 0; for (let i = 0; i < x.length; i++) d += x[i] * y[i]; s += Math.max(0, d); }
+    const ta = tagsOf(a), tb = tagsOf(b);
+    if (ta && tb) { let n = 0; for (const k of ta) if (tb.has(k)) n++; s += 0.5 * n / Math.min(ta.size, tb.size); }
+    return s;
+  };
+}
+
+/** Whether there is enough to flow on: at least half of these tracks have a sound reading or a genre tag. */
+function flowReady(tracks) {
+  if (!tracks?.length) return false;
+  const heard = typeof AUDIO !== 'undefined' ? AUDIO.records : null;
+  let n = 0;
+  for (const t of tracks) {
+    const g = t.artists?.[0]?.id, d = heard?.get(t.id);
+    if ((d && !d.miss) || (g && typeof TAGS !== 'undefined' && TAGS[g]?.tags?.length)) n++;
+  }
+  return n >= tracks.length / 2;
+}
+
+/**
+ * The shuffle the screen shows: spaced, then optionally
+ *   rediscover: artists in the set (what Spotify says you are playing: short-term top, recently played) go to
+ *               the back, spaced among themselves, so what you have not heard lately comes first;
+ *   flow:       soft sound/genre continuity (flowOrder), when `near` is given.
+ * Key is deliberately not used: it is below its bar, so it stays out of the order.
+ */
+function shuffleOrder(items, { rediscover = null, near = null } = {}) {
+  let base;
+  if (rediscover?.size) {
+    const hot = [], fresh = [];
+    for (const t of items) ((t.artists ?? []).some(a => rediscover.has(a.name)) ? hot : fresh).push(t);
+    base = hot.length && fresh.length ? [...spacedShuffle(fresh), ...spacedShuffle(hot)] : spacedShuffle(items);
+  } else base = spacedShuffle(items);
+  return near ? flowOrder(base, near) : base;
+}
+
 function shuffleStats(order) {
   const last = new Map(); const gaps = []; let adjacent = 0, within3 = 0;
   order.forEach((t,i) => { const k = artistOf(t);
@@ -7858,6 +8712,15 @@ async function syncAllSongsPlaylist() {
   render();
 }
 
+/** Fetch what Spotify says is being played (short-term top artists and recently played) for "rediscover", once. */
+async function rediscoverKick() {
+  if (S.shufActive || S.shufActivePending) return;
+  S.shufActivePending = true;
+  try { S.shufActive = (await getListening())?.recentlyActive ?? new Set(); }
+  catch { S.shufActive = new Set(); S.shufRedisc = false; toast('Couldn’t read what you have been playing.'); }
+  S.shufActivePending = false; S.shufCache = null; store.touch('ui.shuffle');
+}
+
 /* ---------- DJ order: Shuffle by tempo and sound (core/audio/order.mjs) ----------
  * Once listening has heard enough of a playlist, Shuffle can order it like a DJ
  * set instead: each next track a tempo you can beatmatch (half and double time
@@ -7909,7 +8772,7 @@ function shuffleMix(sel, tracks, mode) {
  * instead gives you that playlist's radio.
  */
 async function listeningSeeds() {
-  const { topWindows, recentArtists } = await fetchListeningRaw();
+  const { topWindows, recentArtists, topTracks = [], recentTracks = [] } = await fetchListeningRaw();
   // The library as a floor, scaled by the biggest count so that one enormous
   // playlist cannot outvote a month of actually playing something.
   const libraryArtists = [];
@@ -7924,7 +8787,10 @@ async function listeningSeeds() {
   // Stashed for getListening() — Discovery, the tag-gap fetch and the Tidy
   // screen's "you play this a lot" note all read the same one fetch.
   const shortTerm = topWindows.find(w => w.range === 'short_term')?.items ?? [];
-  LISTENING_CACHE = { weights, recentlyActive: new Set([...shortTerm, ...recentArtists]) };
+  // Track-level listening too (File's queue order): plays of the song itself,
+  // not only of its artist. Counts from /me/top/tracks and recently-played.
+  LISTENING_CACHE = { weights, recentlyActive: new Set([...shortTerm, ...recentArtists]),
+                      tracks: trackWeights({ topTracks, recentTracks }) };
   return weights;
 }
 
@@ -7937,7 +8803,8 @@ async function listeningSeeds() {
 // LISTENING_CACHE above only saves the second and third caller *within one
 // page session* — every fresh load spent all four again, even one minute
 // later, for a signal that barely moves within a few hours. Cached in
-// IndexedDB with a TTL for exactly that reason.
+// IndexedDB with a TTL for exactly that reason. /me/top/tracks (three windows)
+// rides on the same cache; an entry cached before it existed simply has none.
 const LISTENING_TTL = 4 * 60 * 60 * 1000;
 async function fetchListeningRaw() {
   const cached = await idb.get('listening_raw');
@@ -7951,13 +8818,23 @@ async function fetchListeningRaw() {
       topWindows.push({ range, weight, items: (r?.items ?? []).map(a => a.name) });
     } catch { anyFailure = true; }
   }
-  let recentArtists = [];
+  // Same windows and weights as the artists. Its own failure is not fatal and
+  // not cached as empty: File just orders by artist until it answers.
+  const topTracks = [];
+  for (const [range, weight] of [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]]) {
+    try {
+      const r = await sp(`/me/top/tracks?limit=50&time_range=${range}`);
+      topTracks.push({ range, weight, items: (r?.items ?? []).map(t => t.id).filter(Boolean) });
+    } catch { anyFailure = true; }
+  }
+  let recentArtists = [], recentTracks = [];
   try {
     const r = await sp('/me/player/recently-played?limit=50');
     recentArtists = (r?.items ?? []).flatMap(p => (p.track?.artists ?? []).map(a => a.name));
+    recentTracks = (r?.items ?? []).map(p => p.track?.id).filter(Boolean);
   } catch { anyFailure = true; }
 
-  const data = { topWindows, recentArtists };
+  const data = { topWindows, recentArtists, topTracks, recentTracks };
   // A genuine failure keeps no cache, so the next call asks Spotify again
   // rather than freezing a partial or empty answer for the whole TTL — the
   // same principle syncLibrary already applies to a playlist Spotify refused.
@@ -7992,6 +8869,35 @@ function rankSeeds(weights, n = 40) {
   return top.map(([name, x]) => ({ name, w: 0.35 + 0.65 * (x / most) }));
 }
 
+/* What this account has told Discover: artists passed on (never offered again) and
+ * artists liked or added from it (extra seeds next run). Kept in this browser's
+ * storage only: not synced, not shared with any other account. */
+const DISC_MEM_KEY = 'bf_disc_mem';
+const DISC_MEM_CAP = 500;
+function discMemory() {
+  try {
+    const m = JSON.parse(LS.getItem(DISC_MEM_KEY) || '{}');
+    return { pass: Array.isArray(m.pass) ? m.pass : [], like: Array.isArray(m.like) ? m.like : [] };
+  } catch { return { pass: [], like: [] }; }
+}
+/** Remember an artist as `pass` or `like` (names, as shown on the card); a pass cancels a like and the reverse. */
+function discRemember(kind, name) {
+  const key = norm(name ?? '');
+  if (!key || (kind !== 'pass' && kind !== 'like')) return;
+  const m = discMemory(), other = kind === 'pass' ? 'like' : 'pass';
+  m[other] = m[other].filter(x => x !== key);
+  m[kind] = [...m[kind].filter(x => x !== key), key].slice(-DISC_MEM_CAP);
+  try { LS.setItem(DISC_MEM_KEY, JSON.stringify(m)); } catch {}
+}
+/** Liked/added artists as extra seeds: each worth half the strongest seed, on top of whatever listening says. */
+function discBoostLiked(weights, liked) {
+  if (!liked.length) return weights;
+  const lead = Math.max(1, ...weights.values());
+  const byKey = new Map([...weights.keys()].map(n => [norm(n), n]));
+  for (const k of liked) { const n = byKey.get(k); if (n != null) weights.set(n, weights.get(n) + lead * 0.5); }
+  return weights;
+}
+
 async function runDiscovery(seedPlaylistId) {
   // No key is not a dead end any more (CLAUDE.md: every account, Spotify
   // library alone): without one, the candidates come from Deezer's and
@@ -8004,9 +8910,14 @@ async function runDiscovery(seedPlaylistId) {
   for (const p of LIB.playlists) p.tracks.forEach(own);
   LIB.liked.forEach(own);
 
+  // Artists you passed on are treated as owned: the same hard filter, so nothing downstream offers them.
+  const mem = discMemory();
+  for (const k of mem.pass) ownedArtist.add(k);
+
   const src = seedPlaylistId ? LIB.playlists.find(p => p.id === seedPlaylistId) : null;
   if (!src) stage('Reading what you have been playing…', 0.02);
   const weights = src ? playlistSeeds(src) : await listeningSeeds();
+  if (!src) discBoostLiked(weights, mem.like);
   const seeds = rankSeeds(weights);
   if (!seeds.length) { toast('Nothing to seed from.'); return; }
 
@@ -9486,7 +10397,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-15-1111';
+    s.src = 'engine.js?v=2026-11-15-1129';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -9508,7 +10419,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-15-1111');
+    const w = new Worker('engine-worker.js?v=2026-11-15-1129');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -9983,7 +10894,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-15-1111';
+    s.src = 'audio.js?v=2026-11-15-1129';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -10019,7 +10930,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1111', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-15-1129', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -10753,7 +11664,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1111', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-15-1129', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -11032,7 +11943,10 @@ SCREEN_CTX.tidy = () => ({
 });
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
-  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render,
+  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
+  twinPairs: () => ENG?.pairs ?? null,
+  coldKick: needCold => coldKick(needCold),
+  get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
   // Library's Suggested section reads the same gaps New playlists draws: start them the way that screen does.
   gapsKick: () => { if (GAPS.status === 'idle' || (GAPS.status === 'ready' && GAPS.for !== R)) { GAPS.status = 'working'; fire(gapsCompute()); } },
@@ -11052,7 +11966,9 @@ Object.assign(SCREEN_CTX, {
                  render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
-                  addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, recordSkip, recordReject,
+                  addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
+                  fileBand, fileSure, fileOrderKick,
+                  rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
                   saveFeedback, toast, render, flyCard,
                   rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
@@ -11061,14 +11977,14 @@ Object.assign(SCREEN_CTX, {
 // --- /home/inbox ---
 // --- shuffle/discover ---
 SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, dedupe, spacedShuffle, shuffleStats, rnd, artistOf,
-  mixHeardIn, shuffleMix, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
+  mixHeardIn, shuffleMix, shuffleOrder, flowReady, flowNear, rediscoverKick, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
   labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
 SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
   soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
-  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall });
+  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember });
 // --- end shuffle/discover ---
 /* ---------- the shell: four tabs and the Settings sheet (docs/BUILD-5-PLAN.md §4.1, UI-D) ----------
  * File, Tidy, Discover and Library are the tabs. Everything that used to be a

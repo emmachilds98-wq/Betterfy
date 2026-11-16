@@ -145,3 +145,61 @@ test('Sources actions: the Discogs token clears and redraws', () => {
   SOURCES.actions.fillWikidata({ fillFromWikidata: () => seen.push('wikidata') });
   assert.deepEqual(seen, ['enrich', 'wikidata']);
 });
+
+test('health also reads twins, repeats and staleness, and says nothing without them', () => {
+  const h = LISTS.playlistHealth({ tracks: 30, twins: ['Tech House B'], repeats: 2, staleDays: 800 });
+  assert.equal(h.notes.length, 3);
+  assert.match(h.notes.join(' '), /Tech House B/);
+  assert.match(h.notes.join(' '), /2 repeated tracks/);
+  assert.match(h.notes.join(' '), /nothing added in 2\+ years/);
+  assert.equal(LISTS.playlistHealth({ tracks: 30, staleDays: null }).notes.length, 0);
+  assert.equal(LISTS.repeatCount([{ id: 'a' }, { id: 'a' }, { id: 'b' }, {}]), 1);
+  assert.equal(LISTS.staleDays([{ name: 'no date' }]), null);
+  assert.equal(LISTS.staleDays([{ added_at: '2024-01-01T00:00:00Z' }, { added_at: '2024-01-11T00:00:00Z' }], Date.parse('2024-01-21T00:00:00Z')), 10);
+  const twins = LISTS.twinsOf([{ verdict: 'indistinguishable', a: { id: 'x', name: 'X' }, b: { id: 'y', name: 'Y' } },
+    { verdict: 'view', a: { id: 'x', name: 'X' }, b: { id: 'z', name: 'Z' } }]);
+  assert.deepEqual([...twins], [['x', ['Y']], ['y', ['X']]]);
+  assert.equal(LISTS.twinsOf(null).size, 0);
+});
+
+test('genre ticks: from the facet mix, or a weaker mix plus one style; never over your own choice', () => {
+  const mixes = new Map([['a', { tracks: 20, genre: 0.7 }], ['b', { tracks: 20, genre: 0.35 }], ['c', { tracks: 20, genre: 0.35 }],
+    ['d', { tracks: 20, genre: 0.9 }], ['e', { tracks: 20, genre: 0.9 }], ['f', { tracks: 0 }]]);
+  const rows = [{ id: 'a', name: 'A', axis: 'mood', tracks: 20 }, { id: 'b', name: 'B', axis: 'mood', tracks: 20 },
+    { id: 'c', name: 'C', axis: 'mood', tracks: 20 }, { id: 'd', name: 'D', axis: 'genre', tracks: 20 },
+    { id: 'e', name: 'E', axis: 'mood', tracks: 20, why: 'set by you' }, { id: 'f', name: 'F', axis: 'mood', tracks: 20 }];
+  const out = LISTS.genreTickSuggestions(rows, mixes, id => id === 'b' ? { styles: [['House', 0.6]] } : null);
+  assert.deepEqual(out.map(x => x.id), ['a', 'b']);
+});
+
+test('cold start offers name sound clusters first, need four tracks, and write nothing', () => {
+  const offers = LISTS.coldStartOffers({
+    clusters: [{ ids: ['1', '2', '3', '4'], suggest: { name: 'Garage' }, tracks: [{ name: 'x' }] }, { ids: ['1', '2'] }],
+    proposals: [{ kind: 'artist', label: 'Busy Producer', ids: ['a', 'b', 'c', 'd', 'e'], examples: [{ name: 'T1' }] }, { kind: 'shape', label: 'x', ids: ['q'] }],
+  });
+  assert.deepEqual(offers.map(o => [o.title, o.n]), [['Garage', 4], ['Busy Producer', 5]]);
+  assert.deepEqual(LISTS.coldStartOffers(), []);
+});
+
+test('new genres: unsure clusters ranked by what you play, named by sound when CLAP has a name', () => {
+  const t = a => ({ artists: [a] });
+  const out = LISTS.newGenreOffers([
+    { ids: ['1', '2', '3', '4', '5', '6'], tracks: [t('Z')] },
+    { ids: ['7', '8', '9', '10'], tracks: [t('Hot'), t('Hot')], suggest: { name: 'Donk' } },
+    { ids: ['x'], tracks: [] }], new Set(['Hot']));
+  assert.deepEqual(out.map(o => [o.title, o.played]), [['Donk?', 2], ['New genre?', 0]]);
+});
+
+test('the Library view offers genre ticks and cold start; nothing without them', () => {
+  const sb = load();
+  const base = { ...sb, store: { touch() {} }, fire() {}, GAPS: { status: 'idle' },
+    CFG: { P1: { name: 'Hardcore', axis: 'mood', why: 'x', tracks: 20 } },
+    playlistMixes: () => ({ mix: new Map([['P1', { tracks: 20, genre: 0.8 }]]) }) };
+  const html = LISTS.view({ ...base, coldKick: () => {}, COLD: { status: 'ready', made: new Set(), newGenre: [], found: { clusters: [],
+    proposals: [{ kind: 'artist', label: 'Busy Producer', ids: ['a', 'b', 'c', 'd'], examples: [] }] } } });
+  assert.match(html, /These look like genre playlists/);
+  assert.match(html, /Start these playlists/);
+  assert.match(html, /Busy Producer/);
+  const none = LISTS.view({ ...base, playlistMixes: () => ({ mix: new Map() }), COLD: { status: 'idle' } });
+  assert.doesNotMatch(none, /genre playlists<\/h2>|Start these/);
+});

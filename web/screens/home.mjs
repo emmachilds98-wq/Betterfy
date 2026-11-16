@@ -68,7 +68,7 @@ export function upNextHTML({ S, R, esc, hueOf, filePicks }) {
         <span class="t">${esc(t.title)}</span>
         <span class="a">${esc(t.artist)}</span>
         <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
-          ? `→ ${esc(best.name)} ${(best.score * 100).toFixed(0)}%` : '→ no confident pick'}</span>
+          ? `→ ${esc(best.name)} · ${best.score >= 0.7 ? 'Sure' : best.score >= 0.45 ? 'Likely' : 'Unsure'}` : '→ no confident pick'}</span>
       </span></button>`;
     }).join('')}</div>`;
 }

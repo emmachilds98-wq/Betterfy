@@ -62,7 +62,10 @@ SCREEN_CTX.tidy = () => ({
 });
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
-  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render,
+  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
+  twinPairs: () => ENG?.pairs ?? null,
+  coldKick: needCold => coldKick(needCold),
+  get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
   // Library's Suggested section reads the same gaps New playlists draws: start them the way that screen does.
   gapsKick: () => { if (GAPS.status === 'idle' || (GAPS.status === 'ready' && GAPS.for !== R)) { GAPS.status = 'working'; fire(gapsCompute()); } },
@@ -82,7 +85,9 @@ Object.assign(SCREEN_CTX, {
                  render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
-                  addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, recordSkip, recordReject,
+                  addTracks, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
+                  fileBand, fileSure, fileOrderKick,
+                  rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
                   saveFeedback, toast, render, flyCard,
                   rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
@@ -91,12 +96,12 @@ Object.assign(SCREEN_CTX, {
 // --- /home/inbox ---
 // --- shuffle/discover ---
 SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, dedupe, spacedShuffle, shuffleStats, rnd, artistOf,
-  mixHeardIn, shuffleMix, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
+  mixHeardIn, shuffleMix, shuffleOrder, flowReady, flowNear, rediscoverKick, MIX_MODES, MIX_PAGE, paged, sp, plCall, chunk, logAction, toast, render, syncAllSongsPlaylist,
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
   labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
 SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
   soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
-  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall });
+  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember });
 // --- end shuffle/discover ---
