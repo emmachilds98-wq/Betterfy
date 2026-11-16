@@ -16,6 +16,13 @@
 // Firebase web key identifies a project rather than authorising anything.
 // Which means the validation below is the real security boundary: writes are
 // unauthenticated, so nothing is trusted until it has been through it.
+//
+// Shape is not truth, though: a well-formed false tag passes every shape
+// check. So a tag is published only when at least two independent contributor
+// ids name it for the same artist (the quorum rule, BUILD-6 H1); one writer
+// alone can never get a tag into the table. What it does not stop is one person
+// posing as two installs. App Check (web/app/tagshare.js) and the reviewed PR
+// that .github/workflows/tags.yml opens are what stand in that way.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createSign } from 'node:crypto';
 
@@ -71,29 +78,102 @@ export function normaliseContribution(raw) {
 }
 
 /**
- * Fold valid contributions into the existing table.
+ * Each contribution's document id is `<Spotify artist id>_<contributor id>`.
  *
- * Gaps only — an artist already in tags.json is never overwritten. That is what
- * makes an unauthenticated write safe: the worst a bad contribution can do is
- * add an artist nobody had, which the next run of this script cannot be tricked
- * into using to replace one that was already right.
+ * The contributor id is 16 hex characters the page derives per artist from a
+ * random secret that never leaves the install (web/app/tagshare.js): the same
+ * install always gets the same id for the same artist, so it votes once per
+ * artist and no more (Firestore refuses a second create of one document id),
+ * while its ids for two different artists cannot be linked to each other.
+ * Nothing in it identifies anyone.
+ *
+ * A bare artist id is what pages before the quorum rule sent. It carries no
+ * contributor, so it is never counted as an independent vote: accepting it as
+ * one would let a single writer post one bare and one suffixed document and
+ * reach a quorum of two on their own.
+ *
+ * @returns {{artist: string, contributor: string|null} | null}
+ */
+const CONTRIBUTOR_ID = /^[0-9a-f]{16}$/;
+export function parseDocId(docId) {
+  const s = String(docId ?? '');
+  const cut = s.indexOf('_');
+  const artist = cut < 0 ? s : s.slice(0, cut);
+  if (!SPOTIFY_ID.test(artist)) return null;
+  if (cut < 0) return { artist, contributor: null };
+  const contributor = s.slice(cut + 1);
+  return CONTRIBUTOR_ID.test(contributor) ? { artist, contributor } : null;
+}
+
+/** How many independent contributor ids must name a tag before it is published. */
+export const QUORUM = 2;
+
+/**
+ * The tags at least `quorum` contributors agree on, in the shipped 0-10 shape,
+ * or null when they agree on none. A tag's weight is the lower median of the
+ * weights its supporters gave it, so one writer inflating a real tag cannot
+ * lift it above what the others saw.
+ * @param {[string, number][][]} lists one normalised list per contributor
+ */
+export function agreedTags(lists, quorum = QUORUM) {
+  const votes = new Map();   // tag -> weights, in first-seen order
+  for (const list of lists) for (const [name, w] of list) (votes.get(name) ?? votes.set(name, []).get(name)).push(w);
+  const out = [];
+  for (const [name, ws] of votes) {
+    if (ws.length < quorum) continue;
+    const sorted = [...ws].sort((a, b) => a - b);
+    out.push([name, sorted[Math.floor((sorted.length - 1) / 2)], ws.length]);
+  }
+  if (!out.length) return null;
+  return out.sort((a, b) => (b[2] - a[2]) || (b[1] - a[1])).slice(0, MAX_TAGS).map(([n, w]) => [n, w]);
+}
+
+/**
+ * Fold valid contributions into the existing table, a tag at a time, and only
+ * where at least QUORUM independent contributors agree (BUILD-6 H1).
+ *
+ * Gaps only — an artist already in tags.json is never overwritten, so the
+ * worst an unauthenticated write could ever do was add an artist nobody had.
+ * The quorum narrows that further: one writer, however many tags they send,
+ * cannot put a single one of them into the file everybody downloads. An artist
+ * whose contributors do not agree yet is left pending (neither merged nor
+ * pruned) until another contributor arrives.
  *
  * @param {Record<string, [string, number][]>} existing docs/tags.json, as shipped.
- * @param {{id: string, tags: string}[]} contributions
+ * @param {{id: string, tags: string}[]} contributions `id` is the Firestore document id.
+ * @returns {{merged, added: string[], covered: string[], rejected: {id, why}[],
+ *            pending: {artist: string, contributors: number}[], processed: string[]}}
+ *          `processed` is every document id this run is finished with, so safe to
+ *          prune; a pending artist's documents are not in it.
  */
-export function mergeContributions(existing, contributions) {
+export function mergeContributions(existing, contributions, { quorum = QUORUM } = {}) {
   const merged = { ...existing };
-  const added = [], covered = [], rejected = [];
+  const added = [], covered = [], rejected = [], pending = [], processed = [];
+  const byArtist = new Map();   // artist -> { lists: Map(contributor -> tags), docs: [] }
 
   for (const { id, tags } of contributions) {
-    if (!SPOTIFY_ID.test(id ?? '')) { rejected.push({ id, why: 'not a Spotify artist id' }); continue; }
-    if (merged[id]) { covered.push(id); continue; }
+    const parsed = parseDocId(id);
+    if (!parsed) { rejected.push({ id, why: 'not a Spotify artist id' }); processed.push(id); continue; }
+    const { artist, contributor } = parsed;
+    if (merged[artist]) { if (!covered.includes(artist)) covered.push(artist); processed.push(id); continue; }
+    if (!contributor) { rejected.push({ id, why: 'no contributor id' }); processed.push(id); continue; }
     const clean = normaliseContribution(tags ?? '');
-    if (!clean) { rejected.push({ id, why: 'tags failed validation' }); continue; }
-    merged[id] = clean;
-    added.push(id);
+    if (!clean) { rejected.push({ id, why: 'tags failed validation' }); processed.push(id); continue; }
+    const g = byArtist.get(artist) ?? byArtist.set(artist, { lists: new Map(), docs: [] }).get(artist);
+    g.docs.push(id);
+    // One vote per contributor per artist. Firestore cannot hold two documents
+    // with one id, but a merge that relied on that would be trusting the rules.
+    if (!g.lists.has(contributor)) g.lists.set(contributor, clean);
   }
-  return { merged, added, covered, rejected };
+
+  for (const [artist, { lists, docs }] of byArtist) {
+    const agreed = lists.size >= quorum ? agreedTags([...lists.values()], quorum) : null;
+    if (!agreed) { pending.push({ artist, contributors: lists.size }); continue; }
+    merged[artist] = agreed;
+    added.push(artist);
+    processed.push(...docs);
+  }
+  return { merged, added, covered, rejected, pending, processed };
 }
 
 /* ---------- everything below only runs as a script ---------- */
@@ -199,37 +279,38 @@ async function main() {
   const contributions = await fetchContributions(project, key);
   console.error(`${contributions.length} contribution(s) for ${before} artists already covered`);
 
-  const { merged, added, covered, rejected } = mergeContributions(existing, contributions);
+  const { merged, added, covered, rejected, pending, processed } = mergeContributions(existing, contributions);
+  const waiting = `${pending.length} waiting for a second contributor`;
 
   for (const r of rejected.slice(0, 20)) console.error(`  rejected ${r.id}: ${r.why}`);
   if (rejected.length > 20) console.error(`  …and ${rejected.length - 20} more`);
 
   if (!added.length) {
-    console.error(`nothing new (${covered.length} already covered, ${rejected.length} rejected)`);
+    console.error(`nothing new (${covered.length} already covered, ${rejected.length} rejected, ${waiting})`);
   } else {
     // Sorted, so the diff of a 400KB file is readable and two runs that add
     // the same artists produce the same bytes.
     const sorted = Object.fromEntries(Object.keys(merged).sort().map(k => [k, merged[k]]));
     writeFileSync('docs/tags.json', JSON.stringify(sorted));
     console.error(`docs/tags.json — ${before} → ${Object.keys(sorted).length} artists `
-      + `(+${added.length}, ${covered.length} already covered, ${rejected.length} rejected)`);
+      + `(+${added.length}, ${covered.length} already covered, ${rejected.length} rejected, ${waiting})`);
   }
 
   // Optional, same as everything else here: with no service account this
   // collection just keeps every contribution forever, which is safe (nothing
-  // reads it but this script) but grows unbounded for no benefit. Every
-  // contribution fetched this run has now been accounted for — merged,
-  // already-covered, or permanently rejected — so all of them are safe to
-  // remove regardless of which.
+  // reads it but this script) but grows unbounded for no benefit. What this
+  // run is finished with (merged, already covered, or permanently rejected)
+  // is safe to remove. A pending artist's documents are kept: they are the
+  // first vote the next contributor's is counted against.
   const serviceAccountJSON = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!serviceAccountJSON) {
     console.error('FIREBASE_SERVICE_ACCOUNT not set — leaving processed contributions in Firestore '
       + '(harmless, just an unbounded collection; see README for how to enable pruning)');
-  } else if (contributions.length) {
+  } else if (processed.length) {
     try {
       const account = JSON.parse(serviceAccountJSON);
-      const { deleted, failed } = await pruneContributions(project, account, contributions.map(c => c.id));
-      console.error(`pruned ${deleted}/${contributions.length} processed contribution(s) from Firestore`
+      const { deleted, failed } = await pruneContributions(project, account, processed);
+      console.error(`pruned ${deleted}/${processed.length} processed contribution(s) from Firestore`
         + (failed.length ? ` — ${failed.length} failed and are left for the next run` : ''));
     } catch (e) {
       // Never the reason the merge itself fails — tags.json is already

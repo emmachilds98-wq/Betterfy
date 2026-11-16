@@ -378,7 +378,8 @@ function bridgeProgressText() {
 /** Look up the neighbours of the artists about to be scored, remembering every
  *  answer on this device so the next run only asks about what is new or stale. */
 async function engineBridge(tracks) {
-  const artists = BetterfyBridge.sourceArtists(tracks);
+  // Most-listened first (D9), so a run Deezer's quota cuts short has looked up what you play.
+  const artists = new Map(await inEnrichOrder(BetterfyBridge.sourceArtists(tracks), ([, a]) => a.name));
   let cache = null;
   try { cache = (await idb.get(BRIDGE_KEY))?.raw ?? null; } catch { /* no cache: ask everything */ }
   let last = 0;

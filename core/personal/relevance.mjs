@@ -96,3 +96,50 @@ export function analysisPriority({ profile }, { weights = null, reach = null, tr
   const spread = 1 + Math.min(3, (reach?.get?.(track?.id) ?? 1) - 1) * 0.25;
   return +(uncertainty * played * spread).toFixed(4);
 }
+
+/** What the engine knows about an artist from its tag count, on the confidence scale. */
+const artistConfidence = n => (n <= 0 ? CONFIDENCE.INSUFFICIENT_DATA : n < 3 ? CONFIDENCE.AMBIGUOUS : CONFIDENCE.LIKELY);
+
+/**
+ * The order to spend enrichment requests in (BUILD-6 D9): the tag-gap fill and
+ * the similar-artist lookups, most-listened and least-known artists first, by
+ * analysisPriority, so a run cut short by a closed tab, a quota or a five-minute
+ * attention span has already covered what this listener actually plays.
+ *
+ * `weights` are listening only — Spotify's top artists over three windows and
+ * recently played, by name (listenedWeights below: no library floor). When there
+ * are none (no listening data, or it failed) the entries come back in exactly
+ * the order they went in: byte-identical to not calling this at all.
+ *
+ * No `reach` (spread) term, deliberately, though analysisPriority takes one:
+ * measured on the large non-owner fixture (test/enrichorder.test.mjs), adding
+ * the number of playlists an artist is filed in let widely-filed artists nobody
+ * plays push listened ones out of the first 100 Last.fm requests (96% -> 88%
+ * of the top-100 listened covered). Uncertainty stays: an artist with no tags
+ * at all goes before one with a thin answer, at equal listening.
+ *
+ * @param {Iterable} entries     e.g. [artistId, name] pairs, or [id, {name}] for a bridge Map
+ * @param {object}   o
+ * @param {Map<string, number>} [o.weights]  listening weight by artist name
+ * @param {(id: string) => number} [o.tagCount]  tags the artist already has
+ * @param {(e) => string} [o.idOf]
+ * @param {(e) => string} [o.nameOf]
+ */
+export function enrichOrder(entries, { weights = null, tagCount = () => 0,
+                                       idOf = e => e[0], nameOf = e => e[1] } = {}) {
+  const list = [...(entries ?? [])];
+  if (!weights?.size) return list;
+  const scored = list.map((e, i) => {
+    const id = idOf(e);
+    const p = analysisPriority({ profile: { genre: { confidence: artistConfidence(tagCount(id)) } } },
+                               { weights, track: { id, artists: [{ name: nameOf(e) }] } });
+    return [e, i, p];
+  });
+  return scored.sort((a, b) => (b[2] - a[2]) || (a[1] - b[1])).map(x => x[0]);
+}
+
+/** Listening-only weights from the raw listening fetch ({ topWindows, recentArtists }), or null when there is none. */
+export function listenedWeights(raw) {
+  const w = listeningWeights({ topWindows: raw?.topWindows ?? [], recentArtists: raw?.recentArtists ?? [] });
+  return w.size ? w : null;
+}
