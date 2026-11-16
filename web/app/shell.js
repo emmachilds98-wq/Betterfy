@@ -1,8 +1,8 @@
 /* ---------- the shell: four tabs and the Settings sheet (docs/BUILD-5-PLAN.md §4.1, UI-D) ----------
  * File, Tidy, Discover and Library are the tabs. Everything that used to be a
  * screen of its own and is not one of those lives in the Settings sheet under
- * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs),
- * Engine and History. Their modules (screens/sources|engine|history.mjs) are
+ * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs)
+ * and History. (Engine moved to Library in Wave F.) Their modules are
  * unchanged: this file paints each one's view into the sheet, one section open
  * at a time, and dispatchAct() (screens.js) finds their actions through the
  * [data-uh] wrapper. Anything still asking for the old screens by name is sent
@@ -11,12 +11,11 @@
 /** The sections of "Under the hood", in order, and what each says when closed. */
 const UH_SECTIONS = [
   ['sources', 'Listening and genre sources', () => {
-    let on = false, key = false;
+    let on = false, key = false, own = false;
     try { on = !!audioSettings().on; } catch { /* before the audio glue loads */ }
-    try { key = !!lfmKey(); } catch { /* no key */ }
-    return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? 'connected' : 'no key'} · Wikidata · Discogs`;
+    try { key = !!lfmKey(); own = !!LS.getItem('bf_lfm'); } catch { /* no key */ }
+    return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? (own ? 'on, your key' : 'on, built-in key') : 'off'} · Wikidata on · Deezer on · ListenBrainz on`;
   }],
-  ['engine', 'Engine', () => 'How picks are scored, and how well'],
   ['history', 'History', () => 'Everything Betterfy wrote to Spotify, with undo'],
 ];
 
@@ -91,7 +90,8 @@ function closePlSheet() {
 }
 
 function underHoodHTML() {
-  return UH_SECTIONS.map(([name, title, sub]) => {
+  // Every source and engine part, on or off, at the top: always shown, never folded (app/helpers.js).
+  return (typeof helpersPanelHTML === 'function' ? helpersPanelHTML() : '') + UH_SECTIONS.map(([name, title, sub]) => {
     const open = S.uhOpen === name;
     let body = '';
     if (open) {

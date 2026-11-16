@@ -139,14 +139,14 @@ function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^=
  * Only tracks in exactly one genre playlist with enough heard members are
  * scored, and only playlists with enough heard members are planted into.
  */
-export function misfitAccuracy({ index, membership, opts = MISFIT, limit = 600 } = {}) {
+export function misfitAccuracy({ index, membership, opts = MISFIT, limit = 600, only = null } = {}) {
   if (!index?.size || !membership?.of) return null;
   const heard = heardPerPlaylist(index, membership);
   const judgeable = [...heard].filter(([, n]) => n >= opts.minHeard).map(([p]) => p).sort();
   if (judgeable.length < 2) return null;
   const ids = [...index.keys()].filter(id => {
     const cur = membership.of.get(id);
-    return cur?.length === 1 && (heard.get(cur[0]) ?? 0) >= opts.minHeard;
+    return (!only || only(id)) && cur?.length === 1 && (heard.get(cur[0]) ?? 0) >= opts.minHeard;
   }).sort().slice(0, limit);
   const t = { scored: 0, caught: 0, flagged: 0, falseAlarm: 0, sure: { n: 0, caught: 0, falseAlarm: 0 } };
   for (const tid of ids) {
@@ -179,7 +179,7 @@ export function misfitAccuracy({ index, membership, opts = MISFIT, limit = 600 }
  * worker). `records` may be the engine's `{ records, feedback }`; a track's
  * "not that playlist" verdicts in `feedback` keep it from being offered there.
  */
-export function soundMisfitsFor(lib, records, { targets = null, isMirror = null, measure = true, limit = 600 } = {}) {
+export function soundMisfitsFor(lib, records, { targets = null, isMirror = null, measure = true, limit = 600, opts = MISFIT } = {}) {
   const wrapped = records && !Array.isArray(records) && !(records instanceof Map) && 'records' in records;
   const recs = wrapped ? records.records : records;
   const feedback = wrapped ? records.feedback ?? {} : {};
@@ -187,7 +187,7 @@ export function soundMisfitsFor(lib, records, { targets = null, isMirror = null,
   if (!index.size) return { rows: [], accuracy: null, heard: 0, version: MISFIT_VERSION };
   const membership = genreMembership(lib, { targets, isMirror });
   const skip = (id, to) => (feedback[id]?.rejected ?? []).includes(to);
-  return { rows: soundMisfits({ index, membership, skip }),
-           accuracy: measure ? misfitAccuracy({ index, membership, limit }) : null,
+  return { rows: soundMisfits({ index, membership, skip, opts }),
+           accuracy: measure ? misfitAccuracy({ index, membership, limit, opts }) : null,
            heard: index.size, version: MISFIT_VERSION };
 }

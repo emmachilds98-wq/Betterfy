@@ -35,7 +35,9 @@ by screen in A4.
 | `app/reports.js` | `buildReports()`, mirrors `dupes.mjs` / `misfile.mjs` |
 | `app/ui.js` | page state (`LIB`, `S`, `view`), screen order and names, `toast()` |
 | `app/actionlog.js` | the History log, undo, playlist and library writes |
+| `app/offline.js` | the service worker's registration (`web/sw.js` → `docs/sw.js`, BUILD-6 F6) and the offline decision queue: writes made with no connection are kept and replayed once each when next online |
 | `app/player.js` | Spotify Connect playback bar |
+| `app/preview.js` | Discover's 30-second Deezer previews, by ISRC, played in the page (Wave F) |
 | `screens/home.mjs` | File, the home tab: status line, deck (the `inbox` module) and Up next |
 | `app/listening.js` | the listening indicator (`setListen`), cover thumbnails |
 | `app/soundslots.js` | sound chips/strips on the File and Discover cards, sound-first picks |
@@ -44,6 +46,7 @@ by screen in A4.
 | `screens/new.js` | gaps, `vNew` |
 | `screens/shuffle.js` | spacing shuffle, DJ order, `vShuffle` |
 | `screens/discover.js` | discovery, keyless and by-sound Discover, `vDiscover` |
+| `app/radar.js` | Release Radar's in-app sync (core/release via the lazy engine bundle, through `sp()` and IndexedDB), dismiss and File; its section of Discover is `screens/radar.mjs`, imported by `screens/discover.mjs` |
 | `screens/history.mjs` | History: screen module (see below) |
 | `screens/lists.js` | playlist mixes and sound profiles, "two genres?", `vLists` |
 | `screens/sources.mjs` | Sources: screen module (`tagCoverage()` lives in `lists.js`) |
@@ -62,6 +65,7 @@ by screen in A4.
 | `app/audio.js` | listening glue: lazy `audio.js`, settings, mood/voice/energy |
 | `app/soundfirst.js` | sound-first filing, sound ID and matches |
 | `app/blend.js` | File's picks from tags blended with the engine and similar artists, once the Score run says so; the engine's per-account fitted weights (`engine-weights`, `withFittedWeights`) |
+| `app/teach.js` | File's teach questions (BUILD-6 SG): `teachHTML`, `teachStart`, one-tap answers through `fileCurrent`; shown only where the Score run's `teachGate` passed (`bf_teach`) |
 | `app/clap.js` | CLAP cluster names and "sounds like" search |
 | `app/audio-panel.js` | the Listening and Deep listen panels |
 | `screens/engine.mjs` | Engine: screen module, its score/bridge/calibration cards and summary (its jobs are in `app/engine.js`) |

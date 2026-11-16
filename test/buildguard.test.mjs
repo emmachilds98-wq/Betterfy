@@ -224,12 +224,25 @@ test('LASTFM_PUBLIC_KEY is baked into the page as the default Last.fm key', t =>
   assert.match(readFileSync(join(dir, 'docs', 'index.html'), 'utf8'), new RegExp(`DEFAULT_LFM_KEY = '${PUB}'`));
 });
 
-test('without LASTFM_PUBLIC_KEY the default is empty', t => {
+test('without LASTFM_PUBLIC_KEY, or one already built in, the default is empty', t => {
   const dir = sandbox({ env: `SPOTIFY_CLIENT_ID=${CLIENT_ID}\n` });
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // The shipped page carries the owner's public key; take it out to test a fresh build.
+  const page = join(dir, 'docs', 'index.html');
+  writeFileSync(page, readFileSync(page, 'utf8').replace(/DEFAULT_LFM_KEY = '[^']*'/, "DEFAULT_LFM_KEY = ''"));
   const { ok, out } = build(dir);
   assert.ok(ok, out);
   assert.match(readFileSync(join(dir, 'docs', 'index.html'), 'utf8'), /DEFAULT_LFM_KEY = ''/);
+});
+
+test('a key already built into the page is kept by a rebuild without one', t => {
+  const dir = sandbox({ env: `SPOTIFY_CLIENT_ID=${CLIENT_ID}\n` });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const page = join(dir, 'docs', 'index.html');
+  writeFileSync(page, readFileSync(page, 'utf8').replace(/DEFAULT_LFM_KEY = '[^']*'/, `DEFAULT_LFM_KEY = '${'a'.repeat(32)}'`));
+  const { ok, out } = build(dir);
+  assert.ok(ok, out);
+  assert.match(readFileSync(page, 'utf8'), new RegExp(`DEFAULT_LFM_KEY = '${'a'.repeat(32)}'`));
 });
 
 test('the same key as LASTFM_API_KEY is not a leak, but the shared secret still is', t => {

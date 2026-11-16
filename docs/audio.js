@@ -337,6 +337,11 @@ const SCOPES = Object.freeze({
   all: 'My whole library',
 });
 
+// A saved "off" counts only when the listener switched it off themselves
+// (`offChosen`, written with it from 2026-11-16). An older build saved `on:
+// false` whenever any listening setting changed, back when off was the default,
+// so those saves read as the default (on) now. The owner's call, 2026-11-16:
+// "it should listen by default".
 const DEFAULT_AUDIO_SETTINGS = Object.freeze({ on: true, wifiOnly: true, scope: 'playing+unfiled' });
 
 /** Settings from a localStorage-like store, each field checked; anything odd falls back to its default. */
@@ -346,7 +351,7 @@ function readAudioSettings(ls) {
   const d = DEFAULT_AUDIO_SETTINGS;
   if (!raw || typeof raw !== 'object') return { ...d };
   return {
-    on: typeof raw.on === 'boolean' ? raw.on : d.on,
+    on: raw.on === true ? true : raw.on === false && raw.offChosen === true ? false : d.on,
     wifiOnly: typeof raw.wifiOnly === 'boolean' ? raw.wifiOnly : d.wifiOnly,
     scope: Object.hasOwn(SCOPES, raw.scope) ? raw.scope : d.scope,
   };
@@ -355,8 +360,10 @@ function readAudioSettings(ls) {
 /** Merge a change in and save it. Returns the saved settings. */
 function writeAudioSettings(ls, change) {
   const next = { ...readAudioSettings(ls), ...change };
-  const clean = readAudioSettings({ getItem: () => JSON.stringify(next) });
-  try { ls?.setItem?.(AUDIO_SETTINGS_KEY, JSON.stringify(clean)); } catch { /* memory only */ }
+  // A write that leaves it off is the listener's own choice: it came from the switch, or kept one.
+  const clean = readAudioSettings({ getItem: () => JSON.stringify(next.on === false ? { ...next, offChosen: true } : next) });
+  const stored = clean.on === false ? { ...clean, offChosen: true } : clean;
+  try { ls?.setItem?.(AUDIO_SETTINGS_KEY, JSON.stringify(stored)); } catch { /* memory only */ }
   return clean;
 }
 
@@ -1305,7 +1312,7 @@ const { melFrames, SAMPLE_RATE, HOP_SIZE, N_BANDS } = __mod["core/audio/mel.mjs"
 
 
 
-const TEMPO_VERSION = '1.0.0';
+const TEMPO_VERSION = '1.1.0';
 
 /** Envelope frame rate: one log-mel frame per hop. */
 const FPS = SAMPLE_RATE / HOP_SIZE; // 62.5
@@ -1357,7 +1364,8 @@ function tempo(samples, { sampleRate = SAMPLE_RATE, min = 60, max = 200 } = {}) 
 function tempoFromMel(mel, { min = 60, max = 200 } = {}) {
   checkRange(min, max);
   if (!mel || mel.frames < MIN_SECONDS * FPS) return none();
-  const acf = autocorrelation(onsetEnvelopes(mel), Math.min(Math.round(MAX_LAG_S * FPS), Math.floor(mel.frames / 2)));
+  const envs = onsetEnvelopes(mel), lagCap = Math.min(Math.round(MAX_LAG_S * FPS), Math.floor(mel.frames / 2));
+  const acf = autocorrelation(envs, lagCap);
   if (!acf) return none();
 
   const at = lag => interp(acf, lag);
@@ -1466,8 +1474,36 @@ function tempoFromMel(mel, { min = 60, max = 200 } = {}) {
     confidence: round(conf, 3),
     alternates: alternates.map(c => ({ bpm: round(c.bpm, 1), score: round(c.score / best.score, 3) })),
     octaveAmbiguous,
+    pulse: round(pulseAt(envs, lagCap, best.bpm), 3),
     version: TEMPO_VERSION,
   };
+}
+
+/**
+ * Per-band-group onset autocorrelations (each normalised to 1 at lag 0), for
+ * measurement scripts that study the octave decision. Lag in mel frames (FPS).
+ * @returns {Float64Array[]|null} kick, body, snare, hats
+ */
+function bandAutocorrelations(mel, maxLagS = MAX_LAG_S) {
+  if (!mel || mel.frames < MIN_SECONDS * FPS) return null;
+  const envs = onsetEnvelopes(mel);
+  const maxLag = Math.min(Math.round(maxLagS * FPS), Math.floor(mel.frames / 2));
+  return envs.map(e => autocorrelation([e], maxLag));
+}
+
+/**
+ * How steady a dance pulse sits on `bpm`: the mean of each band group's own
+ * onset autocorrelation at the beat period P (kick, body, snare, hats) and of
+ * snare and hats at P/2 (the off-beats a half-time reading would hide).
+ * Around 0.5 for a four-on-the-floor track read at half time, around 0.25 for
+ * a ballad or swung jazz at its real slow tempo; combine.mjs gates SLOW_FOLD
+ * on it (PULSE_FOLD). Bands with no onset activity count 0.
+ */
+function pulseAt(envs, maxLag, bpm) {
+  const P = 60 * FPS / bpm;
+  const lin = (a, lag) => { const i = Math.floor(lag), f = lag - i; return a && i + 1 < a.length ? a[i] * (1 - f) + a[i + 1] * f : 0; };
+  const a = envs.map(e => autocorrelation([e], maxLag));
+  return (lin(a[0], P) + lin(a[1], P) + lin(a[2], P) + lin(a[3], P) + lin(a[2], P / 2) + lin(a[3], P / 2)) / 6;
 }
 
 function checkRange(min, max) {
@@ -1567,7 +1603,7 @@ function resample(x, from, to) {
   }
   return out;
 }
-return { TEMPO_VERSION, FPS, OCTAVE_AMBIGUOUS, tempo, tempoFromMel };
+return { TEMPO_VERSION, FPS, OCTAVE_AMBIGUOUS, tempo, tempoFromMel, bandAutocorrelations };
 })();
 /* ---- core/audio/dsp/key.mjs ---- */
 __mod["core/audio/dsp/key.mjs"] = (function () {
@@ -1830,7 +1866,7 @@ function magnitudeSpectrum(re, im, n, { rev, cos, sin }, mag) {
  * Exported for tests and the comparison script; key() is the public entry.
  * @returns {{ chroma: Float64Array, tuningCents: number, seconds: number, tonalWeight: number, gridness: number, frames: number }}
  */
-function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
+function chromagram(samples, { sampleRate = SAMPLE_RATE, fMin = F_MIN, fMax = F_MAX, keepPeaks = false } = {}) {
   // One signal, or several parts (a record's preview windows) pooled into one chroma.
   const parts = Array.isArray(samples) && samples.length && typeof samples[0] !== 'number' ? samples.filter(p => p?.length) : [samples];
   const N = 2 ** Math.round(Math.log2(sampleRate * FRAME_SECONDS));
@@ -1843,14 +1879,14 @@ function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
 
   const tables = fftTables(N);
   const binHz = sampleRate / N;
-  const kMin = Math.max(2, Math.ceil(F_MIN / binHz));
-  const kMax = Math.min(N / 2 - 2, Math.floor(Math.min(F_MAX, sampleRate / 2 * 0.95) / binHz));
+  const kMin = Math.max(2, Math.ceil(fMin / binHz));
+  const kMax = Math.min(N / 2 - 2, Math.floor(Math.min(fMax, sampleRate / 2 * 0.95) / binHz));
   const halfW = Math.max(4, Math.round(FLOOR_HALF_WIDTH_HZ / binHz));
   const re = new Float64Array(N), im = new Float64Array(N), mag = new Float64Array(N / 2 + 1);
   const prefix = new Float64Array(N / 2 + 2);
 
   // Pass 1: peaks (semitones above A4, weight) from every non-silent frame.
-  const semis = [], weights = [];
+  const semis = [], weights = [], peakFrames = [];
   let frameCount = 0;
   for (const samples of parts) {
   const n = samples.length;
@@ -1885,6 +1921,7 @@ function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
       if (!(w > 0)) continue;
       semis.push(12 * Math.log2(hz / A4));
       weights.push(w);
+      if (keepPeaks) peakFrames.push(frameCount - frames + f);
     }
   }
   }
@@ -1914,7 +1951,11 @@ function chromagram(samples, { sampleRate = SAMPLE_RATE } = {}) {
     chroma[(((note + 9) % 12) + 12) % 12] += w;   // A = 9
     tonalWeight += w;
   }
-  return { chroma, tuningCents: Math.round(tuning * 1000) / 10, seconds, tonalWeight, gridness, frames };
+  const out = { chroma, tuningCents: Math.round(tuning * 1000) / 10, seconds, tonalWeight, gridness, frames };
+  // keepPeaks (measurement scripts): every peak as semitones above A4 after
+  // tuning, its weight and its frame, before the off-grid drop and folding.
+  if (keepPeaks) out.peaks = { semis: Float64Array.from(semis, x => x - tuning), weights: Float64Array.from(weights), frames: Int32Array.from(peakFrames) };
+  return out;
 }
 
 // ---------- profile matching ----------
@@ -2318,10 +2359,26 @@ const { loudness: loudnessOf, LOUDNESS_VERSION } = __mod["core/audio/dsp/loudnes
 
 
 
-const COMBINE_VERSION = '1.0.0';
+const COMBINE_VERSION = '1.1.0';
 /** Stored as `dsp.v`; a record whose dsp.v differs is re-measured lazily, never invalidated. */
 const DSP_VERSION = `${COMBINE_VERSION}+t${TEMPO_VERSION}+k${KEY_VERSION}+l${LOUDNESS_VERSION}`;
 
+/**
+ * A combined tempo under this many BPM is read at double time (×2, while that
+ * stays ≤ 200) — but only when the windows hear a steady dance pulse there
+ * (tempo.mjs `pulse` ≥ PULSE_FOLD). The D1 search spans 60–200 with a prior
+ * at 120, and its most common octave error on dance music is a 124–145 track
+ * heard at half time (64 for house, 70 for dubstep). Ungated, the fold took
+ * Beatport half B from 80.9% to 88.9% within ±1 BPM but broke genuinely slow
+ * music: GTZAN 61.5% → 59.0% (fixed 4, broke 29; blues, country, jazz, pop).
+ * The gate keeps the fold off ballads, swung jazz and slow soul, whose pulse
+ * measures ~0.25 against ~0.5 for a four-on-the-floor track at half time.
+ * Both numbers were picked on Beatport half A + GTZAN odd-numbered clips; the
+ * held-out results are in docs/BUILD-5-PROGRESS.md (2026-11-16, second try).
+ * Only slow readings ever move: a DnB 174 stays 174.
+ */
+const SLOW_FOLD = 74;
+const PULSE_FOLD = 0.38;
 /** Two windows within this many BPM agree. */
 const BPM_AGREE = 1;
 /** How far a ratio may sit from exactly 2 (in BPM at the slower tempo) and still count as half/double time. */
@@ -2347,16 +2404,23 @@ function octaveApart(a, b) {
  * @param {Array<{ bpm: number|null, confidence: number, alternates?: {bpm:number,score:number}[], octaveAmbiguous?: boolean }>} ws
  * @returns {{ bpm: number, bpmConf: number, octaveAmbiguous: boolean, bpmAlt?: number, agree: boolean|null } | null}
  */
-function combineTempo(ws) {
+function combineTempo(ws, { slowFold = SLOW_FOLD, pulseFold = PULSE_FOLD } = {}) {
   const good = (ws ?? []).filter(w => w && ok(w.bpm) && w.bpm > 0 && ok(w.confidence));
   if (!good.length) return null;
   const partnerOf = w => {
     const p = (w.alternates ?? []).find(a => ok(a?.bpm) && octaveApart(w.bpm, a.bpm));
     return p ? p.bpm : null;
   };
+  // The pulse of the windows that heard this tempo (within 3%); none measured counts as no pulse.
+  const pulseOf = bpm => {
+    const ps = good.filter(w => Math.abs(w.bpm - bpm) / bpm <= 0.03 && ok(w.pulse)).map(w => w.pulse);
+    return ps.length ? ps.reduce((x, y) => x + y, 0) / ps.length : -Infinity;
+  };
   const finish = (w, bpm, conf, octave, alt, agree) => {
+    let a = octave ? alt ?? partnerOf(w) : null;
+    if (bpm < slowFold && bpm * 2 <= 200 && pulseOf(bpm) >= pulseFold) { a = octave ? bpm : null; bpm *= 2; }
     const out = { bpm: r1(bpm), bpmConf: r3(Math.max(0, Math.min(1, conf))), octaveAmbiguous: !!octave, agree };
-    if (octave) { const a = alt ?? partnerOf(w); if (ok(a)) out.bpmAlt = r1(a); }
+    if (octave && ok(a)) out.bpmAlt = r1(a);
     return out;
   };
   if (good.length === 1) { const w = good[0]; return finish(w, w.bpm, w.confidence, w.octaveAmbiguous, null, null); }
@@ -2434,7 +2498,7 @@ function measureWindows(windows, est = {}) {
 function needsDsp(rec) {
   return !!rec && !rec.miss && (!rec.dsp || rec.dsp.v !== DSP_VERSION);
 }
-return { COMBINE_VERSION, DSP_VERSION, BPM_AGREE, DISAGREE_PENALTY, OCTAVE_PENALTY, combineTempo, combineKey, combineLoudness, measureWindows, needsDsp };
+return { COMBINE_VERSION, DSP_VERSION, SLOW_FOLD, PULSE_FOLD, BPM_AGREE, DISAGREE_PENALTY, OCTAVE_PENALTY, combineTempo, combineKey, combineLoudness, measureWindows, needsDsp };
 })();
 /* ---- core/audio/dsp/beat-mel.mjs ---- */
 __mod["core/audio/dsp/beat-mel.mjs"] = (function () {
@@ -2885,7 +2949,7 @@ const { withBeats, needsBeatsFlagged, BEATS_FILL_PER_RUN } = __mod["core/audio/d
 // flag is on.
 //
 // CLAP (WP-C2), only with deps.loadClap AND deps.clapOn() saying yes (the
-// "Deep listen" switch, off by default, Wi-Fi only): its encoder is loaded on
+// "Deep listen" switch, on by default, Wi-Fi only): its encoder is loaded on
 // the first such run, new records get their `clap` field in the same pass,
 // and records heard before are topped up after DSP, the same lazy way.
 // Without loadClap, or with clapOn() false, nothing here differs from before.
@@ -5204,12 +5268,13 @@ const { connectionVerdict } = __mod["web/audio/settings.mjs"];
 // CLAP (WP-C2), each a large extra download on top of "Listen to my music".
 //
 // One settings object for both so the page has one block and one writer:
-// localStorage `bf_audio_deep` = { maest, clap, memoryOverride }, all off by
-// default. Nothing here downloads anything; it only answers "may this ear
+// localStorage `bf_audio_deep` = { maest, clap, memoryOverride }. Both ears are
+// on by default (owner's call, 2026-11-16); the Wi-Fi and memory rules below
+// still decide whether they may download. Nothing here downloads anything; it only answers "may this ear
 // download and run right now?".
 //
 // The rules (docs/AUDIO-BUILD-PLAN.md, Option C):
-//  - each ear only on its own explicit switch;
+//  - each ear has its own switch, on unless the listener unticks it;
 //  - Wi-Fi only, always: unlike listening there is no "Wi-Fi only" switch to
 //    turn off, because the models are ~90 MB (MAEST) and ~71 MB (CLAP);
 //  - MAEST also needs navigator.deviceMemory >= 8, or the listener saying
@@ -5222,7 +5287,7 @@ const { connectionVerdict } = __mod["web/audio/settings.mjs"];
 
 
 const DEEP_SETTINGS_KEY = 'bf_audio_deep';
-const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: false, clap: false, beats: false, memoryOverride: false });
+const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: true, clap: true, beats: false, memoryOverride: false });
 const DEEP_EARS = Object.freeze(['maest', 'clap', 'beats']);
 /** GB of device memory MAEST needs (navigator.deviceMemory's top value). */
 const MAEST_MIN_MEMORY_GB = 8;
@@ -5811,10 +5876,316 @@ async function fillMaest(deps, record, track = {}) {
 }
 return { MAEST_VERSION, MAEST_FILE, MAEST_LABELS_FILE, MAEST_PATCH_FRAMES, MAEST_PATCH_HOP, MAEST_MIN_FRAMES, MAEST_MEAN, MAEST_STD, INPUT_NAME, ACT_OUTPUT, EMB_OUTPUT, maestPatches, createMaestEar, pickMaestOutputs, hearMaest, needsMaest, fillMaest };
 })();
+/* ---- core/intrinsic/audio.mjs ---- */
+__mod["core/intrinsic/audio.mjs"] = (function () {
+const { validRecord, isCurrent, unpackEmbedding, earCurrent, EMB_DIM, MAEST_DIM } = __mod["core/audio/record.mjs"];
+// What a track sounds like, against what each of this account's playlists
+// sounds like.
+//
+// WP-E1 of docs/AUDIO-BUILD-PLAN.md. Records come from the audio worker in the
+// frozen shape of `core/audio/record.mjs`; this module turns them into one more
+// nullable component for the intrinsic space, shaped like
+// `bonus-rekordbox.mjs`: an index, a per-destination profile, and a score that
+// is `null` — never 0 — whenever it cannot be judged.
+//
+// The rule it inherits from that module (and CLAUDE.md): with no audio records
+// the engine's output is byte-identical. Nothing here touches a space; it only
+// reads one. `combine()` drops null components and renormalises, so an account
+// with no analysed tracks pays nothing. `test/audiocomponent.test.mjs` asserts
+// it.
+//
+// Geometry, matching what phase 0 measured (scripts/audio-phase0/score.py §2,
+// 58% top-1 / 76% top-2 by nearest centroid): every embedding is unit-normalised
+// first, a playlist's centroid is the mean of its analysed members' unit
+// embeddings renormalised, and a track scores the plain cosine to it. The score
+// is a raw cosine in [-1, 1], not rescaled: how much weight it earns, and how
+// sharply to read it, is WP-E2's measured decision and calibrate.mjs's fit, not
+// a prior baked in here.
+//
+// Deliberately no import from `space.mjs`. WP-E2 wires this module into
+// space.mjs, and `bundler.mjs` refuses an import cycle (there is no order to
+// emit one in), so importing `MIN_DEFINITION_TRACKS` from there would make the
+// wiring unbuildable. The value is restated as `MIN_AUDIO_MEMBERS` and a test
+// pins the two equal, so they cannot drift apart silently.
+
+
+// 1.1.0 (WP-C1): `audioIndex(records, { ear })` can read the second ear.
+// Without `ear` it is exactly 1.0.0.
+// 1.2.0: `near` on the audio layer mixes in the nearest members (nearMix).
+// Without it every score is exactly 1.1.0's.
+const AUDIO_COMPONENT_VERSION = '1.2.0';
+
+/**
+ * Which ear an index hears with (WP-C1). 'effnet' is the first ear and the
+ * default. 'maest' is the second ear's embedding alone. 'both' joins the two
+ * unit embeddings (each half weighted equally, then renormalised), so a
+ * cosine on it is the mean of the two ears' cosines. An index never mixes
+ * spaces: a 'maest' or 'both' index holds only tracks that have a current
+ * `maest` field.
+ */
+const EARS = Object.freeze(['effnet', 'maest', 'both']);
+const EAR_DIM = { effnet: EMB_DIM, maest: MAEST_DIM, both: EMB_DIM + MAEST_DIM };
+
+/**
+ * A playlist needs this many *analysed* members before its sound is a
+ * definition rather than a coincidence. Equal to space.mjs's
+ * `MIN_DEFINITION_TRACKS` (pinned by test), and for the same reason: below it
+ * a centroid is one or two records wearing a playlist's name.
+ */
+const MIN_AUDIO_MEMBERS = 5;
+
+const idOf = t => (typeof t === 'string' ? t : t?.id) || null;
+
+/** Unit-normalise into a new Float32Array, or null for a zero/non-finite vector. */
+function unit(v) {
+  let ss = 0;
+  for (let i = 0; i < v.length; i++) ss += v[i] * v[i];
+  if (!(ss > 0) || !Number.isFinite(ss)) return null;
+  const inv = 1 / Math.sqrt(ss);
+  const out = new Float32Array(v.length);
+  for (let i = 0; i < v.length; i++) out[i] = v[i] * inv;
+  return out;
+}
+
+function dot(a, b) {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += a[i] * b[i];
+  return d;
+}
+
+/** Records may arrive as an array, any iterable, a Map, or a plain id → record object. */
+function recordsOf(records) {
+  if (!records || typeof records !== 'object') return [];
+  if (records instanceof Map) return records.values();
+  if (typeof records[Symbol.iterator] === 'function') return records;
+  return Object.values(records);
+}
+
+/**
+ * Spotify id → `{ emb, styles, rec }` for every usable analysed record.
+ *
+ * Usable means: passes `validRecord` (the shape check for anything read back
+ * from storage), is not a miss, is from the current model (`isCurrent` — an
+ * embedding from another backbone lives in a different space and must never
+ * share a centroid with this one), and has a non-zero embedding. `emb` is
+ * unit-normalised. Never throws: junk, misses and stale records are simply
+ * not in the index, which is the ordinary case.
+ *
+ * Two records for one id: the newer (`at`) wins.
+ *
+ * @param {Iterable<object>|Record<string, object>|null} records
+ * @param {{ mel?: string, ear?: 'effnet'|'maest'|'both' }} [opts]  `mel`: pass the
+ *        page's MEL_VERSION to also drop records computed with another front
+ *        end. `ear`: see EARS; default 'effnet'.
+ * @returns {Map<string, { emb: Float32Array, styles: Array<[number, number]>, rec: object }>}
+ */
+function audioIndex(records, { mel = undefined, ear = 'effnet' } = {}) {
+  if (!EARS.includes(ear)) throw new Error(`unknown ear: ${ear}`);
+  const index = new Map();
+  for (const rec of recordsOf(records)) {
+    if (!validRecord(rec) || rec.miss) continue;
+    if (!isCurrent(rec, { mel })) continue;
+    if (ear !== 'effnet' && !earCurrent(rec, 'maest')) continue;
+    const prev = index.get(rec.id);
+    if (prev && !((rec.at ?? 0) > (prev.rec.at ?? 0))) continue;
+    let emb;
+    try { emb = embeddingOf(rec, ear); } catch { emb = null; }
+    if (!emb || emb.length !== EAR_DIM[ear]) continue;
+    index.set(rec.id, { emb, styles: ear === 'maest' ? rec.maest.styles : rec.styles, rec });
+  }
+  return index;
+}
+
+/** One record's unit embedding as `ear` hears it, or null. */
+function embeddingOf(rec, ear) {
+  if (ear === 'effnet') return unit(unpackEmbedding(rec.emb));
+  const m = unit(unpackEmbedding(rec.maest.emb));
+  if (ear === 'maest') return m;
+  const e = unit(unpackEmbedding(rec.emb));
+  if (!e || !m) return null;
+  const both = new Float32Array(e.length + m.length);
+  both.set(e, 0); both.set(m, e.length);
+  return unit(both);
+}
+
+/**
+ * A playlist's sound: the mean of its analysed members' unit embeddings,
+ * renormalised. `members` counts distinct analysed tracks (a track filed twice
+ * is one sound, not two votes toward the definition threshold).
+ *
+ * Also carries what leave-one-out needs to be O(dimensions) instead of a
+ * rebuild: `sum` (the un-normalised sum of member unit embeddings) and `ids`
+ * (which tracks are in it). See `profileWithout`.
+ *
+ * @param {Iterable<string|{id:string}>} playlistTrackIds  ids or track objects
+ * @param {Map} index  from `audioIndex`
+ * @param {{ skip?: Set<string> }} [opts]  ids to treat as not filed (fold-level leave-out)
+ * @returns {{ centroid: Float32Array|null, members: number, sum: Float64Array, ids: Set<string> } | null}
+ *          null when no member is analysed. `centroid` is null only in the
+ *          degenerate case of members cancelling to a zero vector.
+ */
+function audioProfileOf(playlistTrackIds, index, { skip = null } = {}) {
+  if (!index?.size || !playlistTrackIds) return null;
+  const ids = new Set();
+  let sum = null;
+  for (const t of playlistTrackIds) {
+    const id = idOf(t);
+    if (!id || ids.has(id) || skip?.has(id)) continue;
+    const row = index.get(id);
+    if (!row) continue;
+    ids.add(id);
+    sum ??= new Float64Array(row.emb.length);
+    for (let i = 0; i < sum.length; i++) sum[i] += row.emb[i];
+  }
+  if (!ids.size) return null;
+  return { centroid: unit(sum), members: ids.size, sum, ids };
+}
+
+/**
+ * Leave-one-out: the same profile with one member taken out, as if it had
+ * never been filed there. Returns the profile unchanged when the track is not
+ * one of its analysed members, and null when removing it leaves nothing.
+ *
+ * Why it exists: scoring a filed track against a centroid that contains the
+ * track itself flatters every accuracy number (the track votes for its own
+ * home). WP-E2's with/without harness and WP-L1's learning curves need the
+ * honest version per track, and rebuilding every profile per track is
+ * needlessly slow. The result equals `audioProfileOf` over the remaining
+ * members up to float rounding (tested to 1e-6).
+ */
+function profileWithout(profile, trackId, index) {
+  const id = idOf(trackId);
+  if (!profile || !id || !profile.ids?.has(id)) return profile ?? null;
+  const row = index?.get(id);
+  if (!row || profile.members <= 1) return null;
+  const sum = Float64Array.from(profile.sum);
+  for (let i = 0; i < sum.length; i++) sum[i] -= row.emb[i];
+  const ids = new Set(profile.ids);
+  ids.delete(id);
+  return { centroid: unit(sum), members: ids.size, sum, ids };
+}
+
+/** A destination-like thing → its member ids. Space destinations carry `trackIds`. */
+function memberIdsOf(d) {
+  if (d?.trackIds) return d.trackIds;
+  if (Array.isArray(d?.tracks)) return d.tracks;
+  return null;
+}
+
+/**
+ * Every destination's sound profile, worked out once — the audio half of a
+ * space. WP-E2 attaches the result as `space.audio`; this module never edits
+ * the space it reads.
+ *
+ * `destinations` may be a whole space (its `.destinations` Map is used), that
+ * Map itself, or an array of playlists `{ id, tracks }`. Using the space's own
+ * destinations is the intended path: they are already filtered for mirrors,
+ * `targets` and `skip`, so audio judges exactly the buckets the rest of the
+ * engine does. `skip` is honoured again here for the raw-playlist path.
+ *
+ * Profiles below `minMembers` are kept (a UI can say "3 of 12 analysed") but
+ * score null in `audioScores`.
+ *
+ * @returns {{ index: Map, profiles: Map<string, object>, size: number, version: string, minMembers: number }}
+ *          `size` counts destinations with enough analysed members to judge.
+ */
+function buildAudioProfiles(destinations, index, { skip = null, minMembers = MIN_AUDIO_MEMBERS, near = null } = {}) {
+  const profiles = new Map();
+  let size = 0;
+  if (index?.size) {
+    const src = destinations?.destinations ?? destinations;
+    const list = src instanceof Map ? src.values() : (src ?? []);
+    for (const d of list) {
+      if (!d?.id) continue;
+      const prof = audioProfileOf(memberIdsOf(d) ?? [], index, { skip });
+      if (!prof) continue;
+      profiles.set(d.id, prof);
+      if (prof.members >= minMembers && prof.centroid) size++;
+    }
+  }
+  return { index: index ?? new Map(), profiles, size, version: AUDIO_COMPONENT_VERSION, minMembers,
+           ...(near && near.mix > 0 ? { near: { k: near.k, mix: near.mix } } : {}) };
+}
+
+/**
+ * Nearest members (docs/review/ENGINE-REVIEW.md layer 1): a playlist that holds
+ * two or three sounds has an average that sits between them, so a track can be
+ * close to half its members and far from the centroid. With `near` the score
+ * mixes the centroid cosine with the mean cosine to the `k` closest members:
+ * `(1 - mix) * centroid + mix * mean(top k)`. Without `near` (or `mix` 0, or no
+ * members to compare) it is the centroid cosine unchanged.
+ *
+ * @param {number} centroid   cosine to the playlist's centroid
+ * @param {number[]} sims     cosines to the playlist's other heard members
+ * @param {{k: number, mix: number}|null} near
+ */
+function nearMix(centroid, sims, near) {
+  if (!near || !(near.mix > 0) || !sims?.length) return centroid;
+  const k = Math.max(1, Math.min(near.k | 0 || 1, sims.length));
+  const top = [...sims].sort((a, b) => b - a).slice(0, k);
+  const mean = top.reduce((a, b) => a + b, 0) / top.length;
+  return (1 - near.mix) * centroid + near.mix * mean;
+}
+
+/** The nearest-members setting the Score arm measures and the page uses once Score picks it. */
+const NEAR_DEFAULT = Object.freeze({ k: 5, mix: 0.3 });
+
+/**
+ * Sound scores for one track: destination id → cosine to that destination's
+ * centroid, or null for a destination with fewer than `minMembers` analysed
+ * members (null, never 0: "can't judge" is not "sounds wrong").
+ *
+ * Returns null outright — as `bridgeScores` does — when the space has no audio
+ * or the track has not been heard, so the caller adds nothing to `parts` and
+ * the placement is byte-identical to one without this module.
+ *
+ * `space` is a space carrying `.audio` (from `buildAudioProfiles`), or that
+ * audio object itself.
+ *
+ * `leaveOneOut: true` scores a track against each playlist it is itself an
+ * analysed member of with itself removed (`profileWithout`), and re-applies
+ * the `minMembers` floor to what remains. Off by default to match the other
+ * components, which only leave a track out when the space was built with
+ * `skip`; turn it on when grading the engine against tracks already filed
+ * without rebuilding profiles per fold.
+ *
+ * @returns {Map<string, number|null> | null}
+ */
+function audioScores(track, space, { leaveOneOut = false, minMembers = null } = {}) {
+  const audio = space?.audio ?? (space?.profiles instanceof Map ? space : null);
+  if (!audio?.index?.size || !audio.profiles?.size) return null;
+  const id = idOf(track);
+  const row = id ? audio.index.get(id) : null;
+  if (!row) return null;
+  const floor = minMembers ?? audio.minMembers ?? MIN_AUDIO_MEMBERS;
+
+  const near = audio.near ?? null;
+  // Nearest members: each other heard member's cosine, worked out once per
+  // track (one dot per heard track), never the track's own.
+  const simOf = near ? new Map() : null;
+  const sim = mid => {
+    if (!simOf.has(mid)) { const r = audio.index.get(mid); simOf.set(mid, r ? dot(row.emb, r.emb) : null); }
+    return simOf.get(mid);
+  };
+  const out = new Map();
+  for (const [destId, base] of audio.profiles) {
+    const prof = leaveOneOut ? profileWithout(base, id, audio.index) : base;
+    if (!(prof?.centroid && prof.members >= floor)) { out.set(destId, null); continue; }
+    const c = dot(row.emb, prof.centroid);
+    if (!near) { out.set(destId, +c.toFixed(6)); continue; }
+    const sims = [];
+    for (const mid of prof.ids) if (mid !== id) { const v = sim(mid); if (v != null) sims.push(v); }
+    out.set(destId, +nearMix(c, sims, near).toFixed(6));
+  }
+  return out;
+}
+return { AUDIO_COMPONENT_VERSION, EARS, MIN_AUDIO_MEMBERS, audioIndex, audioProfileOf, profileWithout, buildAudioProfiles, nearMix, NEAR_DEFAULT, audioScores };
+})();
 /* ---- web/audio/maest-run.mjs ---- */
 __mod["web/audio/maest-run.mjs"] = (function () {
 const { fillMaest, needsMaest } = __mod["core/audio/maest.mjs"];
 const { earCurrent, withEar } = __mod["core/audio/record.mjs"];
+const { NEAR_DEFAULT } = __mod["core/intrinsic/audio.mjs"];
 // The laptop "second ear" run (WP-C1): give heard tracks a MAEST answer.
 //
 // It never hears a new track by itself. It walks the records "Listen to my
@@ -5832,6 +6203,7 @@ const { earCurrent, withEar } = __mod["core/audio/record.mjs"];
 // Inference sits in its own Worker (docs/maest-worker.js) so the ~90 MB model
 // can be dropped with `release()` when the run is done, without touching the
 // first ear's worker.
+
 
 
 
@@ -5991,8 +6363,31 @@ function chosenEar(choice, records) {
 
 /** Records the Score run should also score with the second ear: only when some have one. */
 function scoreArms(records) {
-  for (const r of records?.values?.() ?? records ?? []) if (earCurrent(r, 'maest')) return ['maest', 'both'];
-  return null;
+  let any = false;
+  for (const r of records?.values?.() ?? records ?? []) {
+    if (earCurrent(r, 'maest')) return ['maest', 'both', 'near'];
+    any = true;
+  }
+  // 'near' (ENGINE-REVIEW layer 1): the first ear scored against each
+  // playlist's nearest heard tracks too. gate.mjs nearChoice decides it.
+  return any ? ['near'] : null;
+}
+
+/** The nearest-members setting the Score arm uses (core/intrinsic/audio.mjs NEAR_DEFAULT). */
+const NEAR_SETTING = NEAR_DEFAULT;
+
+/**
+ * May the File engine mix in each playlist's nearest tracks? Only when a Score
+ * run chose it (`choice.near`), and only for the first ear, which is what the
+ * arm measured.
+ */
+function nearInUse(choice, ear = 'effnet') {
+  return ear === 'effnet' && choice?.near === true;
+}
+
+/** The Score card's line for nearest tracks, or '' when the run had no such arm. */
+function nearScoreText(w) {
+  return w?.nearChoice?.text ?? '';
 }
 
 /** The Score card's line for the second ear, or '' without arms. Counts and rates only. */
@@ -6005,7 +6400,7 @@ function maestScoreText(w, pc = x => (x == null ? '—' : `${Math.round(x * 1000
     + `; first ear: top-1 ${pc(w.top1)}, never-filed ${pc(w.neverFiled?.top1)}. `
     + `Placing with: ${c.ear === 'maest' ? 'the second ear' : c.ear === 'both' ? 'both ears' : 'the first ear'} (${c.reason ?? '—'})`;
 }
-return { MAEST_PER_RUN, createWorkerMaest, createMaestRunner, maestStatusText, chosenEar, scoreArms, maestScoreText };
+return { MAEST_PER_RUN, createWorkerMaest, createMaestRunner, maestStatusText, chosenEar, scoreArms, NEAR_SETTING, nearInUse, nearScoreText, maestScoreText };
 })();
 /* ---- web/audio/index.mjs ---- */
 __mod["web/audio/index.mjs"] = (function () {
@@ -6024,13 +6419,13 @@ const { measureWindows, needsDsp, DSP_VERSION } = __mod["core/audio/dsp/combine.
 const { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf } = __mod["web/audio/labels-view.mjs"];
 const { readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB } = __mod["web/audio/deep-settings.mjs"];
 const { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } = __mod["core/audio/clap-search.mjs"];
-const { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN } = __mod["web/audio/maest-run.mjs"];
+const { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING } = __mod["web/audio/maest-run.mjs"];
 const { MAEST_FILE, MAEST_LABELS_FILE, needsMaest } = __mod["core/audio/maest.mjs"];
 const { needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN } = __mod["core/audio/dsp/beats.mjs"];
 const { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 // What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
 // One namespace so the template reaches core/audio through a single name.
-return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
+return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
 })();
 /* ---- core/audio/infer.mjs ---- */
 __mod["core/audio/infer.mjs"] = (function () {
@@ -6292,272 +6687,6 @@ function withoutTracks(fb, skip) {
   return out;
 }
 return { AUDIO_FEEDBACK_VERSION, feedbackExamples, withoutTracks };
-})();
-/* ---- core/intrinsic/audio.mjs ---- */
-__mod["core/intrinsic/audio.mjs"] = (function () {
-const { validRecord, isCurrent, unpackEmbedding, earCurrent, EMB_DIM, MAEST_DIM } = __mod["core/audio/record.mjs"];
-// What a track sounds like, against what each of this account's playlists
-// sounds like.
-//
-// WP-E1 of docs/AUDIO-BUILD-PLAN.md. Records come from the audio worker in the
-// frozen shape of `core/audio/record.mjs`; this module turns them into one more
-// nullable component for the intrinsic space, shaped like
-// `bonus-rekordbox.mjs`: an index, a per-destination profile, and a score that
-// is `null` — never 0 — whenever it cannot be judged.
-//
-// The rule it inherits from that module (and CLAUDE.md): with no audio records
-// the engine's output is byte-identical. Nothing here touches a space; it only
-// reads one. `combine()` drops null components and renormalises, so an account
-// with no analysed tracks pays nothing. `test/audiocomponent.test.mjs` asserts
-// it.
-//
-// Geometry, matching what phase 0 measured (scripts/audio-phase0/score.py §2,
-// 58% top-1 / 76% top-2 by nearest centroid): every embedding is unit-normalised
-// first, a playlist's centroid is the mean of its analysed members' unit
-// embeddings renormalised, and a track scores the plain cosine to it. The score
-// is a raw cosine in [-1, 1], not rescaled: how much weight it earns, and how
-// sharply to read it, is WP-E2's measured decision and calibrate.mjs's fit, not
-// a prior baked in here.
-//
-// Deliberately no import from `space.mjs`. WP-E2 wires this module into
-// space.mjs, and `bundler.mjs` refuses an import cycle (there is no order to
-// emit one in), so importing `MIN_DEFINITION_TRACKS` from there would make the
-// wiring unbuildable. The value is restated as `MIN_AUDIO_MEMBERS` and a test
-// pins the two equal, so they cannot drift apart silently.
-
-
-// 1.1.0 (WP-C1): `audioIndex(records, { ear })` can read the second ear.
-// Without `ear` it is exactly 1.0.0.
-const AUDIO_COMPONENT_VERSION = '1.1.0';
-
-/**
- * Which ear an index hears with (WP-C1). 'effnet' is the first ear and the
- * default. 'maest' is the second ear's embedding alone. 'both' joins the two
- * unit embeddings (each half weighted equally, then renormalised), so a
- * cosine on it is the mean of the two ears' cosines. An index never mixes
- * spaces: a 'maest' or 'both' index holds only tracks that have a current
- * `maest` field.
- */
-const EARS = Object.freeze(['effnet', 'maest', 'both']);
-const EAR_DIM = { effnet: EMB_DIM, maest: MAEST_DIM, both: EMB_DIM + MAEST_DIM };
-
-/**
- * A playlist needs this many *analysed* members before its sound is a
- * definition rather than a coincidence. Equal to space.mjs's
- * `MIN_DEFINITION_TRACKS` (pinned by test), and for the same reason: below it
- * a centroid is one or two records wearing a playlist's name.
- */
-const MIN_AUDIO_MEMBERS = 5;
-
-const idOf = t => (typeof t === 'string' ? t : t?.id) || null;
-
-/** Unit-normalise into a new Float32Array, or null for a zero/non-finite vector. */
-function unit(v) {
-  let ss = 0;
-  for (let i = 0; i < v.length; i++) ss += v[i] * v[i];
-  if (!(ss > 0) || !Number.isFinite(ss)) return null;
-  const inv = 1 / Math.sqrt(ss);
-  const out = new Float32Array(v.length);
-  for (let i = 0; i < v.length; i++) out[i] = v[i] * inv;
-  return out;
-}
-
-function dot(a, b) {
-  let d = 0;
-  for (let i = 0; i < a.length; i++) d += a[i] * b[i];
-  return d;
-}
-
-/** Records may arrive as an array, any iterable, a Map, or a plain id → record object. */
-function recordsOf(records) {
-  if (!records || typeof records !== 'object') return [];
-  if (records instanceof Map) return records.values();
-  if (typeof records[Symbol.iterator] === 'function') return records;
-  return Object.values(records);
-}
-
-/**
- * Spotify id → `{ emb, styles, rec }` for every usable analysed record.
- *
- * Usable means: passes `validRecord` (the shape check for anything read back
- * from storage), is not a miss, is from the current model (`isCurrent` — an
- * embedding from another backbone lives in a different space and must never
- * share a centroid with this one), and has a non-zero embedding. `emb` is
- * unit-normalised. Never throws: junk, misses and stale records are simply
- * not in the index, which is the ordinary case.
- *
- * Two records for one id: the newer (`at`) wins.
- *
- * @param {Iterable<object>|Record<string, object>|null} records
- * @param {{ mel?: string, ear?: 'effnet'|'maest'|'both' }} [opts]  `mel`: pass the
- *        page's MEL_VERSION to also drop records computed with another front
- *        end. `ear`: see EARS; default 'effnet'.
- * @returns {Map<string, { emb: Float32Array, styles: Array<[number, number]>, rec: object }>}
- */
-function audioIndex(records, { mel = undefined, ear = 'effnet' } = {}) {
-  if (!EARS.includes(ear)) throw new Error(`unknown ear: ${ear}`);
-  const index = new Map();
-  for (const rec of recordsOf(records)) {
-    if (!validRecord(rec) || rec.miss) continue;
-    if (!isCurrent(rec, { mel })) continue;
-    if (ear !== 'effnet' && !earCurrent(rec, 'maest')) continue;
-    const prev = index.get(rec.id);
-    if (prev && !((rec.at ?? 0) > (prev.rec.at ?? 0))) continue;
-    let emb;
-    try { emb = embeddingOf(rec, ear); } catch { emb = null; }
-    if (!emb || emb.length !== EAR_DIM[ear]) continue;
-    index.set(rec.id, { emb, styles: ear === 'maest' ? rec.maest.styles : rec.styles, rec });
-  }
-  return index;
-}
-
-/** One record's unit embedding as `ear` hears it, or null. */
-function embeddingOf(rec, ear) {
-  if (ear === 'effnet') return unit(unpackEmbedding(rec.emb));
-  const m = unit(unpackEmbedding(rec.maest.emb));
-  if (ear === 'maest') return m;
-  const e = unit(unpackEmbedding(rec.emb));
-  if (!e || !m) return null;
-  const both = new Float32Array(e.length + m.length);
-  both.set(e, 0); both.set(m, e.length);
-  return unit(both);
-}
-
-/**
- * A playlist's sound: the mean of its analysed members' unit embeddings,
- * renormalised. `members` counts distinct analysed tracks (a track filed twice
- * is one sound, not two votes toward the definition threshold).
- *
- * Also carries what leave-one-out needs to be O(dimensions) instead of a
- * rebuild: `sum` (the un-normalised sum of member unit embeddings) and `ids`
- * (which tracks are in it). See `profileWithout`.
- *
- * @param {Iterable<string|{id:string}>} playlistTrackIds  ids or track objects
- * @param {Map} index  from `audioIndex`
- * @param {{ skip?: Set<string> }} [opts]  ids to treat as not filed (fold-level leave-out)
- * @returns {{ centroid: Float32Array|null, members: number, sum: Float64Array, ids: Set<string> } | null}
- *          null when no member is analysed. `centroid` is null only in the
- *          degenerate case of members cancelling to a zero vector.
- */
-function audioProfileOf(playlistTrackIds, index, { skip = null } = {}) {
-  if (!index?.size || !playlistTrackIds) return null;
-  const ids = new Set();
-  let sum = null;
-  for (const t of playlistTrackIds) {
-    const id = idOf(t);
-    if (!id || ids.has(id) || skip?.has(id)) continue;
-    const row = index.get(id);
-    if (!row) continue;
-    ids.add(id);
-    sum ??= new Float64Array(row.emb.length);
-    for (let i = 0; i < sum.length; i++) sum[i] += row.emb[i];
-  }
-  if (!ids.size) return null;
-  return { centroid: unit(sum), members: ids.size, sum, ids };
-}
-
-/**
- * Leave-one-out: the same profile with one member taken out, as if it had
- * never been filed there. Returns the profile unchanged when the track is not
- * one of its analysed members, and null when removing it leaves nothing.
- *
- * Why it exists: scoring a filed track against a centroid that contains the
- * track itself flatters every accuracy number (the track votes for its own
- * home). WP-E2's with/without harness and WP-L1's learning curves need the
- * honest version per track, and rebuilding every profile per track is
- * needlessly slow. The result equals `audioProfileOf` over the remaining
- * members up to float rounding (tested to 1e-6).
- */
-function profileWithout(profile, trackId, index) {
-  const id = idOf(trackId);
-  if (!profile || !id || !profile.ids?.has(id)) return profile ?? null;
-  const row = index?.get(id);
-  if (!row || profile.members <= 1) return null;
-  const sum = Float64Array.from(profile.sum);
-  for (let i = 0; i < sum.length; i++) sum[i] -= row.emb[i];
-  const ids = new Set(profile.ids);
-  ids.delete(id);
-  return { centroid: unit(sum), members: ids.size, sum, ids };
-}
-
-/** A destination-like thing → its member ids. Space destinations carry `trackIds`. */
-function memberIdsOf(d) {
-  if (d?.trackIds) return d.trackIds;
-  if (Array.isArray(d?.tracks)) return d.tracks;
-  return null;
-}
-
-/**
- * Every destination's sound profile, worked out once — the audio half of a
- * space. WP-E2 attaches the result as `space.audio`; this module never edits
- * the space it reads.
- *
- * `destinations` may be a whole space (its `.destinations` Map is used), that
- * Map itself, or an array of playlists `{ id, tracks }`. Using the space's own
- * destinations is the intended path: they are already filtered for mirrors,
- * `targets` and `skip`, so audio judges exactly the buckets the rest of the
- * engine does. `skip` is honoured again here for the raw-playlist path.
- *
- * Profiles below `minMembers` are kept (a UI can say "3 of 12 analysed") but
- * score null in `audioScores`.
- *
- * @returns {{ index: Map, profiles: Map<string, object>, size: number, version: string, minMembers: number }}
- *          `size` counts destinations with enough analysed members to judge.
- */
-function buildAudioProfiles(destinations, index, { skip = null, minMembers = MIN_AUDIO_MEMBERS } = {}) {
-  const profiles = new Map();
-  let size = 0;
-  if (index?.size) {
-    const src = destinations?.destinations ?? destinations;
-    const list = src instanceof Map ? src.values() : (src ?? []);
-    for (const d of list) {
-      if (!d?.id) continue;
-      const prof = audioProfileOf(memberIdsOf(d) ?? [], index, { skip });
-      if (!prof) continue;
-      profiles.set(d.id, prof);
-      if (prof.members >= minMembers && prof.centroid) size++;
-    }
-  }
-  return { index: index ?? new Map(), profiles, size, version: AUDIO_COMPONENT_VERSION, minMembers };
-}
-
-/**
- * Sound scores for one track: destination id → cosine to that destination's
- * centroid, or null for a destination with fewer than `minMembers` analysed
- * members (null, never 0: "can't judge" is not "sounds wrong").
- *
- * Returns null outright — as `bridgeScores` does — when the space has no audio
- * or the track has not been heard, so the caller adds nothing to `parts` and
- * the placement is byte-identical to one without this module.
- *
- * `space` is a space carrying `.audio` (from `buildAudioProfiles`), or that
- * audio object itself.
- *
- * `leaveOneOut: true` scores a track against each playlist it is itself an
- * analysed member of with itself removed (`profileWithout`), and re-applies
- * the `minMembers` floor to what remains. Off by default to match the other
- * components, which only leave a track out when the space was built with
- * `skip`; turn it on when grading the engine against tracks already filed
- * without rebuilding profiles per fold.
- *
- * @returns {Map<string, number|null> | null}
- */
-function audioScores(track, space, { leaveOneOut = false, minMembers = null } = {}) {
-  const audio = space?.audio ?? (space?.profiles instanceof Map ? space : null);
-  if (!audio?.index?.size || !audio.profiles?.size) return null;
-  const id = idOf(track);
-  const row = id ? audio.index.get(id) : null;
-  if (!row) return null;
-  const floor = minMembers ?? audio.minMembers ?? MIN_AUDIO_MEMBERS;
-
-  const out = new Map();
-  for (const [destId, base] of audio.profiles) {
-    const prof = leaveOneOut ? profileWithout(base, id, audio.index) : base;
-    out.set(destId, prof?.centroid && prof.members >= floor ? +dot(row.emb, prof.centroid).toFixed(6) : null);
-  }
-  return out;
-}
-return { AUDIO_COMPONENT_VERSION, EARS, MIN_AUDIO_MEMBERS, audioIndex, audioProfileOf, profileWithout, buildAudioProfiles, audioScores };
 })();
 /* ---- core/intrinsic/audio-learn.mjs ---- */
 __mod["core/intrinsic/audio-learn.mjs"] = (function () {

@@ -35,7 +35,7 @@
 
 import { melFrames, SAMPLE_RATE, HOP_SIZE, N_BANDS } from '../mel.mjs';
 
-export const TEMPO_VERSION = '1.0.0';
+export const TEMPO_VERSION = '1.1.0';
 
 /** Envelope frame rate: one log-mel frame per hop. */
 export const FPS = SAMPLE_RATE / HOP_SIZE; // 62.5
@@ -87,7 +87,8 @@ export function tempo(samples, { sampleRate = SAMPLE_RATE, min = 60, max = 200 }
 export function tempoFromMel(mel, { min = 60, max = 200 } = {}) {
   checkRange(min, max);
   if (!mel || mel.frames < MIN_SECONDS * FPS) return none();
-  const acf = autocorrelation(onsetEnvelopes(mel), Math.min(Math.round(MAX_LAG_S * FPS), Math.floor(mel.frames / 2)));
+  const envs = onsetEnvelopes(mel), lagCap = Math.min(Math.round(MAX_LAG_S * FPS), Math.floor(mel.frames / 2));
+  const acf = autocorrelation(envs, lagCap);
   if (!acf) return none();
 
   const at = lag => interp(acf, lag);
@@ -196,8 +197,36 @@ export function tempoFromMel(mel, { min = 60, max = 200 } = {}) {
     confidence: round(conf, 3),
     alternates: alternates.map(c => ({ bpm: round(c.bpm, 1), score: round(c.score / best.score, 3) })),
     octaveAmbiguous,
+    pulse: round(pulseAt(envs, lagCap, best.bpm), 3),
     version: TEMPO_VERSION,
   };
+}
+
+/**
+ * Per-band-group onset autocorrelations (each normalised to 1 at lag 0), for
+ * measurement scripts that study the octave decision. Lag in mel frames (FPS).
+ * @returns {Float64Array[]|null} kick, body, snare, hats
+ */
+export function bandAutocorrelations(mel, maxLagS = MAX_LAG_S) {
+  if (!mel || mel.frames < MIN_SECONDS * FPS) return null;
+  const envs = onsetEnvelopes(mel);
+  const maxLag = Math.min(Math.round(maxLagS * FPS), Math.floor(mel.frames / 2));
+  return envs.map(e => autocorrelation([e], maxLag));
+}
+
+/**
+ * How steady a dance pulse sits on `bpm`: the mean of each band group's own
+ * onset autocorrelation at the beat period P (kick, body, snare, hats) and of
+ * snare and hats at P/2 (the off-beats a half-time reading would hide).
+ * Around 0.5 for a four-on-the-floor track read at half time, around 0.25 for
+ * a ballad or swung jazz at its real slow tempo; combine.mjs gates SLOW_FOLD
+ * on it (PULSE_FOLD). Bands with no onset activity count 0.
+ */
+function pulseAt(envs, maxLag, bpm) {
+  const P = 60 * FPS / bpm;
+  const lin = (a, lag) => { const i = Math.floor(lag), f = lag - i; return a && i + 1 < a.length ? a[i] * (1 - f) + a[i + 1] * f : 0; };
+  const a = envs.map(e => autocorrelation([e], maxLag));
+  return (lin(a[0], P) + lin(a[1], P) + lin(a[2], P) + lin(a[3], P) + lin(a[2], P / 2) + lin(a[3], P / 2)) / 6;
 }
 
 function checkRange(min, max) {

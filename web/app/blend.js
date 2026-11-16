@@ -130,7 +130,8 @@ async function blendFetch() {
     const playOf = t => Math.max(0, ...(t.artists ?? []).map(a => listen.get(String(a?.name ?? '').toLowerCase()) ?? 0));
     const tracks = R.backlog.map(b => liked.get(b.id)).filter(Boolean)
       .map((t, i) => ({ t, i, w: playOf(t) })).sort((a, b) => b.w - a.w || a.i - b.i).map(x => x.t);
-    const artists = BetterfyBridge.sourceArtists(tracks);
+    // Ordered by track above; by artist, listening alone and least-known first, here (D9).
+    const artists = new Map(await inEnrichOrder(BetterfyBridge.sourceArtists(tracks), ([, a]) => a.name));
     let raw = (await idb.get(BRIDGE_KEY))?.raw ?? {};
     const ttl = BetterfyBridgeFetch.TTL_MS, now = Date.now();
     const fresh = at => Number.isFinite(at) && now - at < ttl;
@@ -190,7 +191,9 @@ function blendPicks(t, tagPicks) {
         // rescaled one the order comes from (whose leader is always near 100%).
         score: +(wt * (tagRaw.get(id) ?? 0) + (1 - wt) * (natRow.get(id)?.score ?? 0)).toFixed(4),
         untagged: !tagRaw.size,
-        similar: (natRow.get(id)?.parts?.bridge ?? 0) > 0 }));
+        similar: (natRow.get(id)?.parts?.bridge ?? 0) > 0,
+        // This artist already filed here: filing history backs the pick.
+        filed: (natRow.get(id)?.parts?.graph ?? 0) > 0 }));
     }
   }
   BLEND.memo.set(key, picks);

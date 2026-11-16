@@ -1,0 +1,17 @@
+/* "What's helping your picks" (web/screens/helpers.mjs): every source and engine part,
+   on or off, at the top of the Settings sheet and of Sources. */
+  .helpers{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); padding:12px 14px; margin:0 0 16px}
+  .helpers-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px}
+  .helpers-head h3{margin:0; font-size:15px; letter-spacing:0; text-transform:none; color:var(--ink)}
+  .hlist{list-style:none; margin:0 0 10px; padding:0}
+  .hrow2{display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-top:1px solid var(--line)}
+  .hrow2:first-child{border-top:0}
+  .hdot{width:9px; height:9px; border-radius:50%; flex:none; margin-top:6px; background:var(--line-2)}
+  .h-ok .hdot{background:var(--ok)} .h-warn .hdot, .h-fail .hdot{background:var(--warn)}
+  .hmain{display:flex; flex-direction:column; gap:2px; min-width:0; flex:1}
+  .hname{font-weight:600; color:var(--ink); font-size:14px}
+  .hdid{font-size:12.5px; color:var(--ink-3)}
+  .hcheck{font-size:12px; color:var(--ink-2)}
+  .hcheck.good{color:var(--ok)} .hcheck.bad{color:var(--warn)}
+  .hrow2 .tag{flex:none; white-space:nowrap}
+  .h-off .hname{color:var(--ink-2)}

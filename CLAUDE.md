@@ -29,6 +29,18 @@ over anything that needs a file most users won't have.
 
 ## Where the fuller context lives
 
+- `docs/NEXT-WORKPLAN.md` — **start here (2026-11-16, after #149)**: state
+  of main, the owner's standing rules (on by default and shown as on, hosted
+  checks only, merge when green, tap-only filing), what waits on her (Score +
+  Tune paste, Radar check), and six ranked engine packages with files, gates
+  and how each is measured. Supersedes the HANDOFF below for what to build.
+
+- `docs/review/HANDOFF-2026-11-16.md` — background after build 6: what
+  is merged, what waits on the owner (Radar probe, Score + Tune paste, key,
+  teach queue), auto-file rejected, and the proposed next waves. With
+  `docs/review/USER-REVIEW.md` (screens, design, screenshots) and
+  `docs/review/ENGINE-REVIEW.md` (matching accuracy and the design to raise it).
+
 - `README.md` — what's actually wired, what was tried and rejected and why
   (read "Design decisions worth knowing" and "Data sources, and what
   they're worth" before assuming a new signal is worth adding).
@@ -76,5 +88,6 @@ over anything that needs a file most users won't have.
   content into AI/ML models, no pooling it across accounts). Read §3 before
   proposing any LLM feature or anything shared between users.
 - Tests are the source of truth for behavior, not comments: `npm test`
+  (unit tests, ~2.5 min) and `npm run e2e` (browser specs),
   before and after any change to `profile.mjs`, `axes.mjs`, or the browser
   build's mirrored classify()/buildReports() logic.

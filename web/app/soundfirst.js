@@ -20,7 +20,7 @@
  * Nothing here writes to Spotify: it only changes which playlists are offered.
  * ======================================================================== */
 const SOUND = { status: 'idle', space: null, n: 0, targets: '', err: null, memo: null, byId: null, lib: null,
-                idMemo: null, memb: null, names: null, namesLib: null };
+                idMemo: null, memb: null, names: null, namesLib: null, moodFit: null, moodMemo: new Map() };
 /** Heard records worth a rebuild: a tenth more, and at least 20. */
 const SOUND_REBUILD = n => Math.max(20, Math.round(n * 0.1));
 const soundHeard = () => { let n = 0; for (const r of AUDIO.records?.values() ?? []) if (!r.miss) n++; return n; };
@@ -114,11 +114,39 @@ function soundIdOf(t) {
   if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
   const raw = SOUND.byId.get(t.id);
   const tags = [...new Set((raw?.artists ?? []).map(a => BetterfyGaps.artistGenre(TAGS?.[a?.id]?.tags)).filter(Boolean))];
-  const id = BetterfyIdentify.identify(row.rec, { neighbours, tags, playlistName: pid => CFG[pid]?.name ?? pid });
+  const id = BetterfyIdentify.identify(row.rec, { neighbours, tags, playlistName: pid => CFG[pid]?.name ?? pid, ...((typeof tuneIdentOpts === 'function' ? tuneIdentOpts() : null) ?? {}) });
   const mix = BetterfyMatch.mixesWith(t.id, index, { k: 5, bpm: id?.bpm?.value ?? null });
   const v = { id, neighbours: neighbours.slice(0, 5), mix };
   SOUND.idMemo = { key, v };
   return v;
+}
+
+/** Learn from a filing now (ENGINE-REVIEW layer 5): the track joins the
+ *  playlist in the File and Engine spaces before the next card, so another
+ *  track by that artist, or one that sounds like it, already counts it. The
+ *  background rebuild replaces this with the exact space later. */
+function learnNow(trackId, playlistIds) {
+  if (!globalThis.BetterfyIntrinsic?.learnFiled) return;
+  if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
+  const raw = SOUND.byId.get(trackId);
+  if (!raw) return;
+  let changed = false;
+  for (const space of new Set([SOUND.space, typeof ENG !== 'undefined' ? ENG.space : null].filter(Boolean)))
+    for (const pid of [].concat(playlistIds)) changed = BetterfyIntrinsic.learnFiled(space, raw, pid) || changed;
+  if (changed) { SOUND.memo = null; SOUND.idMemo = null; SOUND.moodMemo = new Map(); }
+}
+
+/** Mood "also fits" chips for one heard track (core/intrinsic/mood.mjs): the mood
+ *  and context playlists this account's Score run fitted a threshold for, that the
+ *  track clears and is not already in. [] until a Score run earned one. */
+function moodChipsFor(t) {
+  const fit = typeof ENG !== 'undefined' ? ENG.calib?.mood : null;
+  const index = SOUND.space?.audio?.index;
+  if (!t?.id || !fit || !index || typeof BetterfyMood === 'undefined' || !BetterfyMood.moodInUse(fit)) return [];
+  const key = `${t.id}|${index.size}|${fit === SOUND.moodFit ? 1 : 0}`;
+  if (SOUND.moodFit !== fit) { SOUND.moodFit = fit; SOUND.moodMemo = new Map(); }
+  if (!SOUND.moodMemo.has(key)) SOUND.moodMemo.set(key, BetterfyMood.moodChips(t.id, fit, index, LIB));
+  return SOUND.moodMemo.get(key);
 }
 
 /** Sound-led picks for one track on the File screen, or [] when it hasn't been
@@ -134,9 +162,9 @@ function soundPicks(t) {
   let picks = [];
   if (raw) {
     soundHear(t.id);
-    const out = BetterfyIntrinsic.placements(raw, space, { limit: 3, soundFirst: true,
+    const out = BetterfyIntrinsic.placements(raw, space, { limit: 3, soundFirst: (typeof tuneSoundFirst === 'function' ? tuneSoundFirst() : null) ?? true,
                                                          exclude: rejected.length ? new Set(rejected) : null });
-    const W = BetterfyIntrinsic.SOUND_FIRST_WEIGHTS;
+    const W = { ...BetterfyIntrinsic.SOUND_FIRST_WEIGHTS, ...((typeof tuneSoundFirst === 'function' ? tuneSoundFirst() : null) ?? {}) };
     const tagIds = new Set((t.suggest ?? []).map(sg => sg.id));
     if (!out.declined) picks = (out.results ?? [])
       .filter(r => r.parts && ('audio' in r.parts || 'learned' in r.parts))

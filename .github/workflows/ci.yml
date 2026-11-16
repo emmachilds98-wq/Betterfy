@@ -18,4 +18,7 @@ jobs:
       # With CI set, that test fails rather than skips when no browser is found.
       - run: npm install --no-save playwright@1
       - run: npx playwright install --with-deps chromium
-      - run: node --test
+      # Unit tests and the page-load check (npm test), then the browser specs
+      # under test/e2e (npm run e2e) as their own step so a failure says which.
+      - run: npm test
+      - run: npm run e2e

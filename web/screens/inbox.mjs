@@ -1,4 +1,5 @@
 // @bundle screens inbox 20
+import { buildDigest, digestLines, digestBaseline, parseBaseline, playlistMap } from '../../core/measure/digest.mjs';
 /* ---------- artist roll-forward: docs/SMARTER-GENRES-PLAN.md, phase 4 ----------
  * File one track by an artist and the same artist's other unfiled tracks usually
  * belong in the same place. So the File screen offers them, as a list you can see
@@ -85,6 +86,91 @@ export async function rollForwardGo(ctx) {
   const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
   toast(`Filed ${ids.length} more by ${rf.artist}.`, undoAll);
   render();
+}
+
+/* ---------- "Since you last opened": docs/BUILD-6-PLAN.md F5 ----------
+ * One dismissible card at the top of File, worked out once per session from
+ * what the page already holds (core/measure/digest.mjs): no request, never a
+ * notification, and nothing at all when there is nothing to say. The baseline
+ * for next time and the dismissed/expanded counts stay in this browser. */
+export const DIGEST_SEEN = 'bf_digest_seen';
+export const DIGEST_MEASURE = 'bf_digest_measure';
+
+const coldGenres = ({ COLD }) => (COLD?.status === 'ready' && Array.isArray(COLD.newGenre) ? COLD.newGenre : null);
+const plMap = ({ LIB, isMirrorPlaylist }) => playlistMap(LIB?.playlists, isMirrorPlaylist ?? (() => false));
+
+/** The local-only measure: how often the card was shown, opened up and dismissed. */
+export function digestMeasure({ LS }) {
+  try { const m = JSON.parse(LS?.getItem(DIGEST_MEASURE) ?? 'null'); if (m && typeof m === 'object') return { shown: m.shown | 0, expanded: m.expanded | 0, dismissed: m.dismissed | 0 }; }
+  catch { /* a malformed record starts again */ }
+  return { shown: 0, expanded: 0, dismissed: 0 };
+}
+function bumpMeasure(ctx, k) {
+  const m = digestMeasure(ctx); m[k]++;
+  try { ctx.LS?.setItem(DIGEST_MEASURE, JSON.stringify(m)); } catch { /* the measure only */ }
+}
+
+/** The digest for this session, or null while it loads or has nothing to say. */
+export function digestNow(ctx) {
+  const { S, R, LIB } = ctx, D = S.digest;
+  if (!D || D.status !== 'ready' || D.hidden) return null;
+  // A brand-new account has no last open and no History: nothing to look back on.
+  if (!D.base && !D.log?.length) return null;
+  const genres = coldGenres(ctx), pls = LIB?.playlists;
+  const m = D.memo;
+  if (m && m.R === R && m.n === R.backlog.length && m.genres === genres && m.pls === pls) return m.d.empty ? null : m.d;
+  const d = buildDigest({ base: D.base, now: D.at, log: D.log, backlog: R.backlog, liked: LIB?.liked,
+                          misfiled: R.misfiled, genres, playlists: D.base?.pls ? plMap(ctx) : null, listening: D.listening });
+  D.memo = { R, n: R.backlog.length, genres, pls, d };
+  return d.empty ? null : d;
+}
+
+export function digestHTML(ctx) {
+  const { S, esc } = ctx;
+  const d = digestNow(ctx), L = digestLines(d);
+  if (!L) return '';
+  const open = !!S.digest.open;
+  const summary = L.lines.filter(l => l.short).map(l => esc(l.short)).join(' · ');
+  const line = l => l.go ? `<li><button class="dg-go" data-go="${esc(l.go)}">${esc(l.text)}</button></li>` : `<li>${esc(l.text)}</li>`;
+  return `<section class="card digest${open ? ' open' : ''}" id="digestCard" aria-labelledby="digestHead">
+    <div class="dg-top">
+      <h2 id="digestHead">${esc(L.head)}</h2>
+      <button class="dg-x" data-act="digestHide" aria-label="Dismiss this summary" title="Dismiss"><span aria-hidden="true">✕</span></button>
+    </div>
+    ${open ? `<ul class="dg-lines">${L.lines.map(line).join('')}</ul>`
+      : `<p class="dg-sum">${summary} <button class="dg-more" data-act="digestMore" aria-expanded="false">Details</button></p>`}
+  </section>`;
+}
+
+/** Once per session: read the last open's record and the log, then store this open as the next baseline. */
+export async function digestLoad(ctx) {
+  const { S, R, LS, getLog, listeningRaw, render } = ctx, D = S.digest;
+  try {
+    const base = parseBaseline(LS?.getItem(DIGEST_SEEN));
+    const log = (await getLog?.()) ?? [];
+    let listening = null;
+    try { listening = (await listeningRaw?.()) ?? null; } catch { /* no cached listening: no line */ }
+    const genres = coldGenres(ctx);
+    Object.assign(D, { status: 'ready', base, log, listening, savedGenres: !!genres });
+    try { LS?.setItem(DIGEST_SEEN, JSON.stringify(digestBaseline({ prev: base, now: D.at, misfiled: R.misfiled, genres, playlists: plMap(ctx) }))); }
+    catch { /* nothing kept: next time looks back a week */ }
+    if (digestNow(ctx)) render();
+  } catch { D.status = 'error'; }
+}
+
+export function digestMount(ctx) {
+  const { S, LS } = ctx;
+  if (!S.digest) { S.digest = { status: 'loading', at: Date.now() }; return digestLoad(ctx); }
+  const D = S.digest;
+  if (D.status !== 'ready') return;
+  if (!D.counted && !D.hidden && globalThis.document?.getElementById('digestCard')) { D.counted = true; bumpMeasure(ctx, 'shown'); }
+  // The new-genre clusters arrive whenever Library works them out: remember them once they exist.
+  const genres = coldGenres(ctx);
+  if (genres && !D.savedGenres) {
+    D.savedGenres = true;
+    const rec = parseBaseline(LS?.getItem(DIGEST_SEEN));
+    if (rec) try { LS.setItem(DIGEST_SEEN, JSON.stringify({ ...rec, genres: digestBaseline({ now: D.at, genres }).genres })); } catch { /* next time */ }
+  }
 }
 
 /* ---------- "File the N sure ones": docs/BUILD-5-PLAN.md §5.2 ----------
@@ -186,8 +272,17 @@ export async function fileSureOnes(ctx) {
 export function view(ctx) {
   const { S, R, CFG, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip, tagChips, trackStrip,
           soundIdHTML, soundNote, pickEvidence, pickBand, matchMedia } = ctx;
+  const pickBacked = ctx.pickBacked ?? (() => true);
   const rows = R.backlog;
-  if (!rows.length) return `<h1>File</h1>
+  // A new account has nothing to file yet: say what to do, not "that's the lot".
+  if (!rows.length && !ctx.LIB?.liked?.length) {
+    const hasPl = ctx.LIB?.playlists?.some(p => p.tracks?.length);
+    return `<h1>File</h1><div class="empty-state"><span class="es-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      <div class="es-body"><b>${hasPl ? 'No liked songs yet' : 'Your library is empty'}</b>
+      <p>${hasPl ? 'File sorts your liked songs into your playlists. Like a few songs in Spotify and they will show up here.'
+        : 'Like some songs in Spotify, or make a playlist, then reopen Betterfy. It files your liked songs into your playlists.'}</p></div></div>`;
+  }
+  if (!rows.length) return `<h1>File</h1>${digestHTML(ctx)}
     <div class="empty done">
       <svg viewBox="0 0 32 32" aria-hidden="true">
         <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
@@ -208,10 +303,20 @@ export function view(ctx) {
   const picks = filePicks(t);
   const opts = Object.entries(CFG).filter(([, v]) => v.target).map(([id, v]) => ({ id, ...v }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const nameOf = id => opts.find(o => o.id === id)?.name ?? picks.find(s => s.id === id)?.name ?? id;
+  // Mood "also fits" chips (ENGINE-REVIEW layer 5): a second, separate yes/no,
+  // never competing with the genre pick. A tap adds it to the selection.
+  const moods = (ctx.moodChips?.(t) ?? []).filter(m => !picks.slice(0, 3).some(sg => sg.id === m.id));
+  const nameOf = id => opts.find(o => o.id === id)?.name ?? picks.find(s => s.id === id)?.name
+    ?? moods.find(m => m.id === id)?.name ?? CFG[id]?.name ?? id;
   const best = picks[0];
   // The calibrated band for the leading pick on every card, not only the sound ones.
   const topBand = ctx.fileBand?.(t, picks) ?? best?.band ?? null;
+  // Family first (ENGINE-REVIEW layer 3): the family is settled, only which
+  // playlist inside it is asked. Those picks are shown as equals.
+  const dec = ctx.fileDecision?.(t) ?? null;
+  const fam = dec?.kind === 'family' && dec.family ? dec : null;
+  const famIds = new Set(fam?.playlists?.map(p => p.id ?? p) ?? []);
+  const famName = fam ? String(fam.family).replace(/-/g, ' ').replace(/^./, c => c.toUpperCase()) : '';
   ctx.fileOrderKick?.();
   const canFile = S.fileSel.size > 0 || !!best;
   const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
@@ -223,7 +328,8 @@ export function view(ctx) {
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
     : '';
 
-  return `${sureBatchHTML(ctx)}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+  // The teach questions (BUILD-6 SG, app/teach.js): '' unless this account's Score run said they help.
+  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
@@ -246,8 +352,9 @@ export function view(ctx) {
             ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
           </div>
         </div>${trackStrip(t)}${soundIdHTML(t)}
+        ${fam ? `<p class="famline" data-family="${esc(fam.family)}"><b>${esc(famName)}</b> for sure. Which one?</p>` : ''}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
-          <div class="pickw"><button class="pick ${n === 0 ? 'best' : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
+          <div class="pickw"><button class="pick ${fam ? (famIds.has(sg.id) ? 'twoway' : '') : n === 0 ? (pickBacked(sg) ? 'best' : 'lead') : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
@@ -261,8 +368,10 @@ export function view(ctx) {
           </button><button class="nope" type="button" data-act="reject" data-reject="${esc(sg.id)}"
             title="Never suggest ${esc(sg.name)} for this track" aria-label="Never suggest ${esc(sg.name)} for this track"><span aria-hidden="true">✕</span></button></div>`).join('')}</div>`
         : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
-        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
-          ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).map(id =>
+        ${moods.length ? `<div class="alsofits" role="group" aria-label="Also fits">${moods.map(m =>
+          `<button class="chip mood${S.fileSel.has(m.id) ? ' on' : ''}" data-act="selfile" data-selfile="${esc(m.id)}" aria-pressed="${S.fileSel.has(m.id)}">${S.fileSel.has(m.id) ? '✓ ' : ''}Also fits ${esc(m.name)}</button>`).join('')}</div>` : ''}
+        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
+          ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).map(id =>
             `<button class="chip" data-act="selfile" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
         </div>` : ''}
         <div class="rowbtns" style="margin-top:22px">
@@ -305,7 +414,7 @@ export const inboxTrack = ctx => ctx.R.backlog[inboxIndex(ctx)] ?? null;
  *  a single id (the swipe gesture, keyboard 1-3 followed by Enter's fallback)
  *  or an array (the multi-select confirm button) — either way nothing is
  *  written until this actually runs. */
-export async function fileCurrent(ctx, playlistIds) {
+export async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
   const { S, R, CFG, FB, addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, toast, render } = ctx;
   const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
   if (!ids.length) return;
@@ -339,7 +448,7 @@ export async function fileCurrent(ctx, playlistIds) {
   try {
     for (const id of ids) {
       await addTracks(id, [t.id]);
-      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, deck:deckLen, band:bandOf(id) });
+      await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, deck:deckLen, band:bandOf(id), ...(via ? { via } : {}) });
       ats.push((await getLog())[0]?.at);
     }
     // An accept is a verdict too (FB.accepted, read by audio-feedback.mjs), so
@@ -372,6 +481,7 @@ export async function inboxAct(ctx, a) {
   if (a === 'play') { try { toast('Playing on ' + await playTrack(t.id)); } catch(e){ toast(e.message); } return; }
   if (a === 'skip') {
     await recordSkip(t.id);
+    try { await logAction({ op:'skip', trackIds:[t.id], reason:'skipped from inbox', queuePos:at, deck:R.backlog.length }); } catch { /* the measure only */ }
     // Move it to the back rather than stepping past it, so the rest of the
     // queue advances now and the skip still holds after a reload.
     t.skips = (t.skips ?? 0) + 1;
@@ -401,6 +511,16 @@ export const actions = {
   selfile: (ctx, el) => toggleFileSel(ctx, el.dataset.selfile),
   anyPl: (ctx, el) => { if (el.value) toggleFileSel(ctx, el.value); },
   filesure: (ctx) => fileSureOnes(ctx),
+  teach: (ctx, el) => ctx.teachAct?.(el),
+  digestMore(ctx) {
+    const D = ctx.S.digest; if (!D) return;
+    if (!D.expandedOnce) { D.expandedOnce = true; bumpMeasure(ctx, 'expanded'); }
+    D.open = true; ctx.render();
+  },
+  digestHide(ctx) {
+    const D = ctx.S.digest; if (!D) return;
+    D.hidden = true; bumpMeasure(ctx, 'dismissed'); ctx.render();
+  },
   filesel: (ctx) => fileCurrent(ctx, ctx.S.fileSel.size ? [...ctx.S.fileSel] : ctx.filePicks(inboxTrack(ctx))[0]?.id),
   play: (ctx) => inboxAct(ctx, 'play'),
   skip: (ctx) => inboxAct(ctx, 'skip'),
@@ -452,6 +572,7 @@ export const actions = {
 // listening re-sort used to close it); a different card starts with it shut.
 let menuFor = null;
 export function mount(ctx) {
+  digestMount(ctx);
   const id = inboxTrack(ctx)?.id ?? null;
   if (id !== menuFor) { menuFor = id; document.querySelector("#swipeCard details.cardmore")?.removeAttribute("open"); }
 }

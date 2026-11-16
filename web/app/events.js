@@ -95,7 +95,8 @@ document.addEventListener('change', guard(async e => {
     const change = e.target.id === 'audioOn' ? { on: e.target.checked }
       : e.target.id === 'audioWifi' ? { wifiOnly: e.target.checked } : { scope: e.target.value };
     if (globalThis.BetterfyAudio) BetterfyAudio.writeAudioSettings(LS, change);
-    else LS.setItem('bf_audio', JSON.stringify({ ...audioSettings(), ...change }));
+    else { const next = { ...audioSettings(), ...change };
+           LS.setItem('bf_audio', JSON.stringify(next.on === false ? { ...next, offChosen: true } : next)); }
     const set = audioSettings();
     // Turning it off, narrowing the scope or tightening Wi-Fi stops the run; the next start re-reads all three.
     if (AUDIO.ctrl?.running) await AUDIO.ctrl.stop(set.on ? 'settings changed' : 'stopped');

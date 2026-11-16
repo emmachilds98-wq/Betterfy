@@ -1,6 +1,8 @@
 // @bundle screens discover 60
 /* The Discover screen (docs/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
  * ranking stay classic in web/app/discover-engine.js; ctx comes from SCREEN_CTX.discover. */
+import { radarView, radarActions, radarMount } from './radar.mjs';
+
 /** A fit score in the same words as everywhere else, not a percentage. */
 export const fitWord = v => v >= 0.7 ? 'Sure' : v >= 0.45 ? 'Likely' : 'Unsure';
 
@@ -12,6 +14,37 @@ export function whyLine(t, esc) {
   return `<p class="why discwhy">Because you listen to <b>${names}</b>.</p>`;
 }
 
+/** The preview button's face and words for one state (app/preview.js). */
+export function previewBtn(state) {
+  return { playing: { icon: '❚❚', label: 'Pause preview' }, loading: { icon: '…', label: 'Loading preview' },
+    none: { icon: '–', label: 'No preview for this track' }, error: { icon: '!', label: 'Preview failed, tap to try again' } }[state]
+    ?? { icon: '▶', label: 'Play a 30-second preview' };
+}
+
+/** Every pick as a row: play its preview, Like it, add it where it fits best, or open it on the card above.
+ *  The row on the card is marked. Nothing here writes until a button is tapped. */
+export function pickRowsHTML(ctx, d, at) {
+  const { esc, thumbHTML, previewState } = ctx;
+  if (!d?.length) return '';
+  const rows = d.map((t, i) => {
+    const best = (t.suggest ?? [])[0];
+    const st = !t.isrc ? 'none' : previewState ? previewState(t.id) : 'idle', pb = previewBtn(st);
+    const face = thumbHTML ? thumbHTML({ id: t.id, title: t.track, art: t.art }) : '';
+    return `<div class="drow${i === at ? ' on' : ''}${st === 'playing' ? ' playing' : ''}" data-drow="${esc(t.id)}">
+      <button class="dprev" type="button" data-act="dprev" data-tid="${esc(t.id)}" aria-label="${esc(pb.label)}: ${esc(t.track)}" title="${esc(pb.label)}"${st === 'none' ? ' disabled' : ''}>${face}<span class="dpi" aria-hidden="true">${pb.icon}</span></button>
+      <button class="dmain" type="button" data-act="dshow" data-at="${i}"${i === at ? ' aria-current="true"' : ''}>
+        <span class="ttl">${esc(t.track)}</span><span class="dsub">${esc(t.artist ?? '')}${best ? ` · <span class="dfit">${esc(fitWord(best.score))} in ${esc(best.name)}</span>` : ''}</span></button>
+      <span class="dacts">
+        ${ctx.S?.discLiked?.has(t.id) ? '<button class="b sm" type="button" disabled>Liked</button>'
+          : `<button class="b sm" type="button" data-act="like" data-like="${esc(t.id)}" aria-label="Like ${esc(t.track)}">Like</button>`}
+        ${best ? `<button class="b sm dadd" type="button" data-act="dadd" data-tid="${esc(t.id)}" data-pl="${esc(best.id)}" aria-label="Add ${esc(t.track)} to ${esc(best.name)}">+ ${esc(best.name)}</button>` : ''}
+      </span></div>`;
+  }).join('');
+  return `<section class="drows" aria-labelledby="drows-h">
+    <div class="plsugg-head"><h2 id="drows-h">All ${d.length} picks</h2><span class="hint">▶ plays a 30-second preview here</span></div>
+    <div class="plrows">${rows}</div></section>`;
+}
+
 export function view(ctx) {
   const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
@@ -19,7 +52,9 @@ export function view(ctx) {
   const d = S.discover ?? [];
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
   const hasKey = !!lfmKey();
-  const head = `<h1>Discover</h1>
+  // Release radar is Discover's first section (BUILD-6-PLAN §2.3); '' without ctx.radar.
+  const radar = radarView(ctx);
+  const head = `<h1>Discover</h1>${radar}${radar ? '<h2 class="disc-h2">Find new music</h2>' : ''}
     <p class="lede">New music, with everything you already own taken out.${ib('discover', 'Discover', `<p>Every artist and track you already own is subtracted before ranking, including each artist named inside a collaboration, so nothing here recycles your library.</p>
       <p><b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>`)}</p>
     ${hasKey ? '' : `<div class="note discnokey">
@@ -39,7 +74,9 @@ export function view(ctx) {
 
   // WP-C3: "find tracks that sound like ___". '' without CLAP records.
   const sounds = soundSearchHTML();
-  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'Pick what to seed from above, then hit Find new music. A run takes a minute or two.');
+  // Every empty state gets a button (USER-REVIEW): here it is the Find button itself.
+  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'One run takes a minute or two, and leaves out everything you already own.',
+    { acts: '<button class="b p" type="button" data-act="discRun">Find new music from what I play</button>' });
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
   const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
@@ -94,17 +131,40 @@ export function view(ctx) {
           <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
           <a class="b sm" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
           <select data-act="discAnyPl" id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+          ${t.isrc ? `<button class="b sm" type="button" data-act="dprev" data-tid="${esc(t.id)}">${ctx.previewState?.(t.id) === 'playing' ? 'Pause preview' : 'Preview'}</button>` : ''}
         </div>
       </div>
-    </div>`;
+    </div>
+    ${pickRowsHTML(ctx, d, i)}`;
 }
 
 
+/** After paint: the radar's search field and windowed feed. */
+export function mount(ctx) { radarMount(ctx); }
+
 export const actions = {
+  ...radarActions,
   discRun: ({ S, runDiscovery }) => runDiscovery(S.discSeed || null),
   discPl({ S }, el) { S.discSeed = el.value; },
   discAnyPl(ctx, el) { if (el.value) return discAdd(ctx, el.value); },
   dfile(ctx, el) { return discAdd(ctx, el.dataset.dfile); },
+  /** A row's "+ playlist": that pick, into the playlist it fits best. */
+  dadd(ctx, el) {
+    const at = (ctx.S.discover ?? []).findIndex(x => x.id === el.dataset.tid);
+    if (at >= 0) return discAdd(ctx, el.dataset.pl, at);
+  },
+  /** A row's ▶: its 30-second preview, in the page. */
+  dprev(ctx, el) {
+    const t = (ctx.S.discover ?? []).find(x => x.id === el.dataset.tid);
+    if (t && ctx.previewToggle) return ctx.previewToggle(t);
+  },
+  /** Tap a row's title: that pick on the card. */
+  dshow({ S, render }, el) {
+    const d = S.discover ?? [];
+    S.discAt = Math.max(0, Math.min(+el.dataset.at || 0, d.length - 1));
+    render();
+    globalThis.document?.querySelector?.('.deck')?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  },
   dnav({ S, render }, el) {
     const d = S.discover ?? [];
     S.discAt = Math.max(0, Math.min((S.discAt ?? 0) + (+el.dataset.dnav), d.length - 1));
@@ -125,14 +185,15 @@ export const actions = {
       const t = (S.discover ?? []).find(x => x.id === el.dataset.like);
       if (t && discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
       await logAction({ op:'add-liked', trackIds:[el.dataset.like], reason:'from discovery' });
+      (S.discLiked ??= new Set()).add(el.dataset.like);
       el.textContent = 'Liked'; el.disabled = true; toast('Added to your Liked Songs.'); }
     catch (err) { toast('Failed: '+err.message); }
   },
 };
 
-/** Add the track on the card to a playlist, and take it off the pile. */
-async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId) {
-  const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
+/** Add a pick (the one on the card, unless `pick` says which) to a playlist, and take it off the pile. */
+async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId, pick = null) {
+  const d = S.discover ?? [], cur = Math.min(S.discAt ?? 0, d.length - 1), at = pick ?? cur, t = d[at];
   if (!t) return;
   const name = CFG[playlistId]?.name ?? playlistId;
   try {
@@ -142,7 +203,7 @@ async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction
     toast(`Added “${t.track}” to ${name}.`, () => undoAction(when));
     if (discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
     d.splice(at, 1);
-    S.discAt = Math.max(0, Math.min(at, d.length - 1));
+    S.discAt = Math.max(0, Math.min(at < cur ? cur - 1 : pick == null ? at : cur, d.length - 1));
     render();
   } catch (e) { toast('Failed: ' + e.message); }
 }

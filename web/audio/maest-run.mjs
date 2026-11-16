@@ -17,6 +17,7 @@
 // first ear's worker.
 import { fillMaest, needsMaest } from '../../core/audio/maest.mjs';
 import { earCurrent, withEar } from '../../core/audio/record.mjs';
+import { NEAR_DEFAULT } from '../../core/intrinsic/audio.mjs';
 
 export const MAEST_PER_RUN = 50;
 
@@ -174,8 +175,31 @@ export function chosenEar(choice, records) {
 
 /** Records the Score run should also score with the second ear: only when some have one. */
 export function scoreArms(records) {
-  for (const r of records?.values?.() ?? records ?? []) if (earCurrent(r, 'maest')) return ['maest', 'both'];
-  return null;
+  let any = false;
+  for (const r of records?.values?.() ?? records ?? []) {
+    if (earCurrent(r, 'maest')) return ['maest', 'both', 'near'];
+    any = true;
+  }
+  // 'near' (ENGINE-REVIEW layer 1): the first ear scored against each
+  // playlist's nearest heard tracks too. gate.mjs nearChoice decides it.
+  return any ? ['near'] : null;
+}
+
+/** The nearest-members setting the Score arm uses (core/intrinsic/audio.mjs NEAR_DEFAULT). */
+export const NEAR_SETTING = NEAR_DEFAULT;
+
+/**
+ * May the File engine mix in each playlist's nearest tracks? Only when a Score
+ * run chose it (`choice.near`), and only for the first ear, which is what the
+ * arm measured.
+ */
+export function nearInUse(choice, ear = 'effnet') {
+  return ear === 'effnet' && choice?.near === true;
+}
+
+/** The Score card's line for nearest tracks, or '' when the run had no such arm. */
+export function nearScoreText(w) {
+  return w?.nearChoice?.text ?? '';
 }
 
 /** The Score card's line for the second ear, or '' without arms. Counts and rates only. */

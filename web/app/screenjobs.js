@@ -54,11 +54,11 @@ async function tidySoundBuild(key) {
     const audio = await engineAudio();
     let res = null;
     if (audio) {
-      try { res = (await inEngineWorker('misfits', { lib: LIB, audio: engineAudioIn(audio) }))?.result ?? null; }
+      try { res = (await inEngineWorker('misfits', { lib: LIB, audio: engineAudioIn(audio), misfitOpts: typeof tuneMisfitOpts === 'function' ? tuneMisfitOpts() : null }))?.result ?? null; }
       catch { res = null; }
       if (!res) {
         await yieldToPaint();
-        res = BetterfyMisfit.soundMisfitsFor(LIB, engineAudioIn(audio), { targets: engineTargets(), isMirror: isMirrorPlaylist });
+        res = BetterfyMisfit.soundMisfitsFor(LIB, engineAudioIn(audio), { targets: engineTargets(), isMirror: isMirrorPlaylist, opts: (typeof tuneMisfitOpts === 'function' ? tuneMisfitOpts() : null) ?? undefined });
       }
     }
     Object.assign(TSOUND, { status: 'ready', key, res, err: null });

@@ -5,7 +5,7 @@ import { analyseOne, analyseSamples, fillDsp, WORKER_VERSION } from '../core/aud
 import { makeRecord, MISS, N_STYLES, EMB_DIM, validRecord } from '../core/audio/record.mjs';
 import { SAMPLE_RATE, MEL_VERSION } from '../core/audio/mel.mjs';
 import { combineTempo, combineKey, combineLoudness, measureWindows, needsDsp, DSP_VERSION,
-         DISAGREE_PENALTY, OCTAVE_PENALTY } from '../core/audio/dsp/combine.mjs';
+         DISAGREE_PENALTY, OCTAVE_PENALTY, SLOW_FOLD, PULSE_FOLD } from '../core/audio/dsp/combine.mjs';
 import { dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, BPM_MIN_CONF, DSP_UI_KEY } from '../web/audio/dsp-view.mjs';
 import { createAudioController } from '../web/audio/controller.mjs';
 import { soundChip } from '../web/ui/sound.mjs';
@@ -120,6 +120,33 @@ test("tempo: D1's own octave ambiguity is kept, with its partner", () => {
   const both = combineTempo([amb, T(85.4, 0.7)]);
   assert.equal(both.octaveAmbiguous, true, 'agreeing windows do not wash out the ambiguity');
   assert.equal(both.bpmAlt, 170);
+});
+
+test('tempo: a slow reading with a steady dance pulse is taken at double time; faster ones are left alone', () => {
+  assert.equal(SLOW_FOLD, 74);
+  assert.equal(PULSE_FOLD, 0.38);
+  const P = { pulse: 0.5 };
+  assert.equal(combineTempo([T(64, 0.8, P), T(64.2, 0.6, P)]).bpm, 128.2);
+  assert.deepEqual(combineTempo([T(70, 0.7, P)]), { bpm: 140, bpmConf: 0.7, octaveAmbiguous: false, agree: null });
+  // Flagged half/double time keeps the slow reading as the alternate.
+  const amb = combineTempo([T(65, 0.6, { ...P, octaveAmbiguous: true, alternates: [{ bpm: 130, score: 0.8 }] })]);
+  assert.equal(amb.bpm, 130); assert.equal(amb.bpmAlt, 65); assert.equal(amb.octaveAmbiguous, true);
+  // At or above the fold, and where ×2 would pass 200, nothing moves.
+  assert.equal(combineTempo([T(74, 0.7, P)]).bpm, 74);
+  assert.equal(combineTempo([T(87, 0.7, P)]).bpm, 87);
+  assert.equal(combineTempo([T(174, 0.7, P)]).bpm, 174);
+});
+
+test('tempo: the fold is gated on the pulse: a ballad or swung jazz at 66 stays 66', () => {
+  assert.equal(combineTempo([T(66, 0.7, { pulse: 0.25 })]).bpm, 66);
+  assert.equal(combineTempo([T(66, 0.7)]).bpm, 66, 'no pulse measured: no fold');
+  // Only windows that heard this tempo count: a pulsing window at 120 does not move a 66.
+  assert.equal(combineTempo([T(66, 0.9, { pulse: 0.2 }), T(120, 0.3, { pulse: 0.6 })]).bpm, 66);
+  // Mean of the agreeing windows.
+  assert.equal(combineTempo([T(66, 0.9, { pulse: 0.3 }), T(66.4, 0.5, { pulse: 0.5 })]).bpm, 132.3);
+  // Options: no fold at all, or the ungated fold the measurements compare against.
+  assert.equal(combineTempo([T(66, 0.7, { pulse: 0.9 })], { slowFold: 0 }).bpm, 66);
+  assert.equal(combineTempo([T(66, 0.7, { pulse: 0.1 })], { pulseFold: -Infinity }).bpm, 132);
 });
 
 test('tempo: no beat in either window gives nothing; one good window is used alone', () => {

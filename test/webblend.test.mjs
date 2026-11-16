@@ -8,6 +8,7 @@ import * as Blend from '../core/intrinsic/blend.mjs';
 import * as Bridge from '../core/intrinsic/bridge.mjs';
 import { buildSpace, placements } from '../core/intrinsic/space.mjs';
 import { buildProfiles, rank } from '../profile.mjs';
+import { enrichOrder, listenedWeights } from '../core/personal/relevance.mjs';
 
 /*
  * docs/SMARTER-GENRES-PLAN.md phase 1, on the File screen, run out of the real
@@ -23,6 +24,7 @@ const between = (from, to, what) => {
   return PAGE.slice(i, j);
 };
 const INBOX = between('function artHTML(t', 'function emptyState(', 'vInbox');
+const ENRICH_ORDER = between('/* Listening-weighted enrichment', '/** Fill tag gaps', 'app/sync-tags.js');
 const BLEND_SRC = between('/* ======================= tags and the engine, blended on File', '/* ---------- CLAP: names for', 'app/blend.js');
 
 /* A library: two genre playlists of core artists, a newcomer nobody has tagged
@@ -59,6 +61,7 @@ function load({ stored = null, raw = null, bridgeOff = false, blend = true, list
   if (stored) store.set('engine-blend', stored);
   if (weights) store.set('engine-weights', weights);
   if (raw) store.set('bridge-raw', { at: 1, raw });
+  if (listening) store.set('listening_raw', { at: 1, data: listening });
   const calls = { engineLoad: 0, gather: [], fired: [], renders: 0 };
   const row = (t, suggest) => ({ id: t.id, title: t.name, artist: t.artists[0].name, album: 'A', released: '2021',
     dur: 300000, art: null, added: '2025-02-01', tags: [], artists: t.artists, suggest });
@@ -94,11 +97,12 @@ function load({ stored = null, raw = null, bridgeOff = false, blend = true, list
     matchMedia: () => ({ matches: false }),
     esc: s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])),
     mmss: ms => `${Math.floor(ms / 60000)}:00`, hueOf: () => 200, ICON_PLAY: '<svg></svg>',
-    console,
+    console, enrichOrder, listenedWeights,
   };
   sandbox.bridgeOn = () => sandbox.LS.getItem('bf_bridge_off') !== '1';
   vm.createContext(sandbox);
   vm.runInContext(INBOX, sandbox); withInbox(sandbox);
+  vm.runInContext(ENRICH_ORDER, sandbox);   // the page's D9 ordering, which blendFetch runs its artists through
   if (blend) vm.runInContext(BLEND_SRC, sandbox);
   return Object.assign(sandbox, { calls, store, lib });
 }

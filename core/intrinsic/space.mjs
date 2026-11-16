@@ -281,7 +281,8 @@ function audioLayer(audio, destinations, skip) {
   const index = opts.index instanceof Map ? opts.index
     : audioIndex(opts.records, { mel: opts.mel, ...(opts.ear ? { ear: opts.ear } : {}) });
   if (!index.size) return {};
-  const layer = buildAudioProfiles(destinations, index, { skip });
+  // `near` (nearest members, ENGINE-REVIEW layer 1): only once a Score run picked it.
+  const layer = buildAudioProfiles(destinations, index, { skip, ...(opts.near ? { near: opts.near } : {}) });
   // Which ear the index holds (WP-C1), so hearMore adds rows from the same
   // ear. Only set for a second ear: a first-ear layer is key for key as before.
   if (opts.ear && opts.ear !== 'effnet') layer.ear = opts.ear;
@@ -313,6 +314,51 @@ export function withAudioLayer(space, audio, { skip = null } = {}) {
   // listener's verdict on a held-out track never trains the learner scoring it.
   const layer = audioLayer(audio, space.destinations, skip);
   return Object.keys(layer).length ? { ...rest, ...layer } : (('audio' in space || 'learned' in space) ? rest : space);
+}
+
+/**
+ * Learn from one tap now (docs/review/ENGINE-REVIEW.md layer 5): a track just
+ * filed into `playlistId` joins that playlist in this space at once, so the
+ * next card by the same artist, or one that sounds like it, already counts it.
+ * The background rebuild after filing replaces this quick update with the
+ * exact one; until then the two differ only in rounding of the graph centroid.
+ *
+ * Updates in place, like `hearMore`: the artist counts, the membership, the
+ * artist-graph centroid (a running mean), and the playlist's sound when the
+ * track has been heard. A track already in the playlist, or a playlist this
+ * space doesn't file into, changes nothing. Returns whether anything changed.
+ */
+export function learnFiled(space, track, playlistId) {
+  const d = space?.destinations?.get(playlistId);
+  if (!d || !track?.id || d.trackIds.has(track.id)) return false;
+  for (const a of track.artists ?? []) {
+    if (!a?.id) continue;
+    const row = d.artistCounts.get(a.id) ?? { name: a.name ?? null, n: 0 };
+    row.n++; d.artistCounts.set(a.id, row); d.artists.add(a.id);
+  }
+  const vec = trackVector(track, space.graph);
+  if (vec.size) {
+    const n = d.vecN ?? d.n;
+    const next = new Map();
+    for (const [k, x] of d.centroid) next.set(k, x * n / (n + 1));
+    for (const [k, x] of vec) next.set(k, (next.get(k) ?? 0) + x / (n + 1));
+    d.centroid = next; d.centroidNorm = norm(next); d.vecN = n + 1;
+  }
+  d.trackIds.add(track.id); d.n++;
+  const prof = space.audio?.profiles?.get(playlistId), row = space.audio?.index?.get(track.id);
+  if (row) {
+    if (prof && !prof.ids.has(track.id)) {
+      for (let i = 0; i < prof.sum.length; i++) prof.sum[i] += row.emb[i];
+      prof.ids.add(track.id); prof.members++;
+      let ss = 0; for (const v of prof.sum) ss += v * v;
+      if (ss > 0) prof.centroid = Float32Array.from(prof.sum, v => v / Math.sqrt(ss));
+      if (prof.members === (space.audio.minMembers ?? 0)) space.audio.size++;
+    } else if (!prof) {
+      const sum = Float64Array.from(row.emb);
+      space.audio.profiles.set(playlistId, { centroid: Float32Array.from(row.emb), members: 1, sum, ids: new Set([track.id]) });
+    }
+  }
+  return true;
 }
 
 /**
@@ -539,7 +585,8 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
   // unheard one (or a space with no audio layer) falls through untouched.
   if (soundFirst && space.audio && audioScores(track, space)) {
     useAudio = true;
-    weights = SOUND_FIRST_WEIGHTS;
+    // `soundFirst` may be an object of tuned weights (Engine › Tune), laid over the priors.
+    weights = typeof soundFirst === 'object' ? { ...SOUND_FIRST_WEIGHTS, ...soundFirst } : SOUND_FIRST_WEIGHTS;
   }
 
   const vec = trackVector(track, space.graph);

@@ -15,13 +15,16 @@ const SCREEN_MODS = globalThis.BetterfyScreens ?? {};
 const SCREEN_CTX = {
   history: () => ({ S, esc, isUndone, emptyState, undoAction, getLog, toast, render }),
   sources: () => ({ LS, esc, lfmKey, $, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
-                    toast, render, enrichMissing, fillFromWikidata }),
+                    toast, render, enrichMissing, fillFromWikidata, sourceCoverage,
+                    helpersPanelHTML: () => (typeof helpersPanelHTML === 'function' ? helpersPanelHTML() : '') }),
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
+                   TUNE, engineScoreTune, engineTune, tuneApply, tuneForget,
+                   tuneBlock: r => (globalThis.BetterfyTune ? BetterfyTune.tuneBlock(r) : ''),
                    blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
                    maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,
-                   getLog: () => (typeof getLog === 'function' ? getLog() : Promise.resolve(null)),
+                   getLog: () => (typeof getLog === 'function' ? getLog({ all: true }) : Promise.resolve(null)),
                    measureLines: log => globalThis.BetterfyMeasure ? BetterfyMeasure.measureLines(BetterfyMeasure.measureHistory(log)) : [],
                    get navigator() { return globalThis.navigator; }, prompt: (...a) => prompt(...a) }),
 };
@@ -59,11 +62,39 @@ SCREEN_CTX.tidy = () => ({
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get LISTENING_CACHE() { return LISTENING_CACHE; },
   get LISTENING_PENDING() { return LISTENING_PENDING; },
+  // The health report and keyboard sprint (BUILD-6 F9): Library's own score, read from its module.
+  LS, NO_SIGNAL, saveFeedback, go, openPlSheet, isMirrorPlaylist, twinPairs: () => ENG?.pairs ?? null,
+  healthSplits: () => (LPROF?.out ? listsSplits().map(x => x.p.id) : []),
+  get libHealth() { return SCREEN_MODS.lists; },
+  get document() { return globalThis.document; },
 });
+/** Library's "How well it knows you" (Wave F): the last Score run's headline, kept on this device so the
+ *  card still has it after a reload. Read from ENG.val, never computed here; nothing until one run. */
+function engineSummary() {
+  const m = typeof ENG !== 'undefined' ? ENG.val?.mine : null;
+  if (m && Number.isFinite(m.top1)) {
+    const sum = { top1: m.top1, top3: m.top3 ?? null, scored: m.scored ?? null, at: ENG.val.at ?? Date.now() };
+    try {
+      const old = JSON.parse(LS.getItem('bf_engscore') || 'null');
+      if (!old || old.top1 !== sum.top1 || old.scored !== sum.scored) LS.setItem('bf_engscore', JSON.stringify(sum));
+      else sum.at = old.at;
+    } catch { /* private mode: shown this session only */ }
+    return sum;
+  }
+  let saved = null;
+  try { saved = JSON.parse(LS.getItem('bf_engscore') || 'null'); } catch { /* none */ }
+  return { ...(saved ?? {}), running: typeof ENG !== 'undefined' && !!ENG.valRunning };
+}
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
-  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
+  listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate, thumbHTML, engineSummary,
   twinPairs: () => ENG?.pairs ?? null,
+  // Merge/split wizard (BUILD-6 F4): new private playlists, written through the History log.
+  sp, landedIn,
+  // Fill this playlist (BUILD-6 F2): ranked by core/recommend/fill.mjs in the lazy engine, written through the History log.
+  TAGS, addTracks, logAction, undoAction, newGroup, engineLoad,
+  engineAudio: () => (typeof engineAudio === 'function' ? engineAudio() : null),
+  get BetterfyFill() { return globalThis.BetterfyFill; },
   coldKick: needCold => coldKick(needCold),
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
@@ -75,21 +106,26 @@ SCREEN_CTX.lists = () => ({
 });
 SCREEN_CTX.new = () => ({
   R, GAPS, esc, $, emptyState, fire, gapsCompute, gapsCreate, gapsFile, toast, render, sp, addTracks,
+  mergeSplitOpen: spec => SCREEN_MODS.lists.wizardOpen(screenCtx('lists'), spec),
   get BetterfyGaps() { return globalThis.BetterfyGaps; },
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
 });
 // --- home/inbox ---
 Object.assign(SCREEN_CTX, {
   // The File tab: the status line and Up next around the `inbox` module's deck.
-  home: () => ({ S, R, LIB, esc, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks,
+  home: () => ({ S, R, LIB, esc, onbHTML, onbColdOffers, gapsCreate, COLD, toast, $, go, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks, pickBacked,
                  render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
-                  tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
+                  tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand, pickBacked,
                   addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
-                  fileBand, fileSure, fileOrderKick,
+                  fileBand, fileSure, fileOrderKick, teachHTML, teachAct,
+                  fileDecision: t => (typeof engineDecisionOf === 'function' ? engineDecisionOf(t?.id) : null),
+                  moodChips: t => (typeof moodChipsFor === 'function' ? moodChipsFor(t) : []),
                   rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
                   saveFeedback, toast, render, flyCard,
+                  // The "since you last opened" card (F5): reads only what is already held.
+                  LS, COLD, isMirrorPlaylist, listeningRaw: async () => (await idb.get('listening_raw'))?.data ?? null,
                   rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
                   matchMedia: q => globalThis.matchMedia(q) }),
 });
@@ -103,5 +139,10 @@ SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, ded
 SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
   soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
-  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember });
+  runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember,
+  thumbHTML, previewToggle, previewState,
+  // Release radar, Discover's first section (web/app/radar.js, web/screens/radar.mjs).
+  radar: typeof radarCtx === 'function' ? radarCtx() : null,
+  get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
+  get document() { return globalThis.document; } });
 // --- end shuffle/discover ---

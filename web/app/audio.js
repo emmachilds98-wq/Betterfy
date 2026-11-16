@@ -38,7 +38,8 @@ function audioLoad() {
 function audioSettings() {
   if (globalThis.BetterfyAudio) return BetterfyAudio.readAudioSettings(LS);
   let s = null; try { s = JSON.parse(LS.getItem('bf_audio') || 'null'); } catch { s = null; }
-  return { on: s?.on !== false, wifiOnly: s?.wifiOnly !== false, scope: s?.scope === 'all' ? 'all' : 'playing+unfiled' };
+  // A saved off counts only when it was chosen (web/audio/settings.mjs offChosen).
+  return { on: !(s?.on === false && s?.offChosen === true), wifiOnly: s?.wifiOnly !== false, scope: s?.scope === 'all' ? 'all' : 'playing+unfiled' };
 }
 
 const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;
@@ -47,7 +48,7 @@ const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;
 function deepSettings() {
   if (globalThis.BetterfyAudio?.readDeepSettings) return BetterfyAudio.readDeepSettings(LS);
   let s = null; try { s = JSON.parse(LS.getItem('bf_audio_deep') || 'null'); } catch { s = null; }
-  return { maest: s?.maest === true, clap: s?.clap === true, beats: s?.beats === true, memoryOverride: s?.memoryOverride === true };
+  return { maest: s?.maest !== false, clap: s?.clap !== false, beats: s?.beats === true, memoryOverride: s?.memoryOverride === true };
 }
 /** May this deep ear run now? 'off' until audio.js has loaded. */
 function deepAllowed(ear) {
@@ -183,6 +184,9 @@ const engineAudioBase = audio => (audio ? { records: audio, model: ENGINE_LEARN_
 const engineAudioIn = audio => {
   const base = engineAudioBase(audio);
   const ear = audio ? engineEar(audio) : 'effnet';
+  // Nearest tracks (ENGINE-REVIEW layer 1): only once a Score run chose them.
+  if (ear === 'effnet' && audio && globalThis.BetterfyAudio?.nearInUse?.(ENG.calib?.soundChoice ?? null, ear))
+    return { ...base, near: BetterfyAudio.NEAR_SETTING };
   return ear === 'effnet' ? base : { ...base, ear };
 };
 /** Which ear places tracks: the first, unless a Score run chose a second ear. */

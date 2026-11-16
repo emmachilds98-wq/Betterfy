@@ -3,11 +3,11 @@
 // own action log (web/app/actionlog.js), nothing fitted, nothing leaves the
 // device. Four numbers, each with its own minimum sample before it is shown:
 //
-//   queue    share of single-card filings that came from the first QUEUE_HEAD
-//            cards of the File queue, against the share a random order would
-//            give for that deck (`deck`, logged with each filing; older
-//            entries without it are left out). `beatsRandom` is false unless
-//            the share clears the baseline by 5 points, so it can fail.
+//   queue    skip rate of the first QUEUE_HEAD cards of the File queue against
+//            the rest (D2). Each decision is a filing or a skip (`op: 'skip'`,
+//            logged with `queuePos`); a good order puts the cards you want
+//            first, so the head's skip rate should sit well below the tail's.
+//            `beatsTail` needs the head at least HEAD_GAP lower, so it can fail.
 //   batch    share of filings made in the "sure" band (`band: 'sure'`) that
 //            were later moved away or undone.
 //   tidy     per tier (`move.tier`: sure / likely / unsure), the share of Tidy
@@ -16,9 +16,14 @@
 //   discover share of tracks added from Discovery that were not undone.
 //
 // An entry is `{ at, op, playlistId, trackIds, reason?, group?, move?,
-// undoneAt?, queuePos?, deck?, band? }`; an `undo` entry (`of`) marks older logs.
+// undoneAt?, queuePos?, deck?, band? }`; skips are `{ at, op: 'skip', trackIds, queuePos, deck }`
+// and never reach History's list (web/app/actionlog.js hides them); an `undo` entry (`of`) marks older logs.
 
 export const QUEUE_HEAD = 20;
+/** How far below the tail's skip rate the head's must be (BUILD-6-PLAN §3.1). */
+export const HEAD_GAP = 0.10;
+/** Fewest decisions on each side of the head/tail line. */
+export const MIN_SIDE = 3;
 /** Fewest counted entries before a number is worth showing. */
 export const MIN_N = Object.freeze({ queue: 10, batch: 10, tidy: 5, discover: 10 });
 export const TIERS = Object.freeze(['sure', 'likely', 'unsure']);
@@ -28,15 +33,15 @@ const rate = (k, n) => (n > 0 ? k / n : null);
 // A filing is one card filed from the inbox, or one step of "File the sure ones"
 // (a group, one entry per playlist). Only single cards say anything about queue
 // order: a batch's `queuePos` is its earliest card, not a card the user chose.
-const isFiling = e => e.op === 'add' && /^filed (from inbox|with the rest of|the sure ones)/.test(e.reason ?? '');
+export const isFiling = e => e.op === 'add' && /^filed (from inbox|with the rest of|the sure ones)/.test(e.reason ?? '');
 const isCard = e => isFiling(e) && !e.group;
 const isDiscover = e => (e.op === 'add' || e.op === 'add-liked') && /discovery/.test(e.reason ?? '');
 
 /** Everything in `log` (any order), oldest first, without malformed entries. */
-const clean = log => (Array.isArray(log) ? log : []).filter(e => e && typeof e.at === 'string' && e.op)
+export const clean = log => (Array.isArray(log) ? log : []).filter(e => e && typeof e.at === 'string' && e.op)
   .slice().sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 
-function undoneSet(log) {
+export function undoneSet(log) {
   const s = new Set(), groups = new Set();
   for (const e of log) if (e.op === 'undo') { if (e.of) s.add(e.of); if (e.ofGroup) groups.add(e.ofGroup); }
   // A grouped undo undoes every member, whichever one the undo entry names.
@@ -46,7 +51,7 @@ function undoneSet(log) {
 }
 
 /** Was this entry undone, or its track later taken out of the same playlist? */
-function reversed(e, log, undone) {
+export function reversed(e, log, undone) {
   if (e.undoneAt || undone.has(e.at)) return true;
   if (!e.playlistId) return false;
   const mine = new Set(ids(e));
@@ -58,15 +63,14 @@ export function measureHistory(rawLog) {
   const log = clean(rawLog), undone = undoneSet(log);
   const filings = log.filter(isFiling);
 
-  // Queue order (D2): a filing at the front proves nothing alone, since the
-  // user files the card in front of them. Compare with what a random order
-  // would give: with a deck of `deck` cards, a random card is in the first
-  // QUEUE_HEAD with probability min(QUEUE_HEAD, deck) / deck. Needs `deck`.
-  const queued = filings.filter(e => isCard(e) && Number.isFinite(e.queuePos) && e.deck > 0);
-  const head = queued.filter(e => e.queuePos < QUEUE_HEAD).length;
-  const baseline = queued.length ? queued.reduce((a, e) => a + Math.min(QUEUE_HEAD, e.deck) / e.deck, 0) / queued.length : null;
-  const share = rate(head, queued.length);
-  const lift = share == null ? null : share - baseline;
+  // Queue order (D2): every card the user decided on (filed or skipped) that
+  // recorded where it sat in the deck. A filing alone proves nothing, since the
+  // user files the card in front of them; a skip is the order being wrong.
+  const decided = log.filter(e => (isCard(e) || e.op === 'skip') && Number.isFinite(e.queuePos));
+  const side = pick => { const xs = decided.filter(pick); const k = xs.filter(e => e.op === 'skip').length;
+                         return { n: xs.length, skips: k, rate: rate(k, xs.length) }; };
+  const head = side(e => e.queuePos < QUEUE_HEAD), tail = side(e => e.queuePos >= QUEUE_HEAD);
+  const gap = head.rate == null || tail.rate == null ? null : tail.rate - head.rate;
 
   const sure = filings.filter(e => e.band === 'sure');
   const sureBack = sure.filter(e => reversed(e, log, undone)).length;
@@ -87,8 +91,7 @@ export function measureHistory(rawLog) {
   const discKept = disc.filter(e => !(e.undoneAt || undone.has(e.at))).length;
 
   return {
-    queue: { n: queued.length, head, share, baseline, lift, beatsRandom: lift == null ? null : lift > 0.05,
-             of: filings.filter(isCard).length },
+    queue: { n: decided.length, head, tail, gap, beatsTail: gap == null ? null : gap >= HEAD_GAP - 1e-9 },
     batch: { n: sure.length, back: sureBack, precision: sure.length ? 1 - sureBack / sure.length : null,
              movedShare: rate(sureBack, sure.length) },
     tidy,
@@ -100,9 +103,10 @@ export function measureHistory(rawLog) {
 export function measureLines(m, pc = x => Math.round(x * 100) + '%') {
   const few = (label, n, min) => `${label}: not enough data yet (${n} of ${min})`;
   const out = [];
-  out.push(m.queue.n >= MIN_N.queue
-    ? `Queue order: ${pc(m.queue.share)} of ${m.queue.n} filings came from the first ${QUEUE_HEAD} cards (${pc(m.queue.baseline)} expected from a random order)${m.queue.beatsRandom ? '' : ': no better than random'}`
-    : few('Queue order', m.queue.n, MIN_N.queue));
+  const q = m.queue;
+  out.push(q.n >= MIN_N.queue && q.head.n >= MIN_SIDE && q.tail.n >= MIN_SIDE
+    ? `Queue order: skip rate ${pc(q.head.rate)} in the first ${QUEUE_HEAD} cards (${q.head.n}), ${pc(q.tail.rate)} in the rest (${q.tail.n})${q.beatsTail ? '' : ': the front is not skipped less, so the order is not helping'}`
+    : few('Queue order', Math.min(q.n, q.head.n + q.tail.n), MIN_N.queue));
   out.push(m.batch.n >= MIN_N.batch
     ? `Batch filing: ${pc(m.batch.movedShare)} of ${m.batch.n} sure-band filings later moved or undone`
     : few('Batch filing', m.batch.n, MIN_N.batch));

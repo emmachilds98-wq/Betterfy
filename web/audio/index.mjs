@@ -17,7 +17,8 @@ export { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_
 export { readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB } from './deep-settings.mjs';
 export { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean,
   confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } from '../../core/audio/clap-search.mjs';
-export { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN } from './maest-run.mjs';
+export { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN,
+         nearInUse, nearScoreText, NEAR_SETTING } from './maest-run.mjs';
 export { MAEST_FILE, MAEST_LABELS_FILE, needsMaest } from '../../core/audio/maest.mjs';
 export { needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN } from '../../core/audio/dsp/beats.mjs';
 export { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } from '../../core/audio/clap.mjs';

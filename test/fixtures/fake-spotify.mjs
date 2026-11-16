@@ -9,6 +9,7 @@
 // app code is exactly the shipped code. Failure modes are switches on `.sw`:
 //
 //   sw.rate429       next N API calls answer 429 with Retry-After: 1
+//   sw.quota         while true, every API call answers 429 QUOTA_EXCEEDED (the app's quota is gone)
 //   sw.expire401     next N authorised API calls answer 401 (the page must
 //                    refresh through /api/token and try again)
 //   sw.failWrites    every playlist/library write answers 403 until cleared
@@ -16,6 +17,11 @@
 //   sw.failAfterWrites=k   after k playlist writes have landed, every further write answers 403
 //   sw.expireAfterWrites=k after k playlist writes, the next call with the old token answers 401 once
 //   sw.loseResponse  next N playlist adds are applied, then the connection is cut before the answer
+//
+// Optional on the account (test/backup.test.mjs): `catalog`, more tracks Spotify
+// knows that are in no playlist; `strictIds`, a playlist add holding an id the
+// fake does not know answers 400 and adds nothing, as Spotify does. GET
+// /search?q=isrc:X finds a known track by ISRC (any other search is empty).
 //
 // `.log` records every API call as { method, path, body } so a spec can assert
 // that a swipe really reached the server, and `.playlist(id)` reads the state.
@@ -36,6 +42,8 @@ const json = (res, status, body, headers = {}) => {
 export async function startFakeSpotify(account) {
   const playlists = new Map(account.playlists.map(p => [p.id, { ...p, tracks: [...p.tracks] }]));
   const liked = [...account.liked];
+  // Newest first, one minute apart, so a client can tell a head it has from one it has not.
+  const likedAt = new Map(liked.map((t, i) => [t.id, new Date(Date.UTC(2024, 4, 1) - i * 60000).toISOString()]));
   const created = [];
   const sw = { rate429: 0, expire401: 0, failWrites: false, latencyMs: 0,
     failAfterWrites: -1, expireAfterWrites: -1, loseResponse: 0 };
@@ -57,6 +65,7 @@ export async function startFakeSpotify(account) {
     const write = m !== 'GET' && !p.startsWith('/me/player');
     log.push({ method: m, path: p + (url.search || ''), body });
     if (sw.latencyMs) await new Promise(r => setTimeout(r, sw.latencyMs));
+    if (sw.quota) return json(res, 429, { error: { status: 429, message: 'quota', reason: 'QUOTA_EXCEEDED' } }, { 'retry-after': '1' });
     if (sw.rate429 > 0) { sw.rate429--; return json(res, 429, { error: { status: 429, message: 'rate limited' } }, { 'retry-after': '1' }); }
     if (sw.expire401 > 0 && /^Bearer /.test(req.headers.authorization ?? '') && !/^Bearer fresh/.test(req.headers.authorization)) {
       sw.expire401--; return json(res, 401, { error: { status: 401, message: 'The access token expired' } });
@@ -71,7 +80,8 @@ export async function startFakeSpotify(account) {
     if (p === '/me/playlists' && m === 'GET')
       return json(res, 200, page([...playlists.values(), ...created].map(({ tracks, ...x }) => x), q, p));
     if (p === '/me/playlists' && m === 'POST') {
-      const pl = { id: 'plnew' + String(created.length + 1).padStart(4, '0'), name: body?.name ?? 'New', owner: { id: account.me.id }, snapshot_id: 's1', tracks: [] };
+      const pl = { id: 'plnew' + String(created.length + 1).padStart(4, '0'), name: body?.name ?? 'New', owner: { id: account.me.id }, snapshot_id: 's1', tracks: [],
+        public: body?.public, description: body?.description ?? '' };
       created.push(pl); playlists.set(pl.id, pl);
       return json(res, 201, { id: pl.id, name: pl.name, snapshot_id: pl.snapshot_id, owner: pl.owner });
     }
@@ -82,6 +92,7 @@ export async function startFakeSpotify(account) {
       if (m === 'GET') return json(res, 200, page(pl.tracks.map(t => entry(t, '2024-03-01T00:00:00Z')), q, p));
       if (m === 'POST') {
         const ids = uriIds((body?.uris ?? []).join(','));
+        if (account.strictIds && ids.some(id => !findTrack(id))) return json(res, 400, { error: { status: 400, message: 'Payload contains a non-existing ID' } });
         // The real endpoint adds duplicates; so does this.
         for (const id of ids) { const t = findTrack(id); if (t) pl.tracks.push(t); }
         pl.snapshot_id = 's' + Date.now();
@@ -96,28 +107,82 @@ export async function startFakeSpotify(account) {
         return json(res, 200, { snapshot_id: pl.snapshot_id });
       }
     }
-    if (p === '/me/tracks' && m === 'GET') return json(res, 200, page(liked.map(t => entry(t, '2024-05-01T00:00:00Z')), q, p));
+    if (p === '/me/tracks' && m === 'GET') return json(res, 200, page(liked.map(t => entry(t, likedAt.get(t.id))), q, p));
+    if (p === '/me/library' && m === 'DELETE' && /spotify:playlist:/.test(q.get('uris') ?? '')) {
+      for (const id of uriIds(q.get('uris'))) {
+        playlists.delete(id);
+        const at = created.findIndex(x => x.id === id); if (at >= 0) created.splice(at, 1);
+      }
+      return json(res, 200, {});
+    }
     if ((p === '/me/library' || p === '/me/tracks') && (m === 'PUT' || m === 'DELETE')) {
       const ids = uriIds(q.get('uris') ?? q.get('ids') ?? '');
       for (const id of ids) {
         const at = liked.findIndex(t => t.id === id);
         if (m === 'DELETE' && at >= 0) liked.splice(at, 1);
-        if (m === 'PUT' && at < 0) { const t = findTrack(id); if (t) liked.unshift(t); }
+        if (m === 'PUT' && at < 0) { const t = findTrack(id); if (t) { liked.unshift(t); likedAt.set(t.id, new Date(Date.now() + liked.length).toISOString()); } }
       }
       return json(res, 200, {});
     }
     if (p.startsWith('/me/top/') || p === '/me/player/recently-played') return json(res, 200, { items: [], total: 0, next: null });
     if (p === '/me/player') { res.writeHead(204); return res.end(); }
     if (p === '/me/player/devices') return json(res, 200, { devices: [] });
-    if (p === '/search') return json(res, 200, { tracks: { items: [] } });
+    if (p === '/search') {
+      const isrc = (q.get('q') ?? '').match(/^isrc:(\w+)$/i)?.[1]?.toUpperCase();
+      const hit = isrc ? allTracks().find(t => t.external_ids?.isrc === isrc) : null;
+      return json(res, 200, { tracks: { items: hit ? [hit] : [] } });
+    }
+    // Release Radar (docs/RELEASE-RADAR-PLAN.md): the catalogue is every album the
+    // account's own tracks sit on, plus `account.releases` (extra albums with
+    // `tracks`, as the spec wants them). Shaped as after February 2026: no
+    // album_group, `limit` at most 10, one include_groups value answered at a time.
+    if (m === 'GET' && (mm = p.match(/^\/artists\/([^/]+)\/albums$/))) {
+      const limit = +(q.get('limit') ?? 5);
+      if (limit > 10) return json(res, 400, { error: { status: 400, message: 'Invalid limit' } });
+      const groups = (q.get('include_groups') ?? 'album,single').split(',');
+      const items = [...catalogue().values()].filter(a => {
+        const own = a.artists.some(x => x.id === mm[1]);
+        const on = a.tracks.some(t => (t.artists ?? []).some(x => x.id === mm[1]));
+        return (own && groups.includes(a.album_type === 'single' ? 'single' : 'album')) || (!own && on && groups.includes('appears_on'));
+      }).sort((x, y) => String(y.release_date).localeCompare(String(x.release_date)));
+      return json(res, 200, page(items.map(albumOut), q, p));
+    }
+    if (m === 'GET' && (mm = p.match(/^\/albums\/([^/]+)(\/tracks)?$/))) {
+      const a = catalogue().get(mm[1]);
+      if (!a) return json(res, 404, { error: { status: 404, message: 'Resource not found' } });
+      const tracks = { items: a.tracks.map(({ external_ids, album, popularity, ...t }) => t), total: a.tracks.length, next: null };
+      return json(res, 200, mm[2] ? tracks : { ...albumOut(a), tracks });
+    }
+    if (m === 'GET' && (mm = p.match(/^\/tracks\/([^/]+)$/))) {
+      for (const a of catalogue().values()) { const t = a.tracks.find(x => x.id === mm[1]); if (t) return json(res, 200, t); }
+      return json(res, 404, { error: { status: 404, message: 'Resource not found' } });
+    }
     json(res, 404, { error: { status: 404, message: 'fake-spotify: no route for ' + m + ' ' + p } });
   }
+
+  /** Album id -> { id, name, release_date, release_date_precision, album_type, artists, images, tracks }. */
+  function catalogue() {
+    const out = new Map();
+    const all = [...liked, ...[...playlists.values()].flatMap(x => x.tracks), ...(account.releases ?? []).flatMap(a => a.tracks)];
+    for (const t of all) {
+      const al = t.album;
+      if (!al?.id) continue;
+      const a = out.get(al.id) ?? out.set(al.id, { id: al.id, name: al.name, release_date: al.release_date,
+        release_date_precision: al.release_date_precision ?? (String(al.release_date).length === 4 ? 'year' : String(al.release_date).length === 7 ? 'month' : 'day'),
+        album_type: al.album_type ?? 'album', artists: al.artists ?? (t.artists ?? []).slice(0, 1), images: al.images ?? [], tracks: [] }).get(al.id);
+      if (!a.tracks.some(x => x.id === t.id)) a.tracks.push(t);
+    }
+    return out;
+  }
+  const albumOut = ({ tracks, ...a }) => ({ ...a, type: 'album', total_tracks: tracks.length });
 
   function findTrack(id) {
     for (const t of liked) if (t.id === id) return t;
     for (const pl of playlists.values()) for (const t of pl.tracks) if (t.id === id) return t;
+    for (const t of account.catalog ?? []) if (t.id === id) return t;
     return null;
   }
+  const allTracks = () => [...(account.catalog ?? []), ...liked, ...[...playlists.values()].flatMap(pl => pl.tracks)];
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -149,6 +214,7 @@ export async function startFakeSpotify(account) {
   return {
     url: base, sw, log, account,
     playlist: id => playlists.get(id)?.tracks.map(t => t.id) ?? null,
+    playlists: () => [...playlists.values()].map(({ tracks, ...x }) => ({ ...x, tracks: tracks.map(t => ({ id: t.id, isrc: t.external_ids?.isrc ?? null })) })),
     liked: () => liked.map(t => t.id),
     writes: () => log.filter(l => l.method !== 'GET' && l.path !== '/api/token'),
     close: () => new Promise(r => { server.closeAllConnections?.(); server.close(r); }),

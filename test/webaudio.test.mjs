@@ -132,6 +132,17 @@ test('switching listening off is saved and beats the on-by-default', () => {
   writeAudioSettings(ls, { on: false });
   assert.equal(readAudioSettings(ls).on, false);
   assert.equal(JSON.parse(ls.getItem(AUDIO_SETTINGS_KEY)).on, false);
+  assert.equal(JSON.parse(ls.getItem(AUDIO_SETTINGS_KEY)).offChosen, true);
+  writeAudioSettings(ls, { scope: 'all' });
+  assert.equal(readAudioSettings(ls).on, false, 'a chosen off survives other changes');
+  writeAudioSettings(ls, { on: true });
+  assert.equal(JSON.parse(ls.getItem(AUDIO_SETTINGS_KEY)).offChosen, undefined);
+});
+
+test('an off saved by an older build (off was the default then) reads as on', () => {
+  const ls = memLS();
+  ls.setItem(AUDIO_SETTINGS_KEY, JSON.stringify({ on: false, wifiOnly: true, scope: 'all' }));
+  assert.deepEqual(readAudioSettings(ls), { on: true, wifiOnly: true, scope: 'all' });
 });
 
 test('settings changes merge and persist', () => {
@@ -155,8 +166,10 @@ test('the page template falls back to the same defaults before audio.js has load
   assert.deepEqual({ ...sb.audioSettings() }, DEFAULT_AUDIO_SETTINGS);
   ls.setItem('bf_audio', JSON.stringify({ on: true, wifiOnly: false, scope: 'all' }));
   assert.deepEqual({ ...sb.audioSettings() }, { on: true, wifiOnly: false, scope: 'all' });
+  ls.setItem('bf_audio', JSON.stringify({ on: false, offChosen: true }));
+  assert.equal(sb.audioSettings().on, false, 'a chosen off wins before audio.js loads too');
   ls.setItem('bf_audio', JSON.stringify({ on: false }));
-  assert.equal(sb.audioSettings().on, false, 'a saved off wins before audio.js loads too');
+  assert.equal(sb.audioSettings().on, true, 'an old build\'s off, never chosen, reads as on');
 });
 
 test('Wi-Fi only waits on cellular and Data Saver, and asks when the browser will not say', () => {

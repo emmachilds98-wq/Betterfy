@@ -6,7 +6,8 @@ let paintedView = null;
 const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
                 lists:screenView('lists'),
                 new:() => libBack('new') + screenView('new')(),
-                shuffle:() => libBack('shuffle') + screenView('shuffle')() };
+                shuffle:() => libBack('shuffle') + screenView('shuffle')(),
+                engine:() => libBack('engine') + screenView('engine')() };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new

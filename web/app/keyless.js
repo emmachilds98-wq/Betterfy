@@ -19,11 +19,14 @@ const untaggedArtists = () => {
 async function fillFromWikidata({ quiet = false } = {}) {
   const cached = (await idb.get('tags_extra')) ?? {};
   // Asked before and Wikidata had nothing: not asked again until that answer is stale.
-  const todo = [...untaggedArtists().keys()].filter(id => !(cached[id]?.source === 'wikidata' && !worthReasking(cached[id])));
+  const untagged = untaggedArtists();
+  const todo = [...untagged.keys()].filter(id => !(cached[id]?.source === 'wikidata' && !worthReasking(cached[id])));
   if (!todo.length) { if (!quiet) toast('Every artist Wikidata could know about has been asked already.'); return 0; }
   await engineLoad();
   const W = BetterfyWikidata;
-  const ids = todo.filter(W.isSpotifyId);
+  // Most-listened first (D9): Wikidata answers 300 at a time, so on a big
+  // library the first answer is the one that matters most.
+  const ids = (await inEnrichOrder(todo.filter(W.isSpotifyId).map(id => [id, untagged.get(id)]))).map(([id]) => id);
   let found = 0, failed = 0;
   for (let i = 0; i < ids.length; i += W.BATCH) {
     const batch = ids.slice(i, i + W.BATCH);

@@ -28,10 +28,10 @@ const STORE_SCREENS = ['inbox', 'tidy', 'new', 'discover', 'shuffle', 'lists', '
 const STORE_WATCH = {
   lib:     STORE_SCREENS,
   reports: STORE_SCREENS,
-  eng:     ['engine'],
+  eng:     ['engine', 'lists'],   // lists: the "How well it knows you" card
   sound:   ['inbox'],
   audio:   ['inbox', 'tidy', 'sources'],
-  gaps:    ['new', 'lists'],
+  gaps:    ['new', 'lists', 'inbox'],   // inbox: File's cold-start offers (O1)
   player:  [],
 };
 for (const [slice, screens] of Object.entries(STORE_WATCH))
@@ -41,7 +41,7 @@ for (const screen of STORE_SCREENS)
 
 /** Repaint the current screen if it is one of `screens` and the page is up. */
 function storeRepaint(screens) {
-  // Engine, History and Sources are sections of the Settings sheet now: repaint
+  // History and Sources are sections of the Settings sheet now: repaint
   // the one that is open, and not the page behind it.
   if (typeof settingsOpen === 'function' && settingsOpen() && screens.includes(S.uhOpen)) underHoodRefresh();
   if (typeof view === 'undefined' || !screens.includes(view) || !document.getElementById('main')) return;

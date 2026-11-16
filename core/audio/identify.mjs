@@ -98,7 +98,8 @@ function votesOf(record, { neighbours, tags }) {
  *   support: { model: number, library: number, tags: number },
  *   why: string[], version: string }}
  */
-export function identify(record, { neighbours = [], tags = [], playlistName = null, weights = SOURCES } = {}) {
+export function identify(record, { neighbours = [], tags = [], playlistName = null, weights = SOURCES,
+                                   specific = SPECIFIC, minGenre = MIN_GENRE } = {}) {
   if (!record || record.miss) return null;
   const votes = votesOf(record, { neighbours, tags });
 
@@ -132,7 +133,7 @@ export function identify(record, { neighbours = [], tags = [], playlistName = nu
   for (const c of flat.keys()) { const g = genreLevel(c); if (g && !level.has(g)) level.set(g, tree.get(g) ?? 0); }
   const [gSlug, gMass] = [...level].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
   const conf = gMass / total;
-  if (conf < MIN_GENRE) {
+  if (conf < minGenre) {
     return { genre: null, path: [], sub: null, bpm, blend: null,
              support: { model: 0, library: 0, tags: 0 }, why: ['The sources disagree too much to name a genre.'],
              version: IDENTIFY_VERSION };
@@ -145,7 +146,7 @@ export function identify(record, { neighbours = [], tags = [], playlistName = nu
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     if (!kids.length) break;
     const [k, v] = kids[0], share = v / (tree.get(at) ?? 1);
-    if (share < SPECIFIC) break;
+    if (share < specific) break;
     path.push({ slug: k, name: nameOf(k), share: +share.toFixed(3) });
     at = k;
   }
@@ -195,8 +196,10 @@ export function identify(record, { neighbours = [], tags = [], playlistName = nu
  *
  * @param {{ index: Map, membership: {playlists: Map, of: Map}, k?: number, limit?: number }} o
  */
-export function identifyAccuracy({ index, membership, k = 12, limit = 600 } = {}) {
+export function identifyAccuracy({ index, membership, k = 12, limit = 600, weights = SOURCES, specific = SPECIFIC,
+                                  minGenre = MIN_GENRE, only = null } = {}) {
   const ids = [...(index?.keys() ?? [])].filter(id => {
+    if (only && !only(id)) return false;
     const pids = membership?.of?.get(id) ?? [];
     return pids.some(p => membership.playlists.get(p)?.concepts?.length);
   }).sort().slice(0, limit);
@@ -211,9 +214,9 @@ export function identifyAccuracy({ index, membership, k = 12, limit = 600 } = {}
   for (const id of ids) {
     const row = index.get(id);
     const truth = [...new Set((membership.of.get(id) ?? []).flatMap(p => membership.playlists.get(p)?.concepts ?? []))];
-    const res = identify(row.rec, { neighbours: filedNeighbours(id, index, membership, { k }) });
+    const res = identify(row.rec, { neighbours: filedNeighbours(id, index, membership, { k }), weights, specific, minGenre });
     const full = judge(res, truth);
-    const alone = judge(identify(row.rec, {}), truth);
+    const alone = judge(identify(row.rec, { specific, minGenre }), truth);
     tally.scored++;
     if (full.genre) tally.genre++;
     if (full.specific) tally.specific++;
@@ -243,11 +246,11 @@ export function identifyAccuracy({ index, membership, k = 12, limit = 600 } = {}
  * `identifyAccuracy` from a library and its heard records, for the Score run.
  * Null with nothing heard. `records` may be the engine's `{ records, feedback }`.
  */
-export function identifyAccuracyFor(lib, records, { targets = null, isMirror = null, limit = 600, k = 12 } = {}) {
+export function identifyAccuracyFor(lib, records, { targets = null, isMirror = null, limit = 600, k = 12, ...more } = {}) {
   const recs = records && !Array.isArray(records) && !(records instanceof Map) && 'records' in records ? records.records : records;
   const index = audioIndex(recs);
   if (!index.size) return null;
   const membership = genreMembership(lib, { targets, isMirror });
-  const out = identifyAccuracy({ index, membership, k, limit });
+  const out = identifyAccuracy({ index, membership, k, limit, ...more });
   return out.scored ? out : null;
 }

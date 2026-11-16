@@ -2,12 +2,13 @@
 // CLAP (WP-C2), each a large extra download on top of "Listen to my music".
 //
 // One settings object for both so the page has one block and one writer:
-// localStorage `bf_audio_deep` = { maest, clap, memoryOverride }, all off by
-// default. Nothing here downloads anything; it only answers "may this ear
+// localStorage `bf_audio_deep` = { maest, clap, memoryOverride }. Both ears are
+// on by default (owner's call, 2026-11-16); the Wi-Fi and memory rules below
+// still decide whether they may download. Nothing here downloads anything; it only answers "may this ear
 // download and run right now?".
 //
 // The rules (docs/AUDIO-BUILD-PLAN.md, Option C):
-//  - each ear only on its own explicit switch;
+//  - each ear has its own switch, on unless the listener unticks it;
 //  - Wi-Fi only, always: unlike listening there is no "Wi-Fi only" switch to
 //    turn off, because the models are ~90 MB (MAEST) and ~71 MB (CLAP);
 //  - MAEST also needs navigator.deviceMemory >= 8, or the listener saying
@@ -20,7 +21,7 @@
 import { connectionVerdict } from './settings.mjs';
 
 export const DEEP_SETTINGS_KEY = 'bf_audio_deep';
-export const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: false, clap: false, beats: false, memoryOverride: false });
+export const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: true, clap: true, beats: false, memoryOverride: false });
 export const DEEP_EARS = Object.freeze(['maest', 'clap', 'beats']);
 /** GB of device memory MAEST needs (navigator.deviceMemory's top value). */
 export const MAEST_MIN_MEMORY_GB = 8;

@@ -16,6 +16,7 @@
  *  the ~145 KB for it. Null again on failure, so a retry actually retries. */
 let ENGINE_JS = null;
 function engineLoad() {
+  tuneLoad().catch(() => {});
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
@@ -163,8 +164,45 @@ async function engineLoadCalibration() {
     if (c && c.stamp === calStamp() && c.fingerprint === BetterfyPersist.fingerprint(LIB)
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
       ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, audioGate: c.audioGate ?? null,
-                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), at: c.at ?? null };
+                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), ...(c.family ? { family: c.family } : {}),
+                   ...(c.mood ? { mood: c.mood } : {}), at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
+}
+
+/* ---------- family first, then sub-genre (docs/review/ENGINE-REVIEW.md layer 3) ----------
+ * Each genre playlist's family from the genre its name names; how often the
+ * family is right on held-out rows, and the family-level "confident" threshold,
+ * fitted and checked the way the playlist level is. File commits to a family
+ * only once this account's Score run says family top-1 reaches 85%. */
+function engineFamilies() {
+  return BetterfyFamily.playlistFamilies(engineTargets().map(id => [id, CFG[id]?.name ?? id]));
+}
+/* ---------- mood "also fits" chips (ENGINE-REVIEW layer 5) ----------
+ * Each mood or context playlist with enough heard members gets a fits-or-not
+ * threshold on its nearest members' sound, fitted on half its heard tracks and
+ * checked on the other half (core/intrinsic/mood.mjs). Only the thresholds are
+ * kept; the chips are scored live from the same index File already uses. */
+function engineMoodIndex() {
+  const sp = (typeof SOUND !== 'undefined' && SOUND.space) || ENG.space;
+  return sp?.audio?.index ?? null;
+}
+function engineMoodFit() {
+  const index = engineMoodIndex();
+  if (!index?.size || typeof BetterfyMood === 'undefined') return null;
+  const fit = BetterfyMood.fitMoods(LIB, index, id => CFG[id]?.axis ?? null);
+  return fit.rows.length ? fit : null;
+}
+
+function engineFamilyFit(rows) {
+  if (!rows?.length || typeof BetterfyFamily === 'undefined') return null;
+  const families = engineFamilies();
+  const acc = BetterfyFamily.familyAccuracy(rows, families, { report: r => BetterfyCalibrate.calibrationReport(r) });
+  if (!acc) return null;
+  const use = BetterfyFamily.familyInUse(acc);
+  const cal = BetterfyFamily.fitFamilyCalibration(acc.rows);
+  const summary = { n: acc.n, family: acc.family, within: acc.within, flat: acc.flat, families: acc.families,
+                    sure: acc.sure?.checked ?? null, holds: acc.sure?.holds ?? null, use };
+  return { summary, keep: { use, cal, family: acc.family, families: acc.families } };
 }
 
 /** Fit from a score run's rows, keep it, and drop the rows: they are only for this. */
@@ -186,20 +224,31 @@ async function engineCalibrate(v) {
   // WP-C1: which ear this run chose. The first ear unless a second ear passed
   // the gate and beat it; its calibration then comes from that ear's rows.
   const choice = mine.withAudio?.choice ?? null;
-  const soundChoice = choice ? { ear: choice.ear, reason: choice.reason, gate: choice.gate ?? null } : null;
-  const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows : mine.withAudio?.rows;
+  const near = choice?.ear === 'effnet' && mine.withAudio?.nearChoice?.use === true;
+  const soundChoice = choice ? { ear: choice.ear, reason: choice.reason, gate: choice.gate ?? null, ...(near ? { near: true } : {}) } : null;
+  // Calibrated on the engine that will place: the chosen ear, or the first ear with its nearest tracks.
+  const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows
+    : near ? mine.withAudio.arms?.near?.rows : mine.withAudio?.rows;
   const audio = soundRows ? BetterfyCalibrate.calibrationReport(soundRows) : null;
+  // Family first (ENGINE-REVIEW layer 3), measured on the rows of the engine that places.
+  const family = engineFamilyFit(soundRows ?? baseRows);
+  if (family) v.family = family.summary;
+  let mood = null;
+  try { mood = engineMoodFit(); } catch { mood = null; }
+  if (mood) v.moodLine = BetterfyMood.moodLine(mood);
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
   if (mine.withAudio) delete mine.withAudio.rows;
   for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
-  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), at: Date.now() };
+  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}),
+                ...(mood ? { mood } : {}), at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
                              targets: engineTargets(), base, bridge, audio, audioGate,
-                             ...(soundChoice ? { soundChoice } : {}), at: ENG.calib.at });
+                             ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}),
+                             ...(mood ? { mood } : {}), at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }
@@ -213,17 +262,23 @@ function engineDecorate() {
   if (!sh || !space) return;
   const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
   const count = { confident: 0, choose: 0, unsure: 0 };
+  let families = null;
   for (const row of sh.rows) {
     row.decision = null;
     const raw = cal && likedById.get(row.id);
     if (!raw) continue;
     const full = BetterfyIntrinsic.placements(raw, space, withFittedWeights({ limit: Infinity, soundFirst: true }, 'plain'));
     const p = full.results?.[0]?.parts ?? {};
-    const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []),
-                                       'audio' in p || 'learned' in p ? soundCal : cal);
-    row.decision = { kind: d.kind,
+    const scores = BetterfyCalibrate.scoresOf(full.results ?? []);
+    const useCal = 'audio' in p || 'learned' in p ? soundCal : cal;
+    // Family first, once this account's Score run earned it: commit to the
+    // family and ask only which playlist inside it.
+    const fam = ENG.calib?.family?.use ? ENG.calib.family : null;
+    const dc = fam ? BetterfyFamily.decideCard(scores, useCal, fam.cal, families ??= engineFamilies()) : null;
+    const d = dc ? { ...dc, kind: dc.kind === 'sure' ? 'confident' : dc.kind } : BetterfyCalibrate.decide(scores, useCal);
+    row.decision = { kind: d.kind, ...(d.family ? { family: d.family } : {}),
                      playlists: d.playlists.map(id => ({ id, name: space.destinations.get(id)?.name ?? id })) };
-    count[d.kind]++;
+    count[d.kind] = (count[d.kind] ?? 0) + 1;
   }
   sh.decided = cal ? count : null;
 }
@@ -377,7 +432,8 @@ function bridgeProgressText() {
 /** Look up the neighbours of the artists about to be scored, remembering every
  *  answer on this device so the next run only asks about what is new or stale. */
 async function engineBridge(tracks) {
-  const artists = BetterfyBridge.sourceArtists(tracks);
+  // Most-listened first (D9), so a run Deezer's quota cuts short has looked up what you play.
+  const artists = new Map(await inEnrichOrder(BetterfyBridge.sourceArtists(tracks), ([, a]) => a.name));
   let cache = null;
   try { cache = (await idb.get(BRIDGE_KEY))?.raw ?? null; } catch { /* no cache: ask everything */ }
   let last = 0;
@@ -470,8 +526,16 @@ const engineValidate = guard(async () => {
       let identify = null;
       try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
       catch { identify = null; }
-      ENG.val = { mine, base, blend, identify, weights, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      let fill = null;
+      try { fill = BetterfyFill.fillRecall(LIB, { tags, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist }); } catch { fill = null; }
+      let teach = null;
+      try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true, audio: engineAudioIn(audio) }); } catch { teach = null; }
+      ENG.val = { mine, base, blend, identify, weights, fill, teach, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
+    // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).
+    try { if (ENG.val.fill?.recall != null) LS.setItem('bf_fill', JSON.stringify({ ...ENG.val.fill, at: Date.now() })); } catch { /* shown next run */ }
+    // File's teach questions show only once this account's own measurement beats (BUILD-6 SG).
+    try { if (ENG.val.teach) teachRemember(ENG.val.teach); } catch { /* shown next run */ }
     // The fitted weights first: calibration is refitted on the engine they
     // make, and the comparison above is redone with them.
     await weightsRemember(ENG.val);
@@ -487,3 +551,72 @@ const engineValidate = guard(async () => {
 
 /** Whether long engine work will run off the main thread. */
 const engineInBackground = () => typeof Worker === 'function' && ENGINE_WORKER !== false;
+
+
+/* ---------- Engine > Tune (BUILD-6 T1) ----------
+ * Sweeps the Score run's constants on THIS account's own held-out tracks and
+ * shows the best value next to the shipped one with the measured delta. A tuned
+ * value is stored on this device only, and only for rows that cleared the bar on
+ * both halves of the account's tracks (core/validate/tune.mjs). Nothing is
+ * shared; "Reset to default" removes it. */
+const TUNE_KEY = 'engine-tune';
+const TUNE = { over: {}, loaded: false, res: null, running: false, stage: null, err: null, saved: false };
+
+/** Read the stored overrides once. Ignored when the playlists it was fitted to have changed. */
+async function tuneLoad() {
+  if (TUNE.loaded) return TUNE.over;
+  TUNE.loaded = true;
+  try {
+    const rec = await idb.get(TUNE_KEY);
+    if (rec && JSON.stringify(rec.targets ?? null) === JSON.stringify(engineTargets()) && globalThis.BetterfyTune) {
+      TUNE.over = BetterfyTune.cleanOverrides(rec.over); TUNE.saved = Object.keys(TUNE.over).length > 0;
+    }
+  } catch { /* defaults */ }
+  return TUNE.over;
+}
+const tuneSoundFirst = () => (globalThis.BetterfyTune ? BetterfyTune.soundFirstFor(TUNE.over) : null);
+const tuneIdentOpts = () => (globalThis.BetterfyTune ? BetterfyTune.identifyOptsFor(TUNE.over) : null);
+const tuneMisfitOpts = () => (globalThis.BetterfyTune ? BetterfyTune.misfitOptsFor(TUNE.over) : null);
+
+/** Sweep each group in the worker (the page's own thread when there is none). */
+const engineTune = guard(async () => {
+  TUNE.running = true; TUNE.res = null; TUNE.err = null; TUNE.stage = null; store.touch('eng');
+  try {
+    await engineLoad();
+    const audio = engineAudioScore(await engineAudio());
+    const parts = [];
+    for (const g of BetterfyTune.TUNE_GROUPS) {
+      TUNE.stage = g; store.touch('eng');
+      let part = null;
+      try { part = (await inEngineWorker('tune', { lib: LIB, audio, groups: [g], limit: 300 }))?.result ?? null; }
+      catch { part = null; }
+      if (!part) {
+        await yieldToPaint();
+        part = BetterfyTune.tuneSweep(LIB, { audio, targets: engineTargets(), isMirror: isMirrorPlaylist, groups: [g], limit: 300 });
+      }
+      parts.push(part);
+    }
+    TUNE.res = { ...BetterfyTune.mergeTune(parts), at: Date.now() };
+  } catch (e) { TUNE.err = e?.message ?? String(e); }
+  TUNE.running = false; TUNE.stage = null; store.touch('eng');
+});
+
+/** One action for the owner's paste: the Score run, then the sweep. */
+async function engineScoreTune() { await engineValidate(); await engineTune(); }
+
+/** Keep the rows that cleared the bar, on this device. */
+async function tuneApply() {
+  const over = TUNE.res ? BetterfyTune.tuneOverrides(TUNE.res) : {};
+  TUNE.over = BetterfyTune.cleanOverrides(over); TUNE.saved = Object.keys(TUNE.over).length > 0;
+  try { if (TUNE.saved) await idb.set(TUNE_KEY, { at: Date.now(), targets: engineTargets(), over: TUNE.over }); else await idb.del(TUNE_KEY); }
+  catch { /* applies until the page is closed */ }
+  if (typeof TSOUND !== 'undefined') TSOUND.key = null;   // Tidy by sound is re-read with the new numbers
+  store.touch('eng');
+}
+/** "Reset to default". */
+async function tuneForget() {
+  TUNE.over = {}; TUNE.saved = false;
+  try { await idb.del(TUNE_KEY); } catch {}
+  if (typeof TSOUND !== 'undefined') TSOUND.key = null;
+  store.touch('eng');
+}
