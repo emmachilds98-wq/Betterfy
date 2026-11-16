@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1103">
+<meta name="bf-build" content="2026-11-16-1246">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1550,6 +1550,17 @@ main:focus{outline:none}
     .acts4{grid-template-columns:1fr}
     aside .nav .lbl{font-size:9.5px}
   }
+/* Merge and split (BUILD-6 F4): the wizard drawn into the playlist sheet (lists.mjs wizardHTML). */
+  .wiz .wizpart{border:1px solid var(--line); border-radius:var(--r-3); padding:12px 12px 10px; background:var(--surface-2)}
+  .wiz .wizname input{flex:1; min-width:0}
+  .wizrows{list-style:none; margin:8px 0 0; padding:0; border-top:1px solid var(--line)}
+  .wizrow{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); min-height:48px}
+  .wizrow:last-child{border-bottom:0}
+  .wizrow.rest .ttl{color:var(--ink-2)}
+  .wizrow .b{flex:none}
+  .wiz .wizgo{position:sticky; bottom:calc(-24px - var(--sab, 0px)); background:var(--surface); padding:10px 0 calc(16px + var(--sab, 0px)); margin:0 0 calc(-24px - var(--sab, 0px))}
+  .wiz .hint.warn{color:var(--warn)}
+  .msline{font-size:12px; color:var(--ink-3)}
 /* soundChip (WP-D4): one compact row per track, "174 BPM · 8A A minor". */
 .snd{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:.15em .45em;font-family:var(--mono);font-size:.78rem;line-height:1.35;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .snd>span{white-space:nowrap}
@@ -1692,7 +1703,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1103</span>
+    <span class="mono">build 2026-11-16-1246</span>
   </p>
 
   <div class="feat">
@@ -1785,7 +1796,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1103</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1246</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1902,7 +1913,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1103. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1246. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5102,7 +5113,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1103`,
+    `Betterfy engine score — build 2026-11-16-1246`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -6037,11 +6048,242 @@ const actions = {
 };
 return { secDupes, secCross, tagMisfiles, secSound, secMisfile, view, actions };
 })();
+/* ---- core/playlists/mergesplit.mjs ---- */
+__mod["core/playlists/mergesplit.mjs"] = (function () {
+// The merge/split playlist wizard's planning (BUILD-6-PLAN §4.1/§4.2 F4).
+//
+// Two offers already existed and had no one place to act on them: "twins",
+// pairs of playlists the engine cannot tell apart (lists.mjs twinsOf, from
+// bucketPairs), and "two genres", a playlist whose tracks split into two
+// (core/audio/plprofile.mjs by sound, core/recommend/gaps.mjs splitCandidates
+// by tags). The wizard puts both behind one preview and writes only new
+// private playlists: the originals are never edited.
+//
+// Everything here is pure: plans in, plans out, no Spotify and no storage.
+// The page (web/screens/lists.mjs) draws a plan, lets you rename and move
+// tracks, and writes `writesOf(plan)` as one History group.
+//
+// Counts on the account's own playlists only (SMARTER-GENRES-PLAN §3, R3):
+// nothing is learned, nothing leaves the device.
+
+/** A track's identity for de-duplication: its ISRC (the recording, the same
+ *  under any relinked pressing) when it has one, else its Spotify id. */
+function trackKey(t) {
+  const isrc = typeof t?.isrc === 'string' ? t.isrc : t?.external_ids?.isrc;
+  if (typeof isrc === 'string' && isrc.trim()) return 'isrc:' + isrc.trim().toUpperCase();
+  return t?.id ? 'id:' + t.id : null;
+}
+
+const artistLine = t => (t?.artists ?? []).map(a => a?.name).filter(Boolean).join(', ');
+const row = (t, from) => ({ id: t.id, title: t.name ?? t.id, artist: artistLine(t), from });
+
+/** Tracks with an id, in order, each recording once (by id and by ISRC). */
+function uniq(tracks, seenId = new Set(), seenKey = new Set()) {
+  const out = [];
+  for (const t of tracks ?? []) {
+    if (!t?.id || seenId.has(t.id)) continue;
+    const k = trackKey(t);
+    if (k && seenKey.has(k)) continue;
+    seenId.add(t.id); if (k) seenKey.add(k);
+    out.push(t);
+  }
+  return out;
+}
+
+/** "Deep House + House Classics", kept under Spotify's 100-character limit. */
+function mergeName(a, b) {
+  return `${String(a?.name ?? '').trim() || 'Playlist'} + ${String(b?.name ?? '').trim() || 'Playlist'}`.slice(0, 100);
+}
+
+/**
+ * Two playlists as one: every track of `a` in its order, then every track of
+ * `b` that `a` does not already hold, the same recording counted once whether
+ * it is the same id or the same ISRC under another id.
+ * @returns {{ kind:'merge', sources:[{id,name,n}], name, parts:[{name, rows, include}],
+ *            counts:{ a, b, both, total, dupes } }}
+ */
+function mergePlan(a, b, { name } = {}) {
+  const seenId = new Set(), seenKey = new Set();
+  const fromA = uniq(a?.tracks, seenId, seenKey);
+  const aKeys = new Set(fromA.map(trackKey).filter(Boolean));
+  const aIds = new Set(fromA.map(t => t.id));
+  const fromB = [], bothSeen = new Set();
+  for (const t of b?.tracks ?? []) {
+    if (!t?.id) continue;
+    const k = trackKey(t);
+    if (aIds.has(t.id) || (k && aKeys.has(k))) { bothSeen.add(k ?? t.id); continue; }
+    if (seenId.has(t.id) || (k && seenKey.has(k))) continue;
+    seenId.add(t.id); if (k) seenKey.add(k);
+    fromB.push(t);
+  }
+  const both = bothSeen.size;
+  const rows = [...fromA.map(t => row(t, 'a')), ...fromB.map(t => row(t, 'b'))];
+  const raw = (a?.tracks ?? []).filter(t => t?.id).length + (b?.tracks ?? []).filter(t => t?.id).length;
+  return {
+    kind: 'merge',
+    sources: [a, b].map(p => ({ id: p?.id, name: p?.name ?? p?.id, n: (p?.tracks ?? []).length })),
+    parts: [{ name: (name ?? mergeName(a, b)).slice(0, 100), rows, include: true }],
+    counts: { a: fromA.length, b: fromB.length, both, total: rows.length, dupes: raw - rows.length },
+  };
+}
+
+/**
+ * One playlist as two or more: each proposed part takes the tracks its `ids`
+ * name, in the playlist's order; a track no part names (not heard, no genre
+ * in its tags) goes to part `restTo` (the half the playlist's name owns), or
+ * is left out with `restTo: -1`. A track two parts name goes to the first.
+ * @param playlist {id, name, tracks}
+ * @param parts [{ name, ids }]
+ * @returns {{ kind:'split', sources:[{id,name,n}], parts:[{name, rows, include}], rest:number }}
+ */
+function splitPlan(playlist, parts, { restTo = 0 } = {}) {
+  const want = (parts ?? []).map(p => new Set(p?.ids ?? []));
+  const out = (parts ?? []).map(p => ({ name: String(p?.name ?? '').slice(0, 100), rows: [], include: true }));
+  let rest = 0;
+  for (const t of uniq(playlist?.tracks)) {
+    const k = want.findIndex(s => s.has(t.id));
+    if (k >= 0) { out[k].rows.push(row(t, 'named')); continue; }
+    rest++;
+    if (out[restTo]) out[restTo].rows.push(row(t, 'rest'));
+  }
+  return { kind: 'split', sources: [{ id: playlist?.id, name: playlist?.name ?? playlist?.id, n: (playlist?.tracks ?? []).length }], parts: out, rest };
+}
+
+/** A plprofile split ({ keep, move }) as wizard parts: "House — House", "House — Jungle". */
+function partsFromSound(playlistName, split) {
+  const base = String(playlistName ?? '').trim() || 'Playlist';
+  return [split?.keep, split?.move].filter(Boolean).map(g => ({ name: `${base} — ${g.name ?? g.slug ?? 'part'}`.slice(0, 100), ids: g.ids ?? [] }));
+}
+
+/** A gaps.mjs split ({ name, parts:[{label, ids, rest}] }) as wizard parts. */
+function partsFromTags(split) {
+  const base = String(split?.name ?? '').trim() || 'Playlist';
+  return (split?.parts ?? []).map(x => ({ name: `${base} — ${x.rest ? 'rest of ' : ''}${x.label ?? x.concept ?? 'part'}`.slice(0, 100), ids: x.ids ?? [] }));
+}
+
+/** The plan with one track moved to part `to` (pure; an unknown track or part changes nothing). */
+function moveTrack(plan, id, to) {
+  if (!plan?.parts?.[to]) return plan;
+  const from = plan.parts.findIndex(p => p.rows.some(r => r.id === id));
+  if (from < 0 || from === to) return plan;
+  const r = plan.parts[from].rows.find(x => x.id === id);
+  return { ...plan, parts: plan.parts.map((p, k) =>
+    k === from ? { ...p, rows: p.rows.filter(x => x.id !== id) }
+    : k === to ? { ...p, rows: [...p.rows, r] } : p) };
+}
+
+/** The plan with part `k` renamed (trimmed later, when written). */
+function renamePart(plan, k, name) {
+  if (!plan?.parts?.[k]) return plan;
+  return { ...plan, parts: plan.parts.map((p, i) => (i === k ? { ...p, name: String(name ?? '').slice(0, 100) } : p)) };
+}
+
+/** The plan with part `k` in or out of what gets made. */
+function includePart(plan, k, on) {
+  if (!plan?.parts?.[k]) return plan;
+  return { ...plan, parts: plan.parts.map((p, i) => (i === k ? { ...p, include: !!on } : p)) };
+}
+
+/**
+ * What the wizard would make: one new private playlist per included part
+ * with at least one track. `problems` says why Create is not offered yet
+ * (a part with no name, two parts with one name, nothing to make).
+ * @returns {{ writes:[{ name, ids }], problems:string[] }}
+ */
+function writesOf(plan) {
+  const writes = [], problems = [];
+  for (const p of plan?.parts ?? []) {
+    if (!p.include || !p.rows.length) continue;
+    const name = String(p.name ?? '').trim();
+    if (!name) { problems.push('Every playlist it makes needs a name.'); continue; }
+    writes.push({ name, ids: p.rows.map(r => r.id) });
+  }
+  const names = writes.map(w => w.name.toLowerCase());
+  if (new Set(names).size !== names.length) problems.push('Two of the new playlists have the same name.');
+  if (!writes.length && !problems.length) problems.push('Nothing to make: every part is empty or left out.');
+  return { writes, problems: [...new Set(problems)] };
+}
+
+/** Twin pairs (bucketPairs' "indistinguishable" verdict) as merge offers, one per pair. */
+function twinOffers(pairs) {
+  const out = [], seen = new Set();
+  for (const p of Array.isArray(pairs) ? pairs : []) {
+    if (p?.verdict !== 'indistinguishable' || !p.a?.id || !p.b?.id || p.a.id === p.b.id) continue;
+    const key = offerKey('merge', [p.a.id, p.b.id]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ key, a: { id: p.a.id, name: p.a.name ?? p.a.id }, b: { id: p.b.id, name: p.b.name ?? p.b.id }, similarity: p.similarity ?? null });
+  }
+  return out;
+}
+
+/** One key per offer, the same whichever screen showed it: "merge:A+B" (sorted), "split:A". */
+function offerKey(kind, ids) {
+  const xs = (Array.isArray(ids) ? ids : [ids]).map(String);
+  return kind === 'merge' ? 'merge:' + [...xs].sort().join('+') : kind + ':' + xs[0];
+}
+
+/* ---------- the measure: how often an offer is waved away ----------
+ * Kept on this device only (`bf_mergesplit`): for each offer key, when it was
+ * first shown, and whether it was dismissed or made. The bar (BUILD-6-PLAN
+ * §3.1, §4.1 F4) is a dismiss rate of at most 25% over at least 10 offers;
+ * above a third, the split constants in plprofile.mjs are too eager. */
+const DISMISS_BAR = 0.25;
+const DISMISS_MIN = 10;
+
+const emptyMeasure = () => ({ shown: {}, dismissed: {}, made: {} });
+
+/** A stored measure, repaired: anything unreadable is an empty one. */
+function readMeasure(raw) {
+  let m = raw;
+  if (typeof raw === 'string') { try { m = JSON.parse(raw); } catch { m = null; } }
+  const out = emptyMeasure();
+  if (m && typeof m === 'object') for (const k of Object.keys(out))
+    if (m[k] && typeof m[k] === 'object') for (const [key, at] of Object.entries(m[k])) if (Number.isFinite(at)) out[k][key] = at;
+  return out;
+}
+
+/** The measure with `what` ('shown' | 'dismissed' | 'made') recorded for `key`, once (the first time stands).
+ *  Dismissing or making an offer also counts it as shown. Null when that was already recorded. */
+function recordOffer(measure, what, key, now = Date.now()) {
+  const m = readMeasure(measure);
+  if (!key || !(what in m) || (m[what][key] && m.shown[key])) return null;
+  m[what][key] ??= now;
+  m.shown[key] ??= now;
+  return m;
+}
+
+/** Shown, dismissed, made, and the dismiss rate against its bar. Merges and splits apart and together. */
+function dismissRate(measure) {
+  const m = readMeasure(measure);
+  const count = (o, kind) => Object.keys(o).filter(k => !kind || k.startsWith(kind + ':')).length;
+  const one = kind => {
+    const shown = count(m.shown, kind), dismissed = count(m.dismissed, kind), made = count(m.made, kind);
+    const rate = shown ? dismissed / shown : null;
+    return { shown, dismissed, made, rate, enough: shown >= DISMISS_MIN, ok: rate === null ? null : rate <= DISMISS_BAR };
+  };
+  return { ...one(null), merge: one('merge'), split: one('split') };
+}
+
+/** The line the Library footer prints for the owner, or '' before any offer was shown. */
+function dismissLine(measure) {
+  const r = dismissRate(measure);
+  if (!r.shown) return '';
+  const pct = Math.round(r.rate * 100);
+  return `Merge/split offers: ${r.shown} shown, ${r.dismissed} dismissed (${pct}%), ${r.made} made. ` +
+    (r.enough ? (r.ok ? `Within the ${DISMISS_BAR * 100}% bar.` : `Above the ${DISMISS_BAR * 100}% bar: the offers are too eager.`)
+      : `Not enough data yet (${r.shown} of ${DISMISS_MIN}); the bar is ${DISMISS_BAR * 100}% or fewer dismissed.`);
+}
+return { trackKey, mergeName, mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renamePart, includePart, writesOf, twinOffers, offerKey, DISMISS_BAR, DISMISS_MIN, readMeasure, recordOffer, dismissRate, dismissLine };
+})();
 /* ---- web/screens/lists.mjs ---- */
 __mod["web/screens/lists.mjs"] = (function () {
+const { mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renamePart, includePart, writesOf, twinOffers, offerKey, readMeasure, recordOffer, dismissLine } = __mod["core/playlists/mergesplit.mjs"];
 /* The Library tab (docs/BUILD-5-PLAN.md A4, UI-E): compact playlist rows, a Suggested playlists section, and a detail sheet per playlist. Was the Playlists screen: an ES module. Reaches nothing but `ctx`;
  * SCREEN_CTX.lists in app/screens.js builds it. playlistMixes, tagCoverage, the sound profiles
  * and the split job stay classic in app/screenjobs.js. */
+
+
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
 /** "64% genre · 19% mood" — what a playlist's tags are actually made of,
@@ -6199,7 +6441,8 @@ const plRowHTML = (c, p, info, undecided) => {
 
 /** The playlist detail sheet's body (opened by plopen; shell.js draws it into #plSheet). */
 function sheetHTML(c, id) {
-  const { CFG, LIB, esc, profileRow, MIN_FOR_TARGET, BetterfyPlProfile, LPROF } = c;
+  const { CFG, LIB, esc, profileRow, MIN_FOR_TARGET, LPROF } = c;
+  if (WIZ && WIZ.sheet === id) return wizardHTML(c);
   const p = CFG[id], pl = LIB.playlists.find(x => x.id === id);
   if (!p || !pl) return '';
   const split = c.listsSplits().find(x => x.p.id === id)?.split;
@@ -6211,7 +6454,14 @@ function sheetHTML(c, id) {
   const few = p.tracks < MIN_FOR_TARGET;
   const canMix = c.mixHeardIn(pl.tracks) >= (c.BetterfyOrder?.MIN_MIX ?? 8);
   const made = LPROF?.made?.has(id);
-  const splitName = split ? BetterfyPlProfile.splitName(pl.name, split) : '';
+  const splitKey = offerKey('split', [id]);
+  const tagSplit = split ? null : (c.GAPS?.status === 'ready' ? (c.GAPS.splits ?? []).find(x => x.playlistId === id) : null);
+  const twins = twinOffers(c.twinPairs?.()).filter(o => o.a.id === id || o.b.id === id)
+    .filter(o => LIB.playlists.some(x => x.id === o.a.id) && LIB.playlists.some(x => x.id === o.b.id));
+  const ms = msMeasure(c);
+  if (split || tagSplit) noteShown(c, splitKey);
+  for (const o of twins) noteShown(c, o.key);
+  const notNow = key => ms.dismissed[key] || ms.made[key] ? '' : `<button class="b sm" data-act="wizdismiss" data-key="${esc(key)}">Not now</button>`;
   return `<div class="pls-head"><h2>${esc(pl.name)}</h2><button class="iconbtn" type="button" data-plclose aria-label="Close">✕</button></div>
     <div class="pls-body">
     <p class="plmeta"><span class="mono">${p.tracks}</span> tracks${mix ? ` · ${esc(mix)}` : ''}</p>
@@ -6227,8 +6477,16 @@ function sheetHTML(c, id) {
     ${prof ? `<section class="pls-sec"><h3>Sound</h3>${prof}</section>` : ''}
     ${split ? `<section class="pls-sec"><h3>Two genres?</h3>
       <p class="hint"><b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.
-        Making the new playlist copies the second group; nothing leaves this one.</p>
-      ${made ? '<span class="tag ok">Made</span>' : `<button class="b sm" data-act="lsplit" data-lsplit="${esc(id)}">Make “${esc(splitName)}”</button>`}</section>` : ''}
+        Splitting previews each half as a new playlist; nothing leaves this one.</p>
+      ${made || ms.made[splitKey] ? '<span class="tag ok">Made</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizsplit" data-pl="${esc(id)}" data-src="sound">Split into playlists…</button>${notNow(splitKey)}</div>`}</section>` : ''}
+    ${tagSplit ? `<section class="pls-sec"><h3>Two genres?</h3>
+      <p class="hint">By its artists’ tags: ${tagSplit.parts.map(x => `<b>${x.size}</b> ${x.rest ? 'the rest of ' : ''}${esc(x.label)}`).join(', ')}.
+        Splitting makes new playlists; nothing leaves this one.</p>
+      ${ms.made[splitKey] ? '<span class="tag ok">Made</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizsplit" data-pl="${esc(id)}" data-src="tags">Split into playlists…</button>${notNow(splitKey)}</div>`}</section>` : ''}
+    ${twins.length ? `<section class="pls-sec"><h3>Twins</h3>
+      ${twins.map(o => { const other = o.a.id === id ? o.b : o.a;
+        return `<p class="hint">The engine can’t tell this from <b>${esc(other.name)}</b> by the music in them.</p>
+      ${ms.made[o.key] ? '<span class="tag ok">Merged</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizmerge" data-a="${esc(id)}" data-b="${esc(other.id)}">Merge into a new playlist…</button>${notNow(o.key)}</div>`}`; }).join('')}</section>` : ''}
     ${fillHTML(c, id, pl)}
     ${pl.tracks.length >= 8 ? `<section class="pls-sec"><h3>Shuffle</h3>
       <p class="hint">Spaces out the same artist, then writes it as a playlist to play with Spotify’s shuffle off.</p>
@@ -6386,6 +6644,146 @@ async function fillCheck(c) {
   c.render();
 }
 
+/* ---------- Merge and split (BUILD-6 F4) ----------
+ * One wizard behind one preview for the two offers Library already makes: twins
+ * (playlists the engine can't tell apart, twinsOf) and "two genres" (a split by
+ * sound from plprofile, or by tags from the Gaps screen). The plan is
+ * core/playlists/mergesplit.mjs; this draws it into the playlist sheet, lets you
+ * rename parts and move tracks, and writes it. It only ever makes new private
+ * playlists: the originals are never edited. Every playlist it makes is one `add`
+ * entry with `created: true`, all in one History group, so one Undo (here, the
+ * toast, or History) takes every track out and deletes every playlist it made.
+ * Offers shown, dismissed and made are counted in `bf_mergesplit`, on this device
+ * only, for the dismiss-rate bar (≤ 25% over ≥ 10 offers). */
+const MS_KEY = 'bf_mergesplit';
+const WIZ_ROWS = 30;
+let WIZ = null;   // { sheet, kind, key, plan, title, status: 'preview'|'working'|'done'|'undone'|'error', err, at, made, more }
+
+function msMeasure(c) { try { return readMeasure(c.LS?.getItem?.(MS_KEY)); } catch { return readMeasure(null); } }
+function noteOffer(c, what, key) {
+  const next = recordOffer(msMeasure(c), what, key);
+  if (next) try { c.LS.setItem(MS_KEY, JSON.stringify(next)); } catch { /* private mode: the measure is a bonus */ }
+}
+const noteShown = (c, key) => noteOffer(c, 'shown', key);
+
+/** Open the wizard on a merge ({ kind:'merge', a, b }) or a split ({ kind:'split', id, src:'sound'|'tags' }). */
+function wizardOpen(c, spec) {
+  const lib = c.LIB?.playlists ?? [];
+  const byId = id => lib.find(x => x.id === id);
+  let plan = null, sheet = null, key = null, title = '';
+  if (spec?.kind === 'merge') {
+    const a = byId(spec.a), b = byId(spec.b);
+    if (!a || !b) return c.toast('Those playlists are not in your library any more.');
+    plan = mergePlan(a, b); sheet = a.id; key = offerKey('merge', [a.id, b.id]); title = 'Merge two playlists';
+  } else if (spec?.kind === 'split') {
+    const pl = byId(spec.id);
+    if (!pl) return c.toast('That playlist is not in your library any more.');
+    const parts = spec.src === 'tags'
+      ? partsFromTags((c.GAPS?.splits ?? []).find(x => x.playlistId === pl.id))
+      : partsFromSound(pl.name, c.listsSplits().find(x => x.p.id === pl.id)?.split);
+    if (parts.length < 2) return c.toast('That split is not on offer any more.');
+    plan = splitPlan(pl, parts, { restTo: 0 }); sheet = pl.id; key = offerKey('split', [pl.id]); title = `Split “${pl.name}”`;
+  } else return;
+  noteShown(c, key);
+  WIZ = { sheet, kind: spec.kind, key, plan, title, status: 'preview', err: null, at: null, made: [], more: new Set() };
+  if (c.S?.plSheet === sheet) c.render(); else c.openPlSheet(sheet);
+}
+
+/** What the name boxes say now: a repaint must not lose a name being typed. */
+function wizSyncNames(c) {
+  if (!WIZ) return;
+  WIZ.plan.parts.forEach((p, k) => { const v = c.$?.('#wiznm' + k)?.value; if (typeof v === 'string') WIZ.plan = renamePart(WIZ.plan, k, v); });
+}
+
+function wizardHTML(c) {
+  const { esc } = c, w = WIZ, plan = w.plan;
+  const busy = w.status === 'working';
+  const head = `<div class="pls-head"><h2>${esc(w.title)}</h2><button class="iconbtn" type="button" data-plclose aria-label="Close">✕</button></div>`;
+  if (w.status === 'done' || w.status === 'undone') {
+    return `${head}<div class="pls-body wiz" data-uh="lists"><section class="pls-sec" aria-live="polite">
+      ${w.status === 'done'
+        ? `<p>Made ${w.made.map(m => `<b>${esc(m.name)}</b> (<span class="mono">${m.n}</span>)`).join(' and ')}. Nothing in ${
+            plan.sources.map(s => `“${esc(s.name)}”`).join(' or ')} was changed.</p>
+           <p class="hint">One Undo deletes ${w.made.length === 1 ? 'it' : 'them'} again; it is in History too.</p>
+           <div class="rowbtns"><button class="b" data-act="wizundo">Undo</button><button class="b p" data-act="wizback">Done</button></div>`
+        : `<p>Undone: ${w.made.length === 1 ? 'the new playlist is' : 'the new playlists are'} gone and nothing else changed.</p>
+           <div class="rowbtns"><button class="b p" data-act="wizback">Done</button></div>`}</section></div>`;
+  }
+  const { writes, problems } = writesOf(plan);
+  const intro = plan.kind === 'merge'
+    ? `<p class="hint">One new private playlist with everything in both, each recording once. <b>${esc(plan.sources[0].name)}</b> and
+        <b>${esc(plan.sources[1].name)}</b> stay exactly as they are.</p>
+       <p class="hint"><span class="mono">${plan.counts.a}</span> from the first, <span class="mono">${plan.counts.b}</span> only in the second,
+        <span class="mono">${plan.counts.dupes}</span> duplicate${plan.counts.dupes === 1 ? '' : 's'} dropped.</p>`
+    : `<p class="hint">Each part becomes a new private playlist. Rename them, move tracks between them, or leave one out.
+        <b>${esc(plan.sources[0].name)}</b> stays exactly as it is.</p>`;
+  const parts = plan.parts.map((p, k) => {
+    const others = plan.parts.map((x, i) => [x, i]).filter(([, i]) => i !== k);
+    const all = w.more.has(k), rows = all ? p.rows : p.rows.slice(0, WIZ_ROWS);
+    const to = others[0];
+    return `<section class="pls-sec wizpart" aria-labelledby="wizh${k}">
+      <h3 id="wizh${k}">${plan.kind === 'merge' ? 'New playlist' : `Part ${k + 1}`} · <span class="mono">${p.rows.length}</span> track${p.rows.length === 1 ? '' : 's'}</h3>
+      <label class="pls-f wizname">Name <input id="wiznm${k}" value="${esc(p.name)}" maxlength="100" ${busy ? 'disabled' : ''}></label>
+      ${plan.kind === 'split' ? `<label class="pls-f"><input type="checkbox" data-act="wizinc" data-k="${k}" ${p.include ? 'checked' : ''} ${busy ? 'disabled' : ''}> make this one</label>` : ''}
+      <ol class="wizrows">${rows.map(r => `<li class="wizrow${r.from === 'rest' ? ' rest' : ''}"><span class="plmain"><span class="ttl">${esc(r.title)}</span>
+        <span class="plmeta">${esc(r.artist)}${r.from === 'b' ? ' · <span class="tag">only in the second</span>' : r.from === 'rest' ? ' · <span class="tag">not placed</span>' : ''}</span></span>${
+        to ? `<button class="b sm" data-act="wizmove" data-tid="${esc(r.id)}" data-to="${to[1]}" ${busy ? 'disabled' : ''}
+          aria-label="Move ${esc(r.title)} to ${esc(to[0].name || 'part ' + (to[1] + 1))}">Move</button>` : ''}</li>`).join('')}</ol>
+      ${!all && p.rows.length > WIZ_ROWS ? `<button class="b sm" data-act="wizmore" data-k="${k}">Show all ${p.rows.length}</button>` : ''}
+    </section>`;
+  }).join('');
+  const n = writes.length;
+  return `${head}<div class="pls-body wiz" data-uh="lists">${intro}${parts}
+    ${w.status === 'error' ? `<p class="hint warn" role="alert">That didn’t work: ${esc(w.err)}</p>` : ''}
+    ${problems.length ? `<p class="hint">${problems.map(esc).join(' ')}</p>` : ''}
+    <div class="rowbtns wizgo"><button class="b p" data-act="wizgo" ${busy || problems.length ? 'disabled' : ''}>${busy ? 'Making…'
+      : `Make ${n} playlist${n === 1 ? '' : 's'}`}</button><button class="b" data-act="wizback" ${busy ? 'disabled' : ''}>Cancel</button></div></div>`;
+}
+
+/** Write the plan: one new private playlist per part, one History group, rolled back whole if a write fails. */
+async function wizGo(c) {
+  if (!WIZ || WIZ.status === 'working') return;
+  wizSyncNames(c);
+  const w = WIZ, { writes, problems } = writesOf(w.plan);
+  if (problems.length) return c.toast(problems[0]);
+  w.status = 'working'; w.err = null; c.render();
+  const group = c.newGroup(), made = [];
+  const from = w.plan.sources.map(s => s.name).join(' and ');
+  const reason = w.kind === 'merge' ? `merged from ${from}` : `split from ${from}`;
+  let first = null;
+  try {
+    for (const x of writes) {
+      const pl = await c.sp('/me/playlists', { method: 'POST',
+        body: JSON.stringify({ name: x.name, public: false, description: `Made by Betterfy, ${reason}.` }) });
+      let err = null;
+      try { await c.addTracks(pl.id, x.ids); } catch (e) { err = e; }
+      const ids = err ? ((await c.landedIn?.(pl.id, x.ids)) ?? []) : x.ids;
+      // Logged even when the add broke half way: the playlist exists, so Undo has to know about it.
+      const at = await c.logAction({ op: 'add', group, playlistId: pl.id, playlistName: x.name, trackIds: ids, created: true, reason });
+      first ??= at;
+      made.push({ id: pl.id, name: x.name, n: ids.length });
+      if (err) throw err;
+    }
+  } catch (err) {
+    let back = '';
+    if (first) { try { await c.undoAction(first); back = ' Nothing was left behind.'; } catch { back = ' What was made is in History, to undo from there.'; } }
+    w.status = 'error'; w.err = (err?.message ?? String(err)) + back;
+    c.render();
+    return;
+  }
+  Object.assign(w, { status: 'done', at: first, made });
+  noteOffer(c, 'made', w.key);
+  c.toast(`Made ${made.length === 1 ? `“${made[0].name}”` : `${made.length} playlists`}. Nothing in ${from} was changed.`, () => wizUndo(c, w));
+  c.render();
+}
+
+async function wizUndo(c, w = WIZ) {
+  if (!w?.at || w.status === 'undone') return;
+  await c.undoAction(w.at);
+  w.status = 'undone';
+  c.render();
+}
+
 function view(c) {
   const { CFG, R, GAPS, esc, tagCoverage, NO_SIGNAL, listsSplits } = c;
   c.gapsKick?.();
@@ -6422,6 +6820,20 @@ function view(c) {
         <span class="plmeta"><span class="mono">${o.n}</span> tracks${o.played ? ` · ${o.played} you are playing` : ''} · ${esc(o.why)}</span></span>
         <button class="b sm" data-act="lnewg" data-newg="${i}">Start</button></div>`).join('')}</div>
     </section>` : '';
+  // Twins (SMARTER-GENRES phase 3: they used to live only on the Engine screen), as merge offers.
+  const ms = msMeasure(c);
+  const have = new Set((c.LIB?.playlists ?? []).map(x => x.id));
+  const twins = twinOffers(c.twinPairs?.()).filter(o => have.has(o.a.id) && have.has(o.b.id) && !ms.dismissed[o.key] && !ms.made[o.key]);
+  for (const o of twins.slice(0, 3)) noteShown(c, o.key);
+  const twinsHTML = twins.length ? `<section class="plsugg" aria-labelledby="pltwin-h">
+      <div class="plsugg-head"><h2 id="pltwin-h">Playlists that sound the same</h2></div>
+      <p class="hint">The engine can’t tell these apart by the music in them. Merging makes one new playlist; both stay as they are.</p>
+      <div class="plrows">${twins.slice(0, 3).map(o => `<div class="plrow"><span class="plmain"><span class="ttl">${esc(o.a.name)}</span>
+        <span class="plmeta">and ${esc(o.b.name)}</span></span>
+        <button class="b sm p" data-act="wizmerge" data-a="${esc(o.a.id)}" data-b="${esc(o.b.id)}">Merge…</button>
+        <button class="b sm" data-act="wizdismiss" data-key="${esc(o.key)}">Not now</button></div>`).join('')}</div>
+    </section>` : '';
+  const msLine = dismissLine(msMeasure(c));
   const suggHTML = sugg.length ? `<section class="plsugg" aria-labelledby="plsugg-h">
       <div class="plsugg-head"><h2 id="plsugg-h">Suggested playlists</h2>
         <button class="b sm" data-go="new">See all ${sugg.length}</button></div>
@@ -6431,17 +6843,18 @@ function view(c) {
     </section>` : '';
   return `<h1>Library</h1>
     <p class="lede">Tap a playlist for its axis, health and shuffle.</p>
-    ${ticksHTML}${coldHTML}${newgHTML}${suggHTML}
+    ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
       <button class="b sm" data-go="sources">Genre sources</button>
-      <button class="b sm" data-go="shuffle">Shuffle everything</button></p>`;
+      <button class="b sm" data-go="shuffle">Shuffle everything</button></p>${
+    msLine ? `\n    <p class="hint msline">${esc(msLine)}</p>` : ''}`;
 }
 
 
 const actions = {
   /** Tap a playlist: its detail sheet. */
-  plopen(c, el) { c.openPlSheet(el.dataset.pl); },
+  plopen(c, el) { if (WIZ?.status !== 'working') WIZ = null; c.openPlSheet(el.dataset.pl); },
 
   /** The sheet's Shuffle: the Shuffle screen on this playlist, as a spaced shuffle. */
   plshuffle(c, el) { return plShuffle(c, el.dataset.pl, ''); },
@@ -6453,6 +6866,22 @@ const actions = {
     el.disabled = true;
     try { await c.listsSplitMake(el.dataset.lsplit); } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
   },
+
+  /** Merge and split (F4): open the wizard on twins, or on a playlist's split. */
+  wizmerge(c, el) { return wizardOpen(c, { kind: 'merge', a: el.dataset.a, b: el.dataset.b }); },
+  wizsplit(c, el) { return wizardOpen(c, { kind: 'split', id: el.dataset.pl, src: el.dataset.src }); },
+  /** "Not now" on an offer: counted for the dismiss rate, and not offered in Library again. */
+  wizdismiss(c, el) { noteOffer(c, 'dismissed', el.dataset.key); c.render(); },
+  wizmove(c, el) { if (!WIZ || WIZ.status === 'working') return; wizSyncNames(c); WIZ.plan = moveTrack(WIZ.plan, el.dataset.tid, +el.dataset.to); c.render(); },
+  wizinc(c, el) { if (!WIZ || WIZ.status === 'working') return; wizSyncNames(c); WIZ.plan = includePart(WIZ.plan, +el.dataset.k, el.checked); c.render(); },
+  wizmore(c, el) { if (!WIZ) return; wizSyncNames(c); WIZ.more.add(+el.dataset.k); c.render(); },
+  wizgo(c) { return wizGo(c); },
+  async wizundo(c, el) {
+    el.disabled = true;
+    try { await wizUndo(c); c.toast('Restored.'); } catch (err) { el.disabled = false; c.toast('Undo failed: ' + err.message); }
+  },
+  /** Leave the wizard: back to the playlist's own sheet. */
+  wizback(c) { if (WIZ?.status === 'working') return; WIZ = null; c.render(); },
 
   /** One "looks like a genre playlist": confirmed. */
   ltick(c, el) { return setAxis(c, el.dataset.pl, { value: 'genre' }, null); },
@@ -6533,7 +6962,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, sheetHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, sheetHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -6910,7 +7339,7 @@ function gapsSections(c) {
       <div class="ttl">${esc(s.name)} <span class="tag">${n(s.total)} tracks</span></div>
       <div class="sub">${s.parts.map(x => `${x.rest ? 'the rest of ' : ''}${esc(x.label)} ${n(x.size)} (${Math.round(x.share * 100)}%)`).join(' · ')}.
         ${esc(s.name)} stays as it is.</div>
-    </div><div class="acts">${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
+    </div><div class="acts"><button class="b sm p" data-act="wizgap" data-wizgap="${i}">Split into playlists…</button> ${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
       : `<button class="b sm" data-act="split" data-split="${i}:${k}">Make “${esc(x.label)}” (${n(x.size)})</button>`).join(' ')}</div></div>`).join('');
   const untagged = GAPS.untagged ? `<p class="why" style="margin-top:8px">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
       outside your genre playlists have no genre in their artists' tags, so they can't be placed in one here.
@@ -7028,6 +7457,12 @@ const actions = {
     if (!name) return c.toast('Give it a name first.');
     el.disabled = true;
     try { await c.gapsCreate(name, g.ids); } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  },
+
+  /** The merge/split wizard (BUILD-6 F4) on this split: preview both halves, rename, move tracks, one undo. */
+  wizgap(c, el) {
+    const s = c.GAPS.splits?.[+el.dataset.wizgap];
+    if (s) c.mergeSplitOpen({ kind: 'split', id: s.playlistId, src: 'tags' });
   },
 
   /** Make one half of a playlist that is two genres. */
@@ -7492,7 +7927,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1103';
+const BUILD = '2026-11-16-1246';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -7830,7 +8265,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1103', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1246', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -8586,7 +9021,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1103');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1246');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11481,7 +11916,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1103';
+    s.src = 'engine.js?v=2026-11-16-1246';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -11503,7 +11938,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1103');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1246');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12051,7 +12486,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1103';
+    s.src = 'audio.js?v=2026-11-16-1246';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -12087,7 +12522,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1103', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1246', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -12821,7 +13256,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1103', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1246', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -13147,6 +13582,8 @@ SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
   twinPairs: () => ENG?.pairs ?? null,
+  // Merge/split wizard (BUILD-6 F4): new private playlists, written through the History log.
+  sp, landedIn,
   // Fill this playlist (BUILD-6 F2): ranked by core/recommend/fill.mjs in the lazy engine, written through the History log.
   TAGS, addTracks, logAction, undoAction, newGroup, engineLoad,
   engineAudio: () => (typeof engineAudio === 'function' ? engineAudio() : null),
@@ -13162,6 +13599,7 @@ SCREEN_CTX.lists = () => ({
 });
 SCREEN_CTX.new = () => ({
   R, GAPS, esc, $, emptyState, fire, gapsCompute, gapsCreate, gapsFile, toast, render, sp, addTracks,
+  mergeSplitOpen: spec => SCREEN_MODS.lists.wizardOpen(screenCtx('lists'), spec),
   get BetterfyGaps() { return globalThis.BetterfyGaps; },
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
 });
@@ -13240,6 +13678,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
+  { where:'local', key:'bf_mergesplit', group:'Your library', why:'Which merge and split offers (twin playlists, playlists that are two genres) were shown, dismissed or made, and when. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 
   // --- genre data ---
