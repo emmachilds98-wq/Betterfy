@@ -83,8 +83,8 @@ export async function until(fn, what, ms = 8000) {
 }
 
 /** A one-finger horizontal drag on `sel` as real touch events: dx px over `ms`. */
-export async function swipe(page, sel, dx, ms = 300) {
-  await page.evaluate(({ sel, dx, ms }) => new Promise(done => {
+export async function swipe(page, sel, dx, ms = 300, { exact = false } = {}) {
+  await page.evaluate(({ sel, dx, ms, exact }) => new Promise(done => {
     const el = document.querySelector(sel), r = el.getBoundingClientRect();
     const x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
     const mk = (x, y) => new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
@@ -92,10 +92,19 @@ export async function swipe(page, sel, dx, ms = 300) {
       touches: type === 'touchend' ? [] : [mk(x, y)], changedTouches: [mk(x, y)] }));
     fire('touchstart', x0, y0);
     const steps = 10; let i = 0;
+    // exact: space the moves by spinning in one task, so the gesture's speed is
+    // what was asked even when a loaded machine runs timers late (a flick's
+    // verdict depends on event timeStamps, which setTimeout drift stretches).
+    if (exact) {
+      const spin = until => { while (performance.now() < until) { /* wait */ } };
+      let t = performance.now();
+      for (i = 1; i <= steps; i++) { spin(t += ms / steps); fire('touchmove', x0 + dx * i / steps, y0); }
+      fire('touchend', x0 + dx, y0); done(); return;
+    }
     const tick = () => {
       i++; fire('touchmove', x0 + dx * i / steps, y0);
       if (i < steps) setTimeout(tick, ms / steps); else { fire('touchend', x0 + dx, y0); done(); }
     };
     setTimeout(tick, ms / steps);
-  }), { sel, dx, ms });
+  }), { sel, dx, ms, exact });
 }
