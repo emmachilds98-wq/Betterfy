@@ -17,6 +17,38 @@ export const MATCH_VERSION = '1.0.0';
 export const MIX_TOLERANCE = 0.06;
 /** A tempo reading below this confidence is not used for mixing. */
 export const MIX_MIN_CONF = 0.3;
+/**
+ * A key reading is used (shown, or counted for mixing) only at or above this
+ * confidence. Measured on the Beatport EDM Key Dataset, held-out half: 62.4%
+ * exact / 72.0% MIREX on the 53% of tracks at or above it, against 55.3% / 64.6%
+ * on all of them (BUILD-5-PROGRESS.md). web/audio/dsp-view.mjs has the same
+ * number for the chip; test/keygate.test.mjs keeps the two equal.
+ */
+export const KEY_MIN_CONF = 0.65;
+/** How much a harmonic fit moves a "mixes with" ranking, in cosine-similarity units. */
+export const KEY_RANK_BONUS = 0.03;
+
+const CAMELOT_RE = /^(1[0-2]|[1-9])([AB])$/;
+/** A record's Camelot key when it is sure enough to mix on, else null. */
+export function keyOfRecord(record) {
+  const d = record && !record.miss ? record.dsp : null;
+  if (!d || typeof d.camelot !== 'string' || !(d.keyConf >= KEY_MIN_CONF)) return null;
+  const c = d.camelot.toUpperCase();
+  return CAMELOT_RE.test(c) ? c : null;
+}
+/**
+ * Do two Camelot keys mix? 'same', 'adjacent' (a step round the wheel, same
+ * letter) or 'relative' (same number, other letter) are harmonic; 'clash' is
+ * not; null when either key is unknown (then nothing is claimed either way).
+ */
+export function keyFit(a, b) {
+  const ma = CAMELOT_RE.exec(a ?? ''), mb = CAMELOT_RE.exec(b ?? '');
+  if (!ma || !mb) return null;
+  const x = Number(ma[1]), y = Number(mb[1]);
+  if (x === y) return ma[2] === mb[2] ? 'same' : 'relative';
+  const step = Math.min(Math.abs(x - y), 12 - Math.abs(x - y));
+  return step === 1 && ma[2] === mb[2] ? 'adjacent' : 'clash';
+}
 
 function dot(a, b) {
   let s = 0;
@@ -137,13 +169,23 @@ export function mixesWith(trackId, index, { k = 8, bpm = null, tolerance = MIX_T
   const own = bpm ?? tempoOf(row?.rec)?.bpm ?? null;
   if (!row || !(own > 0)) return [];
   const out = [];
+  const ownKey = keyOfRecord(row.rec);
   for (const n of nearest(row.emb, index, { k: pool, exclude: new Set([trackId]) })) {
     const t = tempoOf(index.get(n.id)?.rec);
     if (!t || t.conf < MIX_MIN_CONF) continue;
     const r = tempoRelation(own, t.bpm, tolerance) ?? (t.alt ? tempoRelation(own, t.alt, tolerance) : null);
     if (!r) continue;
-    out.push({ id: n.id, sim: n.sim, bpm: +t.bpm.toFixed(1), rel: r.rel, diff: r.diff });
-    if (out.length >= k) break;
+    const hit = { id: n.id, sim: n.sim, bpm: +t.bpm.toFixed(1), rel: r.rel, diff: r.diff };
+    // Key only when both keys are sure; otherwise the entry is exactly what it always was.
+    const theirs = keyOfRecord(index.get(n.id)?.rec), fit = keyFit(ownKey, theirs);
+    if (fit) { hit.key = theirs; hit.keyFit = fit; }
+    out.push(hit);
+    if (!ownKey && out.length >= k) break;
   }
-  return out;
+  if (ownKey) {
+    // A harmonic fit lifts a mix a little, a clash lowers it; ties keep the similarity order.
+    const rank = h => h.sim + (h.keyFit ? (h.keyFit === 'clash' ? -KEY_RANK_BONUS : KEY_RANK_BONUS) : 0);
+    out.sort((a, b) => rank(b) - rank(a));
+  }
+  return out.slice(0, k);
 }
