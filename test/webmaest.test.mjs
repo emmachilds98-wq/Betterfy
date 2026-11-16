@@ -60,13 +60,14 @@ test('page: a passed Score choice for the second ear hands the engine that ear',
   assert.equal(T.engineAudioIn([rec('b', false)]).ear, undefined, 'no second-ear records: the first ear');
 });
 
-test('page: the Score run gets the arms only when some records have a second ear, and never an ear', () => {
+test('page: the Score run gets the ear arms only when some records have a second ear, and never an ear', () => {
   const T = sandbox({ choice: { ear: 'maest', gate: { pass: true } } });
   const plain = [rec('b', false)];
-  assert.equal(T.engineAudioScore(plain).arms, undefined);
-  assert.deepEqual(T.engineAudioScore(plain), T.engineAudioIn(plain));
+  assert.deepEqual([...T.engineAudioScore(plain).arms], ['near'], 'only nearest tracks without a second ear');
+  const { arms, ...rest } = T.engineAudioScore(plain);
+  assert.equal(JSON.stringify(rest), JSON.stringify(T.engineAudioIn(plain)));
   const s = T.engineAudioScore([rec('a', true), rec('b', false)]);
-  assert.deepEqual([...s.arms], ['maest', 'both']);
+  assert.deepEqual([...s.arms], ['maest', 'both', 'near']);
   assert.equal(s.ear, undefined, 'the Score run always scores the first ear as its first arm');
 });
 

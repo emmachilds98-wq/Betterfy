@@ -7,6 +7,9 @@ import { mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renameP
   twinOffers, offerKey, readMeasure, recordOffer, dismissLine } from '../../core/playlists/mergesplit.mjs';
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
+/** The axis names in plain words, for the sheet's picker (USER-REVIEW item 8). The values stay the axis ids. */
+const AXIS_WORDS = { genre: 'genre', mood: 'mood', era: 'era or year', event: 'an event', djset: 'a DJ set',
+  context: 'a time or place', inbox: 'an inbox to sort later' };
 /** "64% genre · 19% mood" — what a playlist's tags are actually made of,
  *  which is the evidence behind a content-guessed axis and a sanity check on
  *  every other one. Facets under a tenth are left out as noise. */
@@ -59,19 +62,22 @@ export function twinsOf(pairs) {
 }
 
 /** 0-100 and the reasons, from what Betterfy already knows about one playlist: misfiled tracks,
- *  drift, a second genre, a twin it cannot be told from, repeats, staleness, an axis nobody has
- *  settled. Null under eight tracks (too few to judge). Every input is optional: no data, no mark. */
+ *  drift, a second genre, a twin it cannot be told from, repeats, an axis nobody has settled.
+ *  The score is about fit, not age (USER-REVIEW item 8): an old playlist that holds together is
+ *  healthy, so staleness is said as a note and costs nothing, while any misfiled track costs at
+ *  least 5, so strays show up sooner than their share alone would say. Null under eight tracks (too few to
+ *  judge). Every input is optional: no data, no mark. */
 export function playlistHealth({ tracks = 0, misfiled = 0, drifting = false, split = false, undecided = false,
                                  twins = [], repeats = 0, staleDays: stale = null } = {}) {
   if (tracks < 8) return null;
   const notes = [];
   let score = 100;
-  if (misfiled) { score -= Math.min(45, Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
+  if (misfiled) { score -= Math.min(45, 5 + Math.round(misfiled / tracks * 150)); notes.push(`${misfiled} track${misfiled === 1 ? '' : 's'} look${misfiled === 1 ? 's' : ''} misfiled`); }
   if (drifting) { score -= 15; notes.push('newest additions read differently from the rest'); }
   if (split) { score -= 20; notes.push('sounds like two genres'); }
   if (twins?.length) { score -= 10; notes.push(`hard to tell apart from ${twins.slice(0, 2).join(' and ')}`); }
   if (repeats > 0) { score -= Math.min(15, repeats * 3); notes.push(`${repeats} repeated track${repeats === 1 ? '' : 's'}`); }
-  if (stale !== null && stale >= 365) { score -= 5; notes.push(`nothing added in ${Math.floor(stale / 365)}+ year${stale >= 730 ? 's' : ''}`); }
+  if (stale !== null && stale >= 365) { notes.push(`nothing added in ${Math.floor(stale / 365)}+ year${stale >= 730 ? 's' : ''}`); }
   if (undecided) { score -= 10; notes.push('no axis decided yet'); }
   score = Math.max(0, score);
   return { score, word: score >= 85 ? 'Healthy' : score >= 65 ? 'Fine' : 'Needs a look', notes };
@@ -137,27 +143,80 @@ export function sparkHTML(vm) {
   return '';
 }
 
+/** Unfiled tracks whose first pick is each playlist: what is waiting to be filed there, by playlist id. */
+export function waitingCounts(backlog) {
+  const out = new Map();
+  for (const t of backlog ?? []) { const id = t?.suggest?.[0]?.id; if (id) out.set(id, (out.get(id) ?? 0) + 1); }
+  return out;
+}
+
+/** The plain-word facts on a Library row, in order: misfiled, waiting to be filed here, the BPM
+ *  range its heard tracks settle on, and its top style. Nothing is shown that is not known. */
+export function rowFacts({ misfiled = 0, waiting = 0, vm = null } = {}) {
+  const out = [];
+  if (misfiled > 0) out.push({ k: 'warn', text: `${misfiled} misfiled` });
+  if (waiting > 0) out.push({ k: 'ok', text: `${waiting} to file` });
+  const b = vm?.bpm;
+  const r = Array.isArray(b) ? b : Number.isFinite(b) ? [b, b] : null;
+  if (r && r.every(x => Number.isFinite(x) && x > 0)) {
+    const [lo, hi] = [Math.round(Math.min(...r)), Math.round(Math.max(...r))];
+    out.push({ k: 'bpm', text: `${lo === hi ? lo : `${lo}–${hi}`} BPM` });
+  }
+  const top = (Array.isArray(vm?.styles) ? vm.styles : []).find(s => Array.isArray(s) && s[0] && s[1] > 0);
+  if (top) out.push({ k: 'style', text: String(top[0]) });
+  return out;
+}
+
+/** Library's order: what needs a look first (health under 85, lowest first, then most to fix), then
+ *  every other playlist by size. A playlist too small to judge sorts with the healthy ones. */
+export function attentionOrder(rows, infoOf) {
+  const key = p => { const i = infoOf(p); const s = i?.health?.score;
+    return { need: s != null && s < 85, s: s ?? 100, fix: (i?.misfiled ?? 0) + (i?.waiting ?? 0) }; };
+  const k = new Map(rows.map(p => [p, key(p)]));
+  return [...rows].sort((a, b) => { const x = k.get(a), y = k.get(b);
+    if (x.need !== y.need) return x.need ? -1 : 1;
+    if (x.need && x.s !== y.s) return x.s - y.s;
+    if (x.need && x.fix !== y.fix) return y.fix - x.fix;
+    return (b.tracks ?? 0) - (a.tracks ?? 0) || String(a.name ?? '').localeCompare(String(b.name ?? '')); });
+}
+
+/** The words for a health score, and its colour class. */
+const healthClass = s => s >= 85 ? 'ok' : s >= 65 ? 'fine' : 'low';
+
+/** "How well it knows you": the last Score run on this account, in one line. Never a number nobody measured. */
+export function knowsYouLine(sum, now = Date.now()) {
+  if (!sum || !Number.isFinite(sum.top1)) return 'Not measured yet. One run checks its picks against what you already filed.';
+  const pc = x => `${Math.round(x * 100)}%`;
+  const days = Number.isFinite(sum.at) ? Math.floor((now - sum.at) / 864e5) : null;
+  const when = days == null ? '' : days <= 0 ? ', checked today' : days === 1 ? ', checked yesterday' : `, checked ${days} days ago`;
+  return `Right first time on ${pc(sum.top1)} of your filed tracks${Number.isFinite(sum.top3) ? `, and in its top three on ${pc(sum.top3)}` : ''}`
+    + `${Number.isFinite(sum.scored) ? ` (${sum.scored.toLocaleString()} tracks${when})` : when ? ` (${when.slice(2)})` : ''}.`;
+}
+
 /** Everything the rows and the sheet need to know about one playlist, in one place. */
-function plInfo(c, p, splitIds, undecidedIds) {
+function plInfo(c, p, splitIds, undecidedIds, waiting = null) {
   const { R, LISTS_SOUND } = c;
   const vm = LISTS_SOUND.profile(p.id);
   const pl = c.LIB?.playlists?.find(x => x.id === p.id);
+  const misfiled = (R.misfiled ?? []).filter(m => m.currentPlaylistId === p.id).length;
   const health = playlistHealth({ tracks: p.tracks,
     twins: twinsOf(c.twinPairs?.()).get(p.id) ?? [], repeats: repeatCount(pl?.tracks), staleDays: staleDays(pl?.tracks),
-    misfiled: (R.misfiled ?? []).filter(m => m.currentPlaylistId === p.id).length,
-    drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
+    misfiled, drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
     split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
-  return { vm, health };
+  return { vm, health, misfiled, waiting: waiting?.get(p.id) ?? 0, face: pl?.tracks?.find(t => t?.art) ?? null };
 }
 
 const plRowHTML = (c, p, info, undecided) => {
   const { esc } = c;
   const spark = sparkHTML(info.vm), h = info.health;
-  return `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(p.id)}" aria-haspopup="dialog">
+  const facts = rowFacts(info).map(f => f.k === 'warn' || f.k === 'ok'
+    ? `<span class="tag ${f.k}">${esc(f.text)}</span>` : `<span class="plf plf-${f.k}">${esc(f.text)}</span>`).join(' ');
+  const face = c.thumbHTML ? c.thumbHTML({ id: p.id, title: p.name, art: info.face?.art }) : '';
+  return `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(p.id)}" aria-haspopup="dialog">${face}
     <span class="plmain"><span class="ttl">${esc(p.name)}</span>
-      <span class="plmeta"><span class="mono">${p.tracks}</span> tracks · <span class="tag">${esc(p.axis)}</span>${
-        undecided ? ' <span class="tag warn">pick an axis</span>' : p.target ? ' <span class="tag ok">files here</span>' : ''}${
-        h && h.score < 65 ? ' <span class="tag warn">needs a look</span>' : ''}</span></span>${spark}</button>`;
+      <span class="plmeta"><span class="mono">${p.tracks}</span> tracks${
+        undecided ? ' · <span class="tag warn">what kind?</span>' : ''}${facts ? ` · ${facts}` : ''}</span></span>${spark}${
+      h ? `<span class="plscore plh-${healthClass(h.score)}" title="Health: ${esc(h.word)}${h.notes.length ? ' · ' + esc(h.notes.join('; ')) : ''}"><b class="mono">${h.score}</b><span>${esc(h.word)}</span></span>` : ''}</button>`;
 };
 
 /** The playlist detail sheet's body (opened by plopen; shell.js draws it into #plSheet). */
@@ -189,12 +248,12 @@ export function sheetHTML(c, id) {
     ${health ? `<section class="pls-sec"><h3>Health</h3>
       <p class="plhealth plh-${health.score >= 85 ? 'ok' : health.score >= 65 ? 'fine' : 'low'}"><b class="mono">${health.score}</b> ${esc(health.word)}</p>
       ${health.notes.length ? `<ul class="plnotes">${health.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : '<p class="hint">Nothing out of place.</p>'}</section>` : ''}
-    <section class="pls-sec"><h3>How it is treated</h3>
+    <section class="pls-sec"><h3>What kind of playlist</h3>
       <p class="hint">${esc(p.why ?? '')}</p>
-      <label class="pls-f">Axis <select data-act="axis" data-ax="${esc(id)}" aria-label="Axis of ${esc(pl.name)}">${AXES.map(a =>
-        `<option value="${a}" ${p.axis === a ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
-      <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to model"' : ''}>
-        receives suggestions</label></section>
+      <label class="pls-f">It groups by <select data-act="axis" data-ax="${esc(id)}" aria-label="What ${esc(pl.name)} groups by">${AXES.map(a =>
+        `<option value="${a}" ${p.axis === a ? 'selected' : ''}>${esc(AXIS_WORDS[a] ?? a)}</option>`).join('')}</select></label>
+      <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to learn from"' : ''}>
+        Suggest new tracks for it</label></section>
     ${prof ? `<section class="pls-sec"><h3>Sound</h3>${prof}</section>` : ''}
     ${split ? `<section class="pls-sec"><h3>Two genres?</h3>
       <p class="hint"><b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.
@@ -508,10 +567,14 @@ async function wizUndo(c, w = WIZ) {
 export function view(c) {
   const { CFG, R, GAPS, esc, tagCoverage, NO_SIGNAL, listsSplits } = c;
   c.gapsKick?.();
-  const rows = Object.entries(CFG).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.tracks - a.tracks);
+  const all = Object.entries(CFG).map(([id, v]) => ({ id, ...v }));
   const cov = tagCoverage();
   const splitIds = new Set(listsSplits().map(x => x.p.id));
-  const undecidedIds = new Set(rows.filter(p => p.why === NO_SIGNAL).map(p => p.id));
+  const undecidedIds = new Set(all.filter(p => p.why === NO_SIGNAL).map(p => p.id));
+  const waiting = waitingCounts(R?.backlog);
+  const infos = new Map(all.map(p => [p.id, plInfo(c, p, splitIds, undecidedIds, waiting)]));
+  const rows = attentionOrder(all, p => infos.get(p.id));
+  const needN = rows.filter(p => (infos.get(p.id)?.health?.score ?? 100) < 85).length;
   const sugg = suggestionsOf(GAPS, R);
   const mixes = c.playlistMixes().mix;
   const ticks = genreTickSuggestions(rows.map(p => ({ ...p, mirror: c.isMirrorPlaylist?.({ id: p.id, name: p.name }) })), mixes, id => c.LISTS_SOUND.profile(id));
@@ -562,10 +625,16 @@ export function view(c) {
         <span class="plmain"><span class="ttl">${esc(s.title)}</span>
           <span class="plmeta"><span class="mono">${s.n}</span> tracks · ${esc(s.why)}</span></span></button>`).join('')}</div>
     </section>` : '';
+  const eng = c.engineSummary?.() ?? null;
+  const knowsHTML = rows.some(p => p.target) ? `<section class="plknows" aria-labelledby="plknows-h">
+      <div class="plknows-head"><h2 id="plknows-h">How well it knows you</h2>
+        <button class="b sm" data-go="engine">${eng?.running ? 'Scoring…' : Number.isFinite(eng?.top1) ? 'Details' : 'Check it'}</button></div>
+      <p class="hint">${esc(knowsYouLine(eng))}</p></section>` : '';
   return `<h1>Library</h1>
-    <p class="lede">Tap a playlist for its axis, health and shuffle.</p>
+    <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
     ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${suggHTML}
-    <div class="plrows">${rows.map(p => plRowHTML(c, p, plInfo(c, p, splitIds, undecidedIds), undecidedIds.has(p.id))).join('')}</div>
+    <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
+    ${knowsHTML}
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
       <button class="b sm" data-go="sources">Genre sources</button>
       <button class="b sm" data-go="shuffle">Shuffle everything</button></p>${

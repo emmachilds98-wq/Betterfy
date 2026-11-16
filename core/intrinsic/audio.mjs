@@ -30,7 +30,9 @@ import { validRecord, isCurrent, unpackEmbedding, earCurrent, EMB_DIM, MAEST_DIM
 
 // 1.1.0 (WP-C1): `audioIndex(records, { ear })` can read the second ear.
 // Without `ear` it is exactly 1.0.0.
-export const AUDIO_COMPONENT_VERSION = '1.1.0';
+// 1.2.0: `near` on the audio layer mixes in the nearest members (nearMix).
+// Without it every score is exactly 1.1.0's.
+export const AUDIO_COMPONENT_VERSION = '1.2.0';
 
 /**
  * Which ear an index hears with (WP-C1). 'effnet' is the first ear and the
@@ -206,7 +208,7 @@ function memberIdsOf(d) {
  * @returns {{ index: Map, profiles: Map<string, object>, size: number, version: string, minMembers: number }}
  *          `size` counts destinations with enough analysed members to judge.
  */
-export function buildAudioProfiles(destinations, index, { skip = null, minMembers = MIN_AUDIO_MEMBERS } = {}) {
+export function buildAudioProfiles(destinations, index, { skip = null, minMembers = MIN_AUDIO_MEMBERS, near = null } = {}) {
   const profiles = new Map();
   let size = 0;
   if (index?.size) {
@@ -220,8 +222,32 @@ export function buildAudioProfiles(destinations, index, { skip = null, minMember
       if (prof.members >= minMembers && prof.centroid) size++;
     }
   }
-  return { index: index ?? new Map(), profiles, size, version: AUDIO_COMPONENT_VERSION, minMembers };
+  return { index: index ?? new Map(), profiles, size, version: AUDIO_COMPONENT_VERSION, minMembers,
+           ...(near && near.mix > 0 ? { near: { k: near.k, mix: near.mix } } : {}) };
 }
+
+/**
+ * Nearest members (docs/review/ENGINE-REVIEW.md layer 1): a playlist that holds
+ * two or three sounds has an average that sits between them, so a track can be
+ * close to half its members and far from the centroid. With `near` the score
+ * mixes the centroid cosine with the mean cosine to the `k` closest members:
+ * `(1 - mix) * centroid + mix * mean(top k)`. Without `near` (or `mix` 0, or no
+ * members to compare) it is the centroid cosine unchanged.
+ *
+ * @param {number} centroid   cosine to the playlist's centroid
+ * @param {number[]} sims     cosines to the playlist's other heard members
+ * @param {{k: number, mix: number}|null} near
+ */
+export function nearMix(centroid, sims, near) {
+  if (!near || !(near.mix > 0) || !sims?.length) return centroid;
+  const k = Math.max(1, Math.min(near.k | 0 || 1, sims.length));
+  const top = [...sims].sort((a, b) => b - a).slice(0, k);
+  const mean = top.reduce((a, b) => a + b, 0) / top.length;
+  return (1 - near.mix) * centroid + near.mix * mean;
+}
+
+/** The nearest-members setting the Score arm measures and the page uses once Score picks it. */
+export const NEAR_DEFAULT = Object.freeze({ k: 5, mix: 0.3 });
 
 /**
  * Sound scores for one track: destination id → cosine to that destination's
@@ -252,10 +278,23 @@ export function audioScores(track, space, { leaveOneOut = false, minMembers = nu
   if (!row) return null;
   const floor = minMembers ?? audio.minMembers ?? MIN_AUDIO_MEMBERS;
 
+  const near = audio.near ?? null;
+  // Nearest members: each other heard member's cosine, worked out once per
+  // track (one dot per heard track), never the track's own.
+  const simOf = near ? new Map() : null;
+  const sim = mid => {
+    if (!simOf.has(mid)) { const r = audio.index.get(mid); simOf.set(mid, r ? dot(row.emb, r.emb) : null); }
+    return simOf.get(mid);
+  };
   const out = new Map();
   for (const [destId, base] of audio.profiles) {
     const prof = leaveOneOut ? profileWithout(base, id, audio.index) : base;
-    out.set(destId, prof?.centroid && prof.members >= floor ? +dot(row.emb, prof.centroid).toFixed(6) : null);
+    if (!(prof?.centroid && prof.members >= floor)) { out.set(destId, null); continue; }
+    const c = dot(row.emb, prof.centroid);
+    if (!near) { out.set(destId, +c.toFixed(6)); continue; }
+    const sims = [];
+    for (const mid of prof.ids) if (mid !== id) { const v = sim(mid); if (v != null) sims.push(v); }
+    out.set(destId, +nearMix(c, sims, near).toFixed(6));
   }
   return out;
 }

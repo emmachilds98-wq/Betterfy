@@ -76,7 +76,7 @@ test('with nothing found yet, the seed picker stands alone', () => {
   assert.match(html, /id="discPl"/, 'you can still choose a seed');
   assert.match(html, /id="discRun"/);
   assert.match(html, /Nothing found yet/);
-  assert.match(html, /Pick what to seed from above/);
+  assert.match(html, /<div class="es-acts"><button class="b p" type="button" data-act="discRun">/, 'the empty state is the Find button itself');
   assert.doesNotMatch(html, /id="seek"/, 'no player until there is something to play');
 });
 
@@ -189,4 +189,61 @@ test('adding the last one leaves the position somewhere real', async () => {
   await Discover.actions.dfile(discoverCtx(app), { dataset: { dfile: 'p1' } });
   assert.equal(app.S.discover.length, 0);
   assert.equal(app.S.discAt, 0);
+});
+
+/* ---------- Wave F: every pick as a playable row ---------- */
+import * as DISC_ROWS from '../web/screens/discover.mjs';
+
+const rowCtx = (over = {}) => ({
+  esc: s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]),
+  S: {}, previewState: () => 'idle', ...over });
+const PICKS = [
+  { id: 'a', track: 'One', artist: 'X', isrc: 'GB1', suggest: [{ id: 'p1', name: 'Jungle', score: 0.8 }] },
+  { id: 'b', track: 'Two', artist: 'Y', isrc: null, suggest: [] },
+  { id: 'c', track: 'Three', artist: 'Z', isrc: 'GB3', suggest: [{ id: 'p2', name: 'House', score: 0.5 }] },
+];
+
+test('pick rows: a preview button per pick, Like, and "+ playlist" where it fits best', () => {
+  const html = DISC_ROWS.pickRowsHTML(rowCtx({ previewState: id => (id === 'c' ? 'playing' : 'idle') }), PICKS, 0);
+  assert.match(html, /All 3 picks/);
+  assert.match(html, /class="drow on" data-drow="a"/, 'the pick on the card is marked');
+  assert.match(html, /data-act="dadd" data-tid="a" data-pl="p1"[^>]*>\+ Jungle</);
+  assert.match(html, /Sure in Jungle/);
+  assert.match(html, /data-tid="b" aria-label="No preview for this track: Two"[^>]* disabled/, 'no ISRC, nothing to play');
+  assert.ok(!/data-act="dadd" data-tid="b"/.test(html), 'no fit, no add button');
+  assert.match(html, /class="drow playing" data-drow="c"[^]*?aria-label="Pause preview: Three"/);
+  assert.equal(DISC_ROWS.pickRowsHTML(rowCtx(), [], 0), '');
+  const liked = DISC_ROWS.pickRowsHTML(rowCtx({ S: { discLiked: new Set(['a']) } }), PICKS, 0);
+  assert.match(liked, /data-drow="a"[^]*?<button class="b sm" type="button" disabled>Liked<\/button>/, 'a like survives a repaint');
+});
+
+test('pick rows: ▶ asks for that pick\'s preview, the title puts it on the card, + adds that pick and keeps the card', async () => {
+  const asked = [];
+  const S = { discover: PICKS.map(p => ({ ...p })), discAt: 2 };
+  const ctx = rowCtx({ S, previewToggle: t => asked.push(t.id), render() {} });
+  DISC_ROWS.actions.dprev(ctx, { dataset: { tid: 'c' } });
+  assert.deepEqual(asked, ['c']);
+  DISC_ROWS.actions.dshow(ctx, { dataset: { at: '1' } });
+  assert.equal(S.discAt, 1);
+  S.discAt = 2;
+  const added = [];
+  await DISC_ROWS.actions.dadd({ ...ctx, CFG: { p1: { name: 'Jungle' } }, addTracks: async (pl, ids) => added.push([pl, ...ids]),
+    logAction: async () => {}, getLog: async () => [{ at: 1 }], toast() {}, undoAction() {} }, { dataset: { tid: 'a', pl: 'p1' } });
+  assert.deepEqual(added, [['p1', 'a']], 'the row\'s own pick, not the one on the card');
+  assert.deepEqual(S.discover.map(p => p.id), ['b', 'c']);
+  assert.equal(S.discover[S.discAt].id, 'c', 'the card still shows the same pick');
+});
+
+test('preview button words for each state', () => {
+  assert.equal(DISC_ROWS.previewBtn('idle').label, 'Play a 30-second preview');
+  assert.equal(DISC_ROWS.previewBtn('playing').label, 'Pause preview');
+  assert.match(DISC_ROWS.previewBtn('error').label, /try again/);
+});
+
+test('the page plays previews by ISRC only, and never stores the address', () => {
+  const src = readFileSync(new URL('../web/app/preview.js', import.meta.url), 'utf8');
+  assert.match(src, /track\/isrc:/);
+  assert.ok(!/LS\.setItem|idb\.set/.test(src), 'a signed preview address expires: never kept');
+  const page = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
+  assert.match(page, /function previewToggle\(t\)/, 'it is in the built page');
 });

@@ -46,6 +46,14 @@ function calibLine(label, rep, pc) {
     + `not sure ${pc(c.unsureShare)}${rep.holds === true ? '; holds' : rep.holds === false ? "; doesn't hold yet" : ''}`;
 }
 
+/** Family first (ENGINE-REVIEW layer 3): the Score line. Counts and rates only. */
+export function familyLine(f, pc) {
+  const sure = f.sure?.confidentN ? `family confident on ${pc(f.sure.confidentShare)} of tracks, right ${pc(f.sure.confidentRight)}`
+    : 'family confident: none earned yet';
+  return `Family first (${f.families} families): family top-1 ${pc(f.family)}, right playlist inside the right family ${pc(f.within)} `
+    + `(flat top-1 ${pc(f.flat)}, ${f.n} tracks); ${sure} — ${f.use ? 'used' : 'not used (family top-1 under 85%)'}`;
+}
+
 /** "How sure it is", checked on tracks the thresholds were not fitted on. */
 function calibCard(p, calib) {
   const c = calib;
@@ -160,6 +168,7 @@ export function audioCard(v, p, esc, maestScoreText) {
         : (g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.')}</b>
       ${esc(g.text ?? '')}</p>
     ${w.arms?.maest && maestScoreText ? `<p class="why" id="maestScore" style="margin-top:8px">${esc(maestScoreText(w))}</p>` : ''}
+    ${w.nearChoice?.text ? `<p class="why" id="nearScore" style="margin-top:8px">${esc(w.nearChoice.text)}</p>` : ''}
     ${identifyHTML(v.identify, p, esc)}
   </div>`;
 }
@@ -222,6 +231,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
+    ...(v.family ? [familyLine(v.family, pc)] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),
     ...(log && measureLines ? measureLines(log) : []),
@@ -247,7 +257,7 @@ function fillRow(f, p) {
 export function teachLine(t, pc) {
   if (!t) return null;
   if (t.before == null) return `Teach questions: off (${t.why})`;
-  return `Teach questions: top-1 ${pc(t.before)} -> ${pc(t.after)} after ${t.asked} simulated answers, ${t.scored} hidden tracks — ${
+  return `Teach questions${t.sound ? " (with sound)" : ""}: top-1 ${pc(t.before)} -> ${pc(t.after)} after ${t.asked} simulated answers, ${t.scored} hidden tracks — ${
     t.pass ? 'shown on File' : `off (${t.why})`}`;
 }
 function teachRow(t, p) {
@@ -376,6 +386,7 @@ function audioLines(v, pc, maestScoreText) {
       + `${w.analysed} analysed in all; had a say on ${w.judged}, changed ${w.changed} top answers`,
     `Audio gate: ${g.pass === true ? 'PASS' : g.pass === false ? 'not yet' : 'undecided'} (${g.reason ?? '—'}) — ${g.text ?? ''}`,
     ...(w.arms?.maest && maestScoreText ? [maestScoreText(w, pc)] : []),
+    ...(w.nearChoice?.text ? [w.nearChoice.text] : []),
     ...(v.identify?.scored ? [
       `Naming genres by sound (${v.identify.scored} filed tracks): genre ${pc(v.identify.genre)}, sub-genre ${pc(v.identify.specific)}; `
         + `model alone ${pc(v.identify.modelOnly.genre)} / ${pc(v.identify.modelOnly.specific)}; `
@@ -391,7 +402,7 @@ const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 export function view(c) {
   const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
   const head = `<h1>Engine</h1>
-    <p class="lede">A second opinion that reads only your own playlists. <b>It files nothing.</b>${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
+    <p class="lede">What Betterfy has learnt from your own playlists, and how often it gets your filing right. Learning and scoring here change nothing in Spotify.${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
       of record, from when. Everything here is what it <i>would</i> do, until the score below shows it, blended with today's engine,
       beating today's engine on your own filing. Then the File screen's picks come from the blend.</p>`) ?? ''}</p>`;
 
@@ -399,10 +410,10 @@ export function view(c) {
   if (!engineTargets().length) return `${head}
     <div class="card">
       <h2 style="margin:0 0 12px; font-size:19px">No genre playlists yet</h2>
-      <p>Both engines only file into playlists marked <b>receives suggestions</b>, and none of yours are — none of
-        their names say what genre they are. Mark the ones that are genre playlists on the Playlists screen, then
+      <p>Both engines only file into playlists that take suggestions, and none of yours do yet — none of
+        their names say what genre they are. Mark the ones that are genre playlists in Library, then
         come back.</p>
-      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Playlists</button></div>
+      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Library</button></div>
     </div>`;
 
   if (ENG.status === 'idle') return `${head}

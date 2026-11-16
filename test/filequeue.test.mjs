@@ -176,3 +176,20 @@ test('buildReports orders the queue by listening once it has landed, newest firs
   assert.deepEqual(run(null), ['new', 'old']);
   assert.deepEqual(run({ weights: new Map([['Loud', 4]]), tracks: null }), ['old', 'new']);
 });
+
+test('pickBacked: only sound or filing history backs a pick, never tags alone', async () => {
+  const { pickBacked, backedBand } = await import('../core/review/filequeue.mjs');
+  assert.equal(pickBacked({ via: 'history' }), true);
+  assert.equal(pickBacked({ via: 'sound' }), true);
+  assert.equal(pickBacked({ via: 'blend', filed: true }), true);
+  assert.equal(pickBacked({ via: 'blend', evidence: { sound: 0, history: 0.2 } }), true);
+  assert.equal(pickBacked({ via: 'tags', axis: 'genre' }), false);
+  assert.equal(pickBacked({ via: 'blend', similar: true }), false, 'similar artists alone are not filing history');
+  assert.equal(pickBacked({ evidence: { tags: 1, sound: 0 } }), false);
+  assert.equal(pickBacked(null), false);
+  assert.equal(backedBand('HIGH', { via: 'tags' }), 'LIKELY');
+  assert.equal(backedBand('high', {}), 'medium');
+  assert.equal(backedBand('HIGH', { via: 'history' }), 'HIGH');
+  assert.equal(backedBand('AMBIGUOUS', {}), 'AMBIGUOUS');
+  assert.equal(backedBand(undefined, {}), null);
+});

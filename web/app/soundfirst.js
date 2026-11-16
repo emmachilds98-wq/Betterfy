@@ -121,6 +121,21 @@ function soundIdOf(t) {
   return v;
 }
 
+/** Learn from a filing now (ENGINE-REVIEW layer 5): the track joins the
+ *  playlist in the File and Engine spaces before the next card, so another
+ *  track by that artist, or one that sounds like it, already counts it. The
+ *  background rebuild replaces this with the exact space later. */
+function learnNow(trackId, playlistIds) {
+  if (!globalThis.BetterfyIntrinsic?.learnFiled) return;
+  if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
+  const raw = SOUND.byId.get(trackId);
+  if (!raw) return;
+  let changed = false;
+  for (const space of new Set([SOUND.space, typeof ENG !== 'undefined' ? ENG.space : null].filter(Boolean)))
+    for (const pid of [].concat(playlistIds)) changed = BetterfyIntrinsic.learnFiled(space, raw, pid) || changed;
+  if (changed) { SOUND.memo = null; SOUND.idMemo = null; }
+}
+
 /** Sound-led picks for one track on the File screen, or [] when it hasn't been
  *  heard, the space isn't ready, or sound can't tell (too few heard members). */
 function soundPicks(t) {

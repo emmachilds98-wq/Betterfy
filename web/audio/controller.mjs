@@ -20,7 +20,7 @@
 // flag is on.
 //
 // CLAP (WP-C2), only with deps.loadClap AND deps.clapOn() saying yes (the
-// "Deep listen" switch, off by default, Wi-Fi only): its encoder is loaded on
+// "Deep listen" switch, on by default, Wi-Fi only): its encoder is loaded on
 // the first such run, new records get their `clap` field in the same pass,
 // and records heard before are topped up after DSP, the same lazy way.
 // Without loadClap, or with clapOn() false, nothing here differs from before.
