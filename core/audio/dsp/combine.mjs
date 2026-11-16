@@ -30,10 +30,21 @@ import { tempo as tempoOf, TEMPO_VERSION } from './tempo.mjs';
 import { key as keyOf, KEY_VERSION } from './key.mjs';
 import { loudness as loudnessOf, LOUDNESS_VERSION } from './loudness.mjs';
 
-export const COMBINE_VERSION = '1.0.0';
+export const COMBINE_VERSION = '1.1.0';
 /** Stored as `dsp.v`; a record whose dsp.v differs is re-measured lazily, never invalidated. */
 export const DSP_VERSION = `${COMBINE_VERSION}+t${TEMPO_VERSION}+k${KEY_VERSION}+l${LOUDNESS_VERSION}`;
 
+/**
+ * A combined tempo under this many BPM is read at double time (×2, while that
+ * stays ≤ 200). The D1 search spans 60–200 with a prior at 120, and its most
+ * common octave error on dance music is a 124–145 track heard at half time
+ * (64 for house, 70 for dubstep). Fitted on the Beatport EDM Key set's half A
+ * (scripts/audio-dsp/keytempo-lab.mjs); on the held-out half B (n=387) it
+ * takes ±1 BPM from 80.9% (±3.9) to 88.9% (±3.1), octave errors 50 → 19
+ * (docs/BUILD-5-PROGRESS.md, 2026-11-16). Only slow readings are moved: a
+ * DnB 174 stays 174.
+ */
+export const SLOW_FOLD = 74;
 /** Two windows within this many BPM agree. */
 export const BPM_AGREE = 1;
 /** How far a ratio may sit from exactly 2 (in BPM at the slower tempo) and still count as half/double time. */
@@ -67,8 +78,10 @@ export function combineTempo(ws) {
     return p ? p.bpm : null;
   };
   const finish = (w, bpm, conf, octave, alt, agree) => {
+    let a = octave ? alt ?? partnerOf(w) : null;
+    if (bpm < SLOW_FOLD && bpm * 2 <= 200) { a = octave ? bpm : null; bpm *= 2; }
     const out = { bpm: r1(bpm), bpmConf: r3(Math.max(0, Math.min(1, conf))), octaveAmbiguous: !!octave, agree };
-    if (octave) { const a = alt ?? partnerOf(w); if (ok(a)) out.bpmAlt = r1(a); }
+    if (octave && ok(a)) out.bpmAlt = r1(a);
     return out;
   };
   if (good.length === 1) { const w = good[0]; return finish(w, w.bpm, w.confidence, w.octaveAmbiguous, null, null); }

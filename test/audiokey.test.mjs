@@ -359,3 +359,17 @@ test('comparison script: ISRC lookup, identity check and misses, with no network
   assert.equal(await miss(track, good, { decode: async () => { throw new Error('bad mp3'); } }), 'decode-failed');
   assert.equal(await miss(track, good, { fetch: async () => { throw new Error('offline'); } }), 'lookup-failed');
 });
+
+test('chromagram: defaults unchanged by the measurement options; keepPeaks returns tuned peaks', () => {
+  const x = progression(57, 'minor');
+  const a = chromagram(x), b = chromagram(x, { keepPeaks: true });
+  assert.deepEqual(Array.from(b.chroma), Array.from(a.chroma));
+  assert.equal(a.peaks, undefined);
+  assert.equal(b.peaks.semis.length, b.peaks.weights.length);
+  assert.equal(b.peaks.frames.length, b.peaks.semis.length);
+  assert.ok(b.peaks.frames.every(f => f >= 0 && f < b.frames));
+  // Narrowing the band can only drop peaks.
+  const narrow = chromagram(x, { fMin: 200, fMax: 800, keepPeaks: true });
+  assert.ok(narrow.peaks.semis.length < b.peaks.semis.length);
+  assert.ok(Array.from(narrow.peaks.semis).every(s => { const hz = 440 * 2 ** (s / 12); return hz > 190 && hz < 830; }));
+});

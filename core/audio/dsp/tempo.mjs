@@ -200,6 +200,18 @@ export function tempoFromMel(mel, { min = 60, max = 200 } = {}) {
   };
 }
 
+/**
+ * Per-band-group onset autocorrelations (each normalised to 1 at lag 0), for
+ * measurement scripts that study the octave decision. Lag in mel frames (FPS).
+ * @returns {Float64Array[]|null} kick, body, snare, hats
+ */
+export function bandAutocorrelations(mel, maxLagS = MAX_LAG_S) {
+  if (!mel || mel.frames < MIN_SECONDS * FPS) return null;
+  const envs = onsetEnvelopes(mel);
+  const maxLag = Math.min(Math.round(maxLagS * FPS), Math.floor(mel.frames / 2));
+  return envs.map(e => autocorrelation([e], maxLag));
+}
+
 function checkRange(min, max) {
   if (!(min > 0 && max > min)) throw new RangeError(`need 0 < min < max, got ${min}..${max}`);
 }

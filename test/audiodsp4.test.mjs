@@ -5,7 +5,7 @@ import { analyseOne, analyseSamples, fillDsp, WORKER_VERSION } from '../core/aud
 import { makeRecord, MISS, N_STYLES, EMB_DIM, validRecord } from '../core/audio/record.mjs';
 import { SAMPLE_RATE, MEL_VERSION } from '../core/audio/mel.mjs';
 import { combineTempo, combineKey, combineLoudness, measureWindows, needsDsp, DSP_VERSION,
-         DISAGREE_PENALTY, OCTAVE_PENALTY } from '../core/audio/dsp/combine.mjs';
+         DISAGREE_PENALTY, OCTAVE_PENALTY, SLOW_FOLD } from '../core/audio/dsp/combine.mjs';
 import { dspSoundVM, dspShown, bpmShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, BPM_MIN_CONF, DSP_UI_KEY } from '../web/audio/dsp-view.mjs';
 import { createAudioController } from '../web/audio/controller.mjs';
 import { soundChip } from '../web/ui/sound.mjs';
@@ -120,6 +120,19 @@ test("tempo: D1's own octave ambiguity is kept, with its partner", () => {
   const both = combineTempo([amb, T(85.4, 0.7)]);
   assert.equal(both.octaveAmbiguous, true, 'agreeing windows do not wash out the ambiguity');
   assert.equal(both.bpmAlt, 170);
+});
+
+test('tempo: a reading under SLOW_FOLD is taken at double time; faster ones are left alone', () => {
+  assert.equal(SLOW_FOLD, 74);
+  assert.deepEqual(combineTempo([T(64, 0.8), T(64.2, 0.6)]).bpm, 128.2);
+  assert.deepEqual(combineTempo([T(70, 0.7)]), { bpm: 140, bpmConf: 0.7, octaveAmbiguous: false, agree: null });
+  // Flagged half/double time keeps the slow reading as the alternate.
+  const amb = combineTempo([T(65, 0.6, { octaveAmbiguous: true, alternates: [{ bpm: 130, score: 0.8 }] })]);
+  assert.equal(amb.bpm, 130); assert.equal(amb.bpmAlt, 65); assert.equal(amb.octaveAmbiguous, true);
+  // At or above the fold, and where ×2 would pass 200, nothing moves.
+  assert.equal(combineTempo([T(74, 0.7)]).bpm, 74);
+  assert.equal(combineTempo([T(87, 0.7)]).bpm, 87);
+  assert.equal(combineTempo([T(174, 0.7)]).bpm, 174);
 });
 
 test('tempo: no beat in either window gives nothing; one good window is used alone', () => {
