@@ -3111,7 +3111,10 @@ function buildProfiles(lib, tags, targets, axisOf = null) {
   for (const [k, d] of df) idf.set(k, Math.log(1 + N / d));
 
   const profiles = new Map();
-  for (const [id, p] of raw) profiles.set(id, { ...p, vec: applyIdf(p.vec, idf) });
+  // `mag` is the centroid's length, worked out once here: rank() compares a track
+  // with every playlist, and re-summing a long centroid for each comparison was
+  // a quarter of the time buildReports took on a 5k library.
+  for (const [id, p] of raw) { const vec = applyIdf(p.vec, idf); profiles.set(id, { ...p, vec, mag: mag(vec) }); }
   return { profiles, idf };
 }
 
@@ -3124,7 +3127,7 @@ function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis = null
   // must see the track the way its own centroid was built.
   const cache = new Map();
   const vecFor = a => {
-    if (!cache.has(a)) cache.set(a, applyIdf(weighFacets(flat, a), idf));
+    if (!cache.has(a)) { const v = applyIdf(weighFacets(flat, a), idf); cache.set(a, { v, mag: mag(v) }); }
     return cache.get(a);
   };
   const out = [];
@@ -3134,9 +3137,10 @@ function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis = null
     // playlists, a mood playlist with mood playlists. Comparing across axes
     // flags every track in a mood playlist as misfiled, which it is not.
     if (axis && p.axis && p.axis !== axis) continue;
-    const v = vecFor(p.axis);
+    const { v, mag: vm } = vecFor(p.axis);
     if (!v.size) continue;
-    const s = cosine(v, p.vec);
+    // cosine(v, p.vec), with the lengths already in hand (same product, same bits).
+    const s = p.mag != null ? (vm * p.mag ? dot(v, p.vec) / (vm * p.mag) : 0) : cosine(v, p.vec);
     if (s > 0) out.push({ id, name: p.name, score: s });
   }
   return out.sort((a, b) => b.score - a.score).slice(0, top);
@@ -3163,19 +3167,29 @@ const HISTORY_MIN_SHARE = 0.6;  // the leading playlist needs a real majority
  * rather than a similarity score, and mixing it into rank()'s cosine scale
  * would misrepresent both.
  */
-function artistHistory(track, lib, targets) {
+function artistHistory(track, lib, targets, index = null) {
   const artistId = track?.artists?.[0]?.id;
   if (!artistId) return [];
 
-  const counts = new Map(); // playlistId -> count
-  let total = 0;
-  for (const p of lib.playlists ?? []) {
-    if (!targets.has(p.id)) continue;
-    for (const t of p.tracks ?? []) {
-      if (t.id === track.id) continue;
-      if (t.artists?.[0]?.id !== artistId) continue;
-      counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
-      total++;
+  let counts, total;
+  if (index && !index.present.has(track.id)) {
+    // The same tally, read from a pass made once for the whole queue. A track
+    // that is itself in a target playlist is left to the scan below, which
+    // leaves it out of its own count.
+    const e = index.byArtist.get(artistId);
+    if (!e) return [];
+    ({ counts, total } = e);
+  } else {
+    counts = new Map(); // playlistId -> count
+    total = 0;
+    for (const p of lib.playlists ?? []) {
+      if (!targets.has(p.id)) continue;
+      for (const t of p.tracks ?? []) {
+        if (t.id === track.id) continue;
+        if (t.artists?.[0]?.id !== artistId) continue;
+        counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
+        total++;
+      }
     }
   }
   if (total < HISTORY_MIN_TRACKS) return [];
@@ -3186,6 +3200,26 @@ function artistHistory(track, lib, targets) {
 
   const home = lib.playlists.find(p => p.id === topId);
   return [{ id: topId, name: home?.name ?? topId, score: share, count: topCount, total }];
+}
+
+/** artistHistory's tally for every primary artist at once: one pass over the target
+ *  playlists instead of one per track. Pass it as artistHistory's fourth argument
+ *  when a whole queue is being scored against an unchanging library. */
+function artistHistoryIndex(lib, targets) {
+  const byArtist = new Map(), present = new Set();
+  for (const p of lib.playlists ?? []) {
+    if (!targets.has(p.id)) continue;
+    for (const t of p.tracks ?? []) {
+      present.add(t.id);
+      const a = t.artists?.[0]?.id;
+      if (!a) continue;
+      let e = byArtist.get(a);
+      if (!e) byArtist.set(a, e = { counts: new Map(), total: 0 });
+      e.counts.set(p.id, (e.counts.get(p.id) ?? 0) + 1);
+      e.total++;
+    }
+  }
+  return { byArtist, present };
 }
 
 /* ---------- rejections teach the tag engine (BUILD-5-PLAN §5.1) ----------
@@ -3471,7 +3505,7 @@ function findDrift(lib, tags, targets, idf) {
   drift.sort((a, b) => a.similarity - b.similarity);
   return drift;
 }
-return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, withoutTrack, findMisfiled, listeningWeights, byListening, findDrift };
+return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, artistHistoryIndex, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, withoutTrack, findMisfiled, listeningWeights, byListening, findDrift };
 })();
 /* ---- core/playlists/mirror.mjs ---- */
 __mod["core/playlists/mirror.mjs"] = (function () {

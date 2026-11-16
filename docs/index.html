@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-0400">
+<meta name="bf-build" content="2026-11-16-0427">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1616,7 +1616,7 @@
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-0400</span>
+    <span class="mono">build 2026-11-16-0427</span>
   </p>
 
   <div class="feat">
@@ -1709,7 +1709,7 @@
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0400</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0427</span>
     </div>
   </aside>
   <main id="main"></main>
@@ -1826,7 +1826,7 @@
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-0400. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-0427. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -2315,7 +2315,10 @@ function buildProfiles(lib, tags, targets, axisOf = null) {
   for (const [k, d] of df) idf.set(k, Math.log(1 + N / d));
 
   const profiles = new Map();
-  for (const [id, p] of raw) profiles.set(id, { ...p, vec: applyIdf(p.vec, idf) });
+  // `mag` is the centroid's length, worked out once here: rank() compares a track
+  // with every playlist, and re-summing a long centroid for each comparison was
+  // a quarter of the time buildReports took on a 5k library.
+  for (const [id, p] of raw) { const vec = applyIdf(p.vec, idf); profiles.set(id, { ...p, vec, mag: mag(vec) }); }
   return { profiles, idf };
 }
 
@@ -2328,7 +2331,7 @@ function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis = null
   // must see the track the way its own centroid was built.
   const cache = new Map();
   const vecFor = a => {
-    if (!cache.has(a)) cache.set(a, applyIdf(weighFacets(flat, a), idf));
+    if (!cache.has(a)) { const v = applyIdf(weighFacets(flat, a), idf); cache.set(a, { v, mag: mag(v) }); }
     return cache.get(a);
   };
   const out = [];
@@ -2338,9 +2341,10 @@ function rank(track, tags, profiles, idf, { exclude = null, top = 5, axis = null
     // playlists, a mood playlist with mood playlists. Comparing across axes
     // flags every track in a mood playlist as misfiled, which it is not.
     if (axis && p.axis && p.axis !== axis) continue;
-    const v = vecFor(p.axis);
+    const { v, mag: vm } = vecFor(p.axis);
     if (!v.size) continue;
-    const s = cosine(v, p.vec);
+    // cosine(v, p.vec), with the lengths already in hand (same product, same bits).
+    const s = p.mag != null ? (vm * p.mag ? dot(v, p.vec) / (vm * p.mag) : 0) : cosine(v, p.vec);
     if (s > 0) out.push({ id, name: p.name, score: s });
   }
   return out.sort((a, b) => b.score - a.score).slice(0, top);
@@ -2367,19 +2371,29 @@ const HISTORY_MIN_SHARE = 0.6;  // the leading playlist needs a real majority
  * rather than a similarity score, and mixing it into rank()'s cosine scale
  * would misrepresent both.
  */
-function artistHistory(track, lib, targets) {
+function artistHistory(track, lib, targets, index = null) {
   const artistId = track?.artists?.[0]?.id;
   if (!artistId) return [];
 
-  const counts = new Map(); // playlistId -> count
-  let total = 0;
-  for (const p of lib.playlists ?? []) {
-    if (!targets.has(p.id)) continue;
-    for (const t of p.tracks ?? []) {
-      if (t.id === track.id) continue;
-      if (t.artists?.[0]?.id !== artistId) continue;
-      counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
-      total++;
+  let counts, total;
+  if (index && !index.present.has(track.id)) {
+    // The same tally, read from a pass made once for the whole queue. A track
+    // that is itself in a target playlist is left to the scan below, which
+    // leaves it out of its own count.
+    const e = index.byArtist.get(artistId);
+    if (!e) return [];
+    ({ counts, total } = e);
+  } else {
+    counts = new Map(); // playlistId -> count
+    total = 0;
+    for (const p of lib.playlists ?? []) {
+      if (!targets.has(p.id)) continue;
+      for (const t of p.tracks ?? []) {
+        if (t.id === track.id) continue;
+        if (t.artists?.[0]?.id !== artistId) continue;
+        counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
+        total++;
+      }
     }
   }
   if (total < HISTORY_MIN_TRACKS) return [];
@@ -2390,6 +2404,26 @@ function artistHistory(track, lib, targets) {
 
   const home = lib.playlists.find(p => p.id === topId);
   return [{ id: topId, name: home?.name ?? topId, score: share, count: topCount, total }];
+}
+
+/** artistHistory's tally for every primary artist at once: one pass over the target
+ *  playlists instead of one per track. Pass it as artistHistory's fourth argument
+ *  when a whole queue is being scored against an unchanging library. */
+function artistHistoryIndex(lib, targets) {
+  const byArtist = new Map(), present = new Set();
+  for (const p of lib.playlists ?? []) {
+    if (!targets.has(p.id)) continue;
+    for (const t of p.tracks ?? []) {
+      present.add(t.id);
+      const a = t.artists?.[0]?.id;
+      if (!a) continue;
+      let e = byArtist.get(a);
+      if (!e) byArtist.set(a, e = { counts: new Map(), total: 0 });
+      e.counts.set(p.id, (e.counts.get(p.id) ?? 0) + 1);
+      e.total++;
+    }
+  }
+  return { byArtist, present };
 }
 
 /* ---------- rejections teach the tag engine (BUILD-5-PLAN §5.1) ----------
@@ -2675,7 +2709,7 @@ function findDrift(lib, tags, targets, idf) {
   drift.sort((a, b) => a.similarity - b.similarity);
   return drift;
 }
-return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, withoutTrack, findMisfiled, listeningWeights, byListening, findDrift };
+return { usableTag, canonTag, tagFacet, FACET_WEIGHTS, weighFacets, axisVec, facetMix, trackVec, isThinSignal, tagGate, gateTags, cosine, applyIdf, buildProfiles, rank, artistHistory, artistHistoryIndex, REJECT_MEMORY, artistRejectMemory, rejectFactors, downweightRejected, topTags, withoutTrack, findMisfiled, listeningWeights, byListening, findDrift };
 })();
 /* ---- core/playlists/axes.mjs ---- */
 __mod["core/playlists/axes.mjs"] = (function () {
@@ -4497,7 +4531,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines }, log) {
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-0400`,
+    `Betterfy engine score — build 2026-11-16-0427`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -6593,7 +6627,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-0400';
+const BUILD = '2026-11-16-0427';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -6914,7 +6948,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-0400', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-0427', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -7473,16 +7507,34 @@ function buildReports(lib, cfg, tags) {
   const unfiled = lib.liked.filter(t => t?.id && !isFiled(t));
   // Rejections by artist, read once for the whole queue (backlogSuggest).
   const rejected = artistRejectMemory(FB, lib);
+  // Everything a card's picks and tags are made from is the track's artists
+  // (credits, tags, and where that artist is already filed) plus the playlists
+  // rejected for this one track, so two songs by the same artists with the
+  // same rejections get the same answer. A real backlog is thousands of tracks
+  // from a few hundred artists: scored once per artist set, not once per song
+  // (measured on 5k liked songs: the dominant cost of this function).
+  const byArtists = new Map();
+  const history = artistHistoryIndex(lib, targets);
+  const scored = t => {
+    // An artist with rejections on record is scored per track: rejectFactors
+    // leaves out the rejection made on the very track it is scoring.
+    const key = (t.artists ?? []).map(a => a.id).join(',') + '|' + (FB[t.id]?.rejected ?? []).join(',')
+      + (rejected?.size && rejected.get(t.artists?.[0]?.id) ? '|' + t.id : '');
+    let s = byArtists.get(key);
+    if (!s) byArtists.set(key, s = { suggest: backlogSuggest(t, lib, cfg, tags, profiles, idf, targets, rejected, history),
+                                      tags: topTags(t, tags, idf), thin: isThinSignal(t, tags) });
+    return s;
+  };
   const backlog = unfiled.map(t => {
     const fb = FB[t.id];
-    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets, rejected);
+    const s = scored(t);
     return { id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
       album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
-      tags: topTags(t, tags, idf),
-      thinData: isThinSignal(t, tags),
+      tags: s.tags.slice(),
+      thinData: s.thin,
       artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })),
       skips: fb?.skips ?? 0,
-      suggest };
+      suggest: s.suggest.map(x => ({ ...x })) };
   })
     // Newest first, but anything already skipped sinks below everything you
     // have not seen yet — so the queue moves on instead of reopening on the
@@ -7576,7 +7628,7 @@ function keptHere(trackId, playlistId) { return !!FB[trackId]?.kept?.includes(pl
  */
 function backlogSuggest(t, lib, cfg, tags, profiles, idf,
                         targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id)),
-                        rejected = artistRejectMemory(FB, lib)) {
+                        rejected = artistRejectMemory(FB, lib), history = null) {
   const fb = FB[t.id];
   // A playlist rejected for this artist's other tracks is lowered here, fading
   // with time and later accepts (profile.mjs rejectFactors, BUILD-5-PLAN §5.1).
@@ -7593,11 +7645,86 @@ function backlogSuggest(t, lib, cfg, tags, profiles, idf,
   // filing history only ever steps in when it hasn't — no fetch, no third
   // party, just where the user already put this artist's other tracks.
   return (ranked.length && ranked[0].score >= 0.30) ? ranked
-    : downweightRejected(artistHistory(t, lib, targets), down)
+    : downweightRejected(artistHistory(t, lib, targets, history), down)
         .filter(h => !fb?.rejected?.includes(h.id))
         .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
 }
 
+/* ---------- reports, off the main thread (page side) ---------- */
+/* buildReports is the biggest single piece of work the page does: on a 5k-liked,
+ * 60-playlist library it holds the main thread for over a second (scripts/perf.mjs,
+ * docs/BUILD-6-PLAN.md D4), at every sync, tag fill and correction. The same
+ * function, byte for byte, runs in docs/reports-worker.js (build-web.mjs cuts
+ * this file at the marker above) and the page asks it for the answer. The
+ * page-side state it reads — rejections, the pinned mirror, the listening weights,
+ * the engine's verdicts — travels with each request. With no Worker, or one that
+ * fails, the same call runs here, on the main thread, as it always did. */
+let REPORTS_WORKER = null, REPORTS_SEQ = 0, REPORTS_APPLY = 0;
+const REPORTS_WAIT = new Map();
+function reportsWorker() {
+  if (REPORTS_WORKER !== null) return REPORTS_WORKER;
+  try {
+    if (typeof Worker !== 'function') return REPORTS_WORKER = false;
+    const w = new Worker('reports-worker.js?v=2026-11-16-0427');
+    w.onmessage = e => {
+      const wait = REPORTS_WAIT.get(e.data?.id);
+      if (!wait) return;
+      REPORTS_WAIT.delete(e.data.id);
+      e.data.ok ? wait.ok(e.data.result) : wait.bad(new Error(e.data.error));
+    };
+    w.onerror = ev => {
+      ev?.preventDefault?.();
+      for (const wait of REPORTS_WAIT.values()) wait.bad(new Error(ev?.message || 'the reports worker stopped'));
+      REPORTS_WAIT.clear();
+      REPORTS_WORKER = false;
+      try { w.terminate(); } catch {}
+    };
+    return REPORTS_WORKER = w;
+  } catch { return REPORTS_WORKER = false; }
+}
+
+/** Same answer as buildReports(lib, cfg, tags), worked out off the main thread when it can be. */
+async function buildReportsAsync(lib, cfg, tags) {
+  const w = reportsWorker();
+  if (w) {
+    try {
+      const L = typeof LISTENING_CACHE !== 'undefined' ? LISTENING_CACHE : null;
+      const sh = typeof ENG !== 'undefined' ? ENG.shadow : null;
+      return await new Promise((ok, bad) => {
+        const id = ++REPORTS_SEQ;
+        REPORTS_WAIT.set(id, { ok, bad });
+        w.postMessage({ id, lib, cfg, tags, fb: FB, pinned: pinnedAllSongs(), allSongsName: ALL_SONGS_NAME,
+          listening: L?.weights ? { weights: L.weights, tracks: L.tracks ?? null } : null,
+          shadow: sh?.rows ? { rows: sh.rows.map(r => ({ id: r.id, decision: r.decision })) } : null });
+      });
+    } catch { /* fall through: build it here */ }
+  }
+  return buildReports(lib, cfg, tags);
+}
+
+/** What the reports are made of, cheaply: if it moved while a build was away, the answer is stale. */
+function reportsSignature() {
+  let n = 0;
+  for (const p of LIB.playlists) n += p.tracks?.length ?? 0;
+  let f = 0;
+  for (const k in FB) { const x = FB[k]; f += 1 + (x?.skips ?? 0) + (x?.rejected?.length ?? 0) + (x?.kept?.length ?? 0); }
+  return `${LIB.liked.length}/${n}/${f}`;
+}
+
+/** Rebuild R off the main thread and repaint what watches it. A newer call wins over an older one
+ *  still in flight, and an answer made from a library that has since changed is made again once. */
+async function refreshReports() {
+  const mine = ++REPORTS_APPLY;
+  for (let tries = 0; tries < 2; tries++) {
+    const lib = LIB, sig = reportsSignature();
+    const res = await buildReportsAsync(LIB, CFG, TAGS);
+    if (mine !== REPORTS_APPLY || lib !== LIB) return false;
+    if (sig !== reportsSignature() && tries === 0) continue;
+    R = res; store.set('reports', R);
+    return true;
+  }
+  return false;
+}
 /* ===================== UI ===================== */
 let LIB = null, CFG = null, TAGS = null, RAW_TAGS = null, R = null, view = 'inbox';
 const S = { inboxAt:0, crossMin:3, mfBand:'high', moved:new Set(), editingArtist:null,
@@ -9717,7 +9844,7 @@ async function fillFromWikidata({ quiet = false } = {}) {
     if (i + W.BATCH < ids.length) await new Promise(r => setTimeout(r, 1000));
   }
   await idb.set('tags_extra', cached);
-  if (found) R = buildReports(LIB, CFG, TAGS);
+  if (found) await refreshReports();
   if (!quiet || found) {
     $('#land').hidden = true; $('#app').hidden = false;
     toast(`Wikidata had genres for ${found.toLocaleString()} of ${ids.length.toLocaleString()} untagged artists.`
@@ -9764,7 +9891,7 @@ async function noteCorrection(id, tags) {
   const c = await loadCorrections();
   c[id] = { tags, at: Date.now() };
   await idb.set(CORR_KEY, c);
-  syncCorrections().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
+  syncCorrections().then(changed => { if (changed) refreshReports(); });
 }
 
 /** Corrections from linked devices, applied exactly as if made here. */
@@ -10398,7 +10525,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-0400';
+    s.src = 'engine.js?v=2026-11-16-0427';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -10420,7 +10547,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-0400');
+    const w = new Worker('engine-worker.js?v=2026-11-16-0427');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -10895,7 +11022,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-0400';
+    s.src = 'audio.js?v=2026-11-16-0427';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -10931,7 +11058,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0400', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0427', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -11665,7 +11792,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0400', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0427', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -12372,7 +12499,7 @@ $('#syncRedeem').onclick = async () => {
     input.value = '';
     toast('Linked — pulling in what the other device knows…');
     const changed = await syncEverything();
-    if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); }
+    if (changed) refreshReports();
   } catch (e) { toast('Could not link: ' + e.message); }
   finally { btn.disabled = false; }
 };
@@ -12510,6 +12637,7 @@ async function start(force) {
   try {
     stage('Reading your library…', 0.02);
     LIB = force ? null : await idb.get('library');
+    performance.mark('bf:library');
     if (!LIB) {
       let at = 0.02;
       // A pause at the very start of a read is not a busy moment, it is a quota
@@ -12521,6 +12649,7 @@ async function start(force) {
       try { LIB = await syncLibrary(force, (name, pct) => { at = pct; stage(`Reading ${name}…`, pct); }); }
       finally { onHold = null; }
     }
+    performance.mark('bf:tags-start');
     stage('Loading genre tags…', 0.96);
     if (!TAGS) {
       // 435KB over whatever signal a phone has at the time. This used to be a
@@ -12540,9 +12669,15 @@ async function start(force) {
     // Skips and rejections must be in hand before reports are built, since
     // buildReports filters rejected playlists out of each track's suggestions.
     await loadFeedback();
+    performance.mark('bf:feedback');
     stage('Working out where everything goes…', 0.99);
     CFG = classify(LIB, TAGS);
+    performance.mark('bf:classified');
+    // The first build stays on this thread: nothing else is waiting on the page yet, and a
+    // worker would add its start-up and a copy of the library to the one wait that matters.
+    // Every rebuild after this one (sync, tag fills, corrections) goes through refreshReports().
     R = buildReports(LIB, CFG, TAGS);
+    performance.mark('bf:reports');
     $('#land').hidden = true; $('#app').hidden = false;
     clearRateLimitStreak();
     // The rail that used to carry this is a bar now; the account line lives in
@@ -12557,7 +12692,7 @@ async function start(force) {
     // Background, after the first paint — never delays it, and only redraws
     // again if another device actually had feedback this one did not, rather
     // than resetting the screen on every load for nothing.
-    syncEverything().then(changed => { if (changed) { R = buildReports(LIB, CFG, TAGS); store.set('reports', R); } });
+    syncEverything().then(changed => { if (changed) refreshReports(); });
     // Keyless genres for artists nothing has tagged. Cached per artist, so after
     // the first load this asks only about artists that are new or stale.
     if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});
