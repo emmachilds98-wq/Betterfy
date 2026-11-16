@@ -30,10 +30,26 @@ import { tempo as tempoOf, TEMPO_VERSION } from './tempo.mjs';
 import { key as keyOf, KEY_VERSION } from './key.mjs';
 import { loudness as loudnessOf, LOUDNESS_VERSION } from './loudness.mjs';
 
-export const COMBINE_VERSION = '1.0.0';
+export const COMBINE_VERSION = '1.1.0';
 /** Stored as `dsp.v`; a record whose dsp.v differs is re-measured lazily, never invalidated. */
 export const DSP_VERSION = `${COMBINE_VERSION}+t${TEMPO_VERSION}+k${KEY_VERSION}+l${LOUDNESS_VERSION}`;
 
+/**
+ * A combined tempo under this many BPM is read at double time (×2, while that
+ * stays ≤ 200) — but only when the windows hear a steady dance pulse there
+ * (tempo.mjs `pulse` ≥ PULSE_FOLD). The D1 search spans 60–200 with a prior
+ * at 120, and its most common octave error on dance music is a 124–145 track
+ * heard at half time (64 for house, 70 for dubstep). Ungated, the fold took
+ * Beatport half B from 80.9% to 88.9% within ±1 BPM but broke genuinely slow
+ * music: GTZAN 61.5% → 59.0% (fixed 4, broke 29; blues, country, jazz, pop).
+ * The gate keeps the fold off ballads, swung jazz and slow soul, whose pulse
+ * measures ~0.25 against ~0.5 for a four-on-the-floor track at half time.
+ * Both numbers were picked on Beatport half A + GTZAN odd-numbered clips; the
+ * held-out results are in docs/BUILD-5-PROGRESS.md (2026-11-16, second try).
+ * Only slow readings ever move: a DnB 174 stays 174.
+ */
+export const SLOW_FOLD = 74;
+export const PULSE_FOLD = 0.38;
 /** Two windows within this many BPM agree. */
 export const BPM_AGREE = 1;
 /** How far a ratio may sit from exactly 2 (in BPM at the slower tempo) and still count as half/double time. */
@@ -59,16 +75,23 @@ function octaveApart(a, b) {
  * @param {Array<{ bpm: number|null, confidence: number, alternates?: {bpm:number,score:number}[], octaveAmbiguous?: boolean }>} ws
  * @returns {{ bpm: number, bpmConf: number, octaveAmbiguous: boolean, bpmAlt?: number, agree: boolean|null } | null}
  */
-export function combineTempo(ws) {
+export function combineTempo(ws, { slowFold = SLOW_FOLD, pulseFold = PULSE_FOLD } = {}) {
   const good = (ws ?? []).filter(w => w && ok(w.bpm) && w.bpm > 0 && ok(w.confidence));
   if (!good.length) return null;
   const partnerOf = w => {
     const p = (w.alternates ?? []).find(a => ok(a?.bpm) && octaveApart(w.bpm, a.bpm));
     return p ? p.bpm : null;
   };
+  // The pulse of the windows that heard this tempo (within 3%); none measured counts as no pulse.
+  const pulseOf = bpm => {
+    const ps = good.filter(w => Math.abs(w.bpm - bpm) / bpm <= 0.03 && ok(w.pulse)).map(w => w.pulse);
+    return ps.length ? ps.reduce((x, y) => x + y, 0) / ps.length : -Infinity;
+  };
   const finish = (w, bpm, conf, octave, alt, agree) => {
+    let a = octave ? alt ?? partnerOf(w) : null;
+    if (bpm < slowFold && bpm * 2 <= 200 && pulseOf(bpm) >= pulseFold) { a = octave ? bpm : null; bpm *= 2; }
     const out = { bpm: r1(bpm), bpmConf: r3(Math.max(0, Math.min(1, conf))), octaveAmbiguous: !!octave, agree };
-    if (octave) { const a = alt ?? partnerOf(w); if (ok(a)) out.bpmAlt = r1(a); }
+    if (octave && ok(a)) out.bpmAlt = r1(a);
     return out;
   };
   if (good.length === 1) { const w = good[0]; return finish(w, w.bpm, w.confidence, w.octaveAmbiguous, null, null); }
