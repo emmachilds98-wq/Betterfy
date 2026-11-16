@@ -48,7 +48,7 @@ const audioModelUrl = f => new URL(AUDIO_MODELS + f, location.href).href;
 function deepSettings() {
   if (globalThis.BetterfyAudio?.readDeepSettings) return BetterfyAudio.readDeepSettings(LS);
   let s = null; try { s = JSON.parse(LS.getItem('bf_audio_deep') || 'null'); } catch { s = null; }
-  return { maest: s?.maest !== false, clap: s?.clap !== false, beats: s?.beats === true, memoryOverride: s?.memoryOverride === true };
+  return { maest: s?.maest !== false, clap: s?.clap !== false, beats: s?.beats !== false, memoryOverride: s?.memoryOverride === true };
 }
 /** May this deep ear run now? 'off' until audio.js has loaded. */
 function deepAllowed(ear) {

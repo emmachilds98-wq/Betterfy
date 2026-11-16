@@ -21,7 +21,7 @@
 import { connectionVerdict } from './settings.mjs';
 
 export const DEEP_SETTINGS_KEY = 'bf_audio_deep';
-export const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: true, clap: true, beats: false, memoryOverride: false });
+export const DEFAULT_DEEP_SETTINGS = Object.freeze({ maest: true, clap: true, beats: true, memoryOverride: false });
 export const DEEP_EARS = Object.freeze(['maest', 'clap', 'beats']);
 /** GB of device memory MAEST needs (navigator.deviceMemory's top value). */
 export const MAEST_MIN_MEMORY_GB = 8;

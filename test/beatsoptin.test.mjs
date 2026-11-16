@@ -36,10 +36,10 @@ test('only tracks the DSP flagged as half/double-time unsure are due', () => {
   assert.equal(needsBeatsFlagged(null), false);
 });
 
-test('the switch is off by default, needs Wi-Fi, and has no memory rule', () => {
-  assert.equal(DEFAULT_DEEP_SETTINGS.beats, false);
+test('the switch is on by default (owner rule: on by default), needs Wi-Fi, and has no memory rule', () => {
+  assert.equal(DEFAULT_DEEP_SETTINGS.beats, true);
   assert.ok(DEEP_EARS.includes('beats'));
-  assert.equal(deepListenAllowed('beats', {}), 'off');
+  assert.equal(deepListenAllowed('beats', { settings: { beats: false } }), 'off');
   assert.equal(deepListenAllowed('beats', { settings: { beats: true }, connection: { type: 'cellular' } }), 'metered');
   assert.equal(deepListenAllowed('beats', { settings: { beats: true }, connection: { type: 'wifi' }, deviceMemory: 1 }), 'ok');
 });
