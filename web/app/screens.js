@@ -96,6 +96,8 @@ Object.assign(SCREEN_CTX, {
                   rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
                   saveFeedback, toast, render, flyCard,
+                  // The "since you last opened" card (F5): reads only what is already held.
+                  LS, COLD, isMirrorPlaylist, listeningRaw: async () => (await idb.get('listening_raw'))?.data ?? null,
                   rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
                   matchMedia: q => globalThis.matchMedia(q) }),
 });

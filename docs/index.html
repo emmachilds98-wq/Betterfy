@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-0558">
+<meta name="bf-build" content="2026-11-16-0609">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1366,6 +1366,22 @@ main:focus{outline:none}
   .lgtitle{animation:none}
   @starting-style{ .lpill, [data-flip], .toast, [popover]:popover-open, .acts4 .act{opacity:1; transform:none} }
 }
+  /* ---------- File: "since you last opened" (BUILD-6 F5, web/screens/inbox.mjs digestHTML) ----------
+     A quiet summary card above the deck. It only exists when there is something to say. */
+  .digest{margin:0 0 16px; padding:14px 16px}
+  .digest .dg-top{display:flex; align-items:center; justify-content:space-between; gap:12px}
+  .digest h2{margin:0; font-family:var(--mono); font-size:11.5px; font-weight:600; letter-spacing:.12em;
+             text-transform:uppercase; color:var(--accent)}
+  .digest .dg-x{flex:none; display:inline-flex; align-items:center; justify-content:center; min-width:32px; min-height:32px;
+                border:0; border-radius:var(--r); background:none; color:var(--ink-3); cursor:pointer; font-size:14px}
+  .digest .dg-x:hover{color:var(--ink); background:var(--surface-2)}
+  .digest .dg-sum{margin:6px 0 0; color:var(--ink-2)}
+  .digest .dg-more{border:0; background:none; padding:0 0 0 4px; color:var(--accent); font:inherit; font-weight:600;
+                   cursor:pointer; text-decoration:underline; text-underline-offset:2px}
+  .digest .dg-lines{margin:8px 0 0; padding:0 0 0 18px; color:var(--ink-2); display:grid; gap:4px}
+  .digest .dg-go{border:0; background:none; padding:0; font:inherit; color:var(--ink); text-align:left; cursor:pointer;
+                 text-decoration:underline; text-underline-offset:2px}
+  .digest .dg-go:hover{color:var(--accent)}
 /* Fill this playlist (BUILD-6 F2): the suggestions list in the Library detail sheet. */
   .plfill .fillrows{list-style:none; margin:0; padding:0; background:var(--surface); border:1px solid var(--line);
           border-radius:var(--r-3); overflow:hidden}
@@ -1647,7 +1663,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-0558</span>
+    <span class="mono">build 2026-11-16-0609</span>
   </p>
 
   <div class="feat">
@@ -1740,7 +1756,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0558</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0609</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1857,7 +1873,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-0558. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-0609. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3964,8 +3980,330 @@ const actions = {
 };
 return { view, actions };
 })();
+/* ---- core/measure/history.mjs ---- */
+__mod["core/measure/history.mjs"] = (function () {
+// Measurement from History (BUILD-5-PLAN §7): pure counts over the account's
+// own action log (web/app/actionlog.js), nothing fitted, nothing leaves the
+// device. Four numbers, each with its own minimum sample before it is shown:
+//
+//   queue    skip rate of the first QUEUE_HEAD cards of the File queue against
+//            the rest (D2). Each decision is a filing or a skip (`op: 'skip'`,
+//            logged with `queuePos`); a good order puts the cards you want
+//            first, so the head's skip rate should sit well below the tail's.
+//            `beatsTail` needs the head at least HEAD_GAP lower, so it can fail.
+//   batch    share of filings made in the "sure" band (`band: 'sure'`) that
+//            were later moved away or undone.
+//   tidy     per tier (`move.tier`: sure / likely / unsure), the share of Tidy
+//            moves that were not undone. History holds only what was done, not
+//            what was offered, so this is "kept after you made it".
+//   discover share of tracks added from Discovery that were not undone.
+//
+// An entry is `{ at, op, playlistId, trackIds, reason?, group?, move?,
+// undoneAt?, queuePos?, deck?, band? }`; skips are `{ at, op: 'skip', trackIds, queuePos, deck }`
+// and never reach History's list (web/app/actionlog.js hides them); an `undo` entry (`of`) marks older logs.
+
+const QUEUE_HEAD = 20;
+/** How far below the tail's skip rate the head's must be (BUILD-6-PLAN §3.1). */
+const HEAD_GAP = 0.10;
+/** Fewest decisions on each side of the head/tail line. */
+const MIN_SIDE = 3;
+/** Fewest counted entries before a number is worth showing. */
+const MIN_N = Object.freeze({ queue: 10, batch: 10, tidy: 5, discover: 10 });
+const TIERS = Object.freeze(['sure', 'likely', 'unsure']);
+
+const ids = e => (Array.isArray(e?.trackIds) ? e.trackIds : []);
+const rate = (k, n) => (n > 0 ? k / n : null);
+// A filing is one card filed from the inbox, or one step of "File the sure ones"
+// (a group, one entry per playlist). Only single cards say anything about queue
+// order: a batch's `queuePos` is its earliest card, not a card the user chose.
+const isFiling = e => e.op === 'add' && /^filed (from inbox|with the rest of|the sure ones)/.test(e.reason ?? '');
+const isCard = e => isFiling(e) && !e.group;
+const isDiscover = e => (e.op === 'add' || e.op === 'add-liked') && /discovery/.test(e.reason ?? '');
+
+/** Everything in `log` (any order), oldest first, without malformed entries. */
+const clean = log => (Array.isArray(log) ? log : []).filter(e => e && typeof e.at === 'string' && e.op)
+  .slice().sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+
+function undoneSet(log) {
+  const s = new Set(), groups = new Set();
+  for (const e of log) if (e.op === 'undo') { if (e.of) s.add(e.of); if (e.ofGroup) groups.add(e.ofGroup); }
+  // A grouped undo undoes every member, whichever one the undo entry names.
+  for (const e of log) if (e.group && (groups.has(e.group) || s.has(e.at) || e.undoneAt)) groups.add(e.group);
+  for (const e of log) if (e.group && groups.has(e.group)) s.add(e.at);
+  return s;
+}
+
+/** Was this entry undone, or its track later taken out of the same playlist? */
+function reversed(e, log, undone) {
+  if (e.undoneAt || undone.has(e.at)) return true;
+  if (!e.playlistId) return false;
+  const mine = new Set(ids(e));
+  return log.some(x => x.op === 'remove' && x.at > e.at && x.playlistId === e.playlistId
+    && !(x.group && x.group === e.group) && ids(x).some(t => mine.has(t)));
+}
+
+function measureHistory(rawLog) {
+  const log = clean(rawLog), undone = undoneSet(log);
+  const filings = log.filter(isFiling);
+
+  // Queue order (D2): every card the user decided on (filed or skipped) that
+  // recorded where it sat in the deck. A filing alone proves nothing, since the
+  // user files the card in front of them; a skip is the order being wrong.
+  const decided = log.filter(e => (isCard(e) || e.op === 'skip') && Number.isFinite(e.queuePos));
+  const side = pick => { const xs = decided.filter(pick); const k = xs.filter(e => e.op === 'skip').length;
+                         return { n: xs.length, skips: k, rate: rate(k, xs.length) }; };
+  const head = side(e => e.queuePos < QUEUE_HEAD), tail = side(e => e.queuePos >= QUEUE_HEAD);
+  const gap = head.rate == null || tail.rate == null ? null : tail.rate - head.rate;
+
+  const sure = filings.filter(e => e.band === 'sure');
+  const sureBack = sure.filter(e => reversed(e, log, undone)).length;
+
+  const tidy = {};
+  for (const t of TIERS) tidy[t] = { n: 0, kept: 0, rate: null };
+  for (const e of log) {
+    const tier = e.op === 'remove' && e.move?.tier;
+    if (!TIERS.includes(tier)) continue;
+    const grp = e.group ? log.filter(x => x.group === e.group && x.op !== 'undo') : [e];
+    const back = grp.some(x => x.undoneAt || undone.has(x.at));
+    tidy[tier].n++;
+    if (!back) tidy[tier].kept++;
+  }
+  for (const t of TIERS) tidy[t].rate = rate(tidy[t].kept, tidy[t].n);
+
+  const disc = log.filter(isDiscover);
+  const discKept = disc.filter(e => !(e.undoneAt || undone.has(e.at))).length;
+
+  return {
+    queue: { n: decided.length, head, tail, gap, beatsTail: gap == null ? null : gap >= HEAD_GAP - 1e-9 },
+    batch: { n: sure.length, back: sureBack, precision: sure.length ? 1 - sureBack / sure.length : null,
+             movedShare: rate(sureBack, sure.length) },
+    tidy,
+    discover: { n: disc.length, kept: discKept, rate: rate(discKept, disc.length) },
+  };
+}
+
+/** The summary lines. `pc` formats a 0..1 share. */
+function measureLines(m, pc = x => Math.round(x * 100) + '%') {
+  const few = (label, n, min) => `${label}: not enough data yet (${n} of ${min})`;
+  const out = [];
+  const q = m.queue;
+  out.push(q.n >= MIN_N.queue && q.head.n >= MIN_SIDE && q.tail.n >= MIN_SIDE
+    ? `Queue order: skip rate ${pc(q.head.rate)} in the first ${QUEUE_HEAD} cards (${q.head.n}), ${pc(q.tail.rate)} in the rest (${q.tail.n})${q.beatsTail ? '' : ': the front is not skipped less, so the order is not helping'}`
+    : few('Queue order', Math.min(q.n, q.head.n + q.tail.n), MIN_N.queue));
+  out.push(m.batch.n >= MIN_N.batch
+    ? `Batch filing: ${pc(m.batch.movedShare)} of ${m.batch.n} sure-band filings later moved or undone`
+    : few('Batch filing', m.batch.n, MIN_N.batch));
+  for (const t of TIERS) {
+    const x = m.tidy[t];
+    out.push(x.n >= MIN_N.tidy ? `Tidy ${t}: ${pc(x.rate)} of ${x.n} moves kept`
+                               : few(`Tidy ${t}`, x.n, MIN_N.tidy));
+  }
+  out.push(m.discover.n >= MIN_N.discover
+    ? `Discover: ${pc(m.discover.rate)} of ${m.discover.n} added tracks kept`
+    : few('Discover keep rate', m.discover.n, MIN_N.discover));
+  return out;
+}
+return { QUEUE_HEAD, HEAD_GAP, MIN_SIDE, MIN_N, TIERS, isFiling, clean, undoneSet, reversed, measureHistory, measureLines };
+})();
+/* ---- core/measure/digest.mjs ---- */
+__mod["core/measure/digest.mjs"] = (function () {
+const { clean, isFiling, undoneSet, reversed } = __mod["core/measure/history.mjs"];
+// "Since you last opened": the digest card at the top of File (BUILD-6-PLAN
+// §4.1/§4.2 F5, RELEASE-RADAR-PLAN §9.5). Pure counts over what the page
+// already holds — the History log, the reports, the liked songs, the playlists'
+// snapshot ids, and the top-artists windows the listening fetch cached — so it
+// costs no request, and nothing in it leaves the device.
+//
+// Every figure is a count of one source, nothing estimated:
+//   filed     filings in the History log (core/measure/history.mjs isFiling) in
+//             the period, as distinct tracks; `back` is how many of those
+//             tracks had a filing that was later undone or taken out of the same
+//             playlist (history.mjs reversed(), the batch measure's own test).
+//   misfits   rows in R.misfiled (track + playlist) that were not there at the
+//             last open.
+//   genres    the "new genre?" clusters (screenjobs.js COLD.newGenre) that do
+//             not overlap any cluster seen at the last open.
+//   liked     liked songs added in the period that are still waiting in File.
+//   playlists playlists whose snapshot id changed since the last open, new ones,
+//             gone ones, and the net change in their track counts.
+//   listening of the short-term top artists, how many are not in the long-term
+//             top: a supporting line, never a reason to show the card alone.
+//
+// The baseline ("last opened") is a small record kept in this browser only:
+// digestBaseline() makes it, and the page stores it once per session.
+
+
+
+const DAY = 24 * 60 * 60 * 1000;
+/** With no record of a last open, the digest covers this long. */
+const FALLBACK_MS = 7 * DAY;
+/** A cluster counts as the same genre as one seen before at this overlap. */
+const SAME_GENRE = 0.5;
+/** Ids kept per remembered cluster, and remembered misfits, so the record stays small. */
+const KEEP_IDS = 60;
+const KEEP_MISFITS = 3000;
+/** Fewest artists in each top window before the listening line says anything. */
+const MIN_TOP = 5;
+
+const ms = iso => { const x = Date.parse(iso); return Number.isFinite(x) ? x : NaN; };
+const idsOf = c => (Array.isArray(c?.ids) ? c.ids : Array.isArray(c?.tracks) ? c.tracks.map(t => t?.id) : []).filter(Boolean);
+const misfitKey = m => `${m?.id}|${m?.currentPlaylistId ?? ''}`;
+
+/** The window the digest covers: from the last open (or a week back) to the start of this session. */
+function digestWindow(base, now) {
+  const last = ms(base?.at);
+  const since = Number.isFinite(last) && last <= now ? last : now - FALLBACK_MS;
+  return { since, until: now, sinceLastOpen: Number.isFinite(last) && last <= now };
+}
+
+/** Filings in [since, until): entries, distinct tracks, and the tracks later moved or undone. */
+function filedIn(rawLog, since, until) {
+  const log = clean(rawLog), undone = undoneSet(log);
+  const inWin = e => { const t = ms(e.at); return t >= since && t < until; };
+  const filings = log.filter(e => isFiling(e) && inWin(e));
+  const tracks = new Set(), back = new Set();
+  for (const e of filings) {
+    const ids = Array.isArray(e.trackIds) ? e.trackIds : [];
+    for (const id of ids) tracks.add(id);
+    if (reversed(e, log, undone)) for (const id of ids) back.add(id);
+  }
+  return { entries: filings.length, tracks: tracks.size, back: back.size };
+}
+
+/** Do two id lists share at least SAME_GENRE of the smaller one? */
+function sameCluster(a, b) {
+  const B = new Set(b);
+  const shared = a.filter(x => B.has(x)).length;
+  return shared >= SAME_GENRE * Math.min(a.length, b.length) && shared > 0;
+}
+
+/** Playlists, keyed by id: [snapshot id, track count, name]. Unread ones (no snapshot id) are left out. */
+function playlistMap(playlists, isMirror = () => false) {
+  const out = {};
+  for (const p of playlists ?? []) {
+    if (!p?.id || !p.snapshot_id || isMirror(p)) continue;
+    out[p.id] = [p.snapshot_id, Array.isArray(p.tracks) ? p.tracks.length : 0, p.name ?? ''];
+  }
+  return out;
+}
+
+/** What changed between two playlistMap()s. */
+function playlistDiff(before, after) {
+  if (!before || !after) return null;
+  let changed = 0, added = 0, gone = 0, plus = 0, minus = 0;
+  for (const [id, [snap, n]] of Object.entries(after)) {
+    const was = before[id];
+    if (!was) { added++; plus += n; continue; }
+    if (was[0] === snap) continue;
+    changed++;
+    const d = n - (was[1] | 0);
+    if (d > 0) plus += d; else minus -= d;
+  }
+  for (const [id, was] of Object.entries(before)) if (!after[id]) { gone++; minus += was[1] | 0; }
+  return { changed, added, gone, plus, minus };
+}
+
+/** Short-term top artists against the long-term ones, from the cached listening fetch. */
+function listeningShift(raw) {
+  const win = r => (raw?.topWindows ?? []).find(w => w?.range === r)?.items ?? [];
+  const short = [...new Set(win('short_term'))], long = new Set(win('long_term'));
+  if (short.length < MIN_TOP || long.size < MIN_TOP) return null;
+  const fresh = short.filter(a => !long.has(a));
+  return { top: short.length, overlap: short.length - fresh.length, fresh: fresh.length, examples: fresh.slice(0, 3) };
+}
+
+/**
+ * The digest. `base` is the record from the last open (or null); the rest is
+ * what the page holds now. `genres` is null while the new-genre clusters have
+ * not been worked out this session (then that line is simply absent).
+ */
+function buildDigest({ base = null, now, log = [], backlog = [], liked = [], misfiled = [], genres = null,
+                              playlists = null, listening = null }) {
+  const { since, until, sinceLastOpen } = digestWindow(base, now);
+  const filed = filedIn(log, since, until);
+
+  const waiting = new Set((backlog ?? []).map(b => b?.id).filter(Boolean));
+  const likedNew = (liked ?? []).filter(t => { const at = ms(t?.added_at); return at >= since && at < until; });
+  const likedWaiting = likedNew.filter(t => waiting.has(t.id)).length;
+
+  // "New" needs something to compare with: without a last open, these say nothing.
+  let misfits = null, newGenres = null, pl = null;
+  if (base) {
+    if (Array.isArray(base.misfits)) {
+      const seen = new Set(base.misfits);
+      misfits = new Set((misfiled ?? []).map(misfitKey).filter(k => !seen.has(k))).size;
+    }
+    if (Array.isArray(base.genres) && Array.isArray(genres)) {
+      newGenres = genres.map(idsOf).filter(ids => ids.length && !base.genres.some(old => sameCluster(ids, old))).length;
+    }
+    if (base.pls && playlists) pl = playlistDiff(base.pls, playlists);
+  }
+  const shift = listeningShift(listening);
+
+  const plMoved = pl ? pl.changed + pl.added + pl.gone : 0;
+  const any = filed.tracks > 0 || likedWaiting > 0 || (misfits ?? 0) > 0 || (newGenres ?? 0) > 0 || plMoved > 0;
+  return { since, until, sinceLastOpen, days: Math.max(0, Math.round((until - since) / DAY)),
+           filed, likedNew: likedNew.length, likedWaiting, misfits, newGenres, playlists: pl, listening: shift,
+           empty: !any };
+}
+
+/**
+ * The record kept for the next open. Values this session could not work out
+ * (`genres` null: the clusters were never computed) carry over from `prev`, so a
+ * session that never opened Library does not make every cluster look new later.
+ */
+function digestBaseline({ prev = null, now, misfiled = [], genres = null, playlists = null }) {
+  return {
+    v: 1,
+    at: new Date(now).toISOString(),
+    misfits: (misfiled ?? []).map(misfitKey).slice(0, KEEP_MISFITS),
+    genres: Array.isArray(genres) ? genres.map(c => idsOf(c).slice(0, KEEP_IDS)).filter(x => x.length)
+      : Array.isArray(prev?.genres) ? prev.genres : null,
+    pls: playlists ?? prev?.pls ?? null,
+  };
+}
+
+/** Read a stored baseline back; anything malformed is no baseline. */
+function parseBaseline(text) {
+  try {
+    const b = JSON.parse(text);
+    return b && typeof b === 'object' && Number.isFinite(ms(b.at)) ? b : null;
+  } catch { return null; }
+}
+
+const plural = (n, one, many = one + 's') => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/** The digest as lines: `head` for the card's title, `lines` for each figure, in order. */
+function digestLines(d) {
+  if (!d || d.empty) return null;
+  const head = d.sinceLastOpen
+    ? (d.days >= 1 ? `Since you last opened, ${plural(d.days, 'day')} ago` : 'Since you last opened')
+    : `In the last ${plural(d.days, 'day')}`;
+  const lines = [];
+  if (d.filed.tracks) lines.push({ k: 'filed', short: `${d.filed.tracks.toLocaleString()} filed`, text: `Filed ${plural(d.filed.tracks, 'song')}`
+    + (d.filed.back ? `, ${d.filed.back.toLocaleString()} later moved or undone` : ', none moved or undone since') });
+  if (d.likedWaiting) lines.push({ k: 'liked', short: `${d.likedWaiting.toLocaleString()} new liked`, text: `${plural(d.likedWaiting, 'new liked song')} waiting to be filed` });
+  if (d.misfits) lines.push({ k: 'misfits', short: plural(d.misfits, 'misfit'), text: `${plural(d.misfits, 'new misfit')} found`, go: 'tidy' });
+  if (d.newGenres) lines.push({ k: 'genres', short: plural(d.newGenres, 'new genre'), text: `${plural(d.newGenres, 'new genre')} forming in what File is unsure about`, go: 'lists' });
+  const p = d.playlists;
+  if (p && p.changed + p.added + p.gone) {
+    const bits = [p.changed && `${plural(p.changed, 'playlist')} changed`, p.added && `${p.added} new`, p.gone && `${p.gone} gone`].filter(Boolean);
+    const net = [p.plus && `+${p.plus.toLocaleString()}`, p.minus && `−${p.minus.toLocaleString()}`].filter(Boolean);
+    lines.push({ k: 'playlists', short: `${plural(p.changed + p.added + p.gone, 'playlist')} changed`, text: `${bits.join(', ')}${net.length ? ` (${net.join(' / ')} ${p.plus + p.minus === 1 ? 'track' : 'tracks'})` : ''}` });
+  }
+  if (d.listening) {
+    const L = d.listening;
+    lines.push({ k: 'listening', text: L.fresh
+      ? `${L.fresh} of your top ${L.top} artists lately aren't in your all-time top${L.examples.length ? ` (${L.examples.join(', ')})` : ''}`
+      : `Your top ${L.top} artists lately are all in your all-time top` });
+  }
+  return { head, lines };
+}
+return { DAY, FALLBACK_MS, SAME_GENRE, KEEP_IDS, KEEP_MISFITS, MIN_TOP, misfitKey, digestWindow, filedIn, playlistMap, playlistDiff, listeningShift, buildDigest, digestBaseline, parseBaseline, digestLines };
+})();
 /* ---- web/screens/inbox.mjs ---- */
 __mod["web/screens/inbox.mjs"] = (function () {
+const { buildDigest, digestLines, digestBaseline, parseBaseline, playlistMap } = __mod["core/measure/digest.mjs"];
 /* ---------- artist roll-forward: docs/SMARTER-GENRES-PLAN.md, phase 4 ----------
  * File one track by an artist and the same artist's other unfiled tracks usually
  * belong in the same place. So the File screen offers them, as a list you can see
@@ -4052,6 +4390,91 @@ async function rollForwardGo(ctx) {
   const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
   toast(`Filed ${ids.length} more by ${rf.artist}.`, undoAll);
   render();
+}
+
+/* ---------- "Since you last opened": docs/BUILD-6-PLAN.md F5 ----------
+ * One dismissible card at the top of File, worked out once per session from
+ * what the page already holds (core/measure/digest.mjs): no request, never a
+ * notification, and nothing at all when there is nothing to say. The baseline
+ * for next time and the dismissed/expanded counts stay in this browser. */
+const DIGEST_SEEN = 'bf_digest_seen';
+const DIGEST_MEASURE = 'bf_digest_measure';
+
+const coldGenres = ({ COLD }) => (COLD?.status === 'ready' && Array.isArray(COLD.newGenre) ? COLD.newGenre : null);
+const plMap = ({ LIB, isMirrorPlaylist }) => playlistMap(LIB?.playlists, isMirrorPlaylist ?? (() => false));
+
+/** The local-only measure: how often the card was shown, opened up and dismissed. */
+function digestMeasure({ LS }) {
+  try { const m = JSON.parse(LS?.getItem(DIGEST_MEASURE) ?? 'null'); if (m && typeof m === 'object') return { shown: m.shown | 0, expanded: m.expanded | 0, dismissed: m.dismissed | 0 }; }
+  catch { /* a malformed record starts again */ }
+  return { shown: 0, expanded: 0, dismissed: 0 };
+}
+function bumpMeasure(ctx, k) {
+  const m = digestMeasure(ctx); m[k]++;
+  try { ctx.LS?.setItem(DIGEST_MEASURE, JSON.stringify(m)); } catch { /* the measure only */ }
+}
+
+/** The digest for this session, or null while it loads or has nothing to say. */
+function digestNow(ctx) {
+  const { S, R, LIB } = ctx, D = S.digest;
+  if (!D || D.status !== 'ready' || D.hidden) return null;
+  // A brand-new account has no last open and no History: nothing to look back on.
+  if (!D.base && !D.log?.length) return null;
+  const genres = coldGenres(ctx), pls = LIB?.playlists;
+  const m = D.memo;
+  if (m && m.R === R && m.n === R.backlog.length && m.genres === genres && m.pls === pls) return m.d.empty ? null : m.d;
+  const d = buildDigest({ base: D.base, now: D.at, log: D.log, backlog: R.backlog, liked: LIB?.liked,
+                          misfiled: R.misfiled, genres, playlists: D.base?.pls ? plMap(ctx) : null, listening: D.listening });
+  D.memo = { R, n: R.backlog.length, genres, pls, d };
+  return d.empty ? null : d;
+}
+
+function digestHTML(ctx) {
+  const { S, esc } = ctx;
+  const d = digestNow(ctx), L = digestLines(d);
+  if (!L) return '';
+  const open = !!S.digest.open;
+  const summary = L.lines.filter(l => l.short).map(l => esc(l.short)).join(' · ');
+  const line = l => l.go ? `<li><button class="dg-go" data-go="${esc(l.go)}">${esc(l.text)}</button></li>` : `<li>${esc(l.text)}</li>`;
+  return `<section class="card digest${open ? ' open' : ''}" id="digestCard" aria-labelledby="digestHead">
+    <div class="dg-top">
+      <h2 id="digestHead">${esc(L.head)}</h2>
+      <button class="dg-x" data-act="digestHide" aria-label="Dismiss this summary" title="Dismiss"><span aria-hidden="true">✕</span></button>
+    </div>
+    ${open ? `<ul class="dg-lines">${L.lines.map(line).join('')}</ul>`
+      : `<p class="dg-sum">${summary} <button class="dg-more" data-act="digestMore" aria-expanded="false">Details</button></p>`}
+  </section>`;
+}
+
+/** Once per session: read the last open's record and the log, then store this open as the next baseline. */
+async function digestLoad(ctx) {
+  const { S, R, LS, getLog, listeningRaw, render } = ctx, D = S.digest;
+  try {
+    const base = parseBaseline(LS?.getItem(DIGEST_SEEN));
+    const log = (await getLog?.()) ?? [];
+    let listening = null;
+    try { listening = (await listeningRaw?.()) ?? null; } catch { /* no cached listening: no line */ }
+    const genres = coldGenres(ctx);
+    Object.assign(D, { status: 'ready', base, log, listening, savedGenres: !!genres });
+    try { LS?.setItem(DIGEST_SEEN, JSON.stringify(digestBaseline({ prev: base, now: D.at, misfiled: R.misfiled, genres, playlists: plMap(ctx) }))); }
+    catch { /* nothing kept: next time looks back a week */ }
+    if (digestNow(ctx)) render();
+  } catch { D.status = 'error'; }
+}
+
+function digestMount(ctx) {
+  const { S, LS } = ctx;
+  if (!S.digest) { S.digest = { status: 'loading', at: Date.now() }; return digestLoad(ctx); }
+  const D = S.digest;
+  if (D.status !== 'ready') return;
+  if (!D.counted && !D.hidden && globalThis.document?.getElementById('digestCard')) { D.counted = true; bumpMeasure(ctx, 'shown'); }
+  // The new-genre clusters arrive whenever Library works them out: remember them once they exist.
+  const genres = coldGenres(ctx);
+  if (genres && !D.savedGenres) {
+    D.savedGenres = true;
+    const rec = parseBaseline(LS?.getItem(DIGEST_SEEN));
+    if (rec) try { LS.setItem(DIGEST_SEEN, JSON.stringify({ ...rec, genres: digestBaseline({ now: D.at, genres }).genres })); } catch { /* next time */ }
+  }
 }
 
 /* ---------- "File the N sure ones": docs/BUILD-5-PLAN.md §5.2 ----------
@@ -4162,7 +4585,7 @@ function view(ctx) {
       <p>${hasPl ? 'File sorts your liked songs into your playlists. Like a few songs in Spotify and they will show up here.'
         : 'Like some songs in Spotify, or make a playlist, then reopen Betterfy. It files your liked songs into your playlists.'}</p></div></div>`;
   }
-  if (!rows.length) return `<h1>File</h1>
+  if (!rows.length) return `<h1>File</h1>${digestHTML(ctx)}
     <div class="empty done">
       <svg viewBox="0 0 32 32" aria-hidden="true">
         <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
@@ -4198,7 +4621,7 @@ function view(ctx) {
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
     : '';
 
-  return `${sureBatchHTML(ctx)}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
       <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
@@ -4377,6 +4800,15 @@ const actions = {
   selfile: (ctx, el) => toggleFileSel(ctx, el.dataset.selfile),
   anyPl: (ctx, el) => { if (el.value) toggleFileSel(ctx, el.value); },
   filesure: (ctx) => fileSureOnes(ctx),
+  digestMore(ctx) {
+    const D = ctx.S.digest; if (!D) return;
+    if (!D.expandedOnce) { D.expandedOnce = true; bumpMeasure(ctx, 'expanded'); }
+    D.open = true; ctx.render();
+  },
+  digestHide(ctx) {
+    const D = ctx.S.digest; if (!D) return;
+    D.hidden = true; bumpMeasure(ctx, 'dismissed'); ctx.render();
+  },
   filesel: (ctx) => fileCurrent(ctx, ctx.S.fileSel.size ? [...ctx.S.fileSel] : ctx.filePicks(inboxTrack(ctx))[0]?.id),
   play: (ctx) => inboxAct(ctx, 'play'),
   skip: (ctx) => inboxAct(ctx, 'skip'),
@@ -4428,10 +4860,11 @@ const actions = {
 // listening re-sort used to close it); a different card starts with it shut.
 let menuFor = null;
 function mount(ctx) {
+  digestMount(ctx);
   const id = inboxTrack(ctx)?.id ?? null;
   if (id !== menuFor) { menuFor = id; document.querySelector("#swipeCard details.cardmore")?.removeAttribute("open"); }
 }
-return { rollForwardFor, rollForwardHTML, rollForwardGo, sureBatchHTML, fileSureOnes, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions, mount };
+return { rollForwardFor, rollForwardHTML, rollForwardGo, DIGEST_SEEN, DIGEST_MEASURE, digestMeasure, digestNow, digestHTML, digestLoad, digestMount, sureBatchHTML, fileSureOnes, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions, mount };
 })();
 /* ---- web/screens/engine.mjs ---- */
 __mod["web/screens/engine.mjs"] = (function () {
@@ -4640,7 +5073,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-0558`,
+    `Betterfy engine score — build 2026-11-16-0609`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -6962,7 +7395,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-0558';
+const BUILD = '2026-11-16-0609';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -7300,7 +7733,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-0558', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-0609', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -8056,7 +8489,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-0558');
+    const w = new Worker('reports-worker.js?v=2026-11-16-0609');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -10948,7 +11381,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-0558';
+    s.src = 'engine.js?v=2026-11-16-0609';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -10970,7 +11403,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-0558');
+    const w = new Worker('engine-worker.js?v=2026-11-16-0609');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11518,7 +11951,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-0558';
+    s.src = 'audio.js?v=2026-11-16-0609';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -11554,7 +11987,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0558', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0609', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -12288,7 +12721,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0558', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0609', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -12644,6 +13077,8 @@ Object.assign(SCREEN_CTX, {
                   rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
                   libraryCall, playTrack, backlogSuggest, gateTags, tagGate, artistRejectMemory, fbUnstamp,
                   saveFeedback, toast, render, flyCard,
+                  // The "since you last opened" card (F5): reads only what is already held.
+                  LS, COLD, isMirrorPlaylist, listeningRaw: async () => (await idb.get('listening_raw'))?.data ?? null,
                   rebuildReports: () => { R = buildReports(LIB, CFG, TAGS); },
                   matchMedia: q => globalThis.matchMedia(q) }),
 });
