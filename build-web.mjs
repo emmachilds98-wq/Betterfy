@@ -225,7 +225,7 @@ self.onmessage = function (e) {
       // The teach queue's gate (BUILD-6 SG): 20 simulated answers on a hidden fold of the
       // account's own filing, the engine scored before and after (core/validate/teach.mjs).
       try { result.teach = BetterfyTeach.teachGate(m.lib, { targets: m.targets || null, isMirror: isMirror,
-              genreGraph: !!(m.opts && m.opts.genreGraph) }); }
+              genreGraph: !!(m.opts && m.opts.genreGraph), audio: prototypesOnly(m.audio) }); }
       catch (e) { result.teach = null; }
     } else if (m.op === 'misfits') {
       // Tidy by sound: an all-pairs nearest-neighbour pass over the heard

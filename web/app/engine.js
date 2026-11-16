@@ -164,8 +164,28 @@ async function engineLoadCalibration() {
     if (c && c.stamp === calStamp() && c.fingerprint === BetterfyPersist.fingerprint(LIB)
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
       ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, audioGate: c.audioGate ?? null,
-                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), at: c.at ?? null };
+                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), ...(c.family ? { family: c.family } : {}), at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
+}
+
+/* ---------- family first, then sub-genre (docs/review/ENGINE-REVIEW.md layer 3) ----------
+ * Each genre playlist's family from the genre its name names; how often the
+ * family is right on held-out rows, and the family-level "confident" threshold,
+ * fitted and checked the way the playlist level is. File commits to a family
+ * only once this account's Score run says family top-1 reaches 85%. */
+function engineFamilies() {
+  return BetterfyFamily.playlistFamilies(engineTargets().map(id => [id, CFG[id]?.name ?? id]));
+}
+function engineFamilyFit(rows) {
+  if (!rows?.length || typeof BetterfyFamily === 'undefined') return null;
+  const families = engineFamilies();
+  const acc = BetterfyFamily.familyAccuracy(rows, families, { report: r => BetterfyCalibrate.calibrationReport(r) });
+  if (!acc) return null;
+  const use = BetterfyFamily.familyInUse(acc);
+  const cal = BetterfyFamily.fitFamilyCalibration(acc.rows);
+  const summary = { n: acc.n, family: acc.family, within: acc.within, flat: acc.flat, families: acc.families,
+                    sure: acc.sure?.checked ?? null, holds: acc.sure?.holds ?? null, use };
+  return { summary, keep: { use, cal, family: acc.family, families: acc.families } };
 }
 
 /** Fit from a score run's rows, keep it, and drop the rows: they are only for this. */
@@ -187,20 +207,26 @@ async function engineCalibrate(v) {
   // WP-C1: which ear this run chose. The first ear unless a second ear passed
   // the gate and beat it; its calibration then comes from that ear's rows.
   const choice = mine.withAudio?.choice ?? null;
-  const soundChoice = choice ? { ear: choice.ear, reason: choice.reason, gate: choice.gate ?? null } : null;
-  const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows : mine.withAudio?.rows;
+  const near = choice?.ear === 'effnet' && mine.withAudio?.nearChoice?.use === true;
+  const soundChoice = choice ? { ear: choice.ear, reason: choice.reason, gate: choice.gate ?? null, ...(near ? { near: true } : {}) } : null;
+  // Calibrated on the engine that will place: the chosen ear, or the first ear with its nearest tracks.
+  const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows
+    : near ? mine.withAudio.arms?.near?.rows : mine.withAudio?.rows;
   const audio = soundRows ? BetterfyCalibrate.calibrationReport(soundRows) : null;
+  // Family first (ENGINE-REVIEW layer 3), measured on the rows of the engine that places.
+  const family = engineFamilyFit(soundRows ?? baseRows);
+  if (family) v.family = family.summary;
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
   if (mine.withAudio) delete mine.withAudio.rows;
   for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
-  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), at: Date.now() };
+  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}), at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
                              targets: engineTargets(), base, bridge, audio, audioGate,
-                             ...(soundChoice ? { soundChoice } : {}), at: ENG.calib.at });
+                             ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}), at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }
@@ -214,17 +240,23 @@ function engineDecorate() {
   if (!sh || !space) return;
   const likedById = new Map((LIB.liked ?? []).map(t => [t.id, t]));
   const count = { confident: 0, choose: 0, unsure: 0 };
+  let families = null;
   for (const row of sh.rows) {
     row.decision = null;
     const raw = cal && likedById.get(row.id);
     if (!raw) continue;
     const full = BetterfyIntrinsic.placements(raw, space, withFittedWeights({ limit: Infinity, soundFirst: true }, 'plain'));
     const p = full.results?.[0]?.parts ?? {};
-    const d = BetterfyCalibrate.decide(BetterfyCalibrate.scoresOf(full.results ?? []),
-                                       'audio' in p || 'learned' in p ? soundCal : cal);
-    row.decision = { kind: d.kind,
+    const scores = BetterfyCalibrate.scoresOf(full.results ?? []);
+    const useCal = 'audio' in p || 'learned' in p ? soundCal : cal;
+    // Family first, once this account's Score run earned it: commit to the
+    // family and ask only which playlist inside it.
+    const fam = ENG.calib?.family?.use ? ENG.calib.family : null;
+    const dc = fam ? BetterfyFamily.decideCard(scores, useCal, fam.cal, families ??= engineFamilies()) : null;
+    const d = dc ? { ...dc, kind: dc.kind === 'sure' ? 'confident' : dc.kind } : BetterfyCalibrate.decide(scores, useCal);
+    row.decision = { kind: d.kind, ...(d.family ? { family: d.family } : {}),
                      playlists: d.playlists.map(id => ({ id, name: space.destinations.get(id)?.name ?? id })) };
-    count[d.kind]++;
+    count[d.kind] = (count[d.kind] ?? 0) + 1;
   }
   sh.decided = cal ? count : null;
 }
@@ -475,7 +507,7 @@ const engineValidate = guard(async () => {
       let fill = null;
       try { fill = BetterfyFill.fillRecall(LIB, { tags, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist }); } catch { fill = null; }
       let teach = null;
-      try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true }); } catch { teach = null; }
+      try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true, audio: engineAudioIn(audio) }); } catch { teach = null; }
       ENG.val = { mine, base, blend, identify, weights, fill, teach, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).

@@ -172,3 +172,21 @@ test('the verdict: all 20 asked, enough left to score, a point and two tracks be
   assert.equal(teachVerdict({ ...ok, gain: 0, right: [50, 50] }).pass, false, 'a tie does not beat');
   assert.equal(TEACH_GATE.answers, 20);
 });
+
+test('the gate with sound: same verdict shape, marked as measured on the sound-first engine', { timeout: 120000 }, async () => {
+  const { makeRecord, N_STYLES, EMB_DIM } = await import('../core/audio/record.mjs');
+  const lib = shapedLibrary();
+  const r = (id) => {
+    let s = [...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) || 1;
+    const emb = Float32Array.from({ length: EMB_DIM }, () => ((s = (s * 16807) % 2147483647) / 2147483647) - 0.5);
+    const act = new Float32Array(N_STYLES).fill(0.01);
+    return makeRecord({ id, isrc: 'GBXXX0000001', activations: act, embeddings: emb, patches: 1,
+                        source: { kind: 'deezer-isrc', deezerId: 1, windows: [[0, 165000]], seconds: 10 }, mel: '1.0.0', at: 1000 });
+  };
+  const ids = new Set(); for (const p of lib.playlists) for (const t of p.tracks ?? []) ids.add(t.id);
+  const g = teachGate(lib, { audio: { records: [...ids].slice(0, 400).map(r) } });
+  assert.equal(typeof g.pass, 'boolean');
+  if (g.asked) assert.equal(g.sound, true);
+  const plain = teachGate(lib);
+  assert.equal(plain.sound, undefined);
+});

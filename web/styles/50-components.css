@@ -68,6 +68,10 @@
   .pick.best .k{background:var(--ok); color:var(--ok-ink)}
   .pick.best .sc{color:var(--ok)} .pick.best .ax{color:color-mix(in srgb, var(--ok) 60%, var(--ink-2))}
   .pick.best .bar i{background:var(--ok)}
+  /* Family first: the family is settled and the picks inside it are equals. */
+  .famline{margin:18px 0 -10px; font-size:15px; color:var(--ink-2)}
+  .famline b{color:var(--ok)}
+  .pick.twoway{border-color:color-mix(in srgb, var(--ok) 35%, var(--line))}
   /* The leading pick that only tags back: first, but a choice, not a commitment.
      Accent outline, no green (USER-REVIEW item 2). */
   .pick.lead{border-color:color-mix(in srgb, var(--accent) 45%, var(--line))}
