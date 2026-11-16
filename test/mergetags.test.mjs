@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, createVerify } from 'node:crypto';
-import { normaliseContribution, mergeContributions, serviceAccountAssertion, pruneContributions }
+import { normaliseContribution, mergeContributions, parseDocId, serviceAccountAssertion, pruneContributions }
   from '../merge-tags.mjs';
 
 /* Contributions arrive from unauthenticated browsers, so this validation is the
@@ -61,82 +61,189 @@ test('anything that is not a usable tag list is refused outright', () => {
   for (const b of bad) assert.equal(normaliseContribution(b), null, `should have refused: ${b.slice(0, 40)}`);
 });
 
-/* ---------- merging ---------- */
+/* ---------- merging, with the quorum rule (BUILD-6 H1) ----------
+ * A document id is `<artist>_<contributor>`; a tag is published only when two
+ * contributor ids name it for the same artist. */
 
 const SHIPPED = { '1P6U1dCeHxPui5pIrGmndZ': [['electronic', 10]] };
 const NEW_ID = '4Z8W4fKeB5YxbusRsdQVPb';
-const contribution = (id, tags) => ({ id, tags: JSON.stringify(tags) });
+const C1 = '0123456789abcdef', C2 = 'fedcba9876543210', C3 = '00000000deadbeef';
+const contribution = (id, tags, who = C1) => ({ id: who ? `${id}_${who}` : id, tags: JSON.stringify(tags) });
 
-test('a genuine gap is filled', () => {
-  const { merged, added } = mergeContributions(SHIPPED, [contribution(NEW_ID, [['jungle', 90]])]);
-  assert.deepEqual(added, [NEW_ID]);
-  assert.deepEqual(merged[NEW_ID], [['jungle', 9]]);
+test('a document id is an artist id and a 16-hex contributor id', () => {
+  assert.deepEqual(parseDocId(`${NEW_ID}_${C1}`), { artist: NEW_ID, contributor: C1 });
+  assert.deepEqual(parseDocId(NEW_ID), { artist: NEW_ID, contributor: null }, 'a bare id is an old page');
+  for (const bad of ['', 'short', `${NEW_ID}_`, `${NEW_ID}_XYZ`, `${NEW_ID}_${C1}0`, `${NEW_ID}_0123456789ABCDEF`,
+    `../../etc/passwd_${C1}`, `${NEW_ID}_${C1}_${C2}`]) assert.equal(parseDocId(bad), null, bad);
 });
 
-test('an artist already in the table is never overwritten', () => {
-  // This is what makes an unauthenticated write safe: the worst a bad
-  // contribution can do is add an artist nobody had.
-  const { merged, added, covered } = mergeContributions(SHIPPED,
-    [contribution('1P6U1dCeHxPui5pIrGmndZ', [['polka', 100]])]);
+test('two contributors who agree fill a genuine gap', () => {
+  const { merged, added, processed, pending } = mergeContributions(SHIPPED, [
+    contribution(NEW_ID, [['jungle', 90]], C1), contribution(NEW_ID, [['jungle', 90]], C2)]);
+  assert.deepEqual(added, [NEW_ID]);
+  assert.deepEqual(merged[NEW_ID], [['jungle', 9]]);
+  assert.deepEqual(pending, []);
+  assert.deepEqual(processed, [`${NEW_ID}_${C1}`, `${NEW_ID}_${C2}`], 'both documents are done with');
+});
+
+test('one contributor alone is pending: not merged, and not pruned', () => {
+  const { merged, added, pending, processed, rejected } = mergeContributions(SHIPPED, [contribution(NEW_ID, [['jungle', 90]])]);
   assert.deepEqual(added, []);
-  assert.deepEqual(covered, ['1P6U1dCeHxPui5pIrGmndZ']);
-  assert.deepEqual(merged['1P6U1dCeHxPui5pIrGmndZ'], [['electronic', 10]], 'the shipped answer stands');
+  assert.equal(merged[NEW_ID], undefined);
+  assert.deepEqual(pending, [{ artist: NEW_ID, contributors: 1 }]);
+  assert.deepEqual(processed, [], 'kept as the first vote for the next contributor');
+  assert.deepEqual(rejected, []);
+});
+
+test('only the tags two contributors share are published, each at the lower weight', () => {
+  const { merged } = mergeContributions({}, [
+    contribution(NEW_ID, [['jungle', 100], ['breakbeat', 60], ['ragga', 40]], C1),
+    contribution(NEW_ID, [['jungle', 80], ['breakbeat', 70], ['techno', 90]], C2)]);
+  assert.deepEqual(merged[NEW_ID], [['jungle', 8], ['breakbeat', 6]]);
+});
+
+test('tags more contributors agree on lead, then weight', () => {
+  const { merged } = mergeContributions({}, [
+    contribution(NEW_ID, [['house', 100], ['garage', 50]], C1),
+    contribution(NEW_ID, [['house', 100], ['garage', 50]], C2),
+    contribution(NEW_ID, [['garage', 60]], C3)]);
+  assert.deepEqual(merged[NEW_ID], [['garage', 5], ['house', 10]], 'three votes beat two, whatever the weight');
+});
+
+test('contributors who agree on nothing leave the artist pending', () => {
+  const { added, pending } = mergeContributions({}, [
+    contribution(NEW_ID, [['jungle', 90]], C1), contribution(NEW_ID, [['polka', 90]], C2)]);
+  assert.deepEqual(added, []);
+  assert.deepEqual(pending, [{ artist: NEW_ID, contributors: 2 }]);
+});
+
+test('an artist already in the table is never overwritten, even by a quorum', () => {
+  const OLD = '1P6U1dCeHxPui5pIrGmndZ';
+  const { merged, added, covered, processed } = mergeContributions(SHIPPED,
+    [contribution(OLD, [['polka', 100]], C1), contribution(OLD, [['polka', 100]], C2)]);
+  assert.deepEqual(added, []);
+  assert.deepEqual(covered, [OLD]);
+  assert.deepEqual(merged[OLD], [['electronic', 10]], 'the shipped answer stands');
+  assert.equal(processed.length, 2, 'nothing more to do with either');
 });
 
 test('the input table is not mutated', () => {
   const before = JSON.stringify(SHIPPED);
-  mergeContributions(SHIPPED, [contribution(NEW_ID, [['jungle', 90]])]);
+  mergeContributions(SHIPPED, [contribution(NEW_ID, [['jungle', 90]], C1), contribution(NEW_ID, [['jungle', 90]], C2)]);
   assert.equal(JSON.stringify(SHIPPED), before);
 });
 
 test('a document id that is not a Spotify artist id is rejected', () => {
   for (const id of ['', 'short', '../../etc/passwd', 'x'.repeat(23), 'has-a-dash-in-it-here!!']) {
-    const { added, rejected } = mergeContributions(SHIPPED, [contribution(id, [['jungle', 90]])]);
+    const { added, rejected, processed } = mergeContributions(SHIPPED, [{ id, tags: JSON.stringify([['jungle', 90]]) }]);
     assert.deepEqual(added, [], `should have rejected id: ${id}`);
     assert.equal(rejected[0].why, 'not a Spotify artist id');
+    assert.deepEqual(processed, [id], 'a permanent rejection is pruned');
   }
 });
 
-test('one bad contribution does not stop the good ones in the same batch', () => {
-  const other = '0OdUWJ0sBjDrqHygGUXeCF';
-  const { added, rejected } = mergeContributions(SHIPPED, [
-    contribution(NEW_ID, [['jungle', 90]]),
-    { id: other, tags: 'garbage' },
-    contribution('3TVXtAsR1Inumwj472S9r4', [['hip hop', 70]]),
-  ]);
-  assert.deepEqual(added, [NEW_ID, '3TVXtAsR1Inumwj472S9r4']);
-  assert.equal(rejected.length, 1);
-  assert.equal(rejected[0].id, other);
+test('a bare artist id (a page from before the quorum) never counts as a vote', () => {
+  // Otherwise one writer could post one bare and one suffixed document and be two.
+  const { added, rejected, pending } = mergeContributions({}, [
+    contribution(NEW_ID, [['polka', 90]], null), contribution(NEW_ID, [['polka', 90]], C1)]);
+  assert.deepEqual(added, []);
+  assert.equal(rejected[0].why, 'no contributor id');
+  assert.deepEqual(pending, [{ artist: NEW_ID, contributors: 1 }]);
 });
 
-test('two contributions for the same new artist take the first, not the last', () => {
-  const { merged, added, covered } = mergeContributions(SHIPPED, [
-    contribution(NEW_ID, [['jungle', 90]]),
-    contribution(NEW_ID, [['polka', 100]]),
+test('one bad contribution does not stop the good ones in the same batch', () => {
+  const other = '0OdUWJ0sBjDrqHygGUXeCF', third = '3TVXtAsR1Inumwj472S9r4';
+  const { added, rejected } = mergeContributions(SHIPPED, [
+    contribution(NEW_ID, [['jungle', 90]], C1),
+    { id: `${other}_${C1}`, tags: 'garbage' },
+    contribution(third, [['hip hop', 70]], C1),
+    contribution(NEW_ID, [['jungle', 90]], C2),
+    contribution(third, [['hip hop', 70]], C2),
   ]);
-  assert.deepEqual(added, [NEW_ID]);
-  assert.deepEqual(covered, [NEW_ID], 'the second is treated as already covered');
-  assert.deepEqual(merged[NEW_ID], [['jungle', 9]]);
+  assert.deepEqual(added, [NEW_ID, third]);
+  assert.equal(rejected.length, 1);
+  assert.equal(rejected[0].id, `${other}_${C1}`);
+});
+
+test('the same contributor twice is still one vote', () => {
+  const { added, pending } = mergeContributions({}, [
+    contribution(NEW_ID, [['polka', 90]], C1), contribution(NEW_ID, [['polka', 90]], C1)]);
+  assert.deepEqual(added, []);
+  assert.deepEqual(pending, [{ artist: NEW_ID, contributors: 1 }]);
 });
 
 test('an empty batch changes nothing', () => {
-  const { merged, added, covered, rejected } = mergeContributions(SHIPPED, []);
+  const { merged, added, covered, rejected, pending, processed } = mergeContributions(SHIPPED, []);
   assert.deepEqual(merged, SHIPPED);
-  assert.deepEqual([added, covered, rejected], [[], [], []]);
+  assert.deepEqual([added, covered, rejected, pending, processed], [[], [], [], [], []]);
 });
 
 test('what merges is exactly the shape the page expects to load', () => {
   // docs/tags.json is id -> [[tag, 0-10]], expanded by ten on load. A contributed
   // artist has to be indistinguishable from a shipped one.
-  const { merged } = mergeContributions({}, [contribution(NEW_ID, [['jungle', 100], ['ragga', 30]])]);
+  const { merged } = mergeContributions({}, [contribution(NEW_ID, [['jungle', 100], ['ragga', 30]], C1),
+    contribution(NEW_ID, [['jungle', 100], ['ragga', 30]], C2)]);
   const entry = merged[NEW_ID];
-  assert.ok(Array.isArray(entry));
+  assert.ok(Array.isArray(entry) && entry.length === 2);
   for (const pair of entry) {
     assert.equal(pair.length, 2);
     assert.equal(typeof pair[0], 'string');
     assert.equal(typeof pair[1], 'number');
     assert.ok(pair[1] >= 1 && pair[1] <= 10, `${pair[1]} is off the 0-10 scale`);
   }
+});
+
+/* ---------- the injection test: one writer cannot get a false tag in ----------
+ * A writer who controls one contributor id, sending any well-formed tags they
+ * like, for any artist, in any order relative to honest contributors, alongside
+ * however many honest contributors agree among themselves. Every case is
+ * generated, and the false tag must reach docs/tags.json in none of them. */
+
+function rng(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+
+test('injection: a single writer\'s false tag is rejected in every one of 5,000 trials', () => {
+  const rnd = rng(20261116);
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const REAL = ['jungle', 'drum and bass', 'breakbeat', 'house', 'techno', 'garage', 'ambient', 'dub'];
+  const FALSE = ['polka', 'christmas', 'nazi punk', 'spam spam', 'buy now'];
+  const hex = () => Array.from({ length: 16 }, () => '0123456789abcdef'[Math.floor(rnd() * 16)]).join('');
+  const artistId = () => Array.from({ length: 22 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(rnd() * 62)]).join('');
+  let trials = 0, leaked = 0, mergedHonest = 0;
+  for (let t = 0; t < 5000; t++) {
+    const artist = artistId(), attacker = hex();
+    const truth = REAL.filter(() => rnd() < 0.5);
+    if (!truth.length) truth.push(pick(REAL));
+    const lie = pick(FALSE);
+    const docs = [];
+    // The attacker: one id, the false tag at full weight, sometimes dressed up
+    // with every real tag too, and sometimes sent several times over.
+    const attackTags = [[lie, 100], ...(rnd() < 0.5 ? truth.map(n => [n, 100]) : [])];
+    const repeats = 1 + Math.floor(rnd() * 3);
+    for (let r = 0; r < repeats; r++) docs.push({ id: `${artist}_${attacker}`, tags: JSON.stringify(attackTags) });
+    // ...and a bare-id copy, the one other door a single writer has.
+    if (rnd() < 0.5) docs.push({ id: artist, tags: JSON.stringify(attackTags) });
+    // Zero to three honest contributors, who agree on the truth.
+    const honest = Math.floor(rnd() * 4);
+    for (let h = 0; h < honest; h++)
+      docs.push({ id: `${artist}_${hex()}`, tags: JSON.stringify(truth.map(n => [n, 40 + Math.floor(rnd() * 60)])) });
+    // Any arrival order.
+    for (let i = docs.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [docs[i], docs[j]] = [docs[j], docs[i]]; }
+    const { merged } = mergeContributions({}, docs);
+    trials++;
+    if ((merged[artist] ?? []).some(([n]) => n === lie)) leaked++;
+    if (merged[artist]) mergedHonest++;
+  }
+  assert.equal(trials, 5000);
+  assert.equal(leaked, 0, `a single writer's false tag reached the table in ${leaked} of ${trials} trials`);
+  // Not vacuous: honest pairs still get through.
+  assert.ok(mergedHonest > 1500, `only ${mergedHonest} honest artists merged`);
+});
+
+test('injection: with the quorum off (1), the same writer would have got in', () => {
+  // The control: shows the test above is measuring the quorum, not something else.
+  const artist = '4Z8W4fKeB5YxbusRsdQVPb';
+  const { merged } = mergeContributions({}, [contribution(artist, [['polka', 100]], C1)], { quorum: 1 });
+  assert.deepEqual(merged[artist], [['polka', 10]]);
 });
 
 /* ---------- pruning: deleting contributions this run already accounted for ----------

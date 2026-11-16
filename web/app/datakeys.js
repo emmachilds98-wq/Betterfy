@@ -85,7 +85,8 @@ const DATA_KEYS = [
   { where:'firestore', key:'linkCodes/{code}', group:'Sync', why:'A six-digit code you asked for to link another device. Expires after ten minutes and is deleted when used.' },
 
   // --- the shared tag table ---
-  { where:'firestore', key:'tagContributions/{artist}', group:'Shared tags', why:'When a Last.fm fetch finds tags for an artist the shipped table lacks: that artist\'s Spotify id and up to ten tags. No account, playlist or listening data, nothing that says who sent it.' },
+  { where:'local', key:'bf_tagshare_secret', group:'Shared tags', why:'A random number made on this device and never sent. Each tag you share carries a code worked out from it and the artist, so the shared table can count two different listeners agreeing, without those codes linking your shares to each other or to you.' },
+  { where:'firestore', key:'tagContributions/{artistAndCode}', group:'Shared tags', why:'When a Last.fm fetch finds tags for an artist the shipped table lacks: that artist\'s Spotify id, a code that is different for every artist (see bf_tagshare_secret), and up to ten tags. No account, playlist or listening data, nothing that says who sent it. A tag joins the shared table only once two listeners have sent it.' },
 
   // --- the look ---
   { where:'local', key:'betterfy-theme', keep:true, group:'Look', why:'Your colour, density and filter settings. Kept by "Wipe this device".' },

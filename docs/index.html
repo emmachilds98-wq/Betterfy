@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1602">
+<meta name="bf-build" content="2026-11-16-1610">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1711,7 +1711,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1602</span>
+    <span class="mono">build 2026-11-16-1610</span>
   </p>
 
   <div class="feat">
@@ -1804,7 +1804,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1602</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1610</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1921,7 +1921,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1602. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1610. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5121,7 +5121,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1602`,
+    `Betterfy engine score — build 2026-11-16-1610`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5612,10 +5612,61 @@ function sourceCard(id, name, state, status, line, body) {
   </section>`;
 }
 
+/**
+ * How much each source knows about this account's own artists (BUILD-6 H1,
+ * SMARTER-GENRES §6): "Deezer knows N%, Wikidata M%, shared table K%". Worked
+ * out on this device from what the page already holds, so a source that is
+ * thin for one account's taste shows up as thin for that account, and nothing
+ * is sent anywhere to get it.
+ *
+ *   ids      the account's artist ids (playlists and liked songs)
+ *   shipped  the shared table as downloaded: id -> tags (either shape)
+ *   extra    tags_extra: id -> { source, tags }  (only `source` and `tags.length` are read)
+ *   bridge   bridge-raw's entries: id -> { deezerId, deezerAt, mbid, mbidAt }
+ *
+ * A source counts as knowing an artist when it answered with something:
+ * Deezer found the artist (its related-artists list hangs off that); Wikidata
+ * gave genres or a MusicBrainz id. `asked` is how many it has been asked
+ * about, since a source never asked has not said it does not know.
+ */
+function artistCoverage({ ids = [], shipped = {}, extra = {}, bridge = {} } = {}) {
+  const all = [...new Set(ids)];
+  const n = all.length;
+  const tagsOf = e => (Array.isArray(e) ? e : e?.tags) ?? [];
+  let shared = 0, deezer = 0, deezerAsked = 0, wikidata = 0, wikidataAsked = 0;
+  for (const id of all) {
+    if (tagsOf(shipped?.[id]).length) shared++;
+    const b = bridge?.[id], x = extra?.[id];
+    if (Number.isFinite(b?.deezerAt)) { deezerAsked++; if (b.deezerId) deezer++; }
+    const wdGenres = x?.source === 'wikidata';
+    if (Number.isFinite(b?.mbidAt) || wdGenres) {
+      wikidataAsked++;
+      if (b?.mbid || (wdGenres && tagsOf(x).length)) wikidata++;
+    }
+  }
+  const pct = k => (n ? Math.round(100 * k / n) : 0);
+  return { total: n, shared, deezer, wikidata, deezerAsked, wikidataAsked,
+           sharedPct: pct(shared), deezerPct: pct(deezer), wikidataPct: pct(wikidata) };
+}
+
+/** The coverage card's body: one sentence, then what has not been asked yet.
+ *  Nothing to count (not read yet, or no artists): '' and no card at all, so
+ *  the screen is byte-identical to what it was before the card existed. */
+function coverageHTML(cov) {
+  if (!cov?.total) return '';
+  const part = (name, pct, asked) => asked ? `${name} knows <b class="mono">${pct}%</b>` : `${name} <b>not asked yet</b>`;
+  const unasked = [['Deezer', cov.deezerAsked], ['Wikidata', cov.wikidataAsked]]
+    .filter(([, k]) => k && k < cov.total).map(([name, k]) => `${name} about ${k.toLocaleString()}`);
+  return `<p class="srcline srcknow">${part('Deezer', cov.deezerPct, cov.deezerAsked)}, ${part('Wikidata', cov.wikidataPct, cov.wikidataAsked)},
+      shared table <b class="mono">${cov.sharedPct}%</b> of your <span class="mono">${cov.total.toLocaleString()}</span> artists.</p>
+    ${unasked.length ? `<p class="srcline sub">Asked so far: ${unasked.join(', ')}. The rest are looked up as File, Score and Discover need them.</p>` : ''}`;
+}
+
 /** Where genre data and (later) listening come from — moved out of Playlists,
  *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
  *  same ids, same handlers as before; only the location changed. */
-function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML, ...rest }) {
+function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
+                       sourceCoverage = () => null, ...rest }) {
   const cov = tagCoverage();
   const { base } = playlistMixes();
   const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
@@ -5632,7 +5683,9 @@ function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes,
       artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
 
     <div class="srcgrid">
-    ${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
+    ${(body => body ? sourceCard('coverage', 'Your artists', 'ok', 'This account',
+      'How much each source knows about the artists in your own library, worked out on this device.', body) + '\n\n    ' : '')(
+      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())))}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'Key saved' : lfm ? 'Shared key' : 'No key',
       'Crowd genre tags for the artists the shipped set doesn\'t cover. '
         + (!lfmOwn && lfm ? 'Using Betterfy\'s shared Last.fm key — add your own to raise limits.' : 'Needs a free API key.'),
       `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : 'Connect Last.fm'}</button></div>
@@ -5732,7 +5785,7 @@ const actions = {
   wipeGo: c => c.wipeThisDevice(),
   fillWikidata: c => c.fillFromWikidata(),
 };
-return { view, yourDataHTML, actions };
+return { artistCoverage, coverageHTML, view, yourDataHTML, actions };
 })();
 /* ---- web/screens/tidy.mjs ---- */
 __mod["web/screens/tidy.mjs"] = (function () {
@@ -7935,7 +7988,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1602';
+const BUILD = '2026-11-16-1610';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -8273,7 +8326,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1602', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1610', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -9029,7 +9082,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1602');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1610');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11011,6 +11064,37 @@ async function appCheckToken() {
   return cachedAppCheckToken.token;
 }
 
+/* Who is voting (BUILD-6 H1). merge-tags.mjs publishes a tag only when two
+ * independent contributor ids name it for the same artist, so each document
+ * carries one, as `<artist id>_<contributor id>`.
+ *
+ * The id is not a stable install id. It is the first 16 hex characters of
+ * SHA-256(secret + ':' + artist id), where the secret is 128 random bits made
+ * on this device the first time it contributes and never sent anywhere. So the
+ * same install always casts the same one vote for an artist (Firestore refuses
+ * a second create of one document id), while the collection, which anyone can
+ * read, cannot group one install's contributions together: a stable id there
+ * would have published which artists one listener had in their library. */
+const TAGSHARE_SECRET_KEY = 'bf_tagshare_secret';
+let tagshareSecretMem = null;   // when storage is blocked: one secret for this visit
+function tagshareSecret() {
+  try {
+    const kept = LS.getItem(TAGSHARE_SECRET_KEY);
+    if (/^[0-9a-f]{32}$/.test(kept ?? '')) return kept;
+  } catch { /* storage blocked: fall through to a per-visit secret */ }
+  const fresh = tagshareSecretMem ?? [...crypto.getRandomValues(new Uint8Array(16))]
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  tagshareSecretMem = fresh;
+  try { LS.setItem(TAGSHARE_SECRET_KEY, fresh); } catch { /* kept in memory instead */ }
+  return fresh;
+}
+/** This install's contributor id for one artist: 16 hex characters, unlinkable across artists. */
+async function contributorId(artistId) {
+  const bytes = new TextEncoder().encode(`${tagshareSecret()}:${artistId}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return [...digest.slice(0, 8)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * Offer one artist's freshly-fetched tags to the shared table. Never awaited,
  * never retried: the tags are already saved locally, and this is a gift to
@@ -11025,30 +11109,75 @@ function contributeTags(artistId, tags) {
     if (!sharingTags() || !artistId || !tags?.length) return;
     // Already in the table everyone downloads, so there is nothing to give.
     if (RAW_TAGS?.[artistId]) return;
-    const url = `https://firestore.googleapis.com/v1/projects/${TAGS_PROJECT}/databases/(default)`
-      + `/documents/tagContributions?documentId=${encodeURIComponent(artistId)}&key=${TAGS_KEY}`;
-    // documentId= on a create means the first contribution for an artist wins
-    // and later ones are refused outright — no edits, no overwrites, nothing to
-    // reconcile. The refusal is a 409 nobody reads.
+    // No Web Crypto (an insecure context): no contributor id, so no vote to cast.
+    if (!globalThis.crypto?.subtle) return;
     const body = JSON.stringify({ fields: {
       tags:   { stringValue: JSON.stringify(tags.slice(0, 10)) },
       source: { stringValue: 'lastfm' },
       at:     { integerValue: String(Date.now()) },
     } });
-    const post = headers => fetchDeadline(url, { method: 'POST', headers, body }, 6000).catch(() => {});
-    if (!appCheckConfigured()) { post({ 'content-type': 'application/json' }); return; }
-    // Only when App Check is actually configured does fetching a token sit in
-    // front of the write. Even then, a slow or failed token fetch must never
-    // be the reason this listener's own tag fetch looks broken — so it still
-    // posts without the header rather than not posting at all; Firestore's own
-    // enforcement setting decides from there whether that write is accepted.
-    appCheckToken().then(
-      token => post({ 'content-type': 'application/json', 'X-Firebase-AppCheck': token }),
-      () => post({ 'content-type': 'application/json' }),
-    );
+    // documentId= on a create means this install's vote for an artist is cast
+    // once and a repeat is refused outright: no edits, no overwrites, nothing
+    // to reconcile. The refusal is a 409 nobody reads.
+    const post = (docId, headers) => fetchDeadline(
+      `https://firestore.googleapis.com/v1/projects/${TAGS_PROJECT}/databases/(default)`
+        + `/documents/tagContributions?documentId=${encodeURIComponent(docId)}&key=${TAGS_KEY}`,
+      { method: 'POST', headers, body }, 6000).catch(() => {});
+    contributorId(artistId).then(cid => {
+      const docId = `${artistId}_${cid}`;
+      if (!appCheckConfigured()) return post(docId, { 'content-type': 'application/json' });
+      // Only when App Check is actually configured does fetching a token sit in
+      // front of the write. Even then, a slow or failed token fetch must never
+      // be the reason this listener's own tag fetch looks broken — so it still
+      // posts without the header rather than not posting at all; Firestore's own
+      // enforcement setting decides from there whether that write is accepted.
+      return appCheckToken().then(
+        token => post(docId, { 'content-type': 'application/json', 'X-Firebase-AppCheck': token }),
+        () => post(docId, { 'content-type': 'application/json' }),
+      );
+    }).catch(() => { /* never the reason a tag fetch failed */ });
   } catch { /* never the reason a tag fetch failed */ }
 }
 
+
+/* ---------- what each source knows about this account (BUILD-6 H1) ----------
+ * The Sources coverage card's data: this account's artist ids and, for each,
+ * what tags_extra and bridge-raw already say. Read from this device's own
+ * IndexedDB; nothing is fetched or sent. web/screens/sources.mjs turns it into
+ * percentages (artistCoverage). Re-read at most every 30 seconds while the card
+ * is showing, since the bridge lookups fill in behind it. */
+const SRC_COV = { data: null, at: 0, pending: null };
+function sourceCoverage() {
+  if (!SRC_COV.pending && Date.now() - SRC_COV.at > 30000) {
+    SRC_COV.pending = loadSourceCoverage()
+      .then(changed => { if (changed && typeof underHoodRefresh === 'function') underHoodRefresh(); })
+      .catch(() => {})
+      .finally(() => { SRC_COV.pending = null; });
+  }
+  return SRC_COV.data;
+}
+async function loadSourceCoverage() {
+  SRC_COV.at = Date.now();
+  if (!LIB) return false;
+  const ids = new Set();
+  for (const p of LIB.playlists ?? []) for (const t of p.tracks ?? []) for (const a of t.artists ?? []) if (a?.id) ids.add(a.id);
+  for (const t of LIB.liked ?? []) for (const a of t.artists ?? []) if (a?.id) ids.add(a.id);
+  let extraAll = {}, bridgeAll = {};
+  try { extraAll = (await idb.get('tags_extra')) ?? {}; } catch { /* none kept */ }
+  try { bridgeAll = (await idb.get(BRIDGE_KEY))?.raw ?? {}; } catch { /* none kept */ }
+  // Only what the card reads, so the whole bridge cache is not held twice.
+  const extra = {}, bridge = {}, shipped = {};
+  for (const id of ids) {
+    const x = extraAll[id], b = bridgeAll[id];
+    if (x) extra[id] = { source: x.source ?? null, tags: x.tags?.length ? [0] : [] };
+    if (b) bridge[id] = { deezerId: b.deezerId ?? null, deezerAt: b.deezerAt, mbid: b.mbid ?? null, mbidAt: b.mbidAt };
+    if (RAW_TAGS?.[id]?.tags?.length) shipped[id] = [0];
+  }
+  const data = { ids: [...ids], shipped, extra, bridge };
+  const changed = JSON.stringify(data) !== JSON.stringify(SRC_COV.data);
+  SRC_COV.data = data;
+  return changed;
+}
 /* ---------- cross-device sync (Firestore) ----------
  * Skip/reject feedback is the one thing that did not survive a fresh sign-in
  * on a different device — the library itself re-syncs from Spotify either
@@ -12132,7 +12261,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1602';
+    s.src = 'engine.js?v=2026-11-16-1610';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -12154,7 +12283,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1602');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1610');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12702,7 +12831,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1602';
+    s.src = 'audio.js?v=2026-11-16-1610';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -12738,7 +12867,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1602', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1610', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -13472,7 +13601,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1602', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1610', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -13747,7 +13876,7 @@ const SCREEN_MODS = globalThis.BetterfyScreens ?? {};
 const SCREEN_CTX = {
   history: () => ({ S, esc, isUndone, emptyState, undoAction, getLog, toast, render }),
   sources: () => ({ LS, esc, lfmKey, $, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
-                    toast, render, enrichMissing, fillFromWikidata }),
+                    toast, render, enrichMissing, fillFromWikidata, sourceCoverage }),
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
@@ -13935,7 +14064,8 @@ const DATA_KEYS = [
   { where:'firestore', key:'linkCodes/{code}', group:'Sync', why:'A six-digit code you asked for to link another device. Expires after ten minutes and is deleted when used.' },
 
   // --- the shared tag table ---
-  { where:'firestore', key:'tagContributions/{artist}', group:'Shared tags', why:'When a Last.fm fetch finds tags for an artist the shipped table lacks: that artist\'s Spotify id and up to ten tags. No account, playlist or listening data, nothing that says who sent it.' },
+  { where:'local', key:'bf_tagshare_secret', group:'Shared tags', why:'A random number made on this device and never sent. Each tag you share carries a code worked out from it and the artist, so the shared table can count two different listeners agreeing, without those codes linking your shares to each other or to you.' },
+  { where:'firestore', key:'tagContributions/{artistAndCode}', group:'Shared tags', why:'When a Last.fm fetch finds tags for an artist the shipped table lacks: that artist\'s Spotify id, a code that is different for every artist (see bf_tagshare_secret), and up to ten tags. No account, playlist or listening data, nothing that says who sent it. A tag joins the shared table only once two listeners have sent it.' },
 
   // --- the look ---
   { where:'local', key:'betterfy-theme', keep:true, group:'Look', why:'Your colour, density and filter settings. Kept by "Wipe this device".' },
