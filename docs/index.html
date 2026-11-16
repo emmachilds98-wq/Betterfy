@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1821">
+<meta name="bf-build" content="2026-11-16-1916">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1466,6 +1466,16 @@ main:focus{outline:none}
   .rr .vh{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
   .disc-h2{margin-top:8px}
   @media (prefers-reduced-motion: reduce){ .rr-prog i{transition:none} }
+
+/* "Check it works on this account": the Phase 0 probe, from the page. */
+  .rr-probe{margin:12px 0 0}
+  .rr-probe p{margin:0 0 8px}
+  .rr-probe.warn p b{color:var(--warn)} .rr-probe.ok p b{color:var(--ok)}
+  .rr-ptab{width:100%; border-collapse:collapse; font-size:12.5px; margin:0 0 10px}
+  .rr-ptab td{padding:4px 6px; border-top:1px solid var(--line); vertical-align:top; color:var(--ink-2)}
+  .rr-ptab td.mono{white-space:nowrap}
+  .rr-ptab tr.no td.mono{color:var(--warn)}
+  .rr-ptab tr.ok td.mono{color:var(--ok)}
   /* ---------- offline decision queue (BUILD-6 F6; app/offline.js offlineShow) ----------
      "N decisions waiting to sync": a small pill above the bottom edge, drawn on
      its own outside every screen, shown only while the queue holds something. */
@@ -1822,7 +1832,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1821</span>
+    <span class="mono">build 2026-11-16-1916</span>
   </p>
 
   <div class="feat">
@@ -1915,7 +1925,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1821</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1916</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2032,7 +2042,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1821. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1916. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5410,7 +5420,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1821`,
+    `Betterfy engine score — build 2026-11-16-1916`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -8468,6 +8478,20 @@ function rowHTML(r, { esc, suggest }) {
 }
 
 /** The whole section. '' when the page gives no radar (tests of the rest of Discover, old builds). */
+/** The "Check it works on this account" block: a button, then the answer in words and the table. */
+function probeHTML(R, esc) {
+  const P = R?.probe;
+  const btn = `<button class="b sm" type="button" data-act="rrProbe"${P?.running ? ' disabled' : ''}>${P?.running ? 'Checking…' : P ? 'Check again' : 'Check it works on this account'}</button>`;
+  if (!P || P.running) return `<div class="rr-probe">${btn}</div>`;
+  if (P.err) return `<div class="rr-probe"><p class="why">The check couldn’t run: ${esc(P.err)}</p>${btn}</div>`;
+  const v = P.verdict ?? { ok: false, missing: [] };
+  const words = v.ok ? 'Spotify answers everything the radar needs on this account.'
+    : `Spotify refused what the radar needs (${v.missing.map(esc).join(', ')}), so it can’t run on this account yet.`;
+  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p><b>${v.ok ? 'Works.' : 'Doesn’t work yet.'}</b> ${words}</p>
+    <table class="rr-ptab"><tbody>${(P.rows ?? []).map(r => `<tr class="${r.ok ? 'ok' : 'no'}"><td>${esc(r.label)}</td><td class="mono">${esc(r.status)}</td><td>${esc(r.note)}</td></tr>`).join('')}</tbody></table>
+    <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></div>`;
+}
+
 function radarView(ctx) {
   const rad = ctx.radar;
   if (!rad) return '';
@@ -8487,6 +8511,7 @@ function radarView(ctx) {
       <div class="rr-start">
         <p>The first read asks Spotify about each artist in turn: about <b>${est.minutes} minute${est.minutes === 1 ? '' : 's'}</b> (${est.requests.toLocaleString('en-GB')} requests). You can keep using the app, and what has been read shows as it arrives.</p>
         <div class="rowbtns"><button class="b p" type="button" data-act="rrStart" id="rrStart">Start the radar</button></div>
+        ${probeHTML(R, esc)}
       </div></section>`;
   }
 
@@ -8536,12 +8561,14 @@ function radarView(ctx) {
     </details>` : '';
   const partial = !st.complete && rows.length ? `<p class="rr-partial">Not the whole radar yet: ${R.running ? 'still reading' : 'some artists are still to be read'}.</p>` : '';
   const count = `<p class="rr-count vh" aria-live="polite">${rows.length.toLocaleString('en-GB')} release${rows.length === 1 ? '' : 's'}</p>`;
-  return head + status + chips + search + count + partial + strip + feed + '</section>';
+  return head + status + (R.probe ? probeHTML(R, esc) : '') + chips + search + count + partial + strip + feed + '</section>';
 }
 
 const radarActions = {
   rrStart: ({ radar }) => radar?.start(),
   rrStop: ({ radar }) => radar?.stop(),
+  rrProbe: ({ radar }) => radar?.probe?.(),
+  rrProbeCopy: ({ radar }) => radar?.probeCopy?.(),
   rrFilter({ radar, render }, el) {
     if (!radar) return;
     radar.R.filter = el.dataset.f || 'all';
@@ -8577,7 +8604,7 @@ function radarMount(ctx) {
     io.observe(more);
   }
 }
-return { PAGE, FILTERS, libraryArtists, searchArtists, coldEstimate, feedRows, groupByMonth, artistMatches, ago, statusLine, radarView, radarActions, radarMount };
+return { PAGE, FILTERS, libraryArtists, searchArtists, coldEstimate, feedRows, groupByMonth, artistMatches, ago, statusLine, probeHTML, radarView, radarActions, radarMount };
 })();
 /* ---- web/screens/discover.mjs ---- */
 __mod["web/screens/discover.mjs"] = (function () {
@@ -9386,7 +9413,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1821';
+const BUILD = '2026-11-16-1916';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -9724,7 +9751,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1821', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1916', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -10480,7 +10507,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1821');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1916');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12505,6 +12532,37 @@ async function radarStart({ deep = null } = {}) {
 
 function radarStop() { RADAR.ctl?.abort(); }
 
+/** "Check it works on this account": the Phase 0 probe (core/release/probe.mjs) from the page,
+ *  with this account's own sign-in, so nobody needs `node radar.mjs --probe`. Seven reads, one
+ *  artist, nothing stored but the answer for this session. */
+async function radarProbe() {
+  if (RADAR.probe?.running || !LIB) return;
+  RADAR.probe = { running: true, rows: null, verdict: null, err: null, artist: null };
+  radarPaint(true);
+  try {
+    await engineLoad();
+    const BR = globalThis.BetterfyRadar;
+    if (!BR?.probeEndpoints) throw new Error('the radar did not load');
+    const artist = BR.artistSet(LIB, {})[0];
+    if (!artist) throw new Error('your library names no artist yet');
+    const rows = await BR.probeEndpoints(path => sp(path), artist.id);
+    Object.assign(RADAR.probe, { rows, verdict: BR.probeVerdict(rows), table: BR.probeTable(rows), artist: artist.name });
+  } catch (e) {
+    RADAR.probe.err = e?.message ?? String(e);
+  } finally {
+    RADAR.probe.running = false;
+    radarPaint(true);
+  }
+}
+
+/** Copy the probe's table, to paste where it is asked for. */
+async function radarProbeCopy() {
+  const t = RADAR.probe?.table;
+  if (!t) return;
+  try { await navigator.clipboard.writeText(`Radar check (${RADAR.probe.artist ?? ''})\n${t}`); toast('Copied.'); }
+  catch { toast('Couldn’t copy. Select the table and copy it instead.'); }
+}
+
 /** Hide a release from the feed for good (on this device). */
 async function radarDismiss(key, quiet = false) {
   RADAR.dismissed.add(key);
@@ -12555,6 +12613,8 @@ function radarCtx() {
     load: () => { if (!RADAR.loaded) radarLoad(); },
     start: o => fire(radarStart(o)),
     stop: radarStop,
+    probe: () => fire(radarProbe()),
+    probeCopy: () => fire(radarProbeCopy()),
     dismiss: k => fire(radarDismiss(k)),
     file: (k, pl) => fire(radarFile(k, pl)),
     suggest: radarSuggest,
@@ -13853,7 +13913,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1821';
+    s.src = 'engine.js?v=2026-11-16-1916';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -13875,7 +13935,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1821');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1916');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14428,7 +14488,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1821';
+    s.src = 'audio.js?v=2026-11-16-1916';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -14464,7 +14524,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1821', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1916', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -15342,7 +15402,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1821', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1916', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;

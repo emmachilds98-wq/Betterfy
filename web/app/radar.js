@@ -113,6 +113,37 @@ async function radarStart({ deep = null } = {}) {
 
 function radarStop() { RADAR.ctl?.abort(); }
 
+/** "Check it works on this account": the Phase 0 probe (core/release/probe.mjs) from the page,
+ *  with this account's own sign-in, so nobody needs `node radar.mjs --probe`. Seven reads, one
+ *  artist, nothing stored but the answer for this session. */
+async function radarProbe() {
+  if (RADAR.probe?.running || !LIB) return;
+  RADAR.probe = { running: true, rows: null, verdict: null, err: null, artist: null };
+  radarPaint(true);
+  try {
+    await engineLoad();
+    const BR = globalThis.BetterfyRadar;
+    if (!BR?.probeEndpoints) throw new Error('the radar did not load');
+    const artist = BR.artistSet(LIB, {})[0];
+    if (!artist) throw new Error('your library names no artist yet');
+    const rows = await BR.probeEndpoints(path => sp(path), artist.id);
+    Object.assign(RADAR.probe, { rows, verdict: BR.probeVerdict(rows), table: BR.probeTable(rows), artist: artist.name });
+  } catch (e) {
+    RADAR.probe.err = e?.message ?? String(e);
+  } finally {
+    RADAR.probe.running = false;
+    radarPaint(true);
+  }
+}
+
+/** Copy the probe's table, to paste where it is asked for. */
+async function radarProbeCopy() {
+  const t = RADAR.probe?.table;
+  if (!t) return;
+  try { await navigator.clipboard.writeText(`Radar check (${RADAR.probe.artist ?? ''})\n${t}`); toast('Copied.'); }
+  catch { toast('Couldn’t copy. Select the table and copy it instead.'); }
+}
+
 /** Hide a release from the feed for good (on this device). */
 async function radarDismiss(key, quiet = false) {
   RADAR.dismissed.add(key);
@@ -163,6 +194,8 @@ function radarCtx() {
     load: () => { if (!RADAR.loaded) radarLoad(); },
     start: o => fire(radarStart(o)),
     stop: radarStop,
+    probe: () => fire(radarProbe()),
+    probeCopy: () => fire(radarProbeCopy()),
     dismiss: k => fire(radarDismiss(k)),
     file: (k, pl) => fire(radarFile(k, pl)),
     suggest: radarSuggest,

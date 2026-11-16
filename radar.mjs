@@ -24,6 +24,7 @@ import { artistSet } from './core/release/artists.mjs';
 import { syncRadar, memoryStore, loadReleases } from './core/release/sync.mjs';
 import { planTasks, estimate, KEY, PAGE_LIMIT } from './core/release/plan.mjs';
 import { parseDate, dateLabel, cutoffTs, inWindow } from './core/release/dates.mjs';
+import { probeEndpoints, probeVerdict, probeTable } from './core/release/probe.mjs';
 
 const args = process.argv.slice(2);
 const flag = f => args.includes(f);
@@ -76,34 +77,14 @@ async function probe() {
   const get = await makeGet();
   const artist = artistSet(lib)[0];
   if (!artist) throw new Error('library.json names no artist');
-  const rows = [];
-  const tryGet = async (label, path, look = () => '') => {
-    try { const b = await get(path); rows.push([label, 'ok', look(b)]); return b; }
-    catch (e) { rows.push([label, String(e.status || 'error'), String(e.message).split('\n')[0].slice(0, 70)]); return null; }
-  };
   console.error(`probing with ${artist.name} (${artist.id})\n`);
-  const page = await tryGet(`albums, limit=${PAGE_LIMIT}`, `/artists/${artist.id}/albums?include_groups=single&market=from_token&limit=${PAGE_LIMIT}`,
-    b => {
-      const items = b?.items ?? [];
-      const ts = items.map(i => parseDate(i.release_date, i.release_date_precision).ts);
-      const sorted = ts.every((t, i) => i === 0 || t <= ts[i - 1]);
-      return `${items.length} items, total ${b?.total}, newest first: ${sorted}, album_group present: ${items.some(i => 'album_group' in i)}`;
-    });
-  await tryGet('albums, limit=50 (cap check)', `/artists/${artist.id}/albums?include_groups=single&market=from_token&limit=50`,
-    b => `${b?.items?.length} items: the 10 cap is lifted`);
-  await tryGet('albums, all groups at once', `/artists/${artist.id}/albums?include_groups=album,single,appears_on&market=from_token&limit=${PAGE_LIMIT}`,
-    b => `${b?.items?.length} items`);
-  const first = page?.items?.[0]?.id, second = page?.items?.[1]?.id ?? first;
-  const album = first ? await tryGet('album detail /albums/{id}', `/albums/${first}?market=from_token`,
-    b => `${b?.tracks?.items?.length} tracks, track ISRCs present: ${(b?.tracks?.items ?? []).some(t => t.external_ids?.isrc)}`) : null;
-  if (first) await tryGet('several albums /albums?ids=', `/albums?ids=${first},${second}`, b => `${b?.albums?.length} albums: still served`);
-  const tid = album?.tracks?.items?.[0]?.id;
-  if (tid) await tryGet('track /tracks/{id}', `/tracks/${tid}?market=from_token`, b => `ISRC: ${b?.external_ids?.isrc ?? 'absent'}`);
-  if (tid) await tryGet('several tracks /tracks?ids=', `/tracks?ids=${tid}`, b => `${b?.tracks?.length} tracks: still served`);
-  const w = Math.max(...rows.map(r => r[0].length));
-  for (const [l, s, n] of rows) console.log(`${l.padEnd(w)}  ${s.padEnd(5)}  ${n}`);
-  console.log('\nExpected on a Development Mode app created after February 2026: the first, fourth and sixth');
-  console.log('answer ok; limit=50 and both batch endpoints refuse. Paste this table into the PR.');
+  const rows = await probeEndpoints(get, artist.id);
+  console.log(probeTable(rows));
+  const v = probeVerdict(rows);
+  console.log(`\n${v.ok ? 'The radar can run as built.' : `The radar cannot run: ${v.missing.join(', ')} refused.`}`);
+  console.log('Expected on a Development Mode app created after February 2026: the first, fourth and sixth');
+  console.log('answer ok; limit=50 and both batch endpoints refuse. The page runs this same check:');
+  console.log('Discover, Release radar, "Check it works on this account".');
 }
 
 async function measure() {

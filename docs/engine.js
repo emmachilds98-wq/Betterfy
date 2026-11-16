@@ -11968,16 +11968,77 @@ function disambiguator(artistId, lib) {
 }
 return { weightsFromLibrary, artistSet, disambiguator };
 })();
+/* ---- core/release/probe.mjs ---- */
+__mod["core/release/probe.mjs"] = (function () {
+const { PAGE_LIMIT } = __mod["core/release/plan.mjs"];
+const { parseDate } = __mod["core/release/dates.mjs"];
+// The Phase 0 endpoint check (docs/RELEASE-RADAR-PLAN.md), shared by
+// `node radar.mjs --probe` and the page's "Check it works on this account"
+// button, so any account can run it from the hosted app, with nothing to
+// install. Seven reads, one artist: what Spotify allows this app, today.
+
+
+
+/** What the sync needs to answer, by row id. The rest are informational: the sync never relies on them. */
+const NEEDED = ['list', 'album', 'track'];
+
+/**
+ * Run the probe. `get(path)` resolves to Spotify's JSON or rejects with `.status`.
+ * @returns {Promise<Array<{ id: string, label: string, ok: boolean, status: string, note: string }>>}
+ */
+async function probeEndpoints(get, artistId) {
+  const rows = [];
+  const a = encodeURIComponent(artistId);
+  const tryGet = async (id, label, path, look = () => '') => {
+    try { const b = await get(path); rows.push({ id, label, ok: true, status: 'ok', note: look(b) }); return b; }
+    catch (e) { rows.push({ id, label, ok: false, status: String(e?.status || 'error'), note: String(e?.message ?? e).split('\n')[0].slice(0, 70) }); return null; }
+  };
+  const page = await tryGet('list', `albums, limit=${PAGE_LIMIT}`, `/artists/${a}/albums?include_groups=single&market=from_token&limit=${PAGE_LIMIT}`,
+    b => {
+      const items = b?.items ?? [];
+      const ts = items.map(i => parseDate(i.release_date, i.release_date_precision).ts);
+      const sorted = ts.every((t, i) => i === 0 || t <= ts[i - 1]);
+      return `${items.length} items, total ${b?.total}, newest first: ${sorted}, album_group present: ${items.some(i => 'album_group' in i)}`;
+    });
+  await tryGet('cap', 'albums, limit=50 (cap check)', `/artists/${a}/albums?include_groups=single&market=from_token&limit=50`,
+    b => `${b?.items?.length} items: the 10 cap is lifted`);
+  await tryGet('groups', 'albums, all groups at once', `/artists/${a}/albums?include_groups=album,single,appears_on&market=from_token&limit=${PAGE_LIMIT}`,
+    b => `${b?.items?.length} items`);
+  const first = page?.items?.[0]?.id, second = page?.items?.[1]?.id ?? first;
+  const album = first ? await tryGet('album', 'album detail /albums/{id}', `/albums/${encodeURIComponent(first)}?market=from_token`,
+    b => `${b?.tracks?.items?.length} tracks, track ISRCs present: ${(b?.tracks?.items ?? []).some(t => t.external_ids?.isrc)}`) : null;
+  if (first) await tryGet('albums', 'several albums /albums?ids=', `/albums?ids=${first},${second}`, b => `${b?.albums?.length} albums: still served`);
+  const tid = album?.tracks?.items?.[0]?.id;
+  if (tid) await tryGet('track', 'track /tracks/{id}', `/tracks/${encodeURIComponent(tid)}?market=from_token`, b => `ISRC: ${b?.external_ids?.isrc ?? 'absent'}`);
+  if (tid) await tryGet('tracks', 'several tracks /tracks?ids=', `/tracks?ids=${tid}`, b => `${b?.tracks?.length} tracks: still served`);
+  return rows;
+}
+
+/** Whether the radar can run as built: every read it relies on answered. `missing` names the ones that did not. */
+function probeVerdict(rows) {
+  const by = new Map((rows ?? []).map(r => [r.id, r]));
+  const missing = NEEDED.filter(id => !by.get(id)?.ok);
+  return { ok: missing.length === 0, missing };
+}
+
+/** The table as text: what `--probe` prints and what the page copies. */
+function probeTable(rows) {
+  const w = Math.max(0, ...(rows ?? []).map(r => r.label.length));
+  return (rows ?? []).map(r => `${r.label.padEnd(w)}  ${r.status.padEnd(5)}  ${r.note}`).join('\n');
+}
+return { NEEDED, probeEndpoints, probeVerdict, probeTable };
+})();
 /* ---- core/release/index.mjs ---- */
 __mod["core/release/index.mjs"] = (function () {
 const { syncRadar, loadReleases, rescore, allReleaseKeys } = __mod["core/release/sync.mjs"];
 const { artistSet } = __mod["core/release/artists.mjs"];
 const { planTasks, estimate, isDue, KEY, SHAPE } = __mod["core/release/plan.mjs"];
+const { probeEndpoints, probeVerdict, probeTable } = __mod["core/release/probe.mjs"];
 // Release Radar for the page: the sync and what it needs, in the lazy engine
 // bundle (docs/engine.js) as `BetterfyRadar`, so a listener who never presses
 // Start never downloads it. web/app/radar.js loads it on Start; the feed itself
 // is read straight from IndexedDB and drawn by web/screens/radar.mjs.
-return { syncRadar, loadReleases, rescore, allReleaseKeys, artistSet, planTasks, estimate, isDue, KEY, SHAPE };
+return { syncRadar, loadReleases, rescore, allReleaseKeys, artistSet, planTasks, estimate, isDue, KEY, SHAPE, probeEndpoints, probeVerdict, probeTable };
 })();
 /* ---- core/analysis/confidence.mjs ---- */
 __mod["core/analysis/confidence.mjs"] = (function () {

@@ -43,3 +43,13 @@
   .rr .vh{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
   .disc-h2{margin-top:8px}
   @media (prefers-reduced-motion: reduce){ .rr-prog i{transition:none} }
+
+/* "Check it works on this account": the Phase 0 probe, from the page. */
+  .rr-probe{margin:12px 0 0}
+  .rr-probe p{margin:0 0 8px}
+  .rr-probe.warn p b{color:var(--warn)} .rr-probe.ok p b{color:var(--ok)}
+  .rr-ptab{width:100%; border-collapse:collapse; font-size:12.5px; margin:0 0 10px}
+  .rr-ptab td{padding:4px 6px; border-top:1px solid var(--line); vertical-align:top; color:var(--ink-2)}
+  .rr-ptab td.mono{white-space:nowrap}
+  .rr-ptab tr.no td.mono{color:var(--warn)}
+  .rr-ptab tr.ok td.mono{color:var(--ok)}

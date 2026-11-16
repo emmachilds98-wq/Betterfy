@@ -172,6 +172,20 @@ function rowHTML(r, { esc, suggest }) {
 }
 
 /** The whole section. '' when the page gives no radar (tests of the rest of Discover, old builds). */
+/** The "Check it works on this account" block: a button, then the answer in words and the table. */
+export function probeHTML(R, esc) {
+  const P = R?.probe;
+  const btn = `<button class="b sm" type="button" data-act="rrProbe"${P?.running ? ' disabled' : ''}>${P?.running ? 'Checking…' : P ? 'Check again' : 'Check it works on this account'}</button>`;
+  if (!P || P.running) return `<div class="rr-probe">${btn}</div>`;
+  if (P.err) return `<div class="rr-probe"><p class="why">The check couldn’t run: ${esc(P.err)}</p>${btn}</div>`;
+  const v = P.verdict ?? { ok: false, missing: [] };
+  const words = v.ok ? 'Spotify answers everything the radar needs on this account.'
+    : `Spotify refused what the radar needs (${v.missing.map(esc).join(', ')}), so it can’t run on this account yet.`;
+  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p><b>${v.ok ? 'Works.' : 'Doesn’t work yet.'}</b> ${words}</p>
+    <table class="rr-ptab"><tbody>${(P.rows ?? []).map(r => `<tr class="${r.ok ? 'ok' : 'no'}"><td>${esc(r.label)}</td><td class="mono">${esc(r.status)}</td><td>${esc(r.note)}</td></tr>`).join('')}</tbody></table>
+    <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></div>`;
+}
+
 export function radarView(ctx) {
   const rad = ctx.radar;
   if (!rad) return '';
@@ -191,6 +205,7 @@ export function radarView(ctx) {
       <div class="rr-start">
         <p>The first read asks Spotify about each artist in turn: about <b>${est.minutes} minute${est.minutes === 1 ? '' : 's'}</b> (${est.requests.toLocaleString('en-GB')} requests). You can keep using the app, and what has been read shows as it arrives.</p>
         <div class="rowbtns"><button class="b p" type="button" data-act="rrStart" id="rrStart">Start the radar</button></div>
+        ${probeHTML(R, esc)}
       </div></section>`;
   }
 
@@ -240,12 +255,14 @@ export function radarView(ctx) {
     </details>` : '';
   const partial = !st.complete && rows.length ? `<p class="rr-partial">Not the whole radar yet: ${R.running ? 'still reading' : 'some artists are still to be read'}.</p>` : '';
   const count = `<p class="rr-count vh" aria-live="polite">${rows.length.toLocaleString('en-GB')} release${rows.length === 1 ? '' : 's'}</p>`;
-  return head + status + chips + search + count + partial + strip + feed + '</section>';
+  return head + status + (R.probe ? probeHTML(R, esc) : '') + chips + search + count + partial + strip + feed + '</section>';
 }
 
 export const radarActions = {
   rrStart: ({ radar }) => radar?.start(),
   rrStop: ({ radar }) => radar?.stop(),
+  rrProbe: ({ radar }) => radar?.probe?.(),
+  rrProbeCopy: ({ radar }) => radar?.probeCopy?.(),
   rrFilter({ radar, render }, el) {
     if (!radar) return;
     radar.R.filter = el.dataset.f || 'all';
