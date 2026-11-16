@@ -41,7 +41,7 @@ async function fillFromWikidata({ quiet = false } = {}) {
     if (i + W.BATCH < ids.length) await new Promise(r => setTimeout(r, 1000));
   }
   await idb.set('tags_extra', cached);
-  if (found) R = buildReports(LIB, CFG, TAGS);
+  if (found) await refreshReports();
   if (!quiet || found) {
     $('#land').hidden = true; $('#app').hidden = false;
     toast(`Wikidata had genres for ${found.toLocaleString()} of ${ids.length.toLocaleString()} untagged artists.`

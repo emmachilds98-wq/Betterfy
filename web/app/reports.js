@@ -151,16 +151,34 @@ function buildReports(lib, cfg, tags) {
   const unfiled = lib.liked.filter(t => t?.id && !isFiled(t));
   // Rejections by artist, read once for the whole queue (backlogSuggest).
   const rejected = artistRejectMemory(FB, lib);
+  // Everything a card's picks and tags are made from is the track's artists
+  // (credits, tags, and where that artist is already filed) plus the playlists
+  // rejected for this one track, so two songs by the same artists with the
+  // same rejections get the same answer. A real backlog is thousands of tracks
+  // from a few hundred artists: scored once per artist set, not once per song
+  // (measured on 5k liked songs: the dominant cost of this function).
+  const byArtists = new Map();
+  const history = artistHistoryIndex(lib, targets);
+  const scored = t => {
+    // An artist with rejections on record is scored per track: rejectFactors
+    // leaves out the rejection made on the very track it is scoring.
+    const key = (t.artists ?? []).map(a => a.id).join(',') + '|' + (FB[t.id]?.rejected ?? []).join(',')
+      + (rejected?.size && rejected.get(t.artists?.[0]?.id) ? '|' + t.id : '');
+    let s = byArtists.get(key);
+    if (!s) byArtists.set(key, s = { suggest: backlogSuggest(t, lib, cfg, tags, profiles, idf, targets, rejected, history),
+                                      tags: topTags(t, tags, idf), thin: isThinSignal(t, tags) });
+    return s;
+  };
   const backlog = unfiled.map(t => {
     const fb = FB[t.id];
-    const suggest = backlogSuggest(t, lib, cfg, tags, profiles, idf, targets, rejected);
+    const s = scored(t);
     return { id:t.id, artist:(t.artists??[]).map(a=>a.name).join(', '), title:t.name,
       album:t.album, released:t.released, added:(t.added_at??'').slice(0,10), dur:t.duration_ms, art:t.art,
-      tags: topTags(t, tags, idf),
-      thinData: isThinSignal(t, tags),
+      tags: s.tags.slice(),
+      thinData: s.thin,
       artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })),
       skips: fb?.skips ?? 0,
-      suggest };
+      suggest: s.suggest.map(x => ({ ...x })) };
   })
     // Newest first, but anything already skipped sinks below everything you
     // have not seen yet — so the queue moves on instead of reopening on the
@@ -254,7 +272,7 @@ function keptHere(trackId, playlistId) { return !!FB[trackId]?.kept?.includes(pl
  */
 function backlogSuggest(t, lib, cfg, tags, profiles, idf,
                         targets = new Set(Object.entries(cfg).filter(([,v]) => v.target).map(([id]) => id)),
-                        rejected = artistRejectMemory(FB, lib)) {
+                        rejected = artistRejectMemory(FB, lib), history = null) {
   const fb = FB[t.id];
   // A playlist rejected for this artist's other tracks is lowered here, fading
   // with time and later accepts (profile.mjs rejectFactors, BUILD-5-PLAN §5.1).
@@ -271,8 +289,83 @@ function backlogSuggest(t, lib, cfg, tags, profiles, idf,
   // filing history only ever steps in when it hasn't — no fetch, no third
   // party, just where the user already put this artist's other tracks.
   return (ranked.length && ranked[0].score >= 0.30) ? ranked
-    : downweightRejected(artistHistory(t, lib, targets), down)
+    : downweightRejected(artistHistory(t, lib, targets, history), down)
         .filter(h => !fb?.rejected?.includes(h.id))
         .map(h => ({ ...h, axis: cfg[h.id]?.axis ?? null, via: 'history' }));
 }
 
+/* ---------- reports, off the main thread (page side) ---------- */
+/* buildReports is the biggest single piece of work the page does: on a 5k-liked,
+ * 60-playlist library it holds the main thread for over a second (scripts/perf.mjs,
+ * docs/BUILD-6-PLAN.md D4), at every sync, tag fill and correction. The same
+ * function, byte for byte, runs in docs/reports-worker.js (build-web.mjs cuts
+ * this file at the marker above) and the page asks it for the answer. The
+ * page-side state it reads — rejections, the pinned mirror, the listening weights,
+ * the engine's verdicts — travels with each request. With no Worker, or one that
+ * fails, the same call runs here, on the main thread, as it always did. */
+let REPORTS_WORKER = null, REPORTS_SEQ = 0, REPORTS_APPLY = 0;
+const REPORTS_WAIT = new Map();
+function reportsWorker() {
+  if (REPORTS_WORKER !== null) return REPORTS_WORKER;
+  try {
+    if (typeof Worker !== 'function') return REPORTS_WORKER = false;
+    const w = new Worker('reports-worker.js?v=__BUILD__');
+    w.onmessage = e => {
+      const wait = REPORTS_WAIT.get(e.data?.id);
+      if (!wait) return;
+      REPORTS_WAIT.delete(e.data.id);
+      e.data.ok ? wait.ok(e.data.result) : wait.bad(new Error(e.data.error));
+    };
+    w.onerror = ev => {
+      ev?.preventDefault?.();
+      for (const wait of REPORTS_WAIT.values()) wait.bad(new Error(ev?.message || 'the reports worker stopped'));
+      REPORTS_WAIT.clear();
+      REPORTS_WORKER = false;
+      try { w.terminate(); } catch {}
+    };
+    return REPORTS_WORKER = w;
+  } catch { return REPORTS_WORKER = false; }
+}
+
+/** Same answer as buildReports(lib, cfg, tags), worked out off the main thread when it can be. */
+async function buildReportsAsync(lib, cfg, tags) {
+  const w = reportsWorker();
+  if (w) {
+    try {
+      const L = typeof LISTENING_CACHE !== 'undefined' ? LISTENING_CACHE : null;
+      const sh = typeof ENG !== 'undefined' ? ENG.shadow : null;
+      return await new Promise((ok, bad) => {
+        const id = ++REPORTS_SEQ;
+        REPORTS_WAIT.set(id, { ok, bad });
+        w.postMessage({ id, lib, cfg, tags, fb: FB, pinned: pinnedAllSongs(), allSongsName: ALL_SONGS_NAME,
+          listening: L?.weights ? { weights: L.weights, tracks: L.tracks ?? null } : null,
+          shadow: sh?.rows ? { rows: sh.rows.map(r => ({ id: r.id, decision: r.decision })) } : null });
+      });
+    } catch { /* fall through: build it here */ }
+  }
+  return buildReports(lib, cfg, tags);
+}
+
+/** What the reports are made of, cheaply: if it moved while a build was away, the answer is stale. */
+function reportsSignature() {
+  let n = 0;
+  for (const p of LIB.playlists) n += p.tracks?.length ?? 0;
+  let f = 0;
+  for (const k in FB) { const x = FB[k]; f += 1 + (x?.skips ?? 0) + (x?.rejected?.length ?? 0) + (x?.kept?.length ?? 0); }
+  return `${LIB.liked.length}/${n}/${f}`;
+}
+
+/** Rebuild R off the main thread and repaint what watches it. A newer call wins over an older one
+ *  still in flight, and an answer made from a library that has since changed is made again once. */
+async function refreshReports() {
+  const mine = ++REPORTS_APPLY;
+  for (let tries = 0; tries < 2; tries++) {
+    const lib = LIB, sig = reportsSignature();
+    const res = await buildReportsAsync(LIB, CFG, TAGS);
+    if (mine !== REPORTS_APPLY || lib !== LIB) return false;
+    if (sig !== reportsSignature() && tries === 0) continue;
+    R = res; store.set('reports', R);
+    return true;
+  }
+  return false;
+}

@@ -70,7 +70,7 @@ function load({ tags = {}, cache = {}, wikidata = {}, wikidataFails = false, las
     },
     engineLoad: async () => true,
     getListening: async () => ({ weights: new Map() }), byListening: e => e,
-    contributeTags: () => {}, buildReports: () => ({ rebuilt: true }),
+    contributeTags: () => {}, buildReports: () => ({ rebuilt: true }), refreshReports: async () => {},
     toast: m => { s.told = m; }, stage: () => {}, render: () => {}, store: { get() {}, on() {}, set() {}, touch() {} }, $: () => ({ hidden: false }),
     URLSearchParams, URL, setTimeout, console,
   };
