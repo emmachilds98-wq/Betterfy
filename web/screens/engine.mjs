@@ -582,6 +582,7 @@ export function view(c) {
       <button class="b" data-act="scoreTune" ${ENG.valRunning || c.TUNE?.running ? 'disabled' : ''}>Score + Tune</button>
       ${v && !v.error && !ENG.valRunning ? `<button class="b" data-act="copy">Copy results</button>` : ''}
     </div>
+    ${c.autoScoreText ? `<p class="why" id="autoScore" style="margin-top:10px">${esc(c.autoScoreText())}</p>` : ''}
     ${ENG.valRunning && ENG.valStage === 'bridge' ? `<p class="why" style="margin-top:12px" id="bridgeProgress" aria-live="polite">${esc(bridgeProgressText())}</p>
       <p class="why">The first run asks about each artist being scored — a few hundred, a minute or two. Every answer is
         remembered on this device for two months, so later runs only ask about what's new.</p>` : ''}

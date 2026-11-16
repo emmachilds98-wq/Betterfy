@@ -3,7 +3,8 @@
 //
 // Defaults: on (the owner's call, 2026-11-15: the engine files better once it
 // has heard your tracks, so nobody should have to find the switch first), Wi-Fi
-// only, and the scope "what I'm playing + unfiled". Switching it off is saved
+// only, and the scope "what I'm playing + unfiled" on a phone, the whole library
+// on a computer (2026-11-16, below). Switching it off is saved
 // and always wins. Nothing downloads until after the first paint, and only on
 // Wi-Fi unless the listener says otherwise.
 // That scope also takes up to 20 examples from each genre playlist, because
@@ -25,25 +26,48 @@ export const SCOPES = Object.freeze({
 // "it should listen by default".
 export const DEFAULT_AUDIO_SETTINGS = Object.freeze({ on: true, wifiOnly: true, scope: 'playing+unfiled' });
 
-/** Settings from a localStorage-like store, each field checked; anything odd falls back to its default. */
-export function readAudioSettings(ls) {
+// On a computer the default scope is the whole library (docs/NEXT-WORKPLAN.md
+// package 6): sound placement and mood chips get better with every heard member
+// of a playlist, and a laptop on Wi-Fi can afford it. A phone keeps the narrow
+// scope. `computer` is the page's own test (a fine pointer and no touch screen,
+// the one Listening already uses for Wi-Fi); the queue still puts played and
+// unfiled tracks first (core/audio/queue.mjs), so nothing useful waits longer.
+/** The default settings for this device. */
+export const defaultAudioSettings = ({ computer = false } = {}) =>
+  computer ? { ...DEFAULT_AUDIO_SETTINGS, scope: 'all' } : { ...DEFAULT_AUDIO_SETTINGS };
+
+/**
+ * Settings from a localStorage-like store, each field checked; anything odd falls back to its default.
+ * A saved scope counts when the listener picked it (`scopeChosen`), or is the whole library (which
+ * was never a default before 2026-11-16, so it was picked). Older builds saved the narrow scope with
+ * any other change, so a narrow one without `scopeChosen` reads as this device's default.
+ */
+export function readAudioSettings(ls, { computer = false } = {}) {
   let raw = null;
   try { raw = JSON.parse(ls?.getItem?.(AUDIO_SETTINGS_KEY) ?? 'null'); } catch { raw = null; }
-  const d = DEFAULT_AUDIO_SETTINGS;
-  if (!raw || typeof raw !== 'object') return { ...d };
+  const d = defaultAudioSettings({ computer });
+  if (!raw || typeof raw !== 'object') return d;
+  const scopeSaved = Object.hasOwn(SCOPES, raw.scope) && (raw.scopeChosen === true || raw.scope === 'all');
   return {
     on: raw.on === true ? true : raw.on === false && raw.offChosen === true ? false : d.on,
     wifiOnly: typeof raw.wifiOnly === 'boolean' ? raw.wifiOnly : d.wifiOnly,
-    scope: Object.hasOwn(SCOPES, raw.scope) ? raw.scope : d.scope,
+    scope: scopeSaved ? raw.scope : d.scope,
   };
 }
 
 /** Merge a change in and save it. Returns the saved settings. */
-export function writeAudioSettings(ls, change) {
-  const next = { ...readAudioSettings(ls), ...change };
+export function writeAudioSettings(ls, change, { computer = false } = {}) {
+  let was = null;
+  try { was = JSON.parse(ls?.getItem?.(AUDIO_SETTINGS_KEY) ?? 'null'); } catch { was = null; }
+  const next = { ...readAudioSettings(ls, { computer }), ...change };
+  // A scope set here is the listener's pick, and so is one picked before.
+  const scopeChosen = Object.hasOwn(change ?? {}, 'scope') || was?.scopeChosen === true;
   // A write that leaves it off is the listener's own choice: it came from the switch, or kept one.
-  const clean = readAudioSettings({ getItem: () => JSON.stringify(next.on === false ? { ...next, offChosen: true } : next) });
-  const stored = clean.on === false ? { ...clean, offChosen: true } : clean;
+  const clean = readAudioSettings({ getItem: () => JSON.stringify({ ...next, scopeChosen, ...(next.on === false ? { offChosen: true } : {}) }) },
+                                  { computer });
+  // A scope nobody picked is not saved, so it follows the device it is read on.
+  const { scope, ...rest } = clean;
+  const stored = { ...rest, ...(scopeChosen ? { scope, scopeChosen: true } : {}), ...(clean.on === false ? { offChosen: true } : {}) };
   try { ls?.setItem?.(AUDIO_SETTINGS_KEY, JSON.stringify(stored)); } catch { /* memory only */ }
   return clean;
 }

@@ -13,14 +13,14 @@ const DEFAULTS = { lib: { playlists: 40, liked: 1200 }, listening: { artists: 80
 
 test('with the defaults every part that improves picks reads as on, and Discogs as an optional extra', () => {
   const rows = helperRows(DEFAULTS);
-  assert.deepEqual(rows.map(r => r.id), ['spotify', 'listening-history', 'shared', 'lastfm', 'wikidata', 'deezer', 'listenbrainz', 'sound', 'deep', 'engine', 'discogs']);
+  assert.deepEqual(rows.map(r => r.id), ['spotify', 'listening-history', 'shared', 'lastfm', 'wikidata', 'deezer', 'listenbrainz', 'sound', 'deep', 'engine', 'autoscore', 'discogs']);
   for (const r of rows.filter(x => x.id !== 'discogs')) assert.equal(r.on, true, `${r.id} is on`);
   assert.equal(rows.find(r => r.id === 'lastfm').status, 'On · built-in key');
   assert.match(rows.find(r => r.id === 'sound').did, /412 tracks heard/);
   assert.match(rows.find(r => r.id === 'deezer').did, /knows 61%/);
   const discogs = rows.find(r => r.id === 'discogs');
   assert.equal(discogs.status, 'Optional');
-  assert.equal(helperSummary(rows), '10 of 10 on', 'an optional extra that is off does not count against');
+  assert.equal(helperSummary(rows), '11 of 11 on', 'an optional extra that is off does not count against');
 });
 
 test('what is off or stuck says so, in words, and never shows a raw address', () => {
@@ -33,17 +33,17 @@ test('what is off or stuck says so, in words, and never shows a raw address', ()
   assert.equal(by.sound.status, 'On · paused');
   assert.match(by.sound.did, /^Paused: couldn’t load the model/);
   assert.equal(by.deep.on, false);
-  assert.equal(helperSummary(rows), '6 of 10 on', 'paused listening is still on');
+  assert.equal(helperSummary(rows), '7 of 11 on', 'paused listening is still on');
   // Nothing known yet: still a full list, nothing invented.
-  assert.equal(helperRows({}).length, 11);
+  assert.equal(helperRows({}).length, 12);
   assert.equal(helperRows({}).find(r => r.id === 'spotify').status, 'Not read yet');
 });
 
 test('the live check adds one line per source and a count of what is not answering', () => {
   const rows = helperRows(DEFAULTS);
   const checks = { spotify: { ok: true, ms: 120 }, lastfm: { ok: false, err: 'Invalid API key' }, deezer: { running: true }, discogs: { skip: 'off, not asked' } };
-  assert.equal(helperSummary(rows, checks), '10 of 10 on · 1 not answering');
-  assert.equal(helperSummary(rows, { spotify: { ok: true } }), '10 of 10 on · all answering');
+  assert.equal(helperSummary(rows, checks), '11 of 11 on · 1 not answering');
+  assert.equal(helperSummary(rows, { spotify: { ok: true } }), '11 of 11 on · all answering');
   const html = helpersHTML(rows, { checks, at: 1, esc });
   assert.match(html, /data-helper="spotify"[^]*?<span class="hcheck good">answering · 120 ms<\/span>/);
   assert.match(html, /class="hrow2 h-ok h-fail" data-helper="lastfm"[^]*?not answering: Invalid API key/);

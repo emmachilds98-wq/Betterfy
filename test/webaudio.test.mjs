@@ -145,6 +145,47 @@ test('an off saved by an older build (off was the default then) reads as on', ()
   assert.deepEqual(readAudioSettings(ls), { on: true, wifiOnly: true, scope: 'all' });
 });
 
+test('on a computer the default is the whole library; a phone stays narrow; a pick still wins', () => {
+  const pc = { computer: true };
+  assert.deepEqual(readAudioSettings(memLS(), pc), { on: true, wifiOnly: true, scope: 'all' });
+  assert.deepEqual(readAudioSettings(memLS()), DEFAULT_AUDIO_SETTINGS, 'phone');
+  // An older build saved the narrow default along with any other change: not a pick.
+  const ls = memLS();
+  ls.setItem(AUDIO_SETTINGS_KEY, JSON.stringify({ on: true, wifiOnly: true, scope: 'playing+unfiled' }));
+  assert.equal(readAudioSettings(ls, pc).scope, 'all');
+  // Ticking Wi-Fi only does not pin the scope either.
+  writeAudioSettings(ls, { wifiOnly: false }, pc);
+  assert.equal(readAudioSettings(ls, pc).scope, 'all');
+  assert.equal(readAudioSettings(ls).scope, 'playing+unfiled', 'the same save on a phone is still narrow');
+  // Picking the narrow scope on a computer is kept, through later changes too.
+  writeAudioSettings(ls, { scope: 'playing+unfiled' }, pc);
+  assert.equal(readAudioSettings(ls, pc).scope, 'playing+unfiled');
+  writeAudioSettings(ls, { wifiOnly: true }, pc);
+  assert.equal(readAudioSettings(ls, pc).scope, 'playing+unfiled');
+  assert.equal(JSON.parse(ls.getItem(AUDIO_SETTINGS_KEY)).scopeChosen, true);
+  // The whole library, picked on a phone, is kept there.
+  const ph = memLS();
+  writeAudioSettings(ph, { scope: 'all' });
+  assert.equal(readAudioSettings(ph).scope, 'all');
+});
+
+test('the page reads a computer as whole-library before audio.js loads, and a picked narrow scope wins', () => {
+  const tpl = assembledTemplate();
+  const i = tpl.indexOf('function audioSettings()'), j = tpl.indexOf('const audioModelUrl');
+  const ls = memLS();
+  const sb = { LS: ls, globalThis: {}, navigator: { maxTouchPoints: 0 }, matchMedia: () => ({ matches: true }) };
+  vm.createContext(sb);
+  vm.runInContext(tpl.slice(i, j) + '\nthis.audioSettings = audioSettings; this.audioSettingsWrite = audioSettingsWrite;', sb);
+  assert.equal(sb.audioSettings().scope, 'all');
+  sb.audioSettingsWrite({ wifiOnly: false });
+  assert.equal(sb.audioSettings().scope, 'all', 'another change does not pin the scope');
+  sb.audioSettingsWrite({ scope: 'playing+unfiled' });
+  assert.equal(sb.audioSettings().scope, 'playing+unfiled');
+  sb.navigator.maxTouchPoints = 5;
+  ls.setItem('bf_audio', 'null');
+  assert.equal(sb.audioSettings().scope, 'playing+unfiled', 'a touch screen is not a computer');
+});
+
 test('settings changes merge and persist', () => {
   const ls = memLS();
   assert.deepEqual(writeAudioSettings(ls, { on: true }), { on: true, wifiOnly: true, scope: 'playing+unfiled' });

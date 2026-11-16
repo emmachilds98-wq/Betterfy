@@ -71,6 +71,7 @@ const DATA_KEYS = [
   { where:'idb', key:'engine-blend', group:'Engine', why:'How File blends tag picks with the engine, from your Score run.' },
   { where:'idb', key:'engine-weights', group:'Engine', why:'The engine weights fitted to your library by a Score run.' },
   { where:'idb', key:'engine-tune', group:'Engine', why:'Tuning you saved from Engine › Tune.' },
+  { where:'local', key:'bf_autoscore', group:'Engine', why:'When Score + Tune last ran (by itself or by hand), how many tracks listening had heard then, and whether it finished, so it runs again by itself after listening or in a week.' },
 
   // --- listening to your music ---
   { where:'idb-db', key:'betterfy-audio', stores:['audio_v1'], group:'Listening', why:'What Listening heard: one record per track (a sound fingerprint, tempo, key). Never the audio itself or the preview link.' },
