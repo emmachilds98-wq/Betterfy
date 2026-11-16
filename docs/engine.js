@@ -10416,7 +10416,7 @@ function measureLines(m, pc = x => Math.round(x * 100) + '%') {
     : few('Discover keep rate', m.discover.n, MIN_N.discover));
   return out;
 }
-return { QUEUE_HEAD, HEAD_GAP, MIN_SIDE, MIN_N, TIERS, measureHistory, measureLines };
+return { QUEUE_HEAD, HEAD_GAP, MIN_SIDE, MIN_N, TIERS, isFiling, clean, undoneSet, reversed, measureHistory, measureLines };
 })();
 /* ---- core/validate/tune.mjs ---- */
 __mod["core/validate/tune.mjs"] = (function () {
