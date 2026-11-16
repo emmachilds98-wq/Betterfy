@@ -17,7 +17,7 @@ const audioSoundVM = r => {
 };
 const trackChip = t => { const vm = soundOf(t); return vm ? soundSlot('sndchip', soundChip(vm)) : ''; };
 const trackStrip = t => { const vm = soundOf(t); return vm ? soundSlot('sndstrip', sectionStrip(vm)) : ''; };
-const pickBand = sg => sg?.band ? bandChip(sg.band) : '';
+const pickBand = sg => sg?.band ? bandChip(typeof backedBand === 'function' ? backedBand(sg.band, sg) : sg.band) : '';
 const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
 
 /* Sound-first filing: the File screen's picks for one track. Heard, the
@@ -41,7 +41,11 @@ function filePicks(t) {
 }
 /* The band the File card shows for its leading pick: the Engine's calibrated
  * verdict on this track when it has judged it, else the pick's own band. */
-const fileBand = (t, picks) => typeof cardBand === 'function' && typeof engineDecisionOf === 'function' ? cardBand(picks, engineDecisionOf(t?.id)) : picks?.[0]?.band ?? null;
+const fileBand = (t, picks) => {
+  const band = typeof cardBand === 'function' && typeof engineDecisionOf === 'function' ? cardBand(picks, engineDecisionOf(t?.id)) : picks?.[0]?.band ?? null;
+  // Sure only when sound or filing history backs the leading pick (core/review/filequeue.mjs).
+  return typeof backedBand === 'function' ? backedBand(band, picks?.[0]) : band;
+};
 /* The cards that are sure, with where each goes: "File the N sure ones". */
 const fileSure = () => typeof sureOnes !== 'function' ? [] : sureOnes(R.backlog, { picksOf: filePicks, bandOf: (t, picks) => fileBand(t, picks) });
 /* The sound ID's most specific genre for a track, only when it is a sure reading

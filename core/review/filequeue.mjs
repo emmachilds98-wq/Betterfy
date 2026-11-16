@@ -66,6 +66,24 @@ export function orderBacklog(rows, ctx = {}) {
 }
 
 /**
+ * Is this pick backed by more than tags? Only sound (the track was heard) or
+ * filing history (this artist already sits in that playlist) can earn the green
+ * "Sure" look: a tags-only pick is a choice, never a commitment
+ * (docs/review/USER-REVIEW.md item 2).
+ */
+export function pickBacked(sg) {
+  if (!sg || typeof sg !== 'object') return false;
+  if (sg.via === 'history' || sg.via === 'sound' || sg.filed === true) return true;
+  const ev = sg.evidence;
+  return !!ev && ((Number(ev.sound) || 0) > 0 || (Number(ev.history) || 0) > 0 || (Number(ev.learned) || 0) > 0);
+}
+
+/** The band to show for a pick: a HIGH ("Sure") band the pick can't back drops to LIKELY. */
+export function backedBand(band, sg) {
+  return (band === 'HIGH' || band === 'high') && !pickBacked(sg) ? (band === 'HIGH' ? 'LIKELY' : 'medium') : band ?? null;
+}
+
+/**
  * The cards that are sure, each with where it goes: a calibrated HIGH band and
  * a leading pick, not skipped, not rejected for that playlist. In queue order.
  * `picksOf(row)` and `bandOf(row, picks)` come from the page.

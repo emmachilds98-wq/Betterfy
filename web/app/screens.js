@@ -95,10 +95,10 @@ SCREEN_CTX.new = () => ({
 // --- home/inbox ---
 Object.assign(SCREEN_CTX, {
   // The File tab: the status line and Up next around the `inbox` module's deck.
-  home: () => ({ S, R, LIB, esc, onbHTML, onbColdOffers, gapsCreate, COLD, toast, $, go, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks,
+  home: () => ({ S, R, LIB, esc, onbHTML, onbColdOffers, gapsCreate, COLD, toast, $, go, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks, pickBacked,
                  render, openUnderHood, morphArt, deck: screenView('inbox') }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
-                  tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand,
+                  tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand, pickBacked,
                   addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
                   fileBand, fileSure, fileOrderKick, teachHTML, teachAct,
                   rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
