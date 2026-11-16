@@ -189,11 +189,161 @@ export function sheetHTML(c, id) {
       <p class="hint"><b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.
         Making the new playlist copies the second group; nothing leaves this one.</p>
       ${made ? '<span class="tag ok">Made</span>' : `<button class="b sm" data-act="lsplit" data-lsplit="${esc(id)}">Make “${esc(splitName)}”</button>`}</section>` : ''}
+    ${fillHTML(c, id, pl)}
     ${pl.tracks.length >= 8 ? `<section class="pls-sec"><h3>Shuffle</h3>
       <p class="hint">Spaces out the same artist, then writes it as a playlist to play with Spotify’s shuffle off.</p>
       <div class="rowbtns"><button class="b p" data-act="plshuffle" data-pl="${esc(id)}">Shuffle</button>${
         canMix ? `<button class="b" data-act="pldj" data-pl="${esc(id)}">DJ order</button>` : ''}</div></section>` : ''}
     </div>`;
+}
+
+/* ---------- Fill this playlist (BUILD-6 F2) ----------
+ * Liked songs you haven't filed anywhere, ranked by fit to this playlist with the
+ * engine's own signals (core/recommend/fill.mjs: artist graph, tags, sound, record
+ * shape). Shown only once the account's own measure clears the bar: hide a fifth of
+ * each playlist, see whether its hidden tracks come back in the top 10. The Score
+ * run (Settings › Engine) and the sheet's "Check" button both write that measure to
+ * `bf_fill`; `bf_fill_force` = '1' is the owner's flag to show it anyway. */
+export const FILL_BAR = 0.4;          // mirrors core/recommend/fill.mjs FILL.bar (test/fill-ui.test.mjs holds them equal)
+export const FILL_SHOW = 10;
+const FILL_MIN = 10;
+const FILL = new Map();               // playlist id → { status, rows, err, for }
+let FILL_MODEL = null;                // { key, model }, one per library state
+let FILL_CHECK = null;                // null | 'working' | error text
+
+function readJSON(LS, k) { try { return JSON.parse(LS.getItem(k) || 'null'); } catch { return null; } }
+
+/** Whether the section offers suggestions: from the stored measure, or the flag. */
+export function fillGateOf(measure, force = false) {
+  const r = measure?.recall;
+  if (force) return { on: true, measured: Number.isFinite(r), recall: Number.isFinite(r) ? r : null, forced: true };
+  if (!Number.isFinite(r)) return { on: false, measured: false, recall: null };
+  return { on: r >= FILL_BAR, measured: true, recall: r };
+}
+
+/** The liked tracks waiting to be filed, as Spotify track objects (File's queue, in its order). */
+function fillCandidates(c) {
+  const ids = (c.R?.backlog ?? []).map(b => b.id);
+  if (!ids.length) return [];
+  const byId = new Map((c.LIB?.liked ?? []).filter(t => t?.id).map(t => [t.id, t]));
+  return ids.map(id => byId.get(id)).filter(Boolean);
+}
+
+const pct = x => (x == null ? '—' : Math.round(x * 100) + '%');
+
+export function fillHTML(c, id, pl) {
+  const { esc, LS } = c;
+  if ((pl.tracks?.length ?? 0) < FILL_MIN || c.isMirrorPlaylist?.(pl)) return '';
+  const cands = fillCandidates(c);
+  if (!cands.length) return '';
+  const measure = readJSON(LS, 'bf_fill');
+  const gate = fillGateOf(measure, LS.getItem('bf_fill_force') === '1');
+  const head = '<section class="pls-sec plfill" aria-labelledby="plfill-h"><h3 id="plfill-h">Fill this playlist</h3>';
+  if (!gate.on && !gate.measured) {
+    return `${head}<p class="hint">Liked songs you haven’t filed that fit here. It’s checked on your own playlists first:
+      hide a fifth of each one and see whether it finds those tracks again.</p>
+      ${typeof FILL_CHECK === 'string' && FILL_CHECK !== 'working' ? `<p class="hint">That didn’t work: ${esc(FILL_CHECK)}</p>` : ''}
+      <button class="b sm" data-act="fillcheck" ${FILL_CHECK === 'working' ? 'disabled' : ''}>${FILL_CHECK === 'working' ? 'Checking…' : 'Check it on my library'}</button></section>`;
+  }
+  if (!gate.on) {
+    return `${head}<p class="hint">Off for your library: it found <b class="mono">${pct(gate.recall)}</b> of the hidden tracks in
+      its top ${FILL_SHOW} (it needs ${pct(FILL_BAR)}; picking at random finds ${pct(measure?.random)}).</p></section>`;
+  }
+  const st = FILL.get(id);
+  const key = fillKey(c);
+  if (!st || st.for !== key || st.status === 'idle') { fillKick(c, id, key); return `${head}<p class="hint">Finding tracks that fit…</p></section>`; }
+  if (st.status === 'working') return `${head}<p class="hint">Finding tracks that fit…</p></section>`;
+  if (st.status === 'error') return `${head}<p class="hint">Couldn’t rank tracks: ${esc(st.err)}</p>
+    <button class="b sm" data-act="fillretry" data-pl="${esc(id)}">Try again</button></section>`;
+  const rows = st.rows;
+  const note = gate.forced && gate.recall != null && gate.recall < FILL_BAR ? ` Shown by the flag; it measured ${pct(gate.recall)} on your library.`
+    : gate.recall != null ? ` On your library it finds ${pct(gate.recall)} of hidden tracks in its top ${FILL_SHOW}.` : '';
+  if (!rows.length) return `${head}<p class="hint">Nothing waiting to be filed fits here.${esc(note)}</p></section>`;
+  return `${head}<p class="hint">Liked songs you haven’t filed, best fit first.${esc(note)}</p>
+    <ul class="fillrows">${rows.map(r => `<li class="fillrow"><span class="plmain"><span class="ttl">${esc(r.title)}</span>
+      <span class="plmeta">${esc(r.artist)} · <span class="tag">${esc(r.why)}</span></span></span>
+      <button class="b sm" data-act="filladd" data-pl="${esc(id)}" data-tid="${esc(r.id)}" aria-label="Add ${esc(r.title)} to ${esc(pl.name)}">Add</button></li>`).join('')}</ul>
+    ${rows.length > 1 ? `<div class="rowbtns"><button class="b sm p" data-act="fillall" data-pl="${esc(id)}">Add all ${rows.length} shown</button></div>` : ''}
+    </section>`;
+}
+
+/** What a ranking was made from: a new sync, a tag fetch or a filing makes it stale. */
+function fillKey(c) {
+  const lib = c.LIB;
+  let n = 0;
+  for (const p of lib?.playlists ?? []) n += p.tracks?.length ?? 0;
+  return `${lib?.captured_at ?? ''}|${lib?.playlists?.length ?? 0}|${n}|${(c.R?.backlog ?? []).length}|${Object.keys(c.TAGS ?? {}).length}`;
+}
+
+function fillKick(c, id, key) {
+  FILL.set(id, { status: 'working', rows: [], for: key });
+  // Not inside the paint that asked: the ranking runs next, then the sheet repaints.
+  setTimeout(() => fillRun(c, id, key).catch(err => { FILL.set(id, { status: 'error', err: err?.message ?? String(err), rows: [], for: key }); c.render(); }), 0);
+}
+
+async function fillRun(c, id, key) {
+  await c.engineLoad();
+  const F = c.BetterfyFill;
+  if (!F) throw new Error('the engine did not load');
+  const audio = c.engineAudio ? await c.engineAudio() : null;
+  const libKey = key.split('|').slice(0, 3).join('|') + '|' + Object.keys(c.TAGS ?? {}).length + '|' + (audio?.length ?? 0);
+  if (FILL_MODEL?.key !== libKey) FILL_MODEL = { key: libKey, model: F.fillModel(c.LIB, { tags: c.TAGS, audio, isMirror: c.isMirrorPlaylist }) };
+  const cands = fillCandidates(c);
+  const byId = new Map(cands.map(t => [t.id, t]));
+  const r = F.fillRank(FILL_MODEL.model, id, cands, { limit: FILL_SHOW });
+  const rows = r.results.map(x => { const t = byId.get(x.id);
+    return { id: x.id, title: t?.name ?? x.id, artist: (t?.artists ?? []).map(a => a.name).filter(Boolean).join(', '), why: x.why, score: x.score }; });
+  FILL.set(id, { status: 'ready', rows, for: key, used: r.used });
+  c.render();
+}
+
+/** Add tracks to the playlist: one write, one History entry (its own group), one undo. */
+async function fillAdd(c, id, ids, el) {
+  const { CFG, R, S } = c;
+  if (!ids.length) return;
+  if (el) el.disabled = true;
+  const name = CFG[id]?.name ?? c.LIB.playlists.find(p => p.id === id)?.name ?? id;
+  try {
+    await c.addTracks(id, ids);
+    const at = await c.logAction({ op: 'add', playlistId: id, playlistName: name, trackIds: ids,
+                                   reason: 'fill this playlist', group: c.newGroup() });
+    // Filed now: off File's queue (keeping the card on screen on screen) and off this list.
+    const gone = new Set(ids), keep = R.backlog?.[S.inboxAt ?? 0]?.id, removed = [];
+    for (let k = (R.backlog?.length ?? 0) - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) removed.unshift(R.backlog.splice(k, 1)[0]);
+    if (R.backlog && S) S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+    const st = FILL.get(id);
+    const one = st?.rows?.find(r => r.id === ids[0])?.title ?? removed[0]?.title;
+    if (st?.rows) { st.rows = st.rows.filter(r => !gone.has(r.id)); st.for = fillKey(c); }
+    if (ids.length > 1) FILL.delete(id);   // "Add all": rank what is left
+    const title = ids.length === 1 ? (one ? `“${one}”` : '1 track') : `${ids.length} tracks`;
+    c.toast(`Added ${title} to ${name}.`, async () => {
+      await c.undoAction(at);
+      // Back in the queue, and the ranking redone with them.
+      if (R.backlog) for (const b of removed) if (!R.backlog.some(x => x.id === b.id)) R.backlog.push(b);
+      FILL.delete(id);
+      c.render();
+    });
+    c.render();
+  } catch (err) {
+    if (el) el.disabled = false;
+    c.toast('Failed: ' + err.message);
+  }
+}
+
+/** The measure, run here when no Score run has made one yet. */
+async function fillCheck(c) {
+  FILL_CHECK = 'working';
+  c.render();
+  try {
+    await c.engineLoad();
+    await new Promise(r => setTimeout(r, 30));   // let "Checking…" paint before the main thread is busy
+    const audio = c.engineAudio ? await c.engineAudio() : null;
+    const m = c.BetterfyFill.fillRecall(c.LIB, { tags: c.TAGS, audio, isMirror: c.isMirrorPlaylist });
+    if (m.recall == null) throw new Error('no playlist has 10 or more tracks to check it on');
+    c.LS.setItem('bf_fill', JSON.stringify({ ...m, at: Date.now() }));
+    FILL_CHECK = null;
+  } catch (err) { FILL_CHECK = err?.message ?? String(err); }
+  c.render();
 }
 
 export function view(c) {
@@ -293,6 +443,14 @@ export const actions = {
       c.COLD.newGenre = c.COLD.newGenre.filter(x => (x.ids ?? x.tracks?.map(t => t.id)) !== o.ids); c.render(); }
     catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
   },
+
+  /** Fill this playlist: add one suggestion. */
+  filladd(c, el) { return fillAdd(c, el.dataset.pl, [el.dataset.tid], el); },
+  /** Every suggestion shown, as one History entry and one undo. */
+  fillall(c, el) { return fillAdd(c, el.dataset.pl, (FILL.get(el.dataset.pl)?.rows ?? []).map(r => r.id), el); },
+  /** Run the measure that decides whether Fill shows. */
+  fillcheck(c) { return fillCheck(c); },
+  fillretry(c, el) { FILL.delete(el.dataset.pl); c.render(); },
 
   /** Axis edit: per-viewer, persisted on this device. */
   axis(c, el) { return setAxis(c, el.dataset.ax, el, null); },

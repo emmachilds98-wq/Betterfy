@@ -222,11 +222,24 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
+    fillLine(v.fill, pc),
     ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   if (TUNE?.res && tuneBlock) lines.push('', tuneBlock(TUNE.res));
   return lines.filter(Boolean).join('\n');
+}
+
+/** Fill this playlist's gate (BUILD-6 F2, M4): hidden tracks found again in a playlist's top 10. Counts only. */
+export function fillLine(f, pc) {
+  if (!f || f.recall == null) return null;
+  return `Fill this playlist: recall@10 ${pc(f.recall)} over ${f.playlists} playlists (random ${pc(f.random)}, bar ${pc(f.bar)}) — ${
+    f.pass ? 'shown in Library' : 'off (behind a flag)'}`;
+}
+function fillRow(f, p) {
+  if (!f || f.recall == null) return '';
+  return `<div class="fillscore"><span><b>Fill this playlist</b> — hidden tracks back in the top 10 <span class="sub">· ${f.playlists} playlists, random ${p(f.random)}, needs ${p(f.bar)}${
+    f.pass ? '' : ', so it stays off'}</span></span><b class="mono">${p(f.recall)}</b></div>`;
 }
 
 /** "×4" for a multiplier, "off" for zero. */
@@ -511,6 +524,7 @@ export function view(c) {
       <div><span>…in its top three</span><b class="mono">${p(v.base.top3)}</b></div>` : ''}
       <hr>
       <div><span>Tracks scored, each engine</span><b class="mono">${v.mine.scored.toLocaleString()}</b></div>
+      ${fillRow(v.fill, p)}
       ${v.base?.noAnswer ? `<p>Today's engine had no tags at all for ${v.base.noAnswer.toLocaleString()} of them.
         Counted as misses: a filing tool that returns nothing has not filed anything.</p>` : ''}
       ${!v.base ? `<p>No tag data is loaded, so there is nothing to compare against — the figure above

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-0553">
+<meta name="bf-build" content="2026-11-16-0609">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1382,6 +1382,16 @@ main:focus{outline:none}
   .digest .dg-go{border:0; background:none; padding:0; font:inherit; color:var(--ink); text-align:left; cursor:pointer;
                  text-decoration:underline; text-underline-offset:2px}
   .digest .dg-go:hover{color:var(--accent)}
+/* Fill this playlist (BUILD-6 F2): the suggestions list in the Library detail sheet. */
+  .plfill .fillrows{list-style:none; margin:0; padding:0; background:var(--surface); border:1px solid var(--line);
+          border-radius:var(--r-3); overflow:hidden}
+  .plfill .fillrow{display:flex; align-items:center; gap:12px; padding:10px 12px; min-height:52px; border-bottom:1px solid var(--line)}
+  .plfill .fillrow:last-child{border-bottom:0}
+  .plfill .fillrow .b{flex:none}
+  .plfill .rowbtns{margin-top:10px}
+  .fillscore .sub{font-weight:400}
+  /* An Add's Undo toast must sit above the open sheet it came from (the toast is z 28, the sheet 30). */
+  body:has(#plSheet.open) .toast{z-index:31}
 
   /* ================= iPhone and other narrow screens ================= */
   @media (max-width:820px){
@@ -1653,7 +1663,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-0553</span>
+    <span class="mono">build 2026-11-16-0609</span>
   </p>
 
   <div class="feat">
@@ -1746,7 +1756,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0553</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-0609</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1863,7 +1873,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-0553. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-0609. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5063,7 +5073,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-0553`,
+    `Betterfy engine score — build 2026-11-16-0609`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5081,11 +5091,24 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
+    fillLine(v.fill, pc),
     ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   if (TUNE?.res && tuneBlock) lines.push('', tuneBlock(TUNE.res));
   return lines.filter(Boolean).join('\n');
+}
+
+/** Fill this playlist's gate (BUILD-6 F2, M4): hidden tracks found again in a playlist's top 10. Counts only. */
+function fillLine(f, pc) {
+  if (!f || f.recall == null) return null;
+  return `Fill this playlist: recall@10 ${pc(f.recall)} over ${f.playlists} playlists (random ${pc(f.random)}, bar ${pc(f.bar)}) — ${
+    f.pass ? 'shown in Library' : 'off (behind a flag)'}`;
+}
+function fillRow(f, p) {
+  if (!f || f.recall == null) return '';
+  return `<div class="fillscore"><span><b>Fill this playlist</b> — hidden tracks back in the top 10 <span class="sub">· ${f.playlists} playlists, random ${p(f.random)}, needs ${p(f.bar)}${
+    f.pass ? '' : ', so it stays off'}</span></span><b class="mono">${p(f.recall)}</b></div>`;
 }
 
 /** "×4" for a multiplier, "off" for zero. */
@@ -5370,6 +5393,7 @@ function view(c) {
       <div><span>…in its top three</span><b class="mono">${p(v.base.top3)}</b></div>` : ''}
       <hr>
       <div><span>Tracks scored, each engine</span><b class="mono">${v.mine.scored.toLocaleString()}</b></div>
+      ${fillRow(v.fill, p)}
       ${v.base?.noAnswer ? `<p>Today's engine had no tags at all for ${v.base.noAnswer.toLocaleString()} of them.
         Counted as misses: a filing tool that returns nothing has not filed anything.</p>` : ''}
       ${!v.base ? `<p>No tag data is loaded, so there is nothing to compare against — the figure above
@@ -5526,7 +5550,7 @@ const actions = {
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, audioCard, weakBuckets, summary, blendVerdict, view, tuneCardHtml, actions };
+return { bridgeVerdict, decisionHtml, audioCard, weakBuckets, summary, fillLine, blendVerdict, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -6108,11 +6132,161 @@ function sheetHTML(c, id) {
       <p class="hint"><b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.
         Making the new playlist copies the second group; nothing leaves this one.</p>
       ${made ? '<span class="tag ok">Made</span>' : `<button class="b sm" data-act="lsplit" data-lsplit="${esc(id)}">Make “${esc(splitName)}”</button>`}</section>` : ''}
+    ${fillHTML(c, id, pl)}
     ${pl.tracks.length >= 8 ? `<section class="pls-sec"><h3>Shuffle</h3>
       <p class="hint">Spaces out the same artist, then writes it as a playlist to play with Spotify’s shuffle off.</p>
       <div class="rowbtns"><button class="b p" data-act="plshuffle" data-pl="${esc(id)}">Shuffle</button>${
         canMix ? `<button class="b" data-act="pldj" data-pl="${esc(id)}">DJ order</button>` : ''}</div></section>` : ''}
     </div>`;
+}
+
+/* ---------- Fill this playlist (BUILD-6 F2) ----------
+ * Liked songs you haven't filed anywhere, ranked by fit to this playlist with the
+ * engine's own signals (core/recommend/fill.mjs: artist graph, tags, sound, record
+ * shape). Shown only once the account's own measure clears the bar: hide a fifth of
+ * each playlist, see whether its hidden tracks come back in the top 10. The Score
+ * run (Settings › Engine) and the sheet's "Check" button both write that measure to
+ * `bf_fill`; `bf_fill_force` = '1' is the owner's flag to show it anyway. */
+const FILL_BAR = 0.4;          // mirrors core/recommend/fill.mjs FILL.bar (test/fill-ui.test.mjs holds them equal)
+const FILL_SHOW = 10;
+const FILL_MIN = 10;
+const FILL = new Map();               // playlist id → { status, rows, err, for }
+let FILL_MODEL = null;                // { key, model }, one per library state
+let FILL_CHECK = null;                // null | 'working' | error text
+
+function readJSON(LS, k) { try { return JSON.parse(LS.getItem(k) || 'null'); } catch { return null; } }
+
+/** Whether the section offers suggestions: from the stored measure, or the flag. */
+function fillGateOf(measure, force = false) {
+  const r = measure?.recall;
+  if (force) return { on: true, measured: Number.isFinite(r), recall: Number.isFinite(r) ? r : null, forced: true };
+  if (!Number.isFinite(r)) return { on: false, measured: false, recall: null };
+  return { on: r >= FILL_BAR, measured: true, recall: r };
+}
+
+/** The liked tracks waiting to be filed, as Spotify track objects (File's queue, in its order). */
+function fillCandidates(c) {
+  const ids = (c.R?.backlog ?? []).map(b => b.id);
+  if (!ids.length) return [];
+  const byId = new Map((c.LIB?.liked ?? []).filter(t => t?.id).map(t => [t.id, t]));
+  return ids.map(id => byId.get(id)).filter(Boolean);
+}
+
+const pct = x => (x == null ? '—' : Math.round(x * 100) + '%');
+
+function fillHTML(c, id, pl) {
+  const { esc, LS } = c;
+  if ((pl.tracks?.length ?? 0) < FILL_MIN || c.isMirrorPlaylist?.(pl)) return '';
+  const cands = fillCandidates(c);
+  if (!cands.length) return '';
+  const measure = readJSON(LS, 'bf_fill');
+  const gate = fillGateOf(measure, LS.getItem('bf_fill_force') === '1');
+  const head = '<section class="pls-sec plfill" aria-labelledby="plfill-h"><h3 id="plfill-h">Fill this playlist</h3>';
+  if (!gate.on && !gate.measured) {
+    return `${head}<p class="hint">Liked songs you haven’t filed that fit here. It’s checked on your own playlists first:
+      hide a fifth of each one and see whether it finds those tracks again.</p>
+      ${typeof FILL_CHECK === 'string' && FILL_CHECK !== 'working' ? `<p class="hint">That didn’t work: ${esc(FILL_CHECK)}</p>` : ''}
+      <button class="b sm" data-act="fillcheck" ${FILL_CHECK === 'working' ? 'disabled' : ''}>${FILL_CHECK === 'working' ? 'Checking…' : 'Check it on my library'}</button></section>`;
+  }
+  if (!gate.on) {
+    return `${head}<p class="hint">Off for your library: it found <b class="mono">${pct(gate.recall)}</b> of the hidden tracks in
+      its top ${FILL_SHOW} (it needs ${pct(FILL_BAR)}; picking at random finds ${pct(measure?.random)}).</p></section>`;
+  }
+  const st = FILL.get(id);
+  const key = fillKey(c);
+  if (!st || st.for !== key || st.status === 'idle') { fillKick(c, id, key); return `${head}<p class="hint">Finding tracks that fit…</p></section>`; }
+  if (st.status === 'working') return `${head}<p class="hint">Finding tracks that fit…</p></section>`;
+  if (st.status === 'error') return `${head}<p class="hint">Couldn’t rank tracks: ${esc(st.err)}</p>
+    <button class="b sm" data-act="fillretry" data-pl="${esc(id)}">Try again</button></section>`;
+  const rows = st.rows;
+  const note = gate.forced && gate.recall != null && gate.recall < FILL_BAR ? ` Shown by the flag; it measured ${pct(gate.recall)} on your library.`
+    : gate.recall != null ? ` On your library it finds ${pct(gate.recall)} of hidden tracks in its top ${FILL_SHOW}.` : '';
+  if (!rows.length) return `${head}<p class="hint">Nothing waiting to be filed fits here.${esc(note)}</p></section>`;
+  return `${head}<p class="hint">Liked songs you haven’t filed, best fit first.${esc(note)}</p>
+    <ul class="fillrows">${rows.map(r => `<li class="fillrow"><span class="plmain"><span class="ttl">${esc(r.title)}</span>
+      <span class="plmeta">${esc(r.artist)} · <span class="tag">${esc(r.why)}</span></span></span>
+      <button class="b sm" data-act="filladd" data-pl="${esc(id)}" data-tid="${esc(r.id)}" aria-label="Add ${esc(r.title)} to ${esc(pl.name)}">Add</button></li>`).join('')}</ul>
+    ${rows.length > 1 ? `<div class="rowbtns"><button class="b sm p" data-act="fillall" data-pl="${esc(id)}">Add all ${rows.length} shown</button></div>` : ''}
+    </section>`;
+}
+
+/** What a ranking was made from: a new sync, a tag fetch or a filing makes it stale. */
+function fillKey(c) {
+  const lib = c.LIB;
+  let n = 0;
+  for (const p of lib?.playlists ?? []) n += p.tracks?.length ?? 0;
+  return `${lib?.captured_at ?? ''}|${lib?.playlists?.length ?? 0}|${n}|${(c.R?.backlog ?? []).length}|${Object.keys(c.TAGS ?? {}).length}`;
+}
+
+function fillKick(c, id, key) {
+  FILL.set(id, { status: 'working', rows: [], for: key });
+  // Not inside the paint that asked: the ranking runs next, then the sheet repaints.
+  setTimeout(() => fillRun(c, id, key).catch(err => { FILL.set(id, { status: 'error', err: err?.message ?? String(err), rows: [], for: key }); c.render(); }), 0);
+}
+
+async function fillRun(c, id, key) {
+  await c.engineLoad();
+  const F = c.BetterfyFill;
+  if (!F) throw new Error('the engine did not load');
+  const audio = c.engineAudio ? await c.engineAudio() : null;
+  const libKey = key.split('|').slice(0, 3).join('|') + '|' + Object.keys(c.TAGS ?? {}).length + '|' + (audio?.length ?? 0);
+  if (FILL_MODEL?.key !== libKey) FILL_MODEL = { key: libKey, model: F.fillModel(c.LIB, { tags: c.TAGS, audio, isMirror: c.isMirrorPlaylist }) };
+  const cands = fillCandidates(c);
+  const byId = new Map(cands.map(t => [t.id, t]));
+  const r = F.fillRank(FILL_MODEL.model, id, cands, { limit: FILL_SHOW });
+  const rows = r.results.map(x => { const t = byId.get(x.id);
+    return { id: x.id, title: t?.name ?? x.id, artist: (t?.artists ?? []).map(a => a.name).filter(Boolean).join(', '), why: x.why, score: x.score }; });
+  FILL.set(id, { status: 'ready', rows, for: key, used: r.used });
+  c.render();
+}
+
+/** Add tracks to the playlist: one write, one History entry (its own group), one undo. */
+async function fillAdd(c, id, ids, el) {
+  const { CFG, R, S } = c;
+  if (!ids.length) return;
+  if (el) el.disabled = true;
+  const name = CFG[id]?.name ?? c.LIB.playlists.find(p => p.id === id)?.name ?? id;
+  try {
+    await c.addTracks(id, ids);
+    const at = await c.logAction({ op: 'add', playlistId: id, playlistName: name, trackIds: ids,
+                                   reason: 'fill this playlist', group: c.newGroup() });
+    // Filed now: off File's queue (keeping the card on screen on screen) and off this list.
+    const gone = new Set(ids), keep = R.backlog?.[S.inboxAt ?? 0]?.id, removed = [];
+    for (let k = (R.backlog?.length ?? 0) - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) removed.unshift(R.backlog.splice(k, 1)[0]);
+    if (R.backlog && S) S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
+    const st = FILL.get(id);
+    const one = st?.rows?.find(r => r.id === ids[0])?.title ?? removed[0]?.title;
+    if (st?.rows) { st.rows = st.rows.filter(r => !gone.has(r.id)); st.for = fillKey(c); }
+    if (ids.length > 1) FILL.delete(id);   // "Add all": rank what is left
+    const title = ids.length === 1 ? (one ? `“${one}”` : '1 track') : `${ids.length} tracks`;
+    c.toast(`Added ${title} to ${name}.`, async () => {
+      await c.undoAction(at);
+      // Back in the queue, and the ranking redone with them.
+      if (R.backlog) for (const b of removed) if (!R.backlog.some(x => x.id === b.id)) R.backlog.push(b);
+      FILL.delete(id);
+      c.render();
+    });
+    c.render();
+  } catch (err) {
+    if (el) el.disabled = false;
+    c.toast('Failed: ' + err.message);
+  }
+}
+
+/** The measure, run here when no Score run has made one yet. */
+async function fillCheck(c) {
+  FILL_CHECK = 'working';
+  c.render();
+  try {
+    await c.engineLoad();
+    await new Promise(r => setTimeout(r, 30));   // let "Checking…" paint before the main thread is busy
+    const audio = c.engineAudio ? await c.engineAudio() : null;
+    const m = c.BetterfyFill.fillRecall(c.LIB, { tags: c.TAGS, audio, isMirror: c.isMirrorPlaylist });
+    if (m.recall == null) throw new Error('no playlist has 10 or more tracks to check it on');
+    c.LS.setItem('bf_fill', JSON.stringify({ ...m, at: Date.now() }));
+    FILL_CHECK = null;
+  } catch (err) { FILL_CHECK = err?.message ?? String(err); }
+  c.render();
 }
 
 function view(c) {
@@ -6213,6 +6387,14 @@ const actions = {
     catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
   },
 
+  /** Fill this playlist: add one suggestion. */
+  filladd(c, el) { return fillAdd(c, el.dataset.pl, [el.dataset.tid], el); },
+  /** Every suggestion shown, as one History entry and one undo. */
+  fillall(c, el) { return fillAdd(c, el.dataset.pl, (FILL.get(el.dataset.pl)?.rows ?? []).map(r => r.id), el); },
+  /** Run the measure that decides whether Fill shows. */
+  fillcheck(c) { return fillCheck(c); },
+  fillretry(c, el) { FILL.delete(el.dataset.pl); c.render(); },
+
   /** Axis edit: per-viewer, persisted on this device. */
   axis(c, el) { return setAxis(c, el.dataset.ax, el, null); },
   /** Receives-suggestions tick. */
@@ -6254,7 +6436,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, sheetHTML, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, sheetHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -7213,7 +7395,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-0553';
+const BUILD = '2026-11-16-0609';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -7551,7 +7733,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-0553', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-0609', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -8307,7 +8489,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-0553');
+    const w = new Worker('reports-worker.js?v=2026-11-16-0609');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11199,7 +11381,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-0553';
+    s.src = 'engine.js?v=2026-11-16-0609';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -11221,7 +11403,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-0553');
+    const w = new Worker('engine-worker.js?v=2026-11-16-0609');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -11650,8 +11832,12 @@ const engineValidate = guard(async () => {
       let identify = null;
       try { identify = audio ? BetterfyIdentify.identifyAccuracyFor(LIB, audio, { targets: engineTargets(), isMirror: isMirrorPlaylist }) : null; }
       catch { identify = null; }
-      ENG.val = { mine, base, blend, identify, weights, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      let fill = null;
+      try { fill = BetterfyFill.fillRecall(LIB, { tags, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist }); } catch { fill = null; }
+      ENG.val = { mine, base, blend, identify, weights, fill, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
+    // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).
+    try { if (ENG.val.fill?.recall != null) LS.setItem('bf_fill', JSON.stringify({ ...ENG.val.fill, at: Date.now() })); } catch { /* shown next run */ }
     // The fitted weights first: calibration is refitted on the engine they
     // make, and the comparison above is redone with them.
     await weightsRemember(ENG.val);
@@ -11765,7 +11951,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-0553';
+    s.src = 'audio.js?v=2026-11-16-0609';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -11801,7 +11987,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0553', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-0609', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -12535,7 +12721,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0553', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-0609', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -12861,6 +13047,10 @@ SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate,
   twinPairs: () => ENG?.pairs ?? null,
+  // Fill this playlist (BUILD-6 F2): ranked by core/recommend/fill.mjs in the lazy engine, written through the History log.
+  TAGS, addTracks, logAction, undoAction, newGroup, engineLoad,
+  engineAudio: () => (typeof engineAudio === 'function' ? engineAudio() : null),
+  get BetterfyFill() { return globalThis.BetterfyFill; },
   coldKick: needCold => coldKick(needCold),
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
