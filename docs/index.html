@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-16-1103">
+<meta name="bf-build" content="2026-11-16-1245">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1421,6 +1421,14 @@ main:focus{outline:none}
   .yourdata label.b{display:inline-flex; align-items:center; justify-content:center; font-size:13.5px; font-weight:600; border:1px solid var(--line-2);
        background:var(--surface); color:var(--ink); border-radius:var(--r); padding:9px 15px; min-height:40px}
   .yourdata label.b:hover{border-color:var(--ink-3)}
+  /* ---------- offline decision queue (BUILD-6 F6; app/offline.js offlineShow) ----------
+     "N decisions waiting to sync": a small pill above the bottom edge, drawn on
+     its own outside every screen, shown only while the queue holds something. */
+  .syncwait{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(76px + env(safe-area-inset-bottom, 0px)); z-index:40;
+       max-width:calc(100vw - 32px); padding:6px 12px; border-radius:999px; border:1px solid var(--line-2);
+       background:var(--surface); color:var(--ink-2); font-size:12.5px; line-height:1.3; text-align:center;
+       box-shadow:0 2px 10px rgba(0,0,0,.18); pointer-events:none}
+  .syncwait[hidden]{display:none}
 
   /* ================= iPhone and other narrow screens ================= */
   @media (max-width:820px){
@@ -1692,7 +1700,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-16-1103</span>
+    <span class="mono">build 2026-11-16-1245</span>
   </p>
 
   <div class="feat">
@@ -1785,7 +1793,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1103</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-16-1245</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -1902,7 +1910,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-16-1103. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-16-1245. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5102,7 +5110,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-16-1103`,
+    `Betterfy engine score — build 2026-11-16-1245`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7492,7 +7500,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-16-1103';
+const BUILD = '2026-11-16-1245';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -7830,7 +7838,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-16-1103', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-16-1245', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -8586,7 +8594,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-16-1103');
+    const w = new Worker('reports-worker.js?v=2026-11-16-1245');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -8889,6 +8897,214 @@ async function libraryCall(method, ids) {
   catch (e) { if (!/^40[34]/.test(e.message)) throw e; return await sp('/me/tracks?ids=' + ids.join(','), { method }); }
 }
 
+/* ---------- offline: the cached shell and the decision queue (BUILD-6 F6) ----------
+ * Two things, both for a listener on a train:
+ *
+ * 1. The service worker (web/sw.js, built to docs/sw.js) keeps the page's shell
+ *    so a reload with no signal opens the app, not a browser error. It is
+ *    registered here, and a new one found waiting is offered through the
+ *    existing update bar (version.js's checkForUpdate), never forced.
+ *
+ * 2. Decisions made with no connection (File's filings and unlikes, Tidy's
+ *    removals and moves) are kept in IndexedDB instead of failing, and applied
+ *    once each when the page is next open and online. Not Background Sync: iOS
+ *    Safari and Firefox have none, so it could not be promised to everyone.
+ *
+ * How the queue sits on the existing write path, without touching it: the
+ * writes in actionlog.js (addTracks, plDelete, libraryCall) are wrapped. With
+ * no connection a write is queued and returns as if it had gone through, so the
+ * screen carries on exactly as it does online and its History entry is written
+ * as usual, marked `queued` until the write lands. Replay re-reads each
+ * playlist and sends only what is still missing (or still there, for a
+ * removal), so a decision is applied once however often replay runs. Undoing a
+ * decision that has not been sent yet just takes it out of the queue. */
+
+const OFFLINE_QUEUE = 'offline_queue';
+const OFFLINE = { n: 0, busy: false, unlogged: [], reg: null };
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+/** A failure that is the connection, not Spotify saying no (auth.js: NET_LOST is status 0). */
+const lostNet = e => !!e && e.status === 0;
+const queueRead = async () => (await idb.get(OFFLINE_QUEUE)) ?? [];
+async function queueWrite(q) { await idb.set(OFFLINE_QUEUE, q); offlineShow(q.length); }
+
+async function enqueue(item) {
+  const q = await queueRead();
+  const it = { id: 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), queuedAt: new Date().toISOString(), ...item };
+  q.push(it);
+  await queueWrite(q);
+  OFFLINE.unlogged.push(it);
+  return it;
+}
+
+/* The originals, for replay and for anything online. */
+const ONLINE_WRITE = { addTracks, plDelete, libraryCall, playlistIds, logAction, undoAction };
+
+/** Send it now, or keep it: with no connection, or when the connection drops
+ *  under the write (replay re-reads first, so a write that did land is not repeated). */
+async function sendOrKeep(item, send) {
+  if (isOffline()) { await enqueue(item); return null; }
+  try { return await send(); }
+  catch (e) { if (!lostNet(e)) throw e; await enqueue(item); return null; }
+}
+
+addTracks = function (id, ids) {
+  return sendOrKeep({ op: 'add', playlistId: id, trackIds: [...ids] }, () => ONLINE_WRITE.addTracks(id, ids));
+};
+// Only plain `{ uri }` removals (Tidy's): a removal by position (the shuffle's
+// prune) depends on a snapshot that will be stale by the time it is replayed.
+plDelete = function (id, objs) {
+  if (!objs.every(o => o && Object.keys(o).length === 1 && /^spotify:track:/.test(o.uri))) return ONLINE_WRITE.plDelete(id, objs);
+  return sendOrKeep({ op: 'remove', playlistId: id, trackIds: objs.map(o => o.uri.slice(14)) }, () => ONLINE_WRITE.plDelete(id, objs));
+};
+libraryCall = function (method, ids) {
+  if (method !== 'DELETE') return ONLINE_WRITE.libraryCall(method, ids);
+  return sendOrKeep({ op: 'unlike', trackIds: [...ids] }, () => ONLINE_WRITE.libraryCall(method, ids));
+};
+// Tidy reads a playlist before a removal, for the positions undo puts tracks
+// back at. Offline, the library this device already holds is that read.
+playlistIds = async function (id) {
+  if (isOffline()) {
+    const p = (typeof LIB !== 'undefined' && LIB?.playlists || []).find(x => x.id === id);
+    if (p) return (p.tracks ?? []).map(t => t?.id).filter(Boolean);
+  }
+  return ONLINE_WRITE.playlistIds(id);
+};
+
+const sameIds = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+/** The History entry for a queued write is written as usual, marked `queued`. */
+logAction = async function (entry) {
+  const i = OFFLINE.unlogged.findIndex(it => it.op === entry.op && sameIds(it.trackIds, entry.trackIds ?? [])
+                                         && (it.op === 'unlike' || it.playlistId === entry.playlistId));
+  if (i < 0) return ONLINE_WRITE.logAction(entry);
+  const [it] = OFFLINE.unlogged.splice(i, 1);
+  const at = await ONLINE_WRITE.logAction({ ...entry, queued: it.id });
+  const q = await queueRead(), hit = q.find(x => x.id === it.id);
+  if (hit) { hit.at = at; await queueWrite(q); }
+  return at;
+};
+
+/** Undo of a decision still in the queue: drop it from the queue rather than
+ *  reversing a write Spotify never saw. Anything already sent is undone as before. */
+undoAction = async function (at) {
+  const log = (await idb.get('actions')) ?? [];
+  const e = log.find(x => x.at === at);
+  const steps = !e ? [] : e.group ? log.filter(x => x.group === e.group && x.op !== 'undo') : [e];
+  const q = await queueRead(), waiting = new Set(q.map(x => x.id));
+  const held = steps.filter(x => x.queued && waiting.has(x.queued) && !isUndone(x, log));
+  if (!held.length) return ONLINE_WRITE.undoAction(at);
+  const drop = new Set(held.map(x => x.queued));
+  await queueWrite(q.filter(x => !drop.has(x.id)));
+  const when = new Date().toISOString();
+  for (const x of log) if (held.includes(x)) x.undoneAt = when;
+  await idb.set('actions', log);
+  const rest = steps.filter(x => !held.includes(x) && !isUndone(x, log));
+  if (rest.length) return ONLINE_WRITE.undoAction(rest[0].at);
+  const mv = steps.find(x => x.move)?.move;
+  if (mv && typeof unrecordMove === 'function') await unrecordMove(mv.trackId, mv.from, mv.to).catch(() => {});
+  await ONLINE_WRITE.logAction({ op: 'undo', of: at, ...(e.group ? { ofGroup: e.group } : {}), playlistId: e.playlistId, trackIds: e.trackIds });
+};
+
+/** Send one queued decision, sending only what Spotify does not hold yet. */
+async function replayOne(it) {
+  if (it.op === 'unlike') return ONLINE_WRITE.libraryCall('DELETE', it.trackIds);
+  const have = new Set(await ONLINE_WRITE.playlistIds(it.playlistId));
+  if (it.op === 'add') {
+    const missing = it.trackIds.filter(x => !have.has(x));
+    if (missing.length) await ONLINE_WRITE.addTracks(it.playlistId, missing);
+  } else if (it.op === 'remove') {
+    const there = it.trackIds.filter(x => have.has(x));
+    if (there.length) await ONLINE_WRITE.plDelete(it.playlistId, there.map(x => ({ uri: 'spotify:track:' + x })));
+  }
+}
+
+/** Mark the History entry: sent (or, for one Spotify refused, why not). */
+async function settleLog(it, patch) {
+  if (!it.at) return;
+  const log = (await idb.get('actions')) ?? [];
+  const hit = log.find(x => x.at === it.at && x.queued === it.id);
+  if (!hit) return;
+  delete hit.queued;
+  Object.assign(hit, patch);
+  await idb.set('actions', log);
+}
+
+/** Apply every queued decision, oldest first, once each. Stops at the first
+ *  connection failure and keeps the rest for next time. */
+async function replayQueue() {
+  if (OFFLINE.busy || isOffline()) return 0;
+  if (typeof token === 'function') { try { if (!(await token())) return 0; } catch { return 0; } }
+  OFFLINE.busy = true;
+  let sent = 0;
+  const refused = [];
+  try {
+    for (;;) {
+      const q = await queueRead();
+      const it = q[0];
+      if (!it || isOffline()) break;
+      try {
+        await replayOne(it);
+        await settleLog(it, { syncedAt: new Date().toISOString() });
+        sent++;
+      } catch (e) {
+        if (lostNet(e) || e.status === 429 || e.status >= 500 || isOffline()) break;
+        // Spotify said no (a playlist deleted since, say): it never will say
+        // yes, so it leaves the queue, and History says why.
+        refused.push(it);
+        await settleLog(it, { syncFailed: e.message });
+      }
+      const now = await queueRead();
+      await queueWrite(now.filter(x => x.id !== it.id));
+    }
+  } finally { OFFLINE.busy = false; }
+  if (sent) toast(`Synced ${sent} ${sent === 1 ? 'decision' : 'decisions'} made offline.`);
+  if (refused.length) toast(`Spotify refused ${refused.length} ${refused.length === 1 ? 'decision' : 'decisions'} made offline. History says which.`);
+  return sent;
+}
+
+/** The "N decisions waiting to sync" line. Drawn on its own, outside every screen. */
+function offlineShow(n) {
+  OFFLINE.n = n;
+  if (typeof document === 'undefined') return;
+  let el = document.getElementById('syncWait');
+  if (!n) { if (el) el.hidden = true; return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'syncWait'; el.className = 'syncwait'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+    document.body.appendChild(el);
+  }
+  el.hidden = false;
+  el.textContent = `${n} ${n === 1 ? 'decision' : 'decisions'} waiting to sync` + (isOffline() ? ' · offline' : '');
+}
+
+/* ---------- the service worker ---------- */
+async function swRegister() {
+  const sw = typeof navigator !== 'undefined' && navigator.serviceWorker;
+  if (!sw || !/^https?:$/.test(location.protocol)) return;
+  try {
+    const hadOne = !!sw.controller;
+    const reg = OFFLINE.reg = await sw.register('sw.js', { scope: './' });
+    // A worker from another build has taken over (offline.js's sw.js skips
+    // waiting): offer the newer page with the bar version.js already has.
+    sw.addEventListener('message', ev => {
+      const m = ev.data || {};
+      if (m.type === 'bf-sw' && m.build && m.build !== BUILD && hadOne) checkForUpdate(true).catch(() => {});
+    });
+    reg.addEventListener('updatefound', () => { if (hadOne) setTimeout(() => checkForUpdate(true).catch(() => {}), 500); });
+    // "Update now" deletes every cache; ask for the shell back.
+    (await sw.ready).active?.postMessage({ type: 'warm' });
+  } catch { /* no worker: the page works exactly as it did without one */ }
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('online', () => { offlineShow(OFFLINE.n); replayQueue().catch(() => {}); });
+  window.addEventListener('offline', () => offlineShow(OFFLINE.n));
+  window.addEventListener('load', () => {
+    swRegister();
+    queueRead().then(q => offlineShow(q.length)).catch(() => {});
+    // Open and online: whatever was decided offline goes now.
+    setTimeout(() => replayQueue().catch(() => {}), 1500);
+  });
+}
 /* ---------- player: Spotify Connect ----------
  * The Web Playback SDK does not run on iOS, so the card drives whatever device
  * the listener already has open — their phone's Spotify app, usually — and
@@ -11481,7 +11697,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-16-1103';
+    s.src = 'engine.js?v=2026-11-16-1245';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -11503,7 +11719,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-16-1103');
+    const w = new Worker('engine-worker.js?v=2026-11-16-1245');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12051,7 +12267,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-16-1103';
+    s.src = 'audio.js?v=2026-11-16-1245';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -12087,7 +12303,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1103', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-16-1245', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -12821,7 +13037,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1103', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-16-1245', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -13226,6 +13442,7 @@ const DATA_KEYS = [
   { where:'idb', key:'library', group:'Your library', why:'A copy of your playlists and liked songs as read from Spotify (track ids, names, artists, ISRCs, cover links, dates added), so the app opens without re-reading everything.' },
   { where:'idb', key:'part:', prefix:true, group:'Your library', why:'Pieces of a library read that was interrupted, so the next try resumes instead of starting again. Dropped once a read completes, or after a day.' },
   { where:'idb', key:'actions', group:'Your library', why:'History: every change Betterfy made to your Spotify playlists, with what is needed to undo it.' },
+  { where:'idb', key:'offline_queue', group:'Your library', why:'Decisions you made with no connection (filings, removals, unlikes), kept until the page is next open and online and then sent to Spotify once each. Empty the rest of the time. The page itself is kept for offline use in the browser\'s cache under "betterfy-shell-<build>".' },
   { where:'idb', key:'feedback', group:'Your library', why:'Tracks you skipped or turned down for a playlist, and filings you accepted, so the same suggestion is not made again.' },
   { where:'idb', key:'listening_raw', group:'Your library', why:'Your top artists and recently played tracks from Spotify, used to put what you actually play first.' },
   { where:'local', key:'bf_axes', group:'Your library', why:'What kind of playlist each one is (genre, mood, occasion...), as you set it.' },

@@ -403,6 +403,10 @@ self.onmessage = function (e) {
 };
 `;
 
+/* The service worker (BUILD-6 F6): web/sw.js with this build's stamp, so its
+ * cache is named after the build the page and workers carry. */
+const SW = readFileSync('web/sw.js', 'utf8').replaceAll('__BUILD__', BUILD);
+
 /* The page's own script lives in web/app/ and web/screens/ (docs/BUILD-5-PLAN.md
  * A1), listed in load order in web/manifest.mjs, and goes back in where the
  * template says __APP__ before any other placeholder is filled. */
@@ -461,7 +465,7 @@ function leakedSecret(out) {
  * the guard iterates outputs instead of naming one. */
 for (const [name, out] of [['docs/index.html', html], ['docs/engine.js', engine],
                            ['docs/engine-worker.js', WORKER], ['docs/reports-worker.js', REPORTS_WORKER], ['docs/audio.js', audio],
-                           ['docs/audio-worker.js', AUDIO_WORKER], ['docs/maest-worker.js', MAEST_WORKER]]) {
+                           ['docs/audio-worker.js', AUDIO_WORKER], ['docs/maest-worker.js', MAEST_WORKER], ['docs/sw.js', SW]]) {
   const named = out.match(/SPOTIFY_CLIENT_SECRET|LASTFM_SHARED_SECRET|LASTFM_API_KEY|DISCOGS_TOKEN/);
   const valued = leakedSecret(out);
   if (named || valued)
@@ -481,6 +485,7 @@ writeFileSync('docs/reports-worker.js', REPORTS_WORKER);
 writeFileSync('docs/audio.js', audio);
 writeFileSync('docs/audio-worker.js', AUDIO_WORKER);
 writeFileSync('docs/maest-worker.js', MAEST_WORKER);
+writeFileSync('docs/sw.js', SW);
 console.log(`docs/audio.js   — ${(audio.length / 1024).toFixed(0)} KB, `
   + `${audioFiles.length} modules, fetched only when listening is switched on`);
 console.log(`docs/engine.js  — ${(engine.length / 1024).toFixed(0)} KB, `
