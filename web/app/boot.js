@@ -299,7 +299,16 @@ async function start(force) {
     syncEverything().then(changed => { if (changed) refreshReports(); });
     // Keyless genres for artists nothing has tagged. Cached per artist, so after
     // the first load this asks only about artists that are new or stale.
-    if (untaggedArtists().size) fillFromWikidata({ quiet: true }).catch(() => {});
+    // Then Last.fm, with the built-in key, for every artist still thin (the owner's
+    // call, 2026-11-16: every keyless source on by default). Chained after Wikidata
+    // because both write the same tag cache. Asks only new or stale artists, so a
+    // reload costs almost nothing; the first run is left to analyseAuto() below.
+    (async () => {
+      if (untaggedArtists().size) await fillFromWikidata({ quiet: true }).catch(() => {});
+      if (LS.getItem('bf_analysed') && lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
+        await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
+      }
+    })();
     // Listening resumes by itself where it left off, if it was switched on — after the first paint.
     if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
     // One-tap analysis runs once by itself when a Last.fm key (shared or own) is there.

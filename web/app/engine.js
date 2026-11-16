@@ -164,7 +164,8 @@ async function engineLoadCalibration() {
     if (c && c.stamp === calStamp() && c.fingerprint === BetterfyPersist.fingerprint(LIB)
         && JSON.stringify(c.targets) === JSON.stringify(engineTargets()))
       ENG.calib = { base: c.base, bridge: c.bridge ?? null, audio: c.audio ?? null, audioGate: c.audioGate ?? null,
-                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), ...(c.family ? { family: c.family } : {}), at: c.at ?? null };
+                   ...(c.soundChoice ? { soundChoice: c.soundChoice } : {}), ...(c.family ? { family: c.family } : {}),
+                   ...(c.mood ? { mood: c.mood } : {}), at: c.at ?? null };
   } catch { /* nothing remembered: the comparison shows raw scores, as before */ }
 }
 
@@ -176,6 +177,22 @@ async function engineLoadCalibration() {
 function engineFamilies() {
   return BetterfyFamily.playlistFamilies(engineTargets().map(id => [id, CFG[id]?.name ?? id]));
 }
+/* ---------- mood "also fits" chips (ENGINE-REVIEW layer 5) ----------
+ * Each mood or context playlist with enough heard members gets a fits-or-not
+ * threshold on its nearest members' sound, fitted on half its heard tracks and
+ * checked on the other half (core/intrinsic/mood.mjs). Only the thresholds are
+ * kept; the chips are scored live from the same index File already uses. */
+function engineMoodIndex() {
+  const sp = (typeof SOUND !== 'undefined' && SOUND.space) || ENG.space;
+  return sp?.audio?.index ?? null;
+}
+function engineMoodFit() {
+  const index = engineMoodIndex();
+  if (!index?.size || typeof BetterfyMood === 'undefined') return null;
+  const fit = BetterfyMood.fitMoods(LIB, index, id => CFG[id]?.axis ?? null);
+  return fit.rows.length ? fit : null;
+}
+
 function engineFamilyFit(rows) {
   if (!rows?.length || typeof BetterfyFamily === 'undefined') return null;
   const families = engineFamilies();
@@ -216,17 +233,22 @@ async function engineCalibrate(v) {
   // Family first (ENGINE-REVIEW layer 3), measured on the rows of the engine that places.
   const family = engineFamilyFit(soundRows ?? baseRows);
   if (family) v.family = family.summary;
+  let mood = null;
+  try { mood = engineMoodFit(); } catch { mood = null; }
+  if (mood) v.moodLine = BetterfyMood.moodLine(mood);
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
   if (mine.withAudio) delete mine.withAudio.rows;
   for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
-  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}), at: Date.now() };
+  ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}),
+                ...(mood ? { mood } : {}), at: Date.now() };
   try {
     await idb.set(CAL_KEY, { stamp: calStamp(), fingerprint: BetterfyPersist.fingerprint(LIB),
                              targets: engineTargets(), base, bridge, audio, audioGate,
-                             ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}), at: ENG.calib.at });
+                             ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}),
+                             ...(mood ? { mood } : {}), at: ENG.calib.at });
   } catch { /* not remembered: it still applies until the page is closed */ }
   engineDecorate();
 }

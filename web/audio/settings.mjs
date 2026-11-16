@@ -18,6 +18,11 @@ export const SCOPES = Object.freeze({
   all: 'My whole library',
 });
 
+// A saved "off" counts only when the listener switched it off themselves
+// (`offChosen`, written with it from 2026-11-16). An older build saved `on:
+// false` whenever any listening setting changed, back when off was the default,
+// so those saves read as the default (on) now. The owner's call, 2026-11-16:
+// "it should listen by default".
 export const DEFAULT_AUDIO_SETTINGS = Object.freeze({ on: true, wifiOnly: true, scope: 'playing+unfiled' });
 
 /** Settings from a localStorage-like store, each field checked; anything odd falls back to its default. */
@@ -27,7 +32,7 @@ export function readAudioSettings(ls) {
   const d = DEFAULT_AUDIO_SETTINGS;
   if (!raw || typeof raw !== 'object') return { ...d };
   return {
-    on: typeof raw.on === 'boolean' ? raw.on : d.on,
+    on: raw.on === true ? true : raw.on === false && raw.offChosen === true ? false : d.on,
     wifiOnly: typeof raw.wifiOnly === 'boolean' ? raw.wifiOnly : d.wifiOnly,
     scope: Object.hasOwn(SCOPES, raw.scope) ? raw.scope : d.scope,
   };
@@ -36,8 +41,10 @@ export function readAudioSettings(ls) {
 /** Merge a change in and save it. Returns the saved settings. */
 export function writeAudioSettings(ls, change) {
   const next = { ...readAudioSettings(ls), ...change };
-  const clean = readAudioSettings({ getItem: () => JSON.stringify(next) });
-  try { ls?.setItem?.(AUDIO_SETTINGS_KEY, JSON.stringify(clean)); } catch { /* memory only */ }
+  // A write that leaves it off is the listener's own choice: it came from the switch, or kept one.
+  const clean = readAudioSettings({ getItem: () => JSON.stringify(next.on === false ? { ...next, offChosen: true } : next) });
+  const stored = clean.on === false ? { ...clean, offChosen: true } : clean;
+  try { ls?.setItem?.(AUDIO_SETTINGS_KEY, JSON.stringify(stored)); } catch { /* memory only */ }
   return clean;
 }
 

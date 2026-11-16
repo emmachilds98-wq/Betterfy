@@ -303,7 +303,11 @@ export function view(ctx) {
   const picks = filePicks(t);
   const opts = Object.entries(CFG).filter(([, v]) => v.target).map(([id, v]) => ({ id, ...v }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const nameOf = id => opts.find(o => o.id === id)?.name ?? picks.find(s => s.id === id)?.name ?? id;
+  // Mood "also fits" chips (ENGINE-REVIEW layer 5): a second, separate yes/no,
+  // never competing with the genre pick. A tap adds it to the selection.
+  const moods = (ctx.moodChips?.(t) ?? []).filter(m => !picks.slice(0, 3).some(sg => sg.id === m.id));
+  const nameOf = id => opts.find(o => o.id === id)?.name ?? picks.find(s => s.id === id)?.name
+    ?? moods.find(m => m.id === id)?.name ?? CFG[id]?.name ?? id;
   const best = picks[0];
   // The calibrated band for the leading pick on every card, not only the sound ones.
   const topBand = ctx.fileBand?.(t, picks) ?? best?.band ?? null;
@@ -364,8 +368,10 @@ export function view(ctx) {
           </button><button class="nope" type="button" data-act="reject" data-reject="${esc(sg.id)}"
             title="Never suggest ${esc(sg.name)} for this track" aria-label="Never suggest ${esc(sg.name)} for this track"><span aria-hidden="true">✕</span></button></div>`).join('')}</div>`
         : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
-        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
-          ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id)).map(id =>
+        ${moods.length ? `<div class="alsofits" role="group" aria-label="Also fits">${moods.map(m =>
+          `<button class="chip mood${S.fileSel.has(m.id) ? ' on' : ''}" data-act="selfile" data-selfile="${esc(m.id)}" aria-pressed="${S.fileSel.has(m.id)}">${S.fileSel.has(m.id) ? '✓ ' : ''}Also fits ${esc(m.name)}</button>`).join('')}</div>` : ''}
+        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
+          ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).map(id =>
             `<button class="chip" data-act="selfile" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
         </div>` : ''}
         <div class="rowbtns" style="margin-top:22px">

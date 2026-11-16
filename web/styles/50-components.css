@@ -312,3 +312,8 @@
     .empty-state.compact>span:not(.es-mark){flex:1; min-width:0}
     .empty-state.compact .es-acts{width:100%; margin:4px 0 0; justify-content:flex-start}
   }
+
+/* Mood "also fits" chips (core/intrinsic/mood.mjs): a second yes/no beside the genre pick. */
+.alsofits { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.alsofits .chip.mood { border-style:dashed; }
+.alsofits .chip.mood.on { border-style:solid; border-color:var(--accent); background:var(--surface-2); }
