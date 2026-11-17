@@ -1,5 +1,8 @@
 # Next work plan (2026-11-16, after #149)
 
+> **Complete, and superseded by [`BUILD-7-PLAN.md`](BUILD-7-PLAN.md)
+> (2026-11-17).** Every package below is built or measured and closed.
+
 **Start here.** This plan replaces `docs/review/HANDOFF-2026-11-16.md` §"next
 waves" for what to build next. It covers the state of `main`, the owner's
 standing rules, what waits on her, and six ranked engine packages with files,

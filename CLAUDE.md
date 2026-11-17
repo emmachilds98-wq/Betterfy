@@ -29,7 +29,15 @@ over anything that needs a file most users won't have.
 
 ## Where the fuller context lives
 
-- `docs/NEXT-WORKPLAN.md` — **start here (2026-11-16, after #149)**: state
+- `docs/BUILD-7-PLAN.md` — **start here (2026-11-17, after #157)**: the audio
+  upgrade and every NEXT-WORKPLAN package are done. State of main, a verdict
+  on every leftover, what waits on the owner (in-page clicks only), the
+  ranked build 7 packages in waves and lanes, and a runbook for running it
+  as a Claude project (coordinator + parallel threads, file ownership, merge
+  order, how to report). Paste-ready thread briefs: `docs/BUILD-7-BRIEFS.md`.
+
+- `docs/NEXT-WORKPLAN.md` — the previous plan (2026-11-16, after #149), now
+  complete: state
   of main, the owner's standing rules (on by default and shown as on, hosted
   checks only, merge when green, tap-only filing), what waits on her (Score +
   Tune paste, Radar check), and six ranked engine packages with files, gates
