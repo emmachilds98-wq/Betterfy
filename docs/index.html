@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-17-0025">
+<meta name="bf-build" content="2026-11-17-0042">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1924,7 +1924,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-17-0025</span>
+    <span class="mono">build 2026-11-17-0042</span>
   </p>
 
   <div class="feat">
@@ -2017,7 +2017,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-17-0025</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-17-0042</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2134,7 +2134,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-17-0025. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-17-0042. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5780,7 +5780,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-17-0025`,
+    `Betterfy engine score — build 2026-11-17-0042`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5994,7 +5994,8 @@ function view(c) {
       <h2 style="margin:0 0 12px; font-size:19px">Learn my library</h2>
       <p>Reads your ${LIB.playlists.length.toLocaleString()} playlists once and works out what each one means.
         Takes a few seconds, and is remembered afterwards so it is a one-off. It runs on this device —
-        nothing is sent anywhere.</p>
+        nothing is sent anywhere. It starts by itself a few seconds after the app opens; this button is
+        only for when it could not.</p>
       <div class="rowbtns" style="margin-top:18px">
         <button class="b big go" data-act="go">Learn my library</button>
       </div>
@@ -8374,7 +8375,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, waitingCounts, rowFacts, attentionOrder, knowsYouLine, sheetHTML, weakRows, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, waitingCounts, rowFacts, attentionOrder, knowsYouLine, sheetHTML, weakRows, weakSheetHTML, weakListHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -10057,7 +10058,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-17-0025';
+const BUILD = '2026-11-17-0042';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10395,7 +10396,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-17-0025', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-17-0042', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11153,7 +11154,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-17-0025');
+    const w = new Worker('reports-worker.js?v=2026-11-17-0042');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14652,7 +14653,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-17-0025';
+    s.src = 'engine.js?v=2026-11-17-0042';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -14674,7 +14675,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-17-0025');
+    const w = new Worker('engine-worker.js?v=2026-11-17-0042');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15381,7 +15382,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-17-0025';
+    s.src = 'audio.js?v=2026-11-17-0042';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -15435,7 +15436,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-17-0025', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-17-0042', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -16576,7 +16577,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-17-0025', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-17-0042', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -16706,8 +16707,16 @@ function clapStatusHTML(d) {
  *
  * analyseRun() takes its collaborators as `d` so it can be tested with stubs;
  * analyseGo()/analyseAuto() wire the real ones.
+ *
+ * A new account never has to press it (2026-11-17, owner's ask): boot.js asks
+ * analyseFirst() before the first paint, so File opens on the progress strip
+ * rather than the button, then runs analyseAuto() in the background: genres
+ * from Wikidata, listening, Last.fm tags, and last the Engine's map of the
+ * playlists (engineAutoLearn, in the engine worker). File stays usable the
+ * whole time. Every later load learns that map again quietly (from the cache,
+ * usually), so the Engine screen never waits on "Learn my library" either.
  * ======================================================================== */
-const ANALYSE = { running: false, tags: [0, 0], listen: null, timer: null };
+const ANALYSE = { running: false, pending: false, stage: null, tags: [0, 0], listen: null, timer: null };
 
 /** Artists whose tags are thin — the same gap enrichMissing() fills. */
 function analyseGapCount() {
@@ -16723,11 +16732,15 @@ function analyseGapCount() {
 function analyseStatus(st) {
   const parts = [];
   const [td, tt] = st.tags ?? [0, 0];
+  if (st.stage === 'genres') parts.push('Looking up genres');
   if (tt) parts.push(`Reading tags ${td.toLocaleString()}/${tt.toLocaleString()}`);
+  if (st.stage === 'learn') parts.push('learning your playlists');
   const l = st.listen;
   if (l && l.total) parts.push(`listening ${Math.min(l.done ?? 0, l.total).toLocaleString()}/${l.total.toLocaleString()}`);
   else if (l?.state === 'paused') parts.push('listening waits for Wi-Fi');
-  return parts.length ? parts.join(' · ') : 'Starting…';
+  if (!parts.length) return 'Starting…';
+  const line = parts.join(' · ');
+  return line[0].toUpperCase() + line.slice(1);
 }
 
 /** Is there something worth offering? Gaps to fill, or listening that has not run. */
@@ -16742,27 +16755,40 @@ function analyseWanted(d = {}) {
 
 /**
  * Run it. Resolves with what was done; never throws (a failed half just stops).
- * `d`: key(), gaps(), enrich({quiet,onProgress}), listen(), listenVM(), status(st), go(view).
+ * `d`: key(), gaps(), enrich({quiet,onProgress}), listen(), listenVM(), status(st), go(view),
+ * and optionally genres() (keyless genres, before the tags) and learn() (the Engine's map, last).
  */
 async function analyseRun(d, { route = true } = {}) {
   if (ANALYSE.running) return { skipped: true };
-  ANALYSE.running = true; ANALYSE.tags = [0, 0]; ANALYSE.listen = null;
-  const push = () => d.status?.({ tags: ANALYSE.tags, listen: ANALYSE.listen, running: true });
+  ANALYSE.running = true; ANALYSE.pending = false; ANALYSE.stage = null; ANALYSE.tags = [0, 0]; ANALYSE.listen = null;
+  const now = () => ({ tags: ANALYSE.tags, listen: ANALYSE.listen, stage: ANALYSE.stage });
+  const push = () => d.status?.({ ...now(), running: true });
   const out = { tags: false, listen: false };
   try {
     // Listening first: it runs by itself while the tags are read.
     try { await d.listen(); out.listen = true; } catch { /* its own error shows on Sources */ }
     const poll = () => { ANALYSE.listen = d.listenVM?.() ?? null; push(); };
     ANALYSE.timer = setInterval(poll, 600); poll();
+    if (d.genres) {
+      ANALYSE.stage = 'genres'; push();
+      try { await d.genres(); out.genres = true; } catch { /* Last.fm still fills what it can */ }
+      ANALYSE.stage = null;
+    }
     if (d.key() && d.gaps() > 0) {
       await d.enrich({ quiet: true, onProgress: (n, t) => { ANALYSE.tags = [n, t]; push(); } });
       out.tags = true;
     }
+    // Last, so the map is learned with the tags just read.
+    if (d.learn) {
+      ANALYSE.stage = 'learn'; push();
+      try { out.learn = !!(await d.learn()); } catch { out.learn = false; }
+      ANALYSE.stage = null;
+    }
     poll();
   } catch { /* leave whatever finished */ }
   finally {
-    clearInterval(ANALYSE.timer); ANALYSE.timer = null; ANALYSE.running = false;
-    d.status?.({ tags: ANALYSE.tags, listen: ANALYSE.listen, running: false });
+    clearInterval(ANALYSE.timer); ANALYSE.timer = null; ANALYSE.running = false; ANALYSE.stage = null;
+    d.status?.({ ...now(), running: false });
   }
   if (route) d.go('inbox');
   return out;
@@ -16772,6 +16798,8 @@ function analyseDeps() {
   return {
     key: lfmKey, gaps: analyseGapCount,
     enrich: o => enrichMissing(o),
+    genres: () => (untaggedArtists().size ? fillFromWikidata({ quiet: true }) : 0),
+    learn: () => engineAutoLearn(),
     listen: () => audioStart({ quiet: true }),
     listenVM: () => AUDIO.vm,
     status: st => {
@@ -16786,20 +16814,46 @@ function analyseDeps() {
 /** The button. */
 function analyseGo() { LS.setItem('bf_analysed', '1'); return analyseRun(analyseDeps()); }
 
-/** Once, after the first load with a key: the same run, without taking the screen away. */
+/** Is this the first load that has something to analyse? Asked by boot before the
+ *  first paint, so File opens on the progress strip instead of the button. */
+function analyseFirst() {
+  if (LS.getItem('bf_analysed') || ANALYSE.running) return false;
+  try { ANALYSE.pending = !!analyseWanted().any; } catch { ANALYSE.pending = false; }
+  return ANALYSE.pending;
+}
+
+/** Once, on an account's first load: the same run as the button, in the background,
+ *  never taking the screen away. Resolves when it is done (or at once, with nothing to do). */
 function analyseAuto() {
-  if (LS.getItem('bf_analysed') || !lfmKey() || ANALYSE.running) return;
-  if (!analyseWanted().any) return;
+  if (LS.getItem('bf_analysed') || ANALYSE.running) { ANALYSE.pending = false; return Promise.resolve(null); }
+  if (!analyseWanted().any) { ANALYSE.pending = false; return Promise.resolve(null); }
   LS.setItem('bf_analysed', '1');
-  analyseRun(analyseDeps(), { route: false });
+  return analyseRun(analyseDeps(), { route: false });
+}
+
+/**
+ * The Engine's map of the playlists (what "Learn my library" makes), in the
+ * background. Built in the engine worker and kept on this device, so after the
+ * first time it is read back from the cache. Only when nothing has asked for it
+ * yet (idle), there are genre playlists to learn, a worker to build it in, and no
+ * Data Saver. Resolves true when the map is ready.
+ */
+async function engineAutoLearn() {
+  if (typeof ENG === 'undefined' || ENG.status !== 'idle' || !LIB) return ENG?.status === 'ready';
+  if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
+  if (!engineInBackground() || !engineTargets().length) return false;
+  await engineAnalyse();
+  return ENG.status === 'ready';
 }
 
 /** Home's button and its progress strip. Empty when there is nothing to offer. */
 function analyseHTML() {
-  if (ANALYSE.running) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen }))}</span></div>`;
+  if (ANALYSE.running || ANALYSE.pending) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen, stage: ANALYSE.stage }))}</span></div>`;
+  // Once analysed, every load keeps the tags and listening going by itself (boot.js): no button.
+  if (LS.getItem('bf_analysed')) return '';
   if (!analyseWanted().any) return '';
   return `<div class="analyse"><button class="b p" id="analyseGo" data-act="analyseGo">Analyse my library</button>
-    ${LS.getItem('bf_analysed') ? '' : `<span class="d">Reads tags and listens to your liked songs, then suggests where each goes.</span>`}</div>
+    <span class="d">Reads tags and listens to your liked songs, then suggests where each goes.</span></div>
     <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
 }
 
@@ -16826,8 +16880,9 @@ function onbHTML() {
   if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return '';
   onbCount();
   const n = ONB.n; if (n == null || n >= ONB_GOAL) return '';
-  const analysed = !!LS.getItem('bf_analysed') || ANALYSE.running || !analyseWanted().any;
-  const steps = [['Connected', true], [ANALYSE.running ? 'Analysing' : 'Analyse your library', analysed],
+  const busy = ANALYSE.running || ANALYSE.pending;
+  const analysed = !!LS.getItem('bf_analysed') || busy || !analyseWanted().any;
+  const steps = [['Connected', true], [busy ? 'Analysing' : 'Analyse your library', analysed],
     ['File your first five (' + n + '/' + ONB_GOAL + ')', false]];
   const cur = steps.findIndex(x => !x[1]);
   return `<ol class="onb" aria-label="Getting started">${steps.map(([t, done], i) =>
@@ -17118,7 +17173,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_shuf_flow', group:'Your library', why:'Whether shuffle should follow sound flow, as you last set it.' },
   { where:'local', key:'bf_shuf_redisc', group:'Your library', why:'Whether shuffle should mix in rediscoveries, as you last set it.' },
   { where:'local', key:'bf_disc_mem', group:'Your library', why:'Discover\'s memory: artist names you passed on (never offered again) and ones you liked or added from it (extra seeds).' },
-  { where:'local', key:'bf_analysed', group:'Your library', why:'That you have run "Analyse my library" once.' },
+  { where:'local', key:'bf_analysed', group:'Your library', why:'That this account\'s first analysis has run (it starts by itself on the first load).' },
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_engscore', group:'Your library', why:'The headline of the last Score run (right first time, top three, how many tracks), for Library\'s "How well it knows you" card.' },
@@ -18232,6 +18287,9 @@ async function start(force) {
     const whoName = LIB.user?.name ?? LIB.user?.id ?? '';
     $('#who').textContent = whoName;
     $('#sheetWho').textContent = whoName;
+    // A new account's first analysis starts by itself (analyse.js): asked before the
+    // first paint so File opens on its progress strip, never on a button.
+    const firstRun = (() => { try { return analyseFirst(); } catch { return false; } })();
     view = ROUTER.start(); S.inboxAt = 0; render();
     // An old link such as #/sources opens the Settings sheet on that section.
     const landed = ROUTER.section; if (landed) openUnderHood(landed);
@@ -18245,21 +18303,28 @@ async function start(force) {
     // Then Last.fm, with the built-in key, for every artist still thin (the owner's
     // call, 2026-11-16: every keyless source on by default). Chained after Wikidata
     // because both write the same tag cache. Asks only new or stale artists, so a
-    // reload costs almost nothing; the first run is left to analyseAuto() below.
+    // reload costs almost nothing. On an account's first load the same steps run as
+    // its first analysis instead, with listening and progress on File (analyseAuto).
     (async () => {
-      if (untaggedArtists().size) await fillFromWikidata({ quiet: true }).catch(() => {});
-      if (LS.getItem('bf_analysed') && lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
-        await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
+      if (firstRun) await analyseAuto().catch(() => null);
+      else {
+        if (untaggedArtists().size) await fillFromWikidata({ quiet: true }).catch(() => {});
+        if (LS.getItem('bf_analysed') && lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
+          await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
+        }
       }
+      // The Engine's map of the playlists, in the worker: from the cache after the first
+      // time, so the Engine screen opens on results, not "Learn my library". Before the
+      // similar artists, which place their picks in it.
+      await engineAutoLearn().catch(() => false);
       // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
       // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
       // don't compete with the tag lookups; resumes where the last load stopped.
       if (typeof bridgeWarm === 'function') await bridgeWarm().catch(() => {});
     })();
-    // Listening resumes by itself where it left off, if it was switched on — after the first paint.
-    if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
-    // One-tap analysis runs once by itself when a Last.fm key (shared or own) is there.
-    setTimeout(() => { try { analyseAuto(); } catch { /* optional */ } }, 4000);
+    // Listening resumes by itself where it left off, if it was switched on — after the first
+    // paint. (On a first run the analysis above starts it.)
+    if (audioSettings().on && !firstRun) setTimeout(() => audioStart({ quiet: true }), 3000);
     // Score + Tune by itself: first look a minute in, then every five minutes while the tab is in front.
     try { autoScoreStart(); } catch { /* optional */ }
   } catch (e) {

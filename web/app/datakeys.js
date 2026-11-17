@@ -41,7 +41,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_shuf_flow', group:'Your library', why:'Whether shuffle should follow sound flow, as you last set it.' },
   { where:'local', key:'bf_shuf_redisc', group:'Your library', why:'Whether shuffle should mix in rediscoveries, as you last set it.' },
   { where:'local', key:'bf_disc_mem', group:'Your library', why:'Discover\'s memory: artist names you passed on (never offered again) and ones you liked or added from it (extra seeds).' },
-  { where:'local', key:'bf_analysed', group:'Your library', why:'That you have run "Analyse my library" once.' },
+  { where:'local', key:'bf_analysed', group:'Your library', why:'That this account\'s first analysis has run (it starts by itself on the first load).' },
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_engscore', group:'Your library', why:'The headline of the last Score run (right first time, top three, how many tracks), for Library\'s "How well it knows you" card.' },
