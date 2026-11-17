@@ -21,8 +21,10 @@ async function audioTracks() {
   const targets = Object.entries(CFG ?? {}).filter(([, c]) => c.target || c.axis === 'mood' || c.axis === 'context').map(([id]) => id);
   const isMirror = p => isMirrorPlaylist(p);
   const store = AUDIO.records ?? new Map();
-  const allowed = A.scopeIds(LIB, { scope: set.scope, listening, targets, isMirror });
-  const ids = A.audioQueue(LIB, { listening, store, mel: A.MEL_VERSION, targets, isMirror })
+  // The last Score run's weakest playlists (core/intrinsic/weak.mjs): their tracks are heard next.
+  const focus = (typeof weakSaved === 'function' ? weakSaved()?.rows ?? [] : []).map(d => d.id);
+  const allowed = A.scopeIds(LIB, { scope: set.scope, listening, targets, isMirror, focus });
+  const ids = A.audioQueue(LIB, { listening, store, mel: A.MEL_VERSION, targets, isMirror, focus })
     .filter(id => !allowed || allowed.has(id));
   const byId = new Map();
   for (const t of LIB.liked ?? []) byId.set(t.id, t);
