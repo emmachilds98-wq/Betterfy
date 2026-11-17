@@ -299,7 +299,7 @@ played tracks first (`core/audio/queue.mjs`).
 
 | Idea | Why not | What would change it |
 | --- | --- | --- |
-| Key and BPM on cards | Key v3 is 55.3% held out, under its 60% bar (#116); BPM display hidden | A key model that clears 60% on the Deezer sets |
+| Key on every card, sure or not | Key v4 (2026-11-17, BUILD-5-PROGRESS.md "Key v4") is 57.3% exact / 66.5% MIREX on all held-out tracks, still under 60/70. Sure keys are shown and used for mixing on 85% of tracks (62.5% / 71.3%), up from 53%. Tried and measured: learned CNN alone 56.2%, plus more training audio, blends, S-KEY 50.7% | A new signal, not more tuning: longer audio than two 10 s windows, or a much larger labelled set |
 | Teach questions on by default | Teach gate: 23% → 23% on her library; shut on most fixture accounts | Package 4's agreement making single answers count, then re-run the gate |
 | Three windows per track | Measured +0.3 points on 374 Deezer previews (`scripts/audio-near/README.md`), under the +1 bar | Nothing planned |
 | Discogs release styles | Needs each listener's personal token | Stays an optional bonus |

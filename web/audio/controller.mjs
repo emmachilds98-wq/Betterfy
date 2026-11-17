@@ -29,6 +29,7 @@ import { MISS } from '../../core/audio/record.mjs';
 import { measureWindows, needsDsp } from '../../core/audio/dsp/combine.mjs';
 import { fillClap, needsClap, CLAP_FILL_PER_RUN } from '../../core/audio/clap.mjs';
 import { withBeats, needsBeatsFlagged, BEATS_FILL_PER_RUN } from '../../core/audio/dsp/beats.mjs';
+import { withKeyNet, keyNetFields, keepKeyNet, needsKeyNet, KEYNET_FILL_PER_RUN } from '../../core/audio/dsp/keynet.mjs';
 
 /** Records topped up with dsp per start(), after the queue. */
 export const DSP_FILL_PER_RUN = 25;
@@ -75,6 +76,13 @@ export function createWorkerEar(worker, init) {
       await call('beatsInit', { modelUrl });
       return { measure: windows => call('beats', { windows: windows.map(w => w.slice()) }) };
     },
+    /** Key v4 (keynet.mjs): load the key model in the same Worker, once. `logp` takes the
+     *  decoded 16 kHz windows (copied) and returns the model's 24 log-probabilities. */
+    loadKeyNet: async modelUrl => {
+      await ready;
+      await call('keynetInit', { modelUrl });
+      return { logp: windows => call('keynet', { windows: windows.map(w => w.slice()) }) };
+    },
     loadClap: async modelUrl => {
       await ready;
       await call('clapInit', { modelUrl });
@@ -104,6 +112,10 @@ export function createWorkerEar(worker, init) {
  *        Beat This (tempo): loads its tracker, once; measure(windows) → beat tempo
  * @param {() => boolean} [deps.beatsOn]  asked at each start(): may Beat This download and run now?
  * @param {number} [deps.beatsFillPerRun] flagged records given Beat This per start (default BEATS_FILL_PER_RUN)
+ * @param {() => Promise<{ logp: Function }>} [deps.loadKeyNet]
+ *        key v4: loads the key model, once; logp(windows) → 24 log-probabilities
+ * @param {() => boolean} [deps.keyNetOn]  asked at each start(); on unless it says false (owner rule: on by default)
+ * @param {number} [deps.keyNetFillPerRun] heard records given key v4 per start (default KEYNET_FILL_PER_RUN)
  */
 export function createAudioController(deps) {
   const st = { state: 'off', done: 0, total: 0, reason: null, failed: 0, missed: {}, heard: 0, last: null };
@@ -116,6 +128,21 @@ export function createAudioController(deps) {
   const beatsBudget = deps.beatsFillPerRun ?? BEATS_FILL_PER_RUN;
   const noBeats = new Set(); // the same, for Beat This
   let beatsTracker = null;
+  const keyNetBudget = deps.keyNetFillPerRun ?? KEYNET_FILL_PER_RUN;
+  const noKeyNet = new Set(); // the same, for key v4
+  let keyNet = null, keyNetFailed = false;
+
+  /** The key v4 model when it is on and loads; null otherwise (never fails a run, not retried this session). */
+  async function keyNetNow() {
+    if (!deps.loadKeyNet || deps.keyNetOn?.() === false || keyNetFailed) return null;
+    if (keyNet) return keyNet;
+    st.reason = 'loading the key model'; emit();
+    try { keyNet = await deps.loadKeyNet(); } catch (e) { keyNet = null; keyNetFailed = true; st.keyNetError = String(e?.message ?? e); }
+    st.reason = null; emit();
+    return keyNet;
+  }
+  /** The dsp to measure with: v4's key on top when its model is loaded. */
+  const keyed = (d, net) => (d && net ? withKeyNet(d, net) : d);
 
   /** The Beat This tracker when it is switched on and loads; null otherwise (never fails a run). */
   async function beatsNow() {
@@ -167,10 +194,12 @@ export function createAudioController(deps) {
       try {
         if (!tracks.length) {
           // Nothing new to hear: still top up dsp (it needs no model), and CLAP when it is on.
-          if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp }, signal);
+          const net = await keyNetNow();
+          if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp: keyed(dsp, net) }, signal);
           const clap = signal.aborted ? null : await clapNow();
           if (clap && clapBudget > 0) await topUpClap({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }, signal);
           await topUpBeats({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }, signal);
+          await topUpKeyNet({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }, signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -181,8 +210,9 @@ export function createAudioController(deps) {
         }
         if (signal.aborted) { st.state = 'paused'; return { done: 0, stopped: true }; }
         const clap = await clapNow();
+        const net = await keyNetNow();
         const analyse = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
-                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp } : {}),
+                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp: keyed(dsp, net) } : {}),
                           ...(clap ? { clap } : {}) };
         const res = await runQueue(analyse, tracks, { signal, onResult: async (r, t) => {
           if (r.record) { await deps.store.put(r.record); st.heard++; }
@@ -194,6 +224,7 @@ export function createAudioController(deps) {
         if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
         if (!res.stopped && clap && clapBudget > 0) await topUpClap(analyse, signal);
         if (!res.stopped) await topUpBeats(analyse, signal);
+        if (!res.stopped) await topUpKeyNet(analyse, signal);
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
@@ -212,6 +243,7 @@ export function createAudioController(deps) {
       if (signal.aborted) return;
       let r;
       try { r = await fillDsp(analyse, rec); } catch { r = { skip: 'error' }; }
+      if (r.record) r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
       if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; emit(); }
       else if (r.skip) noFill.add(rec.id);
       // a failed download is tried again on a later run
@@ -241,16 +273,39 @@ export function createAudioController(deps) {
     const tracker = await beatsNow();
     if (!tracker) return;
     const withTempo = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
-                        dsp: withBeats(dsp, tracker, { onlyAmbiguous: true }) };
+                        dsp: keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet) };
     for (const rec of due) {
       if (signal.aborted) return;
       let r;
       try { r = await fillDsp(withTempo, rec); } catch { r = { skip: 'error' }; }
       if (r.record) {
+        r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
         await deps.store.put(r.record);
         if (r.record.dsp?.beatsV) { st.beatsFilled = (st.beatsFilled ?? 0) + 1; emit(); }
         else noBeats.add(rec.id);   // the tracker failed on it: not again this session
       } else if (r.skip) noBeats.add(rec.id);
+    }
+  }
+
+  /**
+   * Key v4: give heard records the learned key, a few per run. Only the key
+   * fields change (tempo, Beat This and loudness are kept as they are).
+   */
+  async function topUpKeyNet(analyse, signal) {
+    if (signal.aborted || keyNetBudget <= 0 || !dsp) return;
+    const all = await deps.store.getAll();
+    const due = [...all.values()].filter(r => needsKeyNet(r) && !noKeyNet.has(r.id)).slice(0, keyNetBudget);
+    if (!due.length) return;
+    const net = await keyNetNow();
+    if (!net) return;
+    for (const rec of due) {
+      if (signal.aborted) return;
+      const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
+                        dsp: async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; } };
+      let r;
+      try { r = await fillDsp(onlyKey, rec); } catch { r = { skip: 'error' }; }
+      if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; emit(); }
+      else if (r.skip) noKeyNet.add(rec.id);
     }
   }
 

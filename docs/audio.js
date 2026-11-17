@@ -1247,7 +1247,8 @@ async function analyseSamples(deps, { id, isrc, samples, parts = null, source })
   let dsp = null;
   // Per window, never across the join (WP-D4). A caller with only the joined
   // samples gets one "window"; DSP is a bonus and never fails a track.
-  try { dsp = deps.dsp ? (deps.dsp(parts?.length ? parts : [samples]) ?? null) : null; } catch { dsp = null; }
+  // awaited: a dsp wrapped by key v4 (keynet.mjs) or Beat This is async.
+  try { dsp = deps.dsp ? ((await deps.dsp(parts?.length ? parts : [samples])) ?? null) : null; } catch { dsp = null; }
   parts = null;
   let p = melPatches(melFrames(samples));
   samples = null; // drop the audio
@@ -2920,7 +2921,7 @@ async function createBeatTracker({ ort, modelUrl = BEAT_MODEL_URL, sessionOption
  */
 function withBeats(dsp, tracker, opts) {
   return async windows => {
-    const d = dsp(windows);
+    const d = await dsp(windows);   // may itself be async (keynet.mjs withKeyNet)
     if (!d || !ok(d.bpm) || !tracker) return d;
     let beat;
     try { beat = await tracker.measure(windows); } catch { return d; }
@@ -2944,6 +2945,259 @@ function needsBeats(rec) {
 }
 return { BEATS_VERSION, BEAT_MODEL_URL, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, BORDER, LEVEL_TOL, pickBeats, tempoFromBeats, combineBeatTempo, resolveOctave, createBeatTracker, withBeats, needsBeatsFlagged, needsBeats };
 })();
+/* ---- core/audio/dsp/keyspec.mjs ---- */
+__mod["core/audio/dsp/keyspec.mjs"] = (function () {
+// Log-frequency spectrogram for the learned key model (key v4, keynet).
+//
+// 16 kHz mono windows -> frames x KS_BINS log-magnitudes on a quarter-tone
+// grid tied to A440, standardised per track. Isomorphic, no dependencies: the
+// browser worker computes exactly what scripts/audio-dsp/keynet-features.mjs
+// fed the training, so the model sees the same numbers in both places.
+//
+// Front end in the spirit of Korzeniowski & Widmer, "Genre-agnostic key
+// classification with convolutional neural networks" (ISMIR 2018): STFT of
+// ~0.5 s frames at 10 per second, triangular filters 24 per octave, log(1+x).
+// The grid spans KS_MARGIN extra bins (6 semitones) either side of the
+// KS_CROP bins the model reads, so training can transpose by shifting the
+// crop; inference reads the centre crop.
+
+const KS_SR = 16000;
+const KS_N = 8192;          // 0.512 s, 1.95 Hz per bin
+const KS_HOP = 1600;        // 10 frames per second
+const KS_Q_LO = -78;        // quarter tones from A4: 46.2 Hz
+const KS_BINS = 129;        // up to quarter tone +50: 2960 Hz
+const KS_MARGIN = 12;       // ±6 semitones of crop shift
+const KS_CROP = KS_BINS - 2 * KS_MARGIN; // 105 bins, C2 (65.4 Hz) to C7
+
+let tables = null;
+function init() {
+  if (tables) return tables;
+  const N = KS_N, bits = Math.log2(N);
+  const rev = new Uint32Array(N);
+  for (let i = 0; i < N; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); rev[i] = r; }
+  const cos = new Float64Array(N / 2), sin = new Float64Array(N / 2);
+  for (let i = 0; i < N / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / N); sin[i] = -Math.sin(2 * Math.PI * i / N); }
+  const hann = Float64Array.from({ length: N }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));
+  // Triangular filters: band b centred on 440·2^((KS_Q_LO+b)/24), feet on its
+  // neighbours. Where bins are wider than the band (the bass), fall back to
+  // linear interpolation at the centre so no band is empty.
+  const binHz = KS_SR / N, filt = [];
+  for (let b = 0; b < KS_BINS; b++) {
+    const q = KS_Q_LO + b, fc = 440 * 2 ** (q / 24), fl = 440 * 2 ** ((q - 1) / 24), fu = 440 * 2 ** ((q + 1) / 24);
+    const ks = [], ws = [];
+    for (let k = Math.max(1, Math.floor(fl / binHz)); k <= Math.ceil(fu / binHz); k++) {
+      const f = k * binHz;
+      const w = f <= fc ? (f - fl) / (fc - fl) : (fu - f) / (fu - fc);
+      if (w > 0) { ks.push(k); ws.push(w); }
+    }
+    let tot = ws.reduce((s, w) => s + w, 0);
+    if (ks.length < 2) {
+      const x = fc / binHz, k0 = Math.floor(x), t = x - k0;
+      ks.length = 0; ws.length = 0; ks.push(k0, k0 + 1); ws.push(1 - t, t); tot = 1;
+    }
+    filt.push({ ks: Int32Array.from(ks), ws: Float64Array.from(ws, w => w / tot) });
+  }
+  tables = { rev, cos, sin, hann, filt };
+  return tables;
+}
+
+function fftMag(re, im, mag, { rev, cos, sin }) {
+  const n = KS_N;
+  for (let i = 0; i < n; i++) { const j = rev[i]; if (j > i) { const t = re[i]; re[i] = re[j]; re[j] = t; } im[i] = 0; }
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1, step = n / size;
+    for (let s = 0; s < n; s += size) for (let k = 0; k < half; k++) {
+      const c = cos[k * step], sn = sin[k * step], a = s + k, b = a + half;
+      const tr = re[b] * c - im[b] * sn, ti = re[b] * sn + im[b] * c;
+      re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+    }
+  }
+  for (let k = 0; k <= n / 2; k++) mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+}
+
+/**
+ * Spectrogram of one or more contiguous 16 kHz windows, frames concatenated
+ * in order, standardised over the whole thing (mean 0, sd 1).
+ * @param {Float32Array|Float32Array[]} windows
+ * @returns {{ data: Float32Array, frames: number, bins: number } | null} row-major [frame][bin]; null if too short or silent
+ */
+function keySpec(windows) {
+  const parts = (Array.isArray(windows) ? windows : [windows]).filter(w => w && w.length >= KS_N);
+  if (!parts.length) return null;
+  const t = init();
+  const re = new Float64Array(KS_N), im = new Float64Array(KS_N), mag = new Float64Array(KS_N / 2 + 1);
+  const rows = [];
+  for (const x of parts) {
+    const frames = Math.floor((x.length - KS_N) / KS_HOP) + 1;
+    for (let f = 0; f < frames; f++) {
+      const s = f * KS_HOP;
+      for (let i = 0; i < KS_N; i++) re[i] = x[s + i] * t.hann[i];
+      fftMag(re, im, mag, t);
+      const row = new Float32Array(KS_BINS);
+      for (let b = 0; b < KS_BINS; b++) {
+        const { ks, ws } = t.filt[b];
+        let v = 0; for (let j = 0; j < ks.length; j++) v += mag[ks[j]] * ws[j];
+        row[b] = Math.log1p(v);
+      }
+      rows.push(row);
+    }
+  }
+  const data = new Float32Array(rows.length * KS_BINS);
+  rows.forEach((r, i) => data.set(r, i * KS_BINS));
+  let m = 0; for (const v of data) m += v; m /= data.length;
+  let sd = 0; for (const v of data) sd += (v - m) ** 2; sd = Math.sqrt(sd / data.length);
+  if (!(sd > 1e-6)) return null;
+  for (let i = 0; i < data.length; i++) data[i] = (data[i] - m) / sd;
+  return { data, frames: rows.length, bins: KS_BINS };
+}
+return { KS_SR, KS_N, KS_HOP, KS_Q_LO, KS_BINS, KS_MARGIN, KS_CROP, keySpec };
+})();
+/* ---- core/audio/dsp/keynet.mjs ---- */
+__mod["core/audio/dsp/keynet.mjs"] = (function () {
+const { keySpec, KS_BINS, KS_MARGIN, KS_CROP } = __mod["core/audio/dsp/keyspec.mjs"];
+const { chromagram, rankKeys, CAMELOT, pitchClass, toCamelot } = __mod["core/audio/dsp/key.mjs"];
+// Key v4: a small learned key model, blended with the v3 chroma key.
+//
+// Why: v3 (key.mjs, hand-built chroma + a linear key model) is saturated at
+// 55% exact on the held-out half of the Beatport EDM Key set, so only keys at
+// keyConf >= 0.65 were shown (53% of tracks). The two make different
+// mistakes, so blending them gives a confidence that is right more often:
+// at the same bar (>= 60% exact, >= 70% MIREX) the key is now sure on 85% of
+// tracks. Measured, and how it was trained: docs/BUILD-5-PROGRESS.md
+// "Key v4".
+//
+// The model (docs/models/keynet-v4.onnx, ~1 MB, trained here, CC BY-SA 4.0
+// like the dataset it learned from; see docs/models/LICENSE-KEYNET) is five small all-convolutional nets (after
+// Korzeniowski & Widmer, ISMIR 2018), one per training fold, averaged inside
+// the graph. It reads keyspec.mjs's log-frequency spectrogram of the preview
+// windows and gives 24 log-probabilities (class = mode·12 + tonic, major
+// 0–11, minor 12–23). The blend adds KEYNET_DSP_W × the v3 log-probabilities.
+//
+// keyConf on a v4 reading is the blended best probability rescaled so that
+// KEYNET_SURE_P lands exactly on match.mjs's KEY_MIN_CONF (0.65): every
+// consumer keeps its one threshold, and "sure" means the measured gate.
+//
+// `ort` is injected, as in beats.mjs.
+
+
+
+
+const KEYNET_VERSION = '4.0.0';
+const KEYNET_MODEL_FILE = 'keynet-v4.onnx';
+/** Weight of the v3 chroma key's log-probabilities in the blend (fitted on half A). */
+const KEYNET_DSP_W = 0.5;
+/** Blended best probability at which a key counts as sure (picked on half A: the lowest that clears the bar + 4 points). */
+const KEYNET_SURE_P = 0.4;
+/** keyConf that means sure (match.mjs KEY_MIN_CONF, dsp-view.mjs KEY_MIN_CONF). */
+const SURE_CONF = 0.65;
+/** Heard records given v4 per start(); ~0.3 s each on a laptop. */
+const KEYNET_FILL_PER_RUN = 60;
+
+/** Class index (mode·12 + pc) → Camelot code. */
+const CLASS_CAMELOT = Object.freeze(Array.from({ length: 24 }, (_, i) => toCamelot(i % 12, i < 12 ? 'major' : 'minor')));
+const classOf = camelot => { const k = CAMELOT[camelot]; return (k.mode === 'minor' ? 12 : 0) + pitchClass(k.tonic); };
+const r3 = x => Math.round(x * 1000) / 1000;
+
+/** The centre crop of a keySpec, as the model reads it: Float32Array [frames × KS_CROP]. */
+function centreCrop(spec) {
+  const out = new Float32Array(spec.frames * KS_CROP);
+  for (let f = 0; f < spec.frames; f++) out.set(spec.data.subarray(f * KS_BINS + KS_MARGIN, f * KS_BINS + KS_MARGIN + KS_CROP), f * KS_CROP);
+  return out;
+}
+
+/** v3's 24 log-probabilities (class order) for the same windows. */
+function dspLogProbs(windows) {
+  const lp = new Float64Array(24).fill(Math.log(1e-6));
+  for (const r of rankKeys(chromagram(windows).chroma)) lp[classOf(r.camelot)] = Math.log(Math.max(1e-6, r.p));
+  return lp;
+}
+
+/**
+ * Blend the model's and v3's log-probabilities into one key reading.
+ * @param {ArrayLike<number>} netLogp  24
+ * @param {ArrayLike<number>} dspLogp  24
+ * @returns {{ key: string, camelot: string, keyConf: number, keyP: number, keyAlt: string }}
+ */
+function blendKey(netLogp, dspLogp, w = KEYNET_DSP_W) {
+  const s = Array.from({ length: 24 }, (_, i) => netLogp[i] + w * dspLogp[i]);
+  const mx = Math.max(...s);
+  const p = s.map(v => Math.exp(v - mx)); const z = p.reduce((a, b) => a + b, 0);
+  const order = p.map((v, i) => [v / z, i]).sort((a, b) => b[0] - a[0]);
+  const [best, i] = order[0];
+  const camelot = CLASS_CAMELOT[i];
+  return { key: CAMELOT[camelot].key, camelot, keyP: r3(best), keyConf: r3(Math.min(1, best * SURE_CONF / KEYNET_SURE_P)),
+           keyAlt: CLASS_CAMELOT[order[1][1]] };
+}
+
+/**
+ * Load the model on an ONNX session.
+ * @returns {Promise<{ logp(windows: Float32Array[]): Promise<Float32Array|null>, release(): Promise<void> }>}
+ */
+async function createKeyNet({ ort, modelUrl = `models/${KEYNET_MODEL_FILE}`, sessionOptions } = {}) {
+  if (!ort?.InferenceSession) throw new Error('createKeyNet needs ort');
+  const session = await ort.InferenceSession.create(modelUrl, sessionOptions ?? { executionProviders: ['wasm'] });
+  return {
+    async logp(windows) {
+      const spec = keySpec(windows);
+      if (!spec) return null;
+      const res = await session.run({ spec: new ort.Tensor('float32', centreCrop(spec), [1, spec.frames, KS_CROP]) });
+      return Float32Array.from(res.logp.data);
+    },
+    async release() { await session.release?.(); },
+  };
+}
+
+/**
+ * Wrap a dsp (combine.mjs measureWindows, or withBeats's) so the key is v4's.
+ * The result is the same `dsp` with key, camelot, keyConf and keyAlt from the
+ * blend, `keyNetV`, and v3's own reading kept as keyV3 / keyV3Conf. If the
+ * model fails or hears nothing, the dsp comes back as it was, without
+ * keyNetV, so a later run tries again (needsKeyNet()).
+ * @param {(windows: Float32Array[]) => object|null|Promise<object|null>} dsp
+ * @param {{ logp(windows: Float32Array[]): Promise<ArrayLike<number>|null> } | null} net
+ */
+function withKeyNet(dsp, net) {
+  return async windows => {
+    const d = await dsp(windows);
+    if (!d || !net) return d;
+    const f = await keyNetFields(net, windows, d);
+    return f ? { ...d, ...f } : d;
+  };
+}
+
+/**
+ * Just the key fields v4 sets, for windows whose dsp is `d` (v3's reading
+ * is kept from it). null when the model fails or hears nothing.
+ */
+async function keyNetFields(net, windows, d = null) {
+  let lp;
+  try { lp = await net.logp(windows); } catch { return null; }
+  if (!lp || lp.length !== 24) return null;
+  const b = blendKey(lp, dspLogProbs(windows));
+  const v3 = d?.keyNetV ? (d.keyV3 ? { keyV3: d.keyV3, keyV3Conf: d.keyV3Conf } : {})
+                        : (d?.camelot ? { keyV3: d.camelot, keyV3Conf: d.keyConf } : {});
+  return { key: b.key, camelot: b.camelot, keyConf: b.keyConf, keyAlt: b.keyAlt, keyNetV: KEYNET_VERSION, ...v3 };
+}
+
+const KEY_FIELDS = ['key', 'camelot', 'keyConf', 'keyAlt', 'keyAgree', 'keyNetV', 'keyV3', 'keyV3Conf'];
+/**
+ * A re-measured dsp (Beat This, a new DSP_VERSION) made without the model
+ * loses v4's key; the recording is the same, so carry v4's key over from
+ * the dsp it replaces.
+ */
+function keepKeyNet(oldDsp, newDsp) {
+  if (!newDsp || newDsp.keyNetV || oldDsp?.keyNetV !== KEYNET_VERSION) return newDsp;
+  const out = { ...newDsp };
+  for (const k of KEY_FIELDS) { if (k in oldDsp) out[k] = oldDsp[k]; else delete out[k]; }
+  return out;
+}
+
+/** Does this record have a dsp whose key v4 hasn't heard yet? */
+function needsKeyNet(rec) {
+  return !!rec?.dsp && !rec.miss && rec.dsp.keyNetV !== KEYNET_VERSION;
+}
+return { KEYNET_VERSION, KEYNET_MODEL_FILE, KEYNET_DSP_W, KEYNET_SURE_P, KEYNET_FILL_PER_RUN, CLASS_CAMELOT, centreCrop, dspLogProbs, blendKey, createKeyNet, withKeyNet, keyNetFields, keepKeyNet, needsKeyNet };
+})();
 /* ---- web/audio/controller.mjs ---- */
 __mod["web/audio/controller.mjs"] = (function () {
 const { runQueue, fillDsp } = __mod["core/audio/worker.js"];
@@ -2951,6 +3205,7 @@ const { MISS } = __mod["core/audio/record.mjs"];
 const { measureWindows, needsDsp } = __mod["core/audio/dsp/combine.mjs"];
 const { fillClap, needsClap, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 const { withBeats, needsBeatsFlagged, BEATS_FILL_PER_RUN } = __mod["core/audio/dsp/beats.mjs"];
+const { withKeyNet, keyNetFields, keepKeyNet, needsKeyNet, KEYNET_FILL_PER_RUN } = __mod["core/audio/dsp/keynet.mjs"];
 // Runs "Listen to my music" in the page (WP-B2): queue → analyseOne → store.
 //
 // The page owns three things core/audio leaves to it: storage (store.mjs),
@@ -2977,6 +3232,7 @@ const { withBeats, needsBeatsFlagged, BEATS_FILL_PER_RUN } = __mod["core/audio/d
 // the first such run, new records get their `clap` field in the same pass,
 // and records heard before are topped up after DSP, the same lazy way.
 // Without loadClap, or with clapOn() false, nothing here differs from before.
+
 
 
 
@@ -3028,6 +3284,13 @@ function createWorkerEar(worker, init) {
       await call('beatsInit', { modelUrl });
       return { measure: windows => call('beats', { windows: windows.map(w => w.slice()) }) };
     },
+    /** Key v4 (keynet.mjs): load the key model in the same Worker, once. `logp` takes the
+     *  decoded 16 kHz windows (copied) and returns the model's 24 log-probabilities. */
+    loadKeyNet: async modelUrl => {
+      await ready;
+      await call('keynetInit', { modelUrl });
+      return { logp: windows => call('keynet', { windows: windows.map(w => w.slice()) }) };
+    },
     loadClap: async modelUrl => {
       await ready;
       await call('clapInit', { modelUrl });
@@ -3057,6 +3320,10 @@ function createWorkerEar(worker, init) {
  *        Beat This (tempo): loads its tracker, once; measure(windows) → beat tempo
  * @param {() => boolean} [deps.beatsOn]  asked at each start(): may Beat This download and run now?
  * @param {number} [deps.beatsFillPerRun] flagged records given Beat This per start (default BEATS_FILL_PER_RUN)
+ * @param {() => Promise<{ logp: Function }>} [deps.loadKeyNet]
+ *        key v4: loads the key model, once; logp(windows) → 24 log-probabilities
+ * @param {() => boolean} [deps.keyNetOn]  asked at each start(); on unless it says false (owner rule: on by default)
+ * @param {number} [deps.keyNetFillPerRun] heard records given key v4 per start (default KEYNET_FILL_PER_RUN)
  */
 function createAudioController(deps) {
   const st = { state: 'off', done: 0, total: 0, reason: null, failed: 0, missed: {}, heard: 0, last: null };
@@ -3069,6 +3336,21 @@ function createAudioController(deps) {
   const beatsBudget = deps.beatsFillPerRun ?? BEATS_FILL_PER_RUN;
   const noBeats = new Set(); // the same, for Beat This
   let beatsTracker = null;
+  const keyNetBudget = deps.keyNetFillPerRun ?? KEYNET_FILL_PER_RUN;
+  const noKeyNet = new Set(); // the same, for key v4
+  let keyNet = null, keyNetFailed = false;
+
+  /** The key v4 model when it is on and loads; null otherwise (never fails a run, not retried this session). */
+  async function keyNetNow() {
+    if (!deps.loadKeyNet || deps.keyNetOn?.() === false || keyNetFailed) return null;
+    if (keyNet) return keyNet;
+    st.reason = 'loading the key model'; emit();
+    try { keyNet = await deps.loadKeyNet(); } catch (e) { keyNet = null; keyNetFailed = true; st.keyNetError = String(e?.message ?? e); }
+    st.reason = null; emit();
+    return keyNet;
+  }
+  /** The dsp to measure with: v4's key on top when its model is loaded. */
+  const keyed = (d, net) => (d && net ? withKeyNet(d, net) : d);
 
   /** The Beat This tracker when it is switched on and loads; null otherwise (never fails a run). */
   async function beatsNow() {
@@ -3120,10 +3402,12 @@ function createAudioController(deps) {
       try {
         if (!tracks.length) {
           // Nothing new to hear: still top up dsp (it needs no model), and CLAP when it is on.
-          if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp }, signal);
+          const net = await keyNetNow();
+          if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp: keyed(dsp, net) }, signal);
           const clap = signal.aborted ? null : await clapNow();
           if (clap && clapBudget > 0) await topUpClap({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }, signal);
           await topUpBeats({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }, signal);
+          await topUpKeyNet({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }, signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -3134,8 +3418,9 @@ function createAudioController(deps) {
         }
         if (signal.aborted) { st.state = 'paused'; return { done: 0, stopped: true }; }
         const clap = await clapNow();
+        const net = await keyNetNow();
         const analyse = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
-                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp } : {}),
+                          ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp: keyed(dsp, net) } : {}),
                           ...(clap ? { clap } : {}) };
         const res = await runQueue(analyse, tracks, { signal, onResult: async (r, t) => {
           if (r.record) { await deps.store.put(r.record); st.heard++; }
@@ -3147,6 +3432,7 @@ function createAudioController(deps) {
         if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
         if (!res.stopped && clap && clapBudget > 0) await topUpClap(analyse, signal);
         if (!res.stopped) await topUpBeats(analyse, signal);
+        if (!res.stopped) await topUpKeyNet(analyse, signal);
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
@@ -3165,6 +3451,7 @@ function createAudioController(deps) {
       if (signal.aborted) return;
       let r;
       try { r = await fillDsp(analyse, rec); } catch { r = { skip: 'error' }; }
+      if (r.record) r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
       if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; emit(); }
       else if (r.skip) noFill.add(rec.id);
       // a failed download is tried again on a later run
@@ -3194,16 +3481,39 @@ function createAudioController(deps) {
     const tracker = await beatsNow();
     if (!tracker) return;
     const withTempo = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
-                        dsp: withBeats(dsp, tracker, { onlyAmbiguous: true }) };
+                        dsp: keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet) };
     for (const rec of due) {
       if (signal.aborted) return;
       let r;
       try { r = await fillDsp(withTempo, rec); } catch { r = { skip: 'error' }; }
       if (r.record) {
+        r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
         await deps.store.put(r.record);
         if (r.record.dsp?.beatsV) { st.beatsFilled = (st.beatsFilled ?? 0) + 1; emit(); }
         else noBeats.add(rec.id);   // the tracker failed on it: not again this session
       } else if (r.skip) noBeats.add(rec.id);
+    }
+  }
+
+  /**
+   * Key v4: give heard records the learned key, a few per run. Only the key
+   * fields change (tempo, Beat This and loudness are kept as they are).
+   */
+  async function topUpKeyNet(analyse, signal) {
+    if (signal.aborted || keyNetBudget <= 0 || !dsp) return;
+    const all = await deps.store.getAll();
+    const due = [...all.values()].filter(r => needsKeyNet(r) && !noKeyNet.has(r.id)).slice(0, keyNetBudget);
+    if (!due.length) return;
+    const net = await keyNetNow();
+    if (!net) return;
+    for (const rec of due) {
+      if (signal.aborted) return;
+      const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
+                        dsp: async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; } };
+      let r;
+      try { r = await fillDsp(onlyKey, rec); } catch { r = { skip: 'error' }; }
+      if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; emit(); }
+      else if (r.skip) noKeyNet.add(rec.id);
     }
   }
 
@@ -4959,6 +5269,9 @@ __mod["web/audio/dsp-view.mjs"] = (function () {
 //    unconditionally. Shown only when sure (2026-11-16): at confidence >=
 //    KEY_MIN_CONF the held-out half is 62.4% exact / 72.0% MIREX on 53% of tracks
 //    (BUILD-5-PROGRESS.md). Unsure tracks show no key at all.
+//    Key v4 (2026-11-17, core/audio/dsp/keynet.mjs) blends a learned model in and
+//    rescales its confidence onto the same KEY_MIN_CONF: 62.5% / 71.3% on 85% of
+//    tracks (57.3% / 66.5% on all of them).
 // `localStorage.bf_audio_dsp = '1'` shows every reading (for checking), '0' hides
 // everything.
 //
@@ -6446,10 +6759,11 @@ const { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike,
 const { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING } = __mod["web/audio/maest-run.mjs"];
 const { MAEST_FILE, MAEST_LABELS_FILE, needsMaest } = __mod["core/audio/maest.mjs"];
 const { needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN } = __mod["core/audio/dsp/beats.mjs"];
+const { needsKeyNet, KEYNET_MODEL_FILE, KEYNET_FILL_PER_RUN, KEYNET_VERSION } = __mod["core/audio/dsp/keynet.mjs"];
 const { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 // What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
 // One namespace so the template reaches core/audio through a single name.
-return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, defaultAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
+return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, defaultAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, needsKeyNet, KEYNET_MODEL_FILE, KEYNET_FILL_PER_RUN, KEYNET_VERSION, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
 })();
 /* ---- core/audio/infer.mjs ---- */
 __mod["core/audio/infer.mjs"] = (function () {

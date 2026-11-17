@@ -21,7 +21,9 @@ export const MIX_MIN_CONF = 0.3;
  * A key reading is used (shown, or counted for mixing) only at or above this
  * confidence. Measured on the Beatport EDM Key Dataset, held-out half: 62.4%
  * exact / 72.0% MIREX on the 53% of tracks at or above it, against 55.3% / 64.6%
- * on all of them (BUILD-5-PROGRESS.md). web/audio/dsp-view.mjs has the same
+ * on all of them (BUILD-5-PROGRESS.md). Key v4 readings (keynet.mjs, `keyNetV`)
+ * map their own sure bar onto this number: 62.5% / 71.3% on 85% of tracks.
+ * web/audio/dsp-view.mjs has the same
  * number for the chip; test/keygate.test.mjs keeps the two equal.
  */
 export const KEY_MIN_CONF = 0.65;

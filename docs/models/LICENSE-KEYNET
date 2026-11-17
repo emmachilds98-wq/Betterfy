@@ -1,0 +1,23 @@
+keynet-v4.onnx - Betterfy key v4 model weights
+
+Trained for Betterfy (scripts/audio-dsp/keynet-train.py, exported by
+keynet-export.py). Architecture after F. Korzeniowski and G. Widmer,
+"Genre-agnostic key classification with convolutional neural networks",
+ISMIR 2018 (written from the paper; no code or weights from it are used).
+
+Trained on:
+  - The Beatport EDM Key Dataset, Angel Faraldo et al., Zenodo record
+    1101082, CC BY-SA 4.0 (https://zenodo.org/records/1101082). Only the
+    seed-split half A was used for training; half B is held out for testing.
+  - The GiantSteps Key dataset annotations, P. Knees, A. Faraldo, P. Herrera,
+    R. Vogl, S. Boeck, F. Hoerschlaeger, M. Le Goff, "Two data sets for tempo
+    estimation and key detection in electronic dance music annotated from
+    user corrections", ISMIR 2015
+    (https://github.com/GiantSteps/giantsteps-key-dataset).
+No audio from either dataset is included in this file or anywhere in Betterfy.
+
+Because the Beatport EDM Key Dataset is CC BY-SA 4.0, these weights are
+shared under the same licence: Creative Commons Attribution-ShareAlike 4.0
+International (CC BY-SA 4.0), https://creativecommons.org/licenses/by-sa/4.0/
+You may share and adapt them, including commercially, if you give credit as
+above and share adaptations under the same licence.
