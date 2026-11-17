@@ -424,10 +424,11 @@ function connectionVerdict(connection, { wifiOnly = true, confirmed = false } = 
  * @param {{weights?: Map<string, number>, recentlyActive?: Set<string>}} [o.listening]
  * @param {Iterable<string>} [o.targets]  genre playlist ids
  * @param {(p: object) => boolean} [o.isMirror]
+ * @param {Iterable<string>} [o.focus]    the Score run's weakest playlists: all their tracks (up to 60 each)
  * @returns {Set<string>|null}
  */
 function scopeIds(lib, { scope = DEFAULT_AUDIO_SETTINGS.scope, listening = null, targets = null,
-                                isMirror = () => false, exemplarsPerPlaylist = 20 } = {}) {
+                                isMirror = () => false, exemplarsPerPlaylist = 20, focus = null } = {}) {
   if (scope === 'all') return null;
   const out = new Set();
   const weights = listening?.weights ?? new Map();
@@ -444,6 +445,15 @@ function scopeIds(lib, { scope = DEFAULT_AUDIO_SETTINGS.scope, listening = null,
     if (genre && !genre.has(p.id)) continue;
     const own = [...new Map((p.tracks ?? []).filter(t => t?.id && !t.is_local).map(t => [t.id, t])).values()];
     const n = Math.min(exemplarsPerPlaylist, own.length), step = own.length / Math.max(1, n);
+    for (let i = 0; i < n; i++) out.add(own[Math.floor(i * step)].id);
+  }
+  // The Score run's weakest playlists (core/intrinsic/weak.mjs): all of each,
+  // up to 60, since a small playlist needs every heard member it has.
+  const weak = focus ? new Set(focus) : null;
+  if (weak?.size) for (const p of playlists) {
+    if (!weak.has(p.id)) continue;
+    const own = [...new Map((p.tracks ?? []).filter(t => t?.id && !t.is_local).map(t => [t.id, t])).values()];
+    const n = Math.min(60, own.length), step = own.length / Math.max(1, n);
     for (let i = 0; i < n; i++) out.add(own[Math.floor(i * step)].id);
   }
   return out;
@@ -4493,6 +4503,9 @@ const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 //      much you have FILED, not evidence that anybody played anything, so it
 //      orders tiers but never promotes a track into this one.
 //   2. Unfiled liked songs: the inbox the filing suggestions are about.
+//      Then (`focus`) every unheard member of the playlists the last Score run
+//      found weakest (core/intrinsic/weak.mjs), so a small playlist gets a sound
+//      of its own, and its pair check something to measure, before the rest.
 //   3. Tracks by artists with no tags: where crowd tags say nothing and the
 //      ear is the only signal there is.
 //   4. Exemplars of each GENRE playlist, so every destination gets a sound
@@ -4517,6 +4530,9 @@ const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 
 
 
+/** Tracks per weak playlist heard ahead of the rest (tier 2b): all of a small one. */
+const FOCUS_MAX = 60;
+
 /** listeningWeights() gives the library floor at most this much per artist. */
 const LIBRARY_FLOOR_MAX = 1;
 
@@ -4534,12 +4550,14 @@ const LIBRARY_FLOOR_MAX = 1;
  * @param {Iterable<string>} [o.targets]     ids of the genre playlists (the same `targets` the
  *        engine takes); default: every non-mirror playlist, as buildSpace() does
  * @param {(p: object) => boolean} [o.isMirror]  extra playlists the caller knows are mirrors
+ * @param {Iterable<string>} [o.focus]       playlist ids whose members are heard next after the
+ *        unfiled liked songs: the Score run's weakest playlists (weak.mjs), up to FOCUS_MAX tracks each
  * @param {number} [o.now]                   for isCurrent()'s miss TTL
  * @returns {string[]} Spotify track ids, most urgent first
  */
 function audioQueue(lib, { listening = null, filedIds = null, untaggedArtistIds = null, store = null,
                                   budget = Infinity, exemplarsPerPlaylist = 20, mel, targets = null,
-                                  isMirror = null, now = Date.now() } = {}) {
+                                  isMirror = null, focus = null, now = Date.now() } = {}) {
   const limit = Number.isFinite(budget) ? Math.max(0, Math.floor(budget)) : Infinity;
   if (limit === 0) return [];
 
@@ -4586,6 +4604,19 @@ function audioQueue(lib, { listening = null, filedIds = null, untaggedArtistIds 
   const liked = (lib?.liked ?? []).map(t => tracks.get(t?.id)).filter(Boolean);
   if (take(ordered(liked.filter(t => !filed.has(t.id))))) return out;
 
+  // 2b. The weakest playlists' own tracks.
+  const weak = focus ? new Set(focus) : null;
+  if (weak?.size) {
+    const mine = [];
+    for (const p of playlists) {
+      if (!weak.has(p.id)) continue;
+      const own = [];
+      for (const t of p.tracks ?? []) { const x = tracks.get(t?.id); if (x && !own.includes(x)) own.push(x); }
+      mine.push(...spread(own, FOCUS_MAX));
+    }
+    if (take(mine)) return out;
+  }
+
   // 3. Untagged artists.
   const untagged = new Set(untaggedArtistIds ?? []);
   if (untagged.size && take(ordered(all.filter(t => (t.artists ?? []).some(a => a?.id && untagged.has(a.id))))))
@@ -4620,7 +4651,7 @@ function spread(list, n) {
   const step = list.length / n;
   return Array.from({ length: n }, (_, i) => list[Math.floor(i * step)]);
 }
-return { audioQueue };
+return { FOCUS_MAX, audioQueue };
 })();
 /* ---- core/sources/provider.mjs ---- */
 __mod["core/sources/provider.mjs"] = (function () {

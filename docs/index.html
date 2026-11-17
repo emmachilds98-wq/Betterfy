@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-17-0250">
+<meta name="bf-build" content="2026-11-17-0301">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1924,7 +1924,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-17-0250</span>
+    <span class="mono">build 2026-11-17-0301</span>
   </p>
 
   <div class="feat">
@@ -2017,7 +2017,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-17-0250</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-17-0301</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2134,7 +2134,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-17-0250. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-17-0301. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5471,13 +5471,71 @@ function mount(ctx) {
 }
 return { rollForwardFor, rollForwardHTML, rollForwardGo, DIGEST_SEEN, DIGEST_MEASURE, digestMeasure, digestNow, digestHTML, digestLoad, digestMount, sureBatchHTML, fileSureOnes, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions, mount };
 })();
+/* ---- core/review/weakwords.mjs ---- */
+__mod["core/review/weakwords.mjs"] = (function () {
+// The words for a weak playlist's diagnosis (core/intrinsic/weak.mjs), apart
+// from the engine so Library can say them without loading it. No imports.
+
+const WEAK = Object.freeze({
+  minN: 5,             // scored tracks before a playlist is judged at all
+  below: 0.5,          // offered in the top three on fewer than this share
+  max: 5,              // playlists reported
+  few: 20,             // tracks a playlist needs before "too few" stops being the answer
+                       // (12 make it a genre playlist at all, axes.mjs MIN_FOR_TARGET)
+  minHeard: 5,         // heard members before sound can describe a playlist
+  partnerShare: 0.4,   // share of its misses one playlist must take to be "the" partner
+  partnerMin: 2,       // and at least this many
+  shareArtists: 0.3,   // artists shared with the partner, of its own, for "twin"
+  viewShare: 0.5,      // tracks also in the partner, of its own, for "view"
+  sameSound: 0.6,      // a pair check below this two-way accuracy: they sound alike
+});
+
+/** The short label for each fix. */
+const FIX_WORDS = Object.freeze({ merge: 'merge?', add: 'add tracks', wait: 'listening', none: 'working' });
+
+const pc = x => (x == null ? '—' : `${Math.round(x * 100)}%`);
+
+/** One playlist's diagnosis (weak.mjs diagnoseWeak, or a weakSummary row) in words: the reason, then what would fix it. Plain text. */
+function weakWords(d, nameOf = id => id) {
+  // A diagnosis carries `partner` as { id, … }; Library's saved summary as the id alone.
+  const pid = d.partner?.id ?? d.partner ?? null;
+  const q = pid ? nameOf(pid) : null;
+  switch (d.cause) {
+    case 'view': return {
+      why: `${pc(d.sharedTracks)} of its tracks are also in ${q}, so picks go there.`,
+      fix: `If it is meant to be a smaller pick of ${q}, that is fine. If not, merge the two, or keep only tracks that belong here.` };
+    case 'working': return {
+      why: `Usually mistaken for ${q}.`,
+      fix: `A sound check now tells the two apart (right ${pc(d.pair?.accuracy)} of ${d.pair?.n ?? 0} held out) and puts it first when a track sounds like it. Nothing to do.` };
+    case 'few': return {
+      why: `Only ${d.size} track${d.size === 1 ? '' : 's'}${q ? `, and usually mistaken for ${q}` : ''}.`,
+      fix: `Add ${d.add} more that only belong here and it will have a sound of its own.` };
+    case 'twin': return {
+      why: `Usually mistaken for ${q}${d.sharedArtists >= WEAK.shareArtists ? `: they share ${pc(d.sharedArtists)} of its artists` : ''}${
+        d.pair?.accuracy != null && d.pair.accuracy < WEAK.sameSound ? `${d.sharedArtists >= WEAK.shareArtists ? ' and' : ':'} they sound alike (${pc(d.pair.accuracy)} told apart)` : ''}.`,
+      fix: `If they are the same kind of music, merge them. If not, add a few tracks that only belong here.` };
+    case 'unheard': return {
+      why: `Listening has heard ${d.heard} of its ${d.size} tracks, too few to compare by sound.`,
+      fix: `Its tracks are next in line to be heard. Nothing to do.` };
+    case 'partner': return {
+      why: `Usually mistaken for ${q}.`,
+      fix: `Add ${d.add} tracks that sound unlike ${q}, so the two have something to tell them apart.` };
+    default: return {
+      why: `Its misses go all over${d.loners >= 0.5 ? `, and ${pc(d.loners)} of its tracks are by artists filed nowhere else` : ''}.`,
+      fix: `Add ${d.add} more example tracks, ideally more by the artists already in it.` };
+  }
+}
+return { WEAK, FIX_WORDS, weakWords };
+})();
 /* ---- web/screens/engine.mjs ---- */
 __mod["web/screens/engine.mjs"] = (function () {
+const { weakWords, FIX_WORDS } = __mod["core/review/weakwords.mjs"];
 /* The Engine screen (docs/BUILD-5-PLAN.md A4): an ES module, not a page script.
  * It touches nothing outside `ctx` (see web/README.md, "Screen modules"); the
  * ctx for it is built by SCREEN_CTX.engine in web/app/screens.js. The long
  * jobs (learn, score, the similar-artist lookups) stay in web/app/engine.js,
  * which this screen calls through ctx. */
+
 
 /**
  * Phase 0's question, answered from one run: does the bridge lift tracks by
@@ -5675,6 +5733,30 @@ function identifyHTML(a, p, esc) {
     </div>`;
 }
 
+/** "Playlists it understands least": with the engine that places, each one's
+ *  reason and fix (core/intrinsic/weak.mjs, via engineCalibrate); before that
+ *  has run, the engine-alone list as it always was. */
+function weakCard(v, LIB, p, esc) {
+  const names = new Map((LIB?.playlists ?? []).map(x => [x.id, x.name]));
+  const nameOf = id => names.get(id) ?? id;
+  if (Array.isArray(v?.weak)) {
+    if (!v.weak.length) return `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+      <p class="why">None: every genre playlist with enough scored tracks is offered in the top three at least half the time.</p>`;
+    return `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+      <p class="why">How often each one was offered in the top three, for tracks that really are in it, by the engine that files
+        (sound and similar artists included). With the likeliest reason and what would fix it. Nothing changes without a tap.</p>
+      <div class="rows" style="margin-top:10px" id="weakRows">${v.weak.map(d => { const w = weakWords(d, nameOf);
+        return `<div class="row"><div class="main"><div class="ttl">${esc(nameOf(d.id))} <span class="sub">· ${p(d.inTop3)} of ${d.n} scored</span></div>
+          <div class="sub">${esc(w.why)} ${esc(w.fix)}</div></div><span class="tag ${d.fix === 'none' || d.fix === 'wait' ? 'ok' : 'warn'}">${esc(FIX_WORDS[d.fix] ?? d.fix)}</span></div>`; }).join('')}
+      </div>`;
+  }
+  return weakBuckets(v, LIB).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+      <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
+        Low here means the engine has no real idea what that playlist is for.</p>
+      <div class="facts" style="margin-top:10px">${weakBuckets(v, LIB).map(b =>
+        `<div><span>${esc(b.name)} <span class="sub">· ${b.n} tracks</span></span><b class="mono">${p(b.inTop3)}</b></div>`).join('')}
+      </div>` : '';
+}
 /** The playlists the engine understands least: offered in its top three least
  *  often for tracks that really are in them. Five or more tracks, so one odd
  *  record cannot put a playlist on the list by itself. */
@@ -5698,7 +5780,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-17-0250`,
+    `Betterfy engine score — build 2026-11-17-0301`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5707,7 +5789,10 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     v.base ? `Today's engine: top-1 ${pc(v.base.top1)}, top-3 ${pc(v.base.top3)}${v.base.noAnswer ? `, no tags for ${v.base.noAnswer}` : ''}`
            : `Today's engine: not scored (no tag data loaded)`,
     v.mine.declined ? `Declined: ${v.mine.declined}, of which would have been right: ${v.mine.declinedWouldHaveBeenRight ?? 0}` : null,
-    weakBuckets(v, LIB).length ? `Weakest: ${weakBuckets(v, LIB).map(b => `${b.name} ${pc(b.inTop3)} of ${b.n}`).join('; ')}` : null,
+    // The old list, on the engine alone, kept so a paste compares with the last one;
+    // then the same question asked of the engine that places, with each one's reason.
+    weakBuckets(v, LIB).length ? `Weakest (engine alone): ${weakBuckets(v, LIB).map(b => `${b.name} ${pc(b.inTop3)} of ${b.n}`).join('; ')}` : null,
+    v.weakLine || null,
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
     v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
     ...bridgeLines(v, pc),
@@ -5909,7 +5994,8 @@ function view(c) {
       <h2 style="margin:0 0 12px; font-size:19px">Learn my library</h2>
       <p>Reads your ${LIB.playlists.length.toLocaleString()} playlists once and works out what each one means.
         Takes a few seconds, and is remembered afterwards so it is a one-off. It runs on this device —
-        nothing is sent anywhere.</p>
+        nothing is sent anywhere. It starts by itself a few seconds after the app opens; this button is
+        only for when it could not.</p>
       <div class="rowbtns" style="margin-top:18px">
         <button class="b big go" data-act="go">Learn my library</button>
       </div>
@@ -6055,12 +6141,7 @@ function view(c) {
     ${blendCard(v, p, esc)}
     ${audioCard(v, p, esc, maestScoreText)}
     ${v && !v.error ? calibCard(p, ENG.calib) : ''}
-    ${weakBuckets(v, LIB).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
-      <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
-        Low here means the engine has no real idea what that playlist is for.</p>
-      <div class="facts" style="margin-top:10px">${weakBuckets(v, LIB).map(b =>
-        `<div><span>${esc(b.name)} <span class="sub">· ${b.n} tracks</span></span><b class="mono">${p(b.inTop3)}</b></div>`).join('')}
-      </div>` : ''}` : ''}
+    ${weakCard(v, LIB, p, esc)}` : ''}
     <label class="check-row" style="margin-top:14px"><input type="checkbox" data-act="bridgeToggle" id="bridgeToggle" ${bridgeOn() ? 'checked' : ''}
       ${ENG.valRunning ? 'disabled' : ''}> Also try similar artists (asks Deezer, ListenBrainz and Wikidata about the artists being scored)</label>
     <div class="rowbtns" style="margin-top:10px">
@@ -6196,7 +6277,7 @@ const actions = {
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, view, tuneCardHtml, actions };
+return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -7497,9 +7578,11 @@ return { trackKey, mergeName, mergePlan, splitPlan, partsFromSound, partsFromTag
 /* ---- web/screens/lists.mjs ---- */
 __mod["web/screens/lists.mjs"] = (function () {
 const { mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renamePart, includePart, writesOf, twinOffers, offerKey, readMeasure, recordOffer, dismissLine } = __mod["core/playlists/mergesplit.mjs"];
+const { weakWords } = __mod["core/review/weakwords.mjs"];
 /* The Library tab (docs/BUILD-5-PLAN.md A4, UI-E): compact playlist rows, a Suggested playlists section, and a detail sheet per playlist. Was the Playlists screen: an ES module. Reaches nothing but `ctx`;
  * SCREEN_CTX.lists in app/screens.js builds it. playlistMixes, tagCoverage, the sound profiles
  * and the split job stay classic in app/screenjobs.js. */
+
 
 
 
@@ -7764,12 +7847,55 @@ function sheetHTML(c, id) {
       ${twins.map(o => { const other = o.a.id === id ? o.b : o.a;
         return `<p class="hint">The engine can’t tell this from <b>${esc(other.name)}</b> by the music in them.</p>
       ${ms.made[o.key] ? '<span class="tag ok">Merged</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizmerge" data-a="${esc(id)}" data-b="${esc(other.id)}">Merge into a new playlist…</button>${notNow(o.key)}</div>`}`; }).join('')}</section>` : ''}
+    ${weakSheetHTML(c, id)}
     ${fillHTML(c, id, pl)}
     ${pl.tracks.length >= 8 ? `<section class="pls-sec"><h3>Shuffle</h3>
       <p class="hint">Spaces out the same artist, then writes it as a playlist to play with Spotify’s shuffle off.</p>
       <div class="rowbtns"><button class="b p" data-act="plshuffle" data-pl="${esc(id)}">Shuffle</button>${
         canMix ? `<button class="b" data-act="pldj" data-pl="${esc(id)}">DJ order</button>` : ''}</div></section>` : ''}
     </div>`;
+}
+
+/* ---------- Playlists it understands least (core/intrinsic/weak.mjs) ----------
+ * The last Score run's weakest genre playlists, each with its likeliest reason
+ * and the honest fix, kept in `bf_weak` by web/app/engine.js. Advice only: a
+ * merge opens the wizard (nothing is written until its own tap), and "add a
+ * few tracks" is for the listener to do. Scored again by itself (autoscore). */
+const weakName = (c, id) => c.LIB?.playlists?.find(x => x.id === id)?.name ?? c.CFG?.[id]?.name ?? null;
+/** Saved weak rows whose playlists still exist, in the order Score gave them. */
+function weakRows(c) {
+  const w = c.weakSaved?.();
+  if (!w?.rows?.length) return [];
+  return w.rows.filter(d => weakName(c, d.id)).map(d => ({ ...d, partner: d.partner && weakName(c, d.partner) ? d.partner : null }));
+}
+const weakWhen = (at, now = Date.now()) => {
+  const days = Number.isFinite(at) ? Math.floor((now - at) / 864e5) : null;
+  return days == null ? '' : days <= 0 ? ' (scored today)' : days === 1 ? ' (scored yesterday)' : ` (scored ${days} days ago)`;
+};
+function weakSheetHTML(c, id) {
+  const { esc } = c;
+  const d = weakRows(c).find(x => x.id === id);
+  if (!d) return '';
+  const w = weakWords(d, x => weakName(c, x) ?? x);
+  const pc = x => `${Math.round((x ?? 0) * 100)}%`;
+  const merge = d.fix === 'merge' && d.partner
+    ? `<div class="rowbtns"><button class="b sm p" data-act="wizmerge" data-a="${esc(id)}" data-b="${esc(d.partner)}">Merge with ${esc(weakName(c, d.partner))}…</button></div>` : '';
+  return `<section class="pls-sec" id="plweak"><h3>Help it learn this one</h3>
+    <p class="hint">Offered in its top three for ${pc(d.inTop3)} of the ${d.n} tracks it was checked on${esc(weakWhen(c.weakSaved?.()?.at))}. ${esc(w.why)}</p>
+    <p class="hint"><b>${esc(w.fix)}</b></p>${merge}</section>`;
+}
+function weakListHTML(c) {
+  const { esc } = c;
+  const rows = weakRows(c).filter(d => d.fix !== 'none' && d.fix !== 'wait').slice(0, 3);
+  if (!rows.length) return '';
+  const nameOf = x => weakName(c, x) ?? x;
+  return `<section class="plsugg" aria-labelledby="plweak-h">
+      <div class="plsugg-head"><h2 id="plweak-h">Playlists it gets wrong most</h2></div>
+      <p class="hint">From your last Score${esc(weakWhen(c.weakSaved?.()?.at))}. Each one with what would help; nothing changes without a tap.</p>
+      <div class="plrows">${rows.map(d => `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(d.id)}" aria-haspopup="dialog">
+        <span class="plmain"><span class="ttl">${esc(nameOf(d.id))}</span>
+          <span class="plmeta">${esc(weakWords(d, nameOf).fix)}</span></span></button>`).join('')}</div>
+    </section>`;
 }
 
 /* ---------- Fill this playlist (BUILD-6 F2) ----------
@@ -8129,7 +8255,7 @@ function view(c) {
       <p class="hint">${esc(knowsYouLine(eng))}</p></section>` : '';
   return `<h1>Library</h1>
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
-    ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${suggHTML}
+    ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
     ${knowsHTML}
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
@@ -8249,7 +8375,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, waitingCounts, rowFacts, attentionOrder, knowsYouLine, sheetHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, waitingCounts, rowFacts, attentionOrder, knowsYouLine, sheetHTML, weakRows, weakSheetHTML, weakListHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -9932,7 +10058,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-17-0250';
+const BUILD = '2026-11-17-0301';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10270,7 +10396,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-17-0250', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-17-0301', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11028,7 +11154,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-17-0250');
+    const w = new Worker('reports-worker.js?v=2026-11-17-0301');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14527,7 +14653,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-17-0250';
+    s.src = 'engine.js?v=2026-11-17-0301';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -14549,7 +14675,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-17-0250');
+    const w = new Worker('engine-worker.js?v=2026-11-17-0301');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14710,14 +14836,43 @@ function engineFamiliesMemo() {
   if (FAMS_MEMO.key !== key) FAMS_MEMO = { key, map: engineFamilies() };
   return FAMS_MEMO.map;
 }
-function enginePairsFit(rows) {
+function enginePairsFit(rows, extra = []) {
   const index = engineMoodIndex();
   if (!index?.size || !rows?.length || typeof BetterfyPairs === 'undefined' || typeof BetterfyFamily === 'undefined') return null;
   const fams = engineFamiliesMemo(), targets = new Set(engineTargets());
   const fit = BetterfyPairs.fitPairs(LIB, index, rows, ENG.pairs ?? [], {
-    inScope: id => targets.has(id),
+    inScope: id => targets.has(id), extra,
     together: (a, b) => (fams.get(a) ?? `own:${a}`) === (fams.get(b) ?? `own:${b}`) });
   return fit.rows.length ? fit : null;
+}
+
+/* ---------- the playlists it understands least, and why (core/intrinsic/weak.mjs) ----------
+ * Read off the held-out rows of the engine that places (not the engine alone,
+ * which is what the old "Weakest" line measured), each with its likeliest
+ * reason and the honest fix. Kept small in `bf_weak` for Library's advice and
+ * for listening, which hears these playlists' tracks next. Nothing changes a
+ * playlist: a merge is still the wizard, behind a tap. */
+const WEAK_KEY = 'bf_weak';
+function engineWeakList(rows) {
+  if (!rows?.length || typeof BetterfyWeak === 'undefined') return null;
+  const targets = new Set(engineTargets());
+  return BetterfyWeak.weakPlaylists(rows, { inScope: id => targets.has(id) });
+}
+function engineWeakDiagnose(weak, pairs) {
+  if (!weak || typeof BetterfyWeak === 'undefined') return null;
+  const targets = new Set(engineTargets());
+  return BetterfyWeak.diagnoseWeak(weak, { lib: LIB, index: engineMoodIndex(), pairs, families: engineFamiliesMemo(),
+                                           inScope: id => targets.has(id) });
+}
+function engineWeakRemember(diag) {
+  try { LS.setItem(WEAK_KEY, JSON.stringify({ ...BetterfyWeak.weakSummary(diag), targets: engineTargets() })); }
+  catch { /* shown on the Engine screen this session only */ }
+}
+/** What the last Score run said about the weakest playlists, for Library and listening. Null before any. */
+function weakSaved() {
+  let w = null;
+  try { w = JSON.parse(LS.getItem(WEAK_KEY) || 'null'); } catch { return null; }
+  return Array.isArray(w?.rows) ? w : null;
 }
 
 function engineFamilyFit(rows) {
@@ -14776,9 +14931,22 @@ async function engineCalibrate(v) {
   let mood = null;
   try { mood = engineMoodFit(); } catch { mood = null; }
   if (mood) v.moodLine = BetterfyMood.moodLine(mood);
+  // The weakest playlists first, so each one's partner gets a pair check of its own.
+  // Read off the rows of the engine that places: with sound, else with similar artists.
+  const placeRows = soundRows ?? bridgeRows ?? baseRows;
+  let weak = null;
+  try { weak = engineWeakList(placeRows); } catch { weak = null; }
   let pairs = null;
-  try { pairs = enginePairsFit(soundRows ?? baseRows); } catch { pairs = null; }
+  try { pairs = enginePairsFit(soundRows ?? baseRows, weak ? BetterfyWeak.weakPairs(weak) : []); } catch { pairs = null; }
   if (pairs) v.pairsLine = BetterfyPairs.pairsLine(pairs, id => CFG[id]?.name ?? id);
+  try {
+    const diag = engineWeakDiagnose(weak, pairs);
+    if (diag) {
+      v.weak = diag;
+      v.weakLine = BetterfyWeak.weakLine(diag, id => CFG[id]?.name ?? id);
+      engineWeakRemember(diag);
+    }
+  } catch { /* the old list stays */ }
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
@@ -15214,7 +15382,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-17-0250';
+    s.src = 'audio.js?v=2026-11-17-0301';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -15268,7 +15436,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-17-0250', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-17-0301', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -16349,8 +16517,10 @@ async function audioTracks() {
   const targets = Object.entries(CFG ?? {}).filter(([, c]) => c.target || c.axis === 'mood' || c.axis === 'context').map(([id]) => id);
   const isMirror = p => isMirrorPlaylist(p);
   const store = AUDIO.records ?? new Map();
-  const allowed = A.scopeIds(LIB, { scope: set.scope, listening, targets, isMirror });
-  const ids = A.audioQueue(LIB, { listening, store, mel: A.MEL_VERSION, targets, isMirror })
+  // The last Score run's weakest playlists (core/intrinsic/weak.mjs): their tracks are heard next.
+  const focus = (typeof weakSaved === 'function' ? weakSaved()?.rows ?? [] : []).map(d => d.id);
+  const allowed = A.scopeIds(LIB, { scope: set.scope, listening, targets, isMirror, focus });
+  const ids = A.audioQueue(LIB, { listening, store, mel: A.MEL_VERSION, targets, isMirror, focus })
     .filter(id => !allowed || allowed.has(id));
   const byId = new Map();
   for (const t of LIB.liked ?? []) byId.set(t.id, t);
@@ -16413,7 +16583,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-17-0250', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-17-0301', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -16543,8 +16713,16 @@ function clapStatusHTML(d) {
  *
  * analyseRun() takes its collaborators as `d` so it can be tested with stubs;
  * analyseGo()/analyseAuto() wire the real ones.
+ *
+ * A new account never has to press it (2026-11-17, owner's ask): boot.js asks
+ * analyseFirst() before the first paint, so File opens on the progress strip
+ * rather than the button, then runs analyseAuto() in the background: genres
+ * from Wikidata, listening, Last.fm tags, and last the Engine's map of the
+ * playlists (engineAutoLearn, in the engine worker). File stays usable the
+ * whole time. Every later load learns that map again quietly (from the cache,
+ * usually), so the Engine screen never waits on "Learn my library" either.
  * ======================================================================== */
-const ANALYSE = { running: false, tags: [0, 0], listen: null, timer: null };
+const ANALYSE = { running: false, pending: false, stage: null, tags: [0, 0], listen: null, timer: null };
 
 /** Artists whose tags are thin — the same gap enrichMissing() fills. */
 function analyseGapCount() {
@@ -16560,11 +16738,15 @@ function analyseGapCount() {
 function analyseStatus(st) {
   const parts = [];
   const [td, tt] = st.tags ?? [0, 0];
+  if (st.stage === 'genres') parts.push('Looking up genres');
   if (tt) parts.push(`Reading tags ${td.toLocaleString()}/${tt.toLocaleString()}`);
+  if (st.stage === 'learn') parts.push('learning your playlists');
   const l = st.listen;
   if (l && l.total) parts.push(`listening ${Math.min(l.done ?? 0, l.total).toLocaleString()}/${l.total.toLocaleString()}`);
   else if (l?.state === 'paused') parts.push('listening waits for Wi-Fi');
-  return parts.length ? parts.join(' · ') : 'Starting…';
+  if (!parts.length) return 'Starting…';
+  const line = parts.join(' · ');
+  return line[0].toUpperCase() + line.slice(1);
 }
 
 /** Is there something worth offering? Gaps to fill, or listening that has not run. */
@@ -16579,27 +16761,40 @@ function analyseWanted(d = {}) {
 
 /**
  * Run it. Resolves with what was done; never throws (a failed half just stops).
- * `d`: key(), gaps(), enrich({quiet,onProgress}), listen(), listenVM(), status(st), go(view).
+ * `d`: key(), gaps(), enrich({quiet,onProgress}), listen(), listenVM(), status(st), go(view),
+ * and optionally genres() (keyless genres, before the tags) and learn() (the Engine's map, last).
  */
 async function analyseRun(d, { route = true } = {}) {
   if (ANALYSE.running) return { skipped: true };
-  ANALYSE.running = true; ANALYSE.tags = [0, 0]; ANALYSE.listen = null;
-  const push = () => d.status?.({ tags: ANALYSE.tags, listen: ANALYSE.listen, running: true });
+  ANALYSE.running = true; ANALYSE.pending = false; ANALYSE.stage = null; ANALYSE.tags = [0, 0]; ANALYSE.listen = null;
+  const now = () => ({ tags: ANALYSE.tags, listen: ANALYSE.listen, stage: ANALYSE.stage });
+  const push = () => d.status?.({ ...now(), running: true });
   const out = { tags: false, listen: false };
   try {
     // Listening first: it runs by itself while the tags are read.
     try { await d.listen(); out.listen = true; } catch { /* its own error shows on Sources */ }
     const poll = () => { ANALYSE.listen = d.listenVM?.() ?? null; push(); };
     ANALYSE.timer = setInterval(poll, 600); poll();
+    if (d.genres) {
+      ANALYSE.stage = 'genres'; push();
+      try { await d.genres(); out.genres = true; } catch { /* Last.fm still fills what it can */ }
+      ANALYSE.stage = null;
+    }
     if (d.key() && d.gaps() > 0) {
       await d.enrich({ quiet: true, onProgress: (n, t) => { ANALYSE.tags = [n, t]; push(); } });
       out.tags = true;
     }
+    // Last, so the map is learned with the tags just read.
+    if (d.learn) {
+      ANALYSE.stage = 'learn'; push();
+      try { out.learn = !!(await d.learn()); } catch { out.learn = false; }
+      ANALYSE.stage = null;
+    }
     poll();
   } catch { /* leave whatever finished */ }
   finally {
-    clearInterval(ANALYSE.timer); ANALYSE.timer = null; ANALYSE.running = false;
-    d.status?.({ tags: ANALYSE.tags, listen: ANALYSE.listen, running: false });
+    clearInterval(ANALYSE.timer); ANALYSE.timer = null; ANALYSE.running = false; ANALYSE.stage = null;
+    d.status?.({ ...now(), running: false });
   }
   if (route) d.go('inbox');
   return out;
@@ -16609,6 +16804,8 @@ function analyseDeps() {
   return {
     key: lfmKey, gaps: analyseGapCount,
     enrich: o => enrichMissing(o),
+    genres: () => (untaggedArtists().size ? fillFromWikidata({ quiet: true }) : 0),
+    learn: () => engineAutoLearn(),
     listen: () => audioStart({ quiet: true }),
     listenVM: () => AUDIO.vm,
     status: st => {
@@ -16623,20 +16820,46 @@ function analyseDeps() {
 /** The button. */
 function analyseGo() { LS.setItem('bf_analysed', '1'); return analyseRun(analyseDeps()); }
 
-/** Once, after the first load with a key: the same run, without taking the screen away. */
+/** Is this the first load that has something to analyse? Asked by boot before the
+ *  first paint, so File opens on the progress strip instead of the button. */
+function analyseFirst() {
+  if (LS.getItem('bf_analysed') || ANALYSE.running) return false;
+  try { ANALYSE.pending = !!analyseWanted().any; } catch { ANALYSE.pending = false; }
+  return ANALYSE.pending;
+}
+
+/** Once, on an account's first load: the same run as the button, in the background,
+ *  never taking the screen away. Resolves when it is done (or at once, with nothing to do). */
 function analyseAuto() {
-  if (LS.getItem('bf_analysed') || !lfmKey() || ANALYSE.running) return;
-  if (!analyseWanted().any) return;
+  if (LS.getItem('bf_analysed') || ANALYSE.running) { ANALYSE.pending = false; return Promise.resolve(null); }
+  if (!analyseWanted().any) { ANALYSE.pending = false; return Promise.resolve(null); }
   LS.setItem('bf_analysed', '1');
-  analyseRun(analyseDeps(), { route: false });
+  return analyseRun(analyseDeps(), { route: false });
+}
+
+/**
+ * The Engine's map of the playlists (what "Learn my library" makes), in the
+ * background. Built in the engine worker and kept on this device, so after the
+ * first time it is read back from the cache. Only when nothing has asked for it
+ * yet (idle), there are genre playlists to learn, a worker to build it in, and no
+ * Data Saver. Resolves true when the map is ready.
+ */
+async function engineAutoLearn() {
+  if (typeof ENG === 'undefined' || ENG.status !== 'idle' || !LIB) return ENG?.status === 'ready';
+  if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
+  if (!engineInBackground() || !engineTargets().length) return false;
+  await engineAnalyse();
+  return ENG.status === 'ready';
 }
 
 /** Home's button and its progress strip. Empty when there is nothing to offer. */
 function analyseHTML() {
-  if (ANALYSE.running) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen }))}</span></div>`;
+  if (ANALYSE.running || ANALYSE.pending) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen, stage: ANALYSE.stage }))}</span></div>`;
+  // Once analysed, every load keeps the tags and listening going by itself (boot.js): no button.
+  if (LS.getItem('bf_analysed')) return '';
   if (!analyseWanted().any) return '';
   return `<div class="analyse"><button class="b p" id="analyseGo" data-act="analyseGo">Analyse my library</button>
-    ${LS.getItem('bf_analysed') ? '' : `<span class="d">Reads tags and listens to your liked songs, then suggests where each goes.</span>`}</div>
+    <span class="d">Reads tags and listens to your liked songs, then suggests where each goes.</span></div>
     <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
 }
 
@@ -16663,8 +16886,9 @@ function onbHTML() {
   if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return '';
   onbCount();
   const n = ONB.n; if (n == null || n >= ONB_GOAL) return '';
-  const analysed = !!LS.getItem('bf_analysed') || ANALYSE.running || !analyseWanted().any;
-  const steps = [['Connected', true], [ANALYSE.running ? 'Analysing' : 'Analyse your library', analysed],
+  const busy = ANALYSE.running || ANALYSE.pending;
+  const analysed = !!LS.getItem('bf_analysed') || busy || !analyseWanted().any;
+  const steps = [['Connected', true], [busy ? 'Analysing' : 'Analyse your library', analysed],
     ['File your first five (' + n + '/' + ONB_GOAL + ')', false]];
   const cur = steps.findIndex(x => !x[1]);
   return `<ol class="onb" aria-label="Getting started">${steps.map(([t, done], i) =>
@@ -16853,6 +17077,8 @@ SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate, thumbHTML, engineSummary,
   twinPairs: () => ENG?.pairs ?? null,
+  // The last Score run's weakest playlists, with reasons (core/intrinsic/weak.mjs via app/engine.js).
+  weakSaved: () => (typeof weakSaved === 'function' ? weakSaved() : null),
   // Merge/split wizard (BUILD-6 F4): new private playlists, written through the History log.
   sp, landedIn,
   // Fill this playlist (BUILD-6 F2): ranked by core/recommend/fill.mjs in the lazy engine, written through the History log.
@@ -16953,7 +17179,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_shuf_flow', group:'Your library', why:'Whether shuffle should follow sound flow, as you last set it.' },
   { where:'local', key:'bf_shuf_redisc', group:'Your library', why:'Whether shuffle should mix in rediscoveries, as you last set it.' },
   { where:'local', key:'bf_disc_mem', group:'Your library', why:'Discover\'s memory: artist names you passed on (never offered again) and ones you liked or added from it (extra seeds).' },
-  { where:'local', key:'bf_analysed', group:'Your library', why:'That you have run "Analyse my library" once.' },
+  { where:'local', key:'bf_analysed', group:'Your library', why:'That this account\'s first analysis has run (it starts by itself on the first load).' },
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_engscore', group:'Your library', why:'The headline of the last Score run (right first time, top three, how many tracks), for Library\'s "How well it knows you" card.' },
@@ -16984,6 +17210,7 @@ const DATA_KEYS = [
   { where:'idb', key:'engine-blend', group:'Engine', why:'How File blends tag picks with the engine, from your Score run.' },
   { where:'idb', key:'engine-weights', group:'Engine', why:'The engine weights fitted to your library by a Score run.' },
   { where:'idb', key:'engine-tune', group:'Engine', why:'Tuning you saved from Engine › Tune.' },
+  { where:'local', key:'bf_weak', group:'Engine', why:'Which of your genre playlists your last Score run found it understands least, why, and what would help, for Library\'s advice and so listening hears those first.' },
   { where:'local', key:'bf_autoscore', group:'Engine', why:'When Score + Tune last ran (by itself or by hand), how many tracks listening had heard then, and whether it finished, so it runs again by itself after listening or in a week.' },
 
   // --- listening to your music ---
@@ -18066,6 +18293,9 @@ async function start(force) {
     const whoName = LIB.user?.name ?? LIB.user?.id ?? '';
     $('#who').textContent = whoName;
     $('#sheetWho').textContent = whoName;
+    // A new account's first analysis starts by itself (analyse.js): asked before the
+    // first paint so File opens on its progress strip, never on a button.
+    const firstRun = (() => { try { return analyseFirst(); } catch { return false; } })();
     view = ROUTER.start(); S.inboxAt = 0; render();
     // An old link such as #/sources opens the Settings sheet on that section.
     const landed = ROUTER.section; if (landed) openUnderHood(landed);
@@ -18079,21 +18309,28 @@ async function start(force) {
     // Then Last.fm, with the built-in key, for every artist still thin (the owner's
     // call, 2026-11-16: every keyless source on by default). Chained after Wikidata
     // because both write the same tag cache. Asks only new or stale artists, so a
-    // reload costs almost nothing; the first run is left to analyseAuto() below.
+    // reload costs almost nothing. On an account's first load the same steps run as
+    // its first analysis instead, with listening and progress on File (analyseAuto).
     (async () => {
-      if (untaggedArtists().size) await fillFromWikidata({ quiet: true }).catch(() => {});
-      if (LS.getItem('bf_analysed') && lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
-        await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
+      if (firstRun) await analyseAuto().catch(() => null);
+      else {
+        if (untaggedArtists().size) await fillFromWikidata({ quiet: true }).catch(() => {});
+        if (LS.getItem('bf_analysed') && lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
+          await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
+        }
       }
+      // The Engine's map of the playlists, in the worker: from the cache after the first
+      // time, so the Engine screen opens on results, not "Learn my library". Before the
+      // similar artists, which place their picks in it.
+      await engineAutoLearn().catch(() => false);
       // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
       // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
       // don't compete with the tag lookups; resumes where the last load stopped.
       if (typeof bridgeWarm === 'function') await bridgeWarm().catch(() => {});
     })();
-    // Listening resumes by itself where it left off, if it was switched on — after the first paint.
-    if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
-    // One-tap analysis runs once by itself when a Last.fm key (shared or own) is there.
-    setTimeout(() => { try { analyseAuto(); } catch { /* optional */ } }, 4000);
+    // Listening resumes by itself where it left off, if it was switched on — after the first
+    // paint. (On a first run the analysis above starts it.)
+    if (audioSettings().on && !firstRun) setTimeout(() => audioStart({ quiet: true }), 3000);
     // Score + Tune by itself: first look a minute in, then every five minutes while the tab is in front.
     try { autoScoreStart(); } catch { /* optional */ }
   } catch (e) {

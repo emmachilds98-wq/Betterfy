@@ -14,6 +14,9 @@
 //      much you have FILED, not evidence that anybody played anything, so it
 //      orders tiers but never promotes a track into this one.
 //   2. Unfiled liked songs: the inbox the filing suggestions are about.
+//      Then (`focus`) every unheard member of the playlists the last Score run
+//      found weakest (core/intrinsic/weak.mjs), so a small playlist gets a sound
+//      of its own, and its pair check something to measure, before the rest.
 //   3. Tracks by artists with no tags: where crowd tags say nothing and the
 //      ear is the only signal there is.
 //   4. Exemplars of each GENRE playlist, so every destination gets a sound
@@ -38,6 +41,9 @@ import { isCurrent } from './record.mjs';
 import { byListening } from '../../profile.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
 
+/** Tracks per weak playlist heard ahead of the rest (tier 2b): all of a small one. */
+export const FOCUS_MAX = 60;
+
 /** listeningWeights() gives the library floor at most this much per artist. */
 const LIBRARY_FLOOR_MAX = 1;
 
@@ -55,12 +61,14 @@ const LIBRARY_FLOOR_MAX = 1;
  * @param {Iterable<string>} [o.targets]     ids of the genre playlists (the same `targets` the
  *        engine takes); default: every non-mirror playlist, as buildSpace() does
  * @param {(p: object) => boolean} [o.isMirror]  extra playlists the caller knows are mirrors
+ * @param {Iterable<string>} [o.focus]       playlist ids whose members are heard next after the
+ *        unfiled liked songs: the Score run's weakest playlists (weak.mjs), up to FOCUS_MAX tracks each
  * @param {number} [o.now]                   for isCurrent()'s miss TTL
  * @returns {string[]} Spotify track ids, most urgent first
  */
 export function audioQueue(lib, { listening = null, filedIds = null, untaggedArtistIds = null, store = null,
                                   budget = Infinity, exemplarsPerPlaylist = 20, mel, targets = null,
-                                  isMirror = null, now = Date.now() } = {}) {
+                                  isMirror = null, focus = null, now = Date.now() } = {}) {
   const limit = Number.isFinite(budget) ? Math.max(0, Math.floor(budget)) : Infinity;
   if (limit === 0) return [];
 
@@ -106,6 +114,19 @@ export function audioQueue(lib, { listening = null, filedIds = null, untaggedArt
     : new Set(playlists.flatMap(p => (p.tracks ?? []).map(t => t?.id).filter(Boolean)));
   const liked = (lib?.liked ?? []).map(t => tracks.get(t?.id)).filter(Boolean);
   if (take(ordered(liked.filter(t => !filed.has(t.id))))) return out;
+
+  // 2b. The weakest playlists' own tracks.
+  const weak = focus ? new Set(focus) : null;
+  if (weak?.size) {
+    const mine = [];
+    for (const p of playlists) {
+      if (!weak.has(p.id)) continue;
+      const own = [];
+      for (const t of p.tracks ?? []) { const x = tracks.get(t?.id); if (x && !own.includes(x)) own.push(x); }
+      mine.push(...spread(own, FOCUS_MAX));
+    }
+    if (take(mine)) return out;
+  }
 
   // 3. Untagged artists.
   const untagged = new Set(untaggedArtistIds ?? []);

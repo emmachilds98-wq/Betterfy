@@ -89,6 +89,8 @@ SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate, thumbHTML, engineSummary,
   twinPairs: () => ENG?.pairs ?? null,
+  // The last Score run's weakest playlists, with reasons (core/intrinsic/weak.mjs via app/engine.js).
+  weakSaved: () => (typeof weakSaved === 'function' ? weakSaved() : null),
   // Merge/split wizard (BUILD-6 F4): new private playlists, written through the History log.
   sp, landedIn,
   // Fill this playlist (BUILD-6 F2): ranked by core/recommend/fill.mjs in the lazy engine, written through the History log.

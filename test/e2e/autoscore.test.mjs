@@ -28,11 +28,17 @@ test('a Score + Tune run starts and finishes by itself, and the Engine screen sa
   assert.ok(await page.evaluate(() => !!ENG.val && !ENG.val.error && !!TUNE.res), 'Score and Tune both ran');
   // Nothing due straight after a run.
   assert.equal(await page.evaluate(() => autoScoreDue()), null);
+  // The weakest playlists, read off the engine that places, kept for Library and listening.
+  const weak = await page.evaluate(() => JSON.parse(localStorage.getItem('bf_weak') || 'null'));
+  assert.ok(weak && Array.isArray(weak.rows), 'the weak-playlist diagnosis is kept');
+  assert.ok(await page.evaluate(() => Array.isArray(ENG.val.weak)), 'and is on the Score result');
 
   await page.evaluate(() => go('engine'));
   await page.waitForSelector('#autoScore');
   assert.match(await page.locator('#autoScore').innerText(), /^Last scored (just now|\d+ min ago), on its first check\./);
   assert.ok(await page.locator('[data-act="copy"]').count(), 'the results are there to copy');
+  assert.match(await page.locator('.card').filter({ hasText: 'Playlists it understands least' }).first().innerText(),
+               /by the engine that files|None: every genre playlist/);
   assert.deepEqual(app.errors, []);
 });
 

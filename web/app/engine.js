@@ -203,14 +203,43 @@ function engineFamiliesMemo() {
   if (FAMS_MEMO.key !== key) FAMS_MEMO = { key, map: engineFamilies() };
   return FAMS_MEMO.map;
 }
-function enginePairsFit(rows) {
+function enginePairsFit(rows, extra = []) {
   const index = engineMoodIndex();
   if (!index?.size || !rows?.length || typeof BetterfyPairs === 'undefined' || typeof BetterfyFamily === 'undefined') return null;
   const fams = engineFamiliesMemo(), targets = new Set(engineTargets());
   const fit = BetterfyPairs.fitPairs(LIB, index, rows, ENG.pairs ?? [], {
-    inScope: id => targets.has(id),
+    inScope: id => targets.has(id), extra,
     together: (a, b) => (fams.get(a) ?? `own:${a}`) === (fams.get(b) ?? `own:${b}`) });
   return fit.rows.length ? fit : null;
+}
+
+/* ---------- the playlists it understands least, and why (core/intrinsic/weak.mjs) ----------
+ * Read off the held-out rows of the engine that places (not the engine alone,
+ * which is what the old "Weakest" line measured), each with its likeliest
+ * reason and the honest fix. Kept small in `bf_weak` for Library's advice and
+ * for listening, which hears these playlists' tracks next. Nothing changes a
+ * playlist: a merge is still the wizard, behind a tap. */
+const WEAK_KEY = 'bf_weak';
+function engineWeakList(rows) {
+  if (!rows?.length || typeof BetterfyWeak === 'undefined') return null;
+  const targets = new Set(engineTargets());
+  return BetterfyWeak.weakPlaylists(rows, { inScope: id => targets.has(id) });
+}
+function engineWeakDiagnose(weak, pairs) {
+  if (!weak || typeof BetterfyWeak === 'undefined') return null;
+  const targets = new Set(engineTargets());
+  return BetterfyWeak.diagnoseWeak(weak, { lib: LIB, index: engineMoodIndex(), pairs, families: engineFamiliesMemo(),
+                                           inScope: id => targets.has(id) });
+}
+function engineWeakRemember(diag) {
+  try { LS.setItem(WEAK_KEY, JSON.stringify({ ...BetterfyWeak.weakSummary(diag), targets: engineTargets() })); }
+  catch { /* shown on the Engine screen this session only */ }
+}
+/** What the last Score run said about the weakest playlists, for Library and listening. Null before any. */
+function weakSaved() {
+  let w = null;
+  try { w = JSON.parse(LS.getItem(WEAK_KEY) || 'null'); } catch { return null; }
+  return Array.isArray(w?.rows) ? w : null;
 }
 
 function engineFamilyFit(rows) {
@@ -269,9 +298,22 @@ async function engineCalibrate(v) {
   let mood = null;
   try { mood = engineMoodFit(); } catch { mood = null; }
   if (mood) v.moodLine = BetterfyMood.moodLine(mood);
+  // The weakest playlists first, so each one's partner gets a pair check of its own.
+  // Read off the rows of the engine that places: with sound, else with similar artists.
+  const placeRows = soundRows ?? bridgeRows ?? baseRows;
+  let weak = null;
+  try { weak = engineWeakList(placeRows); } catch { weak = null; }
   let pairs = null;
-  try { pairs = enginePairsFit(soundRows ?? baseRows); } catch { pairs = null; }
+  try { pairs = enginePairsFit(soundRows ?? baseRows, weak ? BetterfyWeak.weakPairs(weak) : []); } catch { pairs = null; }
   if (pairs) v.pairsLine = BetterfyPairs.pairsLine(pairs, id => CFG[id]?.name ?? id);
+  try {
+    const diag = engineWeakDiagnose(weak, pairs);
+    if (diag) {
+      v.weak = diag;
+      v.weakLine = BetterfyWeak.weakLine(diag, id => CFG[id]?.name ?? id);
+      engineWeakRemember(diag);
+    }
+  } catch { /* the old list stays */ }
   // The audio gate's verdict, kept with the calibration so it survives a reload.
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;

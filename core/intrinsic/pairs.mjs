@@ -141,7 +141,7 @@ export function fitPair(lib, index, a, b, gate = PAIR_GATE) {
  * genre playlists.
  * @returns {Array<{a, b, key, misses}>}
  */
-export function pairCandidates(rows, enginePairs = [], { limit = PAIR_GATE.maxPairs, inScope = null, together = null } = {}) {
+export function pairCandidates(rows, enginePairs = [], { limit = PAIR_GATE.maxPairs, inScope = null, together = null, extra = [] } = {}) {
   const seen = new Map();
   const ok = id => id && (!inScope || inScope(id));
   // `together(a, b)`: the two may be a pair at all (same family). Default: any two.
@@ -164,12 +164,29 @@ export function pairCandidates(rows, enginePairs = [], { limit = PAIR_GATE.maxPa
     const key = pairKey(a, b);
     if (!out.some(p => p.key === key)) out.push({ a: a < b ? a : b, b: a < b ? b : a, key, misses: 0 });
   }
-  return out.slice(0, limit);
+  const kept = out.slice(0, limit);
+  // `extra` (weak.mjs weakPairs): a weak playlist and the one it is mistaken
+  // for. Kept on top of `limit` and whatever the family, because a playlist
+  // the engine never ranks second can never be a confusion pair above, and is
+  // exactly the one whose fix depends on the answer: two playlists that sound
+  // alike are a merge question, two that don't need more examples. Marked
+  // `weak`: unless the engine also confused them above, it never re-orders a card.
+  for (const e of extra ?? []) {
+    if (!ok(e?.a) || !ok(e?.b) || e.a === e.b) continue;
+    const key = pairKey(e.a, e.b);
+    const have = kept.find(p => p.key === key);
+    if (have) { have.weak = e.weak ?? true; continue; }
+    kept.push({ a: e.a < e.b ? e.a : e.b, b: e.a < e.b ? e.b : e.a, key, misses: e.misses ?? 0, weak: e.weak ?? true });
+  }
+  return kept;
 }
 
 /** Which of the two a heard track sounds like, by a fitted pair: `x`, `y` or null (not used / not heard). */
 export function pairPick(trackId, x, y, fit, index, lib, { tauOf = null } = {}) {
-  const row = fit?.rows?.find(r => r.use && r.key === pairKey(x, y));
+  // A weak pair the engine never ranked as its top two (weak.mjs) is measured
+  // for the diagnosis only: it was not part of the swap's check, so it never
+  // re-orders a card.
+  const row = fit?.rows?.find(r => r.use && r.key === pairKey(x, y) && (!r.weak || r.misses > 0));
   const rec = index?.get?.(trackId);
   if (!row || !rec?.emb) return null;
   const sides = sidesOf(lib, index, row.a, row.b, PAIR_GATE.maxMembers);
@@ -226,10 +243,13 @@ export function pairsImpact(rows, fit, index, lib) {
  * @param {Array} rows   held-out rows of the engine that places (placementAccuracy collect)
  * @param {Array} enginePairs  the "Can't tell apart" list (reports.mjs bucketPairs)
  */
-export function fitPairs(lib, index, rows, enginePairs = [], { inScope = null, together = null, gate = PAIR_GATE } = {}) {
-  const cands = pairCandidates(rows, enginePairs, { inScope, together, limit: gate.maxPairs ?? PAIR_GATE.maxPairs });
-  const fit = { version: PAIRS_VERSION, rows: cands.map(c => ({ ...fitPair(lib, index, c.a, c.b, gate), misses: c.misses })) };
-  fit.impact = fit.rows.some(r => r.use) ? pairsImpact(rows, fit, index, lib) : null;
+export function fitPairs(lib, index, rows, enginePairs = [], { inScope = null, together = null, gate = PAIR_GATE, extra = [] } = {}) {
+  const cands = pairCandidates(rows, enginePairs, { inScope, together, limit: gate.maxPairs ?? PAIR_GATE.maxPairs, extra });
+  const fit = { version: PAIRS_VERSION, rows: cands.map(c => ({ ...fitPair(lib, index, c.a, c.b, gate), misses: c.misses,
+                                                                 ...(c.weak ? { weak: c.weak } : {}) })) };
+  // The swap is checked on the pairs the engine itself confuses; a weak pair
+  // it never ranked as its top two is there for weak.mjs's diagnosis only.
+  fit.impact = fit.rows.some(r => r.use && (!r.weak || r.misses > 0)) ? pairsImpact(rows, fit, index, lib) : null;
   fit.use = !!fit.impact?.use;
   return fit;
 }

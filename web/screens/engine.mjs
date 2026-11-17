@@ -4,6 +4,7 @@
  * ctx for it is built by SCREEN_CTX.engine in web/app/screens.js. The long
  * jobs (learn, score, the similar-artist lookups) stay in web/app/engine.js,
  * which this screen calls through ctx. */
+import { weakWords, FIX_WORDS } from '../../core/review/weakwords.mjs';
 
 /**
  * Phase 0's question, answered from one run: does the bridge lift tracks by
@@ -201,6 +202,30 @@ function identifyHTML(a, p, esc) {
     </div>`;
 }
 
+/** "Playlists it understands least": with the engine that places, each one's
+ *  reason and fix (core/intrinsic/weak.mjs, via engineCalibrate); before that
+ *  has run, the engine-alone list as it always was. */
+export function weakCard(v, LIB, p, esc) {
+  const names = new Map((LIB?.playlists ?? []).map(x => [x.id, x.name]));
+  const nameOf = id => names.get(id) ?? id;
+  if (Array.isArray(v?.weak)) {
+    if (!v.weak.length) return `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+      <p class="why">None: every genre playlist with enough scored tracks is offered in the top three at least half the time.</p>`;
+    return `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+      <p class="why">How often each one was offered in the top three, for tracks that really are in it, by the engine that files
+        (sound and similar artists included). With the likeliest reason and what would fix it. Nothing changes without a tap.</p>
+      <div class="rows" style="margin-top:10px" id="weakRows">${v.weak.map(d => { const w = weakWords(d, nameOf);
+        return `<div class="row"><div class="main"><div class="ttl">${esc(nameOf(d.id))} <span class="sub">· ${p(d.inTop3)} of ${d.n} scored</span></div>
+          <div class="sub">${esc(w.why)} ${esc(w.fix)}</div></div><span class="tag ${d.fix === 'none' || d.fix === 'wait' ? 'ok' : 'warn'}">${esc(FIX_WORDS[d.fix] ?? d.fix)}</span></div>`; }).join('')}
+      </div>`;
+  }
+  return weakBuckets(v, LIB).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+      <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
+        Low here means the engine has no real idea what that playlist is for.</p>
+      <div class="facts" style="margin-top:10px">${weakBuckets(v, LIB).map(b =>
+        `<div><span>${esc(b.name)} <span class="sub">· ${b.n} tracks</span></span><b class="mono">${p(b.inTop3)}</b></div>`).join('')}
+      </div>` : '';
+}
 /** The playlists the engine understands least: offered in its top three least
  *  often for tracks that really are in them. Five or more tracks, so one odd
  *  record cannot put a playlist on the list by itself. */
@@ -233,7 +258,10 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     v.base ? `Today's engine: top-1 ${pc(v.base.top1)}, top-3 ${pc(v.base.top3)}${v.base.noAnswer ? `, no tags for ${v.base.noAnswer}` : ''}`
            : `Today's engine: not scored (no tag data loaded)`,
     v.mine.declined ? `Declined: ${v.mine.declined}, of which would have been right: ${v.mine.declinedWouldHaveBeenRight ?? 0}` : null,
-    weakBuckets(v, LIB).length ? `Weakest: ${weakBuckets(v, LIB).map(b => `${b.name} ${pc(b.inTop3)} of ${b.n}`).join('; ')}` : null,
+    // The old list, on the engine alone, kept so a paste compares with the last one;
+    // then the same question asked of the engine that places, with each one's reason.
+    weakBuckets(v, LIB).length ? `Weakest (engine alone): ${weakBuckets(v, LIB).map(b => `${b.name} ${pc(b.inTop3)} of ${b.n}`).join('; ')}` : null,
+    v.weakLine || null,
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
     v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
     ...bridgeLines(v, pc),
@@ -435,7 +463,8 @@ export function view(c) {
       <h2 style="margin:0 0 12px; font-size:19px">Learn my library</h2>
       <p>Reads your ${LIB.playlists.length.toLocaleString()} playlists once and works out what each one means.
         Takes a few seconds, and is remembered afterwards so it is a one-off. It runs on this device —
-        nothing is sent anywhere.</p>
+        nothing is sent anywhere. It starts by itself a few seconds after the app opens; this button is
+        only for when it could not.</p>
       <div class="rowbtns" style="margin-top:18px">
         <button class="b big go" data-act="go">Learn my library</button>
       </div>
@@ -581,12 +610,7 @@ export function view(c) {
     ${blendCard(v, p, esc)}
     ${audioCard(v, p, esc, maestScoreText)}
     ${v && !v.error ? calibCard(p, ENG.calib) : ''}
-    ${weakBuckets(v, LIB).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
-      <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
-        Low here means the engine has no real idea what that playlist is for.</p>
-      <div class="facts" style="margin-top:10px">${weakBuckets(v, LIB).map(b =>
-        `<div><span>${esc(b.name)} <span class="sub">· ${b.n} tracks</span></span><b class="mono">${p(b.inTop3)}</b></div>`).join('')}
-      </div>` : ''}` : ''}
+    ${weakCard(v, LIB, p, esc)}` : ''}
     <label class="check-row" style="margin-top:14px"><input type="checkbox" data-act="bridgeToggle" id="bridgeToggle" ${bridgeOn() ? 'checked' : ''}
       ${ENG.valRunning ? 'disabled' : ''}> Also try similar artists (asks Deezer, ListenBrainz and Wikidata about the artists being scored)</label>
     <div class="rowbtns" style="margin-top:10px">

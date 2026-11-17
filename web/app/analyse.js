@@ -11,8 +11,16 @@
  *
  * analyseRun() takes its collaborators as `d` so it can be tested with stubs;
  * analyseGo()/analyseAuto() wire the real ones.
+ *
+ * A new account never has to press it (2026-11-17, owner's ask): boot.js asks
+ * analyseFirst() before the first paint, so File opens on the progress strip
+ * rather than the button, then runs analyseAuto() in the background: genres
+ * from Wikidata, listening, Last.fm tags, and last the Engine's map of the
+ * playlists (engineAutoLearn, in the engine worker). File stays usable the
+ * whole time. Every later load learns that map again quietly (from the cache,
+ * usually), so the Engine screen never waits on "Learn my library" either.
  * ======================================================================== */
-const ANALYSE = { running: false, tags: [0, 0], listen: null, timer: null };
+const ANALYSE = { running: false, pending: false, stage: null, tags: [0, 0], listen: null, timer: null };
 
 /** Artists whose tags are thin — the same gap enrichMissing() fills. */
 function analyseGapCount() {
@@ -28,11 +36,15 @@ function analyseGapCount() {
 function analyseStatus(st) {
   const parts = [];
   const [td, tt] = st.tags ?? [0, 0];
+  if (st.stage === 'genres') parts.push('Looking up genres');
   if (tt) parts.push(`Reading tags ${td.toLocaleString()}/${tt.toLocaleString()}`);
+  if (st.stage === 'learn') parts.push('learning your playlists');
   const l = st.listen;
   if (l && l.total) parts.push(`listening ${Math.min(l.done ?? 0, l.total).toLocaleString()}/${l.total.toLocaleString()}`);
   else if (l?.state === 'paused') parts.push('listening waits for Wi-Fi');
-  return parts.length ? parts.join(' · ') : 'Starting…';
+  if (!parts.length) return 'Starting…';
+  const line = parts.join(' · ');
+  return line[0].toUpperCase() + line.slice(1);
 }
 
 /** Is there something worth offering? Gaps to fill, or listening that has not run. */
@@ -47,27 +59,40 @@ function analyseWanted(d = {}) {
 
 /**
  * Run it. Resolves with what was done; never throws (a failed half just stops).
- * `d`: key(), gaps(), enrich({quiet,onProgress}), listen(), listenVM(), status(st), go(view).
+ * `d`: key(), gaps(), enrich({quiet,onProgress}), listen(), listenVM(), status(st), go(view),
+ * and optionally genres() (keyless genres, before the tags) and learn() (the Engine's map, last).
  */
 async function analyseRun(d, { route = true } = {}) {
   if (ANALYSE.running) return { skipped: true };
-  ANALYSE.running = true; ANALYSE.tags = [0, 0]; ANALYSE.listen = null;
-  const push = () => d.status?.({ tags: ANALYSE.tags, listen: ANALYSE.listen, running: true });
+  ANALYSE.running = true; ANALYSE.pending = false; ANALYSE.stage = null; ANALYSE.tags = [0, 0]; ANALYSE.listen = null;
+  const now = () => ({ tags: ANALYSE.tags, listen: ANALYSE.listen, stage: ANALYSE.stage });
+  const push = () => d.status?.({ ...now(), running: true });
   const out = { tags: false, listen: false };
   try {
     // Listening first: it runs by itself while the tags are read.
     try { await d.listen(); out.listen = true; } catch { /* its own error shows on Sources */ }
     const poll = () => { ANALYSE.listen = d.listenVM?.() ?? null; push(); };
     ANALYSE.timer = setInterval(poll, 600); poll();
+    if (d.genres) {
+      ANALYSE.stage = 'genres'; push();
+      try { await d.genres(); out.genres = true; } catch { /* Last.fm still fills what it can */ }
+      ANALYSE.stage = null;
+    }
     if (d.key() && d.gaps() > 0) {
       await d.enrich({ quiet: true, onProgress: (n, t) => { ANALYSE.tags = [n, t]; push(); } });
       out.tags = true;
     }
+    // Last, so the map is learned with the tags just read.
+    if (d.learn) {
+      ANALYSE.stage = 'learn'; push();
+      try { out.learn = !!(await d.learn()); } catch { out.learn = false; }
+      ANALYSE.stage = null;
+    }
     poll();
   } catch { /* leave whatever finished */ }
   finally {
-    clearInterval(ANALYSE.timer); ANALYSE.timer = null; ANALYSE.running = false;
-    d.status?.({ tags: ANALYSE.tags, listen: ANALYSE.listen, running: false });
+    clearInterval(ANALYSE.timer); ANALYSE.timer = null; ANALYSE.running = false; ANALYSE.stage = null;
+    d.status?.({ ...now(), running: false });
   }
   if (route) d.go('inbox');
   return out;
@@ -77,6 +102,8 @@ function analyseDeps() {
   return {
     key: lfmKey, gaps: analyseGapCount,
     enrich: o => enrichMissing(o),
+    genres: () => (untaggedArtists().size ? fillFromWikidata({ quiet: true }) : 0),
+    learn: () => engineAutoLearn(),
     listen: () => audioStart({ quiet: true }),
     listenVM: () => AUDIO.vm,
     status: st => {
@@ -91,20 +118,46 @@ function analyseDeps() {
 /** The button. */
 function analyseGo() { LS.setItem('bf_analysed', '1'); return analyseRun(analyseDeps()); }
 
-/** Once, after the first load with a key: the same run, without taking the screen away. */
+/** Is this the first load that has something to analyse? Asked by boot before the
+ *  first paint, so File opens on the progress strip instead of the button. */
+function analyseFirst() {
+  if (LS.getItem('bf_analysed') || ANALYSE.running) return false;
+  try { ANALYSE.pending = !!analyseWanted().any; } catch { ANALYSE.pending = false; }
+  return ANALYSE.pending;
+}
+
+/** Once, on an account's first load: the same run as the button, in the background,
+ *  never taking the screen away. Resolves when it is done (or at once, with nothing to do). */
 function analyseAuto() {
-  if (LS.getItem('bf_analysed') || !lfmKey() || ANALYSE.running) return;
-  if (!analyseWanted().any) return;
+  if (LS.getItem('bf_analysed') || ANALYSE.running) { ANALYSE.pending = false; return Promise.resolve(null); }
+  if (!analyseWanted().any) { ANALYSE.pending = false; return Promise.resolve(null); }
   LS.setItem('bf_analysed', '1');
-  analyseRun(analyseDeps(), { route: false });
+  return analyseRun(analyseDeps(), { route: false });
+}
+
+/**
+ * The Engine's map of the playlists (what "Learn my library" makes), in the
+ * background. Built in the engine worker and kept on this device, so after the
+ * first time it is read back from the cache. Only when nothing has asked for it
+ * yet (idle), there are genre playlists to learn, a worker to build it in, and no
+ * Data Saver. Resolves true when the map is ready.
+ */
+async function engineAutoLearn() {
+  if (typeof ENG === 'undefined' || ENG.status !== 'idle' || !LIB) return ENG?.status === 'ready';
+  if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
+  if (!engineInBackground() || !engineTargets().length) return false;
+  await engineAnalyse();
+  return ENG.status === 'ready';
 }
 
 /** Home's button and its progress strip. Empty when there is nothing to offer. */
 function analyseHTML() {
-  if (ANALYSE.running) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen }))}</span></div>`;
+  if (ANALYSE.running || ANALYSE.pending) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen, stage: ANALYSE.stage }))}</span></div>`;
+  // Once analysed, every load keeps the tags and listening going by itself (boot.js): no button.
+  if (LS.getItem('bf_analysed')) return '';
   if (!analyseWanted().any) return '';
   return `<div class="analyse"><button class="b p" id="analyseGo" data-act="analyseGo">Analyse my library</button>
-    ${LS.getItem('bf_analysed') ? '' : `<span class="d">Reads tags and listens to your liked songs, then suggests where each goes.</span>`}</div>
+    <span class="d">Reads tags and listens to your liked songs, then suggests where each goes.</span></div>
     <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
 }
 
@@ -131,8 +184,9 @@ function onbHTML() {
   if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return '';
   onbCount();
   const n = ONB.n; if (n == null || n >= ONB_GOAL) return '';
-  const analysed = !!LS.getItem('bf_analysed') || ANALYSE.running || !analyseWanted().any;
-  const steps = [['Connected', true], [ANALYSE.running ? 'Analysing' : 'Analyse your library', analysed],
+  const busy = ANALYSE.running || ANALYSE.pending;
+  const analysed = !!LS.getItem('bf_analysed') || busy || !analyseWanted().any;
+  const steps = [['Connected', true], [busy ? 'Analysing' : 'Analyse your library', analysed],
     ['File your first five (' + n + '/' + ONB_GOAL + ')', false]];
   const cur = steps.findIndex(x => !x[1]);
   return `<ol class="onb" aria-label="Getting started">${steps.map(([t, done], i) =>

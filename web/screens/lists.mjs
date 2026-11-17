@@ -5,6 +5,7 @@
 
 import { mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renamePart, includePart, writesOf,
   twinOffers, offerKey, readMeasure, recordOffer, dismissLine } from '../../core/playlists/mergesplit.mjs';
+import { weakWords } from '../../core/review/weakwords.mjs';
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
 /** The axis names in plain words, for the sheet's picker (USER-REVIEW item 8). The values stay the axis ids. */
@@ -267,12 +268,55 @@ export function sheetHTML(c, id) {
       ${twins.map(o => { const other = o.a.id === id ? o.b : o.a;
         return `<p class="hint">The engine can’t tell this from <b>${esc(other.name)}</b> by the music in them.</p>
       ${ms.made[o.key] ? '<span class="tag ok">Merged</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizmerge" data-a="${esc(id)}" data-b="${esc(other.id)}">Merge into a new playlist…</button>${notNow(o.key)}</div>`}`; }).join('')}</section>` : ''}
+    ${weakSheetHTML(c, id)}
     ${fillHTML(c, id, pl)}
     ${pl.tracks.length >= 8 ? `<section class="pls-sec"><h3>Shuffle</h3>
       <p class="hint">Spaces out the same artist, then writes it as a playlist to play with Spotify’s shuffle off.</p>
       <div class="rowbtns"><button class="b p" data-act="plshuffle" data-pl="${esc(id)}">Shuffle</button>${
         canMix ? `<button class="b" data-act="pldj" data-pl="${esc(id)}">DJ order</button>` : ''}</div></section>` : ''}
     </div>`;
+}
+
+/* ---------- Playlists it understands least (core/intrinsic/weak.mjs) ----------
+ * The last Score run's weakest genre playlists, each with its likeliest reason
+ * and the honest fix, kept in `bf_weak` by web/app/engine.js. Advice only: a
+ * merge opens the wizard (nothing is written until its own tap), and "add a
+ * few tracks" is for the listener to do. Scored again by itself (autoscore). */
+const weakName = (c, id) => c.LIB?.playlists?.find(x => x.id === id)?.name ?? c.CFG?.[id]?.name ?? null;
+/** Saved weak rows whose playlists still exist, in the order Score gave them. */
+export function weakRows(c) {
+  const w = c.weakSaved?.();
+  if (!w?.rows?.length) return [];
+  return w.rows.filter(d => weakName(c, d.id)).map(d => ({ ...d, partner: d.partner && weakName(c, d.partner) ? d.partner : null }));
+}
+const weakWhen = (at, now = Date.now()) => {
+  const days = Number.isFinite(at) ? Math.floor((now - at) / 864e5) : null;
+  return days == null ? '' : days <= 0 ? ' (scored today)' : days === 1 ? ' (scored yesterday)' : ` (scored ${days} days ago)`;
+};
+export function weakSheetHTML(c, id) {
+  const { esc } = c;
+  const d = weakRows(c).find(x => x.id === id);
+  if (!d) return '';
+  const w = weakWords(d, x => weakName(c, x) ?? x);
+  const pc = x => `${Math.round((x ?? 0) * 100)}%`;
+  const merge = d.fix === 'merge' && d.partner
+    ? `<div class="rowbtns"><button class="b sm p" data-act="wizmerge" data-a="${esc(id)}" data-b="${esc(d.partner)}">Merge with ${esc(weakName(c, d.partner))}…</button></div>` : '';
+  return `<section class="pls-sec" id="plweak"><h3>Help it learn this one</h3>
+    <p class="hint">Offered in its top three for ${pc(d.inTop3)} of the ${d.n} tracks it was checked on${esc(weakWhen(c.weakSaved?.()?.at))}. ${esc(w.why)}</p>
+    <p class="hint"><b>${esc(w.fix)}</b></p>${merge}</section>`;
+}
+export function weakListHTML(c) {
+  const { esc } = c;
+  const rows = weakRows(c).filter(d => d.fix !== 'none' && d.fix !== 'wait').slice(0, 3);
+  if (!rows.length) return '';
+  const nameOf = x => weakName(c, x) ?? x;
+  return `<section class="plsugg" aria-labelledby="plweak-h">
+      <div class="plsugg-head"><h2 id="plweak-h">Playlists it gets wrong most</h2></div>
+      <p class="hint">From your last Score${esc(weakWhen(c.weakSaved?.()?.at))}. Each one with what would help; nothing changes without a tap.</p>
+      <div class="plrows">${rows.map(d => `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(d.id)}" aria-haspopup="dialog">
+        <span class="plmain"><span class="ttl">${esc(nameOf(d.id))}</span>
+          <span class="plmeta">${esc(weakWords(d, nameOf).fix)}</span></span></button>`).join('')}</div>
+    </section>`;
 }
 
 /* ---------- Fill this playlist (BUILD-6 F2) ----------
@@ -632,7 +676,7 @@ export function view(c) {
       <p class="hint">${esc(knowsYouLine(eng))}</p></section>` : '';
   return `<h1>Library</h1>
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
-    ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${suggHTML}
+    ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
     ${knowsHTML}
     <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
