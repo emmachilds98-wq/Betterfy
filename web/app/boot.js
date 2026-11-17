@@ -289,6 +289,9 @@ async function start(force) {
     const whoName = LIB.user?.name ?? LIB.user?.id ?? '';
     $('#who').textContent = whoName;
     $('#sheetWho').textContent = whoName;
+    // A new account's first analysis starts by itself (analyse.js): asked before the
+    // first paint so File opens on its progress strip, never on a button.
+    const firstRun = (() => { try { return analyseFirst(); } catch { return false; } })();
     view = ROUTER.start(); S.inboxAt = 0; render();
     // An old link such as #/sources opens the Settings sheet on that section.
     const landed = ROUTER.section; if (landed) openUnderHood(landed);
@@ -302,21 +305,28 @@ async function start(force) {
     // Then Last.fm, with the built-in key, for every artist still thin (the owner's
     // call, 2026-11-16: every keyless source on by default). Chained after Wikidata
     // because both write the same tag cache. Asks only new or stale artists, so a
-    // reload costs almost nothing; the first run is left to analyseAuto() below.
+    // reload costs almost nothing. On an account's first load the same steps run as
+    // its first analysis instead, with listening and progress on File (analyseAuto).
     (async () => {
-      if (untaggedArtists().size) await fillFromWikidata({ quiet: true }).catch(() => {});
-      if (LS.getItem('bf_analysed') && lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
-        await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
+      if (firstRun) await analyseAuto().catch(() => null);
+      else {
+        if (untaggedArtists().size) await fillFromWikidata({ quiet: true }).catch(() => {});
+        if (LS.getItem('bf_analysed') && lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
+          await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
+        }
       }
+      // The Engine's map of the playlists, in the worker: from the cache after the first
+      // time, so the Engine screen opens on results, not "Learn my library". Before the
+      // similar artists, which place their picks in it.
+      await engineAutoLearn().catch(() => false);
       // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
       // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
       // don't compete with the tag lookups; resumes where the last load stopped.
       if (typeof bridgeWarm === 'function') await bridgeWarm().catch(() => {});
     })();
-    // Listening resumes by itself where it left off, if it was switched on — after the first paint.
-    if (audioSettings().on) setTimeout(() => audioStart({ quiet: true }), 3000);
-    // One-tap analysis runs once by itself when a Last.fm key (shared or own) is there.
-    setTimeout(() => { try { analyseAuto(); } catch { /* optional */ } }, 4000);
+    // Listening resumes by itself where it left off, if it was switched on — after the first
+    // paint. (On a first run the analysis above starts it.)
+    if (audioSettings().on && !firstRun) setTimeout(() => audioStart({ quiet: true }), 3000);
     // Score + Tune by itself: first look a minute in, then every five minutes while the tab is in front.
     try { autoScoreStart(); } catch { /* optional */ }
   } catch (e) {

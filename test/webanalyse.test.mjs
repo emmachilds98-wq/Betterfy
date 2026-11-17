@@ -52,3 +52,39 @@ test('with no key it only listens, and a failed listen does not stop the route',
     enrich: async () => calls.push('enrich'), go: v => calls.push(v) });
   assert.deepEqual(calls, ['inbox']);
 });
+
+test('analyseStatus names the genre and learning stages', () => {
+  const { analyseStatus } = load();
+  assert.equal(analyseStatus({ tags: [0, 0], listen: null, stage: 'genres' }), 'Looking up genres');
+  assert.equal(analyseStatus({ tags: [400, 400], listen: { done: 3, total: 9 }, stage: 'learn' }),
+    'Reading tags 400/400 · learning your playlists · listening 3/9');
+  assert.equal(analyseStatus({ tags: [0, 0], listen: { state: 'paused' } }), 'Listening waits for Wi-Fi');
+});
+
+test('the automatic first run: genres, then tags, then the Engine map, and it stays on the screen it is on', async () => {
+  const { analyseRun } = load();
+  const calls = [], stages = [];
+  const out = await analyseRun({
+    key: () => 'k', gaps: () => 2,
+    listen: async () => calls.push('listen'),
+    genres: async () => calls.push('genres'),
+    enrich: async () => calls.push('enrich'),
+    learn: async () => { calls.push('learn'); return true; },
+    status: s => stages.push(s.stage ?? '-'), go: v => calls.push('go:' + v),
+  }, { route: false });
+  assert.deepEqual(calls, ['listen', 'genres', 'enrich', 'learn']);
+  assert.equal(out.learn, true);
+  assert.ok(stages.includes('genres') && stages.includes('learn'), 'each stage shows on the strip');
+  assert.equal(stages.at(-1), '-', 'the last status has no stage left');
+});
+
+test('a failed genre lookup or map does not stop the rest', async () => {
+  const { analyseRun } = load();
+  const calls = [];
+  const out = await analyseRun({ key: () => 'k', gaps: () => 1, listen: async () => {},
+    genres: async () => { throw new Error('wikidata'); }, enrich: async () => calls.push('enrich'),
+    learn: async () => { throw new Error('worker'); }, go: () => {} }, { route: false });
+  assert.deepEqual(calls, ['enrich']);
+  assert.equal(out.tags, true);
+  assert.equal(out.learn, false);
+});
