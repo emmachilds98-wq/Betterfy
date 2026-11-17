@@ -105,10 +105,11 @@ export function connectionVerdict(connection, { wifiOnly = true, confirmed = fal
  * @param {{weights?: Map<string, number>, recentlyActive?: Set<string>}} [o.listening]
  * @param {Iterable<string>} [o.targets]  genre playlist ids
  * @param {(p: object) => boolean} [o.isMirror]
+ * @param {Iterable<string>} [o.focus]    the Score run's weakest playlists: all their tracks (up to 60 each)
  * @returns {Set<string>|null}
  */
 export function scopeIds(lib, { scope = DEFAULT_AUDIO_SETTINGS.scope, listening = null, targets = null,
-                                isMirror = () => false, exemplarsPerPlaylist = 20 } = {}) {
+                                isMirror = () => false, exemplarsPerPlaylist = 20, focus = null } = {}) {
   if (scope === 'all') return null;
   const out = new Set();
   const weights = listening?.weights ?? new Map();
@@ -125,6 +126,15 @@ export function scopeIds(lib, { scope = DEFAULT_AUDIO_SETTINGS.scope, listening 
     if (genre && !genre.has(p.id)) continue;
     const own = [...new Map((p.tracks ?? []).filter(t => t?.id && !t.is_local).map(t => [t.id, t])).values()];
     const n = Math.min(exemplarsPerPlaylist, own.length), step = own.length / Math.max(1, n);
+    for (let i = 0; i < n; i++) out.add(own[Math.floor(i * step)].id);
+  }
+  // The Score run's weakest playlists (core/intrinsic/weak.mjs): all of each,
+  // up to 60, since a small playlist needs every heard member it has.
+  const weak = focus ? new Set(focus) : null;
+  if (weak?.size) for (const p of playlists) {
+    if (!weak.has(p.id)) continue;
+    const own = [...new Map((p.tracks ?? []).filter(t => t?.id && !t.is_local).map(t => [t.id, t])).values()];
+    const n = Math.min(60, own.length), step = own.length / Math.max(1, n);
     for (let i = 0; i < n; i++) out.add(own[Math.floor(i * step)].id);
   }
   return out;

@@ -295,6 +295,41 @@ default to `'all'`. A saved choice still wins.
 **Gate.** None for accuracy; check the queue order still puts unfiled and
 played tracks first (`core/audio/queue.mjs`).
 
+### Package 7: the weakest playlists, and why (built, after #154)
+
+**What was wrong with the old list.** Score's "Weakest" line (Dancehall 0%,
+D&B Jungle Alarms 13%, Late Night House 14%, Alt/Indie 19%, Chill Rap 25%) was
+read off the account-native engine *alone*: no tags, no similar artists, no
+sound. That is not what File places with. On three seeds of the owner-shaped
+fixture (`test/fixtures/shaped-library.mjs`) the engine-alone list's weakest
+playlist rose from 14%/0%/7% to 43%/38%/83% in the top three once similar
+artists were in. It also counted only the tracks inside Score's 600-track
+sample (sorted by id), so "of 7" is 7 scored, not 7 in the playlist.
+
+**Built.** `core/intrinsic/weak.mjs` reads the held-out rows of the engine
+that places (with sound, else similar artists, else alone: the rows family
+first and the pair checks use) and, per weak genre playlist (top 3 on < 50%
+of ≥ 5 scored), names the likeliest reason and the honest fix:
+`view` (half its tracks are in the partner: merge or keep as a pick),
+`working` (a pair check now re-orders it), `few` (< 20 tracks: add N),
+`twin` (shares ≥ 30% of artists with the partner, or sound can't tell them
+apart: merge?), `unheard` (< 5 heard: listening hears it next), `partner`,
+`scattered` (add examples). Each weak playlist's partner gets a pair check of
+its own (`pairs.mjs` `extra`), used for the diagnosis only, never to re-order
+a card. Paste lines: `Weakest (engine alone): …` (the old one, for
+comparison) and `Weakest, as File places: …`. Kept in `bf_weak`; Library
+shows "Playlists it gets wrong most" and a "Help it learn this one" section in
+the playlist sheet (merge opens the wizard; nothing is written without its
+tap); listening hears those playlists' tracks right after unfiled liked songs
+(`queue.mjs` tier 2b, `scopeIds` `focus`).
+
+**Tried and dropped.** Offering a weak playlist second when its pair check
+says the track sounds like it: on synthetic libraries it fired on 0–3 cards
+and was never right, so it was not shipped.
+
+**Measure.** The owner's next automatic Score: the two Weakest lines side by
+side, and each playlist's reason.
+
 ## 5. Not worth doing yet
 
 | Idea | Why not | What would change it |
