@@ -229,7 +229,7 @@ export async function createBeatTracker({ ort, modelUrl = BEAT_MODEL_URL, sessio
  */
 export function withBeats(dsp, tracker, opts) {
   return async windows => {
-    const d = dsp(windows);
+    const d = await dsp(windows);   // may itself be async (keynet.mjs withKeyNet)
     if (!d || !ok(d.bpm) || !tracker) return d;
     let beat;
     try { beat = await tracker.measure(windows); } catch { return d; }

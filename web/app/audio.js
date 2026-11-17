@@ -117,6 +117,12 @@ async function audioInit() {
       await audioEars();
       return AUDIO.wear.loadBeats(audioModelUrl(A.BEAT_MODEL_FILE));
     },
+    // Key v4 (keynet.mjs): on wherever listening runs, no switch (owner rule: on by default).
+    // Its model (~1 MB) loads in the same Worker on the first run.
+    loadKeyNet: async () => {
+      await audioEars();
+      return AUDIO.wear.loadKeyNet(audioModelUrl(A.KEYNET_MODEL_FILE));
+    },
     onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); },
   });
   await audioRefresh();

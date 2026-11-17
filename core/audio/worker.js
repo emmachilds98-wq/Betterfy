@@ -149,7 +149,8 @@ export async function analyseSamples(deps, { id, isrc, samples, parts = null, so
   let dsp = null;
   // Per window, never across the join (WP-D4). A caller with only the joined
   // samples gets one "window"; DSP is a bonus and never fails a track.
-  try { dsp = deps.dsp ? (deps.dsp(parts?.length ? parts : [samples]) ?? null) : null; } catch { dsp = null; }
+  // awaited: a dsp wrapped by key v4 (keynet.mjs) or Beat This is async.
+  try { dsp = deps.dsp ? ((await deps.dsp(parts?.length ? parts : [samples])) ?? null) : null; } catch { dsp = null; }
   parts = null;
   let p = melPatches(melFrames(samples));
   samples = null; // drop the audio

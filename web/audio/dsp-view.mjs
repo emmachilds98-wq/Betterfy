@@ -10,6 +10,9 @@
 //    unconditionally. Shown only when sure (2026-11-16): at confidence >=
 //    KEY_MIN_CONF the held-out half is 62.4% exact / 72.0% MIREX on 53% of tracks
 //    (BUILD-5-PROGRESS.md). Unsure tracks show no key at all.
+//    Key v4 (2026-11-17, core/audio/dsp/keynet.mjs) blends a learned model in and
+//    rescales its confidence onto the same KEY_MIN_CONF: 62.5% / 71.3% on 85% of
+//    tracks (57.3% / 66.5% on all of them).
 // `localStorage.bf_audio_dsp = '1'` shows every reading (for checking), '0' hides
 // everything.
 //

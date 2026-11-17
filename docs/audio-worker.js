@@ -1601,7 +1601,7 @@ async function createBeatTracker({ ort, modelUrl = BEAT_MODEL_URL, sessionOption
  */
 function withBeats(dsp, tracker, opts) {
   return async windows => {
-    const d = dsp(windows);
+    const d = await dsp(windows);   // may itself be async (keynet.mjs withKeyNet)
     if (!d || !ok(d.bpm) || !tracker) return d;
     let beat;
     try { beat = await tracker.measure(windows); } catch { return d; }
@@ -1625,11 +1625,707 @@ function needsBeats(rec) {
 }
 return { BEATS_VERSION, BEAT_MODEL_URL, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, BORDER, LEVEL_TOL, pickBeats, tempoFromBeats, combineBeatTempo, resolveOctave, createBeatTracker, withBeats, needsBeatsFlagged, needsBeats };
 })();
+/* ---- core/audio/dsp/keyspec.mjs ---- */
+__mod["core/audio/dsp/keyspec.mjs"] = (function () {
+// Log-frequency spectrogram for the learned key model (key v4, keynet).
+//
+// 16 kHz mono windows -> frames x KS_BINS log-magnitudes on a quarter-tone
+// grid tied to A440, standardised per track. Isomorphic, no dependencies: the
+// browser worker computes exactly what scripts/audio-dsp/keynet-features.mjs
+// fed the training, so the model sees the same numbers in both places.
+//
+// Front end in the spirit of Korzeniowski & Widmer, "Genre-agnostic key
+// classification with convolutional neural networks" (ISMIR 2018): STFT of
+// ~0.5 s frames at 10 per second, triangular filters 24 per octave, log(1+x).
+// The grid spans KS_MARGIN extra bins (6 semitones) either side of the
+// KS_CROP bins the model reads, so training can transpose by shifting the
+// crop; inference reads the centre crop.
+
+const KS_SR = 16000;
+const KS_N = 8192;          // 0.512 s, 1.95 Hz per bin
+const KS_HOP = 1600;        // 10 frames per second
+const KS_Q_LO = -78;        // quarter tones from A4: 46.2 Hz
+const KS_BINS = 129;        // up to quarter tone +50: 2960 Hz
+const KS_MARGIN = 12;       // ±6 semitones of crop shift
+const KS_CROP = KS_BINS - 2 * KS_MARGIN; // 105 bins, C2 (65.4 Hz) to C7
+
+let tables = null;
+function init() {
+  if (tables) return tables;
+  const N = KS_N, bits = Math.log2(N);
+  const rev = new Uint32Array(N);
+  for (let i = 0; i < N; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); rev[i] = r; }
+  const cos = new Float64Array(N / 2), sin = new Float64Array(N / 2);
+  for (let i = 0; i < N / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / N); sin[i] = -Math.sin(2 * Math.PI * i / N); }
+  const hann = Float64Array.from({ length: N }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));
+  // Triangular filters: band b centred on 440·2^((KS_Q_LO+b)/24), feet on its
+  // neighbours. Where bins are wider than the band (the bass), fall back to
+  // linear interpolation at the centre so no band is empty.
+  const binHz = KS_SR / N, filt = [];
+  for (let b = 0; b < KS_BINS; b++) {
+    const q = KS_Q_LO + b, fc = 440 * 2 ** (q / 24), fl = 440 * 2 ** ((q - 1) / 24), fu = 440 * 2 ** ((q + 1) / 24);
+    const ks = [], ws = [];
+    for (let k = Math.max(1, Math.floor(fl / binHz)); k <= Math.ceil(fu / binHz); k++) {
+      const f = k * binHz;
+      const w = f <= fc ? (f - fl) / (fc - fl) : (fu - f) / (fu - fc);
+      if (w > 0) { ks.push(k); ws.push(w); }
+    }
+    let tot = ws.reduce((s, w) => s + w, 0);
+    if (ks.length < 2) {
+      const x = fc / binHz, k0 = Math.floor(x), t = x - k0;
+      ks.length = 0; ws.length = 0; ks.push(k0, k0 + 1); ws.push(1 - t, t); tot = 1;
+    }
+    filt.push({ ks: Int32Array.from(ks), ws: Float64Array.from(ws, w => w / tot) });
+  }
+  tables = { rev, cos, sin, hann, filt };
+  return tables;
+}
+
+function fftMag(re, im, mag, { rev, cos, sin }) {
+  const n = KS_N;
+  for (let i = 0; i < n; i++) { const j = rev[i]; if (j > i) { const t = re[i]; re[i] = re[j]; re[j] = t; } im[i] = 0; }
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1, step = n / size;
+    for (let s = 0; s < n; s += size) for (let k = 0; k < half; k++) {
+      const c = cos[k * step], sn = sin[k * step], a = s + k, b = a + half;
+      const tr = re[b] * c - im[b] * sn, ti = re[b] * sn + im[b] * c;
+      re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+    }
+  }
+  for (let k = 0; k <= n / 2; k++) mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+}
+
+/**
+ * Spectrogram of one or more contiguous 16 kHz windows, frames concatenated
+ * in order, standardised over the whole thing (mean 0, sd 1).
+ * @param {Float32Array|Float32Array[]} windows
+ * @returns {{ data: Float32Array, frames: number, bins: number } | null} row-major [frame][bin]; null if too short or silent
+ */
+function keySpec(windows) {
+  const parts = (Array.isArray(windows) ? windows : [windows]).filter(w => w && w.length >= KS_N);
+  if (!parts.length) return null;
+  const t = init();
+  const re = new Float64Array(KS_N), im = new Float64Array(KS_N), mag = new Float64Array(KS_N / 2 + 1);
+  const rows = [];
+  for (const x of parts) {
+    const frames = Math.floor((x.length - KS_N) / KS_HOP) + 1;
+    for (let f = 0; f < frames; f++) {
+      const s = f * KS_HOP;
+      for (let i = 0; i < KS_N; i++) re[i] = x[s + i] * t.hann[i];
+      fftMag(re, im, mag, t);
+      const row = new Float32Array(KS_BINS);
+      for (let b = 0; b < KS_BINS; b++) {
+        const { ks, ws } = t.filt[b];
+        let v = 0; for (let j = 0; j < ks.length; j++) v += mag[ks[j]] * ws[j];
+        row[b] = Math.log1p(v);
+      }
+      rows.push(row);
+    }
+  }
+  const data = new Float32Array(rows.length * KS_BINS);
+  rows.forEach((r, i) => data.set(r, i * KS_BINS));
+  let m = 0; for (const v of data) m += v; m /= data.length;
+  let sd = 0; for (const v of data) sd += (v - m) ** 2; sd = Math.sqrt(sd / data.length);
+  if (!(sd > 1e-6)) return null;
+  for (let i = 0; i < data.length; i++) data[i] = (data[i] - m) / sd;
+  return { data, frames: rows.length, bins: KS_BINS };
+}
+return { KS_SR, KS_N, KS_HOP, KS_Q_LO, KS_BINS, KS_MARGIN, KS_CROP, keySpec };
+})();
+/* ---- core/audio/dsp/key.mjs ---- */
+__mod["core/audio/dsp/key.mjs"] = (function () {
+const { SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
+// Musical key from audio, in plain JS (WP-D2, docs/AUDIO-BUILD-PLAN.md).
+//
+// 16 kHz mono samples -> a key, a Camelot code and a confidence. Isomorphic:
+// no DOM, no Node APIs, no dependencies, so the browser worker and Node
+// scripts share it. Written from scratch; the clean key library is AGPL
+// (essentia.js), which the page can't ship (AUDIO-ANALYSIS-PLAN.md §2, §9).
+//
+// Status: v3 (2026-11-15, replaces #106's fitted-profile v2) measured on the Beatport EDM Key Dataset with
+// scripts/audio-dsp/beatport-eval.mjs --half B (the half held out of the
+// weights' training): 55.3% exact, MIREX 64.9% on 170 tracks (v1: 30%).
+// Numbers and what was tried: AUDIO-ANALYSIS-PLAN.md §0. Below the 60% bar,
+// so web/audio/dsp-view.mjs keeps key hidden. #106's v2 scored 47.6% on the same half.
+//
+// Pipeline:
+//   1. STFT with a long frame (8192 at 16 kHz ≈ 0.5 s, 1.95 Hz per bin), so
+//      neighbouring semitones are resolvable down to ~60 Hz. mel.mjs's 512
+//      frame is far too short for pitch (31 Hz per bin).
+//   2. Spectral peaks only: a local maximum that stands TONAL_SNR above the
+//      local mean magnitude and within 60 dB of the frame's loudest bin (so
+//      window sidelobes don't count). This is the whitening step: broadband drums and
+//      noise rarely make a peak, and the bass doesn't drown the treble
+//      because each peak is weighted by how far it stands above its own
+//      neighbourhood (log ratio), not by raw energy.
+//   3. Tuning: the weighted circular mean of every peak's offset from the
+//      A440 grid. Records tuned off 440 (or pitched by a DJ) still map
+//      cleanly. After correcting, a peak more than TUNING_TOLERANCE semitones
+//      from a note is dropped (inharmonic partials, glides, noise).
+//   4. Chroma: each surviving peak adds to its pitch class, cos²-tapered by
+//      its distance from the note centre. Summed over all frames.
+//   5. Keys: v3 scores all 24 with learned weights (rankKeys, LEARNED below):
+//      a softmax over the sum-normalised chroma rotated to each tonic, plus a
+//      minor bias. key(x, { profiles }) keeps the v1 path (Pearson against
+//      Krumhansl–Kessler / Temperley / Faraldo's EDM profiles) for comparison.
+//   6. Confidence (v3): tonality × the best key's probability / 0.5, capped at
+//      1. The v1 description below still covers tonality. It was the product of how
+//      tonal the excerpt is ("gridness": how tightly the peaks sit on one
+//      semitone grid, the length of step 3's circular mean, ~0.75 for
+//      harmonic tones and ~0.03 for noise, whose peaks land anywhere), how
+//      well the best key fits, and how far it leads the runner-up. Silence -> 0 and
+//      key null; noise -> a guess with near-zero confidence. Its calibration
+//      against real keys is what the comparison script reports by band.
+
+
+
+const KEY_VERSION = '3.0.0';
+
+// ---------- names, Camelot, Open Key ----------
+
+/** Pitch-class spellings. Majors and minors follow the usual Camelot-wheel spelling. */
+const MAJOR_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const MINOR_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
+const PC_OF = { C: 0, 'B#': 0, 'C#': 1, DB: 1, D: 2, 'D#': 3, EB: 3, E: 4, FB: 4, F: 5, 'E#': 5, 'F#': 6, GB: 6,
+                G: 7, 'G#': 8, AB: 8, A: 9, 'A#': 10, BB: 10, B: 11, CB: 11 };
+
+/** Pitch class (0 = C) of a tonic spelled 'C', 'F#', 'Eb', 'E♭', 'bb'…; null if unreadable. */
+function pitchClass(tonic) {
+  if (typeof tonic === 'number') return Number.isInteger(tonic) ? ((tonic % 12) + 12) % 12 : null;
+  if (typeof tonic !== 'string') return null;
+  const s = tonic.trim().replace(/♯/g, '#').replace(/♭/g, 'b');
+  if (!s) return null;
+  return PC_OF[s[0].toUpperCase() + s.slice(1).toUpperCase()] ?? null;
+}
+
+const camelotNumber = (pc, mode) => {
+  const majorPc = mode === 'minor' ? (pc + 3) % 12 : pc;   // a minor key sits on its relative major's number
+  return ((majorPc * 7) % 12 + 7) % 12 + 1;                // C major = 8, each fifth up = +1
+};
+
+/**
+ * Camelot code ('8A' = A minor, '8B' = C major) for a tonic and mode.
+ * Accepts sharps or flats; mode is 'major' | 'minor' (also 'maj'/'min'/'m').
+ * Returns null for anything unreadable rather than guessing.
+ */
+function toCamelot(tonic, mode) {
+  const pc = pitchClass(tonic);
+  const m = normMode(mode);
+  if (pc == null || !m) return null;
+  return camelotNumber(pc, m) + (m === 'minor' ? 'A' : 'B');
+}
+
+/** Open Key code ('1m' = A minor, '1d' = C major) for a tonic and mode. */
+function toOpenKey(tonic, mode) {
+  const c = toCamelot(tonic, mode);
+  if (!c) return null;
+  const n = parseInt(c, 10);
+  return (((n - 8) % 12 + 12) % 12 + 1) + (c.endsWith('A') ? 'm' : 'd');
+}
+
+function normMode(mode) {
+  const m = String(mode ?? '').trim().toLowerCase();
+  if (m === 'major' || m === 'maj' || m === 'ionian') return 'major';
+  if (m === 'minor' || m === 'min' || m === 'm' || m === 'aeolian') return 'minor';
+  return null;
+}
+
+/**
+ * All 24 keys, by Camelot code:
+ *   CAMELOT['8A'] = { camelot: '8A', openKey: '1m', tonic: 'A', mode: 'minor', pc: 9, key: 'A minor' }
+ * Frozen.
+ */
+const CAMELOT = Object.freeze(Object.fromEntries(
+  ['major', 'minor'].flatMap(mode => Array.from({ length: 12 }, (_, pc) => {
+    const tonic = (mode === 'major' ? MAJOR_NAMES : MINOR_NAMES)[pc];
+    const camelot = toCamelot(pc, mode);
+    return [camelot, Object.freeze({ camelot, openKey: toOpenKey(pc, mode), tonic, mode, pc, key: `${tonic} ${mode}` })];
+  })),
+));
+
+/**
+ * How key b relates to key a on the Camelot wheel, or null if not a
+ * neighbour: 'same', 'relative' (same number, other letter), 'fifth-up'
+ * (+1, same letter), 'fifth-down' (−1, same letter), 'parallel' (same tonic,
+ * other mode). Codes are Camelot strings.
+ */
+function relation(a, b) {
+  const A = CAMELOT[a], B = CAMELOT[b];
+  if (!A || !B) return null;
+  if (a === b) return 'same';
+  const na = parseInt(a, 10), nb = parseInt(b, 10), la = a.slice(-1), lb = b.slice(-1);
+  if (na === nb) return 'relative';
+  if (la === lb && nb === na % 12 + 1) return 'fifth-up';
+  if (la === lb && na === nb % 12 + 1) return 'fifth-down';
+  if (A.pc === B.pc) return 'parallel';
+  return null;
+}
+
+// ---------- key profiles ----------
+
+// Krumhansl & Kessler (1982) probe-tone ratings.
+const KK_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const KK_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+// Temperley (1999), "What's key for key?": the revised probe-tone profiles.
+const TP_MAJOR = [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0];
+const TP_MINOR = [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0];
+
+// Faraldo et al. (2016), EDM profiles as Essentia ships them: 'edma' (estimated
+// automatically from EDM) and 'bgate' (Beatport-genre-averaged). On the v3
+// measurement they reached ~34% and ~37% exact on their own — better than
+// KK+Temperley (30%) but far from the learned weights below.
+// PROFILES.edm: fitted on the same dataset by PR #106 (scripts/audio-dsp/key-fit.mjs),
+// v2's default there (47.6% exact on this file's held-out half). Kept selectable.
+const EDM_MAJOR = [0.1938, 0.0336, 0.1034, 0.0333, 0.1260, 0.0619, 0.0424, 0.1696, 0.0322, 0.0805, 0.0463, 0.0770];
+const EDM_MINOR = [0.2017, 0.0448, 0.0882, 0.0764, 0.0746, 0.0760, 0.0345, 0.1702, 0.0434, 0.0474, 0.0892, 0.0535];
+const EDMA_MAJOR = [1.00, 0.29, 0.50, 0.40, 0.60, 0.56, 0.32, 0.80, 0.31, 0.45, 0.42, 0.39];
+const EDMA_MINOR = [1.00, 0.31, 0.44, 0.58, 0.33, 0.49, 0.29, 0.78, 0.43, 0.29, 0.53, 0.32];
+const BGATE_MAJOR = [1.00, 0.00, 0.42, 0.00, 0.53, 0.37, 0.00, 0.77, 0.00, 0.38, 0.21, 0.30];
+const BGATE_MINOR = [1.00, 0.00, 0.36, 0.39, 0.00, 0.38, 0.00, 0.74, 0.27, 0.00, 0.42, 0.23];
+
+const PROFILES = Object.freeze({
+  krumhansl: { major: KK_MAJOR, minor: KK_MINOR },
+  temperley: { major: TP_MAJOR, minor: TP_MINOR },
+  edm: { major: EDM_MAJOR, minor: EDM_MINOR },
+  edma: { major: EDMA_MAJOR, minor: EDMA_MINOR },
+  bgate: { major: BGATE_MAJOR, minor: BGATE_MINOR },
+});
+
+// v3 default: a 24-way softmax over the tonic-rotated, sum-normalised chroma,
+// trained (multinomial logistic regression, L2 1e-3) on 1,104 tracks of the
+// Beatport EDM Key Dataset (Faraldo et al., Zenodo 1101082, CC BY-SA 4.0),
+// with the evaluation's held-out half excluded. These 25 numbers are all it
+// learned: a weight per scale degree for each mode and a bias for minor (most
+// EDM is minor; the dataset is 70% minor). Index 0 = tonic.
+const LEARNED = Object.freeze({
+  major: [1.537, -0.4248, 0.2111, -0.8452, 0.9746, -0.1547, -0.9275, 1.0445, -0.773, -0.0667, -0.898, 0.3228],
+  minor: [1.4032, -0.322, 0.1018, 0.4368, -0.0225, -0.3961, -0.5862, 1.1036, -0.7355, -1.1806, 0.3757, -0.1781],
+  minorBias: 1.663,
+});
+
+/**
+ * Score all 24 keys with the learned weights. Sorted best first; `p` is the
+ * softmax probability.
+ * @param {ArrayLike<number>} chroma 12 bins, index 0 = C
+ */
+function rankKeys(chroma) {
+  let tot = 0; for (let i = 0; i < 12; i++) tot += chroma[i];
+  const f = Array.from({ length: 12 }, (_, i) => tot > 0 ? (chroma[i] / tot - 1 / 12) * 12 : 0);
+  const out = [];
+  for (const mode of ['major', 'minor']) {
+    const w = LEARNED[mode];
+    for (let pc = 0; pc < 12; pc++) {
+      let s = mode === 'minor' ? LEARNED.minorBias : 0;
+      for (let i = 0; i < 12; i++) s += w[i] * f[(i + pc) % 12];
+      out.push({ camelot: toCamelot(pc, mode), score: s });
+    }
+  }
+  const mx = Math.max(...out.map(o => o.score));
+  let z = 0; for (const o of out) { o.p = Math.exp(o.score - mx); z += o.p; }
+  for (const o of out) o.p /= z;
+  return out.sort((a, b) => b.score - a.score);
+}
+
+// ---------- analysis settings ----------
+
+const FRAME_SECONDS = 0.512;     // 8192 samples at 16 kHz
+const HOP_FRACTION = 0.25;       // hop 2048: ~7.8 frames per second
+const F_MIN = 30;                // EDM bass carries the tonic; v3 measured 30 Hz better than 60
+const F_MAX = 1500;              // above this, partials are mostly overtones, hats and cymbals (v3: best of 1000–7000)
+const PEAK_RANGE = 5;            // nats: peaks weigh ln(m / loudest) + 5, so ~43 dB under the loudest bin counts 0
+const DYNAMIC_RANGE = Math.exp(-PEAK_RANGE);
+const TONAL_SNR = 2;             // a peak must stand this many times above its local mean
+const FLOOR_HALF_WIDTH_HZ = 40;  // half-width of the local-mean window
+const TUNING_TOLERANCE = 0.4;    // semitones from the nearest note, after tuning
+const SILENCE = 1e-4;            // RMS below this (−80 dBFS) is silence
+const A4 = 440;
+
+// Confidence shaping (see the header; uncalibrated until measured).
+const GRID_NONE = 0.08;          // gridness at or below which the excerpt counts as atonal (noise measures ~0.03)
+const GRID_FULL = 0.33;          // gridness at which it counts as fully tonal (synthetic chords ~0.75)
+const FIT_LOW = 0.2, FIT_HIGH = 0.75;
+const MARGIN_FULL = 0.12;
+const P_FULL = 0.5;              // learned model: a best-key probability of 0.5 or more counts as fully sure
+
+// ---------- FFT ----------
+
+const fftCache = new Map();
+function fftTables(n) {
+  let t = fftCache.get(n);
+  if (t) return t;
+  const bits = Math.log2(n);
+  const rev = new Uint32Array(n);
+  for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); rev[i] = r; }
+  const cos = new Float64Array(n / 2), sin = new Float64Array(n / 2);
+  for (let i = 0; i < n / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / n); sin[i] = -Math.sin(2 * Math.PI * i / n); }
+  const hann = Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / n));
+  t = { rev, cos, sin, hann };
+  fftCache.set(n, t);
+  return t;
+}
+
+/** In-place radix-2 complex FFT; magnitudes of bins 0..n/2 into `mag`. */
+function magnitudeSpectrum(re, im, n, { rev, cos, sin }, mag) {
+  for (let i = 0; i < n; i++) {
+    const j = rev[i];
+    if (j > i) { const t = re[i]; re[i] = re[j]; re[j] = t; }
+    im[i] = 0;
+  }
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1, step = n / size;
+    for (let s = 0; s < n; s += size) {
+      for (let k = 0; k < half; k++) {
+        const c = cos[k * step], sn = sin[k * step];
+        const a = s + k, b = a + half;
+        const tr = re[b] * c - im[b] * sn, ti = re[b] * sn + im[b] * c;
+        re[b] = re[a] - tr; im[b] = im[a] - ti;
+        re[a] += tr; im[a] += ti;
+      }
+    }
+  }
+  for (let k = 0; k <= n / 2; k++) mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+}
+
+// ---------- chroma ----------
+
+/**
+ * Tuning-corrected 12-bin chroma (index 0 = C) plus what confidence needs.
+ * Exported for tests and the comparison script; key() is the public entry.
+ * @returns {{ chroma: Float64Array, tuningCents: number, seconds: number, tonalWeight: number, gridness: number, frames: number }}
+ */
+function chromagram(samples, { sampleRate = SAMPLE_RATE, fMin = F_MIN, fMax = F_MAX, keepPeaks = false } = {}) {
+  // One signal, or several parts (a record's preview windows) pooled into one chroma.
+  const parts = Array.isArray(samples) && samples.length && typeof samples[0] !== 'number' ? samples.filter(p => p?.length) : [samples];
+  const N = 2 ** Math.round(Math.log2(sampleRate * FRAME_SECONDS));
+  const hop = Math.max(1, Math.round(N * HOP_FRACTION));
+  const n = parts.reduce((t, p) => t + (p?.length ?? 0), 0);
+  const seconds = n / sampleRate;
+  const chroma = new Float64Array(12);
+  const empty = { chroma, tuningCents: 0, seconds, tonalWeight: 0, gridness: 0, frames: 0 };
+  if (!n) return empty;
+
+  const tables = fftTables(N);
+  const binHz = sampleRate / N;
+  const kMin = Math.max(2, Math.ceil(fMin / binHz));
+  const kMax = Math.min(N / 2 - 2, Math.floor(Math.min(fMax, sampleRate / 2 * 0.95) / binHz));
+  const halfW = Math.max(4, Math.round(FLOOR_HALF_WIDTH_HZ / binHz));
+  const re = new Float64Array(N), im = new Float64Array(N), mag = new Float64Array(N / 2 + 1);
+  const prefix = new Float64Array(N / 2 + 2);
+
+  // Pass 1: peaks (semitones above A4, weight) from every non-silent frame.
+  const semis = [], weights = [], peakFrames = [];
+  let frameCount = 0;
+  for (const samples of parts) {
+  const n = samples.length;
+  const frames = n <= N ? 1 : Math.ceil((n - N) / hop) + 1;
+  frameCount += frames;
+  for (let f = 0; f < frames; f++) {
+    const s = f * hop;
+    let energy = 0;
+    for (let i = 0; i < N; i++) {
+      const x = s + i < n ? samples[s + i] : 0;
+      energy += x * x;
+      re[i] = x * tables.hann[i];
+    }
+    if (Math.sqrt(energy / Math.min(N, n - s)) < SILENCE) continue;
+    magnitudeSpectrum(re, im, N, tables, mag);
+    prefix[0] = 0;
+    let top = 0;
+    for (let k = 0; k <= N / 2; k++) { prefix[k + 1] = prefix[k] + mag[k]; if (k >= kMin && k <= kMax && mag[k] > top) top = mag[k]; }
+    const absFloor = top * DYNAMIC_RANGE;
+    for (let k = kMin; k <= kMax; k++) {
+      const m = mag[k];
+      if (!(m > absFloor && m > mag[k - 1] && m >= mag[k + 1] && m > mag[k - 2] && m >= mag[k + 2])) continue;
+      const lo = Math.max(0, k - halfW), hi = Math.min(N / 2, k + halfW);
+      const floor = (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1);
+      if (!(floor > 0) || m < TONAL_SNR * floor) continue;
+      // Quadratic interpolation on log magnitude for the true peak frequency.
+      const a = Math.log(mag[k - 1] + 1e-12), b = Math.log(m + 1e-12), c = Math.log(mag[k + 1] + 1e-12);
+      const den = a - 2 * b + c;
+      const p = den < 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den)) : 0;
+      const hz = (k + p) * binHz;
+      const w = Math.log(m / top) + PEAK_RANGE;   // level relative to the frame's loudest bin, > 0 above DYNAMIC_RANGE
+      if (!(w > 0)) continue;
+      semis.push(12 * Math.log2(hz / A4));
+      weights.push(w);
+      if (keepPeaks) peakFrames.push(frameCount - frames + f);
+    }
+  }
+  }
+  const frames = frameCount;
+  if (!semis.length) return { ...empty, frames };
+
+  // Tuning: weighted circular mean of each peak's offset from the A440 grid.
+  let cs = 0, sn = 0;
+  for (let i = 0; i < semis.length; i++) {
+    const ang = 2 * Math.PI * semis[i];
+    cs += weights[i] * Math.cos(ang); sn += weights[i] * Math.sin(ang);
+  }
+  const tuning = Math.atan2(sn, cs) / (2 * Math.PI);  // semitones, −0.5..0.5
+  let total = 0;
+  for (let i = 0; i < weights.length; i++) total += weights[i];
+  // How tightly the peaks sit on one semitone grid: ~1 for tuned instruments,
+  // ~1/√peaks for noise, whose peaks land anywhere.
+  const gridness = Math.hypot(cs, sn) / total;
+
+  // Pass 2: fold into pitch classes, cos²-tapered, dropping off-grid peaks.
+  let tonalWeight = 0;
+  for (let i = 0; i < semis.length; i++) {
+    const x = semis[i] - tuning;
+    const note = Math.round(x), d = x - note;
+    if (Math.abs(d) > TUNING_TOLERANCE) continue;
+    const w = weights[i] * Math.cos(Math.PI * d) ** 2;
+    chroma[(((note + 9) % 12) + 12) % 12] += w;   // A = 9
+    tonalWeight += w;
+  }
+  const out = { chroma, tuningCents: Math.round(tuning * 1000) / 10, seconds, tonalWeight, gridness, frames };
+  // keepPeaks (measurement scripts): every peak as semitones above A4 after
+  // tuning, its weight and its frame, before the off-grid drop and folding.
+  if (keepPeaks) out.peaks = { semis: Float64Array.from(semis, x => x - tuning), weights: Float64Array.from(weights), frames: Int32Array.from(peakFrames) };
+  return out;
+}
+
+// ---------- profile matching ----------
+
+function pearson(x, y, rot) {
+  let mx = 0, my = 0;
+  for (let i = 0; i < 12; i++) { mx += x[i]; my += y[i]; }
+  mx /= 12; my /= 12;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < 12; i++) {
+    const a = x[(i + rot) % 12] - mx, b = y[i] - my;
+    sxy += a * b; sxx += a * a; syy += b * b;
+  }
+  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
+}
+
+/**
+ * Score all 24 keys against a chroma vector. Sorted best first.
+ * @param {ArrayLike<number>} chroma 12 bins, index 0 = C
+ * @param {{ profiles?: string[] }} [opts] which of PROFILES to average (default both)
+ * @returns {{ camelot: string, score: number }[]}
+ */
+function scoreKeys(chroma, { profiles = ['krumhansl', 'temperley'] } = {}) {
+  const out = [];
+  for (const mode of ['major', 'minor']) {
+    for (let pc = 0; pc < 12; pc++) {
+      let s = 0;
+      for (const name of profiles) s += pearson(chroma, PROFILES[name][mode], pc);
+      out.push({ camelot: toCamelot(pc, mode), score: s / profiles.length });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const round3 = x => Math.round(x * 1000) / 1000;
+
+/**
+ * Estimate the musical key of mono audio.
+ *
+ * @param {Float32Array|number[]} samples mono, at `sampleRate` (16 kHz is the tested rate)
+ * @param {{ sampleRate?: number, profiles?: string[] }} [opts]
+ * @returns {{
+ *   key: string|null, tonic: string|null, mode: 'major'|'minor'|null,
+ *   camelot: string|null, openKey: string|null, confidence: number,
+ *   alternates: { key: string, camelot: string, score: number, relation: string|null, compatible: boolean }[],
+ *   tuningCents: number, version: string,
+ * }}
+ * `key` is null (confidence 0) when there is nothing tonal to judge, e.g.
+ * silence. `alternates` are the next three keys by score; `relation` says how
+ * each sits to the answer on the Camelot wheel ('relative', 'fifth-up',
+ * 'fifth-down', 'parallel' or null) and `compatible` is true for the three
+ * a DJ mixes into freely (relative and either fifth).
+ */
+function key(samples, { sampleRate = SAMPLE_RATE, profiles } = {}) {
+  const { chroma, tuningCents, seconds, tonalWeight, gridness } = chromagram(samples, { sampleRate });
+  const none = { key: null, tonic: null, mode: null, camelot: null, openKey: null, confidence: 0,
+                 alternates: [], tuningCents: 0, version: KEY_VERSION };
+  if (!(tonalWeight > 0) || !(seconds > 0)) return none;
+
+  const tonality = clamp01((gridness - GRID_NONE) / (GRID_FULL - GRID_NONE));
+  let ranked, confidence;
+  if (profiles) {
+    // v1 path, kept for comparison: profile correlation.
+    ranked = scoreKeys(chroma, { profiles });
+    const fit = clamp01((ranked[0].score - FIT_LOW) / (FIT_HIGH - FIT_LOW));
+    const lead = clamp01((ranked[0].score - ranked[1].score) / MARGIN_FULL);
+    // The lead counts for half: a close relative or fifth is the usual runner-up
+    // even when the answer is right, so a small lead mustn't zero the confidence.
+    confidence = round3(tonality * fit * (0.5 + 0.5 * lead));
+  } else {
+    ranked = rankKeys(chroma);
+    confidence = round3(tonality * clamp01(ranked[0].p / P_FULL));
+  }
+  const best = ranked[0];
+  const k = CAMELOT[best.camelot];
+
+  return {
+    key: k.key, tonic: k.tonic, mode: k.mode, camelot: k.camelot, openKey: k.openKey,
+    confidence,
+    alternates: ranked.slice(1, 4).map(a => {
+      const rel = relation(best.camelot, a.camelot);
+      return { key: CAMELOT[a.camelot].key, camelot: a.camelot, score: round3(a.p ?? a.score), relation: rel,
+               compatible: rel === 'relative' || rel === 'fifth-up' || rel === 'fifth-down' };
+    }),
+    tuningCents,
+    version: KEY_VERSION,
+  };
+}
+return { KEY_VERSION, pitchClass, toCamelot, toOpenKey, CAMELOT, relation, PROFILES, rankKeys, chromagram, scoreKeys, key };
+})();
+/* ---- core/audio/dsp/keynet.mjs ---- */
+__mod["core/audio/dsp/keynet.mjs"] = (function () {
+const { keySpec, KS_BINS, KS_MARGIN, KS_CROP } = __mod["core/audio/dsp/keyspec.mjs"];
+const { chromagram, rankKeys, CAMELOT, pitchClass, toCamelot } = __mod["core/audio/dsp/key.mjs"];
+// Key v4: a small learned key model, blended with the v3 chroma key.
+//
+// Why: v3 (key.mjs, hand-built chroma + a linear key model) is saturated at
+// 55% exact on the held-out half of the Beatport EDM Key set, so only keys at
+// keyConf >= 0.65 were shown (53% of tracks). The two make different
+// mistakes, so blending them gives a confidence that is right more often:
+// at the same bar (>= 60% exact, >= 70% MIREX) the key is now sure on 85% of
+// tracks. Measured, and how it was trained: docs/BUILD-5-PROGRESS.md
+// "Key v4".
+//
+// The model (docs/models/keynet-v4.onnx, ~1 MB, trained here, CC BY-SA 4.0
+// like the dataset it learned from; see docs/models/LICENSE-KEYNET) is five small all-convolutional nets (after
+// Korzeniowski & Widmer, ISMIR 2018), one per training fold, averaged inside
+// the graph. It reads keyspec.mjs's log-frequency spectrogram of the preview
+// windows and gives 24 log-probabilities (class = mode·12 + tonic, major
+// 0–11, minor 12–23). The blend adds KEYNET_DSP_W × the v3 log-probabilities.
+//
+// keyConf on a v4 reading is the blended best probability rescaled so that
+// KEYNET_SURE_P lands exactly on match.mjs's KEY_MIN_CONF (0.65): every
+// consumer keeps its one threshold, and "sure" means the measured gate.
+//
+// `ort` is injected, as in beats.mjs.
+
+
+
+
+const KEYNET_VERSION = '4.0.0';
+const KEYNET_MODEL_FILE = 'keynet-v4.onnx';
+/** Weight of the v3 chroma key's log-probabilities in the blend (fitted on half A). */
+const KEYNET_DSP_W = 0.5;
+/** Blended best probability at which a key counts as sure (picked on half A: the lowest that clears the bar + 4 points). */
+const KEYNET_SURE_P = 0.4;
+/** keyConf that means sure (match.mjs KEY_MIN_CONF, dsp-view.mjs KEY_MIN_CONF). */
+const SURE_CONF = 0.65;
+/** Heard records given v4 per start(); ~0.3 s each on a laptop. */
+const KEYNET_FILL_PER_RUN = 60;
+
+/** Class index (mode·12 + pc) → Camelot code. */
+const CLASS_CAMELOT = Object.freeze(Array.from({ length: 24 }, (_, i) => toCamelot(i % 12, i < 12 ? 'major' : 'minor')));
+const classOf = camelot => { const k = CAMELOT[camelot]; return (k.mode === 'minor' ? 12 : 0) + pitchClass(k.tonic); };
+const r3 = x => Math.round(x * 1000) / 1000;
+
+/** The centre crop of a keySpec, as the model reads it: Float32Array [frames × KS_CROP]. */
+function centreCrop(spec) {
+  const out = new Float32Array(spec.frames * KS_CROP);
+  for (let f = 0; f < spec.frames; f++) out.set(spec.data.subarray(f * KS_BINS + KS_MARGIN, f * KS_BINS + KS_MARGIN + KS_CROP), f * KS_CROP);
+  return out;
+}
+
+/** v3's 24 log-probabilities (class order) for the same windows. */
+function dspLogProbs(windows) {
+  const lp = new Float64Array(24).fill(Math.log(1e-6));
+  for (const r of rankKeys(chromagram(windows).chroma)) lp[classOf(r.camelot)] = Math.log(Math.max(1e-6, r.p));
+  return lp;
+}
+
+/**
+ * Blend the model's and v3's log-probabilities into one key reading.
+ * @param {ArrayLike<number>} netLogp  24
+ * @param {ArrayLike<number>} dspLogp  24
+ * @returns {{ key: string, camelot: string, keyConf: number, keyP: number, keyAlt: string }}
+ */
+function blendKey(netLogp, dspLogp, w = KEYNET_DSP_W) {
+  const s = Array.from({ length: 24 }, (_, i) => netLogp[i] + w * dspLogp[i]);
+  const mx = Math.max(...s);
+  const p = s.map(v => Math.exp(v - mx)); const z = p.reduce((a, b) => a + b, 0);
+  const order = p.map((v, i) => [v / z, i]).sort((a, b) => b[0] - a[0]);
+  const [best, i] = order[0];
+  const camelot = CLASS_CAMELOT[i];
+  return { key: CAMELOT[camelot].key, camelot, keyP: r3(best), keyConf: r3(Math.min(1, best * SURE_CONF / KEYNET_SURE_P)),
+           keyAlt: CLASS_CAMELOT[order[1][1]] };
+}
+
+/**
+ * Load the model on an ONNX session.
+ * @returns {Promise<{ logp(windows: Float32Array[]): Promise<Float32Array|null>, release(): Promise<void> }>}
+ */
+async function createKeyNet({ ort, modelUrl = `models/${KEYNET_MODEL_FILE}`, sessionOptions } = {}) {
+  if (!ort?.InferenceSession) throw new Error('createKeyNet needs ort');
+  const session = await ort.InferenceSession.create(modelUrl, sessionOptions ?? { executionProviders: ['wasm'] });
+  return {
+    async logp(windows) {
+      const spec = keySpec(windows);
+      if (!spec) return null;
+      const res = await session.run({ spec: new ort.Tensor('float32', centreCrop(spec), [1, spec.frames, KS_CROP]) });
+      return Float32Array.from(res.logp.data);
+    },
+    async release() { await session.release?.(); },
+  };
+}
+
+/**
+ * Wrap a dsp (combine.mjs measureWindows, or withBeats's) so the key is v4's.
+ * The result is the same `dsp` with key, camelot, keyConf and keyAlt from the
+ * blend, `keyNetV`, and v3's own reading kept as keyV3 / keyV3Conf. If the
+ * model fails or hears nothing, the dsp comes back as it was, without
+ * keyNetV, so a later run tries again (needsKeyNet()).
+ * @param {(windows: Float32Array[]) => object|null|Promise<object|null>} dsp
+ * @param {{ logp(windows: Float32Array[]): Promise<ArrayLike<number>|null> } | null} net
+ */
+function withKeyNet(dsp, net) {
+  return async windows => {
+    const d = await dsp(windows);
+    if (!d || !net) return d;
+    const f = await keyNetFields(net, windows, d);
+    return f ? { ...d, ...f } : d;
+  };
+}
+
+/**
+ * Just the key fields v4 sets, for windows whose dsp is `d` (v3's reading
+ * is kept from it). null when the model fails or hears nothing.
+ */
+async function keyNetFields(net, windows, d = null) {
+  let lp;
+  try { lp = await net.logp(windows); } catch { return null; }
+  if (!lp || lp.length !== 24) return null;
+  const b = blendKey(lp, dspLogProbs(windows));
+  const v3 = d?.keyNetV ? (d.keyV3 ? { keyV3: d.keyV3, keyV3Conf: d.keyV3Conf } : {})
+                        : (d?.camelot ? { keyV3: d.camelot, keyV3Conf: d.keyConf } : {});
+  return { key: b.key, camelot: b.camelot, keyConf: b.keyConf, keyAlt: b.keyAlt, keyNetV: KEYNET_VERSION, ...v3 };
+}
+
+const KEY_FIELDS = ['key', 'camelot', 'keyConf', 'keyAlt', 'keyAgree', 'keyNetV', 'keyV3', 'keyV3Conf'];
+/**
+ * A re-measured dsp (Beat This, a new DSP_VERSION) made without the model
+ * loses v4's key; the recording is the same, so carry v4's key over from
+ * the dsp it replaces.
+ */
+function keepKeyNet(oldDsp, newDsp) {
+  if (!newDsp || newDsp.keyNetV || oldDsp?.keyNetV !== KEYNET_VERSION) return newDsp;
+  const out = { ...newDsp };
+  for (const k of KEY_FIELDS) { if (k in oldDsp) out[k] = oldDsp[k]; else delete out[k]; }
+  return out;
+}
+
+/** Does this record have a dsp whose key v4 hasn't heard yet? */
+function needsKeyNet(rec) {
+  return !!rec?.dsp && !rec.miss && rec.dsp.keyNetV !== KEYNET_VERSION;
+}
+return { KEYNET_VERSION, KEYNET_MODEL_FILE, KEYNET_DSP_W, KEYNET_SURE_P, KEYNET_FILL_PER_RUN, CLASS_CAMELOT, centreCrop, dspLogProbs, blendKey, createKeyNet, withKeyNet, keyNetFields, keepKeyNet, needsKeyNet };
+})();
 globalThis["BetterfyInfer"] = __mod["core/audio/infer.mjs"];
 globalThis["BetterfyHeads"] = __mod["core/audio/heads.mjs"];
 globalThis["BetterfyClap"] = __mod["core/audio/clap.mjs"];
 globalThis["BetterfyBeats"] = __mod["core/audio/dsp/beats.mjs"];
-let ort = null, ear = null, heads = null, clapEar = null, beatTracker = null;
+globalThis["BetterfyKeyNet"] = __mod["core/audio/dsp/keynet.mjs"];
+let ort = null, ear = null, heads = null, clapEar = null, beatTracker = null, keyNet = null;
 const opts = () => ({ executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
 self.onmessage = async function (e) {
   const m = e.data || {};
@@ -1666,6 +2362,13 @@ self.onmessage = async function (e) {
     } else if (m.op === 'beats') {
       if (!beatTracker) throw new Error('Beat This not loaded');
       result = await beatTracker.measure(m.windows);
+    } else if (m.op === 'keynetInit') {
+      // Key v4: on wherever listening runs.
+      keyNet = keyNet || await BetterfyKeyNet.createKeyNet({ ort, modelUrl: m.modelUrl, sessionOptions: opts() });
+      result = true;
+    } else if (m.op === 'keynet') {
+      if (!keyNet) throw new Error('key model not loaded');
+      result = await keyNet.logp(m.windows);
     } else if (m.op === 'clap') {
       if (!clapEar) throw new Error('CLAP not loaded');
       result = await BetterfyClap.clapEmbed(clapEar, m.windows);

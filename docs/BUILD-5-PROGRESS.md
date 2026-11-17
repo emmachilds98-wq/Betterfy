@@ -87,3 +87,23 @@ Same Beatport EDM Key set and middle-30-s windows. Half A is dev (note: the v3 k
 - Not a pre-planned rule, but worth knowing: when DSP and S-KEY agree on the key, B is 66.8 / 74.6 on 63% of tracks (A: 73.2 / 80.3 on 62%). That beats the shipped gate on both accuracy and coverage. Blockers to using it: S-KEY needs an ONNX export plus a JS port of its nnAudio VQT front end, and its weights are research/non-commercial, which is not safe to redistribute from a hosted app without the owner clearing it with Deezer. Left for the owner; S-KEY not exported or hosted.
 
 **3. Beat This tempo: shipped as an opt-in, flagged-only.** Numbers are the earlier measurement above (B, n=387): DSP 80.9% within 1 BPM / 50 octave errors (re-run today: identical); flagged-only 82.7% / 43 (fixed 21, broke 14). The gain is inside the +-3.9 CI, so it is a small, cheap, optional improvement, not a proven one. Deep listen has a new "Better tempo (Beat This, about 10 MB)" switch (off by default, Wi-Fi only, no memory rule). It re-listens only to heard tracks whose DSP tempo is flagged octave-unsure, `BEATS_FILL_PER_RUN` = 40 per run, after the normal queue; clear tempos are never sent. The model (`docs/models/beat-this-small0.onnx`, 10 MB, MIT, licence in `LICENSE-BEAT-THIS`) is self-hosted and is loaded into the existing audio worker on first use. `beat-mel.mjs` and `beats.mjs` are back in the audio bundle and the worker (`RESEARCH_ONLY` is empty).
+
+## Key v4: a learned key model, sure keys on 85% of tracks (2026-11-17)
+Same Beatport EDM Key set (Zenodo 1101082), same `halfOf` split and the same middle-30-s windows as `beatport-eval.mjs`. Every choice was made on half A (training and 5-fold cross-validation inside A); half B was held out. Bar: >= 60% exact and >= 70% MIREX.
+
+**What it is.** `core/audio/dsp/keyspec.mjs` (log-frequency spectrogram, 24 bands per octave tied to A440, 10 frames/s, standardised) feeds `docs/models/keynet-v4.onnx` (978 KB): five small all-convolutional nets (after Korzeniowski & Widmer, ISMIR 2018; 48k parameters each), one per fold of A, averaged in the graph. `core/audio/dsp/keynet.mjs` blends its 24 log-probabilities with 0.5 × v3's and rescales the blended best probability so that 0.40 lands on `KEY_MIN_CONF` (0.65): match.mjs, order.mjs and dsp-view.mjs are unchanged. Trained with random transposition (crop shift, rotated label) and random 10 s crops, on half A (640 tracks, every 20 s stretch of each 2-minute clip) plus all 604 GiantSteps Key tracks (no track-id overlap with Beatport EDM Key). Weights CC BY-SA 4.0 (`docs/models/LICENSE-KEYNET`).
+
+**Held-out half B, n=635, through the page's own code** (`scripts/audio-dsp/keynet-eval.mjs`, onnxruntime-node; identical to the Python numbers):
+| | all tracks: exact / MIREX | sure (keyConf >= 0.65): share of tracks, exact / MIREX |
+|---|---|---|
+| v3 (shipped before) | 55.3 / 64.6 | 53.2%, 62.4 / 72.0 |
+| CNN alone, trained on A only | 54.3 / 64.2 | – |
+| CNN alone, A + GiantSteps | 56.2 / 65.6 | – |
+| **v4 = CNN + 0.5 × v3** | **57.3 / 66.5** | **85.4%, 62.5 / 71.3** |
+| v4 where CNN and v3 agree (not shipped) | – | 72.4%, 65.2 / 73.3 |
+
+- Threshold: the lowest blended probability where A (CNN out-of-fold, v3 in-sample) clears the bar + 4 points (the A-flatters-B gap measured before): 0.40 (A 66.2 / 74.2 on 86%). Picked before looking at B for it. B clears both bars, by 2.5 and 1.3 points; CI about ±4, so treat it as "at the bar", not above it.
+- Overall still under 60/70: no key on every card. Sure keys now cover 85% of tracks instead of 53% at the same accuracy, and the same gate drives `mixesWith` and DJ order.
+- Cost: ~290 ms per track on one CPU core (spectrogram + model + blend), the model loads once (~1 MB). On wherever listening runs, no switch. Heard records get v4 at 60 per run (`KEYNET_FILL_PER_RUN`), key fields only, re-downloading the two preview windows; tempo and Beat This are kept (`keepKeyNet`).
+- Not worth repeating: wider training (A + GiantSteps) gave +2 points on the CNN; folds vary 54–57% on B; the blend weight is flat between 0.5 and 1.5. The 20 s of preview audio looks like the limit for this approach.
+Reproduce: `keynet-features.mjs <audio> <keys> <out> [--train-only]` (four shards), `keynet-train.py <feat dirs> <run> --epochs 50 --per-epoch 3000`, `keynet-export.py <run> docs/models/keynet-v4.onnx`, then `keynet-eval.mjs <audio> <keys> docs/models/keynet-v4.onnx --ort <dir> --half B`.

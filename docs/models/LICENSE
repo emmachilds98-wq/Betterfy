@@ -12,6 +12,11 @@ models collection: https://essentia.upf.edu/models.html
       LICENSE-BEAT-THIS. ONNX export from
       https://huggingface.co/jenila-ai/beat-this-small0-onnx
 
+  keynet-v4.onnx
+      Betterfy key v4 (core/audio/dsp/keynet.mjs): five small convolutional
+      key classifiers averaged in one graph, trained for Betterfy by
+      scripts/audio-dsp/keynet-train.py. CC BY-SA 4.0, see LICENSE-KEYNET.
+
   discogs-effnet-bsdynamic-1.onnx / .json
       Discogs-EffNet, music style classification and embeddings.
       Pablo Alonso-Jiménez, Xavier Serra, Dmitry Bogdanov, "Music

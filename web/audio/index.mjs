@@ -21,4 +21,5 @@ export { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, score
          nearInUse, nearScoreText, NEAR_SETTING } from './maest-run.mjs';
 export { MAEST_FILE, MAEST_LABELS_FILE, needsMaest } from '../../core/audio/maest.mjs';
 export { needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN } from '../../core/audio/dsp/beats.mjs';
+export { needsKeyNet, KEYNET_MODEL_FILE, KEYNET_FILL_PER_RUN, KEYNET_VERSION } from '../../core/audio/dsp/keynet.mjs';
 export { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } from '../../core/audio/clap.mjs';
