@@ -435,7 +435,8 @@ export function view(c) {
       <h2 style="margin:0 0 12px; font-size:19px">Learn my library</h2>
       <p>Reads your ${LIB.playlists.length.toLocaleString()} playlists once and works out what each one means.
         Takes a few seconds, and is remembered afterwards so it is a one-off. It runs on this device —
-        nothing is sent anywhere.</p>
+        nothing is sent anywhere. It starts by itself a few seconds after the app opens; this button is
+        only for when it could not.</p>
       <div class="rowbtns" style="margin-top:18px">
         <button class="b big go" data-act="go">Learn my library</button>
       </div>

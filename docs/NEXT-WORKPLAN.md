@@ -295,6 +295,17 @@ default to `'all'`. A saved choice still wins.
 **Gate.** None for accuracy; check the queue order still puts unfiled and
 played tracks first (`core/audio/queue.mjs`).
 
+### Built after this plan: the first analysis starts by itself (2026-11-17)
+
+A new account no longer presses "Analyse my library" or "Learn my library".
+`web/app/analyse.js analyseFirst()` is asked before the first paint, so File
+opens on the progress strip; `analyseAuto()` then runs, in the background and
+in order: Wikidata genres, listening, Last.fm tags, and the Engine's map
+(`engineAutoLearn()`, engine worker only, skipped with Data Saver). Every
+later load learns the map again quietly (from the cache), so the Engine screen
+opens on results. Auto Score + Tune waits while it runs (`autoScoreBusy`).
+Checks: `test/webanalyse.test.mjs`, `test/e2e/firstrun.test.mjs`.
+
 ## 5. Not worth doing yet
 
 | Idea | Why not | What would change it |
