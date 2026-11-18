@@ -309,7 +309,7 @@ async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
  * library queue pauses while picks are heard (one model, one Worker) and
  * carries on afterwards. Off, or nothing heard to compare against, and
  * Discover is exactly what it was. */
-const DISC = { run: 0, ctrl: null, store: null, seed: null, index: null, memb: null, done: 0, missed: 0, busy: false, again: false };
+const DISC = { run: 0, ctrl: null, store: null, seed: null, seedPl: null, index: null, memb: null, done: 0, missed: 0, busy: false, again: false };
 
 async function discListen(src, weights) {
   const run = ++DISC.run;
@@ -329,7 +329,9 @@ async function discListen(src, weights) {
     S.discSound = { state: 'thin', n: seed.n, need: D.DISCOVER_SOUND.minSeed, name };
     return discSoundRedraw();
   }
-  Object.assign(DISC, { seed, index, memb: soundMembership() });
+  // The seed playlist itself, so a pick that sounds at home in it is offered it (seedPicks).
+  const seedPl = src && !isMirrorPlaylist(src) ? { id: src.id, name: src.name, axis: CFG[src.id]?.axis ?? null } : null;
+  Object.assign(DISC, { seed, seedPl, index, memb: soundMembership() });
 
   DISC.store ??= A.openAudioStore({ indexedDB: null });
   DISC.ctrl ??= A.createAudioController({
@@ -380,7 +382,9 @@ async function discApply() {
         heard++;
         o.fit = fits.get(o.id) ?? null;
         o.tagSuggest ??= o.suggest ?? [];
-        o.suggest = discPicks(D.soundPlace(row.emb, DISC.index, DISC.memb), o.tagSuggest);
+        // The fit line and the File button read the same answer: a pick that sounds at home in the
+        // seed playlist is offered that playlist first (core/audio/discover.mjs seedPicks).
+        o.suggest = D.seedPicks(discPicks(D.soundPlace(row.emb, DISC.index, DISC.memb), o.tagSuggest), o.fit, DISC.seedPl);
         if (globalThis.BetterfyAudio?.dspSoundVM) o.sound = audioSoundVM(rec) ?? undefined;
       }
       S.discover = D.rerank(S.discover ?? [], fits, { from: (S.discAt ?? 0) + 1 });

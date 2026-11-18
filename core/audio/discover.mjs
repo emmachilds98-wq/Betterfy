@@ -31,7 +31,7 @@ import { audioIndex } from '../intrinsic/audio.mjs';
 import { sourceArtists } from '../intrinsic/bridge.mjs';
 import { normName } from '../sources/deezer.mjs';
 
-export const DISCOVER_SOUND_VERSION = '1.0.0';
+export const DISCOVER_SOUND_VERSION = '1.1.0';
 
 export const DISCOVER_SOUND = Object.freeze({
   /** Sound-alikes a fit is averaged over. */
@@ -234,6 +234,34 @@ export function soundPlace(emb, index, membership, { k = 15, limit = 3, minNeigh
     .slice(0, limit)
     .map(([id, v]) => ({ id, name: membership.playlists.get(id)?.name ?? id,
                          score: +(v.w / total).toFixed(3), votes: v.n, via: 'sound' }));
+}
+
+/** How close a pick must sound to the seed playlist for that playlist to lead its picks, and to be offered at all.
+ *  The same cut-offs as the card's own fit line (web/app/discover-engine.js discFitHTML): "Sounds right at
+ *  home in X" and "Close to X's sound". */
+export const SEED_FIT = Object.freeze({ lead: 0.75, offer: 0.45 });
+
+/**
+ * Make a pick's playlist picks agree with its fit line. On a playlist's radio the card says how close
+ * the pick sounds to that playlist; the picks come from the genre playlists the filed tracks vote for,
+ * which never include a mood or activity playlist like "on the road". So a card could say "Sounds right
+ * at home in X" and then offer Y. Here the seed playlist leads when the pick sounds at home in it, and
+ * is one tap away (second) when it is merely close. Below that the picks are returned as they were.
+ *
+ * @param {Array<{id: string}>} picks   the pick's playlist picks, best first
+ * @param {{fit: number}|null} fit      soundFit() for this pick against the seed
+ * @param {{id: string, name: string, axis?: string|null}|null} seed  the seed playlist; null for "Everything I listen to"
+ * @returns {Array<object>} a new array, at most `limit` long
+ */
+export function seedPicks(picks, fit, seed, { limit = 3, lead = SEED_FIT.lead, offer = SEED_FIT.offer } = {}) {
+  const list = [...(picks ?? [])];
+  const f = fit?.fit;
+  if (!seed?.id || !Number.isFinite(f) || f < offer) return list;
+  const others = list.filter(p => p?.id !== seed.id);
+  const own = { id: seed.id, name: seed.name ?? seed.id, axis: seed.axis ?? null, score: +clamp01(f).toFixed(3),
+                via: 'seed', evidence: { sound: +clamp01(f).toFixed(3) } };
+  const at = f >= lead ? 0 : Math.min(1, others.length);
+  return [...others.slice(0, at), own, ...others.slice(at)].slice(0, Math.max(1, limit));
 }
 
 /* ---------- the keyless candidate path ---------- */

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-0220">
+<meta name="bf-build" content="2026-11-18-0308">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1794,7 +1794,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-0220</span>
+    <span class="mono">build 2026-11-18-0308</span>
   </p>
 
   <div class="feat">
@@ -1887,7 +1887,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0220</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0308</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2004,7 +2004,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-0220. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-0308. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5764,7 +5764,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-0220`,
+    `Betterfy engine score — build 2026-11-18-0308`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -9663,6 +9663,31 @@ function pickRowsHTML(ctx, d, at) {
     <div class="plrows">${rows}</div></section>`;
 }
 
+/** Why the card's first pick is offered, in words. */
+function fitHow(best) {
+  return best?.via === 'seed' ? 'sounds right at home next to its tracks, the playlist this radio is from'
+    : best?.via === 'sound' ? 'by how it sounds next to what you filed there'
+    : 'ranked by the same model the file queue uses';
+}
+
+/** "Add to another playlist": every playlist you own, the pick's suggestions first, then the rest A to Z.
+ *  Not only the filing targets: you can add a pick to any playlist that is yours. */
+function anyPlaylistMenu(ctx, t) {
+  const { LIB, CFG = {}, esc } = ctx;
+  const mirror = ctx.isMirrorPlaylist ?? (() => false);
+  const mine = (LIB?.playlists ?? []).filter(p => p?.id && !mirror(p));
+  const byId = new Map(mine.map(p => [p.id, p]));
+  const nameOf = id => byId.get(id)?.name ?? CFG[id]?.name ?? id;
+  const sugg = [...new Set((t?.suggest ?? []).map(s => s?.id).filter(id => id && (byId.has(id) || CFG[id])))];
+  const rest = mine.filter(p => !sugg.includes(p.id))
+    .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' }));
+  const opt = (id, name) => `<option value="${esc(id)}">${esc(name)}</option>`;
+  const top = sugg.length ? `<optgroup label="Suggested">${sugg.map(id => opt(id, nameOf(id))).join('')}</optgroup>` : '';
+  const all = rest.length ? (sugg.length ? `<optgroup label="Your other playlists">${rest.map(p => opt(p.id, p.name)).join('')}</optgroup>`
+    : rest.map(p => opt(p.id, p.name)).join('')) : '';
+  return top + all;
+}
+
 function view(ctx) {
   const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
@@ -9697,7 +9722,7 @@ function view(ctx) {
     { acts: '<button class="b p" type="button" data-act="discRun">Find new music from what I play</button>' });
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
-  const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
+  const menu = anyPlaylistMenu(ctx, t);
   const art = artHTML({ art:t.art, id:t.id, title:t.track },
                       `data-dplay="${esc(t.id)}" data-ddur="${t.dur ?? 0}"`);
 
@@ -9729,12 +9754,12 @@ function view(ctx) {
         ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
         ${best ? `<button class="fitcall" data-act="dfile" data-dfile="${esc(best.id)}">
             <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
-              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ${best.via === 'sound' ? 'by how it sounds next to what you filed there' : 'ranked by the same model the file queue uses'}</span>${pickEvidence(best)}</span>
+              <span class="ax">${best.axis ? `<b>${esc(best.axis)}</b> playlist · ` : ''}${fitHow(best)}</span>${pickEvidence(best)}</span>
             ${pickBand(best)}<span class="sc">${fitWord(best.score)}</span>
           </button>` : ''}
         ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
           `<button class="pick" data-act="dfile" data-dfile="${esc(sg.id)}"><span class="k">${n+2}</span>
-           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span>${pickEvidence(sg)}</span>
+           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.axis ? `${esc(sg.axis)} playlist` : sg.via === 'seed' ? 'the playlist this radio is from' : 'playlist'}</span>${pickEvidence(sg)}</span>
            <span class="rt">${pickBand(sg)}<span class="sc">${fitWord(sg.score)}</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
         ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
@@ -9748,7 +9773,7 @@ function view(ctx) {
           <button class="b sm" data-act="dpass" data-dpass="${esc(t.id)}" title="Not for me: this artist won't be offered again">Not for me</button>
           <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
           <a class="b sm" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
-          <select data-act="discAnyPl" id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+          <select data-act="discAnyPl" id="discAnyPl" aria-label="Add to another playlist"><option value="">Add to another playlist…</option>${menu}</select>
         </div>
       </div>
     </div>
@@ -9809,10 +9834,10 @@ const actions = {
 };
 
 /** Add a pick (the one on the card, unless `pick` says which) to a playlist, and take it off the pile. */
-async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId, pick = null) {
+async function discAdd({ S, CFG, LIB, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId, pick = null) {
   const d = S.discover ?? [], cur = Math.min(S.discAt ?? 0, d.length - 1), at = pick ?? cur, t = d[at];
   if (!t) return;
-  const name = CFG[playlistId]?.name ?? playlistId;
+  const name = CFG[playlistId]?.name ?? LIB?.playlists?.find(p => p.id === playlistId)?.name ?? playlistId;
   try {
     await addTracks(playlistId, [t.id]);
     await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'added from discovery' });
@@ -9824,7 +9849,7 @@ async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction
     render();
   } catch (e) { toast('Failed: ' + e.message); }
 }
-return { fitWord, whyLine, previewBtn, pickRowsHTML, view, mount, actions };
+return { fitWord, whyLine, previewBtn, pickRowsHTML, fitHow, anyPlaylistMenu, view, mount, actions };
 })();
 /* ---- web/screens/new.mjs ---- */
 __mod["web/screens/new.mjs"] = (function () {
@@ -10474,7 +10499,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-0220';
+const BUILD = '2026-11-18-0308';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10812,7 +10837,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-0220', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-0308', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11404,8 +11429,12 @@ function buildReports(lib, cfg, tags) {
   // Filed means filed as any release of it: a liked single whose album copy
   // (same ISRC, or the same trackKey — artist, title and version) already sits
   // in a playlist is not waiting to be filed, whatever its Spotify id.
+  // An inflow is not a home either: a liked song whose only playlist is "My
+  // Shazam Tracks", a saved Discover Weekly, "On Repeat" or "To sort" (axis
+  // inbox, core/playlists/axes.mjs) is still waiting to be filed. Counting
+  // those as filed hid most of a library's unfiled likes from the File queue.
   const filed = new Set(), filedIsrc = new Set(), filedKey = new Set();
-  for (const p of lib.playlists) { if (isMirrorPlaylist(p)) continue;
+  for (const p of lib.playlists) { if (isMirrorPlaylist(p) || cfg?.[p.id]?.axis === 'inbox') continue;
     for (const t of p.tracks) { if (!t) continue; filed.add(t.id);
       if (t.isrc) filedIsrc.add(t.isrc); if (t.name) filedKey.add(trackKey(t)); } }
   const isFiled = t => filed.has(t.id) || (!!t.isrc && filedIsrc.has(t.isrc)) || (!!t.name && filedKey.has(trackKey(t)));
@@ -11570,7 +11599,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-0220');
+    const w = new Worker('reports-worker.js?v=2026-11-18-0308');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -13390,7 +13419,7 @@ async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
  * library queue pauses while picks are heard (one model, one Worker) and
  * carries on afterwards. Off, or nothing heard to compare against, and
  * Discover is exactly what it was. */
-const DISC = { run: 0, ctrl: null, store: null, seed: null, index: null, memb: null, done: 0, missed: 0, busy: false, again: false };
+const DISC = { run: 0, ctrl: null, store: null, seed: null, seedPl: null, index: null, memb: null, done: 0, missed: 0, busy: false, again: false };
 
 async function discListen(src, weights) {
   const run = ++DISC.run;
@@ -13410,7 +13439,9 @@ async function discListen(src, weights) {
     S.discSound = { state: 'thin', n: seed.n, need: D.DISCOVER_SOUND.minSeed, name };
     return discSoundRedraw();
   }
-  Object.assign(DISC, { seed, index, memb: soundMembership() });
+  // The seed playlist itself, so a pick that sounds at home in it is offered it (seedPicks).
+  const seedPl = src && !isMirrorPlaylist(src) ? { id: src.id, name: src.name, axis: CFG[src.id]?.axis ?? null } : null;
+  Object.assign(DISC, { seed, seedPl, index, memb: soundMembership() });
 
   DISC.store ??= A.openAudioStore({ indexedDB: null });
   DISC.ctrl ??= A.createAudioController({
@@ -13461,7 +13492,9 @@ async function discApply() {
         heard++;
         o.fit = fits.get(o.id) ?? null;
         o.tagSuggest ??= o.suggest ?? [];
-        o.suggest = discPicks(D.soundPlace(row.emb, DISC.index, DISC.memb), o.tagSuggest);
+        // The fit line and the File button read the same answer: a pick that sounds at home in the
+        // seed playlist is offered that playlist first (core/audio/discover.mjs seedPicks).
+        o.suggest = D.seedPicks(discPicks(D.soundPlace(row.emb, DISC.index, DISC.memb), o.tagSuggest), o.fit, DISC.seedPl);
         if (globalThis.BetterfyAudio?.dspSoundVM) o.sound = audioSoundVM(rec) ?? undefined;
       }
       S.discover = D.rerank(S.discover ?? [], fits, { from: (S.discAt ?? 0) + 1 });
@@ -15086,7 +15119,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-0220';
+    s.src = 'engine.js?v=2026-11-18-0308';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15108,7 +15141,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-0220');
+    const w = new Worker('engine-worker.js?v=2026-11-18-0308');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15819,7 +15852,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-0220';
+    s.src = 'audio.js?v=2026-11-18-0308';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -15873,7 +15906,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0220', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0308', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17020,7 +17053,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0220', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0308', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -17711,7 +17744,7 @@ SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, ded
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
   labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
-SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
+SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, isMirrorPlaylist, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
   soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
   runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember,

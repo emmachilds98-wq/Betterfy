@@ -142,3 +142,15 @@ test('the reject handler re-ranks through backlogSuggest, not bare rank()', () =
   assert.match(body, /t\.suggest = raw \? backlogSuggest\(raw, LIB, CFG, gateTags\(TAGS, tagGate\(TAGS\)\), R\.profiles, R\.idf\) : \[\]/);
   assert.doesNotMatch(body, /rank\(raw/);
 });
+
+test('a liked song whose only playlist is an inflow (Shazam, To sort) is still waiting to be filed', () => {
+  const { lib, cfg } = library();
+  const shazamed = track('z1', 'Dwarde', 'Bassline Pressure');
+  lib.liked.push(shazamed);
+  lib.playlists.push({ id: 'in1', name: 'My Shazam Tracks', tracks: [shazamed, track('t3', 'Blawan', 'Why They Hide')] });
+  cfg.in1 = { name: 'My Shazam Tracks', axis: 'inbox', target: false };
+  assert.deepEqual(backlogIds(lib, cfg).sort(), ['t5', 'z1'], 'only in an inbox playlist: unfiled');
+  // A mood or context playlist is a real place it was put, so it still counts.
+  cfg.in1.axis = 'context';
+  assert.deepEqual(backlogIds(lib, cfg), ['t5']);
+});

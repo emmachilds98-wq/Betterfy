@@ -133,13 +133,21 @@ test('the suggested playlists are ranked, with the best one marked', () => {
   assert.match(html, />genre</);
 });
 
-test('a dropdown offers every filing playlist, and only those', () => {
+test('the dropdown offers every playlist you own, suggestions first, then the rest A to Z', () => {
   const html = load({ discover: FOUND }).vDiscover();
   assert.match(html, /id="discAnyPl"/);
   assert.match(html, /Add to another playlist…/);
-  assert.match(html, /<option value="p1">/);
-  assert.match(html, /<option value="p2">/);
-  assert.doesNotMatch(html, /<option value="p3">/, 'Tiny is not a filing target');
+  const menu = html.slice(html.indexOf('id="discAnyPl"'), html.indexOf('</select>', html.indexOf('id="discAnyPl"')));
+  // Tiny is not a filing target, but it is yours, so it is offered (emma, 2026-11-18).
+  assert.deepEqual([...menu.matchAll(/<option value="(p\d)">/g)].map(m => m[1]), ['p1', 'p2', 'p3']);
+  assert.match(menu, /<optgroup label="Suggested"><option value="p1">[^]*<option value="p2">[^]*<\/optgroup><optgroup label="Your other playlists"><option value="p3">Tiny/);
+});
+
+test('with no suggestion the dropdown is every playlist you own, A to Z', () => {
+  const html = load({ discover: FOUND, discAt: 1 }).vDiscover();
+  const menu = html.slice(html.indexOf('id="discAnyPl"'), html.indexOf('</select>', html.indexOf('id="discAnyPl"')));
+  assert.doesNotMatch(menu, /optgroup/);
+  assert.deepEqual([...menu.matchAll(/<option value="(p\d)">/g)].map(m => m[1]), ['p1', 'p2', 'p3']);
 });
 
 test('a track nothing fits still gets the dropdown, and is told why', () => {
