@@ -311,7 +311,9 @@ async function start(force) {
       if (firstRun) await analyseAuto().catch(() => null);
       else {
         if (untaggedArtists().size) await fillFromWikidata({ quiet: true }).catch(() => {});
-        if (LS.getItem('bf_analysed') && lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
+        // Every load, not only after the first analysis (owner, 2026-11-18: all the data up
+        // front, never a button in Settings to press).
+        if (lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
           await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
         }
       }

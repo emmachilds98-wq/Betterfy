@@ -283,6 +283,15 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
   return lines.filter(Boolean).join('\n');
 }
 
+/** The first ENG_ROWS_SHOWN rows of "What it would do differently", the rest folded away:
+ *  every row of the backlog made this screen over ten thousand pixels tall on a phone. */
+const ENG_ROWS_SHOWN = 8;
+function engRows(rows, one) {
+  const head = rows.slice(0, ENG_ROWS_SHOWN).map(one).join('');
+  const rest = rows.slice(ENG_ROWS_SHOWN);
+  return rest.length ? `${head}<details class="engmore"><summary class="b sm">Show the other ${rest.length}</summary>${rest.map(one).join('')}</details>` : head;
+}
+
 /** Fill this playlist's gate (BUILD-6 F2, M4): hidden tracks found again in a playlist's top 10. Counts only. */
 export function fillLine(f, pc) {
   if (!f || f.recall == null) return null;
@@ -559,7 +568,7 @@ export function view(c) {
         sh.decided.confident} · ${sh.decided.choose} · ${sh.decided.unsure}</b></div>` : ''}
     </div>` : ''}
     ${sh.rows.length ? `<div class="rows" style="margin-top:18px">
-      ${sh.rows.map(row => {
+      ${engRows(sh.rows, row => {
         // Once calibrated, the checked answer is the answer: "not sure" is no
         // answer, and a short list that includes today's suggestion agrees with it.
         const answer = row.decision ? (row.decision.kind === 'unsure' ? null : row.decision.playlists)
@@ -599,7 +608,7 @@ export function view(c) {
                 : 'It has no evidence for this track that separates your playlists at all — an artist it has never seen you file, on a label it does not know. It would rather say nothing than guess.'}</p>`}
           </div>
         </details></div>`;
-      }).join('')}
+      })}
     </div>` : ''}
   </div>`;
 

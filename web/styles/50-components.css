@@ -52,6 +52,9 @@
   .engrow>summary{cursor:pointer; list-style:none; display:block}
   .engrow>summary::-webkit-details-marker{display:none}
   .engrow>summary:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:12px}
+  .engmore>summary{list-style:none; display:inline-flex; margin:14px 0 4px; cursor:pointer}
+  .engmore>summary::-webkit-details-marker{display:none}
+  .engmore[open]>summary{display:none}
   .picks{display:flex; flex-direction:column; gap:9px; margin-top:24px}
   .pick{display:flex; align-items:center; gap:14px; border:1px solid var(--line); border-radius:18px; background:var(--surface-2);
         padding:16px 18px; cursor:pointer; font:inherit; font-size:15px; color:var(--ink); text-align:left; width:100%;

@@ -186,7 +186,7 @@ const healthClass = s => s >= 85 ? 'ok' : s >= 65 ? 'fine' : 'low';
 
 /** "How well it knows you": the last Score run on this account, in one line. Never a number nobody measured. */
 export function knowsYouLine(sum, now = Date.now()) {
-  if (!sum || !Number.isFinite(sum.top1)) return 'Not measured yet. One run checks its picks against what you already filed.';
+  if (!sum || !Number.isFinite(sum.top1)) return 'Not measured yet. It checks its picks against what you already filed by itself, about a minute after Betterfy opens.';
   const pc = x => `${Math.round(x * 100)}%`;
   const days = Number.isFinite(sum.at) ? Math.floor((now - sum.at) / 864e5) : null;
   const when = days == null ? '' : days <= 0 ? ', checked today' : days === 1 ? ', checked yesterday' : `, checked ${days} days ago`;
