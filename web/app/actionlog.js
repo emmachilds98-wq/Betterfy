@@ -77,6 +77,8 @@ async function undoStep(e) {
     if (e.created) await sp(`/me/library?uris=spotify:playlist:${e.playlistId}`, { method: 'DELETE' });
   } else if (e.op === 'unlike') {
     await libraryCall('PUT', e.trackIds);
+  } else if (e.op === 'like') {
+    await libraryCall('DELETE', e.trackIds);
   } else throw new Error(`Cannot undo "${e.op}"`);
 }
 

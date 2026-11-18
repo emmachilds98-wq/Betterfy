@@ -40,9 +40,10 @@ function tidy({ audio = false, rows = [], fb = {} } = {}) {
   return sandbox;
 }
 
-test('without heard tracks Tidy has its three sections and nothing about sound', () => {
+test('without heard tracks Tidy has its three sections, Hard to find, and nothing about sound', () => {
   const html = vm.runInContext('vTidy()', tidy());
-  assert.equal((html.match(/data-tidy="/g) ?? []).length, 3);
+  assert.equal((html.match(/data-tidy="/g) ?? []).length, 4);
+  assert.match(html, /data-tidy="hidden">Hard to find/);
   assert.ok(!/By sound|data-tsb|tsrow/.test(html));
 });
 
