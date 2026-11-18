@@ -9702,7 +9702,61 @@ function narrowToFamily(ids, family, families) {
   const kept = ids.filter(id => famOf(families, id) === family);
   return kept.length ? kept : ids;
 }
-return { FAMILY_VERSION, playlistFamilies, conceptsIn, familyRow, familyAccuracy, FAMILY_GATE, FAMILY_CONFIDENT_GATE, familyGate, familyInUse, fitFamilyCalibration, decideCard, familyConfident, narrowToFamily };
+
+/** Build 8 A1: rows needed before the confusion line names anything. */
+const CONFUSION_MIN = 40;
+
+/**
+ * Build 8 A1, confusion by family: of held-out rows whose first pick was wrong,
+ * where it went. Each miss is counted once, against the track's first true
+ * playlist, as a playlist pair (sibling when both sit in one family) and as a
+ * family pair when the families differ. Top `top` of each, most first.
+ * Counts only; no placement changes.
+ * @returns {{ n, misses, need, pairs: [{from, to, n, sibling}], families: [{from, to, n}] }}
+ */
+function familyConfusion(rows, families, { inScope = null, top = 3, min = CONFUSION_MIN } = {}) {
+  const ok = id => !!id && (!inScope || inScope(id));
+  const pairs = new Map(), fams = new Map();
+  let n = 0, misses = 0;
+  for (const r of rows ?? []) {
+    const ranked = (r?.scores ?? []).filter(x => ok(x?.[0]));
+    const truth = (r?.truth ?? []).filter(ok);
+    if (!ranked.length || !truth.length) continue;
+    n++;
+    const first = ranked[0][0];
+    if (truth.includes(first)) continue;
+    misses++;
+    const from = truth[0], ff = famOf(families, from), tf = famOf(families, first);
+    const sibling = ff === tf && !ff.startsWith('own:');
+    const pk = `${from}\u0000${first}`;
+    const p = pairs.get(pk) ?? { from, to: first, n: 0, sibling };
+    p.n++; pairs.set(pk, p);
+    if (ff !== tf) {
+      const fk = `${ff}\u0000${tf}`;
+      const f = fams.get(fk) ?? { from: ff, to: tf, n: 0 };
+      f.n++; fams.set(fk, f);
+    }
+  }
+  const order = (a, b) => b.n - a.n || (a.from < b.from ? -1 : a.from > b.from ? 1 : a.to < b.to ? -1 : 1);
+  return { n, misses, need: Math.max(0, min - n),
+           pairs: n >= min ? [...pairs.values()].filter(p => p.n >= 2).sort(order).slice(0, top) : [],
+           families: n >= min ? [...fams.values()].filter(f => f.n >= 2).sort(order).slice(0, top) : [] };
+}
+
+/** A family key in words: "drum-and-bass" → "Drum and bass"; a playlist on its own by its name. */
+const famWords = (key, nameOf) => String(key).startsWith('own:') ? nameOf(String(key).slice(4))
+  : String(key).replace(/-/g, ' ').replace(/^./, c => c.toUpperCase());
+
+/** The Score line for A1: playlist names and counts only. */
+function confusionLine(c, nameOf = id => id) {
+  if (!c) return '';
+  if (c.need > 0) return `Mix-ups by family: needs ${c.need} more scored tracks`;
+  if (!c.pairs.length) return `Mix-ups by family: no mix-up repeats on ${c.n} tracks`;
+  const pairs = c.pairs.map(p => `${nameOf(p.from)} read as ${nameOf(p.to)} ${p.n} times${p.sibling ? ' (same family)' : ''}`);
+  const fams = c.families.map(f => `${famWords(f.from, nameOf)} → ${famWords(f.to, nameOf)} ${f.n}`);
+  return `Mix-ups by family (${c.misses} misses of ${c.n}): ${pairs.join('; ')}${fams.length ? `. Across families: ${fams.join(', ')}` : ''}`;
+}
+return { FAMILY_VERSION, playlistFamilies, conceptsIn, familyRow, familyAccuracy, FAMILY_GATE, FAMILY_CONFIDENT_GATE, familyGate, familyInUse, fitFamilyCalibration, decideCard, familyConfident, narrowToFamily, CONFUSION_MIN, familyConfusion, confusionLine };
 })();
 /* ---- core/validate/blend.mjs ---- */
 __mod["core/validate/blend.mjs"] = (function () {
@@ -10696,14 +10750,20 @@ const rate = (a, b) => (b > 0 ? +(a / b).toFixed(4) : null);
 function playlistStats(rows, { inScope = null } = {}) {
   const ok = id => !!id && (!inScope || inScope(id));
   const out = new Map();
+  const blank = pid => ({ id: pid, n: 0, top1: 0, inTop3: 0, misses: 0, missTo: new Map(), calls: 0, callsRight: 0 });
   for (const r of rows ?? []) {
     const ranked = (r?.scores ?? []).filter(x => ok(x?.[0]));
     const truth = new Set((r?.truth ?? []).filter(ok));
     if (!ranked.length || !truth.size) continue;
     const first = ranked[0][0], top3 = ranked.slice(0, 3).map(x => x[0]);
     const miss = !truth.has(first);
+    // Build 8 A2: precision, the other half of reliability. Of the tracks this
+    // playlist was named first for, how many were really its own.
+    const c = out.get(first) ?? blank(first);
+    c.calls++; if (!miss) c.callsRight++;
+    out.set(first, c);
     for (const pid of truth) {
-      const s = out.get(pid) ?? { id: pid, n: 0, top1: 0, inTop3: 0, misses: 0, missTo: new Map() };
+      const s = out.get(pid) ?? blank(pid);
       s.n++;
       if (first === pid) s.top1++;
       if (top3.includes(pid)) s.inTop3++;
@@ -10732,7 +10792,7 @@ function weakPlaylists(rows, { inScope = null, gate = WEAK } = {}) {
   return [...playlistStats(rows, { inScope }).values()]
     .filter(s => s.n >= g.minN && s.inTop3 / s.n < g.below)
     .map(s => ({ id: s.id, n: s.n, top1: rate(s.top1, s.n), inTop3: rate(s.inTop3, s.n), misses: s.misses,
-                 partner: partnerOf(s, g) }))
+                 calls: s.calls, precision: rate(s.callsRight, s.calls), partner: partnerOf(s, g) }))
     .sort((a, b) => a.inTop3 - b.inTop3 || b.n - a.n || (a.id < b.id ? -1 : 1))
     .slice(0, g.max);
 }
@@ -10796,7 +10856,7 @@ function diagnoseWeak(weak, { lib, index = null, pairs = null, families = null, 
       const as = (t.artists ?? []).filter(a => a?.id);
       if (as.length && as.every(a => (f.artists.get(a.id) ?? 0) <= 1 && (homes.get(a.id) ?? 0) <= 1)) lonely++;
     }
-    const out = { id: w.id, n: w.n, top1: w.top1, inTop3: w.inTop3, size: f.size, heard: index ? f.heard : null,
+    const out = { id: w.id, n: w.n, top1: w.top1, inTop3: w.inTop3, calls: w.calls ?? null, precision: w.precision ?? null, size: f.size, heard: index ? f.heard : null,
                   partner: w.partner, loners: rate(lonely, f.size), sharedArtists: null, sharedTracks: null,
                   sameFamily: null, pair: null, cause: null, fix: null, add: 0 };
     const q = w.partner ? facts(byId.get(w.partner.id), null) : null;
@@ -10827,23 +10887,30 @@ function diagnoseWeak(weak, { lib, index = null, pairs = null, families = null, 
 
 const pc = x => (x == null ? '—' : `${Math.round(x * 100)}%`);
 
+/** Build 8 A2: "calls right 62% of 13; finds 20% of its own", or '' before precision was kept. */
+function reliability(d) {
+  if (d?.top1 == null || d.calls == null) return '';
+  const calls = d.calls ? `calls right ${pc(d.precision)} of ${d.calls}` : 'never named first';
+  return `; ${calls}; finds ${pc(d.top1)} of its own`;
+}
+
 /** The Score paste line. Counts and the user's own playlist names only. */
 function weakLine(diag, nameOf = id => id) {
   if (!diag?.length) return '';
   return `Weakest, as File places: ${diag.map(d => {
     const w = weakWords(d, nameOf);
-    return `${nameOf(d.id)} ${pc(d.inTop3)} of ${d.n} in its top 3 (${d.cause}${d.partner ? ` vs ${nameOf(d.partner.id)}` : ''}: ${w.fix})`;
+    return `${nameOf(d.id)} ${pc(d.inTop3)} of ${d.n} in its top 3${reliability(d)} (${d.cause}${d.partner ? ` vs ${nameOf(d.partner.id)}` : ''}: ${w.fix})`;
   }).join('; ')}`;
 }
 
 /** What Library keeps: small, one row per weak playlist. */
 function weakSummary(diag, at = Date.now()) {
   return { v: WEAK_VERSION, at, rows: (diag ?? []).map(d => ({
-    id: d.id, n: d.n, top1: d.top1, inTop3: d.inTop3, size: d.size, heard: d.heard, cause: d.cause, fix: d.fix, add: d.add,
+    id: d.id, n: d.n, top1: d.top1, inTop3: d.inTop3, calls: d.calls ?? null, precision: d.precision ?? null, size: d.size, heard: d.heard, cause: d.cause, fix: d.fix, add: d.add,
     partner: d.partner?.id ?? null, sharedArtists: d.sharedArtists, sharedTracks: d.sharedTracks, loners: d.loners,
     pair: d.pair ? { use: d.pair.use, swaps: d.pair.swaps, accuracy: d.pair.accuracy, n: d.pair.n } : null })) };
 }
-return { WEAK_VERSION, playlistStats, weakPlaylists, weakPairs, diagnoseWeak, weakLine, weakSummary, WEAK, weakWords };
+return { WEAK_VERSION, playlistStats, weakPlaylists, weakPairs, diagnoseWeak, reliability, weakLine, weakSummary, WEAK, weakWords };
 })();
 /* ---- core/recommend/audio-gaps.mjs ---- */
 __mod["core/recommend/audio-gaps.mjs"] = (function () {
@@ -12673,7 +12740,8 @@ function measureHistory(rawLog) {
 
 /** The summary lines. `pc` formats a 0..1 share. */
 function measureLines(m, pc = x => Math.round(x * 100) + '%') {
-  const few = (label, n, min) => `${label}: not enough data yet (${n} of ${min})`;
+  // Build 8 A5: a count that fills, so the line says how close it is.
+  const few = (label, n, min) => `${label}: not enough data yet (${n} of ${min}, ${min - n} more to measure this)`;
   const out = [];
   const q = m.queue;
   out.push(q.n >= MIN_N.queue && q.head.n >= MIN_SIDE && q.tail.n >= MIN_SIDE

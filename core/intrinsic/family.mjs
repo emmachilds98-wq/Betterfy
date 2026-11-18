@@ -218,3 +218,57 @@ export function narrowToFamily(ids, family, families) {
   const kept = ids.filter(id => famOf(families, id) === family);
   return kept.length ? kept : ids;
 }
+
+/** Build 8 A1: rows needed before the confusion line names anything. */
+export const CONFUSION_MIN = 40;
+
+/**
+ * Build 8 A1, confusion by family: of held-out rows whose first pick was wrong,
+ * where it went. Each miss is counted once, against the track's first true
+ * playlist, as a playlist pair (sibling when both sit in one family) and as a
+ * family pair when the families differ. Top `top` of each, most first.
+ * Counts only; no placement changes.
+ * @returns {{ n, misses, need, pairs: [{from, to, n, sibling}], families: [{from, to, n}] }}
+ */
+export function familyConfusion(rows, families, { inScope = null, top = 3, min = CONFUSION_MIN } = {}) {
+  const ok = id => !!id && (!inScope || inScope(id));
+  const pairs = new Map(), fams = new Map();
+  let n = 0, misses = 0;
+  for (const r of rows ?? []) {
+    const ranked = (r?.scores ?? []).filter(x => ok(x?.[0]));
+    const truth = (r?.truth ?? []).filter(ok);
+    if (!ranked.length || !truth.length) continue;
+    n++;
+    const first = ranked[0][0];
+    if (truth.includes(first)) continue;
+    misses++;
+    const from = truth[0], ff = famOf(families, from), tf = famOf(families, first);
+    const sibling = ff === tf && !ff.startsWith('own:');
+    const pk = `${from}\u0000${first}`;
+    const p = pairs.get(pk) ?? { from, to: first, n: 0, sibling };
+    p.n++; pairs.set(pk, p);
+    if (ff !== tf) {
+      const fk = `${ff}\u0000${tf}`;
+      const f = fams.get(fk) ?? { from: ff, to: tf, n: 0 };
+      f.n++; fams.set(fk, f);
+    }
+  }
+  const order = (a, b) => b.n - a.n || (a.from < b.from ? -1 : a.from > b.from ? 1 : a.to < b.to ? -1 : 1);
+  return { n, misses, need: Math.max(0, min - n),
+           pairs: n >= min ? [...pairs.values()].filter(p => p.n >= 2).sort(order).slice(0, top) : [],
+           families: n >= min ? [...fams.values()].filter(f => f.n >= 2).sort(order).slice(0, top) : [] };
+}
+
+/** A family key in words: "drum-and-bass" → "Drum and bass"; a playlist on its own by its name. */
+const famWords = (key, nameOf) => String(key).startsWith('own:') ? nameOf(String(key).slice(4))
+  : String(key).replace(/-/g, ' ').replace(/^./, c => c.toUpperCase());
+
+/** The Score line for A1: playlist names and counts only. */
+export function confusionLine(c, nameOf = id => id) {
+  if (!c) return '';
+  if (c.need > 0) return `Mix-ups by family: needs ${c.need} more scored tracks`;
+  if (!c.pairs.length) return `Mix-ups by family: no mix-up repeats on ${c.n} tracks`;
+  const pairs = c.pairs.map(p => `${nameOf(p.from)} read as ${nameOf(p.to)} ${p.n} times${p.sibling ? ' (same family)' : ''}`);
+  const fams = c.families.map(f => `${famWords(f.from, nameOf)} → ${famWords(f.to, nameOf)} ${f.n}`);
+  return `Mix-ups by family (${c.misses} misses of ${c.n}): ${pairs.join('; ')}${fams.length ? `. Across families: ${fams.join(', ')}` : ''}`;
+}
