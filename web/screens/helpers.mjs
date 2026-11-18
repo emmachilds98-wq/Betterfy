@@ -76,7 +76,8 @@ export function helperRows(s = {}) {
     did: auWait === 'none' ? 'Scores itself on your own filing once you have a genre playlist (mark one in Library), then every week. No button to press.'
       : auWait === 'few' ? `Scores itself on your own filing once ${n(auMin)} tracks are filed in your genre playlists (${n(au.filed)} so far), then every week. No button to press.`
       : `Scores itself on your own filing after listening finishes and every week, and switches on the parts that measure better for you${
-      au.at && au.ago ? `; last run ${au.ago}` : ''}. No button to press.` });
+      au.at && au.ago ? `; last run ${au.ago}` : ''}${Number.isFinite(au.top1) ? `, first pick right for ${Math.round(au.top1 * 100)}% of your filed songs` : ''}${
+      au.build ? ` (build ${au.build})` : ''}. No button to press.` });
   // Release radar (DESIGN-PLAN L5): starts by itself like every other source; only a Stop turns it off.
   const rr = s.radar;
   if (rr) {
