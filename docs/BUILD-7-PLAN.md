@@ -76,8 +76,8 @@ wave without asking her.
 
 **Handoff, 2026-11-18 evening (read this first).** The owner wrapped up and
 asked for everything finished to be merged and this plan left so anyone can
-pick up the rest. State of `main` after #194: no open PRs from this build
-except H3's, if its thread has not merged it yet (check GitHub).
+pick up the rest. State of `main` after #194 and H3 (#193): no open PRs
+from this build.
 
 Merged since the morning handoff above:
 
@@ -113,8 +113,12 @@ Merged since the morning handoff above:
    `withFittedWeights` pick the situation's weights per track (the fit is
    already kept on the run). Until then, nothing to do. A third situation
    (never filed but heard) needs sound in `componentParts`' part rows.
-3. **H3, branch and dead-code sweep:** running in its own thread; if not
-   merged, its brief is in §6.
+3. **H3 leftovers (#193 merged):** the cloud session couldn't delete remote
+   branches (its git proxy only allows pushing its own branch). #193 lists the
+   111 safe ones; whoever has push rights runs the lease-guarded deletes listed
+   there (one `git push origin --force-with-lease=refs/heads/B:SHA :refs/heads/B`
+   each). The 12 branches with unmerged work are listed for the owner;
+   `claude/project-thread-dwt4au` can go once lane E is finished with it.
 4. **H2, CI-built Pages:** only on the owner's yes to **D2** (§5).
 5. **E4, key from more audio:** wave 4, only on her say (D3).
 
@@ -873,7 +877,7 @@ keeps project memory in step.
 | U3 | Sound labels in use | 3 | U | Done | #190 | |
 | H1 | Docs front door | 3 | H | Done | #191 | |
 | H2 | CI-built Pages | 3 | H | Not started | | D2 pending |
-| H3 | Branch and dead-code sweep | 3 | H | Running | | own thread; check GitHub for its PR |
+| H3 | Branch and dead-code sweep | 3 | H | Done | #193 | legacy/ all still wired, none removed; old plan paths now docs/archive/; 111 branch deletes listed but not run (proxy), 12 kept for the owner |
 | E4 | Key from more audio | 4 | E | Not started | | D3, optional |
 | L0 | Second ear stuck at 1/1 (DESIGN-PLAN) | first | audio | Done | #171 | owner to watch one real Deep listen run |
 | L8 | Full UI optimisation + home page (DESIGN-PLAN) | after L0 | U | Done | #170, #172 to #184 | every §7.7 call merged |
