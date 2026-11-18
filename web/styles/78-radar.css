@@ -53,3 +53,5 @@
   .rr-ptab td.mono{white-space:nowrap}
   .rr-ptab tr.no td.mono{color:var(--warn)}
   .rr-ptab tr.ok td.mono{color:var(--ok)}
+/* F5: the account check's table sits behind Details. */
+  .rr-pdet>summary{cursor:pointer; min-height:44px; display:flex; align-items:center; font-size:var(--fs-small); color:var(--ink-3)}

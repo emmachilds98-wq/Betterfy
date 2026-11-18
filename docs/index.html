@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-0627">
+<meta name="bf-build" content="2026-11-18-0637">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -766,6 +766,17 @@ main:focus{outline:none}
 .alsofits { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
 .alsofits .chip.mood { border-style:dashed; }
 .alsofits .chip.mood.on { border-style:solid; border-color:var(--accent); background:var(--surface-2); }
+
+/* L3: the big empty state turns compact on a phone where a screen asks for it (.es-phone),
+   so no dashed box fills the screen above the tab bar. Add-only. */
+@media (max-width:560px){
+  .es-phone .empty-state{padding:16px; border:0; background:var(--surface-2); border-radius:var(--r-2);
+       display:flex; align-items:center; gap:12px; text-align:left}
+  .es-phone .empty-state .es-mark{height:24px; gap:3px; margin:0; flex:none}
+  .es-phone .empty-state .es-mark i{width:5px; border-radius:2px}
+  .es-phone .empty-state b{font-size:15px; margin-bottom:2px}
+  .es-phone .empty-state p{margin:0; max-width:none; font-size:var(--fs-small)}
+}
   /* ---------- inbox: the swipeable card ---------- */
   .deck{position:relative; margin-top:4px}
   /* A sliver of the next track behind the top card, so the deck reads as a
@@ -1170,6 +1181,7 @@ main:focus{outline:none}
   .card.sndsearch .why{margin:0}
   .sndres li{align-items:baseline}
   .sndres li .open{margin-left:auto; flex:none; font-size:12px; color:var(--accent)}
+  .sndmake{margin-top:12px}
   /* ---------- what a heard track is: genre › sub-genre · BPM (File card) ----------
      Drawn only when listening has heard the track and the sound space is ready;
      a card without it is laid out exactly as before. */
@@ -1328,6 +1340,19 @@ main:focus{outline:none}
     .dacts{width:100%; padding-left:56px}
     .dacts .dadd{max-width:none; flex:1}
   }
+
+/* L3: Discover's two-way switch, its toolbar and the card's rows (no inline styles). */
+  .discside{margin:0 0 14px}
+  .discside>button{min-height:40px; padding-inline:14px}
+  .discbar{margin-bottom:16px}
+  .disc-empty{margin:0 0 16px}
+  .disccount{margin:0 0 14px}
+  .discvia{font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)}
+  .discnofit{margin-top:20px}
+  .fitcall.discadd .nm{font-size:16.5px; font-weight:700}
+  .discnav{margin-top:16px}
+  .discmore{margin-top:10px}
+  @media (max-width:520px){ .discside{display:flex} .discside>button{flex:1} }
 
   /* ---------- Shuffle: DJ order (core/audio/order.mjs) ----------
      Drawn only once listening has heard enough of the playlist and a DJ order
@@ -1504,6 +1529,8 @@ main:focus{outline:none}
   .rr-ptab td.mono{white-space:nowrap}
   .rr-ptab tr.no td.mono{color:var(--warn)}
   .rr-ptab tr.ok td.mono{color:var(--ok)}
+/* F5: the account check's table sits behind Details. */
+  .rr-pdet>summary{cursor:pointer; min-height:44px; display:flex; align-items:center; font-size:var(--fs-small); color:var(--ink-3)}
   /* ---------- offline decision queue (BUILD-6 F6; app/offline.js offlineShow) ----------
      "N decisions waiting to sync": a small pill above the bottom edge, drawn on
      its own outside every screen, shown only while the queue holds something. */
@@ -1870,7 +1897,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-0627</span>
+    <span class="mono">build 2026-11-18-0637</span>
   </p>
 
   <div class="feat">
@@ -1963,7 +1990,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0627</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0637</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2073,7 +2100,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-0627. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-0637. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5911,7 +5938,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-0627`,
+    `Betterfy engine score — build 2026-11-18-0637`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -8872,7 +8899,7 @@ function view(c) {
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
     ${ticksHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
-    ${footHTML}`;
+    ${c.soundSearchHTML?.() ?? ''}${footHTML}`;
 }
 
 
@@ -9680,21 +9707,36 @@ function rowHTML(r, { esc, suggest }) {
   </li>`;
 }
 
-/** The whole section. '' when the page gives no radar (tests of the rest of Discover, old builds). */
-/** The "Check it works on this account" block: a button, then the answer in words and the table. */
+/** The account check (F5, BUILD-7 R1): one plain line, and the per-route table behind Details. */
 function probeHTML(R, esc) {
   const P = R?.probe;
   const btn = `<button class="b sm" type="button" data-act="rrProbe"${P?.running ? ' disabled' : ''}>${P?.running ? 'Checking…' : P ? 'Check again' : 'Check it works on this account'}</button>`;
   if (!P || P.running) return `<div class="rr-probe">${btn}</div>`;
   if (P.err) return `<div class="rr-probe"><p class="why">The check couldn’t run: ${esc(P.err)}</p>${btn}</div>`;
   const v = P.verdict ?? { ok: false, missing: [] };
-  const words = v.ok ? 'Spotify answers everything the radar needs on this account.'
-    : `Spotify refused what the radar needs (${v.missing.map(esc).join(', ')}), so it can’t run on this account yet.`;
-  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p><b>${v.ok ? 'Works.' : 'Doesn’t work yet.'}</b> ${words}</p>
+  const line = v.ok ? '<b>Works.</b> Spotify answers everything the radar needs on this account.'
+    : '<b>Spotify isn’t sharing new releases with this account.</b>';
+  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p>${line}</p>
+    <details class="rr-pdet"><summary>Details</summary>
+    ${v.ok ? '' : `<p class="why">Refused: ${v.missing.map(esc).join(', ')}.</p>`}
     <table class="rr-ptab"><tbody>${(P.rows ?? []).map(r => `<tr class="${r.ok ? 'ok' : 'no'}"><td>${esc(r.label)}</td><td class="mono">${esc(r.status)}</td><td>${esc(r.note)}</td></tr>`).join('')}</tbody></table>
-    <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></div>`;
+    <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></details></div>`;
 }
 
+/** Releases new enough to count on Discover's "New releases" side: the main lane (no reissues), released
+ *  in the last `days` days, not dismissed and not already owned in full. The same rule the home header uses. */
+function newReleaseCount(R, now = Date.now(), days = 14) {
+  const cut = now - days * 864e5, dismissed = R?.dismissed ?? new Set();
+  let n = 0;
+  for (const r of R?.rows ?? []) {
+    if (!r || r.lane !== 'main' || r.reissue || r.owned === 'all' || dismissed.has(r.key)) continue;
+    const ts = parseDate(r.releaseDate, r.precision)?.ts ?? r.ts;
+    if (Number.isFinite(ts) && ts >= cut && ts <= now + 864e5) n++;
+  }
+  return n;
+}
+
+/** The whole section. '' when the page gives no radar (tests of the rest of Discover, old builds). */
 function radarView(ctx) {
   const rad = ctx.radar;
   if (!rad) return '';
@@ -9760,15 +9802,10 @@ function radarView(ctx) {
         <ul class="rr-rows">${g.rows.map(r => rowHTML(r, { esc, suggest: sugg })).join('')}</ul></li>`).join('')}</ol>
       ${rows.length > shown.length ? `<button class="b rr-more" type="button" data-act="rrMore" id="rrMore">Show more (${(rows.length - shown.length).toLocaleString('en-GB')} left)</button>` : ''}`;
   }
-  // The features lane: a collapsed strip under All, never mixed into it.
-  const feats = filter === 'all' && !R.artist ? feedRows(R.rows, { ...opts, filter: 'features' }) : [];
-  const strip = feats.length ? `<details class="rr-feat"><summary>Features and remixes · ${feats.length.toLocaleString('en-GB')}</summary>
-      <ul class="rr-rows">${feats.slice(0, 10).map(r => rowHTML(r, { esc, suggest: null })).join('')}</ul>
-      ${feats.length > 10 ? `<button class="b sm" type="button" data-act="rrFilter" data-f="features">See all ${feats.length.toLocaleString('en-GB')}</button>` : ''}
-    </details>` : '';
+  // The features lane is the Features chip only (C5): the fold under All showed the same rows.
   const partial = !st.complete && rows.length ? `<p class="rr-partial">Not the whole radar yet: ${R.running ? 'still reading' : 'some artists are still to be read'}.</p>` : '';
   const count = `<p class="rr-count vh" aria-live="polite">${rows.length.toLocaleString('en-GB')} release${rows.length === 1 ? '' : 's'}</p>`;
-  return head + status + (R.probe || (R.err && !R.running) ? probeHTML(R, esc) : '') + chips + search + count + partial + strip + feed + '</section>';
+  return head + status + (R.probe || (R.err && !R.running) ? probeHTML(R, esc) : '') + chips + search + count + partial + feed + '</section>';
 }
 
 const radarActions = {
@@ -9811,11 +9848,11 @@ function radarMount(ctx) {
     io.observe(more);
   }
 }
-return { PAGE, FILTERS, libraryArtists, searchArtists, coldEstimate, feedRows, groupByMonth, artistMatches, ago, statusLine, probeHTML, radarView, radarActions, radarMount };
+return { PAGE, FILTERS, libraryArtists, searchArtists, coldEstimate, feedRows, groupByMonth, artistMatches, ago, statusLine, probeHTML, newReleaseCount, radarView, radarActions, radarMount };
 })();
 /* ---- web/screens/discover.mjs ---- */
 __mod["web/screens/discover.mjs"] = (function () {
-const { radarView, radarActions, radarMount } = __mod["web/screens/radar.mjs"];
+const { radarView, radarActions, radarMount, newReleaseCount } = __mod["web/screens/radar.mjs"];
 /* The Discover screen (docs/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
  * ranking stay classic in web/app/discover-engine.js; ctx comes from SCREEN_CTX.discover. */
 
@@ -9887,47 +9924,60 @@ function anyPlaylistMenu(ctx, t) {
   return top + all;
 }
 
+/** Which side of Discover shows (L3): 'find' (new music, the default) or 'radar' (new releases).
+ *  Without a radar on the page there is only the one side. */
+const sideOf = ctx => ctx.radar && ctx.S?.discSide === 'radar' ? 'radar' : 'find';
+
+/** The two-way switch at the top: Find new music | New releases, with the count of recent releases. */
+function sideSwitchHTML(ctx, side) {
+  if (!ctx.radar) return '';
+  const R = ctx.radar.R ?? {}, now = ctx.radar.now?.() ?? Date.now();
+  const n = newReleaseCount(R, now);
+  const btn = (id, label, extra = '') => `<button type="button" aria-pressed="${side === id}" data-act="discSide" data-side="${id}">${label}${extra}</button>`;
+  return `<div class="seg discside" role="group" aria-label="Show">${btn('find', 'Find new music')}${btn('radar', 'New releases',
+    n ? ` <span class="n" title="${n} released in the last two weeks">${n.toLocaleString('en-GB')}</span>` : '')}</div>`;
+}
+
 function view(ctx) {
-  const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
+  const { S, LIB, esc, lfmKey, emptyState, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
   const ib = ctx.infoBtn ?? (() => '');
   const d = S.discover ?? [];
+  const side = sideOf(ctx);
+  // Discover leads with what you came for (L3): the radar is the other side of the switch, and keeps
+  // reading in the background (web/app/radar.js) whichever side is showing.
+  if (side === 'radar') return `<h1>Discover</h1>${sideSwitchHTML(ctx, side)}${radarView(ctx)}`;
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
   const hasKey = !!lfmKey();
-  // Release radar is Discover's first section (BUILD-6-PLAN §2.3); '' without ctx.radar.
-  const radar = radarView(ctx);
-  const head = `<h1>Discover</h1>${radar}${radar ? '<h2 class="disc-h2">Find new music</h2>' : ''}
+  const busy = !!ctx.discBusy?.();
+  // One filled button per side: the Find button while there are no picks, the card's Add once there are.
+  const runBtn = `<button class="b${d.length ? '' : ' p'}" data-act="discRun" id="discRun"${busy ? ' disabled' : ''}>${busy ? 'Finding…' : d.length ? 'Find more' : 'Find new music'}</button>`;
+  const head = `<h1>Discover</h1>${sideSwitchHTML(ctx, side)}
     <p class="lede">New music, with everything you already own taken out.${ib('discover', 'Discover', `<p>Every artist and track you already own is subtracted before ranking, including each artist named inside a collaboration, so nothing here recycles your library.</p>
-      <p><b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>`)}</p>
-    ${hasKey ? '' : `<div class="note discnokey">
-      <b>No key needed.</b> Picks come from Deezer's and ListenBrainz's “fans also like” for the artists you play${discListenOn() ? ', then ranked by how they sound' : ''}.
-      A free Last.fm key adds its own similar artists and genre tags.
-      <div class="rowbtns" style="margin-top:8px"><button class="b" type="button" data-lfmconnect>Connect Last.fm</button></div>
-    </div>`}
-    <div class="rowbtns" style="margin-bottom:16px">
+      <p>It looks by itself once a day, from your top artists and recent plays. <b>Everything I listen to</b> weights those above what is merely filed; pick a playlist instead for that playlist's radio.</p>`)}</p>
+    <div class="rowbtns discbar">
       <select data-act="discPl" id="discPl" aria-label="Find new music from">
         <option value="">Everything I listen to</option>
         <optgroup label="Playlist radio">
           ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
         </optgroup>
       </select>
-      <button class="b p" data-act="discRun" id="discRun" >Find new music</button>
+      ${runBtn}
     </div>`;
 
-  // WP-C3: "find tracks that sound like ___". '' without CLAP records.
-  const sounds = soundSearchHTML();
-  // Every empty state gets a button (USER-REVIEW): here it is the Find button itself.
-  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'One run takes a minute or two, and leaves out everything you already own.',
-    { acts: '<button class="b p" type="button" data-act="discRun">Find new music from what I play</button>' });
+  // No picks yet: a compact line, no second button (C5). The Find button above is the way on.
+  if (!d.length) return head + `<div class="disc-empty">${busy
+    ? emptyState('Looking for new music', 'Asking who sits near the artists you play. Picks show here in a minute or two.', { compact: true })
+    : emptyState('Nothing found yet', 'One run takes a minute or two, and leaves out everything you already own.', { compact: true })}</div>`;
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
   const menu = anyPlaylistMenu(ctx, t);
-  const art = artHTML({ art:t.art, id:t.id, title:t.track },
-                      `data-dplay="${esc(t.id)}" data-ddur="${t.dur ?? 0}"`);
+  // No play-on-art (C5): the card's own player and the row's ▶ play it.
+  const art = artHTML({ art:t.art, id:t.id, title:t.track }, 'data-noplay="1"').replace(' title="Play"', '');
 
   const best = (t.suggest ?? [])[0];
-  return head + sounds + discSoundLine() + `<div class="counter" style="margin:0 0 14px">
-      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
+  return head + discSoundLine() + `<div class="counter disccount">
+      <span class="discvia">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
       <span>from ${esc(S.discoverFrom)}</span>
     </div>
     <div class="deck">
@@ -9951,8 +10001,8 @@ function view(ctx) {
 
         ${whyLine(t, esc)}
         ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
-        ${best ? `<button class="fitcall" data-act="dfile" data-dfile="${esc(best.id)}">
-            <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
+        ${best ? `<button class="fitcall discadd" data-act="dfile" data-dfile="${esc(best.id)}">
+            <span class="mid"><span class="nm">Add to ${esc(best.name)}</span>
               <span class="ax">${best.axis ? `<b>${esc(best.axis)}</b> playlist · ` : ''}${fitHow(best)}</span>${pickEvidence(best)}</span>
             ${pickBand(best)}<span class="sc">${fitWord(best.score)}</span>
           </button>` : ''}
@@ -9961,13 +10011,12 @@ function view(ctx) {
            <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.axis ? `${esc(sg.axis)} playlist` : sg.via === 'seed' ? 'the playlist this radio is from' : 'playlist'}</span>${pickEvidence(sg)}</span>
            <span class="rt">${pickBand(sg)}<span class="sc">${fitWord(sg.score)}</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
-        ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
+        ${(t.suggest??[]).length ? '' : `<p class="why discnofit">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
 
-        <div class="rowbtns" style="margin-top:20px">
-          ${best ? `<button class="b big go grow" data-act="dfile" data-dfile="${esc(best.id)}">Add to ${esc(best.name)}</button>` : ''}
-          <button class="b big" data-act="dnav" data-dnav="1" ${i>=d.length-1?'disabled':''}>Next →</button>
+        <div class="rowbtns discnav">
+          <button class="b big grow" data-act="dnav" data-dnav="1" ${i>=d.length-1?'disabled':''}>Next →</button>
         </div>
-        <div class="rowbtns" style="margin-top:10px">
+        <div class="rowbtns discmore">
           <button class="b sm" data-act="dnav" data-dnav="-1" ${i===0?'disabled':''}>← Back</button>
           <button class="b sm" data-act="dpass" data-dpass="${esc(t.id)}" title="Not for me: this artist won't be offered again">Not for me</button>
           <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
@@ -9981,12 +10030,23 @@ function view(ctx) {
 
 
 /** After paint: the radar's search field and windowed feed. */
-function mount(ctx) { radarMount(ctx); }
+function mount(ctx) {
+  ctx.discRestore?.();
+  // The radar's stored rows load on either side: the switch counts new releases from them.
+  if (sideOf(ctx) === 'radar') radarMount(ctx); else ctx.radar?.load?.();
+}
 
 const actions = {
   ...radarActions,
   discRun: ({ S, runDiscovery }) => runDiscovery(S.discSeed || null),
   discPl({ S }, el) { S.discSeed = el.value; },
+  /** The switch: Find new music | New releases. Kept with the remembered filters when those are on. */
+  discSide(ctx, el) {
+    const side = el.dataset.side === 'radar' ? 'radar' : 'find';
+    ctx.S.discSide = side;
+    if (ctx.T?.rememberFilters) { ctx.T.discSide = side; ctx.saveTheme?.(); }
+    ctx.render();
+  },
   discAnyPl(ctx, el) { if (el.value) return discAdd(ctx, el.value); },
   dfile(ctx, el) { return discAdd(ctx, el.dataset.dfile); },
   /** A row's "+ playlist": that pick, into the playlist it fits best. */
@@ -10048,7 +10108,7 @@ async function discAdd({ S, CFG, LIB, addTracks, logAction, getLog, toast, undoA
     render();
   } catch (e) { toast('Failed: ' + e.message); }
 }
-return { fitWord, whyLine, previewBtn, pickRowsHTML, fitHow, anyPlaylistMenu, view, mount, actions };
+return { fitWord, whyLine, previewBtn, pickRowsHTML, fitHow, anyPlaylistMenu, sideOf, sideSwitchHTML, view, mount, actions };
 })();
 /* ---- web/screens/new.mjs ---- */
 __mod["web/screens/new.mjs"] = (function () {
@@ -10225,8 +10285,8 @@ function view(c) {
   // Every section empty is one answer. Some empty is one line under the rest,
   // naming each so nothing silently disappears from the screen.
   const none = !empty.length || g.card ? '' : !full.length && !sound
-    ? emptyState('Nothing to propose yet', `${empty.map(x => `<strong>${esc(x.title)}:</strong> ${esc(x.none)}.`).join(' ')}
-      New ideas show up here as your library grows.`)
+    // One sentence (L3), compact on a phone (.es-phone, 50-components.css).
+    ? `<div class="es-phone">${emptyState('Nothing to propose yet', 'No genre without a playlist, no playlist that is really two genres, and no group in your backlog yet: ideas show up here as your library grows.')}</div>`
     : emptyState('Nothing else to propose', empty.map(x => `<strong>${esc(x.title)}:</strong> ${esc(x.none)}.`).join(' '), { compact: true });
   return `${head}
     ${g.card}${full.map(x => sec(x) + (x === g.sections[0] ? g.untagged ?? '' : '')).join('')}
@@ -10733,7 +10793,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-0627';
+const BUILD = '2026-11-18-0637';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11071,7 +11131,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-0627', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-0637', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11856,7 +11916,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-0627');
+    const w = new Worker('reports-worker.js?v=2026-11-18-0637');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -13510,7 +13570,68 @@ function discBoostLiked(weights, liked) {
   return weights;
 }
 
-async function runDiscovery(seedPlaylistId) {
+/* ---------- Discover looks by itself once a day (DESIGN-PLAN §7.7 A1, provisional) ----------
+ * After the radar's first read (boot.js), a quiet run from top artists and recent plays, at most
+ * once a day, so Discover opens on picks; "Find more" stays for a run by hand. A quiet run never
+ * covers the page with the loading screen or moves you to Discover. The last picks are kept on
+ * this device so a reload opens on them, minus anything since added, owned or passed on. */
+const DISC_AUTO_KEY = 'bf_disc_auto';
+const DISC_PICKS_KEY = 'disc:picks';
+const DISC_DAY_MS = 24 * 3600 * 1000;
+let DISC_QUIET = false, DISC_BUSY = false, DISC_RESTORED = null;
+const discStage = (msg, pct) => { if (!DISC_QUIET) stage(msg, pct); };
+const discBusy = () => DISC_BUSY;
+
+/** Picks still worth showing: not a track you now own, not by an artist you passed on. */
+function discStillNew(picks) {
+  const have = new Set();
+  for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id) have.add(t.id);
+  for (const t of LIB?.liked ?? []) if (t?.id) have.add(t.id);
+  const pass = new Set(discMemory().pass);
+  return (picks ?? []).filter(o => o?.id && !have.has(o.id) && !pass.has(norm(o.artist ?? '')));
+}
+
+/** Once per page: the last picks, back on Discover when nothing newer is there. */
+function discRestore() {
+  return DISC_RESTORED ??= (async () => {
+    try {
+      const saved = await idb.get(DISC_PICKS_KEY);
+      if (!saved?.picks?.length || (S.discover ?? []).length || DISC_BUSY) return false;
+      const picks = discStillNew(saved.picks);
+      if (!picks.length) return false;
+      S.discover = picks; S.discAt = 0; S.discoverFrom = saved.from ?? 'everything you listen to';
+      store.touch('ui.discover');
+      return true;
+    } catch { return false; }
+  })();
+}
+
+/** Keep the picks on this device (Settings › Your data lists the key). */
+function discSave() {
+  try { fire(idb.set(DISC_PICKS_KEY, { at: Date.now(), from: S.discoverFrom, picks: S.discover ?? [] })); } catch { /* no storage */ }
+}
+
+/** Called by boot after the radar's first read: a quiet run, at most once a day, never on Data Saver. */
+async function discAuto({ now = Date.now() } = {}) {
+  if (!LIB || DISC_BUSY) return false;
+  await discRestore();
+  if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
+  let last = 0;
+  try { last = +LS.getItem(DISC_AUTO_KEY) || 0; } catch { /* private mode */ }
+  if (now - last < DISC_DAY_MS) return false;
+  try { LS.setItem(DISC_AUTO_KEY, String(now)); } catch { /* private mode */ }
+  return runDiscovery(null, { quiet: true });
+}
+
+async function runDiscovery(seedPlaylistId, { quiet = false } = {}) {
+  if (DISC_BUSY) return false;
+  DISC_BUSY = true; DISC_QUIET = quiet;
+  if (quiet) store.touch('ui.discover');
+  try { return await discRun(seedPlaylistId, quiet); }
+  finally { DISC_BUSY = false; DISC_QUIET = false; store.touch('ui.discover'); }
+}
+
+async function discRun(seedPlaylistId, quiet) {
   // No key is not a dead end any more (CLAUDE.md: every account, Spotify
   // library alone): without one, the candidates come from Deezer's and
   // ListenBrainz's "fans also like" for the artists you play.
@@ -13527,23 +13648,25 @@ async function runDiscovery(seedPlaylistId) {
   for (const k of mem.pass) ownedArtist.add(k);
 
   const src = seedPlaylistId ? LIB.playlists.find(p => p.id === seedPlaylistId) : null;
-  if (!src) stage('Reading what you have been playing…', 0.02);
+  if (!src) discStage('Reading what you have been playing…', 0.02);
   const weights = src ? playlistSeeds(src) : await listeningSeeds();
   if (!src) discBoostLiked(weights, mem.like);
   const seeds = rankSeeds(weights);
-  if (!seeds.length) { toast('Nothing to seed from.'); return; }
+  if (!seeds.length) { if (!quiet) toast('Nothing to seed from.'); return false; }
 
   let out;
   try {
     out = key ? await discoverLastfm(key, seeds, ownedArtist, ownedTrack)
               : await discoverKeyless(src, weights, ownedArtist, ownedTrack);
   } catch (e) {
+    if (quiet) return false;
     $('#land').hidden = true; $('#app').hidden = false;
     toast('Couldn’t find new music: ' + (e?.message ?? e));
-    return go('discover');
+    go('discover');
+    return false;
   }
 
-  stage('Finding them on Spotify…', 0.95);
+  discStage('Finding them on Spotify…', 0.95);
   for (const o of out) {
     try {
       // The keyless path found its track on Spotify already.
@@ -13574,11 +13697,12 @@ async function runDiscovery(seedPlaylistId) {
   S.discAt = 0;
   S.discoverFrom = src?.name ?? 'everything you listen to';
   S.discSound = null;
-  $('#land').hidden = true; $('#app').hidden = false;
-  go('discover');
+  discSave();
+  if (!quiet) { $('#land').hidden = true; $('#app').hidden = false; go('discover'); }
   // Then listen to the picks, if listening is on, and re-rank the cards still
   // to come by how they sound. Nothing at all happens here otherwise.
   fire(discListen(src, weights));
+  return true;
 }
 
 /** Candidates from Last.fm's similar artists and their top tracks: the path a key buys. */
@@ -13586,7 +13710,7 @@ async function discoverLastfm(key, seeds, ownedArtist, ownedTrack) {
   const lfm = p => fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({ ...p, api_key:key, format:'json' })).then(r => r.json());
   const cand = new Map();
   for (const [i, s] of seeds.entries()) {
-    stage(`Finding artists like ${s.name}…`, i / (seeds.length + 8));
+    discStage(`Finding artists like ${s.name}…`, i / (seeds.length + 8));
     try {
       const r = await lfm({ method:'artist.getsimilar', artist:s.name, autocorrect:'1', limit:'50' });
       for (const a of r.similarartists?.artist ?? []) {
@@ -13604,7 +13728,7 @@ async function discoverLastfm(key, seeds, ownedArtist, ownedTrack) {
   const out = [];
   for (const c of ranked) {
     if (out.length >= 30) break;
-    stage(`Checking ${c.name}…`, 0.8 + out.length/40);
+    discStage(`Checking ${c.name}…`, 0.8 + out.length/40);
     let top;
     try { top = await lfm({ method:'artist.gettoptracks', artist:c.name, limit:'4' }); } catch { continue; }
     await new Promise(r => setTimeout(r, 200));
@@ -13637,7 +13761,7 @@ const discTracks = () => [...(LIB.liked ?? []),
 const discWeightOf = weights => t => Math.max(0, ...(t?.artists ?? []).map(a => weights.get(a?.name) ?? 0));
 
 async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
-  stage('Getting ready to ask who sits near your artists…', 0.03);
+  discStage('Getting ready to ask who sits near your artists…', 0.03);
   await engineLoad();
   const D = BetterfyDiscover;
   const { artists, seeds } = D.seedArtists(src ? src.tracks : discTracks(), { weightOf: discWeightOf(weights), limit: 25 });
@@ -13652,7 +13776,7 @@ async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
       if (now - last < 300) return;
       last = now;
       const name = { deezer: 'Deezer', listenbrainz: 'ListenBrainz', wikidata: 'Wikidata' }[p.stage] ?? p.stage;
-      stage(`Asking ${name} who sits near your artists… ${Math.min(p.done, p.total)} of ${p.total}`,
+      discStage(`Asking ${name} who sits near your artists… ${Math.min(p.done, p.total)} of ${p.total}`,
             0.05 + 0.6 * (p.total ? p.done / p.total : 1));
     },
   });
@@ -13662,7 +13786,7 @@ async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
   const out = [];
   for (const c of cands) {
     if (out.length >= 30) break;
-    stage(`Finding ${c.name} on Spotify…`, 0.7 + out.length / 120);
+    discStage(`Finding ${c.name} on Spotify…`, 0.7 + out.length / 120);
     let r;
     try { r = await sp(`/search?q=${encodeURIComponent(`artist:${c.name}`)}&type=track&limit=10`); } catch { continue; }
     const hit = D.pickTrack(r?.tracks?.items ?? [], c.name,
@@ -15420,7 +15544,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-0627';
+    s.src = 'engine.js?v=2026-11-18-0637';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15442,7 +15566,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-0627');
+    const w = new Worker('engine-worker.js?v=2026-11-18-0637');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16153,7 +16277,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-0627';
+    s.src = 'audio.js?v=2026-11-18-0637';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16207,7 +16331,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0627', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0637', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17187,7 +17311,7 @@ async function clapNames() { return (CLAPS.names ??= (await idb.get(CLAP_NAMES_K
 async function clapConfirm(ids, name) {
   CLAPS.names = BetterfyAudio.confirmName(await clapNames(), ids, name);
   await idb.set(CLAP_NAMES_KEY, CLAPS.names);
-  syncClusterNames().then(changed => { if (changed) { store.touch('ui.new'); store.touch('ui.discover'); } });
+  syncClusterNames().then(changed => { if (changed) { store.touch('ui.new'); store.touch('ui.lists'); } });
 }
 
 /** Names given on the listener's other linked devices. */
@@ -17218,9 +17342,9 @@ async function clapNameOrphans(orphans, records) {
 /** Run a search for what is in the box. Prompts only: free text has no encoder in the page. */
 async function clapSearch(q) {
   CLAPS.q = String(q ?? '').trim();
-  if (!CLAPS.q) { CLAPS.res = null; return store.touch('ui.discover'); }
+  if (!CLAPS.q) { CLAPS.res = null; return store.touch('ui.lists'); }
   const table = await clapTable();
-  if (!table) { CLAPS.res = null; return store.touch('ui.discover'); }
+  if (!table) { CLAPS.res = null; return store.touch('ui.lists'); }
   const idx = BetterfyAudio.clapIndex(AUDIO.records, { dim: table.dim });
   const r = BetterfyAudio.soundsLike(CLAPS.q, idx, table);
   const ids = new Set(r.results.map(x => x.id));
@@ -17230,16 +17354,16 @@ async function clapSearch(q) {
   CLAPS.res = { q: CLAPS.q, prompt: r.prompt, heard: r.heard,
     results: r.results.map(x => ({ ...x, t: info.get(x.id) ?? null })).filter(x => x.t),
     near: r.prompt ? [] : BetterfyAudio.suggestPrompts(CLAPS.q, table, { limit: 6 }) };
-  store.touch('ui.discover');
+  store.touch('ui.lists');
 }
 
-/** Discover's "sounds like" card. '' unless CLAP has heard something in this library. */
+/** Library's "sounds like" card (moved from Discover, F1). '' unless CLAP has heard something in this library. */
 function soundSearchHTML() {
   if (!AUDIO.records || !globalThis.BetterfyAudio) return '';
   const heard = BetterfyAudio.clapHeard(AUDIO.records);
   if (!heard) return '';
   const t = CLAPS.table;
-  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => store.touch('ui.discover')));
+  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => store.touch('ui.lists')));
   const n = x => x.toLocaleString();
   const list = t ? `<datalist id="sndqList">${t.prompts.map(p => `<option value="${esc(p.label)}"></option>`).join('')}</datalist>` : '';
   const res = CLAPS.res;
@@ -17254,12 +17378,12 @@ function soundSearchHTML() {
   else if (res) body = `<ol class="prop-eg sndres">${res.results.map(x => `<li><b>${esc(x.t.name ?? x.id)}</b>
       <span>${esc((x.t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '))}</span>
       <a class="open" href="https://open.spotify.com/track/${esc(x.id)}" target="_blank" rel="noopener">Open</a></li>`).join('')}</ol>
-    <div class="rowbtns" style="margin-top:12px"><button class="b sm" data-sndqmake>Make a playlist of these ${n(res.results.length)}</button></div>`;
+    <div class="rowbtns sndmake"><button class="b sm" data-sndqmake>Make a playlist of these ${n(res.results.length)}</button></div>`;
   return `<div class="card sndsearch" id="sndSearch">
     <div class="ttl">Find tracks that sound like… <span class="tag snd">by sound</span></div>
     <div class="rowbtns"><input id="sndq" list="sndqList" autocomplete="off" aria-label="Sounds like"
       placeholder="e.g. ${esc(t?.prompts.find(p => p.kind === 'description')?.label ?? 'dark rolling bassline')}" value="${esc(CLAPS.q)}">
-      <button class="b p" data-sndq>Search</button></div>${list}
+      <button class="b" data-sndq>Search</button></div>${list}
     <p class="why">Ranks the ${n(heard)} track${heard === 1 ? '' : 's'} listening has heard by how they sound.
       Pick a genre or description from the list; what you type stays on this device.</p>${body}
   </div>`;
@@ -17367,7 +17491,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0627', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0637', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -18025,6 +18149,8 @@ SCREEN_CTX.lists = () => ({
   get BetterfyFill() { return globalThis.BetterfyFill; },
   coldKick: needCold => coldKick(needCold),
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
+  // "Find tracks that sound like…" lives in Library (F1): it searches your own library, not new music.
+  soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
   // Library's Suggested section reads the same gaps New playlists draws: start them the way that screen does.
   gapsKick: () => { if (GAPS.status === 'idle' || (GAPS.status === 'ready' && GAPS.for !== R)) { GAPS.status = 'working'; fire(gapsCompute()); } },
@@ -18039,6 +18165,8 @@ SCREEN_CTX.new = () => ({
   COLD, engineGenreKick: () => coldKick(!Object.values(CFG).some(v => v.axis === 'genre')),
   get BetterfyGaps() { return globalThis.BetterfyGaps; },
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
+  // "Find tracks that sound like…" lives in Library (F1): it searches your own library, not new music.
+  soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
 });
 // --- home/inbox ---
 Object.assign(SCREEN_CTX, {
@@ -18066,8 +18194,10 @@ SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, ded
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
   labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
-SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, isMirrorPlaylist, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
-  soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
+SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, T, saveTheme, $, esc, isMirrorPlaylist, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
+  // A1: the once-a-day quiet run's state, and the last picks back after a reload.
+  discBusy: () => typeof discBusy === 'function' && discBusy(),
+  discRestore: () => typeof discRestore === 'function' ? discRestore() : null,
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
   runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember,
   thumbHTML, previewToggle, previewState,
@@ -18119,6 +18249,8 @@ const DATA_KEYS = [
   { where:'local', key:'bf_shuf_flow', group:'Your library', why:'Whether shuffle should follow sound flow, as you last set it.' },
   { where:'local', key:'bf_shuf_redisc', group:'Your library', why:'Whether shuffle should mix in rediscoveries, as you last set it.' },
   { where:'local', key:'bf_disc_mem', group:'Your library', why:'Discover\'s memory: artist names you passed on (never offered again) and ones you liked or added from it (extra seeds).' },
+  { where:'local', key:'bf_disc_auto', group:'Your library', why:'When Discover last looked for new music by itself, so it does that at most once a day.' },
+  { where:'idb', key:'disc:picks', group:'Your library', why:'Discover\'s last picks (track names, artists, cover links and where each would fit), so it opens on them after a reload. Replaced by each new look.' },
   { where:'local', key:'bf_analysed', group:'Your library', why:'That this account\'s first analysis has run (it starts by itself on the first load).' },
   { where:'local', key:'bf_digest_seen', group:'Your library', why:'What File\'s "since you last opened" card saw last time (when, which misfits, new genres, each playlist\'s version), so it can say what is new.' },
   { where:'local', key:'bf_digest_measure', group:'Your library', why:'How often that card was shown, expanded or dismissed. Counts only, kept here and never sent.' },
@@ -19291,8 +19423,10 @@ async function start(force) {
       // Release Radar starts by itself too, a little later (radar.js radarAuto), unless Stop was
       // pressed on this device. Not awaited: it reads Spotify, the similar artists below read others.
       // After its first read, Tidy › Hard to find checks a batch by itself (DESIGN-PLAN §7.7 A2).
+      // So does Discover's once-a-day look for new music (§7.7 A1), radar or not.
       if (typeof radarAuto === 'function') radarAuto()
-        .then(ran => ran && SCREEN_MODS.tidy?.background?.(screenCtx('tidy'))).catch(() => false);
+        .then(ran => ran && SCREEN_MODS.tidy?.background?.(screenCtx('tidy'))).catch(() => false)
+        .then(() => typeof discAuto === 'function' && discAuto()).catch(() => false);
       // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
       // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
       // don't compete with the tag lookups; resumes where the last load stopped.
@@ -19350,7 +19484,7 @@ const FRIENDLY = {
 };
 
 (async () => {
-  if (T.rememberFilters) { if (T.crossMin) S.crossMin = T.crossMin; if (T.mfBand) S.mfBand = T.mfBand; }
+  if (T.rememberFilters) { if (T.crossMin) S.crossMin = T.crossMin; if (T.mfBand) S.mfBand = T.mfBand; if (T.discSide) S.discSide = T.discSide; }
 
   // Insert the "use your own app" hint shared by access_denied and a 403
   // discovered after sign-in (the reason=not_allowlisted branch below).

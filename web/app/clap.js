@@ -31,7 +31,7 @@ async function clapNames() { return (CLAPS.names ??= (await idb.get(CLAP_NAMES_K
 async function clapConfirm(ids, name) {
   CLAPS.names = BetterfyAudio.confirmName(await clapNames(), ids, name);
   await idb.set(CLAP_NAMES_KEY, CLAPS.names);
-  syncClusterNames().then(changed => { if (changed) { store.touch('ui.new'); store.touch('ui.discover'); } });
+  syncClusterNames().then(changed => { if (changed) { store.touch('ui.new'); store.touch('ui.lists'); } });
 }
 
 /** Names given on the listener's other linked devices. */
@@ -62,9 +62,9 @@ async function clapNameOrphans(orphans, records) {
 /** Run a search for what is in the box. Prompts only: free text has no encoder in the page. */
 async function clapSearch(q) {
   CLAPS.q = String(q ?? '').trim();
-  if (!CLAPS.q) { CLAPS.res = null; return store.touch('ui.discover'); }
+  if (!CLAPS.q) { CLAPS.res = null; return store.touch('ui.lists'); }
   const table = await clapTable();
-  if (!table) { CLAPS.res = null; return store.touch('ui.discover'); }
+  if (!table) { CLAPS.res = null; return store.touch('ui.lists'); }
   const idx = BetterfyAudio.clapIndex(AUDIO.records, { dim: table.dim });
   const r = BetterfyAudio.soundsLike(CLAPS.q, idx, table);
   const ids = new Set(r.results.map(x => x.id));
@@ -74,16 +74,16 @@ async function clapSearch(q) {
   CLAPS.res = { q: CLAPS.q, prompt: r.prompt, heard: r.heard,
     results: r.results.map(x => ({ ...x, t: info.get(x.id) ?? null })).filter(x => x.t),
     near: r.prompt ? [] : BetterfyAudio.suggestPrompts(CLAPS.q, table, { limit: 6 }) };
-  store.touch('ui.discover');
+  store.touch('ui.lists');
 }
 
-/** Discover's "sounds like" card. '' unless CLAP has heard something in this library. */
+/** Library's "sounds like" card (moved from Discover, F1). '' unless CLAP has heard something in this library. */
 function soundSearchHTML() {
   if (!AUDIO.records || !globalThis.BetterfyAudio) return '';
   const heard = BetterfyAudio.clapHeard(AUDIO.records);
   if (!heard) return '';
   const t = CLAPS.table;
-  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => store.touch('ui.discover')));
+  if (!t && !CLAPS.tableP && !CLAPS.err) fire(clapTable().then(() => store.touch('ui.lists')));
   const n = x => x.toLocaleString();
   const list = t ? `<datalist id="sndqList">${t.prompts.map(p => `<option value="${esc(p.label)}"></option>`).join('')}</datalist>` : '';
   const res = CLAPS.res;
@@ -98,12 +98,12 @@ function soundSearchHTML() {
   else if (res) body = `<ol class="prop-eg sndres">${res.results.map(x => `<li><b>${esc(x.t.name ?? x.id)}</b>
       <span>${esc((x.t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '))}</span>
       <a class="open" href="https://open.spotify.com/track/${esc(x.id)}" target="_blank" rel="noopener">Open</a></li>`).join('')}</ol>
-    <div class="rowbtns" style="margin-top:12px"><button class="b sm" data-sndqmake>Make a playlist of these ${n(res.results.length)}</button></div>`;
+    <div class="rowbtns sndmake"><button class="b sm" data-sndqmake>Make a playlist of these ${n(res.results.length)}</button></div>`;
   return `<div class="card sndsearch" id="sndSearch">
     <div class="ttl">Find tracks that sound like… <span class="tag snd">by sound</span></div>
     <div class="rowbtns"><input id="sndq" list="sndqList" autocomplete="off" aria-label="Sounds like"
       placeholder="e.g. ${esc(t?.prompts.find(p => p.kind === 'description')?.label ?? 'dark rolling bassline')}" value="${esc(CLAPS.q)}">
-      <button class="b p" data-sndq>Search</button></div>${list}
+      <button class="b" data-sndq>Search</button></div>${list}
     <p class="why">Ranks the ${n(heard)} track${heard === 1 ? '' : 's'} listening has heard by how they sound.
       Pick a genre or description from the list; what you type stays on this device.</p>${body}
   </div>`;

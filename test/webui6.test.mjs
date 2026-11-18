@@ -82,12 +82,13 @@ function newScreen({ gaps = [], splits = [], clusters = [], status = 'ready' } =
   return s;
 }
 
-test('three empty sections collapse into one empty state that still names each', () => {
+test('three empty sections collapse into one empty state: one sentence that still names each (L3)', () => {
   const html = vm.runInContext('vNew()', newScreen());
   assert.equal(html.match(/class="empty-state/g).length, 1);
   assert.match(html, /Nothing to propose yet/);
-  for (const t of ['Genres with no playlist', 'Playlists that are two genres', 'Groups in your backlog'])
-    assert.match(html, new RegExp(`<strong>${t}:</strong>`));
+  assert.match(html, /<div class="es-phone">/, 'compact on a phone');
+  assert.match(html, /<p>No genre without a playlist, no playlist that is really two genres, and no group in your backlog yet: [^<.]*\.<\/p>/);
+  assert.doesNotMatch(html, /<strong>/, 'no bold run-in paragraphs');
   assert.ok(!/<h2/.test(html), 'no headings over nothing');
 });
 

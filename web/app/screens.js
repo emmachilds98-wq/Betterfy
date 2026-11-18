@@ -102,6 +102,8 @@ SCREEN_CTX.lists = () => ({
   get BetterfyFill() { return globalThis.BetterfyFill; },
   coldKick: needCold => coldKick(needCold),
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
+  // "Find tracks that sound like…" lives in Library (F1): it searches your own library, not new music.
+  soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
   rebuildReports: () => (R = buildReports(LIB, CFG, TAGS)),
   // Library's Suggested section reads the same gaps New playlists draws: start them the way that screen does.
   gapsKick: () => { if (GAPS.status === 'idle' || (GAPS.status === 'ready' && GAPS.for !== R)) { GAPS.status = 'working'; fire(gapsCompute()); } },
@@ -116,6 +118,8 @@ SCREEN_CTX.new = () => ({
   COLD, engineGenreKick: () => coldKick(!Object.values(CFG).some(v => v.axis === 'genre')),
   get BetterfyGaps() { return globalThis.BetterfyGaps; },
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
+  // "Find tracks that sound like…" lives in Library (F1): it searches your own library, not new music.
+  soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
 });
 // --- home/inbox ---
 Object.assign(SCREEN_CTX, {
@@ -143,8 +147,10 @@ SCREEN_CTX.shuffle = () => ({ S, LIB, LS, esc, emptyState, isMirrorPlaylist, ded
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
   get BetterfyOrder() { return globalThis.BetterfyOrder; }, get BetterfyAudio() { return globalThis.BetterfyAudio; },
   labelsShownNow: () => typeof labelsShownNow === 'function' ? labelsShownNow() : null });
-SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, $, esc, isMirrorPlaylist, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
-  soundSearchHTML: () => typeof soundSearchHTML === 'function' ? soundSearchHTML() : '',
+SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, T, saveTheme, $, esc, isMirrorPlaylist, lfmKey, emptyState, discListenOn, discSoundLine, discFitHTML,
+  // A1: the once-a-day quiet run's state, and the last picks back after a reload.
+  discBusy: () => typeof discBusy === 'function' && discBusy(),
+  discRestore: () => typeof discRestore === 'function' ? discRestore() : null,
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
   runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember,
   thumbHTML, previewToggle, previewState,

@@ -80,7 +80,7 @@ test('rows: date as given, type pills, a quiet owned marker, File only with a pi
   assert.match(row('Night Shapes'), /own some/);
   assert.doesNotMatch(row('Twin').slice(800, 1700), /rr-own/, 'absence is silent');
   assert.match(html, /data-act="rrDismiss"/);
-  assert.match(html, /<details class="rr-feat"><summary>Features and remixes · 2<\/summary>/, 'collapsed by default');
+  assert.doesNotMatch(html, /rr-feat|Features and remixes/, 'no features fold under All (C5): the Features chip shows them');
   assert.match(html, /aria-pressed="true">All</);
 });
 

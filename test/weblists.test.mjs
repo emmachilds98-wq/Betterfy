@@ -67,6 +67,13 @@ test('Library rows say what needs a decision; the footer is one line with Shuffl
   assert.ok(!/data-go="sources"|of artists have genre tags|msline/.test(html), 'tag coverage, Genre sources and the rate line are cut (C2)');
 });
 
+test('"Find tracks that sound like…" sits in Library, above the footer (F1)', () => {
+  const sb = load();
+  const html = LISTS.view({ ...sb, store: { touch() {} }, fire() {}, soundSearchHTML: () => '<div class="card sndsearch" id="sndSearch">S</div>' });
+  assert.ok(html.indexOf('id="sndSearch"') > 0 && html.indexOf('id="sndSearch"') < html.indexOf('plfoot'));
+  assert.doesNotMatch(LISTS.view({ ...sb, store: { touch() {} }, fire() {} }), /sndSearch/, 'nothing without it');
+});
+
 test('the row score shows only under 90', () => {
   const sb = load();
   const R = { drift: [], clusters: [], within: [], misfiled: [{ currentPlaylistId: 'P1', confidence: 'medium' }] };

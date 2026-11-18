@@ -134,7 +134,68 @@ function discBoostLiked(weights, liked) {
   return weights;
 }
 
-async function runDiscovery(seedPlaylistId) {
+/* ---------- Discover looks by itself once a day (DESIGN-PLAN §7.7 A1, provisional) ----------
+ * After the radar's first read (boot.js), a quiet run from top artists and recent plays, at most
+ * once a day, so Discover opens on picks; "Find more" stays for a run by hand. A quiet run never
+ * covers the page with the loading screen or moves you to Discover. The last picks are kept on
+ * this device so a reload opens on them, minus anything since added, owned or passed on. */
+const DISC_AUTO_KEY = 'bf_disc_auto';
+const DISC_PICKS_KEY = 'disc:picks';
+const DISC_DAY_MS = 24 * 3600 * 1000;
+let DISC_QUIET = false, DISC_BUSY = false, DISC_RESTORED = null;
+const discStage = (msg, pct) => { if (!DISC_QUIET) stage(msg, pct); };
+const discBusy = () => DISC_BUSY;
+
+/** Picks still worth showing: not a track you now own, not by an artist you passed on. */
+function discStillNew(picks) {
+  const have = new Set();
+  for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id) have.add(t.id);
+  for (const t of LIB?.liked ?? []) if (t?.id) have.add(t.id);
+  const pass = new Set(discMemory().pass);
+  return (picks ?? []).filter(o => o?.id && !have.has(o.id) && !pass.has(norm(o.artist ?? '')));
+}
+
+/** Once per page: the last picks, back on Discover when nothing newer is there. */
+function discRestore() {
+  return DISC_RESTORED ??= (async () => {
+    try {
+      const saved = await idb.get(DISC_PICKS_KEY);
+      if (!saved?.picks?.length || (S.discover ?? []).length || DISC_BUSY) return false;
+      const picks = discStillNew(saved.picks);
+      if (!picks.length) return false;
+      S.discover = picks; S.discAt = 0; S.discoverFrom = saved.from ?? 'everything you listen to';
+      store.touch('ui.discover');
+      return true;
+    } catch { return false; }
+  })();
+}
+
+/** Keep the picks on this device (Settings › Your data lists the key). */
+function discSave() {
+  try { fire(idb.set(DISC_PICKS_KEY, { at: Date.now(), from: S.discoverFrom, picks: S.discover ?? [] })); } catch { /* no storage */ }
+}
+
+/** Called by boot after the radar's first read: a quiet run, at most once a day, never on Data Saver. */
+async function discAuto({ now = Date.now() } = {}) {
+  if (!LIB || DISC_BUSY) return false;
+  await discRestore();
+  if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
+  let last = 0;
+  try { last = +LS.getItem(DISC_AUTO_KEY) || 0; } catch { /* private mode */ }
+  if (now - last < DISC_DAY_MS) return false;
+  try { LS.setItem(DISC_AUTO_KEY, String(now)); } catch { /* private mode */ }
+  return runDiscovery(null, { quiet: true });
+}
+
+async function runDiscovery(seedPlaylistId, { quiet = false } = {}) {
+  if (DISC_BUSY) return false;
+  DISC_BUSY = true; DISC_QUIET = quiet;
+  if (quiet) store.touch('ui.discover');
+  try { return await discRun(seedPlaylistId, quiet); }
+  finally { DISC_BUSY = false; DISC_QUIET = false; store.touch('ui.discover'); }
+}
+
+async function discRun(seedPlaylistId, quiet) {
   // No key is not a dead end any more (CLAUDE.md: every account, Spotify
   // library alone): without one, the candidates come from Deezer's and
   // ListenBrainz's "fans also like" for the artists you play.
@@ -151,23 +212,25 @@ async function runDiscovery(seedPlaylistId) {
   for (const k of mem.pass) ownedArtist.add(k);
 
   const src = seedPlaylistId ? LIB.playlists.find(p => p.id === seedPlaylistId) : null;
-  if (!src) stage('Reading what you have been playing…', 0.02);
+  if (!src) discStage('Reading what you have been playing…', 0.02);
   const weights = src ? playlistSeeds(src) : await listeningSeeds();
   if (!src) discBoostLiked(weights, mem.like);
   const seeds = rankSeeds(weights);
-  if (!seeds.length) { toast('Nothing to seed from.'); return; }
+  if (!seeds.length) { if (!quiet) toast('Nothing to seed from.'); return false; }
 
   let out;
   try {
     out = key ? await discoverLastfm(key, seeds, ownedArtist, ownedTrack)
               : await discoverKeyless(src, weights, ownedArtist, ownedTrack);
   } catch (e) {
+    if (quiet) return false;
     $('#land').hidden = true; $('#app').hidden = false;
     toast('Couldn’t find new music: ' + (e?.message ?? e));
-    return go('discover');
+    go('discover');
+    return false;
   }
 
-  stage('Finding them on Spotify…', 0.95);
+  discStage('Finding them on Spotify…', 0.95);
   for (const o of out) {
     try {
       // The keyless path found its track on Spotify already.
@@ -198,11 +261,12 @@ async function runDiscovery(seedPlaylistId) {
   S.discAt = 0;
   S.discoverFrom = src?.name ?? 'everything you listen to';
   S.discSound = null;
-  $('#land').hidden = true; $('#app').hidden = false;
-  go('discover');
+  discSave();
+  if (!quiet) { $('#land').hidden = true; $('#app').hidden = false; go('discover'); }
   // Then listen to the picks, if listening is on, and re-rank the cards still
   // to come by how they sound. Nothing at all happens here otherwise.
   fire(discListen(src, weights));
+  return true;
 }
 
 /** Candidates from Last.fm's similar artists and their top tracks: the path a key buys. */
@@ -210,7 +274,7 @@ async function discoverLastfm(key, seeds, ownedArtist, ownedTrack) {
   const lfm = p => fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams({ ...p, api_key:key, format:'json' })).then(r => r.json());
   const cand = new Map();
   for (const [i, s] of seeds.entries()) {
-    stage(`Finding artists like ${s.name}…`, i / (seeds.length + 8));
+    discStage(`Finding artists like ${s.name}…`, i / (seeds.length + 8));
     try {
       const r = await lfm({ method:'artist.getsimilar', artist:s.name, autocorrect:'1', limit:'50' });
       for (const a of r.similarartists?.artist ?? []) {
@@ -228,7 +292,7 @@ async function discoverLastfm(key, seeds, ownedArtist, ownedTrack) {
   const out = [];
   for (const c of ranked) {
     if (out.length >= 30) break;
-    stage(`Checking ${c.name}…`, 0.8 + out.length/40);
+    discStage(`Checking ${c.name}…`, 0.8 + out.length/40);
     let top;
     try { top = await lfm({ method:'artist.gettoptracks', artist:c.name, limit:'4' }); } catch { continue; }
     await new Promise(r => setTimeout(r, 200));
@@ -261,7 +325,7 @@ const discTracks = () => [...(LIB.liked ?? []),
 const discWeightOf = weights => t => Math.max(0, ...(t?.artists ?? []).map(a => weights.get(a?.name) ?? 0));
 
 async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
-  stage('Getting ready to ask who sits near your artists…', 0.03);
+  discStage('Getting ready to ask who sits near your artists…', 0.03);
   await engineLoad();
   const D = BetterfyDiscover;
   const { artists, seeds } = D.seedArtists(src ? src.tracks : discTracks(), { weightOf: discWeightOf(weights), limit: 25 });
@@ -276,7 +340,7 @@ async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
       if (now - last < 300) return;
       last = now;
       const name = { deezer: 'Deezer', listenbrainz: 'ListenBrainz', wikidata: 'Wikidata' }[p.stage] ?? p.stage;
-      stage(`Asking ${name} who sits near your artists… ${Math.min(p.done, p.total)} of ${p.total}`,
+      discStage(`Asking ${name} who sits near your artists… ${Math.min(p.done, p.total)} of ${p.total}`,
             0.05 + 0.6 * (p.total ? p.done / p.total : 1));
     },
   });
@@ -286,7 +350,7 @@ async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
   const out = [];
   for (const c of cands) {
     if (out.length >= 30) break;
-    stage(`Finding ${c.name} on Spotify…`, 0.7 + out.length / 120);
+    discStage(`Finding ${c.name} on Spotify…`, 0.7 + out.length / 120);
     let r;
     try { r = await sp(`/search?q=${encodeURIComponent(`artist:${c.name}`)}&type=track&limit=10`); } catch { continue; }
     const hit = D.pickTrack(r?.tracks?.items ?? [], c.name,

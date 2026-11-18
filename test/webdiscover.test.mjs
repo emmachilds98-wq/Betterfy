@@ -74,25 +74,24 @@ test('with nothing found yet, the seed picker stands alone', () => {
   const app = load();
   const html = app.vDiscover();
   assert.match(html, /id="discPl"/, 'you can still choose a seed');
-  assert.match(html, /id="discRun"/);
+  assert.match(html, /<button class="b p" data-act="discRun" id="discRun">Find new music<\/button>/, 'the one filled button');
   assert.match(html, /Nothing found yet/);
-  assert.match(html, /<div class="es-acts"><button class="b p" type="button" data-act="discRun">/, 'the empty state is the Find button itself');
+  assert.match(html, /<div class="empty-state compact">/, 'a compact line, not a big dashed box (L3)');
+  assert.doesNotMatch(html, /es-acts/, 'no second filled button in the empty state (C5)');
+  assert.equal((html.match(/class="b p"/g) ?? []).length, 1);
   assert.doesNotMatch(html, /id="seek"/, 'no player until there is something to play');
 });
 
-test('without a Last.fm key Discover still runs, and a key is offered as an optional extra', () => {
+test('without a Last.fm key Discover runs the same, with no key note on the screen (C5)', () => {
   // CLAUDE.md: a feature only counts if every account can use it from its
   // Spotify library alone. Without a key the candidates come from Deezer's and
-  // ListenBrainz's "fans also like" (core/audio/discover.mjs), so the run
-  // button works and the key form says what a key adds instead of gating.
+  // ListenBrainz's "fans also like" (core/audio/discover.mjs). The hosted build
+  // always has the built-in key; ⚙ › Sources keeps the key box for the rest.
   const html = load({ key: null }).vDiscover();
   assert.doesNotMatch(html, /Discovery needs a free Last\.fm key/);
-  assert.match(html, /No key needed/);
-  assert.match(html, /<button class="b p" data-act="discRun" id="discRun" >/, 'the run button is not disabled');
-  assert.match(html, /data-lfmconnect/, 'a key can still be added: one Connect Last.fm button opens the shared sheet');
-  assert.doesNotMatch(html, /id="lfmKey/, 'no paste box on the screen itself');
+  assert.doesNotMatch(html, /No key needed|data-lfmconnect|id="lfmKey/);
+  assert.match(html, /<button class="b p" data-act="discRun" id="discRun">/, 'the run button is not disabled');
   assert.match(html, /Nothing found yet/, 'the empty state is the same one a key gets');
-  assert.doesNotMatch(html, /Add a key above to get started/);
 });
 
 test('with a key already saved, no inline form clutters the screen', () => {
@@ -100,10 +99,57 @@ test('with a key already saved, no inline form clutters the screen', () => {
   assert.doesNotMatch(html, /data-lfmconnect/);
 });
 
+test('with picks, Find becomes a plain "Find more" and the card\'s Add is the filled one', () => {
+  const html = load({ discover: FOUND }).vDiscover();
+  assert.match(html, /<button class="b" data-act="discRun" id="discRun">Find more<\/button>/);
+  assert.doesNotMatch(html, /class="b p"/);
+  assert.doesNotMatch(html, /sndsearch|Find tracks that sound like/, '"sounds like" lives in Library now (F1)');
+  assert.doesNotMatch(html, /style="(?!width:)/, 'no inline styles but the progress widths');
+});
+
+test('while it looks by itself, the button waits and the empty state says so (A1)', () => {
+  const app = load();
+  const c = discoverCtx(app);
+  c.discBusy = () => true;
+  const html = Discover.view(c);
+  assert.match(html, /id="discRun" disabled>Finding…</);
+  assert.match(html, /Looking for new music/);
+});
+
+test('the switch: Find new music first, New releases with a count, only when the page has a radar', () => {
+  const app = load();
+  const c = discoverCtx(app);
+  assert.doesNotMatch(Discover.view(c), /discside/, 'no radar, no switch');
+  const NOW = Date.UTC(2026, 10, 18);
+  const rows = [
+    { key: 'a', lane: 'main', releaseDate: '2026-11-10', precision: 'day', owned: 'none' },
+    { key: 'b', lane: 'main', releaseDate: '2026-11-12', precision: 'day', owned: 'all' },
+    { key: 'c', lane: 'main', releaseDate: '2026-09-01', precision: 'day', owned: 'none' },
+    { key: 'd', lane: 'features', releaseDate: '2026-11-15', precision: 'day', owned: 'none' },
+    { key: 'e', lane: 'main', releaseDate: '2026-11-16', precision: 'day', owned: 'none', reissue: true },
+    { key: 'f', lane: 'main', releaseDate: '2026-11-17', precision: 'day', owned: 'some' },
+  ];
+  c.radar = { R: { rows, dismissed: new Set(['f']), index: null }, now: () => NOW, auto: () => true };
+  const html = Discover.view(c);
+  assert.match(html, /<div class="seg discside" role="group" aria-label="Show"><button type="button" aria-pressed="true" data-act="discSide" data-side="find">Find new music<\/button><button type="button" aria-pressed="false" data-act="discSide" data-side="radar">New releases <span class="n"[^>]*>1<\/span>/);
+  assert.ok(html.indexOf('id="discRun"') > 0 && !/id="radar"/.test(html), 'Find leads; the radar is on the other side');
+  const R = {}; c.T = { rememberFilters: true }; c.saveTheme = () => { R.saved = true; }; c.render = () => {};
+  Discover.actions.discSide(c, { dataset: { side: 'radar' } });
+  assert.equal(c.S.discSide, 'radar');
+  assert.equal(c.T.discSide, 'radar', 'remembered with the other filters');
+  assert.ok(R.saved);
+  const radarSide = Discover.view(c);
+  assert.match(radarSide, /id="radar"/);
+  assert.doesNotMatch(radarSide, /id="discRun"/);
+  c.T = { rememberFilters: false };
+  Discover.actions.discSide(c, { dataset: { side: 'find' } });
+  assert.equal(c.T.discSide, undefined, 'not remembered when remembered filters are off');
+});
+
 test('the card carries the cover, the track and a real position slider', () => {
   const html = load({ discover: FOUND }).vDiscover();
   assert.match(html, /<img class="art" src="https:\/\/i\.test\/a\.jpg"/, 'the album cover');
-  assert.match(html, /data-dplay="t1"/, 'and tapping it plays this track, not the inbox one');
+  assert.doesNotMatch(html, /data-dplay/, 'no play-on-art (C5): the card player and the row ▶ play it');
   assert.match(html, /<input class="seek" id="seek" type="range" min="0" max="254000"/);
   assert.match(html, /id="pTime">0:00<|id="pTime"/);
   assert.match(html, /id="pDur">4:14</, 'the track length, read from Spotify');
@@ -124,7 +170,8 @@ test('the suggested playlists are ranked, with the best one marked', () => {
   // The top pick is lifted out of the ranked list into its own callout — it is
   // the recommendation, not one option among three — but it still files in one
   // tap, and the runners-up stay behind it in order.
-  assert.match(html, /class="fitcall" data-act="dfile" data-dfile="p1"/, 'the top pick leads');
+  assert.match(html, /class="fitcall discadd" data-act="dfile" data-dfile="p1">\s*<span class="mid"><span class="nm">Add to Jungle &amp; Breaks</, 'the fit line is the Add button (M7)');
+  assert.equal((html.match(/>Add to Jungle/g) ?? []).length, 1, 'one Add button, not two');
   assert.match(html, /class="sc">Likely/);
   // The runners-up carry a score bar rather than the words, so the number is
   // all that is asserted here.
