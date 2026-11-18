@@ -190,3 +190,18 @@ test('the gate with sound: same verdict shape, marked as measured on the sound-f
   const plain = teachGate(lib);
   assert.equal(plain.sound, undefined);
 });
+
+test('E1: a close call can be favoured (TEACH.closeBoost), and both E1 options were measured and left off in the gate', () => {
+  const row = { id: 'a', artists: [{ id: 'x' }], added: '2026-01-01', skips: 0 };
+  const plain = teachValue(row, { kind: 'choose', choices: [{ id: 'p' }, { id: 'q' }] });
+  const level = teachValue(row, { kind: 'choose', choices: [{ id: 'p' }, { id: 'q' }], margin: 0 });
+  const far = teachValue(row, { kind: 'choose', choices: [{ id: 'p' }, { id: 'q' }], margin: 0.5 });
+  assert.ok(level > plain, 'level top two: worth more');
+  assert.equal(far, plain, 'a clear gap: no boost');
+  assert.equal(teachValue(row, { kind: 'choose', choices: [{ id: 'p' }, { id: 'q' }], margin: null }), plain);
+  // Shaped seeds 11, 5, 3 (2026-11-18): the gate opens on seed 11 only, whether answers'
+  // "not those" are learnt or not; favouring close calls shuts seed 11 too (31 -> 29 right).
+  const lib = shapedLibrary();
+  assert.equal(teachGate(lib, { targets: lib.targets, online: true }).pass, true);
+  assert.equal(teachGate(lib, { targets: lib.targets, close: true }).pass, false);
+});

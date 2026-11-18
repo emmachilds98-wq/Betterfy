@@ -331,6 +331,7 @@ export function withAudioLayer(space, audio, { skip = null } = {}) {
 export function learnFiled(space, track, playlistId) {
   const d = space?.destinations?.get(playlistId);
   if (!d || !track?.id || d.trackIds.has(track.id)) return false;
+  learnRemember(space, { kind: 'filed', trackId: track.id, playlistId, snap: destSnapshot(space, d, track.id) });
   for (const a of track.artists ?? []) {
     if (!a?.id) continue;
     const row = d.artistCounts.get(a.id) ?? { name: a.name ?? null, n: 0 };
@@ -359,6 +360,115 @@ export function learnFiled(space, track, playlistId) {
     }
   }
   return true;
+}
+
+/* ---------- learning from every tap (docs/BUILD-7-PLAN.md E1) ----------
+ * A "not that playlist", a pick of the second choice over the first, and a move
+ * away count at once, like a filing does (learnFiled): the (artist, playlist)
+ * pair is marked against, and that playlist's score for the artist's other
+ * tracks is lowered, by a bounded share that shrinks as the artist's filings
+ * there grow (more evidence the other way wins). An undo takes back the last
+ * learn. Everything lives on the space only: the next rebuild starts clean and
+ * the page replays what it still holds (FB), so nothing here is stored.
+ *
+ * A space no tap has touched has no `rejected` and scores exactly as before. */
+
+export const ONLINE = Object.freeze({
+  /** How much one "not there" lowers that playlist for the artist's other tracks. */
+  step: 0.2,
+  /** The most it can ever lower it: never a veto, just a nudge. */
+  max: 0.5,
+  /** Learns kept for undo. */
+  keep: 50,
+});
+
+function learnRemember(space, entry) {
+  const log = space.learnLog ??= [];
+  log.push(entry);
+  if (log.length > ONLINE.keep) log.splice(0, log.length - ONLINE.keep);
+}
+
+/** What learnFiled changes on `d`, copied, so learnUndone can put it back. Plain data only. */
+function destSnapshot(space, d, trackId) {
+  const prof = space.audio?.profiles?.get(d.id);
+  return {
+    artistCounts: [...d.artistCounts].map(([k, v]) => [k, { ...v }]),
+    artists: [...d.artists], centroid: d.centroid, centroidNorm: d.centroidNorm,
+    vecN: 'vecN' in d ? d.vecN : undefined, n: d.n, trackId,
+    prof: prof ? { sum: Float64Array.from(prof.sum), ids: [...prof.ids], members: prof.members, centroid: prof.centroid } : null,
+    audioSize: space.audio?.size,
+  };
+}
+
+/**
+ * "Not that playlist" for this track, learnt now: every artist of the track
+ * counts once more against `playlistId`. Returns whether anything changed.
+ */
+export function learnRejected(space, track, playlistId) {
+  const d = space?.destinations?.get(playlistId);
+  const ids = (track?.artists ?? []).map(a => a?.id).filter(Boolean);
+  if (!d || !track?.id || !ids.length) return false;
+  space.rejected ??= new Map();
+  for (const a of ids) {
+    const m = space.rejected.get(a) ?? space.rejected.set(a, new Map()).get(a);
+    m.set(playlistId, (m.get(playlistId) ?? 0) + 1);
+  }
+  learnRemember(space, { kind: 'rejected', trackId: track.id, playlistId, artists: ids });
+  return true;
+}
+
+/**
+ * Take back the last learn (a filing or a "not there"), when it is the one
+ * `match` names ({ trackId, playlistId }, either optional). Only the newest
+ * can be undone exactly; for an older one this returns false and the next
+ * rebuild catches up.
+ */
+export function learnUndone(space, match = null) {
+  const log = space?.learnLog;
+  const last = log?.[log.length - 1];
+  if (!last) return false;
+  if (match?.trackId && match.trackId !== last.trackId) return false;
+  if (match?.playlistId && match.playlistId !== last.playlistId) return false;
+  log.pop();
+  if (last.kind === 'rejected') {
+    for (const a of last.artists) {
+      const m = space.rejected?.get(a);
+      if (!m) continue;
+      const n = (m.get(last.playlistId) ?? 0) - 1;
+      if (n > 0) m.set(last.playlistId, n); else m.delete(last.playlistId);
+      if (!m.size) space.rejected.delete(a);
+    }
+    if (space.rejected && !space.rejected.size) delete space.rejected;
+    return true;
+  }
+  const d = space.destinations?.get(last.playlistId), s = last.snap;
+  if (!d || !s) return false;
+  d.artistCounts = new Map(s.artistCounts.map(([k, v]) => [k, { ...v }]));
+  d.artists = new Set(s.artists);
+  d.centroid = s.centroid; d.centroidNorm = s.centroidNorm;
+  if (s.vecN === undefined) delete d.vecN; else d.vecN = s.vecN;
+  d.n = s.n; d.trackIds.delete(s.trackId);
+  const profs = space.audio?.profiles;
+  if (profs) {
+    if (s.prof) Object.assign(profs.get(last.playlistId) ?? {}, { sum: s.prof.sum, ids: new Set(s.prof.ids), members: s.prof.members, centroid: s.prof.centroid });
+    else profs.delete(last.playlistId);
+    if (s.audioSize !== undefined) space.audio.size = s.audioSize;
+  }
+  return true;
+}
+
+/** How much this playlist is lowered for this track by "not there" taps on its artists: 0 to ONLINE.max. */
+export function rejectPenalty(track, d, space) {
+  const rej = space?.rejected;
+  if (!rej?.size) return 0;
+  let pen = 0;
+  for (const a of track?.artists ?? []) {
+    const neg = a?.id ? rej.get(a.id)?.get(d.id) ?? 0 : 0;
+    if (!neg) continue;
+    const pos = d.artistCounts.get(a.id)?.n ?? 0;
+    pen = Math.max(pen, Math.min(ONLINE.max, ONLINE.step * neg / (1 + pos)));
+  }
+  return pen;
 }
 
 /**
@@ -618,8 +728,11 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
     const parts = destinationParts(track, d, space, ctx);
-    const { score, used, judged } = combine(parts, weights);
+    const { score: raw, used, judged } = combine(parts, weights);
     if (!judged) continue;
+    // E1: "not there" taps on this artist lower this playlist at once (0 when none).
+    const pen = space.rejected ? rejectPenalty(track, d, space) : 0;
+    const score = pen ? raw * (1 - pen) : raw;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
     const row = { playlistId: d.id, name: d.name, score: +score.toFixed(4),
                   parts: used, judged, sharedArtists: shared, members: d.n };

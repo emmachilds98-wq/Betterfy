@@ -4641,6 +4641,7 @@ function withAudioLayer(space, audio, { skip = null } = {}) {
 function learnFiled(space, track, playlistId) {
   const d = space?.destinations?.get(playlistId);
   if (!d || !track?.id || d.trackIds.has(track.id)) return false;
+  learnRemember(space, { kind: 'filed', trackId: track.id, playlistId, snap: destSnapshot(space, d, track.id) });
   for (const a of track.artists ?? []) {
     if (!a?.id) continue;
     const row = d.artistCounts.get(a.id) ?? { name: a.name ?? null, n: 0 };
@@ -4669,6 +4670,115 @@ function learnFiled(space, track, playlistId) {
     }
   }
   return true;
+}
+
+/* ---------- learning from every tap (docs/BUILD-7-PLAN.md E1) ----------
+ * A "not that playlist", a pick of the second choice over the first, and a move
+ * away count at once, like a filing does (learnFiled): the (artist, playlist)
+ * pair is marked against, and that playlist's score for the artist's other
+ * tracks is lowered, by a bounded share that shrinks as the artist's filings
+ * there grow (more evidence the other way wins). An undo takes back the last
+ * learn. Everything lives on the space only: the next rebuild starts clean and
+ * the page replays what it still holds (FB), so nothing here is stored.
+ *
+ * A space no tap has touched has no `rejected` and scores exactly as before. */
+
+const ONLINE = Object.freeze({
+  /** How much one "not there" lowers that playlist for the artist's other tracks. */
+  step: 0.2,
+  /** The most it can ever lower it: never a veto, just a nudge. */
+  max: 0.5,
+  /** Learns kept for undo. */
+  keep: 50,
+});
+
+function learnRemember(space, entry) {
+  const log = space.learnLog ??= [];
+  log.push(entry);
+  if (log.length > ONLINE.keep) log.splice(0, log.length - ONLINE.keep);
+}
+
+/** What learnFiled changes on `d`, copied, so learnUndone can put it back. Plain data only. */
+function destSnapshot(space, d, trackId) {
+  const prof = space.audio?.profiles?.get(d.id);
+  return {
+    artistCounts: [...d.artistCounts].map(([k, v]) => [k, { ...v }]),
+    artists: [...d.artists], centroid: d.centroid, centroidNorm: d.centroidNorm,
+    vecN: 'vecN' in d ? d.vecN : undefined, n: d.n, trackId,
+    prof: prof ? { sum: Float64Array.from(prof.sum), ids: [...prof.ids], members: prof.members, centroid: prof.centroid } : null,
+    audioSize: space.audio?.size,
+  };
+}
+
+/**
+ * "Not that playlist" for this track, learnt now: every artist of the track
+ * counts once more against `playlistId`. Returns whether anything changed.
+ */
+function learnRejected(space, track, playlistId) {
+  const d = space?.destinations?.get(playlistId);
+  const ids = (track?.artists ?? []).map(a => a?.id).filter(Boolean);
+  if (!d || !track?.id || !ids.length) return false;
+  space.rejected ??= new Map();
+  for (const a of ids) {
+    const m = space.rejected.get(a) ?? space.rejected.set(a, new Map()).get(a);
+    m.set(playlistId, (m.get(playlistId) ?? 0) + 1);
+  }
+  learnRemember(space, { kind: 'rejected', trackId: track.id, playlistId, artists: ids });
+  return true;
+}
+
+/**
+ * Take back the last learn (a filing or a "not there"), when it is the one
+ * `match` names ({ trackId, playlistId }, either optional). Only the newest
+ * can be undone exactly; for an older one this returns false and the next
+ * rebuild catches up.
+ */
+function learnUndone(space, match = null) {
+  const log = space?.learnLog;
+  const last = log?.[log.length - 1];
+  if (!last) return false;
+  if (match?.trackId && match.trackId !== last.trackId) return false;
+  if (match?.playlistId && match.playlistId !== last.playlistId) return false;
+  log.pop();
+  if (last.kind === 'rejected') {
+    for (const a of last.artists) {
+      const m = space.rejected?.get(a);
+      if (!m) continue;
+      const n = (m.get(last.playlistId) ?? 0) - 1;
+      if (n > 0) m.set(last.playlistId, n); else m.delete(last.playlistId);
+      if (!m.size) space.rejected.delete(a);
+    }
+    if (space.rejected && !space.rejected.size) delete space.rejected;
+    return true;
+  }
+  const d = space.destinations?.get(last.playlistId), s = last.snap;
+  if (!d || !s) return false;
+  d.artistCounts = new Map(s.artistCounts.map(([k, v]) => [k, { ...v }]));
+  d.artists = new Set(s.artists);
+  d.centroid = s.centroid; d.centroidNorm = s.centroidNorm;
+  if (s.vecN === undefined) delete d.vecN; else d.vecN = s.vecN;
+  d.n = s.n; d.trackIds.delete(s.trackId);
+  const profs = space.audio?.profiles;
+  if (profs) {
+    if (s.prof) Object.assign(profs.get(last.playlistId) ?? {}, { sum: s.prof.sum, ids: new Set(s.prof.ids), members: s.prof.members, centroid: s.prof.centroid });
+    else profs.delete(last.playlistId);
+    if (s.audioSize !== undefined) space.audio.size = s.audioSize;
+  }
+  return true;
+}
+
+/** How much this playlist is lowered for this track by "not there" taps on its artists: 0 to ONLINE.max. */
+function rejectPenalty(track, d, space) {
+  const rej = space?.rejected;
+  if (!rej?.size) return 0;
+  let pen = 0;
+  for (const a of track?.artists ?? []) {
+    const neg = a?.id ? rej.get(a.id)?.get(d.id) ?? 0 : 0;
+    if (!neg) continue;
+    const pos = d.artistCounts.get(a.id)?.n ?? 0;
+    pen = Math.max(pen, Math.min(ONLINE.max, ONLINE.step * neg / (1 + pos)));
+  }
+  return pen;
 }
 
 /**
@@ -4928,8 +5038,11 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
   for (const d of space.destinations.values()) {
     if (exclude?.has(d.id)) continue;
     const parts = destinationParts(track, d, space, ctx);
-    const { score, used, judged } = combine(parts, weights);
+    const { score: raw, used, judged } = combine(parts, weights);
     if (!judged) continue;
+    // E1: "not there" taps on this artist lower this playlist at once (0 when none).
+    const pen = space.rejected ? rejectPenalty(track, d, space) : 0;
+    const score = pen ? raw * (1 - pen) : raw;
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
     const row = { playlistId: d.id, name: d.name, score: +score.toFixed(4),
                   parts: used, judged, sharedArtists: shared, members: d.n };
@@ -4966,7 +5079,7 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
     version: SPACE_VERSION,
   };
 }
-return { SPACE_VERSION, WEIGHTS, SOUND_FIRST_WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, withAudioLayer, learnFiled, hearMore, MIN_TEMPO_MEMBERS, relativeSound, combine, graphNormalised, componentParts, placements };
+return { SPACE_VERSION, WEIGHTS, SOUND_FIRST_WEIGHTS, MIN_DEFINITION_TRACKS, BANDS, THRESHOLDS, buildSpace, withAudioLayer, learnFiled, ONLINE, learnRejected, learnUndone, rejectPenalty, hearMore, MIN_TEMPO_MEMBERS, relativeSound, combine, graphNormalised, componentParts, placements };
 })();
 /* ---- core/intrinsic/coldstart.mjs ---- */
 __mod["core/intrinsic/coldstart.mjs"] = (function () {
@@ -13800,6 +13913,10 @@ const TEACH = {
   singleWeight: 0.6,
   /** Best guesses shown for a track the Engine is not sure about. */
   guesses: 3,
+  /** E1: a close call teaches more (ENGINE-REVIEW layer 5). Up to this much more value… */
+  closeBoost: 0.5,
+  /** …when the top two are level, falling to none at this score margin. */
+  closeAt: 0.1,
 };
 
 /** decide() kinds as the bands filequeue.mjs reads uncertainty by. */
@@ -13844,12 +13961,14 @@ function choicesOf(row, decision, guesses = null) {
  * How much one answer about this row should teach, 0 when there is nothing to
  * ask. `spread` is artistSpread over the waiting rows.
  */
-function teachValue(row, { kind = null, choices = [] } = {}, { weights = null, tracks = null, spread = null } = {}) {
+function teachValue(row, { kind = null, choices = [], margin = null } = {}, { weights = null, tracks = null, spread = null } = {}) {
   if (!choices?.length || kind === 'confident') return 0;
   const base = valueOf(row, { weights, tracks, bandOf: () => KIND_BAND[kind] ?? null });
   const reach = 1 + Math.log2(Math.max(1, spread?.get?.(artistKeyOf(row)) ?? 1));
   const open = choices.length >= 2 ? 1 : TEACH.singleWeight;
-  return +(base * reach * open).toFixed(4);
+  // E1: the top two close together (`margin`, the score gap) is where one answer decides most.
+  const close = Number.isFinite(margin) ? 1 + TEACH.closeBoost * Math.max(0, 1 - margin / TEACH.closeAt) : 1;
+  return +(base * reach * open * close).toFixed(4);
 }
 
 /**
@@ -13863,7 +13982,7 @@ function teachValue(row, { kind = null, choices = [] } = {}, { weights = null, t
  * One question per artist.
  */
 function teachQueue(rows, { decisionOf = null, guesses = null, weights = null, tracks = null,
-                                   limit = TEACH.batch, answered = null, rejected = null } = {}) {
+                                   limit = TEACH.batch, answered = null, rejected = null, marginOf = null } = {}) {
   const list = (rows ?? []).filter(r => r?.id && !(r.skips > 0) && !answered?.has?.(r.id));
   const spread = artistSpread(list);
   const out = [];
@@ -13874,7 +13993,7 @@ function teachQueue(rows, { decisionOf = null, guesses = null, weights = null, t
     const choices = rejected ? c.choices.filter(x => !rejected(row, x.id)) : c.choices;
     if (!choices.length) continue;
     const kind = d?.kind ?? 'unsure';
-    const value = teachValue(row, { kind, choices }, { weights, tracks, spread });
+    const value = teachValue(row, { kind, choices, margin: marginOf?.(row) ?? null }, { weights, tracks, spread });
     if (value > 0) out.push({ row, choices, checked: c.checked, kind, value });
   }
   out.sort((a, b) => b.value - a.value || (b.row.added ?? '').localeCompare(a.row.added ?? '')
@@ -13893,7 +14012,7 @@ return { TEACH_VERSION, TEACH, artistKeyOf, artistSpread, choicesOf, teachValue,
 })();
 /* ---- core/validate/teach.mjs ---- */
 __mod["core/validate/teach.mjs"] = (function () {
-const { buildSpace, placements } = __mod["core/intrinsic/space.mjs"];
+const { buildSpace, placements, learnRejected } = __mod["core/intrinsic/space.mjs"];
 const { scoresOf, decide, calibrationReport } = __mod["core/intrinsic/calibrate.mjs"];
 const { placementAccuracy, foldOf, truthOf, scoredTracks } = __mod["core/validate/loo.mjs"];
 const { libraryWithout } = __mod["core/validate/baseline.mjs"];
@@ -13966,6 +14085,7 @@ function decisionsFor(space, tracks, cal, { soundFirst = false } = {}) {
   for (const t of tracks) {
     const results = placements(t, space, { limit: Infinity, soundFirst }).results ?? [];
     out.set(t.id, { decision: decide(scoresOf(results), cal),
+                    margin: results.length >= 2 ? results[0].score - results[1].score : null,
                     guesses: results.slice(0, TEACH.guesses).map(r => ({ id: r.playlistId, name: r.name })) });
   }
   return out;
@@ -13984,7 +14104,13 @@ function decisionsFor(space, tracks, cal, { soundFirst = false } = {}) {
  */
 function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH.batch, strategy = 'teach',
                                     folds = 5, targets = null, genreGraph = false, cal = null, calLimit = null,
-                                    isMirror = null, audio = null } = {}) {
+                                    isMirror = null, audio = null, online = false, close = false } = {}) {
+  // Both off by default: measured on the shaped seeds (docs/BUILD-7-PLAN.md E1),
+  // neither opens the gate on more seeds, and close calls cost tracks.
+  // `online` (E1): each answer's "not those" (the short list's picks above the
+  // right one, or all of it when the right one was missing) is learnt at once
+  // and replayed onto every rebuilt space, as the page learns from each tap.
+  // `close`: the queue favours close calls (teach.mjs TEACH.closeBoost).
   // With `audio` (ENGINE-REVIEW layer 5) the engine is the one File places heard
   // tracks with: sound-first, and each answer joins its playlist's sound, so a
   // single answer counts for every track that sounds like it.
@@ -13996,6 +14122,7 @@ function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH.batch,
   const asked = [];
   const first = buildSpace(lib, spaceOpts);
   let cur = lib, space = first, inList = 0;
+  const noes = [];
   while (asked.length < answers) {
     const done = new Set(asked.map(([t]) => t.id));
     const left = pending.filter(t => !done.has(t.id));
@@ -14007,7 +14134,7 @@ function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH.batch,
     let picks;
     if (strategy === 'teach') {
       picks = teachQueue(rows, { decisionOf: r => dec.get(r.id).decision, guesses: r => dec.get(r.id).guesses,
-                                 limit: want })
+                                 limit: want, marginOf: close ? r => dec.get(r.id).margin : null })
         .map(q => ({ t: byId.get(q.row.id), choices: q.choices.map(c => c.id) }));
     } else {
       // The File card shows its top three too: same tap, the queue's own order.
@@ -14023,10 +14150,12 @@ function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH.batch,
       const hit = choices.find(id => real.includes(id));
       if (hit) inList++;
       round.push([t, hit ?? real[0]]);
+      if (online) for (const id of hit ? choices.slice(0, choices.indexOf(hit)) : choices) noes.push([t, id]);
     }
     asked.push(...round);
     cur = withAnswers(cur, round);
     space = buildSpace(cur, spaceOpts);
+    for (const [t, id] of noes) learnRejected(space, t, id);
   }
   const done = new Set(asked.map(([t]) => t.id));
   const rest = pending.filter(t => !done.has(t.id));
@@ -14071,7 +14200,8 @@ function teachGate(lib, { targets = null, isMirror = null, genreGraph = false, a
   if (truth.size < o.answers + o.minScored) return { ...out, why: `not enough filed tracks yet (${truth.size} of ${o.answers + o.minScored})` };
   const base = libraryWithout(lib, new Set(truth.keys()));
   const r = simulateTeach(base, { waiting: hidden, truth, answers: o.answers, targets, genreGraph, isMirror,
-                                  folds: o.calFolds, calLimit: o.calLimit, audio });
+                                  folds: o.calFolds, calLimit: o.calLimit, audio,
+                                  ...(o.online != null ? { online: o.online } : {}), ...(o.close != null ? { close: o.close } : {}) });
   Object.assign(out, { asked: r.asked, inList: r.inList, scored: r.before.n, before: r.before.top1, after: r.after.top1,
                        ...(r.sound ? { sound: true } : {}),
                        gain: r.gain, right: [r.before.right, r.after.right] });
@@ -14089,6 +14219,85 @@ function teachVerdict(r, over = {}) {
   return { ...r, pass: !why, why: why ?? 'beats' };
 }
 return { TEACH_SIM_VERSION, withAnswers, scoreOn, decisionsFor, simulateTeach, TEACH_GATE, teachGate, teachVerdict };
+})();
+/* ---- core/validate/online.mjs ---- */
+__mod["core/validate/online.mjs"] = (function () {
+const { buildSpace, placements, learnFiled, learnRejected } = __mod["core/intrinsic/space.mjs"];
+const { truthOf, scoredTracks, foldOf, DEFAULT_FOLDS } = __mod["core/validate/loo.mjs"];
+// Does learning from every tap help the next card? (docs/BUILD-7-PLAN.md E1)
+//
+// The Score run's held-out folds, replayed in the order the listener added the
+// tracks. For each fold the space is built without it (as placementAccuracy
+// does), then every held-out track is placed twice:
+//
+//   static  against the fold's space as built: what File showed before E1,
+//           where only a rebuild learns.
+//   online  against the same space after the taps on the tracks before it in
+//           the replay: each was filed where it really sits (learnFiled), and
+//           when the top pick was wrong, that pick got a "not there"
+//           (learnRejected), as a pick of another playlist does on the page.
+//
+// Same tracks, same space, so the difference is the online learning and
+// nothing else. A track never learns from itself: its own tap comes after it
+// is scored. Nothing leaves the account; the result is a few counts.
+
+
+
+const ONLINE_SCORE_VERSION = '1.0.0';
+
+/**
+ * @returns {{ version, scored, static: { top1, top3 }, online: { top1, top3 },
+ *             repeat: { scored, static, online } }}
+ *   `repeat`: the tracks whose artist was tapped earlier in the same fold, where
+ *   online learning can act at all.
+ */
+function onlineAccuracy(lib, { folds = DEFAULT_FOLDS, isMirror = null, targets = null, limit = null,
+                                      genreGraph = false, audio = null, soundFirst = false, reject = true } = {}) {
+  const truth = truthOf(lib, { isMirror });
+  const allowed = targets ? new Set(targets) : null;
+  const tracks = scoredTracks(lib, { limit, isMirror, targets: allowed });
+  const addedAt = new Map();
+  for (const p of lib.playlists ?? []) for (const t of p.tracks ?? []) {
+    const at = t.added_at ?? '';
+    if (!addedAt.has(t.id) || at < addedAt.get(t.id)) addedAt.set(t.id, at);
+  }
+  const groups = new Map();
+  for (const t of tracks) {
+    const f = foldOf(t.id, folds);
+    (groups.get(f) ?? groups.set(f, []).get(f)).push(t);
+  }
+  const tally = () => ({ n: 0, top1: 0, top3: 0 });
+  const st = tally(), on = tally(), rs = tally(), ro = tally();
+  for (const [, members] of groups) {
+    members.sort((a, b) => (addedAt.get(a.id) ?? '').localeCompare(addedAt.get(b.id) ?? '') || (a.id < b.id ? -1 : 1));
+    const skip = new Set(members.map(t => t.id));
+    const opts = { skip, isMirror, targets: allowed, genreGraph, ...(audio ? { audio } : {}) };
+    const fixed = buildSpace(lib, opts), live = buildSpace(lib, opts);
+    const tapped = new Set();
+    for (const t of members) {
+      const all = truth.get(t.id);
+      const want = allowed && all ? [...all].filter(id => allowed.has(id)) : [...(all ?? [])];
+      if (!want.length) continue;
+      const rank = space => (placements(t, space, { limit: 3, soundFirst }).results ?? []).map(r => r.playlistId);
+      const a = rank(fixed), b = rank(live);
+      const repeat = (t.artists ?? []).some(x => x?.id && tapped.has(x.id));
+      for (const [ids, c, r] of [[a, st, rs], [b, on, ro]]) {
+        const h1 = want.includes(ids[0]), h3 = ids.some(id => want.includes(id));
+        c.n++; c.top1 += h1; c.top3 += h3;
+        if (repeat) { r.n++; r.top1 += h1; r.top3 += h3; }
+      }
+      // The tap: filed where it sits; a wrong first pick is a "not there".
+      for (const id of want) learnFiled(live, t, id);
+      if (reject && b[0] && !want.includes(b[0])) learnRejected(live, t, b[0]);
+      for (const x of t.artists ?? []) if (x?.id) tapped.add(x.id);
+    }
+  }
+  const pc = (c, k) => (c.n ? +(c[k] / c.n).toFixed(4) : null);
+  const out = c => ({ top1: pc(c, 'top1'), top3: pc(c, 'top3'), right: c.top1 });
+  return { version: ONLINE_SCORE_VERSION, scored: st.n, static: out(st), online: out(on),
+           repeat: { scored: rs.n, static: out(rs), online: out(ro) } };
+}
+return { ONLINE_SCORE_VERSION, onlineAccuracy };
 })();
 globalThis["BetterfyIntrinsic"] = __mod["core/intrinsic/space.mjs"];
 globalThis["BetterfyColdStart"] = __mod["core/intrinsic/coldstart.mjs"];
@@ -14123,3 +14332,4 @@ globalThis["BetterfyMeasure"] = __mod["core/measure/history.mjs"];
 globalThis["BetterfyTune"] = __mod["core/validate/tune.mjs"];
 globalThis["BetterfyRadar"] = __mod["core/release/index.mjs"];
 globalThis["BetterfyTeach"] = __mod["core/validate/teach.mjs"];
+globalThis["BetterfyOnline"] = __mod["core/validate/online.mjs"];
