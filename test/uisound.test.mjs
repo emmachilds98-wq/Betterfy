@@ -7,7 +7,7 @@ import * as S from '../web/ui/sound.mjs';
 import { SOUND, EVIDENCE, PROFILE, LISTEN, galleryHTML } from './fixtures/uisound.mjs';
 import { profileVM, listenVM, MISS_TEXT } from '../web/audio/controller.mjs';
 
-const MINE = ['sectionStrip', 'evidenceBadges', 'bandChip', 'profileRow', 'listenPill', 'listenCard', 'missedList'];
+const MINE = ['sectionStrip', 'evidenceBadges', 'bandChip', 'profileRow', 'listenTidyText', 'listenPill', 'listenCard', 'missedList'];
 
 test('no data, no markup: every renderer returns "" for null, undefined and empty input', () => {
   const empties = [null, undefined, {}, [], '', 0, false];

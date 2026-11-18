@@ -18,6 +18,7 @@
 import { fillMaest, needsMaest } from '../../core/audio/maest.mjs';
 import { earCurrent, withEar } from '../../core/audio/record.mjs';
 import { NEAR_DEFAULT } from '../../core/intrinsic/audio.mjs';
+import { withTimeout, TRACK_TIMEOUT_MS, MODEL_TIMEOUT_MS } from '../../core/audio/timeout.mjs';
 
 export const MAEST_PER_RUN = 50;
 
@@ -63,9 +64,14 @@ export function createWorkerMaest(worker, init) {
  * @param {() => Promise<{ run: Function, release?: Function }>} deps.loadMaest  loads the model, once per start
  * @param {(vm: object) => void} [deps.onChange]
  * @param {number} [deps.perRun]
+ * @param {number} [deps.trackTimeoutMs] per-track limit (default TRACK_TIMEOUT_MS; 0 = none). A track
+ *        over it counts as failed, is tried again on a later run, and the run carries on (DESIGN-PLAN L0).
+ * @param {number} [deps.modelTimeoutMs] model-load limit (default MODEL_TIMEOUT_MS; 0 = none)
  */
 export function createMaestRunner(deps) {
   const perRun = deps.perRun ?? MAEST_PER_RUN;
+  const trackMs = deps.trackTimeoutMs ?? TRACK_TIMEOUT_MS;
+  const modelMs = deps.modelTimeoutMs ?? MODEL_TIMEOUT_MS;
   const st = { state: 'off', done: 0, total: 0, heard: 0, waiting: 0, failed: 0, reason: null };
   const skip = new Set();
   let abort = null, running = null;
@@ -109,14 +115,20 @@ export function createMaestRunner(deps) {
         emit();
         if (!due.length) { st.state = 'done'; return { done: 0, stopped: false }; }
         st.reason = 'loading the second ear'; emit();
-        try { ear = await deps.loadMaest(); }
-        catch (e) { st.state = 'paused'; st.reason = `couldn’t load the second ear: ${e?.message ?? e}`; return { done: 0, stopped: true }; }
+        let loading = null;
+        try { loading = deps.loadMaest(); ear = await withTimeout(loading, modelMs, 'loading the second ear'); }
+        catch (e) {
+          // A load that timed out may still finish later: free that model when it does.
+          if (e?.timeout) loading?.then(m => m?.release?.(), () => {});
+          st.state = 'paused'; st.reason = `couldn’t load the second ear: ${e?.message ?? e}`; return { done: 0, stopped: true };
+        }
         st.reason = null; emit();
         const fill = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, maest: ear };
         for (const rec of due) {
           if (signal.aborted) break;
           let r;
-          try { r = await fillMaest(fill, rec); } catch (e) { r = { failed: { id: rec.id, stage: 'unknown', detail: String(e?.message ?? e) } }; }
+          try { r = await withTimeout(() => fillMaest(fill, rec), trackMs, 'one track'); }
+          catch (e) { r = { failed: { id: rec.id, stage: e?.timeout ? 'timeout' : 'unknown', detail: String(e?.message ?? e) } }; }
           // Put the ear on the record as it is now, not as it was when the run began:
           // a listening run may have added CLAP or DSP to it meanwhile (WP-C2).
           if (r.record) { const now = await latest(rec, r.record); r = now ? { record: now } : { skip: 'different-recording' }; }
@@ -152,6 +164,7 @@ export function createMaestRunner(deps) {
 export function maestStatusText(v) {
   if (!v) return '';
   const n = x => x.toLocaleString('en-GB');
+  if (v.state === 'waiting') return 'Second ear: waits for listening to finish, then starts by itself.';
   if (v.state === 'running') return v.reason ? `Second ear: ${v.reason}…` : `Second ear: listening… ${n(v.done)} of ${n(v.total)} this run.`;
   const tail = `${n(v.heard)} track${v.heard === 1 ? '' : 's'} heard by the second ear${v.waiting ? `, ${n(v.waiting)} still to go` : ''}.`;
   if (v.state === 'paused') return `Second ear stopped${v.reason && v.reason !== 'stopped' ? `: ${v.reason}` : ''}. ${tail}`;

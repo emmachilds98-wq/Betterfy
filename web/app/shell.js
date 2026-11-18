@@ -34,6 +34,9 @@ const settingsOpen = () => !!$('#settingsPanel')?.classList.contains('open');
 function listenStatus() {
   if (!listenEverRan()) return '';
   const done = LISTEN.done ?? 0, total = LISTEN.total ?? 0;
+  // After its songs a run tidies up (tempo, keys, descriptions): say so, not "listening 1/1".
+  const tidy = listenTidyText(LISTEN, '/');
+  if (tidy) return `tidying up: ${tidy}`;
   if (LISTEN.state === 'running' && total) return `listening ${Math.min(done, total).toLocaleString()}/${total.toLocaleString()}`;
   const heard = listenHeard();
   return heard ? `${heard.toLocaleString()} heard` : '';
