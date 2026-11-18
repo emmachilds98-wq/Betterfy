@@ -91,6 +91,7 @@ function engineSummary() {
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate, thumbHTML, engineSummary,
+  scoreCard: () => scoreCardInfo(), scoreCopy: () => scoreCopyNow(),
   twinPairs: () => ENG?.pairs ?? null,
   // The last Score run's weakest playlists, with reasons (core/intrinsic/weak.mjs via app/engine.js).
   weakSaved: () => (typeof weakSaved === 'function' ? weakSaved() : null),

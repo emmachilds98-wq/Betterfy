@@ -67,3 +67,11 @@
     .plline{flex-wrap:wrap}
     .placts{padding:0 14px 10px 68px}
   }
+
+/* Library's Score card (owner 2026-11-18): one compact card at the top. */
+.scorecard{display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+  margin:10px 0 14px; padding:12px 14px; border:1px solid var(--line, rgba(128,128,128,.25)); border-radius:12px}
+.scorecard-main{flex:1 1 240px; min-width:0}
+.scorecard h2{margin:0 0 2px; font-size:1rem}
+.scorecard .plmeta{margin:0}
+.scorecard-b{display:flex; gap:8px; flex-wrap:wrap}

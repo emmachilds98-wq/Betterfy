@@ -25,6 +25,10 @@ export const AUTOSCORE = Object.freeze({
   heardMore: 200,
   /** ... and this much more, as a share of what it had heard last time. */
   heardGrowth: 0.25,
+  /** Sound lines (and the gates that read the heard tracks) appear once this many are heard. */
+  soundAt: 30,
+  /** A run is due once listening has heard this many more since the last run, however few before. */
+  soundMore: 100,
   /** The weekly check. Also the longest a running listen can hold a run back. */
   weekMs: 7 * 24 * 3600e3,
   /** A run that failed is not tried again for this long. */
@@ -43,7 +47,7 @@ const HOUR = 3600e3, DAY = 24 * HOUR;
  * @param {number} [o.filed]      distinct tracks in genre (target) playlists
  * @param {string|null} [o.listening]  listening state: 'running' | 'done' | 'paused' | null
  * @param {boolean} [o.busy]      a Score or Tune run (or the first analysis) already going
- * @returns {'first'|'listened'|'heard'|'weekly'|null}
+ * @returns {'first'|'listened'|'heard'|'sound'|'weekly'|null}
  */
 export function autoScoreWhy({ last = null, now, heard = 0, filed = 0, listening = null, busy = false } = {}) {
   if (busy || !Number.isFinite(now)) return null;
@@ -54,9 +58,12 @@ export function autoScoreWhy({ last = null, now, heard = 0, filed = 0, listening
   // A run that did not finish: leave it for a while, then try again for the reason it first ran.
   if (last.ok === false) {
     if (age < AUTOSCORE.retryMs) return null;
-    return ['first', 'listened', 'heard', 'weekly'].includes(last.why) ? last.why : 'weekly';
+    return ['first', 'listened', 'heard', 'sound', 'weekly'].includes(last.why) ? last.why : 'weekly';
   }
   const was = Number(last.heard) || 0, more = heard - was;
+  // Sound just came in (the last run had under 30 heard, now 30+), or 100+ new tracks heard: score again.
+  // Ahead of the "let listening finish" wait, so the card shows a score that includes the sound.
+  if ((was < AUTOSCORE.soundAt && heard >= AUTOSCORE.soundAt) || more >= AUTOSCORE.soundMore) return 'sound';
   const grew = more >= AUTOSCORE.heardMore && heard >= was * (1 + AUTOSCORE.heardGrowth);
   // Listening and a Score run both want the computer: let listening finish, unless that is
   // taking all week. A long listen still earns a run on the way once it has heard a lot more.
@@ -81,6 +88,7 @@ const WHY_WORDS = {
   first: 'on its first check',
   listened: 'after listening finished',
   heard: 'after listening heard more of your library',
+  sound: 'after listening heard enough to count',
   weekly: 'on its weekly check',
   manual: 'when you ran it',
 };

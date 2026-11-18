@@ -61,8 +61,9 @@ async function autoScoreTick() {
   } catch { ok = false; }
   finally {
     autoScoreNote(why, ok);
-    AUTOSCORE_RUN.running = false; store.touch('eng');
+    AUTOSCORE_RUN.running = false; store.touch('eng'); store.touch('lists');
   }
+  if (ok) toast('New score ready.', null, { label: 'Copy results', run: () => fire(scoreCopyNow()) });
   // A Score run that ended early may not have reached Fill's measure: take it on its own.
   if (!ok) await autoFillTick();
   return why;
@@ -108,6 +109,25 @@ function autoScoreStart() {
   const first = Number.isFinite(globalThis.BF_AUTOSCORE_MS) ? globalThis.BF_AUTOSCORE_MS : AUTOSCORE_RUN.firstMs;
   const tick = () => fire(autoScoreTick());
   setTimeout(() => { tick(); setInterval(tick, AUTOSCORE_RUN.everyMs); }, first);
+}
+
+/** What Library's Score card shows: the run now going, the last one, and what listening has heard. */
+function scoreCardInfo() {
+  const runs = runHistoryList().filter(r => r.kind === 'score');
+  const heard = typeof listenHeard === 'function' ? listenHeard() : 0;
+  return { running: AUTOSCORE_RUN.running || !!ENG?.valRunning, last: autoScoreLast(), score: engineSummary(),
+           build: runs[0]?.build || null, heard, total: LISTEN?.total ?? null };
+}
+
+/** Copy the score as text (the Engine's Copy results; the last kept report when this page has not run one). */
+async function scoreCopyNow() {
+  let text = '';
+  try { text = (ENG?.val && !ENG.val.error && SCREEN_MODS.engine?.summary?.(screenCtx('engine'), await getLog({ all: true }).catch(() => null))) || ''; } catch { text = ''; }
+  if (!text) text = runHistoryList().find(r => r.kind === 'score' && r.text)?.text ?? '';
+  if (!text) return toast('No score yet. It runs by itself a minute after Betterfy opens.');
+  try { await navigator.clipboard.writeText(text); return toast('Copied — paste it wherever you like.'); } catch { /* share */ }
+  try { if (navigator.share) { await navigator.share({ text }); return; } } catch { return; }
+  prompt('Copy this:', text);
 }
 
 /** The Engine screen's line under the Score buttons. */

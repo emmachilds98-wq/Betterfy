@@ -62,8 +62,8 @@ test('Library rows say what needs a decision; the footer is one line with Shuffl
   const html = load().vLists();
   assert.ok(!html.includes('plscore'), 'a healthy playlist (100) shows no score');
   assert.match(html, /data-pl="P2"[^]*?<span class="tag warn">what kind\?<\/span>/);
-  assert.match(html, /<p class="axcov plfoot"><span class="plknows">Not measured yet[^<]*<\/span><span class="plfoot-b"><button class="b sm" data-go="engine">How it picks<\/button>\s*<button class="b sm" data-act="lshufall">Shuffle everything<\/button><\/span><\/p>/,
-    'one line: the score sentence, Engine and Shuffle everything');
+  assert.match(html, /<p class="axcov plfoot"><span class="plfoot-b"><button class="b sm" data-go="engine">How it picks<\/button>\s*<button class="b sm" data-act="lshufall">Shuffle everything<\/button><\/span><\/p>/,
+    'one line: Engine and Shuffle everything (the score sentence is the Score card)');
   assert.ok(!/data-go="sources"|of artists have genre tags|msline/.test(html), 'tag coverage, Genre sources and the rate line are cut (C2)');
 });
 

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1650">
+<meta name="bf-build" content="2026-11-18-1755">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1063,6 +1063,14 @@ main:focus{outline:none}
     .plline{flex-wrap:wrap}
     .placts{padding:0 14px 10px 68px}
   }
+
+/* Library's Score card (owner 2026-11-18): one compact card at the top. */
+.scorecard{display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+  margin:10px 0 14px; padding:12px 14px; border:1px solid var(--line, rgba(128,128,128,.25)); border-radius:12px}
+.scorecard-main{flex:1 1 240px; min-width:0}
+.scorecard h2{margin:0 0 2px; font-size:1rem}
+.scorecard .plmeta{margin:0}
+.scorecard-b{display:flex; gap:8px; flex-wrap:wrap}
 /* Playlists (axes table) and Sources — UI-3, docs/archive/UI-BUILD-PLAN.md §6. */
   [data-v="sources"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
 
@@ -2001,7 +2009,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1650</span>
+    <span class="mono">build 2026-11-18-1755</span>
   </p>
 
   <div class="feat">
@@ -2094,7 +2102,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1650</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1755</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2204,7 +2212,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-1650. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-1755. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -4123,6 +4131,10 @@ const AUTOSCORE = Object.freeze({
   heardMore: 200,
   /** ... and this much more, as a share of what it had heard last time. */
   heardGrowth: 0.25,
+  /** Sound lines (and the gates that read the heard tracks) appear once this many are heard. */
+  soundAt: 30,
+  /** A run is due once listening has heard this many more since the last run, however few before. */
+  soundMore: 100,
   /** The weekly check. Also the longest a running listen can hold a run back. */
   weekMs: 7 * 24 * 3600e3,
   /** A run that failed is not tried again for this long. */
@@ -4141,7 +4153,7 @@ const HOUR = 3600e3, DAY = 24 * HOUR;
  * @param {number} [o.filed]      distinct tracks in genre (target) playlists
  * @param {string|null} [o.listening]  listening state: 'running' | 'done' | 'paused' | null
  * @param {boolean} [o.busy]      a Score or Tune run (or the first analysis) already going
- * @returns {'first'|'listened'|'heard'|'weekly'|null}
+ * @returns {'first'|'listened'|'heard'|'sound'|'weekly'|null}
  */
 function autoScoreWhy({ last = null, now, heard = 0, filed = 0, listening = null, busy = false } = {}) {
   if (busy || !Number.isFinite(now)) return null;
@@ -4152,9 +4164,12 @@ function autoScoreWhy({ last = null, now, heard = 0, filed = 0, listening = null
   // A run that did not finish: leave it for a while, then try again for the reason it first ran.
   if (last.ok === false) {
     if (age < AUTOSCORE.retryMs) return null;
-    return ['first', 'listened', 'heard', 'weekly'].includes(last.why) ? last.why : 'weekly';
+    return ['first', 'listened', 'heard', 'sound', 'weekly'].includes(last.why) ? last.why : 'weekly';
   }
   const was = Number(last.heard) || 0, more = heard - was;
+  // Sound just came in (the last run had under 30 heard, now 30+), or 100+ new tracks heard: score again.
+  // Ahead of the "let listening finish" wait, so the card shows a score that includes the sound.
+  if ((was < AUTOSCORE.soundAt && heard >= AUTOSCORE.soundAt) || more >= AUTOSCORE.soundMore) return 'sound';
   const grew = more >= AUTOSCORE.heardMore && heard >= was * (1 + AUTOSCORE.heardGrowth);
   // Listening and a Score run both want the computer: let listening finish, unless that is
   // taking all week. A long listen still earns a run on the way once it has heard a lot more.
@@ -4179,6 +4194,7 @@ const WHY_WORDS = {
   first: 'on its first check',
   listened: 'after listening finished',
   heard: 'after listening heard more of your library',
+  sound: 'after listening heard enough to count',
   weekly: 'on its weekly check',
   manual: 'when you ran it',
 };
@@ -7019,7 +7035,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1650`,
+    `Betterfy engine score — build 2026-11-18-1755`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -9531,6 +9547,32 @@ function knowsYouLine(sum, now = Date.now()) {
     + `${Number.isFinite(sum.scored) ? ` (${sum.scored.toLocaleString()} tracks${when})` : when ? ` (${when.slice(2)})` : ''}.`;
 }
 
+/** Library's Score card (owner, 2026-11-18: "i cant find score"): the last Score + Tune run, or that one is on its way,
+ *  and whether listening has heard enough for sound to count. Words only; the numbers are the Engine's own. */
+function scoreCardHTML(c, now = Date.now()) {
+  const info = c.scoreCard?.();
+  if (!info) return '';
+  const { esc } = c, pc = x => `${Math.round(x * 100)}%`, sum = info.score;
+  const has = Number.isFinite(sum?.top1);
+  const days = has && Number.isFinite(sum.at) ? Math.floor((now - sum.at) / 864e5) : null;
+  const when = days == null ? '' : days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+  const head = info.running ? 'Scoring…'
+    : has ? `Your score: top-1 ${pc(sum.top1)}${Number.isFinite(sum.top3) ? ` · top-3 ${pc(sum.top3)}` : ''}`
+    : 'Not scored yet';
+  const sub = info.running ? 'Checking its picks against what you filed. You can keep using Betterfy.'
+    : has ? `Last run ${when}${info.build ? `, build ${esc(info.build)}` : ''}.`
+    : 'It runs by itself about a minute after Betterfy opens.';
+  const heard = Number(info.heard) || 0, total = Number(info.total) || 0;
+  const sound = `Listening: heard ${heard.toLocaleString()}${total ? ` of ${total.toLocaleString()}` : ''}`
+    + (heard < 30 ? ' · sound lines appear after ~30 heard' : ' · sound is part of the score');
+  return `<section class="scorecard" aria-labelledby="scorecard-h">
+      <div class="scorecard-main"><h2 id="scorecard-h">${head}</h2>
+        <p class="plmeta">${sub}</p><p class="plmeta">${sound}</p></div>
+      <div class="scorecard-b"><button class="b sm p" data-go="engine">See results</button>
+        ${has || info.running ? '<button class="b sm" data-act="scorecopy">Copy results</button>' : ''}</div>
+    </section>`;
+}
+
 /** Everything the rows and the sheet need to know about one playlist, in one place. */
 function plInfo(c, p, splitIds, undecidedIds, waiting = null) {
   const { R, LISTS_SOUND } = c;
@@ -10000,21 +10042,23 @@ function view(c) {
         <span class="plmain"><span class="ttl">${esc(s.title)}</span>
           <span class="plmeta"><span class="mono">${s.n}</span> tracks · ${esc(s.why)}</span></span></button>`).join('')}</div>
     </section>` : '';
-  const eng = c.engineSummary?.() ?? null;
   // One line of the Engine's score (owner, 2026-11-18): the Engine itself lives in Settings.
   // The footer is one line (L2): the score sentence, then where to go from here.
-  const knows = rows.some(p => p.target) ? `<span class="plknows">${esc(eng?.running ? 'Checking how well it knows you…' : knowsYouLine(eng))}</span>` : '';
-  const footHTML = `<p class="axcov plfoot">${knows}<span class="plfoot-b">${knows ? '<button class="b sm" data-go="engine">How it picks</button>' : ''}
+  // The score sentence lives in the Score card at the top now; the footer keeps the way to the full results.
+  const knows = rows.some(p => p.target);
+  const footHTML = `<p class="axcov plfoot"><span class="plfoot-b">${knows ? '<button class="b sm" data-go="engine">How it picks</button>' : ''}
       <button class="b sm" data-act="lshufall">Shuffle everything</button></span></p>`;
   return `<h1>Library</h1>
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
-    ${ticksHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
+    ${scoreCardHTML(c)}${ticksHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
     ${c.soundSearchHTML?.() ?? ''}${footHTML}`;
 }
 
 
 const actions = {
+  /** The Score card's Copy results: the same text as the Engine screen's. */
+  scorecopy(c) { return c.scoreCopy?.(); },
   /** Tap a playlist: its detail sheet. */
   plopen(c, el) { if (WIZ?.status !== 'working') WIZ = null; c.openPlSheet(el.dataset.pl); },
 
@@ -10125,7 +10169,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, waitingCounts, rowFacts, attentionOrder, ROW_SCORE_BELOW, tidyFor, fileFirst, knowsYouLine, sheetHTML, twoGenresHTML, weakRows, weakSheetHTML, weakListHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, waitingCounts, rowFacts, attentionOrder, ROW_SCORE_BELOW, tidyFor, fileFirst, knowsYouLine, scoreCardHTML, sheetHTML, twoGenresHTML, weakRows, weakSheetHTML, weakListHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -11232,7 +11276,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1650';
+const BUILD = '2026-11-18-1755';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11570,7 +11614,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1650', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1755', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12391,7 +12435,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1650');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1755');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16085,7 +16129,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1650';
+    s.src = 'engine.js?v=2026-11-18-1755';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -16107,7 +16151,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1650');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1755');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16822,7 +16866,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1650';
+    s.src = 'audio.js?v=2026-11-18-1755';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16876,7 +16920,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1650', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1755', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -18113,7 +18157,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1650', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1755', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -18497,8 +18541,9 @@ async function autoScoreTick() {
   } catch { ok = false; }
   finally {
     autoScoreNote(why, ok);
-    AUTOSCORE_RUN.running = false; store.touch('eng');
+    AUTOSCORE_RUN.running = false; store.touch('eng'); store.touch('lists');
   }
+  if (ok) toast('New score ready.', null, { label: 'Copy results', run: () => fire(scoreCopyNow()) });
   // A Score run that ended early may not have reached Fill's measure: take it on its own.
   if (!ok) await autoFillTick();
   return why;
@@ -18544,6 +18589,25 @@ function autoScoreStart() {
   const first = Number.isFinite(globalThis.BF_AUTOSCORE_MS) ? globalThis.BF_AUTOSCORE_MS : AUTOSCORE_RUN.firstMs;
   const tick = () => fire(autoScoreTick());
   setTimeout(() => { tick(); setInterval(tick, AUTOSCORE_RUN.everyMs); }, first);
+}
+
+/** What Library's Score card shows: the run now going, the last one, and what listening has heard. */
+function scoreCardInfo() {
+  const runs = runHistoryList().filter(r => r.kind === 'score');
+  const heard = typeof listenHeard === 'function' ? listenHeard() : 0;
+  return { running: AUTOSCORE_RUN.running || !!ENG?.valRunning, last: autoScoreLast(), score: engineSummary(),
+           build: runs[0]?.build || null, heard, total: LISTEN?.total ?? null };
+}
+
+/** Copy the score as text (the Engine's Copy results; the last kept report when this page has not run one). */
+async function scoreCopyNow() {
+  let text = '';
+  try { text = (ENG?.val && !ENG.val.error && SCREEN_MODS.engine?.summary?.(screenCtx('engine'), await getLog({ all: true }).catch(() => null))) || ''; } catch { text = ''; }
+  if (!text) text = runHistoryList().find(r => r.kind === 'score' && r.text)?.text ?? '';
+  if (!text) return toast('No score yet. It runs by itself a minute after Betterfy opens.');
+  try { await navigator.clipboard.writeText(text); return toast('Copied — paste it wherever you like.'); } catch { /* share */ }
+  try { if (navigator.share) { await navigator.share({ text }); return; } } catch { return; }
+  prompt('Copy this:', text);
 }
 
 /** The Engine screen's line under the Score buttons. */
@@ -18788,6 +18852,7 @@ function engineSummary() {
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate, thumbHTML, engineSummary,
+  scoreCard: () => scoreCardInfo(), scoreCopy: () => scoreCopyNow(),
   twinPairs: () => ENG?.pairs ?? null,
   // The last Score run's weakest playlists, with reasons (core/intrinsic/weak.mjs via app/engine.js).
   weakSaved: () => (typeof weakSaved === 'function' ? weakSaved() : null),
