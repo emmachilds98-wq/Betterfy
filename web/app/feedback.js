@@ -208,7 +208,9 @@ async function syncLibrary(force, onProgress, onPartial) {
   for (const [i, p] of owned.entries()) {
     onProgress?.(p.name, i / (owned.length + 1));
     const kept = banked[PART(p.id)]?.playlist ?? held[p.id];
-    if (kept?.snapshot_id === p.snapshot_id) { playlists.push(kept); continue; }
+    // A rename leaves the tracks (and so, it may be, the snapshot) as they were:
+    // the name is always Spotify's own, never the one banked with the tracks.
+    if (kept?.snapshot_id === p.snapshot_id) { playlists.push(kept.name === p.name ? kept : { ...kept, name: p.name }); continue; }
     let items = null;
     try {
       items = await paged(`/playlists/${p.id}/items?limit=100&fields=${encodeURIComponent(FIELDS)}`);

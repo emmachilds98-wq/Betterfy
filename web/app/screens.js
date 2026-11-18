@@ -101,6 +101,9 @@ SCREEN_CTX.lists = () => ({
   TAGS, addTracks, logAction, undoAction, newGroup, engineLoad,
   engineAudio: () => (typeof engineAudio === 'function' ? engineAudio() : null),
   get BetterfyFill() { return globalThis.BetterfyFill; },
+  // Names that say what a playlist holds (core/playlists/describe.mjs, in the lazy engine), and the rename itself.
+  get BetterfyDescribe() { return globalThis.BetterfyDescribe; },
+  renamePlaylist: (id, name, o) => renamePlaylist(id, name, o),
   // A3: the same measure the background tick takes (app/autoscore.js), and whether it is running now.
   fillMeasure: typeof fillMeasureNow === 'function' ? fillMeasureNow : undefined,
   fillAutoRunning: () => typeof AUTOFILL !== 'undefined' && AUTOFILL.running,

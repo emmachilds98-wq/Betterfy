@@ -22,7 +22,7 @@ const only = process.argv.find(a => a.startsWith('--only='))?.slice(7);
 const tags = JSON.parse(fs.readFileSync(path.join(ROOT, 'tags.json'), 'utf8'));
 const top = id => tags[id]?.[0]?.[0];
 const want = { 'drum and bass':'Rollers', 'jungle':'Jungle & Breaks', 'house':'House', 'techno':'Techno', 'ambient':'Ambient', 'hip hop':'Hip Hop', 'uk garage':'UKG', 'indie':'Indie' };
-const byG = {}; for (const id of Object.keys(tags)) { const g = top(id); if (want[g]) (byG[g] ??= []).push(id); }
+const byG = {}; for (const id of Object.keys(tags)) { const g = top(id); if (want[g] || g === 'reggae') (byG[g] ??= []).push(id); }
 const syl = ['ka','ro','mi','dex','vel','an','tor','lu','sen','ray','fo','zi','nor','bel','quin'];
 let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 const nm = n => Array.from({length:n}, () => syl[Math.floor(rnd()*syl.length)]).join('');
@@ -40,6 +40,8 @@ for (const [g, name] of Object.entries(want)) {
 }
 playlists.push({ id:'plx', name:'Late Night', owner:{id:'me'}, snapshot_id:'s1', tracks: (byG['ambient']||[]).slice(14,20).map(mkTrack) });
 playlists.push({ id:'ply', name:'Gym', owner:{id:'me'}, snapshot_id:'s1', tracks: (byG['techno']||[]).slice(14,20).map(mkTrack) });
+// A name that says nothing (Library's "Names that could say more", core/playlists/describe.mjs).
+playlists.push({ id:'plz', name:'My Playlist #3', owner:{id:'me'}, snapshot_id:'s1', tracks: (byG['reggae']||[]).slice(0,12).map(mkTrack) });
 const liked = [];
 for (const g of Object.keys(want)) for (const id of (byG[g]||[]).slice(20, 26)) liked.push(mkTrack(id));
 for (const p of playlists) liked.push(...p.tracks.slice(0, 3));
@@ -116,6 +118,14 @@ async function shoot(b, FORM, THEME) {
   await pg.evaluate(() => { go('lists'); openPlSheet(Object.keys(CFG)[0]); });
   await pg.waitForTimeout(900);
   await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-lists-sheet.png`) });
+  await pg.evaluate(() => closePlSheet());
+  await pg.waitForTimeout(400);
+  // The same sheet on a playlist whose name says nothing: its Name section's suggestions.
+  await pg.evaluate(() => openPlSheet('plz'));
+  await pg.waitForTimeout(900);
+  await pg.evaluate(() => document.querySelector('.plnamesec')?.scrollIntoView({ block: 'start' }));
+  await pg.waitForTimeout(300);
+  await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-lists-name.png`) });
   await pg.evaluate(() => closePlSheet());
   await pg.waitForTimeout(400);
   await touchBack();

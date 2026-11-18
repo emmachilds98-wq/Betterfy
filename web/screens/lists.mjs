@@ -229,6 +229,96 @@ export function scoreCardHTML(c, now = Date.now()) {
     </section>`;
 }
 
+/* ---------- Names that say what is in a playlist (core/playlists/describe.mjs) ----------
+ * The suggestions are worked out in the lazy engine bundle (it carries the genre
+ * ontology); until it is here nothing is suggested and the sheet still renames by
+ * hand. What each playlist holds is read once per library, tag table and set of
+ * names, and kept; the style is learned from this account's own playlist names. */
+const NAMES = { stamp: null, facts: new Map(), memo: new Map(), style: null, loading: false };
+const NAME_SKIP = 'bf_name_skip';
+
+function nameKit(c) {
+  const D = c.BetterfyDescribe;
+  if (!D) {
+    if (!NAMES.loading && typeof c.engineLoad === 'function') {
+      NAMES.loading = true;
+      Promise.resolve(c.engineLoad()).then(() => c.store?.touch?.('ui.lists'), () => {});
+    }
+    return null;
+  }
+  const pls = (c.LIB?.playlists ?? []).filter(p => p?.id && !c.isMirrorPlaylist?.(p));
+  const tagN = c.TAGS ? Object.keys(c.TAGS).length : 0;
+  const stamp = `${c.LIB?.captured_at}|${tagN}|${pls.map(p => p.id + '\u0001' + p.name).join('\u0002')}`;
+  if (NAMES.stamp !== stamp) {
+    Object.assign(NAMES, { stamp, facts: new Map(), memo: new Map(), style: D.nameStyle(pls.map(p => p.name)) });
+  }
+  const factsOf = p => {
+    if (!NAMES.facts.has(p.id)) NAMES.facts.set(p.id, D.describeTracks(p, id => c.TAGS?.[id]?.tags, { memo: NAMES.memo }));
+    return NAMES.facts.get(p.id);
+  };
+  return { D, style: NAMES.style, factsOf, pls };
+}
+
+function nameSkips(c) { try { return JSON.parse(c.LS?.getItem?.(NAME_SKIP) || '{}') ?? {}; } catch { return {}; } }
+
+/** Library's "Names that could say more": vague names and names that say another genre, three at most. */
+export function namesListHTML(c) {
+  const kit = nameKit(c);
+  if (!kit) return '';
+  const { esc } = c;
+  const skip = nameSkips(c);
+  const rows = kit.D.namesToImprove(kit.pls, kit.factsOf, { soundOf: p => c.LISTS_SOUND?.profile?.(p.id) ?? null,
+    style: kit.style, skip: p => skip[p.id] === p.name });
+  if (!rows.length) return '';
+  return `<section class="plsugg plnames" aria-labelledby="plname-h">
+      <div class="plsugg-head"><h2 id="plname-h">Names that could say more</h2></div>
+      <p class="hint">Suggested from the music in each, written the way you name playlists. Tap one for other names; undo from History.</p>
+      <div class="plrows">${rows.slice(0, 3).map(r => `<div class="plline"><button class="plrow" type="button" data-act="plopen" data-pl="${esc(r.id)}" aria-haspopup="dialog">
+        <span class="plmain"><span class="ttl">${esc(r.name)}</span>
+          <span class="plmeta"><span class="plname-to">→ ${esc(r.best.name)}</span>${r.vague ? '' : ` · ${esc(r.why)}`}</span></span></button>
+        <span class="placts"><button class="b sm p" type="button" data-act="lrename" data-pl="${esc(r.id)}" data-name="${esc(r.best.name)}"
+          aria-label="${esc(`Rename ${r.name} to ${r.best.name}`)}">Rename</button>
+        <button class="b sm" type="button" data-act="lnameskip" data-pl="${esc(r.id)}">Not now</button></span></div>`).join('')}</div>
+    </section>`;
+}
+
+/** The sheet's Name section: suggestions as chips, and a field to rename it by hand. */
+export function nameSheetHTML(c, id, pl) {
+  const { esc } = c;
+  if (c.isMirrorPlaylist?.(pl)) return '';
+  const kit = nameKit(c);
+  const s = kit ? kit.D.suggestNames(pl.name, kit.factsOf(pl), c.LISTS_SOUND?.profile?.(id) ?? null, kit.style) : null;
+  const said = !s ? '' : s.misleading ? `${s.misleading}.`
+    : s.vague && s.names.length ? 'Its name doesn’t say what’s in it yet.'
+    : s.fits ? 'Its name already says what’s in it; these add a little more.'
+    : s.names.length ? 'Your name stays first; these add what’s in it.' : '';
+  const chips = s?.names?.length ? `<div class="rowbtns plnamechips">${s.names.map(n =>
+    `<button class="chip" type="button" data-act="lnamepick" data-name="${esc(n.name)}" data-why="${esc(n.why)}" title="${esc(n.why)}">${esc(n.name)}</button>`).join('')}</div>` : '';
+  return `<section class="pls-sec plnamesec"><h3>Name</h3>
+      ${said ? `<p class="hint">${esc(said)}</p>` : ''}${chips}
+      <p class="hint plname-why" id="plname-why" aria-live="polite"></p>
+      <label class="pls-f plname-f"><input id="plname-in" value="${esc(pl.name)}" maxlength="100" aria-label="New name for ${esc(pl.name)}"></label>
+      <div class="rowbtns"><button class="b sm p" type="button" data-act="lrename" data-pl="${esc(id)}" data-from="input">Rename</button></div>
+      <p class="hint">${s?.names?.length ? 'Suggested from its artists’ tags, release years and, once heard, how it sounds. ' : ''}Renames it in Spotify too; undo from History.</p></section>`;
+}
+
+/** Rename, then say so with an Undo. */
+async function renameNow(c, id, name, el) {
+  const to = String(name ?? '').trim();
+  const from = c.LIB?.playlists?.find(x => x.id === id)?.name ?? c.CFG?.[id]?.name ?? '';
+  if (!to) return c.toast('A playlist needs a name.');
+  if (to === from) return c.toast('That is its name already.');
+  if (el) el.disabled = true;
+  try {
+    const at = await c.renamePlaylist(id, to);
+    c.render();
+    c.toast(`Renamed “${from}” to “${to}”.`, at ? async () => { await c.undoAction(at); c.render(); } : null);
+  } catch (err) {
+    if (el) el.disabled = false;
+    c.toast('Rename failed: ' + (err?.message ?? err));
+  }
+}
+
 /** Everything the rows and the sheet need to know about one playlist, in one place. */
 function plInfo(c, p, splitIds, undecidedIds, waiting = null) {
   const { R, LISTS_SOUND } = c;
@@ -298,6 +388,7 @@ export function sheetHTML(c, id) {
       <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to learn from"' : ''}>
         Suggest new tracks for it</label></section>
     ${prof ? `<section class="pls-sec"><h3>Sound</h3>${prof}</section>` : ''}
+    ${nameSheetHTML(c, id, pl)}
     ${twoGenresHTML(c, id, split, tagSplit, !!(split ? made || ms.made[splitKey] : ms.made[splitKey]), notNow(splitKey))}
     ${weakSheetHTML(c, id)}
     ${fillHTML(c, id, pl)}
@@ -707,7 +798,7 @@ export function view(c) {
       <button class="b sm" data-act="lshufall">Shuffle everything</button></span></p>`;
   return `<h1>Library</h1>
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
-    ${scoreCardHTML(c)}${ticksHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
+    ${scoreCardHTML(c)}${ticksHTML}${twinsHTML}${weakListHTML(c)}${namesListHTML(c)}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
     ${c.soundSearchHTML?.() ?? ''}${footHTML}`;
 }
@@ -784,6 +875,26 @@ export const actions = {
   /** Run the measure that decides whether Fill shows. */
   fillcheck(c) { return fillCheck(c); },
   fillretry(c, el) { FILL.delete(el.dataset.pl); c.render(); },
+
+  /** Rename: a "Names that could say more" row's suggestion, or the sheet's field. */
+  lrename(c, el) {
+    const name = el.dataset.from === 'input' ? c.$?.('#plname-in')?.value : el.dataset.name;
+    return renameNow(c, el.dataset.pl, name, el);
+  },
+  /** A suggested name tapped in the sheet: into the field, with why, to edit or keep. */
+  lnamepick(c, el) {
+    const box = c.$?.('#plname-in');
+    if (box) { box.value = el.dataset.name; box.focus?.(); }
+    const why = c.$?.('#plname-why');
+    if (why) why.textContent = el.dataset.why ? `Why: ${el.dataset.why}.` : '';
+  },
+  /** "Not now" on a name row: not offered again until the playlist's name changes. */
+  lnameskip(c, el) {
+    const skip = nameSkips(c), id = el.dataset.pl;
+    skip[id] = c.LIB?.playlists?.find(x => x.id === id)?.name ?? '';
+    try { c.LS.setItem(NAME_SKIP, JSON.stringify(skip)); } catch { /* private mode: this session only */ }
+    c.render();
+  },
 
   /** Axis edit: per-viewer, persisted on this device. */
   axis(c, el) { return setAxis(c, el.dataset.ax, el, null); },
