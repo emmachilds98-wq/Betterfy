@@ -92,11 +92,12 @@ test('opening the screen works the gaps out once, then shows them', async () => 
   assert.match(html, /Groups in your backlog/);
 });
 
-test('artists with no genre in their tags are counted and said, not guessed', async () => {
+test('artists with no genre in their tags are counted, not guessed, and the note is gone (§7.7 C6)', async () => {
   const s = screen();
   vm.runInContext('vNew()', s);
   await settle(s);
-  assert.match(vm.runInContext('vNew()', s), /5 of the \d+ tracks\s+outside your genre playlists have no genre/);
+  assert.equal(vm.runInContext('GAPS.untagged', s), 5);
+  assert.doesNotMatch(vm.runInContext('vNew()', s), /have no genre in their artists/);
 });
 
 test('what you are playing puts a gap first and says so', async () => {
