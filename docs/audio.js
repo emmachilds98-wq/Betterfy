@@ -1181,6 +1181,29 @@ const { withTimeout } = __mod["core/audio/timeout.mjs"];
 const WORKER_VERSION = '1.1.0';
 
 /**
+ * The network half of analyseOne (lookup, then both preview windows), on its
+ * own so runQueue can start it for the next track while this one is heard
+ * (SOUND-ENGINE-PLAN L2). Never rejects. Returns `{ found, got }` to hear, or
+ * `{ result }` when the answer is already known (a miss, or a failure).
+ */
+async function fetchTrack(deps, track) {
+  const now = deps.now ?? Date.now;
+  const id = track?.id;
+  if (!id) throw new Error('analyseOne needs a track id');
+  const isrc = track.isrc || null;
+  const miss = reason => ({ result: { miss: makeMiss({ id, isrc, reason, at: now() }) } });
+  const failed = (stage, detail) => ({ result: { failed: { id, stage, detail: String(detail ?? '') } } });
+  if (!isrc) return miss(MISS.NO_ISRC);
+  let found;
+  try { found = await deps.lookup(isrc, { spotifyDurationMs: track.durationMs }); }
+  catch (e) { return failed('lookup', e?.message ?? e); }
+  if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? miss(found.miss) : failed('lookup', found.detail ?? found.miss);
+  const got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
+  if (got?.miss) return failed('download', got.detail ?? got.miss);
+  return { found, got };
+}
+
+/**
  * Analyse one track end to end.
  *
  * @param {object} deps
@@ -1196,26 +1219,22 @@ const WORKER_VERSION = '1.1.0';
  *        optional CLAP (WP-C2): 48 kHz decode and core/audio/clap.mjs clapEmbed, bound to its ear
  * @param {() => number} [deps.now]
  * @param {{ id: string, isrc?: string, durationMs?: number }} track
+ * @param {Promise<object>|object} [fetched]  fetchTrack()'s answer, when the caller already started it
  * @returns {Promise<{ record: object } | { miss: object } | { failed: { id: string, stage: string, detail: string } }>}
  *   `record` and `miss` are storable; `failed` is not and must not be stored.
  */
-async function analyseOne(deps, track) {
+async function analyseOne(deps, track, fetched = undefined) {
   const now = deps.now ?? Date.now;
   const id = track?.id;
   if (!id) throw new Error('analyseOne needs a track id');
+
+  // `fetched` is a prefetch (L2, runQueue): the same lookup + download, done earlier.
+  const pre = fetched === undefined ? await fetchTrack(deps, track) : await fetched;
+  if (pre.result) return pre.result;
+  const { found } = pre;
+  let got = pre.got;
   const isrc = track.isrc || null;
-  const miss = reason => ({ miss: makeMiss({ id, isrc, reason, at: now() }) });
   const failed = (stage, detail) => ({ failed: { id, stage, detail: String(detail ?? '') } });
-
-  if (!isrc) return miss(MISS.NO_ISRC);
-
-  let found;
-  try { found = await deps.lookup(isrc, { spotifyDurationMs: track.durationMs }); }
-  catch (e) { return failed('lookup', e?.message ?? e); }
-  if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? miss(found.miss) : failed('lookup', found.detail ?? found.miss);
-
-  let got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
-  if (got?.miss) return failed('download', got.detail ?? got.miss);
 
   // CLAP (WP-C2), only when the page passes deps.clap: the same windows at
   // 48 kHz, decoded first because decoding detaches the buffer it is given.
@@ -1330,13 +1349,24 @@ async function analyseSamples(deps, { id, isrc, samples, parts = null, source })
  * `onResult` gets each result as it lands — the caller stores records and misses.
  * @returns {Promise<{ done: number, stopped: boolean }>}
  */
-async function runQueue(deps, tracks, { signal, onResult = () => {}, timeoutMs = 0 } = {}) {
+async function runQueue(deps, tracks, { signal, onResult = () => {}, timeoutMs = 0, prefetch = true } = {}) {
   let done = 0;
-  for (const t of tracks) {
+  // L2: one ahead. While track i is decoded and heard, track i+1's lookup and
+  // download run (the signed URL is used at once, never kept). fetchTrack
+  // never rejects, and a prefetch still in flight when the queue stops is
+  // simply dropped.
+  const ahead = t => withTimeout(() => fetchTrack(deps, t), timeoutMs, 'fetching one track')
+    .catch(e => ({ result: { failed: { id: t?.id, stage: 'unknown', detail: String(e?.message ?? e) } } }));
+  let next = null;
+  for (let i = 0; i < tracks.length; i++) {
+    const t = tracks[i];
     if (signal?.aborted) return { done, stopped: true };
+    const pre = next ?? (prefetch ? ahead(t) : undefined);
+    next = null;
+    if (prefetch && i + 1 < tracks.length) next = ahead(tracks[i + 1]);
     let r;
     // timeoutMs (DESIGN-PLAN L0): a track that never settles counts as failed, and the queue moves on.
-    try { r = await withTimeout(() => analyseOne(deps, t), timeoutMs, 'hearing one track'); }
+    try { r = await withTimeout(() => analyseOne(deps, t, pre), timeoutMs, 'hearing one track'); }
     catch (e) { r = { failed: { id: t?.id, stage: 'unknown', detail: String(e?.message ?? e) } }; }
     await onResult(r, t);
     done++;
@@ -1350,7 +1380,7 @@ function concat(parts) {
   let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
   return out;
 }
-return { WORKER_VERSION, analyseOne, fillDsp, analyseSamples, runQueue };
+return { WORKER_VERSION, fetchTrack, analyseOne, fillDsp, analyseSamples, runQueue };
 })();
 /* ---- core/audio/timing.mjs ---- */
 __mod["core/audio/timing.mjs"] = (function () {
@@ -1466,6 +1496,416 @@ function timingReportLines(snapshot, device = '') {
   return lines;
 }
 return { STAGES, TIMING_KEEP, createTimer, timeDeps, summariseTimings, timingLine, deviceClass, timingReportLines };
+})();
+/* ---- core/sources/provider.mjs ---- */
+__mod["core/sources/provider.mjs"] = (function () {
+// The provider interface — §7 and §36 of the v3 plan.
+//
+// Adding a source must mean writing an adapter, a mapper and tests, and
+// nothing else (§36). That only holds if the classifier never has to know a
+// provider exists, which in turn only holds if everything the classifier
+// would otherwise want to special-case is something the provider *declares*:
+// how much it is trusted, what it can answer, whether it is independent of
+// the sources already consulted, and what version of itself produced an
+// answer.
+//
+// Nothing here fetches. An adapter is split into a declaration plus pure
+// mapping functions, and a separate thin fetch function, so the mapping — the
+// part with all the judgement in it — is testable against a recorded fixture
+// with no network at all (§41.6, §41.7).
+
+/** What a provider can be asked for. Mirrors Evidence FIELDS plus 'identity'. */
+const CAPABILITIES = ['identity', 'genre', 'mood', 'context', 'era', 'descriptor',
+                             'bpm', 'key', 'energy', 'valence', 'voice', 'instrumentation', 'similarity'];
+
+/**
+ * @typedef {object} ProviderCapability
+ * @property {string} id                 stable provider id, used as Evidence.source
+ * @property {string} version            bumped when the adapter's mapping changes
+ * @property {string[]} capabilities     subset of CAPABILITIES
+ * @property {string[]} entityTypes      what it can be asked about
+ * @property {number} reliability        0-1, how much this source is trusted at all
+ * @property {string} independenceGroup  sources sharing a group are NOT independent
+ * @property {boolean} optional          true when absent-by-default costs nothing
+ * @property {string} requires           human-readable: what a user must configure
+ */
+
+/**
+ * Declare a provider. `reliability` is the one judgement call here and it is
+ * deliberately shallow — a coarse prior, to be replaced by benchmark-measured
+ * numbers (§9: "actual numerical weights must be validated using the
+ * benchmark dataset"). It is not a ranking the classifier reads directly; it
+ * is one factor among four in evidenceWeight().
+ */
+function defineProvider(spec) {
+  const p = {
+    id: spec.id,
+    version: spec.version ?? '0.0.0',
+    capabilities: spec.capabilities ?? [],
+    entityTypes: spec.entityTypes ?? [],
+    reliability: spec.reliability ?? 0.5,
+    // Default: every provider is its own group. Sharing one is the exception
+    // and has to be stated, because getting it wrong inflates confidence.
+    independenceGroup: spec.independenceGroup ?? spec.id,
+    optional: spec.optional ?? true,
+    requires: spec.requires ?? 'nothing',
+  };
+  for (const c of p.capabilities)
+    if (!CAPABILITIES.includes(c)) throw new Error(`${p.id} declares unknown capability: ${c}`);
+  return Object.freeze(p);
+}
+
+/**
+ * A set of providers the engine may consult, and the two lookups the
+ * weighting layer needs from them. Built per run, so a listener who has
+ * configured no Discogs token simply has a registry without it — there is no
+ * "disabled provider" state to reason about anywhere downstream.
+ */
+class ProviderRegistry {
+  constructor(providers = []) {
+    this.providers = new Map();
+    for (const p of providers) this.register(p);
+  }
+
+  register(p) {
+    if (!p?.id) throw new Error('a provider needs an id');
+    this.providers.set(p.id, p);
+    return this;
+  }
+
+  get(id) { return this.providers.get(id) ?? null; }
+  has(id) { return this.providers.has(id); }
+  get ids() { return [...this.providers.keys()]; }
+
+  /** For evidenceWeight(). Unknown sources are trusted at half. */
+  reliabilityOf = source => this.providers.get(source)?.reliability ?? 0.5;
+
+  /**
+   * For agreementFactor(). An unregistered source is treated as its own
+   * group — the conservative direction is to *under*-count correlation only
+   * when we genuinely know two sources share a crowd.
+   */
+  independenceOf = source => this.providers.get(source)?.independenceGroup ?? source;
+
+  /** Providers that can answer a given capability. */
+  providing(capability) {
+    return [...this.providers.values()].filter(p => p.capabilities.includes(capability));
+  }
+
+  /** The version stamp recorded on every profile this registry produced. */
+  versions() {
+    return Object.fromEntries([...this.providers.values()].map(p => [p.id, p.version]));
+  }
+}
+return { CAPABILITIES, defineProvider, ProviderRegistry };
+})();
+/* ---- core/sources/deezer.mjs ---- */
+__mod["core/sources/deezer.mjs"] = (function () {
+const { defineProvider } = __mod["core/sources/provider.mjs"];
+// Deezer: an exact artist id from an ISRC, and that artist's "fans also like".
+//
+// Why Deezer at all, when Spotify has an artist id already: Spotify's own
+// related-artists endpoint is gone, and Deezer's is keyless. Measured on the
+// owner's library (docs/SMARTER-GENRES-PLAN.md §2.1): of 70 scene-genre artists
+// Wikidata does not know at all, 68 were on Deezer and 57 had a related list —
+// and the lists stayed inside the scene (Coco Bryce → Tim Reaper, LTJ Bukem).
+//
+// Identity is the part with the judgement in it. Searching Deezer by name is
+// the Last.fm-autocorrect mistake again: a same-named artist wins and poisons
+// every answer about the real one. So the artist is reached through a
+// *recording*: the ISRC Spotify already gives identifies one track exactly, and
+// that track's credits name the Deezer artist. The name is then checked against
+// the Spotify credit, so an ISRC that Deezer has filed under a different
+// billing (a remixer as main artist) is caught rather than trusted.
+//
+// Nothing here fetches. The page reaches Deezer through JSONP in a sandboxed
+// frame (Deezer sends no CORS header — checked), Node with plain fetch; both
+// hand the parsed JSON to the functions below.
+
+
+const DEEZER = defineProvider({
+  id: 'deezer-related',
+  version: '1.0.0',
+  capabilities: ['identity', 'similarity'],
+  entityTypes: ['artist'],
+  // A prior. Phase 0 of the plan replaces it with the held-out number.
+  reliability: 0.5,
+  independenceGroup: 'deezer',
+  optional: true,
+  requires: 'nothing — public, keyless',
+});
+
+const API = 'https://api.deezer.com';
+
+/** How many related artists to keep. Deezer returns 20 by default; the tail is
+ *  where the list drifts out of the scene, so more is not better. */
+const RELATED_LIMIT = 25;
+
+const isrcUrl = isrc => `${API}/track/isrc:${encodeURIComponent(String(isrc).replace(/-/g, '').toUpperCase())}`;
+const relatedUrl = (id, limit = RELATED_LIMIT) => `${API}/artist/${encodeURIComponent(id)}/related?limit=${limit}`;
+
+/** Only these URLs may be fetched through the page's JSONP frame. A script tag
+ *  runs whatever it is given, so the host is pinned rather than trusted. */
+const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_-]*)?$/i.test(String(url));
+
+/**
+ * What a Deezer error body means for the cache.
+ *
+ *  - `none`   code 800 "no data": a real answer that there is nothing. Cacheable.
+ *  - `quota`  code 4: slow down and ask again. Never cached.
+ *  - `error`  anything else: not an answer. Never cached — the README's rule that
+ *             a request that failed must not be written down as "nothing here".
+ */
+function errorKind(json) {
+  const e = json?.error;
+  if (!e) return null;
+  const code = Number(e.code);
+  if (code === 800) return 'none';
+  if (code === 4) return 'quota';
+  return 'error';
+}
+
+/** Lower-case, accents and punctuation off, a leading "the" dropped. Enough to
+ *  see that "Ragga Twins" and "The Ragga Twins" are one act, and not so loose
+ *  that two different names collapse into one. */
+function normName(s) {
+  return String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/&/g, 'and').replace(/^the\s+/, '').replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * The Deezer artist behind a Spotify credit, from a `track/isrc:` answer.
+ *
+ * @param {object} json   the parsed response
+ * @param {string} name   the Spotify artist's name, to check the credit against
+ * @returns {{answered: true, artist: {id: number, name: string}|null}
+ *          |{answered: false, retry: boolean}}
+ */
+function artistFromIsrc(json, name) {
+  const kind = errorKind(json);
+  if (kind === 'none') return { answered: true, artist: null };
+  if (kind) return { answered: false, retry: kind === 'quota' };
+  if (!json || typeof json !== 'object' || json.id == null) return { answered: false, retry: false };
+
+  const want = normName(name);
+  const credits = [json.artist, ...(Array.isArray(json.contributors) ? json.contributors : [])]
+    .filter(a => a && a.id != null && a.name);
+  // The main artist first, then any contributor, but only ever one whose name
+  // matches the credit we asked about. No match is an answer — "Deezer has the
+  // recording but not under this artist" — not a reason to take the nearest.
+  const hit = want ? credits.find(a => normName(a.name) === want) : null;
+  return { answered: true, artist: hit ? { id: Number(hit.id), name: String(hit.name) } : null };
+}
+
+/**
+ * An artist's related artists, in Deezer's own order (most related first).
+ *
+ * @returns {{answered: true, related: {id: number, name: string}[]}
+ *          |{answered: false, retry: boolean}}
+ */
+function relatedFrom(json, { limit = RELATED_LIMIT } = {}) {
+  const kind = errorKind(json);
+  if (kind === 'none') return { answered: true, related: [] };
+  if (kind) return { answered: false, retry: kind === 'quota' };
+  if (!json || !Array.isArray(json.data)) return { answered: false, retry: false };
+  const related = json.data
+    .filter(a => a && a.id != null && a.name)
+    .slice(0, limit)
+    .map(a => ({ id: Number(a.id), name: String(a.name) }));
+  return { answered: true, related };
+}
+return { DEEZER, API, RELATED_LIMIT, isrcUrl, relatedUrl, isDeezerApiUrl, errorKind, normName, artistFromIsrc, relatedFrom };
+})();
+/* ---- core/audio/fetch.mjs ---- */
+__mod["core/audio/fetch.mjs"] = (function () {
+const { MISS } = __mod["core/audio/record.mjs"];
+const { isrcUrl, errorKind } = __mod["core/sources/deezer.mjs"];
+// Deezer preview lookup and partial download (WP-A1).
+//
+// Spotify gives the ISRC; Deezer's `track/isrc:` answers with a 30-second
+// preview MP3 for that exact recording. ISRC or nothing: phase 0 saw a name
+// match pick the wrong track 1 time in 19 (docs/AUDIO-ANALYSIS-PLAN.md §0).
+//
+// Nothing here owns a transport. `jsonp` is injected (the page passes its
+// existing deezerJsonp; Deezer's API sends no CORS header) and so is `fetch`
+// (the preview CDN *is* CORS-open). Tests pass fakes; there is no network in
+// CI.
+//
+// Rules this file holds (build plan §0):
+//  - never cache a preview URL: it is signed and expires ~15 minutes after
+//    lookup, so look up and download in the same pass;
+//  - a failed request is FAILED, which record.mjs refuses to cache, never a
+//    catalogue "miss";
+//  - only two ~10 s windows are downloaded (phase 0: 31% less data, same
+//    top-1 82% of the time, embedding cosine median 0.988).
+
+
+
+const FETCH_VERSION = '1.0.0';
+/** One window: ~10 s of a 128 kbps preview. */
+const WINDOW_BYTES = 165000;
+/** Deezer duration vs Spotify duration: more apart than this is another recording. */
+const IDENTITY_TOLERANCE_MS = 3000;
+
+const normIsrc = s => String(s ?? '').replace(/-/g, '').toUpperCase();
+
+/**
+ * Look a track up on Deezer by ISRC.
+ * @param {string} isrc
+ * @param {{ jsonp: (url: string) => Promise<object>, spotifyDurationMs?: number }} deps
+ * @returns {Promise<{ deezerId: number, previewUrl: string, durationMs: number, readable: boolean }
+ *                  | { miss: string, detail?: string }>}
+ */
+async function lookup(isrc, { jsonp, spotifyDurationMs } = {}) {
+  if (!isrc) return { miss: MISS.NO_ISRC };
+  let json;
+  try { json = await jsonp(isrcUrl(isrc)); }
+  catch (e) { return { miss: MISS.FAILED, detail: String(e?.message ?? e) }; }
+  const err = errorKind(json);
+  if (err === 'none') return { miss: MISS.NOT_ON_DEEZER };
+  if (err) return { miss: MISS.FAILED, detail: err };          // quota or error: ask again later
+  if (!json || typeof json !== 'object' || !json.id) return { miss: MISS.FAILED, detail: 'malformed' };
+  if (json.isrc && normIsrc(json.isrc) !== normIsrc(isrc)) return { miss: MISS.IDENTITY, detail: 'isrc' };
+  const durationMs = Number(json.duration) * 1000;
+  if (spotifyDurationMs != null && !identityOk(durationMs, spotifyDurationMs)) return { miss: MISS.IDENTITY, detail: 'duration' };
+  const readable = json.readable !== false;
+  if (!readable || !json.preview) return { miss: MISS.NO_PREVIEW, detail: readable ? 'no preview' : 'not readable' };
+  return { deezerId: json.id, previewUrl: json.preview, durationMs, readable };
+}
+
+/** Deezer reports whole seconds, so ±3 s is the tolerance (§4.1). */
+function identityOk(deezerDurationMs, spotifyDurationMs) {
+  if (!Number.isFinite(deezerDurationMs) || !Number.isFinite(spotifyDurationMs) || deezerDurationMs <= 0) return false;
+  return Math.abs(deezerDurationMs - spotifyDurationMs) <= IDENTITY_TOLERANCE_MS;
+}
+
+/**
+ * The two byte ranges to download: one at the start, one centred.
+ * Returns [[start, length], ...] — the shape AudioRecord's `source.windows` keeps.
+ * A file too small for two separate windows comes back as one range covering it.
+ */
+function windows(byteLength) {
+  const n = Math.max(0, Math.floor(byteLength));
+  if (n <= 2 * WINDOW_BYTES) return n > 0 ? [[0, n]] : [];
+  const mid = Math.floor(n / 2 - WINDOW_BYTES / 2);
+  return [[0, WINDOW_BYTES], [mid, WINDOW_BYTES]];
+}
+
+/**
+ * Download byte ranges of a preview. Expects 206 Partial Content; a server
+ * that ignores Range and answers 200 sends the whole file, which is sliced
+ * here instead (and the result says so, in `.sliced`).
+ *
+ * @param {string} url
+ * @param {Array<[number, number]>} ranges
+ * @param {{ fetch: typeof fetch }} deps
+ * @returns {Promise<ArrayBuffer[] & { sliced: boolean }>}  rejects on a network or HTTP failure
+ */
+async function fetchWindows(url, ranges, { fetch }) {
+  const out = []; let sliced = false, whole = null;
+  for (const [start, len] of ranges) {
+    if (whole) { out.push(whole.slice(start, start + len)); continue; }
+    const r = await fetch(url, { headers: { Range: `bytes=${start}-${start + len - 1}` } });
+    if (r.status === 206) { out.push(await r.arrayBuffer()); continue; }
+    if (r.status === 200) {
+      whole = await r.arrayBuffer(); sliced = true;
+      out.push(whole.slice(start, start + len));
+      continue;
+    }
+    throw new Error(`preview answered ${r.status}`);
+  }
+  return Object.assign(out, { sliced });
+}
+
+/** Total size from a `Content-Range: bytes 0-164999/479827` header, or null. */
+function totalFromContentRange(h) {
+  const m = /\/(\d+)\s*$/.exec(String(h ?? ''));
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Lookup's preview -> the two windows, in one pass (the URL is never kept).
+ * The first request also tells us the file size, which places the centred
+ * window; a server that sends the whole file costs one request.
+ *
+ * @returns {Promise<{ buffers: ArrayBuffer[], windows: Array<[number, number]>, total: number|null, sliced: boolean }
+ *                  | { miss: 'FAILED', detail: string }>}
+ */
+async function fetchPreview(url, { fetch }) {
+  try {
+    const r = await fetch(url, { headers: { Range: `bytes=0-${WINDOW_BYTES - 1}` } });
+    if (r.status === 200) {
+      const whole = await r.arrayBuffer();
+      const w = windows(whole.byteLength);
+      return { buffers: w.map(([s, l]) => whole.slice(s, s + l)), windows: w, total: whole.byteLength, sliced: true };
+    }
+    if (r.status !== 206) return { miss: MISS.FAILED, detail: `preview answered ${r.status}` };
+    const first = await r.arrayBuffer();
+    const total = totalFromContentRange(r.headers?.get?.('content-range'));
+    if (!total || total <= first.byteLength) return { buffers: [first], windows: [[0, first.byteLength]], total: total ?? first.byteLength, sliced: false };
+    const w = windows(total);
+    if (w.length < 2) {
+      const rest = await fetchWindows(url, [[first.byteLength, total - first.byteLength]], { fetch });
+      const all = new Uint8Array(total); all.set(new Uint8Array(first)); all.set(new Uint8Array(rest[0]), first.byteLength);
+      return { buffers: [all.buffer], windows: [[0, total]], total, sliced: rest.sliced };
+    }
+    const second = await fetchWindows(url, [w[1]], { fetch });
+    return { buffers: [first, second[0]], windows: [[0, first.byteLength], w[1]], total, sliced: second.sliced };
+  } catch (e) {
+    return { miss: MISS.FAILED, detail: String(e?.message ?? e) };
+  }
+}
+
+/** Stands in for a preview URL when the answer comes from the cache; never a real, signed URL. */
+const CACHED_PREVIEW = 'preview-cache:';
+
+/**
+ * One download per record for all top-ups (SOUND-ENGINE-PLAN L3). The four
+ * top-ups (tempo/key, CLAP, Beat This, key v4) each looked a record up and
+ * downloaded its preview again; this wraps `lookup` and `fetchPreview` so the
+ * second and later ask for the same ISRC in a run is answered from the raw
+ * (still compressed) windows kept briefly in memory. Only the audio bytes and
+ * Deezer's id are kept, never the signed URL, and callers get fresh copies
+ * because decoding detaches the buffer it is given. `max` records are kept
+ * (oldest out first); `max` 0 passes everything straight through. Make one
+ * per run and `clear()` it when the run ends.
+ *
+ * @param {{ lookup: Function, fetchPreview: Function, max?: number }} deps
+ */
+function createPreviewCache({ lookup, fetchPreview, max = 64 }) {
+  const kept = new Map();   // isrc -> { found (no url), got }
+  const urls = new Map();   // the url of a lookup just answered -> { isrc, found }
+  const stats = { lookups: 0, downloads: 0, hits: 0 };
+  const copy = got => ({ ...got, buffers: got.buffers.map(b => b.slice(0)) });
+  return {
+    stats,
+    clear() { kept.clear(); urls.clear(); },
+    async lookup(isrc, o) {
+      const e = max > 0 ? kept.get(isrc) : null;
+      if (e) { kept.delete(isrc); kept.set(isrc, e); stats.hits++; return { ...e.found, previewUrl: CACHED_PREVIEW + isrc }; }
+      stats.lookups++;
+      const r = await lookup(isrc, o);
+      if (max > 0 && r && !r.miss && r.previewUrl) urls.set(r.previewUrl, { isrc, found: r });
+      return r;
+    },
+    async fetchPreview(url) {
+      if (typeof url === 'string' && url.startsWith(CACHED_PREVIEW)) {
+        const e = kept.get(url.slice(CACHED_PREVIEW.length));
+        return e ? copy(e.got) : { miss: MISS.FAILED, detail: 'cache' };
+      }
+      const got = await fetchPreview(url);
+      stats.downloads++;
+      const k = urls.get(url); urls.delete(url);
+      if (max > 0 && k && got && !got.miss && Array.isArray(got.buffers)) {
+        const { previewUrl, ...found } = k.found;
+        kept.set(k.isrc, { found, got: copy(got) });
+        while (kept.size > max) kept.delete(kept.keys().next().value);
+      }
+      return got;
+    },
+  };
+}
+return { FETCH_VERSION, WINDOW_BYTES, IDENTITY_TOLERANCE_MS, lookup, identityOk, windows, fetchWindows, totalFromContentRange, fetchPreview, CACHED_PREVIEW, createPreviewCache };
 })();
 /* ---- core/audio/dsp/tempo.mjs ---- */
 __mod["core/audio/dsp/tempo.mjs"] = (function () {
@@ -3373,6 +3813,7 @@ __mod["web/audio/controller.mjs"] = (function () {
 const { withTimeout, TRACK_TIMEOUT_MS, MODEL_TIMEOUT_MS } = __mod["core/audio/timeout.mjs"];
 const { runQueue, fillDsp } = __mod["core/audio/worker.js"];
 const { createTimer, timeDeps } = __mod["core/audio/timing.mjs"];
+const { createPreviewCache } = __mod["core/audio/fetch.mjs"];
 const { MISS } = __mod["core/audio/record.mjs"];
 const { measureWindows, needsDsp } = __mod["core/audio/dsp/combine.mjs"];
 const { fillClap, needsClap, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
@@ -3412,6 +3853,7 @@ const { withKeyNet, keyNetFields, keepKeyNet, needsKeyNet, KEYNET_FILL_PER_RUN }
 // per-track step and every model load has a time limit (core/audio/timeout.mjs):
 // a step that never settles counts as failed, is tried again on a later run,
 // and the run carries on to `done`.
+
 
 
 
@@ -3528,6 +3970,9 @@ function createAudioController(deps) {
   // L1: per-stage timing, measurement only. Every call listening makes is wrapped; nothing it returns changes.
   const timer = createTimer({ now: deps.timerNow, seed: deps.timingSeed });
   const timed = d => timeDeps(d, timer);
+  // L3: the top-ups after a run share one download per record (a short-lived cache of the raw windows, made per run).
+  let pc = null, toppedIds = new Set(), downloaded = 0;
+  const topDeps = d => ({ ...d, lookup: pc.lookup, fetchPreview: pc.fetchPreview });
   const trackMs = deps.trackTimeoutMs ?? TRACK_TIMEOUT_MS;
   const modelMs = deps.modelTimeoutMs ?? MODEL_TIMEOUT_MS;
   /** A model load, bounded. */
@@ -3599,14 +4044,16 @@ function createAudioController(deps) {
     emit();
     running = (async () => {
       try {
+        pc = createPreviewCache({ lookup: timer.wrap('lookup', deps.lookup), fetchPreview: timer.wrap('download', deps.fetchPreview), max: deps.previewCacheMax ?? 64 });
+        toppedIds = new Set(); downloaded = 0;
         if (!tracks.length) {
           // Nothing new to hear: still top up dsp (it needs no model), and CLAP when it is on.
           const net = await keyNetNow();
-          if (dsp && fillBudget > 0) await topUpDsp(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp: keyed(dsp, net) }), signal);
+          if (dsp && fillBudget > 0) await topUpDsp(topDeps(timed({ decode: deps.decode, dsp: keyed(dsp, net) })), signal);
           const clap = signal.aborted ? null : await clapNow();
-          if (clap && clapBudget > 0) await topUpClap(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }), signal);
-          await topUpBeats(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }), signal);
-          await topUpKeyNet(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }), signal);
+          if (clap && clapBudget > 0) await topUpClap(topDeps(timed({ clap })), signal);
+          await topUpBeats(topDeps(timed({ decode: deps.decode })), signal);
+          await topUpKeyNet(topDeps(timed({ decode: deps.decode })), signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -3629,14 +4076,16 @@ function createAudioController(deps) {
           st.done++; st.last = t?.id ?? null;
           emit();
         } });
-        if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
-        if (!res.stopped && clap && clapBudget > 0) await topUpClap(analyse, signal);
-        if (!res.stopped) await topUpBeats(analyse, signal);
-        if (!res.stopped) await topUpKeyNet(analyse, signal);
+        const top = topDeps(analyse);
+        if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(top, signal);
+        if (!res.stopped && clap && clapBudget > 0) await topUpClap(top, signal);
+        if (!res.stopped) await topUpBeats(top, signal);
+        if (!res.stopped) await topUpKeyNet(top, signal);
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
         running = null; abort = null; st.tidy = null;
+        if (pc) { downloaded = pc.stats.downloads; pc.clear(); }
         try { deps.onTiming?.(timer.snapshot()); } catch { /* a storage bug must not stop listening */ }
         emit();
       }
@@ -3653,7 +4102,7 @@ function createAudioController(deps) {
     try {
       for (const rec of due) {
         if (signal.aborted) return;
-        const r = await step(() => fillDsp(analyse, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillDsp(analyse, rec)));
         if (r.record) r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
         if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; }
         else if (r.skip) noFill.add(rec.id);
@@ -3672,7 +4121,7 @@ function createAudioController(deps) {
     try {
       for (const rec of due) {
         if (signal.aborted) return;
-        const r = await step(() => fillClap(analyse, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillClap(analyse, rec)));
         if (r.record) { await deps.store.put(r.record); st.clapFilled = (st.clapFilled ?? 0) + 1; }
         else if (r.skip) noClap.add(rec.id);
         // a failed download, or one that timed out, is tried again on a later run
@@ -3696,7 +4145,7 @@ function createAudioController(deps) {
                           dsp: timer.wrap('dsp', keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet)) };
       for (const rec of due) {
         if (signal.aborted) return;
-        const r = await step(() => fillDsp(withTempo, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillDsp(withTempo, rec)));
         if (r.record) {
           r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
           await deps.store.put(r.record);
@@ -3726,7 +4175,7 @@ function createAudioController(deps) {
         if (signal.aborted) return;
         const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
                           dsp: timer.wrap('dsp', async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; }) };
-        const r = await step(() => fillDsp(onlyKey, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillDsp(onlyKey, rec)));
         if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; }
         else if (r.skip) noKeyNet.add(rec.id);
         tidyTick();
@@ -3746,7 +4195,9 @@ function createAudioController(deps) {
   /** Resolves when no run is going (at once if none is). The second ear waits on this. */
   const whenIdle = () => (running ? running.then(() => undefined, () => undefined) : Promise.resolve());
 
-  return { start, stop, refresh, vm, whenIdle, timing: () => timer.snapshot(), get running() { return !!running; } };
+  return { start, stop, refresh, vm, whenIdle, timing: () => timer.snapshot(),
+    /** L3: preview downloads and distinct records topped up in the last run (bar: downloads <= 1.1 x records). */
+    topupDownloads: () => ({ downloads: pc ? pc.stats.downloads : downloaded, records: toppedIds.size }), get running() { return !!running; } };
 }
 
 /** ListenVM for web/ui/sound.mjs, from the controller's state and the settings. */
@@ -4862,366 +5313,6 @@ function spread(list, n) {
   return Array.from({ length: n }, (_, i) => list[Math.floor(i * step)]);
 }
 return { FOCUS_MAX, audioQueue };
-})();
-/* ---- core/sources/provider.mjs ---- */
-__mod["core/sources/provider.mjs"] = (function () {
-// The provider interface — §7 and §36 of the v3 plan.
-//
-// Adding a source must mean writing an adapter, a mapper and tests, and
-// nothing else (§36). That only holds if the classifier never has to know a
-// provider exists, which in turn only holds if everything the classifier
-// would otherwise want to special-case is something the provider *declares*:
-// how much it is trusted, what it can answer, whether it is independent of
-// the sources already consulted, and what version of itself produced an
-// answer.
-//
-// Nothing here fetches. An adapter is split into a declaration plus pure
-// mapping functions, and a separate thin fetch function, so the mapping — the
-// part with all the judgement in it — is testable against a recorded fixture
-// with no network at all (§41.6, §41.7).
-
-/** What a provider can be asked for. Mirrors Evidence FIELDS plus 'identity'. */
-const CAPABILITIES = ['identity', 'genre', 'mood', 'context', 'era', 'descriptor',
-                             'bpm', 'key', 'energy', 'valence', 'voice', 'instrumentation', 'similarity'];
-
-/**
- * @typedef {object} ProviderCapability
- * @property {string} id                 stable provider id, used as Evidence.source
- * @property {string} version            bumped when the adapter's mapping changes
- * @property {string[]} capabilities     subset of CAPABILITIES
- * @property {string[]} entityTypes      what it can be asked about
- * @property {number} reliability        0-1, how much this source is trusted at all
- * @property {string} independenceGroup  sources sharing a group are NOT independent
- * @property {boolean} optional          true when absent-by-default costs nothing
- * @property {string} requires           human-readable: what a user must configure
- */
-
-/**
- * Declare a provider. `reliability` is the one judgement call here and it is
- * deliberately shallow — a coarse prior, to be replaced by benchmark-measured
- * numbers (§9: "actual numerical weights must be validated using the
- * benchmark dataset"). It is not a ranking the classifier reads directly; it
- * is one factor among four in evidenceWeight().
- */
-function defineProvider(spec) {
-  const p = {
-    id: spec.id,
-    version: spec.version ?? '0.0.0',
-    capabilities: spec.capabilities ?? [],
-    entityTypes: spec.entityTypes ?? [],
-    reliability: spec.reliability ?? 0.5,
-    // Default: every provider is its own group. Sharing one is the exception
-    // and has to be stated, because getting it wrong inflates confidence.
-    independenceGroup: spec.independenceGroup ?? spec.id,
-    optional: spec.optional ?? true,
-    requires: spec.requires ?? 'nothing',
-  };
-  for (const c of p.capabilities)
-    if (!CAPABILITIES.includes(c)) throw new Error(`${p.id} declares unknown capability: ${c}`);
-  return Object.freeze(p);
-}
-
-/**
- * A set of providers the engine may consult, and the two lookups the
- * weighting layer needs from them. Built per run, so a listener who has
- * configured no Discogs token simply has a registry without it — there is no
- * "disabled provider" state to reason about anywhere downstream.
- */
-class ProviderRegistry {
-  constructor(providers = []) {
-    this.providers = new Map();
-    for (const p of providers) this.register(p);
-  }
-
-  register(p) {
-    if (!p?.id) throw new Error('a provider needs an id');
-    this.providers.set(p.id, p);
-    return this;
-  }
-
-  get(id) { return this.providers.get(id) ?? null; }
-  has(id) { return this.providers.has(id); }
-  get ids() { return [...this.providers.keys()]; }
-
-  /** For evidenceWeight(). Unknown sources are trusted at half. */
-  reliabilityOf = source => this.providers.get(source)?.reliability ?? 0.5;
-
-  /**
-   * For agreementFactor(). An unregistered source is treated as its own
-   * group — the conservative direction is to *under*-count correlation only
-   * when we genuinely know two sources share a crowd.
-   */
-  independenceOf = source => this.providers.get(source)?.independenceGroup ?? source;
-
-  /** Providers that can answer a given capability. */
-  providing(capability) {
-    return [...this.providers.values()].filter(p => p.capabilities.includes(capability));
-  }
-
-  /** The version stamp recorded on every profile this registry produced. */
-  versions() {
-    return Object.fromEntries([...this.providers.values()].map(p => [p.id, p.version]));
-  }
-}
-return { CAPABILITIES, defineProvider, ProviderRegistry };
-})();
-/* ---- core/sources/deezer.mjs ---- */
-__mod["core/sources/deezer.mjs"] = (function () {
-const { defineProvider } = __mod["core/sources/provider.mjs"];
-// Deezer: an exact artist id from an ISRC, and that artist's "fans also like".
-//
-// Why Deezer at all, when Spotify has an artist id already: Spotify's own
-// related-artists endpoint is gone, and Deezer's is keyless. Measured on the
-// owner's library (docs/SMARTER-GENRES-PLAN.md §2.1): of 70 scene-genre artists
-// Wikidata does not know at all, 68 were on Deezer and 57 had a related list —
-// and the lists stayed inside the scene (Coco Bryce → Tim Reaper, LTJ Bukem).
-//
-// Identity is the part with the judgement in it. Searching Deezer by name is
-// the Last.fm-autocorrect mistake again: a same-named artist wins and poisons
-// every answer about the real one. So the artist is reached through a
-// *recording*: the ISRC Spotify already gives identifies one track exactly, and
-// that track's credits name the Deezer artist. The name is then checked against
-// the Spotify credit, so an ISRC that Deezer has filed under a different
-// billing (a remixer as main artist) is caught rather than trusted.
-//
-// Nothing here fetches. The page reaches Deezer through JSONP in a sandboxed
-// frame (Deezer sends no CORS header — checked), Node with plain fetch; both
-// hand the parsed JSON to the functions below.
-
-
-const DEEZER = defineProvider({
-  id: 'deezer-related',
-  version: '1.0.0',
-  capabilities: ['identity', 'similarity'],
-  entityTypes: ['artist'],
-  // A prior. Phase 0 of the plan replaces it with the held-out number.
-  reliability: 0.5,
-  independenceGroup: 'deezer',
-  optional: true,
-  requires: 'nothing — public, keyless',
-});
-
-const API = 'https://api.deezer.com';
-
-/** How many related artists to keep. Deezer returns 20 by default; the tail is
- *  where the list drifts out of the scene, so more is not better. */
-const RELATED_LIMIT = 25;
-
-const isrcUrl = isrc => `${API}/track/isrc:${encodeURIComponent(String(isrc).replace(/-/g, '').toUpperCase())}`;
-const relatedUrl = (id, limit = RELATED_LIMIT) => `${API}/artist/${encodeURIComponent(id)}/related?limit=${limit}`;
-
-/** Only these URLs may be fetched through the page's JSONP frame. A script tag
- *  runs whatever it is given, so the host is pinned rather than trusted. */
-const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_-]*)?$/i.test(String(url));
-
-/**
- * What a Deezer error body means for the cache.
- *
- *  - `none`   code 800 "no data": a real answer that there is nothing. Cacheable.
- *  - `quota`  code 4: slow down and ask again. Never cached.
- *  - `error`  anything else: not an answer. Never cached — the README's rule that
- *             a request that failed must not be written down as "nothing here".
- */
-function errorKind(json) {
-  const e = json?.error;
-  if (!e) return null;
-  const code = Number(e.code);
-  if (code === 800) return 'none';
-  if (code === 4) return 'quota';
-  return 'error';
-}
-
-/** Lower-case, accents and punctuation off, a leading "the" dropped. Enough to
- *  see that "Ragga Twins" and "The Ragga Twins" are one act, and not so loose
- *  that two different names collapse into one. */
-function normName(s) {
-  return String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
-    .toLowerCase().replace(/&/g, 'and').replace(/^the\s+/, '').replace(/[^a-z0-9]/g, '');
-}
-
-/**
- * The Deezer artist behind a Spotify credit, from a `track/isrc:` answer.
- *
- * @param {object} json   the parsed response
- * @param {string} name   the Spotify artist's name, to check the credit against
- * @returns {{answered: true, artist: {id: number, name: string}|null}
- *          |{answered: false, retry: boolean}}
- */
-function artistFromIsrc(json, name) {
-  const kind = errorKind(json);
-  if (kind === 'none') return { answered: true, artist: null };
-  if (kind) return { answered: false, retry: kind === 'quota' };
-  if (!json || typeof json !== 'object' || json.id == null) return { answered: false, retry: false };
-
-  const want = normName(name);
-  const credits = [json.artist, ...(Array.isArray(json.contributors) ? json.contributors : [])]
-    .filter(a => a && a.id != null && a.name);
-  // The main artist first, then any contributor, but only ever one whose name
-  // matches the credit we asked about. No match is an answer — "Deezer has the
-  // recording but not under this artist" — not a reason to take the nearest.
-  const hit = want ? credits.find(a => normName(a.name) === want) : null;
-  return { answered: true, artist: hit ? { id: Number(hit.id), name: String(hit.name) } : null };
-}
-
-/**
- * An artist's related artists, in Deezer's own order (most related first).
- *
- * @returns {{answered: true, related: {id: number, name: string}[]}
- *          |{answered: false, retry: boolean}}
- */
-function relatedFrom(json, { limit = RELATED_LIMIT } = {}) {
-  const kind = errorKind(json);
-  if (kind === 'none') return { answered: true, related: [] };
-  if (kind) return { answered: false, retry: kind === 'quota' };
-  if (!json || !Array.isArray(json.data)) return { answered: false, retry: false };
-  const related = json.data
-    .filter(a => a && a.id != null && a.name)
-    .slice(0, limit)
-    .map(a => ({ id: Number(a.id), name: String(a.name) }));
-  return { answered: true, related };
-}
-return { DEEZER, API, RELATED_LIMIT, isrcUrl, relatedUrl, isDeezerApiUrl, errorKind, normName, artistFromIsrc, relatedFrom };
-})();
-/* ---- core/audio/fetch.mjs ---- */
-__mod["core/audio/fetch.mjs"] = (function () {
-const { MISS } = __mod["core/audio/record.mjs"];
-const { isrcUrl, errorKind } = __mod["core/sources/deezer.mjs"];
-// Deezer preview lookup and partial download (WP-A1).
-//
-// Spotify gives the ISRC; Deezer's `track/isrc:` answers with a 30-second
-// preview MP3 for that exact recording. ISRC or nothing: phase 0 saw a name
-// match pick the wrong track 1 time in 19 (docs/AUDIO-ANALYSIS-PLAN.md §0).
-//
-// Nothing here owns a transport. `jsonp` is injected (the page passes its
-// existing deezerJsonp; Deezer's API sends no CORS header) and so is `fetch`
-// (the preview CDN *is* CORS-open). Tests pass fakes; there is no network in
-// CI.
-//
-// Rules this file holds (build plan §0):
-//  - never cache a preview URL: it is signed and expires ~15 minutes after
-//    lookup, so look up and download in the same pass;
-//  - a failed request is FAILED, which record.mjs refuses to cache, never a
-//    catalogue "miss";
-//  - only two ~10 s windows are downloaded (phase 0: 31% less data, same
-//    top-1 82% of the time, embedding cosine median 0.988).
-
-
-
-const FETCH_VERSION = '1.0.0';
-/** One window: ~10 s of a 128 kbps preview. */
-const WINDOW_BYTES = 165000;
-/** Deezer duration vs Spotify duration: more apart than this is another recording. */
-const IDENTITY_TOLERANCE_MS = 3000;
-
-const normIsrc = s => String(s ?? '').replace(/-/g, '').toUpperCase();
-
-/**
- * Look a track up on Deezer by ISRC.
- * @param {string} isrc
- * @param {{ jsonp: (url: string) => Promise<object>, spotifyDurationMs?: number }} deps
- * @returns {Promise<{ deezerId: number, previewUrl: string, durationMs: number, readable: boolean }
- *                  | { miss: string, detail?: string }>}
- */
-async function lookup(isrc, { jsonp, spotifyDurationMs } = {}) {
-  if (!isrc) return { miss: MISS.NO_ISRC };
-  let json;
-  try { json = await jsonp(isrcUrl(isrc)); }
-  catch (e) { return { miss: MISS.FAILED, detail: String(e?.message ?? e) }; }
-  const err = errorKind(json);
-  if (err === 'none') return { miss: MISS.NOT_ON_DEEZER };
-  if (err) return { miss: MISS.FAILED, detail: err };          // quota or error: ask again later
-  if (!json || typeof json !== 'object' || !json.id) return { miss: MISS.FAILED, detail: 'malformed' };
-  if (json.isrc && normIsrc(json.isrc) !== normIsrc(isrc)) return { miss: MISS.IDENTITY, detail: 'isrc' };
-  const durationMs = Number(json.duration) * 1000;
-  if (spotifyDurationMs != null && !identityOk(durationMs, spotifyDurationMs)) return { miss: MISS.IDENTITY, detail: 'duration' };
-  const readable = json.readable !== false;
-  if (!readable || !json.preview) return { miss: MISS.NO_PREVIEW, detail: readable ? 'no preview' : 'not readable' };
-  return { deezerId: json.id, previewUrl: json.preview, durationMs, readable };
-}
-
-/** Deezer reports whole seconds, so ±3 s is the tolerance (§4.1). */
-function identityOk(deezerDurationMs, spotifyDurationMs) {
-  if (!Number.isFinite(deezerDurationMs) || !Number.isFinite(spotifyDurationMs) || deezerDurationMs <= 0) return false;
-  return Math.abs(deezerDurationMs - spotifyDurationMs) <= IDENTITY_TOLERANCE_MS;
-}
-
-/**
- * The two byte ranges to download: one at the start, one centred.
- * Returns [[start, length], ...] — the shape AudioRecord's `source.windows` keeps.
- * A file too small for two separate windows comes back as one range covering it.
- */
-function windows(byteLength) {
-  const n = Math.max(0, Math.floor(byteLength));
-  if (n <= 2 * WINDOW_BYTES) return n > 0 ? [[0, n]] : [];
-  const mid = Math.floor(n / 2 - WINDOW_BYTES / 2);
-  return [[0, WINDOW_BYTES], [mid, WINDOW_BYTES]];
-}
-
-/**
- * Download byte ranges of a preview. Expects 206 Partial Content; a server
- * that ignores Range and answers 200 sends the whole file, which is sliced
- * here instead (and the result says so, in `.sliced`).
- *
- * @param {string} url
- * @param {Array<[number, number]>} ranges
- * @param {{ fetch: typeof fetch }} deps
- * @returns {Promise<ArrayBuffer[] & { sliced: boolean }>}  rejects on a network or HTTP failure
- */
-async function fetchWindows(url, ranges, { fetch }) {
-  const out = []; let sliced = false, whole = null;
-  for (const [start, len] of ranges) {
-    if (whole) { out.push(whole.slice(start, start + len)); continue; }
-    const r = await fetch(url, { headers: { Range: `bytes=${start}-${start + len - 1}` } });
-    if (r.status === 206) { out.push(await r.arrayBuffer()); continue; }
-    if (r.status === 200) {
-      whole = await r.arrayBuffer(); sliced = true;
-      out.push(whole.slice(start, start + len));
-      continue;
-    }
-    throw new Error(`preview answered ${r.status}`);
-  }
-  return Object.assign(out, { sliced });
-}
-
-/** Total size from a `Content-Range: bytes 0-164999/479827` header, or null. */
-function totalFromContentRange(h) {
-  const m = /\/(\d+)\s*$/.exec(String(h ?? ''));
-  return m ? Number(m[1]) : null;
-}
-
-/**
- * Lookup's preview -> the two windows, in one pass (the URL is never kept).
- * The first request also tells us the file size, which places the centred
- * window; a server that sends the whole file costs one request.
- *
- * @returns {Promise<{ buffers: ArrayBuffer[], windows: Array<[number, number]>, total: number|null, sliced: boolean }
- *                  | { miss: 'FAILED', detail: string }>}
- */
-async function fetchPreview(url, { fetch }) {
-  try {
-    const r = await fetch(url, { headers: { Range: `bytes=0-${WINDOW_BYTES - 1}` } });
-    if (r.status === 200) {
-      const whole = await r.arrayBuffer();
-      const w = windows(whole.byteLength);
-      return { buffers: w.map(([s, l]) => whole.slice(s, s + l)), windows: w, total: whole.byteLength, sliced: true };
-    }
-    if (r.status !== 206) return { miss: MISS.FAILED, detail: `preview answered ${r.status}` };
-    const first = await r.arrayBuffer();
-    const total = totalFromContentRange(r.headers?.get?.('content-range'));
-    if (!total || total <= first.byteLength) return { buffers: [first], windows: [[0, first.byteLength]], total: total ?? first.byteLength, sliced: false };
-    const w = windows(total);
-    if (w.length < 2) {
-      const rest = await fetchWindows(url, [[first.byteLength, total - first.byteLength]], { fetch });
-      const all = new Uint8Array(total); all.set(new Uint8Array(first)); all.set(new Uint8Array(rest[0]), first.byteLength);
-      return { buffers: [all.buffer], windows: [[0, total]], total, sliced: rest.sliced };
-    }
-    const second = await fetchWindows(url, [w[1]], { fetch });
-    return { buffers: [first, second[0]], windows: [[0, first.byteLength], w[1]], total, sliced: second.sliced };
-  } catch (e) {
-    return { miss: MISS.FAILED, detail: String(e?.message ?? e) };
-  }
-}
-return { FETCH_VERSION, WINDOW_BYTES, IDENTITY_TOLERANCE_MS, lookup, identityOk, windows, fetchWindows, totalFromContentRange, fetchPreview };
 })();
 /* ---- core/audio/heads.mjs ---- */
 __mod["core/audio/heads.mjs"] = (function () {

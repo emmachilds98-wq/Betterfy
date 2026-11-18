@@ -35,6 +35,7 @@
 import { withTimeout, TRACK_TIMEOUT_MS, MODEL_TIMEOUT_MS } from '../../core/audio/timeout.mjs';
 import { runQueue, fillDsp } from '../../core/audio/worker.js';
 import { createTimer, timeDeps } from '../../core/audio/timing.mjs';
+import { createPreviewCache } from '../../core/audio/fetch.mjs';
 import { MISS } from '../../core/audio/record.mjs';
 import { measureWindows, needsDsp } from '../../core/audio/dsp/combine.mjs';
 import { fillClap, needsClap, CLAP_FILL_PER_RUN } from '../../core/audio/clap.mjs';
@@ -148,6 +149,9 @@ export function createAudioController(deps) {
   // L1: per-stage timing, measurement only. Every call listening makes is wrapped; nothing it returns changes.
   const timer = createTimer({ now: deps.timerNow, seed: deps.timingSeed });
   const timed = d => timeDeps(d, timer);
+  // L3: the top-ups after a run share one download per record (a short-lived cache of the raw windows, made per run).
+  let pc = null, toppedIds = new Set(), downloaded = 0;
+  const topDeps = d => ({ ...d, lookup: pc.lookup, fetchPreview: pc.fetchPreview });
   const trackMs = deps.trackTimeoutMs ?? TRACK_TIMEOUT_MS;
   const modelMs = deps.modelTimeoutMs ?? MODEL_TIMEOUT_MS;
   /** A model load, bounded. */
@@ -219,14 +223,16 @@ export function createAudioController(deps) {
     emit();
     running = (async () => {
       try {
+        pc = createPreviewCache({ lookup: timer.wrap('lookup', deps.lookup), fetchPreview: timer.wrap('download', deps.fetchPreview), max: deps.previewCacheMax ?? 64 });
+        toppedIds = new Set(); downloaded = 0;
         if (!tracks.length) {
           // Nothing new to hear: still top up dsp (it needs no model), and CLAP when it is on.
           const net = await keyNetNow();
-          if (dsp && fillBudget > 0) await topUpDsp(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp: keyed(dsp, net) }), signal);
+          if (dsp && fillBudget > 0) await topUpDsp(topDeps(timed({ decode: deps.decode, dsp: keyed(dsp, net) })), signal);
           const clap = signal.aborted ? null : await clapNow();
-          if (clap && clapBudget > 0) await topUpClap(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }), signal);
-          await topUpBeats(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }), signal);
-          await topUpKeyNet(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }), signal);
+          if (clap && clapBudget > 0) await topUpClap(topDeps(timed({ clap })), signal);
+          await topUpBeats(topDeps(timed({ decode: deps.decode })), signal);
+          await topUpKeyNet(topDeps(timed({ decode: deps.decode })), signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -249,14 +255,16 @@ export function createAudioController(deps) {
           st.done++; st.last = t?.id ?? null;
           emit();
         } });
-        if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
-        if (!res.stopped && clap && clapBudget > 0) await topUpClap(analyse, signal);
-        if (!res.stopped) await topUpBeats(analyse, signal);
-        if (!res.stopped) await topUpKeyNet(analyse, signal);
+        const top = topDeps(analyse);
+        if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(top, signal);
+        if (!res.stopped && clap && clapBudget > 0) await topUpClap(top, signal);
+        if (!res.stopped) await topUpBeats(top, signal);
+        if (!res.stopped) await topUpKeyNet(top, signal);
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
         running = null; abort = null; st.tidy = null;
+        if (pc) { downloaded = pc.stats.downloads; pc.clear(); }
         try { deps.onTiming?.(timer.snapshot()); } catch { /* a storage bug must not stop listening */ }
         emit();
       }
@@ -273,7 +281,7 @@ export function createAudioController(deps) {
     try {
       for (const rec of due) {
         if (signal.aborted) return;
-        const r = await step(() => fillDsp(analyse, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillDsp(analyse, rec)));
         if (r.record) r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
         if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; }
         else if (r.skip) noFill.add(rec.id);
@@ -292,7 +300,7 @@ export function createAudioController(deps) {
     try {
       for (const rec of due) {
         if (signal.aborted) return;
-        const r = await step(() => fillClap(analyse, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillClap(analyse, rec)));
         if (r.record) { await deps.store.put(r.record); st.clapFilled = (st.clapFilled ?? 0) + 1; }
         else if (r.skip) noClap.add(rec.id);
         // a failed download, or one that timed out, is tried again on a later run
@@ -316,7 +324,7 @@ export function createAudioController(deps) {
                           dsp: timer.wrap('dsp', keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet)) };
       for (const rec of due) {
         if (signal.aborted) return;
-        const r = await step(() => fillDsp(withTempo, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillDsp(withTempo, rec)));
         if (r.record) {
           r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
           await deps.store.put(r.record);
@@ -346,7 +354,7 @@ export function createAudioController(deps) {
         if (signal.aborted) return;
         const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
                           dsp: timer.wrap('dsp', async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; }) };
-        const r = await step(() => fillDsp(onlyKey, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillDsp(onlyKey, rec)));
         if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; }
         else if (r.skip) noKeyNet.add(rec.id);
         tidyTick();
@@ -366,7 +374,9 @@ export function createAudioController(deps) {
   /** Resolves when no run is going (at once if none is). The second ear waits on this. */
   const whenIdle = () => (running ? running.then(() => undefined, () => undefined) : Promise.resolve());
 
-  return { start, stop, refresh, vm, whenIdle, timing: () => timer.snapshot(), get running() { return !!running; } };
+  return { start, stop, refresh, vm, whenIdle, timing: () => timer.snapshot(),
+    /** L3: preview downloads and distinct records topped up in the last run (bar: downloads <= 1.1 x records). */
+    topupDownloads: () => ({ downloads: pc ? pc.stats.downloads : downloaded, records: toppedIds.size }), get running() { return !!running; } };
 }
 
 /** ListenVM for web/ui/sound.mjs, from the controller's state and the settings. */
