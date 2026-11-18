@@ -134,7 +134,7 @@ test('a keyboard sprint through Tidy is at least as fast as the pointer on the s
   }
 });
 
-test('U undoes the newest sprint decision in Spotify too, Esc leaves, and the health report opens Tidy at a playlist', { skip, timeout: 120000 }, async () => {
+test('U undoes the newest sprint decision in Spotify too, Esc leaves, and Library\'s Tidy N opens Tidy at a playlist', { skip, timeout: 120000 }, async () => {
   app = await openApp(browser, { account: misfiledAccount(), phone: true });
   const { page, fake, ctx } = app;
   // Undo puts a track back at its old position with a reorder (PUT), which the fake Spotify
@@ -143,17 +143,13 @@ test('U undoes the newest sprint decision in Spotify too, Esc leaves, and the he
     ? r.fulfill({ status: 200, contentType: 'application/json', body: '{"snapshot_id":"s2"}' }) : r.fallback());
   await openTidy(page);
 
-  // The report: worst first, each with why and a way in.
-  await page.click('#main [data-act="section"][data-tidy="health"]');
-  await page.waitForSelector('#main .hrep .hrow');
-  const rep = await page.evaluate(() => [...document.querySelectorAll('#main .hrow')].map(li => ({
-    pl: li.querySelector('[data-hpl]').dataset.hpl, score: +li.querySelector('.plhealth .mono').textContent, why: li.querySelectorAll('.plnotes li').length })));
-  assert.ok(rep.length >= 1 && rep.length <= 5);
-  assert.deepEqual(rep.map(r => r.score), [...rep.map(r => r.score)].sort((a, b) => a - b), 'worst first');
-  assert.ok(rep.every(r => r.score < 85 && r.why >= 1));
-  const target = await page.evaluate(() => document.querySelector('#main [data-act="hgo"]')?.dataset.hpl);
-  assert.ok(target, 'at least one report row opens Tidy');
-  await page.click(`#main [data-act="hgo"][data-hpl="${target}"]`);
+  // Health lives in Library now (DESIGN-PLAN §7.7 M4): a row's "Tidy N" opens Tidy at that playlist.
+  assert.equal(await page.locator('#main [data-act="section"][data-tidy="health"]').count(), 0);
+  await page.evaluate(() => { go('lists'); render(); });
+  await page.waitForSelector('#main [data-act="ltidy"][data-sec="misfile"]');
+  const target = await page.evaluate(() => document.querySelector('#main [data-act="ltidy"][data-sec="misfile"]')?.dataset.pl);
+  assert.ok(target, 'at least one Library row opens Tidy');
+  await page.click(`#main [data-act="ltidy"][data-pl="${target}"]`);
   await page.waitForSelector('#main .tidypl');
   const froms = await page.evaluate(() => [...document.querySelectorAll('#main .row [data-act="move"]')].map(b => b.dataset.mvfrom));
   assert.ok(froms.length && froms.every(f => f === target), 'only that playlist\'s rows');
@@ -183,7 +179,7 @@ test('U undoes the newest sprint decision in Spotify too, Esc leaves, and the he
 // axe-core on Tidy's new states, when it is installed (npm i --no-save axe-core); `npm run a11y` covers the rest.
 let axeSrc = null;
 try { axeSrc = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8'); } catch { /* not installed */ }
-test('axe: Tidy\'s health report and sprint have no critical or serious violations', { skip: skip || (!axeSrc && 'axe-core not installed'), timeout: 120000 }, async () => {
+test('axe: Tidy\'s list and sprint have no critical or serious violations', { skip: skip || (!axeSrc && 'axe-core not installed'), timeout: 120000 }, async () => {
   app = await openApp(browser, { account: misfiledAccount(), phone: false });
   const { page } = app;
   await openTidy(page);
@@ -193,13 +189,10 @@ test('axe: Tidy\'s health report and sprint have no critical or serious violatio
     .then(r => r.violations.filter(v => v.impact === 'critical' || v.impact === 'serious').map(v => `${v.id}: ${v.nodes.slice(0, 3).map(n => n.target.join(' ')).join(' | ')}`)));
   const bad = [];
   bad.push(...await scan());
-  await page.click('#main [data-act="section"][data-tidy="health"]');
-  await page.waitForSelector('#main .hrep');
-  bad.push(...await scan());
   await page.evaluate(() => { S.tidySec = 'misfile'; render(); });
   await page.click('#sprintGo');
   await page.waitForSelector('#sprintCard[data-sptr]');
   bad.push(...await scan());
-  console.log(`# axe on Tidy (list, health, sprint): ${bad.length} critical/serious`);
+  console.log(`# axe on Tidy (list, sprint): ${bad.length} critical/serious`);
   assert.deepEqual(bad, []);
 });
