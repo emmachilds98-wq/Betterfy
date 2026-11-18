@@ -1759,8 +1759,12 @@ function buildReports(lib, cfg, tags) {
   // Filed means filed as any release of it: a liked single whose album copy
   // (same ISRC, or the same trackKey — artist, title and version) already sits
   // in a playlist is not waiting to be filed, whatever its Spotify id.
+  // An inflow is not a home either: a liked song whose only playlist is "My
+  // Shazam Tracks", a saved Discover Weekly, "On Repeat" or "To sort" (axis
+  // inbox, core/playlists/axes.mjs) is still waiting to be filed. Counting
+  // those as filed hid most of a library's unfiled likes from the File queue.
   const filed = new Set(), filedIsrc = new Set(), filedKey = new Set();
-  for (const p of lib.playlists) { if (isMirrorPlaylist(p)) continue;
+  for (const p of lib.playlists) { if (isMirrorPlaylist(p) || cfg?.[p.id]?.axis === 'inbox') continue;
     for (const t of p.tracks) { if (!t) continue; filed.add(t.id);
       if (t.isrc) filedIsrc.add(t.isrc); if (t.name) filedKey.add(trackKey(t)); } }
   const isFiled = t => filed.has(t.id) || (!!t.isrc && filedIsrc.has(t.isrc)) || (!!t.name && filedKey.has(trackKey(t)));
