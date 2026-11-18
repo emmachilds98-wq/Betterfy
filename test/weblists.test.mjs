@@ -58,13 +58,21 @@ test('Library without audio: compact rows, no sound strip, and the renderer is n
   assert.equal(html, load().vLists());
 });
 
-test('Library rows say what needs a decision, and Shuffle stays reachable', () => {
+test('Library rows say what needs a decision; the footer is one line with Shuffle everything', () => {
   const html = load().vLists();
-  assert.match(html, /data-pl="P1"[^]*?<span class="plscore plh-ok"[^>]*><b class="mono">100<\/b><span>Healthy<\/span>/);
+  assert.ok(!html.includes('plscore'), 'a healthy playlist (100) shows no score');
   assert.match(html, /data-pl="P2"[^]*?<span class="tag warn">what kind\?<\/span>/);
-  assert.ok(html.includes('data-go="shuffle"') && html.includes('data-go="sources"'));
-  assert.match(html, /<p class="axcov plknows">Not measured yet[^<]*<button class="b sm" data-go="engine">Engine<\/button><\/p>/, 'one line of the score, and the Engine is a tap away in Settings');
-  assert.match(html, /Not measured yet/);
+  assert.match(html, /<p class="axcov plfoot"><span class="plknows">Not measured yet[^<]*<\/span><span class="plfoot-b"><button class="b sm" data-go="engine">Engine<\/button>\s*<button class="b sm" data-act="lshufall">Shuffle everything<\/button><\/span><\/p>/,
+    'one line: the score sentence, Engine and Shuffle everything');
+  assert.ok(!/data-go="sources"|of artists have genre tags|msline/.test(html), 'tag coverage, Genre sources and the rate line are cut (C2)');
+});
+
+test('the row score shows only under 90', () => {
+  const sb = load();
+  const R = { drift: [], clusters: [], within: [], misfiled: [{ currentPlaylistId: 'P1', confidence: 'medium' }] };
+  const html = LISTS.view({ ...sb, R, store: { touch() {} }, fire() {} });
+  assert.match(html, /data-pl="P1"[^]*?<span class="plscore plh-ok"[^>]*><b class="mono">87<\/b><span>Healthy<\/span>/);
+  assert.equal(LISTS.ROW_SCORE_BELOW, 90);
 });
 
 test('Library rows: misfiled, waiting, BPM range and top style; the ones needing a look come first', () => {
@@ -75,8 +83,8 @@ test('Library rows: misfiled, waiting, BPM range and top style; the ones needing
   const LIB2 = { ...LIB, playlists: [...LIB.playlists, { id: 'P3', name: 'Halftime', tracks: tr('h', 12) }] };
   const html = LISTS.view({ ...sb, R, CFG: CFG2, LIB: LIB2, store: { touch() {} }, fire() {} });
   assert.ok(html.indexOf('data-pl="P3"') < html.indexOf('data-pl="P1"'), 'the misfiled playlist is listed first, although it is smaller');
-  assert.match(html, /data-pl="P3"[^]*?<span class="tag warn">5 misfiled<\/span> <span class="tag ok">1 to file<\/span>/);
-  assert.match(html, /data-pl="P1"[^]*?<span class="tag ok">2 to file<\/span>/);
+  assert.match(html, /<div class="plline"><button class="plrow"[^>]*data-pl="P3"[^]*?<\/button><span class="placts"><button class="b sm warn" type="button" data-act="ltidy" data-pl="P3" data-sec="misfile"[^>]*>Tidy 5<\/button><button class="b sm" type="button" data-act="lfile" data-pl="P3"[^>]*>1 to file<\/button><\/span><\/div>/);
+  assert.match(html, /data-act="lfile" data-pl="P1"[^>]*>2 to file<\/button>/);
   assert.match(html, /1 playlist could use a look, listed first/);
 
   assert.deepEqual(LISTS.rowFacts({ misfiled: 0, waiting: 0, vm: { bpm: [124, 129.6], styles: [['Tech House', 0.6], ['Techno', 0.2]] } }).map(f => f.text),
@@ -222,7 +230,51 @@ test('new genres: unsure clusters ranked by what you play, named by sound when C
   assert.deepEqual(out.map(o => [o.title, o.played]), [['Donk?', 2], ['New genre?', 0]]);
 });
 
-test('the Library view offers genre ticks and cold start; nothing without them', () => {
+test('"Tidy N" opens Tidy at that playlist; "N to file" puts its songs first in File; Shuffle everything resets', () => {
+  assert.deepEqual(LISTS.tidyFor({ misfiled: [{ currentPlaylistId: 'A' }], within: [{ playlistId: 'A' }, { playlistId: 'B' }] }, 'A'), { n: 2, sec: 'misfile' });
+  assert.deepEqual(LISTS.tidyFor({ misfiled: [], within: [{ playlistId: 'B' }] }, 'B'), { n: 1, sec: 'dupes' });
+  assert.equal(LISTS.tidyFor({}, 'C'), null);
+
+  const seen = [];
+  const c = { S: { inboxAt: 3, shufPl: 'P9', shufCache: [1] }, CFG: { A: { name: 'Rollers' } },
+    R: { misfiled: [{ currentPlaylistId: 'A', confidence: 'low' }, { currentPlaylistId: 'A', confidence: 'medium' }],
+         backlog: [{ id: 't1', suggest: [{ id: 'B' }] }, { id: 't2', suggest: [{ id: 'A' }] }, { id: 't3', suggest: [] }, { id: 't4', suggest: [{ id: 'A' }, { id: 'B' }] }] },
+    go: v => seen.push(v), toast: m => seen.push(m) };
+  const queue = c.R.backlog;
+  LISTS.actions.ltidy(c, { dataset: { pl: 'A', sec: 'misfile' } });
+  assert.deepEqual([c.S.tidyPl, c.S.tidySec, c.S.mfBand, c.S.tidyFocus], ['A', 'misfile', 'medium', 'rows']);
+  LISTS.actions.lfile(c, { dataset: { pl: 'A' } });
+  assert.equal(c.R.backlog, queue, 'reordered in place');
+  assert.deepEqual(c.R.backlog.map(t => t.id), ['t2', 't4', 't1', 't3'], 'its songs first, in their order; the rest after');
+  assert.deepEqual([c.S.inboxAt, c.S.inboxFor], [0, 'A']);
+  LISTS.actions.lfile(c, { dataset: { pl: 'Z' } });
+  LISTS.actions.lshufall(c);
+  assert.deepEqual([c.S.shufPl, c.S.shufCache], [null, null]);
+  assert.deepEqual(seen, ['tidy', 'inbox', 'The 2 songs suggested for Rollers are first in File.', 'Nothing is waiting for Z any more.', 'shuffle']);
+});
+
+test('the sheet has one "Two genres?" section and no Twins section', () => {
+  const esc = s => String(s);
+  const sound = LISTS.twoGenresHTML({ esc }, 'P1', { keep: { n: 10, name: 'House' }, move: { n: 6, name: 'Garage' } }, null, false, '');
+  assert.match(sound, /<h3>Two genres\?<\/h3>[^]*10<\/b> sound like House[^]*data-src="sound"/);
+  const tags = LISTS.twoGenresHTML({ esc }, 'P1', null, { parts: [{ size: 8, label: 'dub' }, { size: 9, label: 'techno', rest: true }] }, false, '');
+  assert.match(tags, /By its artists’ tags: <b>8<\/b> dub, <b>9<\/b> the rest of techno[^]*data-src="tags"/);
+  assert.match(LISTS.twoGenresHTML({ esc }, 'P1', null, { parts: [] }, true), /tag ok">Made/);
+  assert.equal(LISTS.twoGenresHTML({ esc }, 'P1', null, null, false), '');
+  const sb = load();
+  const sheet = LISTS.sheetHTML({ ...sb, mixHeardIn: () => 0, twinPairs: () => [{ verdict: 'indistinguishable', a: { id: 'P1', name: 'Rollers' }, b: { id: 'P2', name: 'Sunday' } }] }, 'P1');
+  assert.ok(!/<h3>Twins<\/h3>/.test(sheet), 'Twins is cut from the sheet (C3); Library keeps "sound the same"');
+});
+
+test('Fill says one line when its measure is too low', () => {
+  const liked = Array.from({ length: 3 }, (_, i) => ({ id: 'L' + i, name: 'L' + i, artists: [] }));
+  const html = LISTS.fillHTML({ esc: s => String(s), LS: { getItem: k => k === 'bf_fill' ? JSON.stringify({ recall: 0.1, random: 0.05 }) : '' },
+    R: { backlog: liked.map(t => ({ id: t.id })) }, LIB: { liked } }, 'P1', { tracks: tr('r', 20) });
+  assert.match(html, /<p class="hint">Not enough to go on for this playlist yet\.<\/p>/);
+  assert.ok(!/Off for your library|picking at random/.test(html));
+});
+
+test('the Library view offers genre ticks; cold start and new genres are elsewhere now', () => {
   const sb = load();
   const base = { ...sb, store: { touch() {} }, fire() {}, GAPS: { status: 'idle' },
     CFG: { P1: { name: 'Hardcore', axis: 'mood', why: 'x', tracks: 20 } },
@@ -230,8 +282,7 @@ test('the Library view offers genre ticks and cold start; nothing without them',
   const html = LISTS.view({ ...base, coldKick: () => {}, COLD: { status: 'ready', made: new Set(), newGenre: [], found: { clusters: [],
     proposals: [{ kind: 'artist', label: 'Busy Producer', ids: ['a', 'b', 'c', 'd'], examples: [] }] } } });
   assert.match(html, /These look like genre playlists/);
-  assert.match(html, /Start these playlists/);
-  assert.match(html, /Busy Producer/);
+  assert.doesNotMatch(html, /Start these playlists|Possible new genres/, 'File keeps cold start (C2); new genres are on New (M5)');
   const none = LISTS.view({ ...base, playlistMixes: () => ({ mix: new Map() }), COLD: { status: 'idle' } });
   assert.doesNotMatch(none, /genre playlists<\/h2>|Start these/);
 });

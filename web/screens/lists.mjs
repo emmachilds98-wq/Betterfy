@@ -4,7 +4,7 @@
  * and the split job stay classic in app/screenjobs.js. */
 
 import { mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renamePart, includePart, writesOf,
-  twinOffers, offerKey, readMeasure, recordOffer, dismissLine } from '../../core/playlists/mergesplit.mjs';
+  twinOffers, offerKey, readMeasure, recordOffer } from '../../core/playlists/mergesplit.mjs';
 import { weakWords } from '../../core/review/weakwords.mjs';
 
 const AXES = ['genre','mood','era','event','djset','context','inbox'];
@@ -181,6 +181,26 @@ export function attentionOrder(rows, infoOf) {
     return (b.tracks ?? 0) - (a.tracks ?? 0) || String(a.name ?? '').localeCompare(String(b.name ?? '')); });
 }
 
+/** The score a row shows only below this (DESIGN-PLAN L2): a healthy playlist's row says nothing about health. */
+export const ROW_SCORE_BELOW = 90;
+
+/** What Tidy has to act on in one playlist, from the reports Library already holds: tracks that look
+ *  misfiled there and repeats inside it. `sec` is the Tidy section to open on (the one with rows). */
+export function tidyFor(R, id) {
+  const misfiled = (R?.misfiled ?? []).filter(m => m.currentPlaylistId === id).length;
+  const repeats = (R?.within ?? []).filter(x => x.playlistId === id).length;
+  const n = misfiled + repeats;
+  return n ? { n, sec: misfiled ? 'misfile' : 'dupes' } : null;
+}
+
+/** File's queue with the tracks whose first pick is this playlist moved to the front, in their own order
+ *  (the "N to file" button). Nothing else changes order. */
+export function fileFirst(backlog, id) {
+  const mine = [], rest = [];
+  for (const t of backlog ?? []) (t?.suggest?.[0]?.id === id ? mine : rest).push(t);
+  return { order: [...mine, ...rest], n: mine.length };
+}
+
 /** The words for a health score, and its colour class. */
 const healthClass = s => s >= 85 ? 'ok' : s >= 65 ? 'fine' : 'low';
 
@@ -204,20 +224,31 @@ function plInfo(c, p, splitIds, undecidedIds, waiting = null) {
     twins: twinsOf(c.twinPairs?.()).get(p.id) ?? [], repeats: repeatCount(pl?.tracks), staleDays: staleDays(pl?.tracks),
     misfiled, drifting: (R.drift ?? []).some(d => d.playlistId === p.id),
     split: splitIds.has(p.id), undecided: undecidedIds.has(p.id) });
-  return { vm, health, misfiled, waiting: waiting?.get(p.id) ?? 0, face: pl?.tracks?.find(t => t?.art) ?? null };
+  return { vm, health, misfiled, waiting: waiting?.get(p.id) ?? 0, tidy: tidyFor(R, p.id), face: pl?.tracks?.find(t => t?.art) ?? null };
 }
 
+/** One Library row. The row opens the playlist's sheet; what can be done straight away ("Tidy N", "N to file")
+ *  sits beside it as its own buttons, and the score shows only when it is under ROW_SCORE_BELOW (L2, M4). */
 const plRowHTML = (c, p, info, undecided) => {
   const { esc } = c;
   const spark = sparkHTML(info.vm), h = info.health;
-  const facts = rowFacts(info).map(f => f.k === 'warn' || f.k === 'ok'
-    ? `<span class="tag ${f.k}">${esc(f.text)}</span>` : `<span class="plf plf-${f.k}">${esc(f.text)}</span>`).join(' ');
+  // Misfiled and waiting are said by the buttons; the meta line keeps the plain facts.
+  const facts = rowFacts(info).filter(f => f.k !== 'warn' && f.k !== 'ok')
+    .map(f => `<span class="plf plf-${f.k}">${esc(f.text)}</span>`).join(' ');
   const face = c.thumbHTML ? c.thumbHTML({ id: p.id, title: p.name, art: info.face?.art }) : '';
-  return `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(p.id)}" aria-haspopup="dialog">${face}
+  const score = h && h.score < ROW_SCORE_BELOW
+    ? `<span class="plscore plh-${healthClass(h.score)}" title="Health: ${esc(h.word)}${h.notes.length ? ' · ' + esc(h.notes.join('; ')) : ''}"><b class="mono">${h.score}</b><span>${esc(h.word)}</span></span>` : '';
+  const row = `<button class="plrow" type="button" data-act="plopen" data-pl="${esc(p.id)}" aria-haspopup="dialog">${face}
     <span class="plmain"><span class="ttl">${esc(p.name)}</span>
       <span class="plmeta"><span class="mono">${p.tracks}</span> tracks${
-        undecided ? ' · <span class="tag warn">what kind?</span>' : ''}${facts ? ` · ${facts}` : ''}</span></span>${spark}${
-      h ? `<span class="plscore plh-${healthClass(h.score)}" title="Health: ${esc(h.word)}${h.notes.length ? ' · ' + esc(h.notes.join('; ')) : ''}"><b class="mono">${h.score}</b><span>${esc(h.word)}</span></span>` : ''}</button>`;
+        undecided ? ' · <span class="tag warn">what kind?</span>' : ''}${facts ? ` · ${facts}` : ''}</span></span>${spark}${score}</button>`;
+  const t = info.tidy, w = info.waiting;
+  if (!t && !(w > 0)) return row;
+  const acts = [
+    t ? `<button class="b sm warn" type="button" data-act="ltidy" data-pl="${esc(p.id)}" data-sec="${t.sec}" aria-label="${esc(`Tidy ${t.n} in ${p.name}`)}">Tidy ${t.n.toLocaleString()}</button>` : '',
+    w > 0 ? `<button class="b sm" type="button" data-act="lfile" data-pl="${esc(p.id)}" aria-label="${esc(`File the ${w} songs suggested for ${p.name}`)}">${w.toLocaleString()} to file</button>` : '',
+  ].join('');
+  return `<div class="plline">${row}<span class="placts">${acts}</span></div>`;
 };
 
 /** The playlist detail sheet's body (opened by plopen; shell.js draws it into #plSheet). */
@@ -237,11 +268,8 @@ export function sheetHTML(c, id) {
   const made = LPROF?.made?.has(id);
   const splitKey = offerKey('split', [id]);
   const tagSplit = split ? null : (c.GAPS?.status === 'ready' ? (c.GAPS.splits ?? []).find(x => x.playlistId === id) : null);
-  const twins = twinOffers(c.twinPairs?.()).filter(o => o.a.id === id || o.b.id === id)
-    .filter(o => LIB.playlists.some(x => x.id === o.a.id) && LIB.playlists.some(x => x.id === o.b.id));
   const ms = msMeasure(c);
   if (split || tagSplit) noteShown(c, splitKey);
-  for (const o of twins) noteShown(c, o.key);
   const notNow = key => ms.dismissed[key] || ms.made[key] ? '' : `<button class="b sm" data-act="wizdismiss" data-key="${esc(key)}">Not now</button>`;
   return `<div class="pls-head"><h2>${esc(pl.name)}</h2><button class="iconbtn" type="button" data-plclose aria-label="Close">✕</button></div>
     <div class="pls-body">
@@ -256,18 +284,7 @@ export function sheetHTML(c, id) {
       <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to learn from"' : ''}>
         Suggest new tracks for it</label></section>
     ${prof ? `<section class="pls-sec"><h3>Sound</h3>${prof}</section>` : ''}
-    ${split ? `<section class="pls-sec"><h3>Two genres?</h3>
-      <p class="hint"><b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.
-        Splitting previews each half as a new playlist; nothing leaves this one.</p>
-      ${made || ms.made[splitKey] ? '<span class="tag ok">Made</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizsplit" data-pl="${esc(id)}" data-src="sound">Split into playlists…</button>${notNow(splitKey)}</div>`}</section>` : ''}
-    ${tagSplit ? `<section class="pls-sec"><h3>Two genres?</h3>
-      <p class="hint">By its artists’ tags: ${tagSplit.parts.map(x => `<b>${x.size}</b> ${x.rest ? 'the rest of ' : ''}${esc(x.label)}`).join(', ')}.
-        Splitting makes new playlists; nothing leaves this one.</p>
-      ${ms.made[splitKey] ? '<span class="tag ok">Made</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizsplit" data-pl="${esc(id)}" data-src="tags">Split into playlists…</button>${notNow(splitKey)}</div>`}</section>` : ''}
-    ${twins.length ? `<section class="pls-sec"><h3>Twins</h3>
-      ${twins.map(o => { const other = o.a.id === id ? o.b : o.a;
-        return `<p class="hint">The engine can’t tell this from <b>${esc(other.name)}</b> by the music in them.</p>
-      ${ms.made[o.key] ? '<span class="tag ok">Merged</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizmerge" data-a="${esc(id)}" data-b="${esc(other.id)}">Merge into a new playlist…</button>${notNow(o.key)}</div>`}`; }).join('')}</section>` : ''}
+    ${twoGenresHTML(c, id, split, tagSplit, !!(split ? made || ms.made[splitKey] : ms.made[splitKey]), notNow(splitKey))}
     ${weakSheetHTML(c, id)}
     ${fillHTML(c, id, pl)}
     ${pl.tracks.length >= 8 ? `<section class="pls-sec"><h3>Shuffle</h3>
@@ -275,6 +292,20 @@ export function sheetHTML(c, id) {
       <div class="rowbtns"><button class="b p" data-act="plshuffle" data-pl="${esc(id)}">Shuffle</button>${
         canMix ? `<button class="b" data-act="pldj" data-pl="${esc(id)}">DJ order</button>` : ''}</div></section>` : ''}
     </div>`;
+}
+
+/** The sheet's one "Two genres?" section (M6): the split by sound when there is one, else the split by
+ *  artists' tags. Same title, same wizard; '' when neither is on offer. */
+export function twoGenresHTML(c, id, split, tagSplit, made, notNow = '') {
+  const { esc } = c;
+  if (!split && !tagSplit) return '';
+  const src = split ? 'sound' : 'tags';
+  const said = split
+    ? `<b>${split.keep.n}</b> sound like ${esc(split.keep.name)}, <b>${split.move.n}</b> like ${esc(split.move.name)}.`
+    : `By its artists’ tags: ${tagSplit.parts.map(x => `<b>${x.size}</b> ${x.rest ? 'the rest of ' : ''}${esc(x.label)}`).join(', ')}.`;
+  return `<section class="pls-sec"><h3>Two genres?</h3>
+      <p class="hint">${said} Splitting previews each part as a new playlist; nothing leaves this one.</p>
+      ${made ? '<span class="tag ok">Made</span>' : `<div class="rowbtns"><button class="b sm p" data-act="wizsplit" data-pl="${esc(id)}" data-src="${src}">Split into playlists…</button>${notNow}</div>`}</section>`;
 }
 
 /* ---------- Playlists it understands least (core/intrinsic/weak.mjs) ----------
@@ -368,8 +399,7 @@ export function fillHTML(c, id, pl) {
       <button class="b sm" data-act="fillcheck" ${FILL_CHECK === 'working' ? 'disabled' : ''}>${FILL_CHECK === 'working' ? 'Checking…' : 'Check it on my library'}</button></section>`;
   }
   if (!gate.on) {
-    return `${head}<p class="hint">Off for your library: it found <b class="mono">${pct(gate.recall)}</b> of the hidden tracks in
-      its top ${FILL_SHOW} (it needs ${pct(FILL_BAR)}; picking at random finds ${pct(measure?.random)}).</p></section>`;
+    return `${head}<p class="hint">Not enough to go on for this playlist yet.</p></section>`;
   }
   const st = FILL.get(id);
   const key = fillKey(c);
@@ -609,10 +639,9 @@ async function wizUndo(c, w = WIZ) {
 }
 
 export function view(c) {
-  const { CFG, R, GAPS, esc, tagCoverage, NO_SIGNAL, listsSplits } = c;
+  const { CFG, R, GAPS, esc, NO_SIGNAL, listsSplits } = c;
   c.gapsKick?.();
   const all = Object.entries(CFG).map(([id, v]) => ({ id, ...v }));
-  const cov = tagCoverage();
   const splitIds = new Set(listsSplits().map(x => x.p.id));
   const undecidedIds = new Set(all.filter(p => p.why === NO_SIGNAL).map(p => p.id));
   const waiting = waitingCounts(R?.backlog);
@@ -628,26 +657,10 @@ export function view(c) {
       <div class="plrows">${ticks.slice(0, 5).map(t => `<div class="plrow"><span class="plmain"><span class="ttl">${esc(t.name)}</span>
         <span class="plmeta">${esc(t.why)}</span></span><button class="b sm" data-act="ltick" data-pl="${esc(t.id)}">Genre</button></div>`).join('')}</div>
     </section>` : '';
-  // Cold start: no genre playlist at all. Offers come from what Spotify gives every account; nothing is made until tapped.
+  // Cold start (no genre playlist at all) is offered on File, which keeps "Start these playlists" (C2); still kicked
+  // here so its groups are ready. "Possible new genres" moved to New playlists › By sound (M5).
   const noGenre = rows.length > 0 && !rows.some(p => p.axis === 'genre');
   c.coldKick?.(noGenre);
-  const cold = c.COLD?.status === 'ready' && noGenre ? coldStartOffers(c.COLD.found) : [];
-  const coldHTML = cold.length ? `<section class="plsugg" aria-labelledby="plcold-h">
-      <div class="plsugg-head"><h2 id="plcold-h">Start these playlists</h2></div>
-      <p class="hint">You have no genre playlists yet. These groups already sit together in your library.</p>
-      <div class="plrows">${cold.map((o, i) => `<div class="plrow"><span class="plmain">
-        <input id="coldnm${i}" aria-label="Name for this playlist" value="${esc(o.title)}">
-        <span class="plmeta"><span class="mono">${o.n}</span> tracks · ${esc(o.why)}${o.eg.length ? ` · e.g. ${esc(o.eg.join(', '))}` : ''}</span></span>
-        <button class="b sm p" data-act="lcold" data-cold="${i}">Start</button></div>`).join('')}</div>
-    </section>` : '';
-  const newg = c.COLD?.status === 'ready' ? newGenreOffers(c.COLD.newGenre, c.COLD.active).slice(0, 3) : [];
-  const newgHTML = newg.length ? `<section class="plsugg" aria-labelledby="plnewg-h">
-      <div class="plsugg-head"><h2 id="plnewg-h">Possible new genres</h2></div>
-      <div class="plrows">${newg.map((o, i) => `<div class="plrow"><span class="plmain">
-        <input id="newgnm${i}" aria-label="Name for this playlist" ${o.named ? `value="${esc(o.title.replace(/\?$/, ''))}"` : 'placeholder="Name it"'}>
-        <span class="plmeta"><span class="mono">${o.n}</span> tracks${o.played ? ` · ${o.played} you are playing` : ''} · ${esc(o.why)}</span></span>
-        <button class="b sm" data-act="lnewg" data-newg="${i}">Start</button></div>`).join('')}</div>
-    </section>` : '';
   // Twins (SMARTER-GENRES phase 3: they used to live only on the Engine screen), as merge offers.
   const ms = msMeasure(c);
   const have = new Set((c.LIB?.playlists ?? []).map(x => x.id));
@@ -661,7 +674,6 @@ export function view(c) {
         <button class="b sm p" data-act="wizmerge" data-a="${esc(o.a.id)}" data-b="${esc(o.b.id)}">Merge…</button>
         <button class="b sm" data-act="wizdismiss" data-key="${esc(o.key)}">Not now</button></div>`).join('')}</div>
     </section>` : '';
-  const msLine = dismissLine(msMeasure(c));
   const suggHTML = sugg.length ? `<section class="plsugg" aria-labelledby="plsugg-h">
       <div class="plsugg-head"><h2 id="plsugg-h">Suggested playlists</h2>
         <button class="b sm" data-go="new">See all ${sugg.length}</button></div>
@@ -671,17 +683,15 @@ export function view(c) {
     </section>` : '';
   const eng = c.engineSummary?.() ?? null;
   // One line of the Engine's score (owner, 2026-11-18): the Engine itself lives in Settings.
-  const knowsHTML = rows.some(p => p.target) ? `<p class="axcov plknows">${esc(eng?.running ? 'Checking how well it knows you…' : knowsYouLine(eng))}
-      <button class="b sm" data-go="engine">Engine</button></p>` : '';
+  // The footer is one line (L2): the score sentence, then where to go from here.
+  const knows = rows.some(p => p.target) ? `<span class="plknows">${esc(eng?.running ? 'Checking how well it knows you…' : knowsYouLine(eng))}</span>` : '';
+  const footHTML = `<p class="axcov plfoot">${knows}<span class="plfoot-b">${knows ? '<button class="b sm" data-go="engine">Engine</button>' : ''}
+      <button class="b sm" data-act="lshufall">Shuffle everything</button></span></p>`;
   return `<h1>Library</h1>
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
-    ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
+    ${ticksHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
-    ${knowsHTML}
-    <p class="axcov"><span class="mono">${cov.pct}%</span> of artists have genre tags${cov.pct < 85 ? ', so suggestions will be thin until that improves' : ''}.
-      <button class="b sm" data-go="sources">Genre sources</button>
-      <button class="b sm" data-go="shuffle">Shuffle everything</button></p>${
-    msLine ? `\n    <p class="hint msline">${esc(msLine)}</p>` : ''}`;
+    ${footHTML}`;
 }
 
 
@@ -719,25 +729,32 @@ export const actions = {
     for (const id of ids) setAxis(c, id, { value: 'genre' }, null, true);
     return finishAxes(c, `${ids.length} marked as genre`);
   },
-  /** Cold start: make the playlist for one offered group. */
-  async lcold(c, el) {
-    const i = +el.dataset.cold, o = coldStartOffers(c.COLD.found)[i], name = c.$('#coldnm' + i)?.value.trim();
-    if (!o) return;
-    if (!name) return c.toast('Give it a name first.');
-    el.disabled = true;
-    try { await c.gapsCreate(name, o.ids); c.COLD.found.proposals = c.COLD.found.proposals.filter(p => p.ids !== o.ids);
-      c.COLD.found.clusters = c.COLD.found.clusters.filter(p => (p.ids ?? p.tracks?.map(t => t.id)) !== o.ids); c.render(); }
-    catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  /** "Tidy N" on a row: Tidy at this playlist only, on the section that has its rows (M4). */
+  ltidy(c, el) {
+    const { S, R } = c, id = el.dataset.pl, sec = el.dataset.sec;
+    S.tidyPl = id; S.tidySec = sec;
+    if (sec === 'misfile') {
+      const mine = (R?.misfiled ?? []).filter(x => x.currentPlaylistId === id);
+      S.mfBand = ['high', 'medium', 'low'].find(b => mine.some(x => x.confidence === b)) ?? S.mfBand;
+    }
+    S.tidyFocus = 'rows';
+    c.go('tidy');
   },
-  /** A possible new genre: make it, and remember the name for CLAP when it is one. */
-  async lnewg(c, el) {
-    const i = +el.dataset.newg, o = newGenreOffers(c.COLD.newGenre, c.COLD.active)[i], name = c.$('#newgnm' + i)?.value.trim();
-    if (!o) return;
-    if (!name) return c.toast('Give it a name first.');
-    el.disabled = true;
-    try { await c.gapsCreate(name, o.ids); if (c.clapConfirm) c.clapConfirm(o.ids, name).catch(() => {});
-      c.COLD.newGenre = c.COLD.newGenre.filter(x => (x.ids ?? x.tracks?.map(t => t.id)) !== o.ids); c.render(); }
-    catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  /** "N to file" on a row: File, with the songs it suggests for this playlist first in the queue. */
+  lfile(c, el) {
+    const { S, R } = c, id = el.dataset.pl;
+    const { order, n } = fileFirst(R?.backlog, id);
+    const name = c.CFG?.[id]?.name ?? id;
+    if (!n) return c.toast(`Nothing is waiting for ${name} any more.`);
+    R.backlog.splice(0, R.backlog.length, ...order);   // in place: File and its actions hold this array
+    S.inboxAt = 0; S.inboxFor = id;
+    c.go('inbox');
+    c.toast(`${n === 1 ? 'The song' : `The ${n} songs`} suggested for ${name} ${n === 1 ? 'is' : 'are'} first in File.`);
+  },
+  /** "Shuffle everything": the Shuffle screen on All Songs, whatever a sheet last picked (F2). */
+  lshufall(c) {
+    c.S.shufPl = null; c.S.shufCache = null;
+    c.go('shuffle');
   },
 
   /** Fill this playlist: add one suggestion. */

@@ -281,12 +281,20 @@ async function coldCompute(needCold) {
 }
 
 /** Make a private playlist holding these tracks. Nothing else in the library changes. */
-async function gapsCreate(name, ids) {
+async function gapsCreate(name, ids, reason = 'new playlist') {
   const pl = await sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
-  await addTracks(pl.id, ids);
+  let err = null;
+  try { await addTracks(pl.id, ids); } catch (e) { err = e; }
+  // In History as one `add` that made the playlist (DESIGN-PLAN F3), so one Undo takes the tracks out and
+  // deletes it, like the merge/split wizard. Logged even when the add broke half way: the playlist exists.
+  const landed = err ? ((typeof landedIn === 'function' ? await landedIn(pl.id, ids).catch(() => null) : null) ?? []) : ids;
+  const at = await logAction({ op:'add', group:newGroup(), playlistId:pl.id, playlistName:name, trackIds:landed, created:true, reason });
+  if (err) throw err;
   GAPS.made.add(name.toLowerCase());
-  toast(`Created “${name}” with ${ids.length} tracks. It becomes a place to file into after your next sync.`);
+  toast(`Created “${name}” with ${ids.length} tracks. It becomes a place to file into after your next sync.`,
+    async () => { await undoAction(at); GAPS.made.delete(name.toLowerCase()); store.touch('gaps'); });
   store.touch('gaps');
+  return pl;
 }
 
 /** Add these tracks to a playlist they already sound like. Nothing is taken out of anywhere. */

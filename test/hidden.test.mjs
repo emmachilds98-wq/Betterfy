@@ -133,3 +133,32 @@ test('a check run asks search about each song and saves what it found', async ()
   assert.equal(saved.hidden_checks.t2.state, 'ok');
   assert.equal(hidden.hiddenCount(c), 1);
 });
+
+// DESIGN-PLAN §7.7 A2 (provisional): a batch is checked by itself, once a day, after the
+// radar's first read; the button is only a small "Check N more".
+test('the background check runs once a day, only while songs are left, and the button is small', async () => {
+  const L = lib(), calls = [], kept = new Map();
+  const c = ctx(L, calls);
+  const saved = {};
+  c.idb = { async get(k) { return saved[k]; }, async set(k, v) { saved[k] = v; } };
+  c.LS = { getItem: k => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) };
+  let asked = 0;
+  c.sp = async () => { asked++; return { tracks: { items: [] } }; };
+  hidden.H.checks = {};
+  let html = hidden.hiddenView(c);
+  assert.match(html, /None checked yet\. A batch of your oldest songs is checked by itself/);
+  assert.match(html, /<button class="b sm" data-act="hdRun">Check 2 more<\/button>/);
+  const now = Date.now();
+  assert.equal(await hidden.hiddenAuto(c, now), true);
+  assert.equal(asked, 2);
+  assert.equal(await hidden.hiddenAuto(c, now + 3600_000), false, 'not again the same day');
+  assert.equal(asked, 2);
+  // A day later there is nothing left to ask, so it does not run either.
+  assert.equal(await hidden.hiddenAuto(c, now + 25 * 3600_000), false);
+  html = hidden.hiddenView(c);
+  assert.match(html, /2 of 2 songs checked, all of them\./);
+  assert.doesNotMatch(html, /data-act="hdRun"/);
+  // Without Spotify (tests, a page without sp) it is idle.
+  hidden.H.checks = {};
+  assert.equal(await hidden.hiddenAuto({ ...c, sp: null }, now + 50 * 3600_000), false);
+});

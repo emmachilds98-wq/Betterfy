@@ -4,7 +4,7 @@
  * misfit state and jobs, and emptyState, stay classic in app/screenjobs.js. */
 /* The library health report and the keyboard cleanup sprint (BUILD-6 F9) are at the end of
  * this file; their pure parts (ranking, the sprint's counts) are core/review/health.mjs. */
-import { hiddenView, hiddenActions, hiddenMount, hiddenCount } from './hidden.mjs';
+import { hiddenView, hiddenActions, hiddenMount, hiddenCount, hiddenAuto } from './hidden.mjs';
 import { tidyCounts, healthInputs, rankHealth, sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTotals } from '../../core/review/health.mjs';
 
 /* ---------- Tidy: three screens' worth of the same question ----------
@@ -14,10 +14,16 @@ import { tidyCounts, healthInputs, rankHealth, sprintStart, sprintDecide, sprint
  * screen now, with a section each and the counts on the switcher, so the
  * question is asked once and the answer is a row you tap.
  */
-const TIDY_SECTIONS = [['misfile', 'Wrong place'], ['dupes', 'Repeats'], ['cross', 'Cross-filed']];
+/* [id, label, short label]: the short one is what a phone shows (DESIGN-PLAN L4), so the
+ * switch fits one line at 390 px; desktop and the ⓘ text keep the full words. By sound is
+ * not a part of its own any more (§7.7 M3): its rows sit in Wrong place with a badge. */
+const TIDY_SECTIONS = [['misfile', 'Wrong place', 'Misfiled'], ['dupes', 'Repeats', 'Repeats'], ['cross', 'Cross-filed', 'In two']];
+const HEALTH_SECTION = ['health', 'Health', 'Health'];
 // Hard to find (screens/hidden.mjs) is always last, and like Health is never opened
 // for you: its count is only what a check found, so it is a place you go, not work queued.
-const HIDDEN_SECTION = ['hidden', 'Hard to find'];
+const HIDDEN_SECTION = ['hidden', 'Hard to find', 'Hidden'];
+/** Cross-filed means two or more playlists. The 2+…6+ row went (§7.7 C4, provisional). */
+const CROSS_MIN = 2;
 
 export function secDupes(c) {
   const ib = c.infoBtn ?? (() => '');
@@ -51,12 +57,10 @@ function crossNote(x) {
 
 export function secCross(c) {
   const ib = c.infoBtn ?? (() => '');
-  const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton } = c;
-  const a = R.across.filter(x => x.placements.length >= S.crossMin);
+  const { R, esc, thumbHTML, shownOf, emptyState, moreButton } = c;
+  const a = R.across.filter(x => x.placements.length >= CROSS_MIN);
   return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is removed unless you tap. The likeliest slips come first, with the best-fitting playlist starred.${ib('tidy-cross', 'Cross-filed', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
-    <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
-      `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-act="cmin" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
-    <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
+    <div class="rows">${a.slice(0, shownOf('cross')).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
       ${crossNote(c)}
@@ -64,10 +68,8 @@ export function secCross(c) {
         `<button class="chip${p.playlistId === c.keeper ? ' keeper' : ''}" data-act="xpl" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}${p.playlistId === c.keeper ? ' — the best fit' : ''}">${p.playlistId === c.keeper ? '★ ' : ''}${esc(p.playlist)}</button>`).join('')}
         ${c.keeper && c.suspicion >= 2 ? `<button class="b sm" data-act="xkeep" data-xkeeper="${esc(c.keeper)}" data-xtr="${esc(c.placements[0].trackId)}" data-xall="${esc(c.placements.map(p => p.playlistId).join(','))}">Keep only in ${esc(c.placements.find(p => p.playlistId === c.keeper)?.playlist ?? '')}</button>` : ''}</div>
     </div></div>`).join('')
-      || (R.across.length
-        ? emptyState(`Nothing at ${S.crossMin}+ playlists`, 'Lower the threshold to see tracks filed in fewer places.', { compact: true })
-        : emptyState('Nothing cross-filed', 'Every track you have filed sits in one playlist only.'))}</div>
-    ${moreButton('cross-' + S.crossMin, a.length)}`;
+      || emptyState('Nothing cross-filed', 'Every track you have filed sits in one playlist only.')}</div>
+    ${moreButton('cross', a.length)}`;
 }
 
 /* The misfile confidence tiers, in calibrate's words (UI-BUILD-PLAN R5): the
@@ -97,40 +99,35 @@ export function tagMisfiles(c) {
 /** A cosine fit in words, not a percentage nobody can calibrate. */
 const mfFitWord = v => v >= 0.5 ? 'strong' : v >= 0.25 ? 'fair' : v >= 0.1 ? 'weak' : 'barely';
 
-function tidySections(c) {
-  return c.tidySoundOn() ? [...TIDY_SECTIONS, ['sound', 'By sound']] : TIDY_SECTIONS;
-}
 function tidySoundTrack(LIB, id) {
   for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id === id)
     return { id, title: t.name ?? '', artist: (t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '), art: t.art ?? null, dur: t.duration_ms ?? 0 };
   return { id, title: id, artist: '', art: null, dur: 0 };
 }
-const TS_BANDS = [['sure', 'HIGH'], ['likely', 'LIKELY']];
-export function secSound(c) {
-  const ib = c.infoBtn ?? (() => '');
-  const { S, esc, thumbHTML, shownOf, emptyState, moreButton, TSOUND, LIB, tidySoundRows } = c;
-  const rows = onlyPl(c, tidySoundRows(), x => x.from);
-  const band = S.tsBand ?? 'sure';
-  const counts = { sure: 0, likely: 0 };
-  for (const x of rows) counts[x.band]++;
-  const acc = TSOUND.res?.accuracy;
-  const pct = v => `${Math.round(v * 100)}%`;
-  const checked = acc?.scored ? `<p class="sub tsacc">Checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
-    acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>` : '';
-  const lede = `<p class="lede">Filed in one playlist, but it sounds like another.${ib('tidy-sound', 'Sounds wrong', '<p>Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn\'t place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>')}</p>${plChip(c)}`;
-  if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true }) + (c.skeleton ? c.skeleton('rows', 3) : '');
-  if (TSOUND.status === 'error' && !TSOUND.res) return lede + emptyState('Couldn’t compare by sound', esc(TSOUND.err ?? ''), { compact: true });
-  if (S.sprint?.sec === 'sound') return lede + sprintPanel(c, 'sound');
-  const m = rows.filter(x => x.band === band);
-  return `${lede}${checked}
-    ${rows.length ? `<div class="seg mfbands tsbands" role="group" aria-label="How sure">${TS_BANDS.map(([b, vm]) =>
-      `<button type="button" aria-pressed="${band === b}" data-act="tsb" data-tsb="${b}">${mfBandChip(c, vm === 'HIGH' ? 'high' : 'medium')} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
-    ${sprintBar(c, 'sound', sprintRows(c, 'sound').length)}
-    <div class="rows">${m.slice(0, shownOf('tsound-' + band)).map(x => {
-      const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
-      return `<div class="row tsrow ${done ? 'done' : ''}" data-flip data-key="${esc(`ts:${x.id}`)}">${thumbHTML(t)}<div class="main">
+
+/* ---------- Wrong place, by tags and by sound (§7.7 M3, provisional) ----------
+ * The sound tier's rows (core/audio/misfit.mjs, through ctx.tidySoundRows) used to be a
+ * section of their own with the same Move / Keep here / Play. They are Wrong place rows now,
+ * with a "by sound" badge: sound's Sure joins Sure, its Likely joins Likely, and they come
+ * first in their band. Where both tiers flag the same track in the same playlist, the sound
+ * row is the one shown (tagMisfiles already drops the tag row where they disagree). */
+const SOUND_BAND = { sure: 'high', likely: 'medium' };
+const BAND_SOUND = { high: 'sure', medium: 'likely' };
+
+/** Both tiers' rows for Wrong place, before the playlist chip and the band filter. */
+export function misfileRows(c) {
+  const sound = (typeof c.tidySoundRows === 'function' ? c.tidySoundRows() : null) ?? [];
+  const heard = new Set(sound.map(x => `${x.id}|${x.from}`));
+  const tag = tagMisfiles(c).filter(m => !heard.has(`${m.id}|${m.currentPlaylistId}`));
+  return { sound, tag };
+}
+
+function soundRow(c, x) {
+  const { S, esc, thumbHTML } = c;
+  const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
+  return `<div class="row tsrow ${done ? 'done' : ''}" data-flip data-key="${esc(`ts:${x.id}`)}">${thumbHTML(t)}<div class="main">
         <div class="ttl">${esc(t.title)} <span class="sub">— ${esc(t.artist)}</span></div>
-        <div class="tssound">${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
+        <div class="tssound"><span class="bysound">by sound</span> ${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
         <div class="swap"><span class="from">${esc(x.fromName)}</span><span class="arw">→</span><span class="to">${esc(x.toName)}</span>
           <span class="mono" style="color:var(--ink-3)">${x.near.from} → ${x.near.to} of ${x.near.k} sound-alikes</span></div>
         <div class="why">${esc(x.why.join('; '))}.</div>
@@ -138,21 +135,34 @@ export function secSound(c) {
         <button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtier="${esc(x.band)}" data-act="move" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.from)}" data-mvto="${esc(x.to)}">${done ? 'Moved' : 'Move'}</button>
         ${done ? '' : `<button class="b sm" data-act="tskeep" data-tsfrom="${esc(x.from)}" data-tskeep="${esc(x.id)}" data-tsto="${esc(x.to)}">Keep here</button>`}
         <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${t.dur}">Play</button></div></div>`;
-    }).join('')
-      || (rows.length
-        ? emptyState(`Nothing ${band === 'sure' ? 'sure' : 'likely'}`, band === 'sure' ? 'Likely has the more speculative ones.' : 'Try Sure.', { compact: true })
-        : emptyState('Everything sounds where it is', 'No heard track sits in a genre playlist its sound-alikes avoid. More show up as listening hears more of your library.'))}</div>
-    ${moreButton('tsound-' + band, m.length)}`;
+}
+
+/** The sound tier's own state, as one line under the lede (it was a whole section). */
+function soundNote(c, sound) {
+  const T = c.TSOUND;
+  if (!T || typeof c.tidySoundOn !== 'function' || !c.tidySoundOn()) return '';
+  if (T.status === 'working' && !T.res) return '<p class="sub tsacc">Also listening through your playlists for tracks that sound out of place. They join this list when that is done.</p>';
+  if (T.status === 'error' && !T.res) return `<p class="sub tsacc">Couldn’t compare by sound: ${c.esc(T.err ?? '')}</p>`;
+  const acc = T.res?.accuracy;
+  if (!sound.length || !acc?.scored) return '';
+  const pct = v => `${Math.round(v * 100)}%`;
+  return `<p class="sub tsacc">By sound, checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
+    acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>`;
 }
 
 export function secMisfile(c) {
   const ib = c.infoBtn ?? (() => '');
-  const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton, tagChips, tagEditorHTML, store, getListening } = c;
+  const { S, esc, thumbHTML, shownOf, emptyState, moreButton, tagChips, tagEditorHTML, store, getListening } = c;
   const LISTENING_CACHE = c.LISTENING_CACHE, LISTENING_PENDING = c.LISTENING_PENDING;
   const counts = { high: 0, medium: 0, low: 0 };
-  const MF = onlyPl(c, tagMisfiles(c), x => x.currentPlaylistId);
+  const both = misfileRows(c);
+  const MF = onlyPl(c, both.tag, x => x.currentPlaylistId);
+  const SD = onlyPl(c, both.sound, x => x.from);
   for (const x of MF) counts[x.confidence]++;
+  for (const x of SD) counts[SOUND_BAND[x.band] ?? 'medium']++;
+  const sd = SD.filter(x => (SOUND_BAND[x.band] ?? 'medium') === S.mfBand);
   const m = MF.filter(x => x.confidence === S.mfBand);
+  const all = [...sd.map(x => ['s', x]), ...m.map(x => ['t', x])];
   // Best-effort, fetched once and reused: a "misfiled" track you actually
   // play a lot is more likely a deliberate keep than a mistake. Doesn't
   // change the confidence tier — just gives you the context to judge it —
@@ -163,13 +173,9 @@ export function secMisfile(c) {
   // Only draw the (stateful, id-bearing) editor once, even if the artist
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
-  const lede = `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p>')}</p>${plChip(c)}`;
-  if (S.sprint?.sec === 'misfile') return lede + sprintPanel(c, 'misfile');
-  return `${lede}
-    ${MF.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
-      `<button type="button" aria-pressed="${S.mfBand === b}" data-act="mfb" data-mfb="${b}">${mfBandChip(c, b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
-    ${sprintBar(c, 'misfile', sprintRows(c, 'misfile').length)}
-    <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
+  const lede = `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p><p>Rows marked <b>by sound</b> come from listening: filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one. Only heard tracks, and only playlists with at least five heard tracks, are judged that way.</p>')}</p>${plChip(c)}${soundNote(c, SD)}`;
+  if (S.sprint?.sec === 'misfile' || S.sprint?.sec === 'sound') return lede + sprintPanel(c, S.sprint.sec);
+  const tagRow = x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
       const playedALot = recentlyActive?.has(x.artist);
@@ -192,31 +198,46 @@ export function secMisfile(c) {
         ${!editorDrawn && S.editingArtist && x.artists?.some(a => a.id === S.editingArtist)
           ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
       </div>` : ''}</div>`;
-    }).join('')
-      || (MF.length
+  };
+  const any = MF.length + SD.length;
+  return `${lede}
+    ${any ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
+      `<button type="button" aria-pressed="${S.mfBand === b}" data-act="mfb" data-mfb="${b}">${mfBandChip(c, b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
+    ${sprintBar(c, 'misfile', sprintRows(c, 'misfile').length)}
+    <div class="rows">${all.slice(0, shownOf('misfile-' + S.mfBand)).map(([k, x]) => k === 's' ? soundRow(c, x) : tagRow(x)).join('')
+      || (any
         ? emptyState(`Nothing ${mfBandWord(S.mfBand)}`, S.mfBand === 'high'
             ? 'Nothing is clearly in the wrong place. Likely has the more speculative ones.' : 'Try another of the three.', { compact: true })
         : emptyState('Everything fits where it is', 'No track sits in a playlist that fits far worse than another one on the same axis. New ones show up here after a sync.'))}</div>
-    ${moreButton('misfile-' + S.mfBand, m.length)}`;
+    ${moreButton('misfile-' + S.mfBand, all.length)}`;
 }
 
 export function view(c) {
-  const { S, R, esc } = c;
+  const { S, R } = c;
   c.tidySoundWarm();
   const report = healthReport(c);
-  const n = { misfile: tagMisfiles(c).length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount(), health: report.length, hidden: hiddenCount(c) };
-  const secs = [...(report.length ? [...tidySections(c), ['health', 'Health']] : tidySections(c)), HIDDEN_SECTION];
+  const both = misfileRows(c);
+  const n = { misfile: both.tag.length + both.sound.length, dupes: R.within.length, cross: R.across.length,
+    health: report.length, hidden: hiddenCount(c) };
+  const secs = [...TIDY_SECTIONS, ...(report.length ? [HEALTH_SECTION] : []), HIDDEN_SECTION];
   // Opens on the first section with something in it rather than on "Wrong
   // place 0" while Repeats has work. A section the listener picked (S.tidySec,
   // set only by a tap) is kept; one that has gone away falls back the same way.
   // Health is a report, not a list of work: it is never opened for you.
   const first = (secs.find(([id]) => n[id] > 0 && id !== 'health' && id !== 'hidden') ?? secs[0])[0];
+  // By sound was a section; a remembered one is Wrong place now, on sound's band, while it has rows.
+  if (S.tidySec === 'sound') {
+    S.tidySec = n.misfile ? 'misfile' : first;
+    if (n.misfile && S.tsBand) S.mfBand = SOUND_BAND[S.tsBand] ?? S.mfBand;
+  }
   if (S.tidySec != null && !secs.some(([id]) => id === S.tidySec)) S.tidySec = first;
   const sec = S.tidySec ?? first;
-  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound, health: secHealth, hidden: hiddenView }[sec];
+  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, health: secHealth, hidden: hiddenView }[sec];
+  // A section with nothing in it is dimmed, not hidden: it stays tappable (L4).
+  const label = (full, short) => full === short ? full : `<span class="lg">${full}</span><span class="sh">${short}</span>`;
   return `<h1>Tidy</h1>
-    <div class="seg tidysecs" role="group" aria-label="Section">${secs.map(([id, label]) =>
-      `<button type="button" aria-pressed="${sec === id}" data-act="section" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
+    <div class="seg tidysecs" role="group" aria-label="Section">${secs.map(([id, full, short]) =>
+      `<button${n[id] ? '' : ' class="zero"'} type="button" aria-pressed="${sec === id}" data-act="section" data-tidy="${id}">${label(full, short)} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
     ${body(c)}`;
 }
 
@@ -227,15 +248,6 @@ export const actions = {
     if (c.S.sprint) endSprint(c);
     c.S.tidySec = el.dataset.tidy; c.S.tidyPl = null; c.render();
   },
-
-  cmin(c, el) {
-    const { S, T } = c;
-    S.crossMin = +el.dataset.cmin;
-    if (T.rememberFilters) { T.crossMin = S.crossMin; c.saveTheme(); }
-    c.render();
-  },
-
-  tsb(c, el) { c.S.tsBand = el.dataset.tsb; c.render(); },
 
   async tskeep(c, el) {
     await c.recordKeep(el.dataset.tskeep, el.dataset.tsfrom, [el.dataset.tsto]);
@@ -325,16 +337,16 @@ export const actions = {
 
   /** Open Tidy at one playlist: its first section with rows, on the first band that has some. */
   hgo(c, el) {
-    const { S } = c, pl = el.dataset.hpl, sec = el.dataset.hsec;
+    const { S } = c, pl = el.dataset.hpl;
+    // By sound's rows live in Wrong place now (M3), so a link to 'sound' lands there.
+    const sec = el.dataset.hsec === 'sound' ? 'misfile' : el.dataset.hsec;
     if (S.sprint) endSprint(c);
     S.tidyPl = pl; S.tidySec = sec;
     if (sec === 'misfile') {
-      const mine = tagMisfiles(c).filter(x => x.currentPlaylistId === pl);
-      S.mfBand = ['high', 'medium', 'low'].find(b => mine.some(x => x.confidence === b)) ?? S.mfBand;
-    }
-    if (sec === 'sound') {
-      const mine = c.tidySoundRows().filter(x => x.from === pl);
-      S.tsBand = ['sure', 'likely'].find(b => mine.some(x => x.band === b)) ?? S.tsBand;
+      const { sound, tag } = misfileRows(c);
+      const bands = [...sound.filter(x => x.from === pl).map(x => SOUND_BAND[x.band] ?? 'medium'),
+                     ...tag.filter(x => x.currentPlaylistId === pl).map(x => x.confidence)];
+      S.mfBand = ['high', 'medium', 'low'].find(b => bands.includes(b)) ?? S.mfBand;
     }
     S.tidyFocus = 'rows';
     c.render();
@@ -485,22 +497,31 @@ const left = n => (n ? `${n} left.` : 'That was the last one.');
 /** What the sprint walks, in the list's own order, decided ones gone. */
 export function sprintRows(c, sec) {
   const { S } = c;
-  if (sec === 'misfile') return onlyPl(c, tagMisfiles(c), x => x.currentPlaylistId)
+  // Wrong place walks its rows in the order shown: the band's by-sound rows, then the tag ones.
+  if (sec === 'misfile') return [...(BAND_SOUND[S.mfBand] ? soundSprintRows(c, BAND_SOUND[S.mfBand]) : []),
+    ...onlyPl(c, misfileRows(c).tag, x => x.currentPlaylistId)
     .filter(x => x.confidence === S.mfBand && !S.moved.has(x.id))
     .map(x => {
       const to = (x.suggest ?? []).find(sg => sg.id);
       return to ? { id: x.id, title: x.title ?? '', artist: x.artist ?? '', art: x.art ?? null, from: x.currentPlaylistId, fromName: x.current ?? '',
         to: to.id, toName: to.name ?? to.id, tier: MF_TIER[S.mfBand] ?? '', away: x.suggest.filter(sg => sg.id).slice(0, 2).map(sg => sg.id),
         why: `${mfFitWord(x.currentScore)} fit here, ${mfFitWord(to.score)} there`, row: x } : null;
-    }).filter(Boolean);
-  if (sec === 'sound' && typeof c.tidySoundRows === 'function') return onlyPl(c, c.tidySoundRows(), x => x.from)
-    .filter(x => x.band === (S.tsBand ?? 'sure') && !S.moved.has(x.id))
+    }).filter(Boolean)];
+  if (sec === 'sound') return soundSprintRows(c, S.tsBand ?? 'sure');
+  return [];
+}
+
+/** The sound tier's rows of one band (sure / likely), shaped for the sprint. */
+function soundSprintRows(c, band) {
+  const { S } = c;
+  if (typeof c.tidySoundRows !== 'function') return [];
+  return onlyPl(c, c.tidySoundRows(), x => x.from)
+    .filter(x => x.band === band && !S.moved.has(x.id))
     .map(x => {
       const t = tidySoundTrack(c.LIB, x.id);
       return { id: x.id, title: t.title, artist: t.artist, art: t.art, from: x.from, fromName: x.fromName, to: x.to, toName: x.toName,
         tier: x.band, away: [x.to], why: (x.why ?? []).join('; ') };
     });
-  return [];
 }
 
 function readSprints(c) {
@@ -619,6 +640,10 @@ function sprintKeys(doc) {
     if (b && !b.disabled) b.click();
   };
 }
+
+/** Tidy's background work, called by boot once the radar's first read has run (§7.7 A2):
+ *  Hard to find checks a batch by itself, so its count is real before anyone opens it. */
+export function background(c) { return hiddenAuto(c); }
 
 export function mount(c) {
   hiddenMount(c);

@@ -52,3 +52,18 @@
   /* The Engine's score, one line under the rows (the Engine itself is in Settings). */
   .plknows{margin:18px 0 8px}
   @media (max-width:520px){ .plrow .plspark{display:none} }
+
+/* L2 (DESIGN-PLAN §4): a row with something to do now carries it as its own buttons beside the row,
+   never inside it ("Tidy N", "N to file"); the footer is one line. */
+  .plline{display:flex; align-items:center; border-bottom:1px solid var(--line)}
+  .plline:last-child{border-bottom:0}
+  .plline > .plrow{border-bottom:0; flex:1; min-width:0}
+  .placts{display:flex; gap:6px; flex:none; padding-right:14px}
+  .placts .b.warn{color:var(--warn); border-color:var(--warn)}
+  .plfoot{justify-content:space-between; margin-top:18px}
+  .plfoot .plknows{flex:1 1 280px; min-width:0; margin:0}
+  .plfoot-b{display:flex; gap:8px; flex-wrap:wrap}
+  @media (max-width:520px){
+    .plline{flex-wrap:wrap}
+    .placts{padding:0 14px 10px 68px}
+  }

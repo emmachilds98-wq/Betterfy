@@ -3,12 +3,33 @@
  * SCREEN_CTX.new in app/screens.js builds it. The GAPS state and its jobs stay classic in
  * app/screenjobs.js. */
 
-/** Proposals by sound: pick one of two, hybrid playlists, new genre? Nothing at all without audio.
- *  Each drawn by UI-6's proposalCard, so the three read as one kind of thing. */
+import { newGenreOffers } from './lists.mjs';
+
+/** "New genre?" from the Engine (M5, was Library's "Possible new genres"): tracks it is unsure where to
+ *  file, sitting together, most played first and named by sound ID when CLAP has a name. Up to three.
+ *  Kept apart from the audio orphans because they come from the Engine's map, not from listening. */
+export function engineGenreRows(c) {
+  const { COLD, esc } = c;
+  const offers = COLD?.status === 'ready' ? newGenreOffers(COLD.newGenre, COLD.active).slice(0, 3) : [];
+  const n = x => (x ?? 0).toLocaleString();
+  return offers.map((o, i) => `<div class="row prop prop-new"><div class="main">
+      <div class="ttl">${esc(o.title)} <span class="tag snd">by sound</span> <span class="tag">${n(o.n)} tracks</span>${
+        o.played ? ` <span class="tag ok">${n(o.played)} you're playing</span>` : ''}</div>
+      <div class="sub">Tracks Betterfy is unsure where to file, sitting together. Name it if it is a genre to you.</div>
+    </div><div class="acts"><input id="newgnm${i}" aria-label="Name for this playlist" ${o.named ? `value="${esc(o.title.replace(/\?$/, ''))}"` : 'placeholder="Name it"'}>
+      <button class="b sm p" data-act="newg" data-newg="${i}">Create with ${n(o.n)}</button></div></div>`).join('');
+}
+
+/** Proposals by sound: pick one of two, hybrid playlists, new genre? Nothing at all without audio
+ *  or the Engine's map. Each drawn as UI-6's proposalCard, so they read as one kind of thing. */
 function gapsSoundSection(c) {
-  const { GAPS, esc } = c;
+  const { GAPS } = c;
   const S = GAPS.sound;
-  if (!S) return '';
+  const eng = engineGenreRows(c);
+  if (!S && !eng) return '';
+  if (!S) return `<h2 class="newsec">By sound</h2>
+    <p class="why">Groups the Engine found among your unfiled tracks. Only suggestions: nothing is made until you tap.</p>
+    <div class="rows" style="margin-top:10px">${eng}</div>`;
   const made = name => GAPS.made.has(String(name).toLowerCase());
   const hybrids = S.hybrids.map((h, i) => proposalCard(c, { ...h, kind: 'hybrid', i, done: made(h.name) })).join('');
   const orphans = S.orphans.map((o, i) => proposalCard(c, { ...o, kind: 'new', i, done: GAPS.filed.has('o' + i) })).join('');
@@ -17,7 +38,7 @@ function gapsSoundSection(c) {
   return `<h2 class="newsec">By sound</h2>
     <p class="why">From listening to your unfiled tracks and comparing them with your own genre playlists. Only
       suggestions: nothing is made or added until you tap.</p>
-    <div class="rows" style="margin-top:10px">${hybrids}${orphans}${picks}</div>`;
+    <div class="rows" style="margin-top:10px">${hybrids}${orphans}${eng}${picks}</div>`;
 }
 
 /**
@@ -127,6 +148,7 @@ export function proposalCard(c, p) {
 
 export function view(c) {
   const { R, esc, emptyState } = c;
+  c.engineGenreKick?.();
   const ib = c.infoBtn ?? (() => '');
   const head = `<h1>New playlists</h1>
     <p class="lede">Playlists you could make from music you already have.${ib('new', 'New playlists', `<p>Genres you have music in but no playlist for,
@@ -209,16 +231,28 @@ export const actions = {
 
   gapsretry(c) { c.GAPS.status = 'idle'; c.render(); },
 
-  /** A backlog cluster: name it and create it. */
+  /** A backlog cluster: name it and create it, through gapsCreate so it is in History with one Undo (F3). */
   async cluster(c, el) {
-    const R = c.R, i = +el.dataset.cluster, name = c.$('#nm' + i).value.trim();
+    const R = c.R, i = +el.dataset.cluster, g = R.clusters[i], name = c.$('#nm' + i)?.value.trim();
+    if (!g) return;
     if (!name) return c.toast('Give it a name first.');
+    el.disabled = true;
+    try { await c.gapsCreate(name, g.ids, 'group in your backlog'); R.clusters.splice(R.clusters.indexOf(g), 1); c.render(); }
+    catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
+  },
+
+  /** A "New genre?" from the Engine (M5): make it, and remember the name for CLAP. */
+  async newg(c, el) {
+    const i = +el.dataset.newg, o = newGenreOffers(c.COLD?.newGenre, c.COLD?.active)[i], name = c.$('#newgnm' + i)?.value.trim();
+    if (!o) return;
+    if (!name) return c.toast('Give it a name first.');
+    el.disabled = true;
     try {
-      const pl = await c.sp('/me/playlists', { method:'POST', body:JSON.stringify({ name, public:false }) });
-      await c.addTracks(pl.id, R.clusters[i].ids);
-      c.toast(`Created “${name}” with ${R.clusters[i].ids.length} tracks.`);
-      R.clusters.splice(i, 1); c.render();
-    } catch (err) { c.toast('Failed: ' + err.message); }
+      await c.gapsCreate(name, o.ids, 'new genre');
+      if (c.clapConfirm) c.clapConfirm(o.ids, name).catch(() => {});
+      c.COLD.newGenre = c.COLD.newGenre.filter(x => (x.ids ?? x.tracks?.map(t => t.id)) !== o.ids);
+      c.render();
+    } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
   },
 };
 
