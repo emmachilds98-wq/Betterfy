@@ -80,11 +80,18 @@ export function checksFor(all, userId) {
  * reading the listener was shown, kept so a later mapping change can tell
  * which verdicts were about what. `ok` null clears the verdict.
  */
-export function withVerdict(all, userId, trackId, type, ok, seen, at = Date.now()) {
+export function withVerdict(all, userId, trackId, type, ok, seen, at = Date.now(), from = null) {
   if (!userId || !trackId || !LABEL_TYPES.includes(type)) return all ?? {};
   const mine = { ...checksFor(all, userId) };
   const cur = { ...(mine[trackId] ?? {}), at, seen: { ...(mine[trackId]?.seen ?? {}), [type]: seen ?? null } };
   if (ok === true || ok === false) cur[type] = ok; else delete cur[type];
+  // Where the answer was given ('file' | 'sources'), for the record only: one
+  // track and type is one verdict wherever it came from, the last answer wins.
+  if (from) {
+    const f = { ...(cur.from ?? {}) };
+    if (ok === true || ok === false) f[type] = from; else delete f[type];
+    if (Object.keys(f).length) cur.from = f; else delete cur.from;
+  }
   mine[trackId] = cur;
   return { ...(all ?? {}), [userId]: mine };
 }
@@ -246,5 +253,75 @@ export function reviewHTML(vm) {
     <ul class="lck-sum">${LABEL_TYPES.map(t => agreeLine(t, vm.agree[t])).join('')}</ul>
     ${rows ? `<ol class="lck-list">${rows}</ol>` : '<p class="sub">Nothing new to check. Listen to more tracks and come back.</p>'}
     <div class="rowbtns"><button class="b sm" id="labelCheckMore">Show other tracks</button></div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------ asked on File (BUILD-7 U3) */
+//
+// The same check, asked in use: at most once a session, File asks one small
+// question about a track that is playing or was just filed ("Does this sound
+// energetic?"). The answer is stored by withVerdict() exactly as a Sources
+// answer is, so a track answered in both places is still one verdict.
+
+/** Energy is asked about only when it is clearly high or clearly low. */
+export const ASK_HIGH = 0.6, ASK_LOW = 0.4;
+export const ASK_SESSION_KEY = 'bf_label_ask';
+
+/** The question for one reading, or null when it is not worth asking. */
+export function askText(type, v) {
+  if (v == null) return null;
+  if (type === 'energy') return v >= ASK_HIGH ? 'Does this sound energetic?' : v <= ASK_LOW ? 'Does this sound calm, low in energy?' : null;
+  if (type === 'voice') return v === 'vocal' ? 'Does this have vocals?' : 'Is this instrumental, with no vocals?';
+  if (type === 'mood' && Array.isArray(v) && v.length) {
+    const ms = v.map(m => String(m).replace(/[-_]/g, ' '));
+    return `Does this sound ${ms.length > 1 ? `${ms.slice(0, -1).join(', ')} and ${ms[ms.length - 1]}` : ms[0]}?`;
+  }
+  return null;
+}
+
+/**
+ * The one question to ask, or null. `ids` are the candidate tracks, best first
+ * (the one playing, then the one just filed). A type already shown, or already
+ * answered for that track, is not asked; among the rest the type with the
+ * fewest answers so far goes first, so the answers spread across the gate.
+ * @returns {{ id: string, type: string, reading: any, seen: any, text: string }|null}
+ */
+export function askFor(ids, records, checks = {}) {
+  const agree = agreement(checks);
+  for (const id of ids ?? []) {
+    if (!id) continue;
+    const r = readingsOf(records?.get?.(id));
+    const open = LABEL_TYPES.filter(t => !agree[t].on && checks?.[id]?.[t] == null && askText(t, r[t]))
+      .sort((a, b) => agree[a].reviewed - agree[b].reviewed || LABEL_TYPES.indexOf(a) - LABEL_TYPES.indexOf(b));
+    if (open.length) { const type = open[0]; return { id, type, reading: r[type], seen: seenOf(type, r[type]), text: askText(type, r[type]) }; }
+  }
+  return null;
+}
+
+/** How far that type is from deciding, in words. */
+export function askProgress(type, checks) {
+  const a = agreement(checks)[type];
+  if (!a) return '';
+  return a.reviewed >= REVIEW_MIN ? `${a.reviewed} answers so far.` : `${a.reviewed} of ${REVIEW_MIN} answers needed.`;
+}
+
+/**
+ * The small question under File's card. `ask` is askFor()'s, plus `answered`
+ * (true | false | 'pass') once a button was pressed. '' for none.
+ */
+export function askHTML(ask, { title = '', checks = {} } = {}) {
+  if (!ask) return '';
+  const what = TYPE_NAME[ask.type]?.toLowerCase() ?? ask.type;
+  if (ask.answered != null) {
+    return `<div class="lblask lblask-done" id="labelAsk" role="status"><p>${ask.answered === 'pass' ? 'No problem.'
+      : `Thanks. That counts toward showing ${what} labels. ${esc(askProgress(ask.type, checks))}`}</p></div>`;
+  }
+  return `<div class="lblask" id="labelAsk" role="group" aria-labelledby="labelAskQ" data-ask="${esc(ask.id)}" data-lt="${ask.type}">
+    <p id="labelAskQ"><span class="lblask-k">Quick check${title ? ` on <b>${esc(title)}</b>` : ''}:</span> ${esc(ask.text)}</p>
+    <div class="lblask-btns">
+      <button class="b sm" data-act="lblask" data-lok="1">Yes</button>
+      <button class="b sm" data-act="lblask" data-lok="0">No</button>
+      <button class="b sm lblask-pass" data-act="lblask" data-lok="pass">Not sure</button>
+    </div>
   </div>`;
 }

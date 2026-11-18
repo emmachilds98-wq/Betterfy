@@ -180,9 +180,49 @@ async function labelVerdict(btn) {
   const A = BetterfyAudio, id = btn.dataset.lchk, type = btn.dataset.lt, ok = btn.dataset.lok === '1', me = labelUser();
   const reading = A.readingsOf(AUDIO.records?.get(id))[type];
   const again = A.checksFor(LABELCHECKS, me)[id]?.[type] === ok;   // tapping the chosen answer again clears it
-  LABELCHECKS = A.withVerdict(LABELCHECKS, me, id, type, again ? null : ok, reading == null ? null : A.seenOf(type, reading));
+  LABELCHECKS = A.withVerdict(LABELCHECKS, me, id, type, again ? null : ok, reading == null ? null : A.seenOf(type, reading), Date.now(), 'sources');
   await idb.set(A.CHECKS_KEY, LABELCHECKS);
   labelCheckRedraw();
+}
+
+/* ---------- the same check, asked on File (BUILD-7 U3) ----------
+ * At most once a session (sessionStorage, so a reload in the same tab does not
+ * ask again), File asks one question about the track that is playing or was
+ * just filed. It sits under the card, never in it, so it cannot stand in for
+ * a card's File button. The answer is stored with withVerdict() like a Sources
+ * answer, so one track's answer counts once wherever it was given. Nothing
+ * shows until records exist, and nothing once every label type has decided. */
+const LABEL_ASK = { cur: null };
+const labelAskSpent = () => { try { return sessionStorage.getItem(BetterfyAudio.ASK_SESSION_KEY) === '1'; } catch { return !!LABEL_ASK.spent; } };
+const labelAskSpend = () => { LABEL_ASK.spent = true; try { sessionStorage.setItem(BetterfyAudio.ASK_SESSION_KEY, '1'); } catch { /* the flag above holds it */ } };
+/** File's slot: `cands` are the playing and the just-filed track ({ id, title }), best first. */
+function labelAskHTML(cands = []) {
+  const ids = cands.map(c => c?.id).filter(Boolean);
+  const A = globalThis.BetterfyAudio;
+  if (!A?.askFor || !AUDIO.records?.size || !labelUser() || !LABELCHECKS) return '';
+  const cur = LABEL_ASK.cur;
+  // Shown until it is answered and the card moves on, or its track is no longer the one in view.
+  if (cur && !ids.includes(cur.id)) { LABEL_ASK.cur = null; return ''; }
+  if (!cur) {
+    if (labelAskSpent()) return '';
+    const ask = A.askFor(ids, AUDIO.records, labelChecks());
+    if (!ask) return '';
+    LABEL_ASK.cur = { ...ask, title: cands.find(c => c?.id === ask.id)?.title ?? '' };
+    labelAskSpend();
+  }
+  return A.askHTML(LABEL_ASK.cur, { title: LABEL_ASK.cur.title, checks: labelChecks() });
+}
+/** Yes / No / Not sure on File's question. File repaints after it (inbox.mjs actions.lblask). */
+function labelAskAct(btn) {
+  const A = BetterfyAudio, cur = LABEL_ASK.cur, me = labelUser();
+  if (!cur || cur.answered != null || !me) return;
+  const v = btn?.dataset?.lok;
+  if (v === 'pass') { cur.answered = 'pass'; return; }
+  const ok = v === '1';
+  LABELCHECKS = A.withVerdict(LABELCHECKS, me, cur.id, cur.type, ok, cur.seen, Date.now(), 'file');
+  cur.answered = ok;
+  LABELS.sample = null;   // Sources draws a fresh sample, with this one counted
+  fire(idb.set(A.CHECKS_KEY, LABELCHECKS));
 }
 
 /** The heard tracks for the engine (WP-E2 reads them as `audio`), as an array of
