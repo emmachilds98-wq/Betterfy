@@ -23,4 +23,6 @@ export { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, score
 export { MAEST_FILE, MAEST_LABELS_FILE, needsMaest } from '../../core/audio/maest.mjs';
 export { needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN } from '../../core/audio/dsp/beats.mjs';
 export { needsKeyNet, KEYNET_MODEL_FILE, KEYNET_FILL_PER_RUN, KEYNET_VERSION } from '../../core/audio/dsp/keynet.mjs';
+export { createTimer, timeDeps, summariseTimings, timingLine, timingReportLines, deviceClass, STAGES as TIMING_STAGES } from '../../core/audio/timing.mjs';
+export { hearingFunnel, funnelText, funnelStages, funnelLines, FUNNEL_INSTEAD } from '../../core/audio/funnel.mjs';
 export { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } from '../../core/audio/clap.mjs';

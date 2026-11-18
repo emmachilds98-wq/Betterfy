@@ -34,6 +34,7 @@
 // and the run carries on to `done`.
 import { withTimeout, TRACK_TIMEOUT_MS, MODEL_TIMEOUT_MS } from '../../core/audio/timeout.mjs';
 import { runQueue, fillDsp } from '../../core/audio/worker.js';
+import { createTimer, timeDeps } from '../../core/audio/timing.mjs';
 import { MISS } from '../../core/audio/record.mjs';
 import { measureWindows, needsDsp } from '../../core/audio/dsp/combine.mjs';
 import { fillClap, needsClap, CLAP_FILL_PER_RUN } from '../../core/audio/clap.mjs';
@@ -126,6 +127,8 @@ export function createWorkerEar(worker, init) {
  * @param {() => boolean} [deps.keyNetOn]  asked at each start(); on unless it says false (owner rule: on by default)
  * @param {number} [deps.keyNetFillPerRun] heard records given key v4 per start (default KEYNET_FILL_PER_RUN)
  * @param {number} [deps.trackTimeoutMs] per-track limit, queue and top-ups (default TRACK_TIMEOUT_MS; 0 = none)
+ * @param {object} [deps.timingSeed] earlier timing samples ({ track, topup }), kept per device by the page (L1)
+ * @param {(snapshot: object) => void} [deps.onTiming] called with the rolling timing samples at the end of each run
  * @param {number} [deps.modelTimeoutMs] per-model-load limit (default MODEL_TIMEOUT_MS; 0 = none)
  */
 export function createAudioController(deps) {
@@ -142,6 +145,9 @@ export function createAudioController(deps) {
   const keyNetBudget = deps.keyNetFillPerRun ?? KEYNET_FILL_PER_RUN;
   const noKeyNet = new Set(); // the same, for key v4
   let keyNet = null, keyNetFailed = false;
+  // L1: per-stage timing, measurement only. Every call listening makes is wrapped; nothing it returns changes.
+  const timer = createTimer({ now: deps.timerNow, seed: deps.timingSeed });
+  const timed = d => timeDeps(d, timer);
   const trackMs = deps.trackTimeoutMs ?? TRACK_TIMEOUT_MS;
   const modelMs = deps.modelTimeoutMs ?? MODEL_TIMEOUT_MS;
   /** A model load, bounded. */
@@ -150,7 +156,7 @@ export function createAudioController(deps) {
   const step = fn => withTimeout(fn, trackMs, 'one track').catch(e => (e?.timeout ? { failed: { stage: 'timeout', detail: e.message } } : { skip: 'error' }));
   /** Start a tidy-up step: the pill and status show it instead of the finished queue's "1/1". */
   const tidyStart = (name, total) => { st.tidy = { step: name, done: 0, total }; emit(); };
-  const tidyTick = () => { if (st.tidy) { st.tidy.done++; emit(); } };
+  const tidyTick = () => { timer.finish('topup'); if (st.tidy) { st.tidy.done++; emit(); } };
   const tidyEnd = () => { if (st.tidy) { st.tidy = null; emit(); } };
 
   /** The key v4 model when it is on and loads; null otherwise (never fails a run, not retried this session). */
@@ -216,11 +222,11 @@ export function createAudioController(deps) {
         if (!tracks.length) {
           // Nothing new to hear: still top up dsp (it needs no model), and CLAP when it is on.
           const net = await keyNetNow();
-          if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp: keyed(dsp, net) }, signal);
+          if (dsp && fillBudget > 0) await topUpDsp(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp: keyed(dsp, net) }), signal);
           const clap = signal.aborted ? null : await clapNow();
-          if (clap && clapBudget > 0) await topUpClap({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }, signal);
-          await topUpBeats({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }, signal);
-          await topUpKeyNet({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }, signal);
+          if (clap && clapBudget > 0) await topUpClap(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }), signal);
+          await topUpBeats(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }), signal);
+          await topUpKeyNet(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }), signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -232,13 +238,14 @@ export function createAudioController(deps) {
         if (signal.aborted) { st.state = 'paused'; return { done: 0, stopped: true }; }
         const clap = await clapNow();
         const net = await keyNetNow();
-        const analyse = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
+        const analyse = timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
                           ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp: keyed(dsp, net) } : {}),
-                          ...(clap ? { clap } : {}) };
+                          ...(clap ? { clap } : {}) });
         const res = await runQueue(analyse, tracks, { signal, timeoutMs: trackMs, onResult: async (r, t) => {
           if (r.record) { await deps.store.put(r.record); st.heard++; }
           else if (r.miss) { await deps.store.put(r.miss); st.missed[r.miss.miss] = (st.missed[r.miss.miss] ?? 0) + 1; }
           else st.failed++;
+          timer.finish('track');
           st.done++; st.last = t?.id ?? null;
           emit();
         } });
@@ -250,6 +257,7 @@ export function createAudioController(deps) {
         return res;
       } finally {
         running = null; abort = null; st.tidy = null;
+        try { deps.onTiming?.(timer.snapshot()); } catch { /* a storage bug must not stop listening */ }
         emit();
       }
     })();
@@ -305,7 +313,7 @@ export function createAudioController(deps) {
       const tracker = await beatsNow();
       if (!tracker) return;
       const withTempo = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
-                          dsp: keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet) };
+                          dsp: timer.wrap('dsp', keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet)) };
       for (const rec of due) {
         if (signal.aborted) return;
         const r = await step(() => fillDsp(withTempo, rec));
@@ -337,7 +345,7 @@ export function createAudioController(deps) {
       for (const rec of due) {
         if (signal.aborted) return;
         const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
-                          dsp: async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; } };
+                          dsp: timer.wrap('dsp', async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; }) };
         const r = await step(() => fillDsp(onlyKey, rec));
         if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; }
         else if (r.skip) noKeyNet.add(rec.id);
@@ -358,7 +366,7 @@ export function createAudioController(deps) {
   /** Resolves when no run is going (at once if none is). The second ear waits on this. */
   const whenIdle = () => (running ? running.then(() => undefined, () => undefined) : Promise.resolve());
 
-  return { start, stop, refresh, vm, whenIdle, get running() { return !!running; } };
+  return { start, stop, refresh, vm, whenIdle, timing: () => timer.snapshot(), get running() { return !!running; } };
 }
 
 /** ListenVM for web/ui/sound.mjs, from the controller's state and the settings. */

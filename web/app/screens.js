@@ -25,6 +25,7 @@ const SCREEN_CTX = {
                    tuneBlock: r => (globalThis.BetterfyTune ? BetterfyTune.tuneBlock(r) : ''),
                    blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
                    maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,
+                   hearingLines: () => (typeof hearingReportLines === 'function' ? hearingReportLines() : []),
                    getLog: () => (typeof getLog === 'function' ? getLog({ all: true }) : Promise.resolve(null)),
                    measureLines: log => globalThis.BetterfyMeasure ? BetterfyMeasure.measureLines(BetterfyMeasure.measureHistory(log)) : [],
                    get navigator() { return globalThis.navigator; }, prompt: (...a) => prompt(...a) }),

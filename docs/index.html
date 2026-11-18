@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-2256">
+<meta name="bf-build" content="2026-11-18-2313">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -2071,7 +2071,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-2256</span>
+    <span class="mono">build 2026-11-18-2313</span>
   </p>
 
   <div class="feat">
@@ -2164,7 +2164,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-2256</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-2313</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2242,7 +2242,7 @@ main:focus{outline:none}
         <button class="uhhead" type="button" id="uh-about-h" data-uhtoggle="about" aria-expanded="false" aria-controls="uh-about-b">
           <span class="uht"><b>About &amp; updates</b><span class="uhs"></span></span><span class="chev" aria-hidden="true"></span></button>
         <div class="uhbody" id="uh-about-b" role="region" aria-labelledby="uh-about-h" hidden>
-          <p class="hint">Betterfy, build 2026-11-18-2256. <span id="sheetWho" class="mono"></span></p>
+          <p class="hint">Betterfy, build 2026-11-18-2313. <span id="sheetWho" class="mono"></span></p>
           <div class="rowbtns"><button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button></div>
           <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, which read as "get the latest
                Betterfy". It is not: it re-reads every playlist from Spotify, hundreds of calls against a
@@ -7101,12 +7101,12 @@ function weakBuckets(v, LIB, n = 5) {
  * names of the user's own weakest playlists — so pasting it somewhere shares
  * how the engine did, not what the library holds beyond that.
  */
-function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, log) {
+function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock, hearingLines }, log) {
   const v = ENG.val, r = ENG.rung;
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-2256`,
+    `Betterfy engine score — build 2026-11-18-2313`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7139,6 +7139,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     situationLine(v, pc),
     tempoRangeLine(v.tempoRange, pc),
     ...(log && measureLines ? measureLines(log) : []),
+    ...(hearingLines ? hearingLines() : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   if (TUNE?.res && tuneBlock) lines.push('', tuneBlock(TUNE.res));
@@ -11640,7 +11641,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-2256';
+const BUILD = '2026-11-18-2313';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11978,7 +11979,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-2256', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-2313', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12801,7 +12802,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-2256');
+    const w = new Worker('reports-worker.js?v=2026-11-18-2313');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16608,7 +16609,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-2256';
+    s.src = 'engine.js?v=2026-11-18-2313';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -16630,7 +16631,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-2256');
+    const w = new Worker('engine-worker.js?v=2026-11-18-2313');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -17385,7 +17386,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-2256';
+    s.src = 'audio.js?v=2026-11-18-2313';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -17439,7 +17440,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-2256', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-2313', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17460,6 +17461,9 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: audioEars,
+    // L1: the last few per-stage timings, kept on this device (numbers only).
+    timingSeed: audioTimingRead(),
+    onTiming: snap => audioTimingWrite(snap),
     // CLAP (WP-C2): only while "Search by description" is ticked and Wi-Fi allows it.
     // Its encoder (~77 MB) loads in the same Worker on the first such run.
     clapOn: () => deepAllowed('clap') === 'ok',
@@ -18699,6 +18703,52 @@ function audioRedraw() {
   });
 }
 
+/* ---------- L1 timing and L4 funnel: display only (docs/SOUND-ENGINE-PLAN.md) ---------- */
+const TIMING_KEY = 'bf_listen_timing';
+function audioTimingRead() {
+  try { const j = JSON.parse(LS.getItem(TIMING_KEY) || 'null'); return j && typeof j === 'object' ? j : null; } catch { return null; }
+}
+function audioTimingWrite(snap) {
+  try {
+    const A = globalThis.BetterfyAudio, n = navigator;
+    const device = A?.deviceClass ? A.deviceClass({ hardwareConcurrency: n.hardwareConcurrency, deviceMemory: n.deviceMemory,
+      mobile: n.userAgentData?.mobile ?? /Mobi|Android|iPhone|iPad/i.test(n.userAgent || '') }) : '';
+    LS.setItem(TIMING_KEY, JSON.stringify({ ...snap, device }));
+  } catch { /* storage off: the numbers just aren't kept */ }
+}
+/** Every track in the library, each once, with the ISRC Spotify gave. */
+function funnelTracks() {
+  const out = [], seen = new Set();
+  const add = t => { if (t?.id && !seen.has(t.id)) { seen.add(t.id); out.push({ id: t.id, isrc: t.isrc ?? null }); } };
+  for (const t of LIB?.liked ?? []) add(t);
+  for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) add(t);
+  return out;
+}
+function hearingFunnelNow() {
+  const A = globalThis.BetterfyAudio;
+  return A?.hearingFunnel ? A.hearingFunnel(funnelTracks(), AUDIO.records ?? new Map()) : null;
+}
+function hearingFunnelHTML() {
+  const A = globalThis.BetterfyAudio, f = hearingFunnelNow();
+  if (!f || !f.total) return '';
+  const stages = A.funnelStages(f).map(([k, c]) => `<li><b>${c.toLocaleString()}</b> ${esc(k)}</li>`).join('');
+  const why = Object.entries(f.misses).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1])
+    .map(([k, c]) => `<li><b>${c.toLocaleString()}</b> ${esc(A.FUNNEL_INSTEAD[k] ?? k)}</li>`).join('');
+  const timing = A.timingLine ? A.timingLine((AUDIO.ctrl?.timing?.() ?? audioTimingRead() ?? {}).track) : '';
+  return `<div id="hearingFunnel" class="sub lp-note"><p id="hearingFunnelText">${esc(A.funnelText(f))}</p>
+    <details><summary>How much of your library can be heard</summary><ul>${stages}</ul>${why ? `<p>What happens to the rest:</p><ul>${why}</ul>` : ''}</details>
+    ${timing ? `<p id="audioTiming">On this device: ${esc(timing)}.</p>` : ''}</div>`;
+}
+/** Score report lines: how much is heard, and how fast listening is on this device. */
+function hearingReportLines() {
+  const A = globalThis.BetterfyAudio;
+  if (!A?.hearingFunnel) return ['Hearing: nothing heard yet.'];
+  const lines = A.funnelLines(hearingFunnelNow());
+  const t = audioTimingRead();
+  if (t && A.timingReportLines) lines.push(...A.timingReportLines(t, t.device || ''));
+  return lines;
+}
+
 /** What the queue should hear next, in order, cut to the chosen scope. */
 async function audioTracks() {
   const A = BetterfyAudio, set = audioSettings();
@@ -18788,7 +18838,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-2256', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-2313', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -18855,6 +18905,7 @@ function audioPanelHTML() {
     ${set.on && vm.reason === 'ask' ? `<p class="sub lp-note">This browser doesn’t say whether it is on Wi-Fi.
       <button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button></p>` : ''}
     <p class="sub lp-note" id="audioStatus">${status}</p>${bar}
+    ${hearingFunnelHTML()}
     ${listenPill(vm)}
     ${missedList(vm) || (nMissed ? `<details class="sub lp-note"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
@@ -19417,6 +19468,7 @@ const SCREEN_CTX = {
                    tuneBlock: r => (globalThis.BetterfyTune ? BetterfyTune.tuneBlock(r) : ''),
                    blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
                    maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,
+                   hearingLines: () => (typeof hearingReportLines === 'function' ? hearingReportLines() : []),
                    getLog: () => (typeof getLog === 'function' ? getLog({ all: true }) : Promise.resolve(null)),
                    measureLines: log => globalThis.BetterfyMeasure ? BetterfyMeasure.measureLines(BetterfyMeasure.measureHistory(log)) : [],
                    get navigator() { return globalThis.navigator; }, prompt: (...a) => prompt(...a) }),
@@ -19660,6 +19712,7 @@ const DATA_KEYS = [
   { where:'idb', key:'cluster_names', name:'Names for sound groups', group:'Listening', why:'Names you gave to groups of tracks that sound alike.' },
   { where:'idb', key:'labelchecks', name:'Your label checks', group:'Listening', why:'Your answers when checking mood, voice and energy labels.' },
   { where:'local', key:'bf_audio', name:'Listening settings', group:'Listening', why:'Listening settings: on or off, and which tracks to listen to.' },
+  { where:'local', key:'bf_listen_timing', name:'Listening speed', group:'Listening', why:'How long the last few tracks took to hear on this device, per step (looking up, downloading, decoding, listening), so Settings can say how fast listening is here. Numbers only, never sent.' },
   { where:'local', key:'bf_audio_deep', name:'Deep listen settings', group:'Listening', why:'Deep listen settings.' },
   { where:'local', key:'bf_audio_wifi_ok', name:'OK to listen off Wi-Fi', group:'Listening', why:'That you said yes to listening on a metered connection.' },
   { where:'local', key:'bf_sound_nudge', name:'Listen suggestion dismissed', group:'Listening', why:'That you dismissed the "listen to my music" suggestion on File.' },

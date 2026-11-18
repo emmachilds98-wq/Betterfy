@@ -1352,6 +1352,121 @@ function concat(parts) {
 }
 return { WORKER_VERSION, analyseOne, fillDsp, analyseSamples, runQueue };
 })();
+/* ---- core/audio/timing.mjs ---- */
+__mod["core/audio/timing.mjs"] = (function () {
+// Per-stage timing of listening (SOUND-ENGINE-PLAN L1). Measurement only: it
+// wraps the functions listening already calls, adds up how long each took, and
+// never changes what is heard, stored or ranked. Nothing is sent anywhere; the
+// page keeps the last few samples per device in localStorage (bf_listen_timing).
+//
+// Stages: lookup (Deezer, by ISRC), download (the preview windows), decode,
+// model (the listening model, its heads, CLAP), dsp (tempo and key). A "track"
+// sample is one track heard from scratch; a "topup" sample is one stored
+// record given a missing field (tempo/key, CLAP, Beat This, key v4), which
+// downloads the preview again.
+
+const STAGES = Object.freeze(['lookup', 'download', 'decode', 'model', 'dsp']);
+/** Samples kept per kind: a rolling window, so the median follows the device's current state. */
+const TIMING_KEEP = 60;
+
+const nowMs = () => (globalThis.performance?.now ? performance.now() : Date.now());
+
+const validSample = s => s && typeof s === 'object' && STAGES.some(k => Number.isFinite(s[k]) && s[k] >= 0);
+
+/**
+ * @param {{ now?: () => number, seed?: { track?: object[], topup?: object[] } }} [o]
+ */
+function createTimer({ now = nowMs, seed } = {}) {
+  const keep = { track: [], topup: [] };
+  for (const k of Object.keys(keep)) keep[k] = (Array.isArray(seed?.[k]) ? seed[k] : []).filter(validSample).slice(-TIMING_KEEP);
+  let cur = {};
+  /** Wrap an async (or sync) function so its time lands in `stage` of the sample being built. */
+  const wrap = (stage, fn) => typeof fn !== 'function' ? fn : async (...a) => {
+    const t0 = now();
+    try { return await fn(...a); } finally { cur[stage] = (cur[stage] ?? 0) + Math.max(0, now() - t0); }
+  };
+  /** Close the sample being built as one `kind` ('track' or 'topup'); samples with no time are dropped. */
+  const finish = kind => {
+    const ms = {};
+    let total = 0;
+    for (const s of STAGES) if (cur[s] > 0) { ms[s] = Math.round(cur[s]); total += ms[s]; }
+    cur = {};
+    if (!total || !keep[kind]) return null;
+    keep[kind].push(ms);
+    if (keep[kind].length > TIMING_KEEP) keep[kind].shift();
+    return ms;
+  };
+  const snapshot = () => ({ track: keep.track.map(x => ({ ...x })), topup: keep.topup.map(x => ({ ...x })) });
+  return { wrap, finish, snapshot };
+}
+
+/**
+ * `deps` (lookup, fetchPreview, decode, ear, heads, dsp, clap) with every
+ * call timed into `timer`. Same shape, same results; the originals are untouched.
+ */
+function timeDeps(deps, timer) {
+  const out = { ...deps };
+  if (deps.lookup) out.lookup = timer.wrap('lookup', deps.lookup);
+  if (deps.fetchPreview) out.fetchPreview = timer.wrap('download', deps.fetchPreview);
+  if (deps.decode) out.decode = timer.wrap('decode', deps.decode);
+  if (deps.ear) out.ear = { ...deps.ear, run: timer.wrap('model', deps.ear.run) };
+  if (deps.heads) out.heads = { ...deps.heads, run: timer.wrap('model', deps.heads.run) };
+  if (deps.dsp) out.dsp = timer.wrap('dsp', deps.dsp);
+  if (deps.clap) out.clap = { ...deps.clap, decode: timer.wrap('decode', deps.clap.decode), embed: timer.wrap('model', deps.clap.embed) };
+  return out;
+}
+
+const median = xs => {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+/**
+ * Samples → what the page shows: the median per stage, the median total, and
+ * how many a minute that is. `perMin` is 0 with no samples.
+ * @returns {{ n: number, ms: Record<string, number>, total: number, perMin: number }}
+ */
+function summariseTimings(samples) {
+  const list = (samples ?? []).filter(validSample);
+  const ms = {};
+  for (const s of STAGES) ms[s] = Math.round(median(list.map(x => x[s] ?? 0)));
+  const total = Math.round(median(list.map(x => STAGES.reduce((n, s) => n + (x[s] ?? 0), 0))));
+  return { n: list.length, ms, total, perMin: total > 0 ? Math.round((60000 / total) * 10) / 10 : 0 };
+}
+
+const secs = ms => (ms / 1000).toFixed(1);
+
+/** "about 2.1 s a track (29 a minute): 0.9 s waiting for Deezer, 0.8 s hearing"; '' with too few samples. */
+function timingLine(samples, { min = 3 } = {}) {
+  const s = summariseTimings(samples);
+  if (s.n < min || !s.total) return '';
+  const wait = s.ms.lookup + s.ms.download, hear = s.ms.decode + s.ms.model + s.ms.dsp;
+  const perMin = s.perMin >= 10 ? Math.round(s.perMin) : s.perMin;
+  return `about ${secs(s.total)} s a track (${perMin} a minute): ${secs(wait)} s waiting for Deezer, ${secs(hear)} s hearing`;
+}
+
+/** The device, in a few plain words, so a phone run and a computer run can be compared. */
+function deviceClass(nav = {}) {
+  const cores = Number.isFinite(nav.hardwareConcurrency) ? nav.hardwareConcurrency : null;
+  const gb = Number.isFinite(nav.deviceMemory) ? nav.deviceMemory : null;
+  const kind = nav.mobile === true ? 'phone or tablet' : 'computer';
+  return [kind, cores ? `${cores} cores` : null, gb ? `${gb} GB memory` : null].filter(Boolean).join(', ');
+}
+
+/** Lines for the Score report: one per kind with samples, with the per-stage medians. */
+function timingReportLines(snapshot, device = '') {
+  const lines = [];
+  for (const [kind, label] of [['track', 'Listening speed'], ['topup', 'Top-up speed (per record)']]) {
+    const s = summariseTimings(snapshot?.[kind]);
+    if (!s.n) continue;
+    const parts = STAGES.filter(k => s.ms[k] > 0).map(k => `${k} ${secs(s.ms[k])} s`).join(', ');
+    lines.push(`${label}${device ? ` (${device})` : ''}: ${secs(s.total)} s each, ${s.perMin} a minute, over ${s.n}; ${parts}`);
+  }
+  return lines;
+}
+return { STAGES, TIMING_KEEP, createTimer, timeDeps, summariseTimings, timingLine, deviceClass, timingReportLines };
+})();
 /* ---- core/audio/dsp/tempo.mjs ---- */
 __mod["core/audio/dsp/tempo.mjs"] = (function () {
 const { melFrames, SAMPLE_RATE, HOP_SIZE, N_BANDS } = __mod["core/audio/mel.mjs"];
@@ -3257,6 +3372,7 @@ return { KEYNET_VERSION, KEYNET_MODEL_FILE, KEYNET_DSP_W, KEYNET_SURE_P, KEYNET_
 __mod["web/audio/controller.mjs"] = (function () {
 const { withTimeout, TRACK_TIMEOUT_MS, MODEL_TIMEOUT_MS } = __mod["core/audio/timeout.mjs"];
 const { runQueue, fillDsp } = __mod["core/audio/worker.js"];
+const { createTimer, timeDeps } = __mod["core/audio/timing.mjs"];
 const { MISS } = __mod["core/audio/record.mjs"];
 const { measureWindows, needsDsp } = __mod["core/audio/dsp/combine.mjs"];
 const { fillClap, needsClap, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
@@ -3296,6 +3412,7 @@ const { withKeyNet, keyNetFields, keepKeyNet, needsKeyNet, KEYNET_FILL_PER_RUN }
 // per-track step and every model load has a time limit (core/audio/timeout.mjs):
 // a step that never settles counts as failed, is tried again on a later run,
 // and the run carries on to `done`.
+
 
 
 
@@ -3390,6 +3507,8 @@ function createWorkerEar(worker, init) {
  * @param {() => boolean} [deps.keyNetOn]  asked at each start(); on unless it says false (owner rule: on by default)
  * @param {number} [deps.keyNetFillPerRun] heard records given key v4 per start (default KEYNET_FILL_PER_RUN)
  * @param {number} [deps.trackTimeoutMs] per-track limit, queue and top-ups (default TRACK_TIMEOUT_MS; 0 = none)
+ * @param {object} [deps.timingSeed] earlier timing samples ({ track, topup }), kept per device by the page (L1)
+ * @param {(snapshot: object) => void} [deps.onTiming] called with the rolling timing samples at the end of each run
  * @param {number} [deps.modelTimeoutMs] per-model-load limit (default MODEL_TIMEOUT_MS; 0 = none)
  */
 function createAudioController(deps) {
@@ -3406,6 +3525,9 @@ function createAudioController(deps) {
   const keyNetBudget = deps.keyNetFillPerRun ?? KEYNET_FILL_PER_RUN;
   const noKeyNet = new Set(); // the same, for key v4
   let keyNet = null, keyNetFailed = false;
+  // L1: per-stage timing, measurement only. Every call listening makes is wrapped; nothing it returns changes.
+  const timer = createTimer({ now: deps.timerNow, seed: deps.timingSeed });
+  const timed = d => timeDeps(d, timer);
   const trackMs = deps.trackTimeoutMs ?? TRACK_TIMEOUT_MS;
   const modelMs = deps.modelTimeoutMs ?? MODEL_TIMEOUT_MS;
   /** A model load, bounded. */
@@ -3414,7 +3536,7 @@ function createAudioController(deps) {
   const step = fn => withTimeout(fn, trackMs, 'one track').catch(e => (e?.timeout ? { failed: { stage: 'timeout', detail: e.message } } : { skip: 'error' }));
   /** Start a tidy-up step: the pill and status show it instead of the finished queue's "1/1". */
   const tidyStart = (name, total) => { st.tidy = { step: name, done: 0, total }; emit(); };
-  const tidyTick = () => { if (st.tidy) { st.tidy.done++; emit(); } };
+  const tidyTick = () => { timer.finish('topup'); if (st.tidy) { st.tidy.done++; emit(); } };
   const tidyEnd = () => { if (st.tidy) { st.tidy = null; emit(); } };
 
   /** The key v4 model when it is on and loads; null otherwise (never fails a run, not retried this session). */
@@ -3480,11 +3602,11 @@ function createAudioController(deps) {
         if (!tracks.length) {
           // Nothing new to hear: still top up dsp (it needs no model), and CLAP when it is on.
           const net = await keyNetNow();
-          if (dsp && fillBudget > 0) await topUpDsp({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp: keyed(dsp, net) }, signal);
+          if (dsp && fillBudget > 0) await topUpDsp(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp: keyed(dsp, net) }), signal);
           const clap = signal.aborted ? null : await clapNow();
-          if (clap && clapBudget > 0) await topUpClap({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }, signal);
-          await topUpBeats({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }, signal);
-          await topUpKeyNet({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }, signal);
+          if (clap && clapBudget > 0) await topUpClap(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }), signal);
+          await topUpBeats(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }), signal);
+          await topUpKeyNet(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }), signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -3496,13 +3618,14 @@ function createAudioController(deps) {
         if (signal.aborted) { st.state = 'paused'; return { done: 0, stopped: true }; }
         const clap = await clapNow();
         const net = await keyNetNow();
-        const analyse = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
+        const analyse = timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
                           ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp: keyed(dsp, net) } : {}),
-                          ...(clap ? { clap } : {}) };
+                          ...(clap ? { clap } : {}) });
         const res = await runQueue(analyse, tracks, { signal, timeoutMs: trackMs, onResult: async (r, t) => {
           if (r.record) { await deps.store.put(r.record); st.heard++; }
           else if (r.miss) { await deps.store.put(r.miss); st.missed[r.miss.miss] = (st.missed[r.miss.miss] ?? 0) + 1; }
           else st.failed++;
+          timer.finish('track');
           st.done++; st.last = t?.id ?? null;
           emit();
         } });
@@ -3514,6 +3637,7 @@ function createAudioController(deps) {
         return res;
       } finally {
         running = null; abort = null; st.tidy = null;
+        try { deps.onTiming?.(timer.snapshot()); } catch { /* a storage bug must not stop listening */ }
         emit();
       }
     })();
@@ -3569,7 +3693,7 @@ function createAudioController(deps) {
       const tracker = await beatsNow();
       if (!tracker) return;
       const withTempo = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
-                          dsp: keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet) };
+                          dsp: timer.wrap('dsp', keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet)) };
       for (const rec of due) {
         if (signal.aborted) return;
         const r = await step(() => fillDsp(withTempo, rec));
@@ -3601,7 +3725,7 @@ function createAudioController(deps) {
       for (const rec of due) {
         if (signal.aborted) return;
         const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
-                          dsp: async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; } };
+                          dsp: timer.wrap('dsp', async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; }) };
         const r = await step(() => fillDsp(onlyKey, rec));
         if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; }
         else if (r.skip) noKeyNet.add(rec.id);
@@ -3622,7 +3746,7 @@ function createAudioController(deps) {
   /** Resolves when no run is going (at once if none is). The second ear waits on this. */
   const whenIdle = () => (running ? running.then(() => undefined, () => undefined) : Promise.resolve());
 
-  return { start, stop, refresh, vm, whenIdle, get running() { return !!running; } };
+  return { start, stop, refresh, vm, whenIdle, timing: () => timer.snapshot(), get running() { return !!running; } };
 }
 
 /** ListenVM for web/ui/sound.mjs, from the controller's state and the settings. */
@@ -6947,6 +7071,92 @@ function maestScoreText(w, pc = x => (x == null ? '—' : `${Math.round(x * 1000
 }
 return { MAEST_PER_RUN, createWorkerMaest, createMaestRunner, maestStatusText, chosenEar, scoreArms, NEAR_SETTING, nearInUse, nearScoreText, maestScoreText };
 })();
+/* ---- core/audio/funnel.mjs ---- */
+__mod["core/audio/funnel.mjs"] = (function () {
+const { MISS } = __mod["core/audio/record.mjs"];
+// The hearing coverage funnel (SOUND-ENGINE-PLAN L4): of the tracks in this
+// library, how many have an ISRC, are found on Deezer, have a preview, were
+// downloaded and are heard, and why the rest are not. Display only: it reads
+// what listening already stored (records and cached misses) and changes
+// nothing. Every count is per account, from this device's own store.
+
+
+
+/**
+ * @param {{ id: string, isrc?: string|null }[]} tracks  the library (duplicates by id are counted once)
+ * @param {Map<string, object>|null} records  audio store contents: heard records and cached misses by track id
+ * @returns {{ total: number, withIsrc: number, onDeezer: number, hasPreview: number, downloaded: number, heard: number,
+ *             misses: Record<string, number>, waiting: number }}
+ *   `misses` counts NO_ISRC, NOT_ON_DEEZER, NO_PREVIEW, IDENTITY and TOO_SHORT;
+ *   `waiting` is tracks with an ISRC not tried yet (or only failed this session).
+ *   Each stage is the tracks still in after the ones turned away before it.
+ */
+function hearingFunnel(tracks, records) {
+  const misses = { [MISS.NO_ISRC]: 0, [MISS.NOT_ON_DEEZER]: 0, [MISS.NO_PREVIEW]: 0, [MISS.IDENTITY]: 0, [MISS.TOO_SHORT]: 0 };
+  const seen = new Set();
+  let total = 0, heard = 0, waiting = 0;
+  for (const t of tracks ?? []) {
+    if (!t?.id || seen.has(t.id)) continue;
+    seen.add(t.id);
+    total++;
+    const r = records?.get?.(t.id);
+    if (r && !r.miss) { heard++; continue; }
+    if (r?.miss === MISS.NO_ISRC || (!r && !t.isrc)) { misses[MISS.NO_ISRC]++; continue; }
+    if (r?.miss && r.miss in misses) { misses[r.miss]++; continue; }
+    waiting++;
+  }
+  const withIsrc = total - misses[MISS.NO_ISRC];
+  const onDeezer = withIsrc - waiting - misses[MISS.NOT_ON_DEEZER];
+  const hasPreview = onDeezer - misses[MISS.NO_PREVIEW] - misses[MISS.IDENTITY];
+  // A usable preview is downloaded as soon as the track is tried; a clip too short to hear is lost after that.
+  return { total, withIsrc, onDeezer, hasPreview, downloaded: hasPreview, heard, misses, waiting };
+}
+
+const n = x => Number(x).toLocaleString('en-US');
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** The plain-words funnel: "Heard 7,161 of 7,450. Not on Deezer 180, no preview 60, ..."; "Nothing heard yet." when none. */
+function funnelText(f) {
+  if (!f || !f.total) return 'Nothing heard yet.';
+  const parts = [];
+  const add = (c, label) => { if (c > 0) parts.push(`${label} ${n(c)}`); };
+  add(f.misses[MISS.NOT_ON_DEEZER], 'not on Deezer');
+  add(f.misses[MISS.NO_PREVIEW], 'no preview');
+  add(f.misses[MISS.IDENTITY], 'a different version');
+  add(f.misses[MISS.TOO_SHORT], 'too short');
+  add(f.misses[MISS.NO_ISRC], 'no ISRC');
+  add(f.waiting, 'not tried yet');
+  const tail = parts.length ? ` ${cap(parts.join(', '))}.` : '';
+  if (!f.heard) return `Nothing heard yet.${tail}`;
+  return `Heard ${n(f.heard)} of ${n(f.total)}.${tail}`;
+}
+
+/** The stages in order: [label, count]. */
+function funnelStages(f) {
+  if (!f) return [];
+  return [['In your library', f.total], ['Have a recording code (ISRC)', f.withIsrc], ['Found on Deezer', f.onDeezer],
+          ['Have a preview', f.hasPreview], ['Downloaded', f.downloaded], ['Heard', f.heard]];
+}
+
+/** What happens instead, per reason (SOUND-ENGINE-PLAN §5), one plain line each. */
+const FUNNEL_INSTEAD = Object.freeze({
+  [MISS.NO_ISRC]: 'no recording code from Spotify (usually local files): placed by tags instead',
+  [MISS.NOT_ON_DEEZER]: 'not on Deezer: placed by tags, similar artists and the artist’s other heard tracks',
+  [MISS.NO_PREVIEW]: 'Deezer has it but no clip: placed the same way',
+  [MISS.IDENTITY]: 'Deezer’s version is a different length, so probably another recording: not heard, on purpose',
+  [MISS.TOO_SHORT]: 'the clip was too short to hear',
+});
+
+/** Score report lines. */
+function funnelLines(f) {
+  if (!f) return [];
+  const lines = [`Hearing: ${funnelText(f)}`];
+  const top = Object.entries(f.misses).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1])[0];
+  if (top) lines.push(`Hearing, biggest miss (${n(top[1])}): ${FUNNEL_INSTEAD[top[0]]}`);
+  return lines;
+}
+return { hearingFunnel, funnelText, funnelStages, FUNNEL_INSTEAD, funnelLines };
+})();
 /* ---- web/audio/index.mjs ---- */
 __mod["web/audio/index.mjs"] = (function () {
 const { openAudioStore, AUDIO_DB, AUDIO_STORE } = __mod["web/audio/store.mjs"];
@@ -6968,10 +7178,12 @@ const { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreA
 const { MAEST_FILE, MAEST_LABELS_FILE, needsMaest } = __mod["core/audio/maest.mjs"];
 const { needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN } = __mod["core/audio/dsp/beats.mjs"];
 const { needsKeyNet, KEYNET_MODEL_FILE, KEYNET_FILL_PER_RUN, KEYNET_VERSION } = __mod["core/audio/dsp/keynet.mjs"];
+const { createTimer, timeDeps, summariseTimings, timingLine, timingReportLines, deviceClass, STAGES: TIMING_STAGES } = __mod["core/audio/timing.mjs"];
+const { hearingFunnel, funnelText, funnelStages, funnelLines, FUNNEL_INSTEAD } = __mod["core/audio/funnel.mjs"];
 const { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 // What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
 // One namespace so the template reaches core/audio through a single name.
-return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, defaultAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, askFor, askText, askHTML, askProgress, ASK_SESSION_KEY, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, needsKeyNet, KEYNET_MODEL_FILE, KEYNET_FILL_PER_RUN, KEYNET_VERSION, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
+return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, defaultAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, askFor, askText, askHTML, askProgress, ASK_SESSION_KEY, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, needsKeyNet, KEYNET_MODEL_FILE, KEYNET_FILL_PER_RUN, KEYNET_VERSION, createTimer, timeDeps, summariseTimings, timingLine, timingReportLines, deviceClass, TIMING_STAGES, hearingFunnel, funnelText, funnelStages, funnelLines, FUNNEL_INSTEAD, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
 })();
 /* ---- core/audio/infer.mjs ---- */
 __mod["core/audio/infer.mjs"] = (function () {

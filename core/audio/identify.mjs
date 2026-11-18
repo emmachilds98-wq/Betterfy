@@ -111,7 +111,14 @@ export function identify(record, { neighbours = [], tags = [], playlistName = nu
   const t = tempoOf(record);
   let bpm = null;
   if (t) {
-    const octave = resolveOctave(t.bpm, t.alt, [...flat]);
+    let octave = resolveOctave(t.bpm, t.alt, [...flat]);
+    if (!t.alt && t.conf >= TEMPO_CONF) {
+      // Confident readings too: let the genres heard pick between x2 and x1/2 of it.
+      for (const p of [t.bpm * 2, t.bpm / 2]) {
+        const o = resolveOctave(octave.bpm, p, [...flat]);
+        if (o.from === 'genre') { octave = o; break; }
+      }
+    }
     bpm = { value: +octave.bpm.toFixed(1), conf: t.conf, from: octave.from, fit: null };
     if (t.conf >= TEMPO_CONF) {
       for (const [c, v] of flat) {
