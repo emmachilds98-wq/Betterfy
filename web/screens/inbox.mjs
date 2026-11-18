@@ -289,7 +289,24 @@ export function likedLineHTML({ R, esc }) {
   return `<details class="liked-line"><summary>${f(b.liked)} liked · ${f(b.filed)} filed here · ${f(b.toFile)} to file</summary>
     <p>Every liked song waits here until you file it, even one that is already in a playlist.${short}</p>
     ${b.placed ? `<p>${f(b.placed)} of the ${f(b.toFile)} are already in a playlist: ${b.top.map(x => `${esc(x.name)} (${f(x.n)})`).join(', ')}${b.playlists > b.top.length ? `, and ${f(b.playlists - b.top.length)} more` : ''}. Filing one where it already is adds no second copy.</p>` : ''}
+    <p>Songs that fit none of your playlists? <button class="linkbtn" data-go="new">See suggested new playlists</button></p>
   </details>`;
+}
+
+/** A liked song that already sits in a playlist: keep it there, or take it out of Liked Songs.
+ *  Picking other playlists above still files it there as well. Remove asks for a second tap. */
+export function alreadyHTML({ S, esc }, t) {
+  const pl = t?.inPl ?? [];
+  if (!pl.length) return '';
+  const names = pl.slice(0, 3).map(p => `<b>${esc(p.name)}</b>`).join(', ') + (pl.length > 3 ? ` and ${pl.length - 3} more` : '');
+  const ask = S.unlikeAsk === t.id;
+  return `<div class="already" role="group" aria-label="Already in a playlist">
+    <p>Already in ${names}. Pick more playlists above to add it there too, or:</p>
+    <div class="rowbtns">
+      <button class="b sm" data-act="keepthere">Keep it there</button>
+      <button class="b sm${ask ? ' warn' : ''}" data-act="unlikeask" aria-live="polite">${ask ? 'Tap again to remove from Liked' : 'Remove from Liked'}</button>
+    </div>
+  </div>`;
 }
 
 export function view(ctx) {
@@ -320,7 +337,7 @@ export function view(ctx) {
   // A tap only ever builds a selection now — it never writes to Spotify by
   // itself, which is what a misclick used to cost. The selection belongs to
   // whichever track is on screen, so it clears the moment that changes.
-  if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; }
+  if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; S.unlikeAsk = null; }
   if (typeof soundWarm === 'function') soundWarm();
   const promote = !!S.promote; S.promote = false;   // the peek card springing up, once
   const picks = filePicks(t);
@@ -397,6 +414,7 @@ export function view(ctx) {
           ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).map(id =>
             `<button class="chip" data-act="selfile" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
         </div>` : ''}
+        ${alreadyHTML(ctx, t)}
         <div class="rowbtns" style="margin-top:22px">
           <button class="b big go grow" data-act="filesel" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
           <button class="b big" data-act="skip">Skip</button>
@@ -404,6 +422,7 @@ export function view(ctx) {
         <details class="cardmore"><summary aria-label="More: unlike, or add another playlist" title="More">\u22EF</summary>
           <div class="rowbtns">
             <button class="b sm" data-act="unlike">Unlike</button>
+            <button class="b sm" data-go="new" title="Playlists Betterfy suggests making from songs that fit nowhere yet">Suggest a new playlist</button>
             <select id="anyPl" data-act="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
           </div>
         </details>
@@ -495,7 +514,9 @@ export async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
   S.filing = false;
   const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
                                 await forgetAccept(t.id, ids); };
-  toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
+  const keptOnly = ids.every(id => (t.inPl ?? []).some(p => p.id === id));
+  toast(keptOnly ? `Kept “${t.title}” where it is. It is filed now.`
+    : names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
   const more = rollForwardFor(t, R.backlog, ids, FB, { sound: ctx.rollSound, registrant: ctx.rollRegistrant });
   S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
                            rows: more.map(b => ({ id: b.id, title: b.title, how: b.how })), off: new Set() } : null;
@@ -551,6 +572,13 @@ export const actions = {
   play: (ctx) => inboxAct(ctx, 'play'),
   skip: (ctx) => inboxAct(ctx, 'skip'),
   unlike: (ctx) => inboxAct(ctx, 'unlike'),
+  // Already in a playlist: file it where it is (nothing written), or remove it from Liked on a second tap.
+  keepthere: (ctx) => { const t = inboxTrack(ctx); if (t?.inPl?.length) return fileCurrent(ctx, t.inPl.map(p => p.id)); },
+  unlikeask(ctx) {
+    const t = inboxTrack(ctx); if (!t) return;
+    if (ctx.S.unlikeAsk === t.id) { ctx.S.unlikeAsk = null; return inboxAct(ctx, 'unlike'); }
+    ctx.S.unlikeAsk = t.id; ctx.render();
+  },
   async roll(ctx, el) {
     if (el.dataset.roll === 'no') { ctx.S.roll = null; return ctx.render(); }
     el.disabled = true;

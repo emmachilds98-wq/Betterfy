@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-0409">
+<meta name="bf-build" content="2026-11-18-0451">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -936,6 +936,13 @@ main:focus{outline:none}
 .liked-line { margin: 0 0 14px; font-size: 13px; color: var(--ink-2); }
 .liked-line summary { cursor: pointer; font-family: var(--mono); font-size: 11.5px; letter-spacing: .06em; }
 .liked-line p { margin: 8px 0 0; line-height: 1.5; }
+
+/* A liked song already in a playlist (inbox.mjs alreadyHTML): keep it there, or remove from Liked. */
+.already { margin: 18px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); font-size: 13.5px; }
+.already p { margin: 0 0 10px; color: var(--ink-2); }
+.already .rowbtns { margin: 0; }
+.already .b.warn { color: var(--warn); border-color: var(--warn); }
+.liked-line .linkbtn { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
 /* Library (UI-E, docs/BUILD-5-PLAN.md §4.1): compact playlist rows, the Suggested
    section, the detail sheet, and the way back on New playlists / Shuffle. */
   .libnav{background:none; padding:0; border-radius:0; width:auto; display:flex; align-items:center; gap:10px; overflow:visible}
@@ -1799,7 +1806,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-0409</span>
+    <span class="mono">build 2026-11-18-0451</span>
   </p>
 
   <div class="feat">
@@ -1892,7 +1899,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0409</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0451</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2009,7 +2016,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-0409. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-0451. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5171,7 +5178,24 @@ function likedLineHTML({ R, esc }) {
   return `<details class="liked-line"><summary>${f(b.liked)} liked · ${f(b.filed)} filed here · ${f(b.toFile)} to file</summary>
     <p>Every liked song waits here until you file it, even one that is already in a playlist.${short}</p>
     ${b.placed ? `<p>${f(b.placed)} of the ${f(b.toFile)} are already in a playlist: ${b.top.map(x => `${esc(x.name)} (${f(x.n)})`).join(', ')}${b.playlists > b.top.length ? `, and ${f(b.playlists - b.top.length)} more` : ''}. Filing one where it already is adds no second copy.</p>` : ''}
+    <p>Songs that fit none of your playlists? <button class="linkbtn" data-go="new">See suggested new playlists</button></p>
   </details>`;
+}
+
+/** A liked song that already sits in a playlist: keep it there, or take it out of Liked Songs.
+ *  Picking other playlists above still files it there as well. Remove asks for a second tap. */
+function alreadyHTML({ S, esc }, t) {
+  const pl = t?.inPl ?? [];
+  if (!pl.length) return '';
+  const names = pl.slice(0, 3).map(p => `<b>${esc(p.name)}</b>`).join(', ') + (pl.length > 3 ? ` and ${pl.length - 3} more` : '');
+  const ask = S.unlikeAsk === t.id;
+  return `<div class="already" role="group" aria-label="Already in a playlist">
+    <p>Already in ${names}. Pick more playlists above to add it there too, or:</p>
+    <div class="rowbtns">
+      <button class="b sm" data-act="keepthere">Keep it there</button>
+      <button class="b sm${ask ? ' warn' : ''}" data-act="unlikeask" aria-live="polite">${ask ? 'Tap again to remove from Liked' : 'Remove from Liked'}</button>
+    </div>
+  </div>`;
 }
 
 function view(ctx) {
@@ -5202,7 +5226,7 @@ function view(ctx) {
   // A tap only ever builds a selection now — it never writes to Spotify by
   // itself, which is what a misclick used to cost. The selection belongs to
   // whichever track is on screen, so it clears the moment that changes.
-  if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; }
+  if (S.fileSelFor !== t.id) { S.fileSel = new Set(); S.fileSelFor = t.id; S.unlikeAsk = null; }
   if (typeof soundWarm === 'function') soundWarm();
   const promote = !!S.promote; S.promote = false;   // the peek card springing up, once
   const picks = filePicks(t);
@@ -5279,6 +5303,7 @@ function view(ctx) {
           ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).map(id =>
             `<button class="chip" data-act="selfile" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
         </div>` : ''}
+        ${alreadyHTML(ctx, t)}
         <div class="rowbtns" style="margin-top:22px">
           <button class="b big go grow" data-act="filesel" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
           <button class="b big" data-act="skip">Skip</button>
@@ -5286,6 +5311,7 @@ function view(ctx) {
         <details class="cardmore"><summary aria-label="More: unlike, or add another playlist" title="More">\u22EF</summary>
           <div class="rowbtns">
             <button class="b sm" data-act="unlike">Unlike</button>
+            <button class="b sm" data-go="new" title="Playlists Betterfy suggests making from songs that fit nowhere yet">Suggest a new playlist</button>
             <select id="anyPl" data-act="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
           </div>
         </details>
@@ -5377,7 +5403,9 @@ async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
   S.filing = false;
   const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
                                 await forgetAccept(t.id, ids); };
-  toast(names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
+  const keptOnly = ids.every(id => (t.inPl ?? []).some(p => p.id === id));
+  toast(keptOnly ? `Kept “${t.title}” where it is. It is filed now.`
+    : names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
   const more = rollForwardFor(t, R.backlog, ids, FB, { sound: ctx.rollSound, registrant: ctx.rollRegistrant });
   S.roll = more.length ? { artist: t.artists?.[0]?.name ?? t.artist, playlistIds: ids, names,
                            rows: more.map(b => ({ id: b.id, title: b.title, how: b.how })), off: new Set() } : null;
@@ -5433,6 +5461,13 @@ const actions = {
   play: (ctx) => inboxAct(ctx, 'play'),
   skip: (ctx) => inboxAct(ctx, 'skip'),
   unlike: (ctx) => inboxAct(ctx, 'unlike'),
+  // Already in a playlist: file it where it is (nothing written), or remove it from Liked on a second tap.
+  keepthere: (ctx) => { const t = inboxTrack(ctx); if (t?.inPl?.length) return fileCurrent(ctx, t.inPl.map(p => p.id)); },
+  unlikeask(ctx) {
+    const t = inboxTrack(ctx); if (!t) return;
+    if (ctx.S.unlikeAsk === t.id) { ctx.S.unlikeAsk = null; return inboxAct(ctx, 'unlike'); }
+    ctx.S.unlikeAsk = t.id; ctx.render();
+  },
   async roll(ctx, el) {
     if (el.dataset.roll === 'no') { ctx.S.roll = null; return ctx.render(); }
     el.disabled = true;
@@ -5484,7 +5519,7 @@ function mount(ctx) {
   const id = inboxTrack(ctx)?.id ?? null;
   if (id !== menuFor) { menuFor = id; document.querySelector("#swipeCard details.cardmore")?.removeAttribute("open"); }
 }
-return { rollForwardFor, rollForwardHTML, rollForwardGo, DIGEST_SEEN, DIGEST_MEASURE, digestMeasure, digestNow, digestHTML, digestLoad, digestMount, sureBatchHTML, fileSureOnes, likedLineHTML, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions, mount };
+return { rollForwardFor, rollForwardHTML, rollForwardGo, DIGEST_SEEN, DIGEST_MEASURE, digestMeasure, digestNow, digestHTML, digestLoad, digestMount, sureBatchHTML, fileSureOnes, likedLineHTML, alreadyHTML, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions, mount };
 })();
 /* ---- core/review/weakwords.mjs ---- */
 __mod["core/review/weakwords.mjs"] = (function () {
@@ -5795,7 +5830,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-0409`,
+    `Betterfy engine score — build 2026-11-18-0451`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -10530,7 +10565,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-0409';
+const BUILD = '2026-11-18-0451';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10868,7 +10903,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-0409', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-0451', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11653,7 +11688,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-0409');
+    const w = new Worker('reports-worker.js?v=2026-11-18-0451');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15173,7 +15208,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-0409';
+    s.src = 'engine.js?v=2026-11-18-0451';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15195,7 +15230,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-0409');
+    const w = new Worker('engine-worker.js?v=2026-11-18-0451');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15906,7 +15941,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-0409';
+    s.src = 'audio.js?v=2026-11-18-0451';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -15960,7 +15995,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0409', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0451', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17107,7 +17142,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0409', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0451', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
