@@ -80,3 +80,53 @@ test('the page runs it: bundled, in the manifest, started from boot, noted on a 
   assert.match(page, /saveData/, 'skipped with Data Saver on');
   assert.match(page, /document\.hidden/, 'only while the tab is in front');
 });
+
+// ---- every run, kept (BUILD-7 M1) ----
+import { runHistoryAdd, runHistoryParse, scoreHistory, scoreDiff, listenRunEntry, RUN_KEEP } from '../core/review/autoscore.mjs';
+
+test('run history keeps 12 Score runs, newest first, and survives a corrupt entry', () => {
+  let list = [];
+  for (let i = 0; i < 15; i++) list = runHistoryAdd(list, { kind: 'score', at: 1000 + i, top1: i / 100 });
+  assert.equal(list.length, RUN_KEEP.score);
+  assert.equal(list[0].at, 1014);
+  assert.equal(list.at(-1).at, 1003);
+  const raw = JSON.stringify([null, 'x', { kind: 'nope', at: 1 }, { kind: 'score' }, ...list]);
+  assert.equal(runHistoryParse(raw).length, 12);
+  assert.deepEqual(runHistoryParse('not json'), []);
+  assert.equal(scoreHistory(list, { at: 2000, top1: 0.5 })[0].at, 2000);
+});
+
+test('run history keeps each kind to its own cap, and a rewrite of the same run replaces it', () => {
+  let list = [];
+  for (let i = 0; i < 20; i++) list = runHistoryAdd(list, { kind: 'listen', at: i + 1, done: 5 });
+  list = runHistoryAdd(list, { kind: 'score', at: 100, top1: 0.5 });
+  list = runHistoryAdd(list, { kind: 'score', at: 100, top1: 0.5, text: 'with tune' });
+  assert.equal(list.filter(r => r.kind === 'listen').length, RUN_KEEP.listen);
+  const scores = list.filter(r => r.kind === 'score');
+  assert.equal(scores.length, 1);
+  assert.equal(scores[0].text, 'with tune');
+});
+
+test('scoreDiff names a top-1 change of a point or more and a gate that switched', () => {
+  const a = { top1: 0.61, top3: 0.8, gates: { family: false, audio: true } };
+  const b = { top1: 0.66, top3: 0.804, gates: { family: true, audio: false } };
+  const d = scoreDiff(a, b);
+  assert.ok(d.includes('Top-1 61% → 66% (+5)'), d.join('|'));
+  assert.ok(d.includes('Family first: switched on'));
+  assert.ok(d.includes('Sound in the blend: switched off'));
+  assert.ok(!d.some(x => x.startsWith('Top-3')), 'under a point is not a change');
+  assert.deepEqual(scoreDiff(a, a), []);
+  assert.deepEqual(scoreDiff(null, b), []);
+});
+
+test('a listening run that heard something becomes an entry with its own text', () => {
+  const e = listenRunEntry('listen', { state: 'done', done: 312, total: 400, heard: 2140, missed: { NO_PREVIEW: 40 } },
+    { at: Date.UTC(2026, 10, 18, 1, 40), startedAt: Date.UTC(2026, 10, 18, 1, 0), build: 'b1', missText: { NO_PREVIEW: 'no preview' } });
+  assert.equal(e.kind, 'listen');
+  assert.match(e.text, /Listening \(first ear\) — build b1/);
+  assert.match(e.text, /finished, after 40 min/);
+  assert.match(e.text, /This run: 312 of 400 tracks/);
+  assert.match(e.text, /Couldn't hear: 40 no preview/);
+  assert.equal(listenRunEntry('deep', { state: 'done', done: 0, total: 0 }, { at: 1 }), null, 'nothing heard, nothing kept');
+  assert.match(listenRunEntry('deep', { state: 'paused', reason: 'waiting for Wi-Fi', done: 3, total: 40 }, { at: 1 }).text, /stopped: waiting for Wi-Fi/);
+});

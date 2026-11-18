@@ -642,6 +642,8 @@ const engineValidate = guard(async () => {
     await blendRemember(ENG.val);
     // A run by hand counts as this week's run, so the automatic one (app/autoscore.js) counts from it.
     if (typeof autoScoreNote === 'function' && !AUTOSCORE_RUN.running) autoScoreNote('manual', !ENG.val?.error);
+    // Every run's report is kept on this device for the Engine screen's Past runs (app/autoscore.js).
+    if (typeof scoreHistorySave === 'function') { try { await scoreHistorySave(AUTOSCORE_RUN.running ? AUTOSCORE_RUN.why : 'manual'); } catch { /* shown this session */ } }
     if (ENG.space && ENG.status === 'ready') { try { engineShadow(); } catch { /* the old comparison stays */ } }
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
@@ -697,6 +699,8 @@ const engineTune = guard(async () => {
       parts.push(part);
     }
     TUNE.res = { ...BetterfyTune.mergeTune(parts), at: Date.now() };
+    // The Score run's kept report gains its Tune block (same entry, rewritten).
+    if (typeof scoreHistorySave === 'function' && ENG.val && !ENG.val.error) { try { await scoreHistorySave(); } catch { /* kept without it */ } }
   } catch (e) { TUNE.err = e?.message ?? String(e); }
   TUNE.running = false; TUNE.stage = null; store.touch('eng');
 });

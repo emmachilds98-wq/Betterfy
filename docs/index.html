@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-17-0301">
+<meta name="bf-build" content="2026-11-18-0150">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1924,7 +1924,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-17-0301</span>
+    <span class="mono">build 2026-11-18-0150</span>
   </p>
 
   <div class="feat">
@@ -2017,7 +2017,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-17-0301</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0150</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2134,7 +2134,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-17-0301. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-0150. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3896,7 +3896,119 @@ function autoScoreStatus(last, now) {
   if (last.ok === false) return 'On · retrying';
   return `On · scored ${agoWords(now - last.at)}`;
 }
-return { AUTOSCORE, autoScoreWhy, agoWords, autoScoreLine, autoScoreStatus };
+
+/* ---------- every run, kept (docs/BUILD-7-PLAN.md M1) ----------
+ * A Score run's report, and the end of each listening run (first ear, second
+ * ear), used to live only in the page's memory: close the tab without pressing
+ * Copy results and it was gone. The page now keeps them in localStorage
+ * `bf_run_history`, newest first, and the Engine screen lists them, each with
+ * its own Copy. These are the pure parts. */
+
+const RUN_KEEP = Object.freeze({ score: 12, listen: 12, deep: 8 });
+const RUN_KINDS = Object.keys(RUN_KEEP);
+
+/** A stored entry, or null for anything that is not one (a corrupt row is dropped, not fatal). */
+function cleanRun(r) {
+  if (!r || typeof r !== 'object' || !RUN_KINDS.includes(r.kind) || !Number.isFinite(r.at)) return null;
+  return r;
+}
+
+/** Read the stored list: newest first, corrupt rows dropped. Never throws. */
+function runHistoryParse(raw) {
+  let list = raw;
+  if (typeof raw === 'string') { try { list = JSON.parse(raw); } catch { list = null; } }
+  if (!Array.isArray(list)) return [];
+  return list.map(cleanRun).filter(Boolean).sort((a, b) => b.at - a.at);
+}
+
+/**
+ * Add one run, newest first, keeping at most `keep[kind]` of each kind.
+ * An entry with the same kind and `at` replaces the old one (a Score run
+ * whose Tune sweep finished afterwards is written twice).
+ * @param {object[]} prev
+ * @param {object} run  { kind: 'score'|'listen'|'deep', at, ... }
+ */
+function runHistoryAdd(prev, run, { keep = RUN_KEEP } = {}) {
+  const list = runHistoryParse(prev);
+  if (!cleanRun(run)) return list;
+  const out = [run, ...list.filter(r => !(r.kind === run.kind && r.at === run.at))].sort((a, b) => b.at - a.at);
+  const seen = {};
+  return out.filter(r => (seen[r.kind] = (seen[r.kind] ?? 0) + 1) <= (keep[r.kind] ?? 12));
+}
+
+/** Kept for the plan's name: the Score runs only, newest first. */
+function scoreHistory(prev, run, o) {
+  return runHistoryAdd(prev, { kind: 'score', ...run }, o).filter(r => r.kind === 'score');
+}
+
+const GATE_WORDS = {
+  audio: 'Sound in the blend', ear: 'Second ear', near: 'Nearest members', family: 'Family first',
+  agree: 'Agreement check', pairs: 'Pair check', bridge: 'Similar artists', mood: 'Mood chips',
+  teach: 'Teach questions', fill: 'Fill this playlist', weights: 'Fitted weights',
+};
+const pct = x => `${Math.round(x * 100)}%`;
+
+/**
+ * What changed between two Score runs, in words, `b` the newer:
+ * "Top-1 61% → 66% (+5)", "Family first: switched on". Empty when nothing did.
+ */
+function scoreDiff(a, b) {
+  if (!a || !b) return [];
+  const out = [];
+  const num = (label, x, y) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const d = Math.round(y * 100) - Math.round(x * 100);
+    if (Math.abs(d) >= 1) out.push(`${label} ${pct(x)} → ${pct(y)} (${d > 0 ? '+' : '−'}${Math.abs(d)})`);
+  };
+  num('Top-1', a.top1, b.top1);
+  num('Top-3', a.top3, b.top3);
+  num('Sure', a.sure, b.sure);
+  num('Never-filed artists top-1', a.neverFiled, b.neverFiled);
+  const ga = a.gates ?? {}, gb = b.gates ?? {};
+  for (const k of Object.keys(GATE_WORDS)) {
+    const x = ga[k], y = gb[k];
+    if (typeof x !== 'boolean' || typeof y !== 'boolean' || x === y) continue;
+    out.push(`${GATE_WORDS[k]}: switched ${y ? 'on' : 'off'}`);
+  }
+  return out;
+}
+
+/** "18 Nov, 01:40" in the listener's own time. */
+function runWhen(at) {
+  try {
+    return new Date(at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch { return new Date(at).toISOString().slice(0, 16).replace('T', ' '); }
+}
+
+const LISTEN_MISS = { noIsrc: 'no ISRC', noPreview: 'no preview', fetch: 'download failed', decode: "couldn't decode" };
+
+/**
+ * A listening run that just ended, as a history entry with its own text.
+ * `vm` is the controller's view model ({ done, total, heard, missed, reason, state }).
+ * Null when it heard nothing (a run that only checked there was nothing to do).
+ * @param {'listen'|'deep'} kind
+ */
+function listenRunEntry(kind, vm, { at, startedAt = null, build = '', extra = [], missText = LISTEN_MISS } = {}) {
+  if (!vm || !Number.isFinite(at)) return null;
+  const done = Number(vm.done) || 0;
+  if (done <= 0) return null;
+  const n = x => Number(x || 0).toLocaleString('en-GB');
+  const missed = Object.entries(vm.missed ?? {}).filter(([, v]) => v > 0);
+  const label = kind === 'deep' ? 'Deep listen (second ear)' : 'Listening (first ear)';
+  const how = vm.state === 'done' ? 'finished' : `stopped${vm.reason && vm.reason !== 'stopped' ? `: ${vm.reason}` : ''}`;
+  const mins = Number.isFinite(startedAt) && at > startedAt ? Math.round((at - startedAt) / 60e3) : null;
+  const lines = [
+    `Betterfy ${label} — build ${build}`,
+    `Ended ${runWhen(at)}, ${how}${mins != null ? `, after ${mins} min` : ''}`,
+    `This run: ${n(done)} of ${n(vm.total ?? done)} tracks`,
+    Number.isFinite(vm.heard) ? `Heard in all: ${n(vm.heard)} tracks` : null,
+    missed.length ? `Couldn't hear: ${missed.map(([k, v]) => `${n(v)} ${missText[k] ?? k}`).join(', ')}` : null,
+    ...extra.filter(Boolean),
+  ].filter(Boolean);
+  return { kind, at, build, done, total: Number(vm.total) || done, heard: Number(vm.heard) || null,
+           state: vm.state ?? null, text: lines.join('\n') };
+}
+return { AUTOSCORE, autoScoreWhy, agoWords, autoScoreLine, autoScoreStatus, RUN_KEEP, runHistoryParse, runHistoryAdd, scoreHistory, scoreDiff, runWhen, listenRunEntry };
 })();
 /* ---- web/ui/sound.mjs ---- */
 __mod["web/ui/sound.mjs"] = (function () {
@@ -5780,7 +5892,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-17-0301`,
+    `Betterfy engine score — build 2026-11-18-0150`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5972,8 +6084,41 @@ function audioLines(v, pc, maestScoreText) {
 /** 0 nothing filed, 1 sparse, 2 working, 3 established. */
 const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 
+const RUN_LABEL = { score: 'Score', listen: 'Listening', deep: 'Deep listen' };
+const RUN_WHY = { first: 'first check', listened: 'after listening', heard: 'after more was heard', weekly: 'weekly check', manual: 'run by hand' };
+
+/**
+ * Past runs (BUILD-7 M1): every Score run's full report and the end of every
+ * listening run, kept on this device (bf_run_history), each with its own Copy,
+ * so a report not copied at the time is still there tomorrow. '' with none.
+ */
+function pastRunsCard(runs, esc) {
+  if (!runs?.length) return '';
+  const pc = x => (x == null ? '—' : Math.round(x * 100) + '%');
+  const n = x => Number(x || 0).toLocaleString('en-GB');
+  const row = r => {
+    const sub = r.kind === 'score'
+      ? [`top-1 ${pc(r.top1)}`, `top-3 ${pc(r.top3)}`, r.recovered ? 'headline only' : RUN_WHY[r.why] ?? null, r.build ? `build ${r.build}` : null]
+      : [`${n(r.done)} of ${n(r.total)} tracks`, r.state === 'done' ? 'finished' : 'stopped', r.heard ? `${n(r.heard)} heard in all` : null];
+    return `<div class="row"><div class="main">
+      <div class="ttl">${esc(RUN_LABEL[r.kind] ?? r.kind)} · ${esc(r.when ?? '')}</div>
+      <div class="sub">${esc(sub.filter(Boolean).join(' · '))}</div>
+      ${r.diff?.length ? `<div class="sub">Since the run before: ${esc(r.diff.join('; '))}</div>` : ''}
+    </div>${r.text ? `<button class="b sm" type="button" data-act="histCopy" data-kind="${esc(r.kind)}" data-at="${r.at}">Copy</button>` : ''}</div>`;
+  };
+  const head = runs.slice(0, 4), rest = runs.slice(4);
+  return `<div class="card" id="pastRuns">
+    <h2 style="margin:0 0 6px; font-size:19px">Past runs</h2>
+    <p class="why">Each Score and listening run is kept on this device, so you can copy one later.</p>
+    <div class="rows" style="margin-top:10px">${head.map(row).join('')}</div>
+    ${rest.length ? `<details style="margin-top:8px"><summary class="sub">${rest.length} older</summary>
+      <div class="rows">${rest.map(row).join('')}</div></details>` : ''}
+  </div>`;
+}
+
 function view(c) {
   const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
+  const pastCard = pastRunsCard(c.runHistoryView?.() ?? [], esc);
   const head = `<h1>Engine</h1>
     <p class="lede">What Betterfy has learnt from your own playlists, and how often it gets your filing right. Learning and scoring here change nothing in Spotify.${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
       of record, from when. Everything here is what it <i>would</i> do, until the score below shows it, blended with today's engine,
@@ -5987,7 +6132,7 @@ function view(c) {
         their names say what genre they are. Mark the ones that are genre playlists in Library, then
         come back.</p>
       <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Library</button></div>
-    </div>`;
+    </div>${pastCard}`;
 
   if (ENG.status === 'idle') return `${head}
     <div class="card">
@@ -5999,7 +6144,7 @@ function view(c) {
       <div class="rowbtns" style="margin-top:18px">
         <button class="b big go" data-act="go">Learn my library</button>
       </div>
-    </div>`;
+    </div>${pastCard}`;
 
   if (ENG.status === 'working') return `${head}
     <div class="card">
@@ -6007,14 +6152,14 @@ function view(c) {
       <p>Working out what your playlists mean — the arithmetic for every pair of artists you file together.
         ${engineInBackground() ? 'It runs in the background' : 'On a big library this holds the page up for a moment'},
         and it only happens once.</p>
-    </div>`;
+    </div>${pastCard}`;
 
   if (ENG.status === 'error') return `${head}
     <div class="card">
       <h2 style="margin:0 0 12px; font-size:19px">That didn't work</h2>
       <p class="why">${esc(ENG.err ?? 'Unknown error')}</p>
       <div class="rowbtns" style="margin-top:16px"><button class="b" data-act="go">Try again</button></div>
-    </div>`;
+    </div>${pastCard}`;
 
   const r = ENG.rung, sh = ENG.shadow;
 
@@ -6188,6 +6333,7 @@ function view(c) {
     ${rungCard}
     ${shadowCard}
     ${valCard}
+    ${pastCard}
     ${tuneCard}
     ${pairCard}
     <div class="rowbtns" style="margin:20px 0 0">
@@ -6262,6 +6408,16 @@ const actions = {
     try { if (c.navigator.share) { await c.navigator.share({ text }); return; } } catch { return; }
     c.prompt('Copy this:', text);
   },
+  /** Copy one past run's report (Past runs). */
+  async histCopy(c, el) {
+    const r = (c.runHistoryView?.() ?? []).find(x => String(x.at) === el.dataset.at && x.kind === el.dataset.kind);
+    const text = r?.text;
+    if (!text) return;
+    try { await c.navigator.clipboard.writeText(text); return c.toast('Copied — paste it wherever you like.'); }
+    catch { /* fall through to share */ }
+    try { if (c.navigator.share) { await c.navigator.share({ text }); return; } } catch { return; }
+    c.prompt('Copy this:', text);
+  },
   /** Forget the learned space, so the next analysis rebuilds from the library. */
   async reset(c) {
     try { await c.idb.del(c.SPACE_KEY); } catch {}
@@ -6277,7 +6433,7 @@ const actions = {
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, view, tuneCardHtml, actions };
+return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, pastRunsCard, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -10058,7 +10214,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-17-0301';
+const BUILD = '2026-11-18-0150';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10396,7 +10552,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-17-0301', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-0150', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11154,7 +11310,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-17-0301');
+    const w = new Worker('reports-worker.js?v=2026-11-18-0150');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14653,7 +14809,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-17-0301';
+    s.src = 'engine.js?v=2026-11-18-0150';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -14675,7 +14831,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-17-0301');
+    const w = new Worker('engine-worker.js?v=2026-11-18-0150');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15275,6 +15431,8 @@ const engineValidate = guard(async () => {
     await blendRemember(ENG.val);
     // A run by hand counts as this week's run, so the automatic one (app/autoscore.js) counts from it.
     if (typeof autoScoreNote === 'function' && !AUTOSCORE_RUN.running) autoScoreNote('manual', !ENG.val?.error);
+    // Every run's report is kept on this device for the Engine screen's Past runs (app/autoscore.js).
+    if (typeof scoreHistorySave === 'function') { try { await scoreHistorySave(AUTOSCORE_RUN.running ? AUTOSCORE_RUN.why : 'manual'); } catch { /* shown this session */ } }
     if (ENG.space && ENG.status === 'ready') { try { engineShadow(); } catch { /* the old comparison stays */ } }
   } catch (e) {
     ENG.val = { error: e?.message ?? String(e) };
@@ -15330,6 +15488,8 @@ const engineTune = guard(async () => {
       parts.push(part);
     }
     TUNE.res = { ...BetterfyTune.mergeTune(parts), at: Date.now() };
+    // The Score run's kept report gains its Tune block (same entry, rewritten).
+    if (typeof scoreHistorySave === 'function' && ENG.val && !ENG.val.error) { try { await scoreHistorySave(); } catch { /* kept without it */ } }
   } catch (e) { TUNE.err = e?.message ?? String(e); }
   TUNE.running = false; TUNE.stage = null; store.touch('eng');
 });
@@ -15382,7 +15542,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-17-0301';
+    s.src = 'audio.js?v=2026-11-18-0150';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -15436,7 +15596,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-17-0301', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0150', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -15478,7 +15638,7 @@ async function audioInit() {
       await audioEars();
       return AUDIO.wear.loadKeyNet(audioModelUrl(A.KEYNET_MODEL_FILE));
     },
-    onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); },
+    onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); if (typeof runHistoryWatch === 'function') runHistoryWatch('listen', vm); },
   });
   await audioRefresh();
   // The style names, for ProfileVM. Optional: a playlist row without them still says how much was heard.
@@ -16583,12 +16743,12 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-17-0301', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0150', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
     },
-    onChange: vm => { AUDIO.maestVm = vm; audioRedraw(); },
+    onChange: vm => { AUDIO.maestVm = vm; audioRedraw(); if (typeof runHistoryWatch === 'function') runHistoryWatch('deep', vm); },
   });
   if (AUDIO.maest.running) return;
   await AUDIO.maest.start();
@@ -16952,7 +17112,7 @@ async function autoScoreTick() {
   if (navigator.connection?.saveData) return null;
   const why = autoScoreDue();
   if (!why) return null;
-  AUTOSCORE_RUN.running = true; store.touch('eng');
+  AUTOSCORE_RUN.running = true; AUTOSCORE_RUN.why = why; store.touch('eng');
   let ok = false;
   try {
     await engineLoad();
@@ -16976,6 +17136,7 @@ async function autoScoreTick() {
 function autoScoreStart() {
   if (AUTOSCORE_RUN.started) return;
   AUTOSCORE_RUN.started = true;
+  runHistorySeed();
   const first = Number.isFinite(globalThis.BF_AUTOSCORE_MS) ? globalThis.BF_AUTOSCORE_MS : AUTOSCORE_RUN.firstMs;
   const tick = () => fire(autoScoreTick());
   setTimeout(() => { tick(); setInterval(tick, AUTOSCORE_RUN.everyMs); }, first);
@@ -16985,6 +17146,150 @@ function autoScoreStart() {
 function autoScoreText() {
   if (typeof autoScoreLine !== 'function') return '';
   return autoScoreLine(autoScoreLast(), Date.now(), { filed: LIB ? autoScoreFiled() : null, running: AUTOSCORE_RUN.running });
+}
+
+/* ---------- every run, kept (docs/BUILD-7-PLAN.md M1) ----------
+ * Each Score run's full report (the same text Copy results gives), and the end
+ * of each listening run, first ear and second, kept on this device in
+ * bf_run_history so the Engine screen can list them with a Copy each, long
+ * after the tab that ran them is closed. Read-only for the runs themselves:
+ * nothing here starts, stops or slows a run. */
+const RUNHIST_KEY = 'bf_run_history';
+
+function runHistoryList() {
+  let raw = null;
+  try { raw = LS.getItem(RUNHIST_KEY); } catch { raw = null; }
+  return typeof runHistoryParse === 'function' ? runHistoryParse(raw) : [];
+}
+
+/** Once, at boot and before any run can overwrite what it reads: an empty list gets the rebuilt entry. */
+function runHistorySeed() {
+  try {
+    if (typeof runHistoryParse !== 'function' || runHistoryParse(LS.getItem(RUNHIST_KEY)).length) return;
+    const old = runHistoryRecovered();
+    if (old.length) runHistoryWrite(old);
+  } catch { /* nothing to rebuild */ }
+}
+
+function runHistoryWrite(list) {
+  // A full localStorage drops the reports' text from the oldest runs first, then the oldest runs.
+  for (let i = 0; i <= list.length; i++) {
+    try { LS.setItem(RUNHIST_KEY, JSON.stringify(list)); return true; } catch { /* full: trim */ }
+    const j = list.length - 1 - i;
+    if (j < 1) break;
+    list = list.map((r, k) => (k >= j ? { ...r, text: undefined } : r));
+  }
+  return false;
+}
+
+function runHistoryPut(run) {
+  if (typeof runHistoryAdd !== 'function' || !run) return null;
+  let raw = null;
+  try { raw = LS.getItem(RUNHIST_KEY); } catch { raw = null; }
+  const list = runHistoryAdd(raw ?? [], run);
+  runHistoryWrite(list);
+  store.touch('eng');
+  return run;
+}
+
+/** The gates a Score run decided, as on/off, for the history's "switched on" lines. Unknown stays out. */
+function scoreGates(v) {
+  const b = x => (typeof x === 'boolean' ? x : undefined);
+  const out = {
+    audio: b(v?.mine?.withAudio?.gate?.pass),
+    ear: v?.ear?.ear ? v.ear.ear !== 'effnet' : b(v?.earChoice?.gate?.pass),
+    family: b(v?.family?.use ?? v?.family?.pass),
+    mood: b(v?.mood?.pass ?? v?.mood?.gate?.pass),
+    agree: b(v?.agree?.pass ?? v?.agree?.gate?.pass),
+    pairs: b(v?.pairs?.pass ?? v?.pairs?.gate?.pass),
+    near: b(v?.near?.pass ?? v?.near?.gate?.pass),
+    teach: b(v?.teach?.pass),
+    fill: b(v?.fill?.pass),
+    weights: b(v?.weights?.plain?.use),
+  };
+  try { const g = SCREEN_MODS.engine?.bridgeVerdict?.(v); if (g) out.bridge = b(g.pass); } catch { /* left out */ }
+  for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
+  return out;
+}
+
+const SCORE_KEPT = new WeakMap();
+/** Keep the Score run just shown on the Engine screen (and its Tune sweep, once that is in). */
+async function scoreHistorySave(why) {
+  const v = typeof ENG !== 'undefined' ? ENG.val : null;
+  if (!v || v.error || !v.mine) return null;
+  // When and why, per Score result (never written onto ENG.val itself): the Tune block rewrites the same entry.
+  const k = SCORE_KEPT.get(v) ?? { at: Date.now(), why: why ?? 'manual' };
+  SCORE_KEPT.set(v, k);
+  let text = '';
+  try {
+    const log = await (typeof getLog === 'function' ? getLog({ all: true }).catch(() => null) : null);
+    text = SCREEN_MODS.engine?.summary ? SCREEN_MODS.engine.summary(screenCtx('engine'), log) : '';
+  } catch { text = ''; }
+  const sure = ENG.calib?.base?.checked?.confidentShare;
+  return runHistoryPut({ kind: 'score', at: k.at, build: BUILD, why: k.why,
+    top1: v.mine.top1 ?? null, top3: v.mine.top3 ?? null, scored: v.mine.scored ?? null,
+    sure: Number.isFinite(sure) ? sure : null, neverFiled: v.mine.neverFiled?.top1 ?? null,
+    gates: scoreGates(v), tuned: !!(TUNE?.res && !TUNE.err), text });
+}
+
+/* Listening runs: the controller's view model goes running -> done/paused at
+ * the end of a run; that edge is written down, once per run. */
+const RUNHIST_WATCH = { listen: { running: false, since: null }, deep: { running: false, since: null } };
+function runHistoryWatch(kind, vm) {
+  const w = RUNHIST_WATCH[kind];
+  if (!w || !vm) return;
+  if (vm.state === 'running') { if (!w.running) { w.running = true; w.since = Date.now(); } return; }
+  if (!w.running) return;
+  w.running = false;
+  try {
+    const A = globalThis.BetterfyAudio;
+    const extra = [];
+    if (kind === 'listen' && AUDIO?.records) {
+      const heard = [...AUDIO.records.values()].filter(r => !r.miss);
+      const d = typeof deepSettings === 'function' ? deepSettings() : {};
+      if (d.clap && A?.needsClap) extra.push(`Described by CLAP: ${heard.filter(r => !A.needsClap(r)).length} of ${heard.length} heard`);
+      if (d.beats && A?.needsBeatsFlagged) {
+        const flagged = heard.filter(r => r.dsp?.octaveAmbiguous === true);
+        extra.push(`Unsure tempos re-checked by Beat This: ${flagged.filter(r => !A.needsBeatsFlagged(r)).length} of ${flagged.length}`);
+      }
+    }
+    const run = listenRunEntry(kind, vm, { at: Date.now(), startedAt: w.since, build: BUILD, extra, missText: A?.MISS_TEXT });
+    if (run) runHistoryPut(run);
+  } catch { /* the run itself is untouched */ }
+}
+
+/* Runs from before this list existed: the full report was never saved, but the
+ * device kept its headline and the verdicts it acted on. Shown once as one
+ * "rebuilt" entry, so there is something to hand over. Never written back. */
+function runHistoryRecovered() {
+  const read = k => { try { return JSON.parse(LS.getItem(k) || 'null'); } catch { return null; } };
+  const sc = read('bf_engscore'), au = read('bf_autoscore');
+  if (!Number.isFinite(sc?.top1) && !Number.isFinite(au?.at)) return [];
+  const pc = x => (x == null ? '—' : Math.round(x * 100) + '%');
+  const fill = read('bf_fill'), teach = read('bf_teach'), weak = read('bf_weak');
+  const E = SCREEN_MODS.engine ?? {};
+  const plName = id => LIB?.playlists?.find(p => p.id === id)?.name ?? id;
+  const at = Number.isFinite(au?.at) ? au.at : sc?.at ?? Date.now();
+  const lines = [
+    'Betterfy engine score, rebuilt from what this device kept (runs before run history existed only kept their headline)',
+    au?.at ? `Last run: ${runWhen(au.at)}, ${au.why ?? 'by itself'}${au.ok === false ? ", didn't finish" : ''}; listening had heard ${Number(au.heard || 0)} tracks then` : null,
+    Number.isFinite(sc?.top1) ? `This engine: top-1 ${pc(sc.top1)}, top-3 ${pc(sc.top3)} (${sc.scored ?? '?'} tracks)` : null,
+    fill && E.fillLine ? E.fillLine(fill, pc) : null,
+    teach && E.teachLine ? E.teachLine(teach, pc) : null,
+    weak?.rows?.length ? `Weakest, as File places: ${weak.rows.map(r => `${plName(r.id)} ${pc(r.inTop3)} of ${r.n ?? '?'}${r.cause ? ` (${r.cause})` : ''}`).join('; ')}` : null,
+  ];
+  return [{ kind: 'score', at, build: '', why: au?.why ?? null, recovered: true,
+            top1: sc?.top1 ?? null, top3: sc?.top3 ?? null, scored: sc?.scored ?? null,
+            text: lines.filter(Boolean).join('\n') }];
+}
+
+/** The Engine screen's list: each run with the change from the one before it, in words. */
+function runHistoryView() {
+  const list = runHistoryList();
+  return list.map((r, i) => {
+    const prev = r.kind === 'score' ? list.slice(i + 1).find(x => x.kind === 'score') : null;
+    return { ...r, when: runWhen(r.at), diff: prev && typeof scoreDiff === 'function' ? scoreDiff(prev, r) : [] };
+  });
 }
 /* ---------- screen modules (docs/BUILD-5-PLAN.md A4) ----------
  * A migrated screen is web/screens/<name>.mjs: an ES module that build-web.mjs
@@ -17009,6 +17314,7 @@ const SCREEN_CTX = {
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
                    TUNE, engineScoreTune, engineTune, tuneApply, tuneForget, autoScoreText,
+                   runHistoryView: () => (typeof runHistoryView === 'function' ? runHistoryView() : []),
                    tuneBlock: r => (globalThis.BetterfyTune ? BetterfyTune.tuneBlock(r) : ''),
                    blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
                    maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,
@@ -17211,6 +17517,7 @@ const DATA_KEYS = [
   { where:'idb', key:'engine-weights', group:'Engine', why:'The engine weights fitted to your library by a Score run.' },
   { where:'idb', key:'engine-tune', group:'Engine', why:'Tuning you saved from Engine › Tune.' },
   { where:'local', key:'bf_weak', group:'Engine', why:'Which of your genre playlists your last Score run found it understands least, why, and what would help, for Library\'s advice and so listening hears those first.' },
+  { where:'local', key:'bf_run_history', group:'Engine', why:'Your last Score runs (each one\'s full report, the text Copy results gives) and how each listening run ended, first ear and Deep listen, so the Engine screen\'s Past runs can copy any of them later.' },
   { where:'local', key:'bf_autoscore', group:'Engine', why:'When Score + Tune last ran (by itself or by hand), how many tracks listening had heard then, and whether it finished, so it runs again by itself after listening or in a week.' },
 
   // --- listening to your music ---
