@@ -6,6 +6,10 @@ thread. Paste **the common header plus one package block**, verbatim, then
 add: the owner's approving message (attached by id), the current `main` SHA,
 and anything learned since (a Score paste, a Radar answer, an Owner decision).
 
+**Handoff 2026-11-18:** start from BUILD-7-PLAN §0. The design and
+layout packages (L0 bug, L1 to L5, L7, L8) use the common header below plus
+`docs/DESIGN-PLAN.md` §6.
+
 Start at most three threads at a time, only from the same wave, and only
 packages the plan's §6 lists as parallel. Lane E packages run one at a time.
 

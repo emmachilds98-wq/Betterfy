@@ -29,11 +29,16 @@ over anything that needs a file most users won't have.
 
 ## Where the fuller context lives
 
+- **Handoff (2026-11-18): start at `docs/BUILD-7-PLAN.md` §0.** It covers what
+  #158 to #168 shipped, tonight's owner decisions, and the first two packages
+  (DESIGN-PLAN L0, the second-ear bug, and L8, full UI optimisation with a home
+  page). There are no open PRs.
+
 - `docs/DESIGN-PLAN.md` — the design and layout plan (2026-11-18, review 2):
-  principles, screen-by-screen findings, packages L1–L5 and L7 with gates, and
+  principles, screen-by-screen findings, packages L0–L5, L7 and L8 with gates, and
   thread briefs. Run it alongside build 7.
 
-- `docs/BUILD-7-PLAN.md` — **start here (2026-11-17, after #157)**: the audio
+- `docs/BUILD-7-PLAN.md` — (2026-11-17, after #157; §0 added 2026-11-18): the audio
   upgrade and every NEXT-WORKPLAN package are done. State of main, a verdict
   on every leftover, what waits on the owner (in-page clicks only), the
   ranked build 7 packages in waves and lanes, and a runbook for running it

@@ -31,7 +31,7 @@ Contents:
   gone. Tidy › Repeats no longer shows an empty sub-list. The Engine's "would
   do differently" list is folded after 8 rows (the phone page was over
   10,000 px tall). Shuffle and Library copy is plainer.
-- **The follow-up PR:**
+- **#168:**
   - **Release Radar starts by itself.** It starts about 90 s after
     the page opens, after the tag lookups and the Engine's map. It doesn't run
     on Data Saver, or once Stop has been pressed on this device (`bf_radar`).
@@ -83,6 +83,53 @@ These are the rules each package is measured against.
 | Everywhere | Heading sizes and spacing set inline in places (`font-size:19px`), so the h2 scale differs between screens | L5 |
 
 ## 4. The packages
+
+### L0: Fix the second ear looking stuck at "listening 1/1" (bug, do first)
+
+- **What emma sees:** after a listening run, the pill and status say
+  "Listening 1/1" (or "N/N") for a long time, and "Listen with the second
+  ear now" seems to do nothing.
+- **Cause, read from the code** (not yet reproduced live; reproduce it first):
+  1. `web/audio/controller.mjs` `start()`. After the queue reaches done =
+     total, the run stays `state: 'running'` while it does four top-ups with
+     no progress of their own: `topUpDsp`, `topUpClap`, `topUpBeats` and
+     `topUpKeyNet`.
+     - Each one re-downloads previews.
+     - CLAP (about 77 MB), Beat This and the key net can each load a model
+       first.
+     - Only "loading the … model" sets a `reason`. The work itself sets none.
+
+     So the vm reads `done 1, total 1, running` for minutes. `listenPill()`
+     and File's status line (`app/shell.js` `listenStatus()`) both print
+     that as "listening 1/1".
+  2. `web/app/audio-panel.js` `maestStart()` returns silently while
+     `AUDIO.ctrl.running` ("one writer at a time"). The second-ear button
+     calls it, so a tap during the top-ups does nothing visible. MAEST only
+     starts when `audioStart()` reaches its trailing `maestStart`.
+  3. None of the top-ups, model loads or `fillMaest` steps has a timeout. One
+     preview fetch or model load that never settles would leave it truly
+     stuck, not just slow.
+- **Fix:**
+  - The controller sets a reason and a count for each top-up ("tidying up:
+    tempo 3 of 12", "describing 2 of 20", "keys 5 of 40"). The pill and
+    status show that, not "1/1".
+  - The second-ear button, while the first ear is busy, says "Waits for
+    listening to finish" and queues the start, rather than returning silently.
+  - Each per-track step and each model load gets a timeout (for example 60 s
+    per track, 5 min per model). It is counted as a failed track, retried on a
+    later run, and the run carries on.
+  - The maest runner gets the same per-track timeout.
+- **Files:** `web/audio/controller.mjs`, `web/audio/maest-run.mjs`,
+  `web/app/audio-panel.js`, `web/app/listening.js` and `web/ui/sound.mjs`
+  (the pill text only), and their tests (`test/audio*.test.mjs` and the
+  controller tests).
+- **Accept:**
+  - A unit test: a controller with stub top-ups emits a reason with counts
+    during each one, and ends `done`.
+  - A stub fetch that never resolves times out, and the run still ends.
+  - A second-ear start during a run is queued and then runs.
+  - Then ask emma to watch one real run with Deep listen on, in the page
+    only.
 
 ### L1: Desktop uses its width (≥1100 px)
 
@@ -172,13 +219,69 @@ These are the rules each package is measured against.
 - **Accept:** the shots match the before shots to the eye. The unit tests
   pass, with only fixture updates.
 
+### L8: Full UI optimisation and a home page (owner's ask, 2026-11-18)
+
+emma: "full ui optimisation to make all new functions fit better, more usable
+easily with no bloat and a nice homepage". This package is the umbrella that
+L1 to L5 and L7 are parts of. It starts with an inventory and ends with a home
+page.
+
+1. **Inventory (a short doc, first PR).** List every function the app has
+   today: each screen, sheet, section, button and automatic job. For each,
+   record where it is reached from, how many taps it takes, and whether it is
+   automatic now (tonight made tags, genres, Score, the radar and listening
+   automatic). Mark each one:
+   - **keep**;
+   - **merge** (two ways to the same thing; for example "Genre sources" on
+     Library and Settings › Sources, or Shuffle on Library and in the playlist
+     sheet);
+   - **automate** (a button that gathers data);
+   - **cut** (no one needs to see it).
+
+   Put the table in this file as §7 and agree the cuts with emma in the thread
+   before building. Cuts are her call.
+2. **Home page.** File stays the first tab, and the top of it becomes a calm
+   "today" header:
+   - One line of greeting and status, for example "72 songs to file · 3 new
+     releases · 1 thing to tidy · listening 412/1,280".
+   - Each part is a tap to where it lives.
+   - Under it, the File card as today.
+   - Setup strips (first five, analysis progress) fold into that one line and
+     disappear when done.
+   - No new data. Everything comes from what the page already holds (`R`,
+     `RADAR`, `LISTEN`, the File queue).
+   - Coordinate with whoever owns File, or own File for the length of this
+     package.
+3. **Fit the new functions.**
+   - Remove-from-likes and Keep (#166), Hard to find (#163), Past runs
+     (#159), the radar, the Engine section and Fill this playlist each get
+     one obvious home and one way in.
+   - Duplicate entry points go.
+   - Labels use the listener's words (see BUILD-7-PLAN §1).
+4. **Then L1 to L5 and L7** as already written, with the inventory deciding
+   any detail that overlaps.
+
+- **Files:** the inventory doc, then `web/screens/home.mjs`, the
+  `40-home.css` partial, and whatever the agreed merges and cuts touch, one PR
+  each.
+- **Accept:**
+  - The inventory is agreed with emma.
+  - Home shots on phone and desktop, light and dark.
+  - No feature is lost unless she agreed to cut it.
+  - Tap counts to each function are equal or lower than in the inventory.
+  - e2e passes.
+
 ## 5. Waves, file ownership, gate
 
-- **Wave A** (parallel, at most three): L2, L4, L5. They touch different
-  partials and modules.
-- **Wave B:** L3, then L1. L1 goes last because it lays out what L2 and L3
-  leave.
-- **Wave C:** L7, once File is quiet.
+- **First:** L0 (bug). It touches only the audio files, so it can run beside
+  anything.
+- **Then L8's inventory** (docs only). L8's home page and merges come next,
+  using L1 to L5 and L7 as their parts, in this order:
+  - **Wave A** (parallel, at most three): L2, L4, L5. They touch different
+    partials and modules.
+  - **Wave B:** L3, then L1. L1 goes last because it lays out what L2 and L3
+    leave. L1 replaces BUILD-7's U2 (desktop width), so don't run both.
+  - **Wave C:** L7, once File is quiet.
 
 Not planned: a simpler Shuffle screen. It was described to the owner on
 2026-11-18, and she decided not to build it.
