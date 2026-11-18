@@ -147,7 +147,7 @@ export function yourDataHTML({ esc, BK = { stage: 'idle' }, DATA_KEYS = [], DATA
     ${restoreHTML(BK, esc)}
 
     <details class="bkkeys"><summary>What is kept, and why (${DATA_KEYS.length})</summary>
-      ${[...groups].map(([g, ks]) => `<h4>${esc(g)}</h4><dl>${ks.map(k => `<dt><code>${esc(k.key)}${k.prefix ? '…' : ''}</code> <span class="sub">${WHERE[k.where] ?? esc(k.where)}</span></dt><dd>${esc(k.why)}</dd>`).join('')}</dl>`).join('')}
+      ${[...groups].map(([g, ks]) => `<h4>${esc(g)}</h4><dl>${ks.map(k => `<dt>${esc(k.name ?? k.key)} <span class="sub">${WHERE[k.where] ?? esc(k.where)}</span> <code class="bkraw">${esc(k.key)}${k.prefix ? '…' : ''}</code></dt><dd>${esc(k.why)}</dd>`).join('')}</dl>`).join('')}
     </details>
     <details class="bkkeys"><summary>Who hears from Betterfy (${DATA_SERVICES.length})</summary>
       <dl>${DATA_SERVICES.map(s => `<dt>${esc(s.name)}</dt><dd>${esc(s.what)}</dd>`).join('')}</dl>
