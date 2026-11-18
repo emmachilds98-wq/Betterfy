@@ -84,3 +84,82 @@ export function normalised(scores) {
   NORMALISED.add(m);
   return m;
 }
+
+/* ---------- S1 (docs/BUILD-7-PLAN.md): sound joins the blend, per situation ----------
+ * A heard track's picks can come three ways: sound leading (today's File rule),
+ * the blend of tags and the engine above, or all three blended, each side
+ * scaled so its best is 1 exactly as above. Which one a heard track gets may
+ * depend on its situation (artist already filed, or never filed). The Score
+ * run measures every way on held-out folds (core/validate/blend.mjs
+ * `routeAccuracy`); File uses another way only where that run says it is ahead. */
+
+/** [tags, engine, sound] weights the three-way fit tries: a tenth apart, summing to 1. */
+export const THREE_GRID = Object.freeze((() => {
+  const out = [];
+  for (let s = 0; s <= 10; s++) for (let t = 0; t <= 10 - s; t++) out.push(Object.freeze([t / 10, (10 - s - t) / 10, s / 10]));
+  return out;
+})());
+
+/**
+ * Tags, the engine and sound in one ranking: `[[playlist id, score]]`, best
+ * first, ties by id. `w` is `[tags, engine, sound]`. A side with nothing to say
+ * drops out and the others share its weight, as `blendScores` does.
+ */
+export function blendThree(tagScores, nativeScores, soundScores, w) {
+  const sides = [tagScores, nativeScores, soundScores].map(s => (s instanceof Map && isNormalised(s) ? s : normalise(s)));
+  const ws = sides.map((m, i) => (m.size ? Math.max(0, Number(w?.[i]) || 0) : 0));
+  let sum = ws[0] + ws[1] + ws[2];
+  if (!(sum > 0)) {
+    // Every side with something to say was weighted 0: the sides present, equally.
+    for (let i = 0; i < 3; i++) ws[i] = sides[i].size ? 1 : 0;
+    sum = ws[0] + ws[1] + ws[2];
+    if (!(sum > 0)) return [];
+  }
+  const ids = new Set(sides.flatMap(m => [...m.keys()]));
+  const out = [];
+  for (const id of ids) {
+    let s = 0;
+    for (let i = 0; i < 3; i++) if (ws[i]) s += ws[i] * (sides[i].get(id) ?? 0);
+    s /= sum;
+    if (s > 0) out.push([id, +s.toFixed(5)]);
+  }
+  return out.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+}
+
+/**
+ * The ways a heard track's picks can be made, per situation:
+ * `{ filed, neverFiled }`, each 'sound' (sound leads, the blend underneath),
+ * 'blend' (tags and the engine) or 'three' (tags, engine and sound blended).
+ */
+export const ROUTES = Object.freeze({
+  today: Object.freeze({ filed: 'sound', neverFiled: 'sound' }),
+  blend: Object.freeze({ filed: 'blend', neverFiled: 'blend' }),
+  three: Object.freeze({ filed: 'three', neverFiled: 'three' }),
+  route: Object.freeze({ filed: 'blend', neverFiled: 'sound' }),
+  route3: Object.freeze({ filed: 'three', neverFiled: 'sound' }),
+});
+
+/**
+ * How one track's picks are made under route `name`: 'sound', 'blend' or
+ * 'three'. A track sound has nothing on (not heard, or too little heard to
+ * compare) is always 'blend', the picks it gets today.
+ */
+export function routeMode(name, { fresh = false, led = false } = {}) {
+  if (!led) return 'blend';
+  const r = ROUTES[name] ?? ROUTES.today;
+  return fresh ? r.neverFiled : r.filed;
+}
+
+/**
+ * Today's File order for a heard track: sound's first two, then the blend's
+ * (or tags') picks, then the rest of sound's, no playlist twice
+ * (web/app/soundslots.js filePicks). Ids in, ids out.
+ */
+export function soundLeads(soundIds, blendIds, n = Infinity) {
+  const out = (soundIds ?? []).slice(0, 2);
+  for (const id of [...(blendIds ?? []), ...(soundIds ?? []).slice(2)]) {
+    if (out.length >= n) break;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}

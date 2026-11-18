@@ -27,11 +27,11 @@ test('listened: listening finished and heard 50+ more', () => {
   assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 100 }), heard: 150, listening: 'paused' }), null, 'paused is not done');
 });
 
-test('heard: 200+ more and 25%+ more, even mid-listen', () => {
-  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 400 }), heard: 600 }), 'heard');
-  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 1000 }), heard: 1200 }), null, '200 more but only 20% more');
-  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 400 }), heard: 600, listening: 'running' }), 'heard');
-  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 400 }), heard: 599, listening: 'running' }), null);
+test('heard: 100+ more is "sound" now (it used to need 200 and 25% more), even mid-listen', () => {
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 400 }), heard: 600 }), 'sound');
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 1000 }), heard: 1200 }), 'sound');
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 400 }), heard: 600, listening: 'running' }), 'sound');
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 400 }), heard: 499, listening: 'running' }), null);
 });
 
 test('waits while listening runs, unless the last run is a week old', () => {
@@ -133,4 +133,16 @@ test('a listening run that heard something becomes an entry with its own text', 
   assert.match(e.text, /Couldn't hear: 40 no preview/);
   assert.equal(listenRunEntry('deep', { state: 'done', done: 0, total: 0 }, { at: 1 }), null, 'nothing heard, nothing kept');
   assert.match(listenRunEntry('deep', { state: 'paused', reason: 'waiting for Wi-Fi', done: 3, total: 40 }, { at: 1 }).text, /stopped: waiting for Wi-Fi/);
+});
+
+test('sound: listening crossed 30 heard since the last run, or 100+ new were heard', () => {
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 0 }), heard: 30 }), 'sound', 'none heard last time, 30 now');
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 12 }), heard: 29 }), null, 'still under 30');
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 12 }), heard: 31, listening: 'running' }), 'sound', 'does not wait for listening to finish');
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 500 }), heard: 600 }), 'sound', '100 more');
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 500 }), heard: 599 }), null, '99 more');
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 40 }), heard: 45 }), null, 'already past 30 last time');
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 0 }), heard: 30, busy: true }), null, 'not while a run is going');
+  assert.equal(autoScoreWhy({ ...base, last: ran(H, { heard: 0 }), heard: 30, filed: 0 }), null, 'nothing filed to score');
+  assert.equal(autoScoreWhy({ ...base, last: ran(7 * H, { heard: 0, ok: false, why: 'sound' }), heard: 30 }), 'sound', 'a failed run retries for the same reason');
 });

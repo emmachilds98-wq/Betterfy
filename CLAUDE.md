@@ -40,6 +40,10 @@ is the same map for an agent.
   project (coordinator + parallel threads, file ownership, merge order, how to
   report). Paste-ready thread briefs: `docs/BUILD-7-BRIEFS.md`.
 
+- **Next build: `docs/BUILD-8-PLAN.md`** (2026-11-18): identifying and
+  matching, further analysis and the upgrade plan, built on the owner's real
+  Score numbers. Uses BUILD-7's rules and thread format.
+
 - `docs/DESIGN-PLAN.md` — the design and layout plan (2026-11-18, review 2):
   principles, screen-by-screen findings, packages L0–L5, L7 and L8 with gates, and
   thread briefs. Run it alongside build 7.

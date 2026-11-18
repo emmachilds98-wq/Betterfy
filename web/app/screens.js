@@ -91,6 +91,7 @@ function engineSummary() {
 SCREEN_CTX.lists = () => ({
   CFG, LIB, LS, R, S, GAPS, LPROF, MIX_MODES, go, mixHeardIn, openPlSheet, closePlSheet, LISTS_SOUND, NO_SIGNAL, MIN_FOR_TARGET, esc, store, tagCoverage, playlistMixes, listsSplits,
   listsSplitMake, profileRow, isMirrorPlaylist, syncAxes, toast, render, $, COLD, gapsCreate, thumbHTML, engineSummary,
+  scoreCard: () => scoreCardInfo(), scoreCopy: () => scoreCopyNow(),
   twinPairs: () => ENG?.pairs ?? null,
   // The last Score run's weakest playlists, with reasons (core/intrinsic/weak.mjs via app/engine.js).
   weakSaved: () => (typeof weakSaved === 'function' ? weakSaved() : null),
@@ -167,6 +168,7 @@ SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, T, saveTheme, $, esc, isMirrorPl
   discRestore: () => typeof discRestore === 'function' ? discRestore() : null,
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
   runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember,
+  discAfterChange: () => typeof discAfterChange === 'function' ? discAfterChange() : null,
   thumbHTML, previewToggle, previewState,
   // Release radar, Discover's first section (web/app/radar.js, web/screens/radar.mjs).
   radar: typeof radarCtx === 'function' ? radarCtx() : null,

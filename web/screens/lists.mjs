@@ -203,6 +203,32 @@ export function knowsYouLine(sum, now = Date.now()) {
     + `${Number.isFinite(sum.scored) ? ` (${sum.scored.toLocaleString()} tracks${when})` : when ? ` (${when.slice(2)})` : ''}.`;
 }
 
+/** Library's Score card (owner, 2026-11-18: "i cant find score"): the last Score + Tune run, or that one is on its way,
+ *  and whether listening has heard enough for sound to count. Words only; the numbers are the Engine's own. */
+export function scoreCardHTML(c, now = Date.now()) {
+  const info = c.scoreCard?.();
+  if (!info) return '';
+  const { esc } = c, pc = x => `${Math.round(x * 100)}%`, sum = info.score;
+  const has = Number.isFinite(sum?.top1);
+  const days = has && Number.isFinite(sum.at) ? Math.floor((now - sum.at) / 864e5) : null;
+  const when = days == null ? '' : days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+  const head = info.running ? 'Scoring…'
+    : has ? `Your score: top-1 ${pc(sum.top1)}${Number.isFinite(sum.top3) ? ` · top-3 ${pc(sum.top3)}` : ''}`
+    : 'Not scored yet';
+  const sub = info.running ? 'Checking its picks against what you filed. You can keep using Betterfy.'
+    : has ? `Last run ${when}${info.build ? `, build ${esc(info.build)}` : ''}.`
+    : 'It runs by itself about a minute after Betterfy opens.';
+  const heard = Number(info.heard) || 0, total = Number(info.total) || 0;
+  const sound = `Listening: heard ${heard.toLocaleString()}${total ? ` of ${total.toLocaleString()}` : ''}`
+    + (heard < 30 ? ' · sound lines appear after ~30 heard' : ' · sound is part of the score');
+  return `<section class="scorecard" aria-labelledby="scorecard-h">
+      <div class="scorecard-main"><h2 id="scorecard-h">${head}</h2>
+        <p class="plmeta">${sub}</p><p class="plmeta">${sound}</p></div>
+      <div class="scorecard-b"><button class="b sm p" data-go="engine">See results</button>
+        ${has || info.running ? '<button class="b sm" data-act="scorecopy">Copy results</button>' : ''}</div>
+    </section>`;
+}
+
 /** Everything the rows and the sheet need to know about one playlist, in one place. */
 function plInfo(c, p, splitIds, undecidedIds, waiting = null) {
   const { R, LISTS_SOUND } = c;
@@ -672,21 +698,23 @@ export function view(c) {
         <span class="plmain"><span class="ttl">${esc(s.title)}</span>
           <span class="plmeta"><span class="mono">${s.n}</span> tracks · ${esc(s.why)}</span></span></button>`).join('')}</div>
     </section>` : '';
-  const eng = c.engineSummary?.() ?? null;
   // One line of the Engine's score (owner, 2026-11-18): the Engine itself lives in Settings.
   // The footer is one line (L2): the score sentence, then where to go from here.
-  const knows = rows.some(p => p.target) ? `<span class="plknows">${esc(eng?.running ? 'Checking how well it knows you…' : knowsYouLine(eng))}</span>` : '';
-  const footHTML = `<p class="axcov plfoot">${knows}<span class="plfoot-b">${knows ? '<button class="b sm" data-go="engine">How it picks</button>' : ''}
+  // The score sentence lives in the Score card at the top now; the footer keeps the way to the full results.
+  const knows = rows.some(p => p.target);
+  const footHTML = `<p class="axcov plfoot"><span class="plfoot-b">${knows ? '<button class="b sm" data-go="engine">How it picks</button>' : ''}
       <button class="b sm" data-act="lshufall">Shuffle everything</button></span></p>`;
   return `<h1>Library</h1>
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
-    ${ticksHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
+    ${scoreCardHTML(c)}${ticksHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
     ${c.soundSearchHTML?.() ?? ''}${footHTML}`;
 }
 
 
 export const actions = {
+  /** The Score card's Copy results: the same text as the Engine screen's. */
+  scorecopy(c) { return c.scoreCopy?.(); },
   /** Tap a playlist: its detail sheet. */
   plopen(c, el) { if (WIZ?.status !== 'working') WIZ = null; c.openPlSheet(el.dataset.pl); },
 

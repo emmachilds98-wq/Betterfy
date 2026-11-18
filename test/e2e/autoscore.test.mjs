@@ -91,3 +91,29 @@ test('a run from before Past runs existed shows as one rebuilt entry, ready to c
   assert.match(listens[0].text, /This run: 3 of 3 tracks/);
   assert.deepEqual(app.errors, []);
 });
+
+test('Library has a Score card at the top: the score, the listening line, See results and Copy results', { skip, timeout: 120000 }, async () => {
+  app = await openApp(browser, { kind: 'typical', phone: false });
+  const { page, ctx } = app;
+  await ready(page);
+  await ctx.addInitScript(() => {
+    if (window !== window.top || localStorage.getItem('bf_engscore')) return;
+    localStorage.setItem('bf_engscore', JSON.stringify({ top1: 0.65, top3: 0.82, scored: 600, at: Date.now() }));
+    localStorage.setItem('bf_run_history', JSON.stringify([{ kind: 'score', at: Date.now(), build: 'b1', top1: 0.65, top3: 0.82, text: 'Betterfy engine score — test report' }]));
+  });
+  await page.reload();
+  await ready(page);
+  await page.evaluate(() => go('lists'));
+  await page.waitForSelector('.scorecard');
+  const card = await page.locator('.scorecard').innerText();
+  assert.match(card, /Your score: top-1 65% · top-3 82%/);
+  assert.match(card, /Listening: heard \d+/);
+  assert.match(card, /sound lines appear after ~30 heard|sound is part of the score/);
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.locator('.scorecard [data-act="scorecopy"]').click();
+  const copied = await until(() => page.evaluate(() => navigator.clipboard.readText().catch(() => '')), 'the copy', 5000);
+  assert.match(copied, /Betterfy engine score/);
+  await page.locator('.scorecard [data-go="engine"]').click();
+  await page.waitForFunction(() => view === 'engine' || !!document.querySelector('#settingsPanel.open'), null, { timeout: 20000 });
+  assert.deepEqual(app.errors, []);
+});

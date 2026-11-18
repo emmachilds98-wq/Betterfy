@@ -218,13 +218,14 @@ export const actions = {
     render();
   },
   /** Pass on this artist for good (kept on this device) and move to the next card. */
-  dpass({ S, render, toast, discRemember }) {
+  dpass({ S, render, toast, discRemember, discAfterChange }) {
     const d = S.discover ?? [], at = Math.min(S.discAt ?? 0, d.length - 1), t = d[at];
     if (!t) return;
     discRemember('pass', t.artist ?? t.artists?.[0]?.name);
     S.discover = d.filter(x => (x.artist ?? '') !== (t.artist ?? ''));
     S.discAt = Math.max(0, Math.min(at, S.discover.length - 1));
     toast(`Won’t offer ${t.artist ?? 'them'} again.`);
+    discAfterChange?.();
     render();
   },
   async like({ S, libraryCall, logAction, toast, discRemember }, el) {
@@ -239,7 +240,7 @@ export const actions = {
 };
 
 /** Add a pick (the one on the card, unless `pick` says which) to a playlist, and take it off the pile. */
-async function discAdd({ S, CFG, LIB, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId, pick = null) {
+async function discAdd({ S, CFG, LIB, addTracks, logAction, getLog, toast, undoAction, render, discRemember, discAfterChange }, playlistId, pick = null) {
   const d = S.discover ?? [], cur = Math.min(S.discAt ?? 0, d.length - 1), at = pick ?? cur, t = d[at];
   if (!t) return;
   const name = CFG[playlistId]?.name ?? LIB?.playlists?.find(p => p.id === playlistId)?.name ?? playlistId;
@@ -247,10 +248,17 @@ async function discAdd({ S, CFG, LIB, addTracks, logAction, getLog, toast, undoA
     await addTracks(playlistId, [t.id]);
     await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'added from discovery' });
     const when = (await getLog())[0]?.at;
-    toast(`Added “${t.track}” to ${name}.`, () => undoAction(when));
+    toast(`Added “${t.track}” to ${name}.`, async () => {
+      await undoAction(when);
+      // Undone: the pick is back in the deck, where it was.
+      const now = S.discover ?? (S.discover = []);
+      if (!now.some(x => x.id === t.id)) now.splice(Math.min(at, now.length), 0, t);
+      discAfterChange?.(); render();
+    });
     if (discRemember) discRemember('like', t.artist ?? t.artists?.[0]?.name);
     d.splice(at, 1);
     S.discAt = Math.max(0, Math.min(at < cur ? cur - 1 : pick == null ? at : cur, d.length - 1));
+    discAfterChange?.();
     render();
   } catch (e) { toast('Failed: ' + e.message); }
 }

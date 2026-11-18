@@ -19,6 +19,7 @@ Built because Spotify's Web API stopped providing the data this needs.
 |---|---|
 | To use the app | This file, from "What's in the app" down |
 | The current state of the work, and what's next | [`docs/BUILD-7-PLAN.md`](docs/BUILD-7-PLAN.md) §0, with the thread briefs in [`docs/BUILD-7-BRIEFS.md`](docs/BUILD-7-BRIEFS.md) and the design plan in [`docs/DESIGN-PLAN.md`](docs/DESIGN-PLAN.md) |
+| What to build next (matching, analysis, upgrades), on the owner's real numbers | [`docs/BUILD-8-PLAN.md`](docs/BUILD-8-PLAN.md) |
 | The rules for working on it | [`CLAUDE.md`](CLAUDE.md) |
 | How the page's script and styles are laid out | [`web/README.md`](web/README.md) |
 | The audio contracts and how sound was measured | [`docs/AUDIO-BUILD-PLAN.md`](docs/AUDIO-BUILD-PLAN.md) (frozen contracts), [`docs/AUDIO-ANALYSIS-PLAN.md`](docs/AUDIO-ANALYSIS-PLAN.md), [`docs/BUILD-5-PROGRESS.md`](docs/BUILD-5-PROGRESS.md) (key and tempo measurements) |
