@@ -45,6 +45,31 @@ export function pickRowsHTML(ctx, d, at) {
     <div class="plrows">${rows}</div></section>`;
 }
 
+/** Why the card's first pick is offered, in words. */
+export function fitHow(best) {
+  return best?.via === 'seed' ? 'sounds right at home next to its tracks, the playlist this radio is from'
+    : best?.via === 'sound' ? 'by how it sounds next to what you filed there'
+    : 'ranked by the same model the file queue uses';
+}
+
+/** "Add to another playlist": every playlist you own, the pick's suggestions first, then the rest A to Z.
+ *  Not only the filing targets: you can add a pick to any playlist that is yours. */
+export function anyPlaylistMenu(ctx, t) {
+  const { LIB, CFG = {}, esc } = ctx;
+  const mirror = ctx.isMirrorPlaylist ?? (() => false);
+  const mine = (LIB?.playlists ?? []).filter(p => p?.id && !mirror(p));
+  const byId = new Map(mine.map(p => [p.id, p]));
+  const nameOf = id => byId.get(id)?.name ?? CFG[id]?.name ?? id;
+  const sugg = [...new Set((t?.suggest ?? []).map(s => s?.id).filter(id => id && (byId.has(id) || CFG[id])))];
+  const rest = mine.filter(p => !sugg.includes(p.id))
+    .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' }));
+  const opt = (id, name) => `<option value="${esc(id)}">${esc(name)}</option>`;
+  const top = sugg.length ? `<optgroup label="Suggested">${sugg.map(id => opt(id, nameOf(id))).join('')}</optgroup>` : '';
+  const all = rest.length ? (sugg.length ? `<optgroup label="Your other playlists">${rest.map(p => opt(p.id, p.name)).join('')}</optgroup>`
+    : rest.map(p => opt(p.id, p.name)).join('')) : '';
+  return top + all;
+}
+
 export function view(ctx) {
   const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
@@ -79,7 +104,7 @@ export function view(ctx) {
     { acts: '<button class="b p" type="button" data-act="discRun">Find new music from what I play</button>' });
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
-  const opts = Object.entries(CFG).filter(([,v])=>v.target).map(([id,v])=>({id,...v})).sort((a,b)=>a.name.localeCompare(b.name));
+  const menu = anyPlaylistMenu(ctx, t);
   const art = artHTML({ art:t.art, id:t.id, title:t.track },
                       `data-dplay="${esc(t.id)}" data-ddur="${t.dur ?? 0}"`);
 
@@ -111,12 +136,12 @@ export function view(ctx) {
         ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
         ${best ? `<button class="fitcall" data-act="dfile" data-dfile="${esc(best.id)}">
             <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
-              <span class="ax"><b>${esc(best.axis??'')}</b> playlist · ${best.via === 'sound' ? 'by how it sounds next to what you filed there' : 'ranked by the same model the file queue uses'}</span>${pickEvidence(best)}</span>
+              <span class="ax">${best.axis ? `<b>${esc(best.axis)}</b> playlist · ` : ''}${fitHow(best)}</span>${pickEvidence(best)}</span>
             ${pickBand(best)}<span class="sc">${fitWord(best.score)}</span>
           </button>` : ''}
         ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
           `<button class="pick" data-act="dfile" data-dfile="${esc(sg.id)}"><span class="k">${n+2}</span>
-           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${esc(sg.axis??'')} playlist</span>${pickEvidence(sg)}</span>
+           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.axis ? `${esc(sg.axis)} playlist` : sg.via === 'seed' ? 'the playlist this radio is from' : 'playlist'}</span>${pickEvidence(sg)}</span>
            <span class="rt">${pickBand(sg)}<span class="sc">${fitWord(sg.score)}</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
         ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
@@ -130,7 +155,7 @@ export function view(ctx) {
           <button class="b sm" data-act="dpass" data-dpass="${esc(t.id)}" title="Not for me: this artist won't be offered again">Not for me</button>
           <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
           <a class="b sm" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
-          <select data-act="discAnyPl" id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
+          <select data-act="discAnyPl" id="discAnyPl" aria-label="Add to another playlist"><option value="">Add to another playlist…</option>${menu}</select>
         </div>
       </div>
     </div>
@@ -191,10 +216,10 @@ export const actions = {
 };
 
 /** Add a pick (the one on the card, unless `pick` says which) to a playlist, and take it off the pile. */
-async function discAdd({ S, CFG, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId, pick = null) {
+async function discAdd({ S, CFG, LIB, addTracks, logAction, getLog, toast, undoAction, render, discRemember }, playlistId, pick = null) {
   const d = S.discover ?? [], cur = Math.min(S.discAt ?? 0, d.length - 1), at = pick ?? cur, t = d[at];
   if (!t) return;
-  const name = CFG[playlistId]?.name ?? playlistId;
+  const name = CFG[playlistId]?.name ?? LIB?.playlists?.find(p => p.id === playlistId)?.name ?? playlistId;
   try {
     await addTracks(playlistId, [t.id]);
     await logAction({ op:'add', playlistId, playlistName:name, trackIds:[t.id], reason:'added from discovery' });
