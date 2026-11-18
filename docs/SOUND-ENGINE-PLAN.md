@@ -640,8 +640,8 @@ source in `build-web.mjs`. Lane E adds `core/ontology/tempo.mjs`,
 | Id | Package | Wave | Lane | State | PR | Bar |
 | --- | --- | --- | --- | --- | --- | --- |
 | T1 | Double time counts for DnB | S0 | E | Not started | | DnB named ≥ 95/199; tempo fits ≥ 70% |
-| L1 | Time every stage | S0 | M | Not started | | measurement |
-| L4 | Hearing coverage funnel | S0 | M | Not started | | display |
+| L1 | Time every stage | S0 | M | Built (display and measurement only): per-stage timings per track and per top-up in the controller, rolling median on the Listening panel and in the Score report; key `bf_listen_timing` | | measurement |
+| L4 | Hearing coverage funnel | S0 | M | Built (display only): library → ISRC → Deezer → preview → downloaded → heard, with miss reasons, in Settings › Listening and as Score report lines | | display |
 | R1 | A new ear never switches sound off | S0 | E | Not started | | guard test |
 | T2 | One BPM everywhere | S1 | E, U | Not started | | +15 in range; ≤ 1% moved on house/techno |
 | T3 | "About" tempos | S1 | U | Not started | | ≥ 80% right in the 0.15-0.3 band |

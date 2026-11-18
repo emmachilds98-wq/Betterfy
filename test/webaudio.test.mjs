@@ -296,6 +296,24 @@ test('a run stops mid-queue after the track in flight, and a second run resumes 
   assert.ok(seen.includes('running') && seen.includes('paused'));
 });
 
+test('L1: the controller times each stage per track, hands the samples to onTiming, and stores the same records', async () => {
+  const tracks = ['a', 'b', 'c'].map(id => ({ id, isrc: 'I' + id, durationMs: 1000 }));
+  const run = async extra => {
+    const store = openAudioStore({ indexedDB: fakeIndexedDB() });
+    const snaps = [];
+    const ctrl = createAudioController({ store, ...fakePipeline(), ...extra, onTiming: s => snaps.push(s) });
+    await ctrl.start(tracks);
+    return { all: [...(await store.getAll()).values()].map(r => ({ ...r, at: 0 })), snaps, ctrl };
+  };
+  let t = 0;
+  const a = await run({ timerNow: () => (t += 5) }), b = await run({});
+  assert.deepEqual(a.all, b.all, 'timing changes nothing that is stored');
+  assert.equal(a.snaps.length, 1);
+  assert.equal(a.snaps[0].track.length, 3, 'one sample per track');
+  assert.ok(a.snaps[0].track.every(s => s.lookup > 0 && s.download > 0 && s.decode > 0 && s.model > 0));
+  assert.equal(a.ctrl.timing().track.length, 3);
+});
+
 test('a failed download is counted for the session but never stored, so it is tried again', async () => {
   const store = openAudioStore({ indexedDB: fakeIndexedDB() });
   const p = fakePipeline();
