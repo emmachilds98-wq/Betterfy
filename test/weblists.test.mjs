@@ -63,7 +63,7 @@ test('Library rows say what needs a decision, and Shuffle stays reachable', () =
   assert.match(html, /data-pl="P1"[^]*?<span class="plscore plh-ok"[^>]*><b class="mono">100<\/b><span>Healthy<\/span>/);
   assert.match(html, /data-pl="P2"[^]*?<span class="tag warn">what kind\?<\/span>/);
   assert.ok(html.includes('data-go="shuffle"') && html.includes('data-go="sources"'));
-  assert.match(html, /How well it knows you[^]*data-go="engine"|data-go="engine"[^]*How well it knows you/, 'Engine is reached from Library now');
+  assert.match(html, /<p class="axcov plknows">Not measured yet[^<]*<button class="b sm" data-go="engine">Engine<\/button><\/p>/, 'one line of the score, and the Engine is a tap away in Settings');
   assert.match(html, /Not measured yet/);
 });
 

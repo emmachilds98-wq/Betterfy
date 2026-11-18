@@ -54,6 +54,7 @@ const DATA_KEYS = [
   // --- release radar (Discover) ---
   { where:'idb', key:'radar:artist:', prefix:true, group:'Release radar', why:'Per artist in your library: when the radar last asked Spotify about their releases and the date of their newest, so it only asks again when one is due.' },
   { where:'idb', key:'radar:release:', prefix:true, group:'Release radar', why:'Each release the radar found by an artist in your library (name, date, cover link, track list where it was read), with whether you own it and whether it is a reissue.' },
+  { where:'local', key:'bf_radar', group:'Release radar', why:'"off" once you pressed Stop on the radar, so it does not start by itself again on this device until you press Start.' },
   { where:'idb', key:'radar:index', group:'Release radar', why:'How far the radar\'s last read got, so a stopped read picks up where it stopped.' },
   { where:'idb', key:'radar:dismissed', group:'Release radar', why:'Releases you dismissed or filed from the radar, so they stay out of it.' },
 

@@ -78,8 +78,8 @@ async function shoot(b, FORM, THEME) {
   // touch-only controls. Turned back on after each shot.
   const cdp = FORM === 'phone' ? await ctx.newCDPSession(pg) : null;
   const touchBack = () => cdp?.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-  // The four tabs, then Library's three sub-screens (Engine moved there in Wave F).
-  const views = ['inbox','tidy','discover','lists','new','shuffle','engine'];
+  // The four tabs, then Library's two sub-screens (Engine is a Settings section).
+  const views = ['inbox','tidy','discover','lists','new','shuffle'];
   for (const v of views) {
     await pg.evaluate(v => { try { go(v); } catch (e) { console.log(e); } }, v);
     await pg.waitForTimeout(700);
@@ -120,7 +120,7 @@ async function shoot(b, FORM, THEME) {
   await touchBack();
   // The Settings sheet, closed to open: its sections one at a time (UI-D).
   await pg.evaluate(() => go('inbox'));
-  for (const sec of [null, 'sources', 'history']) {
+  for (const sec of [null, 'sources', 'engine', 'history']) {
     await pg.evaluate(s => { try { S.uhOpen = s; openUnderHood(s); } catch (e) { console.log(e); } }, sec);
     await pg.waitForTimeout(sec === 'engine' ? 2500 : 900);
     await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-settings${sec ? '-' + sec : ''}.png`) });

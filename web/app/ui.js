@@ -22,25 +22,26 @@ function moreButton(key, total) {
 // Bar order: the four tabs, which is also swipe order. Swiping left and right on a phone
 // walks this list, so the gesture and the tab bar agree on what comes next.
 // New playlists, Shuffle and Engine follow Library: they are reached from it, and a
-// swipe on from Library lands on them. Sources and History are not screens any
-// more: they are sections of the Settings sheet (app/shell.js). Engine was one
-// too, until it moved to Library's "How well it knows you" card (Wave F).
+// swipe on from Library lands on them. Sources, Engine and History are not screens:
+// they are sections of the Settings sheet (app/shell.js). Engine was a Library
+// screen from Wave F until 2026-11-18, when it went back to Settings (owner's ask)
+// and Library kept one line of its score.
 const TABS = ['inbox','tidy','discover','lists'];
-const VORDER = [...TABS, 'new', 'shuffle', 'engine'];
+const VORDER = [...TABS, 'new', 'shuffle'];
 // The five colours of the mark, one per screen — see the [data-v=…] rules in
 // the stylesheet, which have to agree with this.
 const VHUE = { inbox:'m0', tidy:'m1', discover:'m3', lists:'m4', new:'m2', shuffle:'m4', engine:'m2' };
 const VTITLE = { inbox:'File', tidy:'Tidy', discover:'Discover', lists:'Library',
                  new:'New playlists', shuffle:'Shuffle', engine:'Engine' };
 // Screens that sit under another tab on the bar.
-const TAB_OF = { new:'lists', shuffle:'lists', engine:'lists' };
+const TAB_OF = { new:'lists', shuffle:'lists' };
 const tabOf = v => TAB_OF[v] ?? v;
 // Old screen names and where they went: Home became File; Sources and History
-// became sections of the Settings sheet. go() and the router use it. Engine is
-// a screen again, under Library, so #/engine needs no entry here.
+// became sections of the Settings sheet, and so did Engine. go() and the router use it.
 const LEGACY_VIEWS = {
   home:    { view: 'inbox' },
   sources: { section: 'sources' },
+  engine:  { section: 'engine' },
   history: { section: 'history' },
 };
 /* ---------- ⓘ: "how this works" lives behind a button, not in the page ----------

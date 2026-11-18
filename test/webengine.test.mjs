@@ -285,13 +285,12 @@ test('an engine that cannot be fetched leaves a retry, not a dead screen', async
   assert.match(html, /data-act="go"/, 'and the retry must still be reachable');
 });
 
-test('the screen is reachable: a screen under Library, and old links land there', () => {
+test('the Engine is reachable: a section of Settings, and old links land there', () => {
   // A screen nothing routes to is a screen nobody can open, and that failure is
   // invisible to every test that calls the screen's view directly.
-  assert.match(PAGE, /const VORDER = \[[^\]]*'engine'/, 'it is a screen the router knows, so #/engine and go(\'engine\') open it');
-  assert.match(PAGE, /TAB_OF = \{[^}]*engine:'lists'/, 'it sits under Library on the tab bar');
-  assert.match(PAGE, /engine:\(\) => libBack\('engine'\) \+ screenView\('engine'\)\(\)/, 'with a way back to Library');
-  assert.ok(!/\['engine', 'Engine', /.test(PAGE), 'and it is no longer a section of the Settings sheet');
+  assert.match(PAGE, /\['engine', 'Engine', /, 'it is a section of the Settings sheet (owner, 2026-11-18)');
+  assert.match(PAGE, /engine:\s+\{ section: 'engine' \}/, 'so #/engine and go(\'engine\') open that section');
+  assert.ok(!/const VORDER = \[[^\]]*'engine'/.test(PAGE), 'and it is no longer a screen under Library');
   assert.ok(!/data-v="engine"/.test(PAGE), 'it is not on the tab bar');
   assert.match(PAGE, /data-go="engine"/, 'Library links to it');
 });

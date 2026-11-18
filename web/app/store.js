@@ -28,7 +28,7 @@ const STORE_SCREENS = ['inbox', 'tidy', 'new', 'discover', 'shuffle', 'lists', '
 const STORE_WATCH = {
   lib:     STORE_SCREENS,
   reports: STORE_SCREENS,
-  eng:     ['engine', 'lists'],   // lists: the "How well it knows you" card
+  eng:     ['engine', 'lists'],   // engine: its Settings section; lists: Library's score line
   sound:   ['inbox'],
   audio:   ['inbox', 'tidy', 'sources'],
   gaps:    ['new', 'lists', 'inbox'],   // inbox: File's cold-start offers (O1)
