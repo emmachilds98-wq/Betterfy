@@ -3,7 +3,7 @@
 // unlike is caught by the count check or, failing that, the weekly full read.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { skip, launch, openApp, ready } from './harness.mjs';
+import { skip, launch, openApp, whole } from './harness.mjs';
 
 let browser;
 test.before(async () => { if (!skip) browser = await launch(); });
@@ -22,7 +22,7 @@ test('liked sync: head-only when nothing changed, merges new likes, reconciles u
   const app = await openApp(browser, { kind: 'large' });
   try {
     const { page, fake } = app;
-    await ready(page);
+    await whole(page);
     const full = fake.liked().length;
     assert.ok(full >= 5000);
     const outside = () => fake.account.playlists.flatMap(p => p.tracks).map(t => t.id).filter(id => !fake.liked().includes(id));

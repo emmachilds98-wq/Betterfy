@@ -71,6 +71,14 @@ export async function ready(page, timeout = 45000) {
   await page.waitForSelector('#app:not([hidden])', { timeout });
 }
 
+/** Wait until the whole library is in. A large first read draws File from its first liked page and
+ *  reads the rest behind it (BUILD-7 P1); this waits for that rest, and is at once otherwise. */
+export async function whole(page, timeout = 120000) {
+  await ready(page, timeout);
+  await page.waitForFunction(() => typeof LIB !== 'undefined' && LIB && !LIB.partial
+    && (typeof LIB_READ === 'undefined' || !LIB_READ), null, { timeout });
+}
+
 /** Wait for File to show a card with a leading suggestion; returns the track id and that playlist id. */
 export async function fileCard(page, timeout = 45000) {
   await page.waitForSelector('#swipeCard[data-best]', { timeout });
