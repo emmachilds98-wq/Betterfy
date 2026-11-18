@@ -215,3 +215,19 @@ test('the sure batch skips the ones already in their playlist and still takes th
   assert.equal(ctx.R.backlog.length, 0);
   assert.equal(accepted.length, 3);
 });
+
+test('a card already in a playlist offers Keep it there and a two-tap Remove from Liked', async () => {
+  const { ctx, adds } = mk(2, { libraryCall: async () => {}, logAction: async () => {}, getLog: async () => [{ at: 'u1' }] });
+  const t = ctx.R.backlog[0];
+  t.inPl = [{ id: 'p1', name: 'Jungle' }];
+  assert.match(INBOX.alreadyHTML(ctx, t), /Already in <b>Jungle<\/b>/);
+  assert.match(INBOX.alreadyHTML(ctx, t), />Remove from Liked</);
+  assert.equal(INBOX.alreadyHTML(ctx, ctx.R.backlog[1]), '', 'not shown for a song in no playlist');
+  await INBOX.actions.unlikeask(ctx);
+  assert.equal(ctx.R.backlog.length, 2, 'the first tap only asks');
+  assert.match(INBOX.alreadyHTML(ctx, t), /Tap again to remove from Liked/);
+  await INBOX.actions.unlikeask(ctx);
+  assert.equal(ctx.R.backlog.length, 1, 'the second tap removes it from Liked and from File');
+  await INBOX.actions.keepthere(ctx);
+  assert.deepEqual(adds, [], 'Keep it there on a song in no playlist does nothing');
+});
