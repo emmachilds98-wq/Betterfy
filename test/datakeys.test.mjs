@@ -161,6 +161,7 @@ test('every registry row is complete and every key is unique', () => {
     assert.ok(typeof k.key === 'string' && k.key, 'a key');
     assert.ok(typeof k.why === 'string' && k.why.length >= 15, `${k.key}: a reason a listener can read`);
     assert.ok(k.group, `${k.key}: a group`);
+    assert.ok(typeof k.name === 'string' && k.name.length >= 3 && k.name.length <= 40 && !/^bf_|_/.test(k.name), `${k.key}: a plain name for Settings › Your data`);
     const id = k.where + ':' + k.key;
     assert.ok(!seen.has(id), `${id} listed twice`);
     seen.add(id);
@@ -224,4 +225,13 @@ test('no stale rows: every registry key is written somewhere, or marked readOnly
       : r.where === 'idb-db' ? x.kind === 'idb-db' && k.key === r.key
       : x.kind === r.where && (k.key === r.key || (r.prefix && k.key.startsWith(r.key))))));
   assert.deepEqual(stale.map(r => r.where + ':' + r.key), []);
+});
+
+test('Your data shows each key by its plain name, with the raw key as small print', async () => {
+  const { yourDataHTML } = await import('../web/screens/sources.mjs');
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+  const { keys, services } = loadRegistry();
+  const html = yourDataHTML({ esc, DATA_KEYS: keys, DATA_SERVICES: services });
+  assert.match(html, /<dt>Your Spotify sign-in <span class="sub">[^<]*<\/span> <code class="bkraw">bf_tok<\/code><\/dt>/);
+  assert.match(html, /<h4>How it picks<\/h4>/);
 });

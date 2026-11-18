@@ -20,6 +20,7 @@
   .yourdata details.bkkeys h4{margin:12px 0 2px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3)}
   .yourdata details.bkkeys dl{margin:4px 0 0}
   .yourdata details.bkkeys dt{margin-top:8px; font-size:13px; overflow-wrap:anywhere}
+  .yourdata details.bkkeys dt code.bkraw{font-size:var(--fs-micro); color:var(--ink-3)}
   .yourdata details.bkkeys dd{margin:2px 0 0; color:var(--ink-2); font-size:13px}
   .yourdata .bkwipe{padding:12px 14px; border:1px solid var(--warn); border-radius:var(--r-2, 10px); background:var(--warn-soft)}
   .yourdata .b.danger{background:var(--warn); border-color:var(--warn); color:var(--surface)}
