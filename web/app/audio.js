@@ -123,7 +123,7 @@ async function audioInit() {
       await audioEars();
       return AUDIO.wear.loadKeyNet(audioModelUrl(A.KEYNET_MODEL_FILE));
     },
-    onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); },
+    onChange: vm => { AUDIO.vm = vm; audioRedraw(); audioMidRun(vm); if (typeof runHistoryWatch === 'function') runHistoryWatch('listen', vm); },
   });
   await audioRefresh();
   // The style names, for ProfileVM. Optional: a playlist row without them still says how much was heard.

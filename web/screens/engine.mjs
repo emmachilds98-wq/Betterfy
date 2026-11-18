@@ -441,8 +441,41 @@ function audioLines(v, pc, maestScoreText) {
 /** 0 nothing filed, 1 sparse, 2 working, 3 established. */
 const RUNG_TONE = ['warn', 'warn', 'ok', 'ok'];
 
+const RUN_LABEL = { score: 'Score', listen: 'Listening', deep: 'Deep listen' };
+const RUN_WHY = { first: 'first check', listened: 'after listening', heard: 'after more was heard', weekly: 'weekly check', manual: 'run by hand' };
+
+/**
+ * Past runs (BUILD-7 M1): every Score run's full report and the end of every
+ * listening run, kept on this device (bf_run_history), each with its own Copy,
+ * so a report not copied at the time is still there tomorrow. '' with none.
+ */
+export function pastRunsCard(runs, esc) {
+  if (!runs?.length) return '';
+  const pc = x => (x == null ? '—' : Math.round(x * 100) + '%');
+  const n = x => Number(x || 0).toLocaleString('en-GB');
+  const row = r => {
+    const sub = r.kind === 'score'
+      ? [`top-1 ${pc(r.top1)}`, `top-3 ${pc(r.top3)}`, r.recovered ? 'headline only' : RUN_WHY[r.why] ?? null, r.build ? `build ${r.build}` : null]
+      : [`${n(r.done)} of ${n(r.total)} tracks`, r.state === 'done' ? 'finished' : 'stopped', r.heard ? `${n(r.heard)} heard in all` : null];
+    return `<div class="row"><div class="main">
+      <div class="ttl">${esc(RUN_LABEL[r.kind] ?? r.kind)} · ${esc(r.when ?? '')}</div>
+      <div class="sub">${esc(sub.filter(Boolean).join(' · '))}</div>
+      ${r.diff?.length ? `<div class="sub">Since the run before: ${esc(r.diff.join('; '))}</div>` : ''}
+    </div>${r.text ? `<button class="b sm" type="button" data-act="histCopy" data-kind="${esc(r.kind)}" data-at="${r.at}">Copy</button>` : ''}</div>`;
+  };
+  const head = runs.slice(0, 4), rest = runs.slice(4);
+  return `<div class="card" id="pastRuns">
+    <h2 style="margin:0 0 6px; font-size:19px">Past runs</h2>
+    <p class="why">Each Score and listening run is kept on this device, so you can copy one later.</p>
+    <div class="rows" style="margin-top:10px">${head.map(row).join('')}</div>
+    ${rest.length ? `<details style="margin-top:8px"><summary class="sub">${rest.length} older</summary>
+      <div class="rows">${rest.map(row).join('')}</div></details>` : ''}
+  </div>`;
+}
+
 export function view(c) {
   const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
+  const pastCard = pastRunsCard(c.runHistoryView?.() ?? [], esc);
   const head = `<h1>Engine</h1>
     <p class="lede">What Betterfy has learnt from your own playlists, and how often it gets your filing right. Learning and scoring here change nothing in Spotify.${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
       of record, from when. Everything here is what it <i>would</i> do, until the score below shows it, blended with today's engine,
@@ -456,7 +489,7 @@ export function view(c) {
         their names say what genre they are. Mark the ones that are genre playlists in Library, then
         come back.</p>
       <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Library</button></div>
-    </div>`;
+    </div>${pastCard}`;
 
   if (ENG.status === 'idle') return `${head}
     <div class="card">
@@ -468,7 +501,7 @@ export function view(c) {
       <div class="rowbtns" style="margin-top:18px">
         <button class="b big go" data-act="go">Learn my library</button>
       </div>
-    </div>`;
+    </div>${pastCard}`;
 
   if (ENG.status === 'working') return `${head}
     <div class="card">
@@ -476,14 +509,14 @@ export function view(c) {
       <p>Working out what your playlists mean — the arithmetic for every pair of artists you file together.
         ${engineInBackground() ? 'It runs in the background' : 'On a big library this holds the page up for a moment'},
         and it only happens once.</p>
-    </div>`;
+    </div>${pastCard}`;
 
   if (ENG.status === 'error') return `${head}
     <div class="card">
       <h2 style="margin:0 0 12px; font-size:19px">That didn't work</h2>
       <p class="why">${esc(ENG.err ?? 'Unknown error')}</p>
       <div class="rowbtns" style="margin-top:16px"><button class="b" data-act="go">Try again</button></div>
-    </div>`;
+    </div>${pastCard}`;
 
   const r = ENG.rung, sh = ENG.shadow;
 
@@ -657,6 +690,7 @@ export function view(c) {
     ${rungCard}
     ${shadowCard}
     ${valCard}
+    ${pastCard}
     ${tuneCard}
     ${pairCard}
     <div class="rowbtns" style="margin:20px 0 0">
@@ -725,6 +759,16 @@ export const actions = {
   /** Copy the score as text; no clipboard permission offers the share sheet, then a manual copy. */
   async copy(c) {
     const text = summary(c, await c.getLog?.().catch(() => null));
+    if (!text) return;
+    try { await c.navigator.clipboard.writeText(text); return c.toast('Copied — paste it wherever you like.'); }
+    catch { /* fall through to share */ }
+    try { if (c.navigator.share) { await c.navigator.share({ text }); return; } } catch { return; }
+    c.prompt('Copy this:', text);
+  },
+  /** Copy one past run's report (Past runs). */
+  async histCopy(c, el) {
+    const r = (c.runHistoryView?.() ?? []).find(x => String(x.at) === el.dataset.at && x.kind === el.dataset.kind);
+    const text = r?.text;
     if (!text) return;
     try { await c.navigator.clipboard.writeText(text); return c.toast('Copied — paste it wherever you like.'); }
     catch { /* fall through to share */ }

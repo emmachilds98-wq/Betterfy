@@ -92,7 +92,7 @@ async function maestStart({ quiet = false } = {}) {
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
     },
-    onChange: vm => { AUDIO.maestVm = vm; audioRedraw(); },
+    onChange: vm => { AUDIO.maestVm = vm; audioRedraw(); if (typeof runHistoryWatch === 'function') runHistoryWatch('deep', vm); },
   });
   if (AUDIO.maest.running) return;
   await AUDIO.maest.start();
