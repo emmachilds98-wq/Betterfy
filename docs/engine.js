@@ -8588,6 +8588,12 @@ const TEMPO = Object.freeze({
 /** Played at this tempo but felt (and often tracked) at half of it. */
 const HALF_TIME = Object.freeze(new Set(['dubstep', 'brostep', 'halftime', 'trap', 'drill', 'phonk']));
 
+/**
+ * Genres whose own convention is "87 or 174": Beatport writes 32 of 40 DnB tracks at 85-90.
+ * A reading at half of the DJ range is a full fit for these (and their children), not 0.6.
+ */
+const DOUBLE_OK = Object.freeze(new Set(['drum-and-bass', 'jungle', 'footwork', 'juke', 'breakcore']));
+
 /** How much a half- or double-time reading counts: real, but weaker than a straight one. */
 const OCTAVE_CREDIT = 0.6;
 /** Outside the range, fit falls to zero over this many BPM. */
@@ -8618,8 +8624,9 @@ function tempoFit(bpm, slug) {
   const range = tempoRangeOf(slug);
   if (!range || !Number.isFinite(bpm) || bpm <= 0) return null;
   const half = HALF_TIME.has(slug) || ancestorsOf(slug).some(a => HALF_TIME.has(a));
+  const dbl = DOUBLE_OK.has(slug) || ancestorsOf(slug).some(a => DOUBLE_OK.has(a));
   let best = { fit: straight(bpm, range), bpm };
-  for (const [k, credit] of [[2, half ? 1 : OCTAVE_CREDIT], [0.5, OCTAVE_CREDIT]]) {
+  for (const [k, credit] of [[2, half || dbl ? 1 : OCTAVE_CREDIT], [0.5, OCTAVE_CREDIT]]) {
     const f = straight(bpm * k, range) * credit;
     if (f > best.fit) best = { fit: f, bpm: bpm * k };
   }
@@ -8647,7 +8654,7 @@ function resolveOctave(bpm, alt, candidates = []) {
 
 /** Every slug in the table is a real genre (checked by the test). */
 const tempoSlugs = () => Object.keys(TEMPO);
-return { TEMPO_VERSION, TEMPO, HALF_TIME, OCTAVE_CREDIT, FALLOFF, tempoRangeOf, tempoFit, resolveOctave, tempoSlugs };
+return { TEMPO_VERSION, TEMPO, HALF_TIME, DOUBLE_OK, OCTAVE_CREDIT, FALLOFF, tempoRangeOf, tempoFit, resolveOctave, tempoSlugs };
 })();
 /* ---- core/audio/sections.mjs ---- */
 __mod["core/audio/sections.mjs"] = (function () {
@@ -9332,7 +9339,14 @@ function identify(record, { neighbours = [], tags = [], playlistName = null, wei
   const t = tempoOf(record);
   let bpm = null;
   if (t) {
-    const octave = resolveOctave(t.bpm, t.alt, [...flat]);
+    let octave = resolveOctave(t.bpm, t.alt, [...flat]);
+    if (!t.alt && t.conf >= TEMPO_CONF) {
+      // Confident readings too: let the genres heard pick between x2 and x1/2 of it.
+      for (const p of [t.bpm * 2, t.bpm / 2]) {
+        const o = resolveOctave(octave.bpm, p, [...flat]);
+        if (o.from === 'genre') { octave = o; break; }
+      }
+    }
     bpm = { value: +octave.bpm.toFixed(1), conf: t.conf, from: octave.from, fit: null };
     if (t.conf >= TEMPO_CONF) {
       for (const [c, v] of flat) {

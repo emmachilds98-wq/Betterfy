@@ -639,7 +639,7 @@ source in `build-web.mjs`. Lane E adds `core/ontology/tempo.mjs`,
 
 | Id | Package | Wave | Lane | State | PR | Bar |
 | --- | --- | --- | --- | --- | --- | --- |
-| T1 | Double time counts for DnB | S0 | E | Not started | | DnB named ≥ 95/199; tempo fits ≥ 70% |
+| T1 | Double time counts for DnB | S0 | E | Built, awaiting her Score run | | DnB named ≥ 95/199; tempo fits ≥ 70% |
 | L1 | Time every stage | S0 | M | Not started | | measurement |
 | L4 | Hearing coverage funnel | S0 | M | Not started | | display |
 | R1 | A new ear never switches sound off | S0 | E | Not started | | guard test |
