@@ -172,7 +172,10 @@ function onbCount() {
   if (ONB.busy || LS.getItem('bf_onb_done')) return;
   ONB.busy = true;
   Promise.resolve(getLog()).then(log => {
-    const n = log.filter(e => e.op === 'add' && e.reason === 'filed from inbox' && !e.undone).length;
+    // Filed songs, not writes: a liked song filed where it already was writes nothing but still counts.
+    const ids = new Set(log.filter(e => e.op === 'add' && e.reason === 'filed from inbox' && !e.undone).flatMap(e => e.trackIds ?? []));
+    for (const id in FB) if (FB[id]?.accepted?.length) ids.add(id);
+    const n = ids.size;
     const changed = n !== ONB.n; ONB.n = n;
     if (n >= ONB_GOAL) LS.setItem('bf_onb_done', '1');
     if (changed && view === 'inbox') render();

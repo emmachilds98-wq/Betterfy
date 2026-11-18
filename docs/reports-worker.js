@@ -1756,19 +1756,25 @@ function buildReports(lib, cfg, tags) {
     // not offered as wrong there again.
     .filter(m => !keptHere(m.id, m.currentPlaylistId));
 
-  // Filed means filed as any release of it: a liked single whose album copy
-  // (same ISRC, or the same trackKey — artist, title and version) already sits
-  // in a playlist is not waiting to be filed, whatever its Spotify id.
-  // An inflow is not a home either: a liked song whose only playlist is "My
-  // Shazam Tracks", a saved Discover Weekly, "On Repeat" or "To sort" (axis
-  // inbox, core/playlists/axes.mjs) is still waiting to be filed. Counting
-  // those as filed hid most of a library's unfiled likes from the File queue.
-  const filed = new Set(), filedIsrc = new Set(), filedKey = new Set();
-  for (const p of lib.playlists) { if (isMirrorPlaylist(p) || cfg?.[p.id]?.axis === 'inbox') continue;
-    for (const t of p.tracks) { if (!t) continue; filed.add(t.id);
-      if (t.isrc) filedIsrc.add(t.isrc); if (t.name) filedKey.add(trackKey(t)); } }
-  const isFiled = t => filed.has(t.id) || (!!t.isrc && filedIsrc.has(t.isrc)) || (!!t.name && filedKey.has(trackKey(t)));
-  const unfiled = lib.liked.filter(t => t?.id && !isFiled(t));
+  // Liked Songs is the inbox: every liked song waits in File until you file it
+  // there, whatever playlists it already sits in (emma, 2026-11-18). It
+  // leaves the queue once File records where it went (FB.accepted), not
+  // because some playlist happens to hold it. Where it already is, as any
+  // release of it (same id, ISRC or trackKey; never the All Songs mirror),
+  // rides along on the card as `inPl`, so filing it where it already is adds
+  // no second copy.
+  const plOf = new Map();
+  const keysOf = t => [t.id, t.isrc ? 'i:' + t.isrc : null, t.name ? 'k:' + trackKey(t) : null].filter(Boolean);
+  for (const p of lib.playlists) { if (isMirrorPlaylist(p)) continue;
+    for (const t of p.tracks ?? []) { if (!t) continue;
+      for (const k of keysOf(t)) { let m = plOf.get(k); if (!m) plOf.set(k, m = new Map()); m.set(p.id, p.name); } } }
+  const placedIn = t => { const out = new Map();
+    for (const k of keysOf(t)) for (const [id, name] of plOf.get(k) ?? []) out.set(id, name);
+    return [...out].map(([id, name]) => ({ id, name })); };
+  const filedHere = t => !!FB[t.id]?.accepted?.length;
+  const unfiled = lib.liked.filter(t => t?.id && !filedHere(t));
+  const inPlOf = new Map(unfiled.map(t => [t.id, placedIn(t)]));
+  const likedIn = likedBreakdown(lib, unfiled, inPlOf);
   // Rejections by artist, read once for the whole queue (backlogSuggest).
   const rejected = artistRejectMemory(FB, lib);
   // Everything a card's picks and tags are made from is the track's artists
@@ -1798,6 +1804,7 @@ function buildReports(lib, cfg, tags) {
       thinData: s.thin,
       artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })),
       skips: fb?.skips ?? 0,
+      inPl: inPlOf.get(t.id) ?? [],
       suggest: s.suggest.map(x => ({ ...x })) };
   })
     // Newest first, but anything already skipped sinks below everything you
@@ -1839,7 +1846,23 @@ function buildReports(lib, cfg, tags) {
   // profiles/idf come out too: Discover ranks tracks that are not in the
   // library at all, and must score them against the same centroids the inbox
   // uses rather than a second, subtly different model.
-  return { within, across, misfiled, backlog, clusters, drift, profiles, idf };
+  return { within, across, misfiled, backlog, clusters, drift, profiles, idf, likedIn };
+}
+
+/**
+ * The count line on File: how many songs you have liked, how many File has
+ * filed, how many are left, and how many of those left already sit in some
+ * playlist (with the playlists holding the most of them).
+ */
+function likedBreakdown(lib, unfiled, inPlOf) {
+  const liked = (lib.liked ?? []).filter(t => t?.id).length;
+  const tally = new Map();
+  let placed = 0;
+  for (const t of unfiled) { const pl = inPlOf.get(t.id) ?? []; if (pl.length) placed++;
+    for (const p of pl) { const x = tally.get(p.id) ?? { id: p.id, name: p.name, n: 0 }; x.n++; tally.set(p.id, x); } }
+  const top = [...tally.values()].sort((a, b) => b.n - a.n || String(a.name).localeCompare(String(b.name)));
+  return { liked, total: lib.liked_total ?? null, filed: liked - unfiled.length, toFile: unfiled.length,
+           placed, playlists: top.length, top: top.slice(0, 8) };
 }
 
 /* ---------- File's queue order (BUILD-5-PLAN §5.2) ----------

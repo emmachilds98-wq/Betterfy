@@ -193,3 +193,25 @@ test('pickBacked: only sound or filing history backs a pick, never tags alone', 
   assert.equal(backedBand('AMBIGUOUS', {}), 'AMBIGUOUS');
   assert.equal(backedBand(undefined, {}), null);
 });
+
+test('filing a liked song where it already is writes nothing but still records the answer', async () => {
+  const accepted = [];
+  const { ctx, log, adds } = mk(2, { recordAccept: async (id, ids) => { accepted.push([id, ...ids]); } });
+  ctx.R.backlog[0].inPl = [{ id: 'p1', name: 'P1' }];
+  const id = ctx.R.backlog[0].id;
+  await INBOX.fileCurrent(ctx, 'p1');
+  assert.deepEqual(adds, [], 'no second copy in p1');
+  assert.equal(log.length, 0);
+  assert.deepEqual(accepted, [[id, 'p1']], 'File remembers it is filed, so it leaves the queue');
+  assert.equal(ctx.R.backlog.length, 1);
+});
+
+test('the sure batch skips the ones already in their playlist and still takes them off the queue', async () => {
+  const accepted = [];
+  const { ctx, adds } = mk(3, { recordAccept: async (id, ids) => { accepted.push([id, ...ids]); } });
+  ctx.R.backlog[1].inPl = [{ id: 'p1', name: 'P1' }];
+  await INBOX.fileSureOnes(ctx);
+  assert.deepEqual(adds, [['p1', 't1', 't3']]);
+  assert.equal(ctx.R.backlog.length, 0);
+  assert.equal(accepted.length, 3);
+});

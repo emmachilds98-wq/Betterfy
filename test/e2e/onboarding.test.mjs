@@ -50,7 +50,9 @@ test('typical account: first filing, then the strip goes after five', { skip }, 
     for (let k = 0; k < 5; k++) {
       const c = await fileCard(page);
       await swipe(page, '#swipeCard', 220);
-      await until(() => app.fake.writes().some(w => w.path === `/playlists/${c.best}/items` && w.body?.uris?.includes('spotify:track:' + c.track)), 'filing ' + (k + 1));
+      // Liked Songs is the inbox: a card already in its best playlist is filed with no write.
+      await until(async () => app.fake.writes().some(w => w.path === `/playlists/${c.best}/items` && w.body?.uris?.includes('spotify:track:' + c.track))
+        || await page.evaluate(id => !R.backlog.some(b => b.id === id), c.track), 'filing ' + (k + 1));
       await page.waitForTimeout(700);
     }
     await until(() => page.evaluate(() => !!localStorage.getItem('bf_onb_done')).then(Boolean), 'the strip to finish', 10000).catch(() => {});

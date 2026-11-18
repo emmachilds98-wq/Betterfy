@@ -178,7 +178,7 @@ test('buildReports computes drift alongside misfiled, from the same idf table', 
   const to = BUNDLE.indexOf('function emptyState(');
   const body = BUNDLE.slice(from, to);
   assert.match(body, /const drift = findDrift\(lib, tags, targets, idf\);/);
-  assert.match(body, /return \{ within, across, misfiled, backlog, clusters, drift, profiles, idf \};/);
+  assert.match(body, /return \{ within, across, misfiled, backlog, clusters, drift, profiles, idf, likedIn \};/);
 });
 
 test('enrichMissing covers what you actually listen to first', () => {

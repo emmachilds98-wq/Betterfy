@@ -81,10 +81,14 @@ function library({ mirrored }) {
 
 const build = mirrored => { const { lib, cfg } = library({ mirrored }); return reports(lib, cfg, TAGS); };
 
-test('a liked song that is only in the mirror is still unfiled', () => {
-  assert.equal(build(false).backlog.length, 1, 'the fixture has exactly one liked song with no playlist');
-  assert.equal(build(true).backlog.length, 1,
-    'building All Songs must not empty the File queue by filing everything into itself');
+// Liked Songs is the inbox (2026-11-18): every liked song is in File until
+// filed there. What the mirror must not do is read as a playlist it is "already in".
+const unplaced = r => own(r.backlog.filter(b => !b.inPl.length).map(b => b.id));
+test('a liked song that is only in the mirror is still in no playlist', () => {
+  assert.deepEqual(unplaced(build(false)), ['t5'], 'the fixture has exactly one liked song with no playlist');
+  assert.deepEqual(unplaced(build(true)), ['t5'],
+    'building All Songs must not make every liked song look already filed');
+  assert.equal(build(true).backlog.length, 2, 'both liked songs wait in File');
 });
 
 test('the mirror does not make every track cross-filed', () => {
@@ -167,7 +171,7 @@ test('a renamed mirror is still treated as a view of the library, not a playlist
   const mirror = lib.playlists.find(p => p.name === MIRROR);
   mirror.name = 'Everything';                      // renamed in Spotify
   const r = reports(lib, cfg, TAGS, {}, mirror.id); // …but still the pinned one
-  assert.deepEqual(own(r.backlog.map(b => b.id)), ['t5'],
-    'the File queue does not empty just because the mirror got a new name');
+  assert.deepEqual(unplaced(r), ['t5'],
+    'the mirror does not turn into a playlist just because it got a new name');
   assert.equal(r.across.length, 0, 'and nothing is suddenly cross-filed into it');
 });
