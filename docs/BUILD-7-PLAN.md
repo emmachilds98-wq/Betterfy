@@ -74,43 +74,60 @@ written (#158), what is still open, and where to start:
 Usage is low (emma, 2026-11-15): run few threads at once, and start no new
 wave without asking her.
 
-**Update, 2026-11-18 afternoon.** DESIGN-PLAN L0 to L8 and its §7.7 calls
-are all merged (#170 to #184), and AUDIO-BUILD-PLAN is complete apart from the
-owner's in-page Score run for the gates. M1 was mostly shipped by #159 (run
-history, `scoreDiff`, Engine › Past runs); "Send to the team" stays copy-only
-while D1 is unanswered. Wave 1 is now running:
+**Handoff, 2026-11-18 evening (read this first).** The owner wrapped up and
+asked for everything finished to be merged and this plan left so anyone can
+pick up the rest. State of `main` after #194: no open PRs from this build
+except H3's, if its thread has not merged it yet (check GitHub).
 
-- **R1 done** (#185): the account check runs by itself once per account
-  per build (IndexedDB `radar:probe`), on the first Discover visit or just
-  before the automatic start; a refused or reshaped artist-albums route holds
-  the sync and shows one line with Check again; Settings' row is "New releases
-  (Radar)" with the check's date and result. It also fixes a false refusal:
-  an artist with no singles had no album to read, which counted as refused.
-  Live confirmation still comes from the first real account that loads it:
-  the owner glances at that Settings row once.
-- **M1 done**: its last piece, the Settings row naming the last run's build
-  and top-1, merged after R1 (#185).
-- **Q1 and U1** touch disjoint files and can run as parallel threads.
-- **Q1 merged #187, U1 merged #188, P1 merged #189** (first card 41 s → 16 s on `large`).
-- **E1 done** (wave 2): a "not that playlist", a pick of the second choice,
-  a move away and an undo change the next card at once
-  (`space.mjs` `learnRejected`, `learnUndone`, `rejectPenalty`; page hooks in
-  `soundfirst.js` and `feedback.js`). Score gets a "Learning from each tap"
-  line (`core/validate/online.mjs`). Measured on synthetic libraries: online
-  top-1 is never below static (shaped seeds 32.9→35.0, 36.1→36.4, 35.8→36.4;
-  large 10.9→11.7). The teach gate still opens on 1 of 3 shaped seeds, so teach
-  questions stay behind their per-account gate; favouring close calls cost
-  tracks and ships off.
-- **E2 measured, shipped display-only:** a weight per source in each situation
-  (artist already filed / never filed) for the engine (`weights.mjs`
-  `fitSituations`) and the tags blend (`blend.mjs` `bySituation`), nested
-  like the one fit. Shaped seeds 52.7→51.1, 57.5→57.0, 58.2→58.6; large
-  13.0→12.8, with never-filed lower on two. That misses the +2 bar, so the
-  Score run reports it ("Weights per situation") and nothing applies it; her
-  own run decides. Heard/unheard is not a third situation yet (part rows carry
-  no sound). Next in lane E: E3, which uses the multiplicative fallback.
-- **New package P1, from Q1:** see wave 1 below ("P1. First card fast on a
-  large library").
+Merged since the morning handoff above:
+
+| PR | Package | What it did |
+|---|---|---|
+| #170–#184 | DESIGN-PLAN L0–L8, §7.7 | Second-ear fix, home header, Library, Tidy, Settings, Discover, desktop width, Wave C words and cuts. All of DESIGN-PLAN is done |
+| #185 | R1 | Radar's account check runs by itself once per account per build (`radar:probe`); a refused or reshaped route holds the sync and shows one line with Check again; Settings row "New releases (Radar)". Fixed a false refusal for artists with no singles |
+| #186 | M1 (last piece) | Settings' weekly check names its last run's build and top-1 (the rest was #159). "Send to the team" stays copy-only (D1 unanswered) |
+| #187 | Q1 | Second-account check: small, mood-only, typical, large, end to end |
+| #188 | U1 | File card's three states, evidence line, kept-rate line, "It learned" |
+| #189 | P1 | First File card on a large library 41 s → 16 s |
+| #190 | U3 | One sound-label question on File, feeding the label gate |
+| #191 | H1 | Docs front door; superseded plans in `docs/archive/`; `test/mdlinks.test.mjs` |
+| #192 | E1 | Learn from every tap at once (`space.mjs` `learnRejected`/`learnUndone`/`rejectPenalty`, hooks in `soundfirst.js`/`feedback.js`); Score line "Learning from each tap" (`core/validate/online.mjs`). Online ≥ static on every synthetic library; teach gate opens on 1 of 3 shaped seeds, so teach stays per-account; close-call boost ships off |
+| #194 | E2 (display-only) | Weights per situation (filed artist / never filed) for the engine (`weights.mjs` `fitSituations`) and the tags blend (`blend.mjs` `bySituation`). −1.5 to +0.4 points on the seeds, bar +2 missed: the Score run reports it, nothing applies it |
+
+**What is left, and where each starts:**
+
+1. **E3, tempo range per playlist (lane E, not started).** Brief in
+   `BUILD-7-BRIEFS.md` and §6 below. Starting points:
+   `core/intrinsic/space.mjs` already has `tempoShare` (the share of a
+   playlist's heard members a track could mix with, `parts.bpm`, sound path
+   only) and `playlistTempos` (confident readings, `MIX_MIN_CONF`);
+   `core/audio/plprofile.mjs` already works out each playlist's BPM range for
+   Library (#146); `core/ontology/tempo.mjs` has per-genre ranges. Use the
+   **multiplicative penalty** (E2's fit is not applied): playlists with ≥ 12
+   heard members and IQR ≤ 10 BPM, octave-aware. Measure with/without on a
+   fixture with tempos (`test/fixtures/sound-library.mjs`) against the gate
+   (+1 top-1 overall or +3 on the weakest five, no family loss); otherwise
+   display-only ("most of this playlist is 170–176 BPM").
+2. **Apply E2 if her run says so.** If the owner's Score run shows "Weights
+   per situation … ahead", a small PR makes `web/app/blend.js`
+   `withFittedWeights` pick the situation's weights per track (the fit is
+   already kept on the run). Until then, nothing to do. A third situation
+   (never filed but heard) needs sound in `componentParts`' part rows.
+3. **H3, branch and dead-code sweep:** running in its own thread; if not
+   merged, its brief is in §6.
+4. **H2, CI-built Pages:** only on the owner's yes to **D2** (§5).
+5. **E4, key from more audio:** wave 4, only on her say (D3).
+
+**What waits on the owner (in-page, no scripts):**
+
+- Open Betterfy once and let the weekly Score run (or Engine › Run again
+  now), then Copy results. Her numbers decide the sound gates (WP-E2), the
+  second ear, teach questions, and whether E1's and E2's lines are ahead on her
+  library.
+- Glance once at Settings › What's helping your picks › "New releases (Radar)":
+  the first live confirmation of R1.
+- Watch one real Deep listen run end (L0).
+- Answer D1 (Send to the team opens a GitHub issue?) and D2 (CI-built Pages?).
 
 ## 1. Standing rules
 
@@ -844,21 +861,20 @@ keeps project memory in step.
 
 | Id | Package | Wave | Lane | State | PR | Numbers / notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M1 | Score history, Send to the team | 1 | M | Done | #159, M1 row PR | D1 pending: copy only |
+| M1 | Score history, Send to the team | 1 | M | Done | #159, #186 | D1 pending: copy only |
 | Q1 | Second-account check | 1 | Q | Done | #187 | found P1 |
-| R1 | Radar confirms itself | 1 | R | Done | #168, R1 PR | check once per account per build, refused route holds the sync, Settings row; live check on the first real account |
+| R1 | Radar confirms itself | 1 | R | Done | #168, #185 | check once per account per build, refused route holds the sync, Settings row; live check on the first real account |
 | U1 | File you can trust at a glance | 1 | U | Done | #188 | |
 | P1 | First card fast on a large library | 1 | P | Done | #189 | 41 s → 16 s on `large` |
-| E1 | Learn from every tap | 2 | E | Done | E1 PR | online ≥ static on all seeds; teach gate 1 of 3, stays per-account |
-| E2 | Weights per source and situation | 2 | E | Display-only | E2 PR | −1.5 to +0.4 on the seeds; bar +2 missed; reported in Score |
-| E3 | Tempo range per playlist | 2 | E | Not started | | after E2 |
+| E1 | Learn from every tap | 2 | E | Done | #192 | online ≥ static on all seeds; teach gate 1 of 3, stays per-account |
+| E2 | Weights per source and situation | 2 | E | Display-only | #194 | −1.5 to +0.4 on the seeds; bar +2 missed; reported in Score |
+| E3 | Tempo range per playlist | 2 | E | Not started | | next; see §0 for where it starts |
 | U2 | Desktop width, calmer File | 3 | U | Replaced | | by DESIGN-PLAN L1 |
-| U3 | Sound labels in use | 3 | U | Not started | | after U1 |
-| H1 | Docs front door | 3 | H | Not started | | |
+| U3 | Sound labels in use | 3 | U | Done | #190 | |
+| H1 | Docs front door | 3 | H | Done | #191 | |
 | H2 | CI-built Pages | 3 | H | Not started | | D2 pending |
-| H3 | Branch and dead-code sweep | 3 | H | Not started | | |
+| H3 | Branch and dead-code sweep | 3 | H | Running | | own thread; check GitHub for its PR |
 | E4 | Key from more audio | 4 | E | Not started | | D3, optional |
-
 | L0 | Second ear stuck at 1/1 (DESIGN-PLAN) | first | audio | Done | #171 | owner to watch one real Deep listen run |
 | L8 | Full UI optimisation + home page (DESIGN-PLAN) | after L0 | U | Done | #170, #172 to #184 | every §7.7 call merged |
 
