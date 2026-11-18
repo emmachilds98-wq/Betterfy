@@ -510,9 +510,40 @@ async function deezerJsonp(url) {
 }
 /** Wikidata and ListenBrainz send CORS headers, so plain fetch works. */
 async function corsJson(url, init) {
+  if (new URL(url).host === WD_HOST) return wikidataJson(url, init);
   const r = await fetch(url, init);
   if (!r.ok) throw new Error(`${new URL(url).host} answered ${r.status}`);
   return r.json();
+}
+
+/* Wikidata's query service rate-limits by IP (429). At startup the genre fill,
+ * the similar-artist lookups and Settings' live check could all ask at once, and
+ * a 429 dropped that batch, so on a phone it read "not answering" and knew 4% of
+ * the artists. Every Wikidata request now goes through one queue, one at a time;
+ * a 429 or 503 waits what Retry-After says (or 5 s, 15 s, 45 s) and retries; if it
+ * still refuses, Wikidata rests for ten minutes and says so instead of hammering. */
+const WD_HOST = 'query.wikidata.org';
+const WD_RETRY_MS = [5000, 15000, 45000];
+const WD_REST_MS = 10 * 60 * 1000;
+const WD = { chain: Promise.resolve(), restUntil: 0 };
+const wdSleep = ms => new Promise(r => setTimeout(r, ms));
+function wikidataJson(url, init) {
+  const run = WD.chain.then(async () => {
+    if (Date.now() < WD.restUntil)
+      throw new Error(`${WD_HOST} is busy; trying again in ${Math.ceil((WD.restUntil - Date.now()) / 60000)} min`);
+    for (let attempt = 0; ; attempt++) {
+      const r = await fetch(url, init);
+      if (r.ok) return r.json();
+      if ((r.status !== 429 && r.status !== 503) || attempt >= WD_RETRY_MS.length) {
+        if (r.status === 429 || r.status === 503) WD.restUntil = Date.now() + WD_REST_MS;
+        throw new Error(`${WD_HOST} answered ${r.status}`);
+      }
+      const after = Number(r.headers?.get?.('Retry-After'));
+      await wdSleep(Number.isFinite(after) && after > 0 ? Math.min(after, 120) * 1000 : WD_RETRY_MS[attempt]);
+    }
+  });
+  WD.chain = run.catch(() => {});   // the next request waits for this one, success or not
+  return run;
 }
 
 /* ---- the jobs behind the Engine screen (its view and actions are web/screens/engine.mjs) ---- */
