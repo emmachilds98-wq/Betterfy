@@ -217,6 +217,163 @@ function blocked(msg, retry, retryInMs, ownAppHint) {
   }
 }
 
+/* ---------- the first paint, and the read that goes on behind it (BUILD-7 P1) ---------- */
+
+/** While File is up on a partial read: `{ done, total }` liked songs read so far; null otherwise.
+ *  The home header says so (screens/home.mjs), and nothing that waits for the whole library starts. */
+let LIB_READ = null;
+/** Was this load an account's first analysis (analyse.js analyseFirst), asked at the first paint. */
+let FIRST_RUN = false;
+
+/** The read went on a page: move the header's count without repainting the screen under a thumb. */
+function libReadProgress(n) {
+  if (!LIB_READ || !n) return;
+  LIB_READ.done = n.done ?? LIB_READ.done;
+  LIB_READ.total = n.total ?? LIB_READ.total;
+  const el = document.querySelector('#fileStatus .st-reading');
+  if (el) el.textContent = libReadText();
+}
+/** "reading liked songs 1,250/5,025": what the header says while the rest comes in. */
+function libReadText() {
+  const r = LIB_READ; if (!r) return '';
+  return r.total ? `reading liked songs ${Math.min(r.done, r.total).toLocaleString()}/${r.total.toLocaleString()}`
+    : 'reading the rest of your liked songs';
+}
+
+/**
+ * syncLibrary, carried through a busy spell once File is up. Before the first paint a failure goes
+ * to start()'s walls as it always did; after it, the page stays and the read resumes from its banked
+ * pieces after the wait Spotify asked for, a few times, before giving up with a word on screen.
+ */
+async function readLibraryWhole(force, onProgress, onPartial, shown) {
+  for (let tries = 0; ; tries++) {
+    try { return await syncLibrary(force && !tries, onProgress, shown() ? null : onPartial); }
+    catch (e) {
+      if (!shown() || !retryable(e) || tries >= 3) throw e;
+      await sleep(Math.max(1000, e.retryAfterMs ?? 15000));
+    }
+  }
+}
+
+/** Tags, feedback, classify and reports for `lib`, then File on screen. */
+async function firstPaint(lib) {
+  LIB = lib;
+  performance.mark('bf:tags-start');
+  stage('Loading genre tags…', 0.96);
+  if (!TAGS) {
+    // 435KB over whatever signal a phone has at the time. This used to be a
+    // bare fetch: one blip threw a TypeError, which is not retryable, which
+    // meant the only way off the screen was Start over — and Start over
+    // cleared a perfectly good sign-in over a failed static file.
+    const raw = await fetchTags();
+    TAGS = {};
+    // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
+    for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
+    // Kept aside so a hand-corrected artist can be put back the way Last.fm
+    // shipped it, without losing every other correction made this session.
+    RAW_TAGS = JSON.parse(JSON.stringify(TAGS));
+    // anything this viewer has fetched for their own artists wins
+    Object.assign(TAGS, (await idb.get('tags_extra')) ?? {});
+  }
+  // Skips and rejections must be in hand before reports are built, since
+  // buildReports filters rejected playlists out of each track's suggestions.
+  await loadFeedback();
+  performance.mark('bf:feedback');
+  stage('Working out where everything goes…', 0.99);
+  CFG = classify(LIB, TAGS);
+  performance.mark('bf:classified');
+  // The first build stays on this thread: nothing else is waiting on the page yet, and a
+  // worker would add its start-up and a copy of the library to the one wait that matters.
+  // Every rebuild after this one (sync, tag fills, corrections) goes through refreshReports().
+  R = buildReports(LIB, CFG, TAGS);
+  performance.mark('bf:reports');
+  $('#land').hidden = true; $('#app').hidden = false;
+  clearRateLimitStreak();
+  // The rail that used to carry this is a bar now; the account line lives in
+  // the More sheet, which is where Disconnect sits too.
+  const whoName = LIB.user?.name ?? LIB.user?.id ?? '';
+  $('#who').textContent = whoName;
+  $('#sheetWho').textContent = whoName;
+  // A new account's first analysis starts by itself (analyse.js): asked before the
+  // first paint so File opens on its progress strip, never on a button.
+  FIRST_RUN = (() => { try { return analyseFirst(); } catch { return false; } })();
+  view = ROUTER.start(); S.inboxAt = 0; render();
+  // An old link such as #/sources opens the Settings sheet on that section.
+  const landed = ROUTER.section; if (landed) openUnderHood(landed);
+  window.scrollTo(0, 0);
+  // Background, after the first paint — never delays it, and only redraws
+  // again if another device actually had feedback this one did not, rather
+  // than resetting the screen on every load for nothing.
+  syncEverything().then(changed => { if (changed) refreshReports(); });
+}
+
+/**
+ * The read finished after File went up on part of it: take the whole library, rebuild the
+ * picks and counts, and repaint on the card that is showing (by id, never by position).
+ */
+async function takeFullLibrary(full) {
+  LIB = full;
+  CFG = classify(LIB, TAGS);
+  const mine = ++REPORTS_APPLY;
+  for (let tries = 0; tries < 2; tries++) {
+    const sig = reportsSignature();
+    const res = await buildReportsAsync(LIB, CFG, TAGS);
+    if (mine !== REPORTS_APPLY || full !== LIB) return;   // a newer rebuild has it
+    if (sig !== reportsSignature() && tries === 0) continue;
+    const keep = R?.backlog?.[Math.min(S.inboxAt | 0, R.backlog.length - 1)]?.id;
+    R = res;
+    const at = keep ? R.backlog.findIndex(b => b.id === keep) : -1;
+    S.inboxAt = at >= 0 ? at : Math.min(S.inboxAt | 0, Math.max(0, R.backlog.length - 1));
+    LIB_READ = null;
+    store.set('lib', LIB);
+    store.set('reports', R);
+    return;
+  }
+}
+
+/** Everything that waits for the whole library: tag fills, the first analysis, the Engine's map,
+ *  the radar and Tidy's checks, listening, Score + Tune. Never from a partial read. */
+function afterFirstPaint() {
+  // Keyless genres for artists nothing has tagged. Cached per artist, so after
+  // the first load this asks only about artists that are new or stale.
+  // Then Last.fm, with the built-in key, for every artist still thin (the owner's
+  // call, 2026-11-16: every keyless source on by default). Chained after Wikidata
+  // because both write the same tag cache. Asks only new or stale artists, so a
+  // reload costs almost nothing. On an account's first load the same steps run as
+  // its first analysis instead, with listening and progress on File (analyseAuto).
+  (async () => {
+    if (FIRST_RUN) await analyseAuto().catch(() => null);
+    else {
+      if (untaggedArtists().size) await fillFromWikidata({ quiet: true }).catch(() => {});
+      // Every load, not only after the first analysis (owner, 2026-11-18: all the data up
+      // front, never a button in Settings to press).
+      if (lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
+        await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
+      }
+    }
+    // The Engine's map of the playlists, in the worker: from the cache after the first
+    // time, so the Engine screen opens on results, not "Learn my library". Before the
+    // similar artists, which place their picks in it.
+    await engineAutoLearn().catch(() => false);
+    // Release Radar starts by itself too, a little later (radar.js radarAuto), unless Stop was
+    // pressed on this device. Not awaited: it reads Spotify, the similar artists below read others.
+    // After its first read, Tidy › Hard to find checks a batch by itself (DESIGN-PLAN §7.7 A2).
+    // So does Discover's once-a-day look for new music (§7.7 A1), radar or not.
+    if (typeof radarAuto === 'function') radarAuto()
+      .then(ran => ran && SCREEN_MODS.tidy?.background?.(screenCtx('tidy'))).catch(() => false)
+      .then(() => typeof discAuto === 'function' && discAuto()).catch(() => false);
+    // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
+    // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
+    // don't compete with the tag lookups; resumes where the last load stopped.
+    if (typeof bridgeWarm === 'function') await bridgeWarm().catch(() => {});
+  })();
+  // Listening resumes by itself where it left off, if it was switched on — after the first
+  // paint. (On a first run the analysis above starts it.)
+  if (audioSettings().on && !FIRST_RUN) setTimeout(() => audioStart({ quiet: true }), 3000);
+  // Score + Tune by itself: first look a minute in, then every five minutes while the tab is in front.
+  try { autoScoreStart(); } catch { /* optional */ }
+}
+
 async function start(force) {
   let t;
   try { t = await token(); }
@@ -238,9 +395,16 @@ async function start(force) {
     }
     return;
   }
+  // A first paint from a partial read (docs/BUILD-7-PLAN.md P1): set once File is up on the
+  // playlists and the first liked page, while syncLibrary goes on reading the rest.
+  let early = null;
+  LIB_READ = null;
   try {
     stage('Reading your library…', 0.02);
     LIB = force ? null : await idb.get('library');
+    // A partial read is never the cache: something that saved LIB mid-read (Shuffle does) left
+    // half the liked songs behind, so read again; the banked pieces make that a resume.
+    if (LIB?.partial) LIB = null;
     performance.mark('bf:library');
     if (!LIB) {
       let at = 0.02;
@@ -250,95 +414,36 @@ async function start(force) {
       onHold = secs => stage(secs
         ? `Spotify asked for a pause — carrying on in ${secs}s. Leave this open.`
         : 'Carrying on…', at, secs ? ownAppNote() : '');
-      try { LIB = await syncLibrary(force, (name, pct) => { at = pct; stage(`Reading ${name}…`, pct); }); }
+      const progress = (name, pct, n) => {
+        // Once File is up the read carries on behind it: the status line counts, the page stays.
+        if (early) { libReadProgress(n); return; }
+        at = pct; stage(`Reading ${name}…`, pct);
+      };
+      const partial = lib => {
+        LIB_READ = { done: lib.liked.length, total: lib.liked_total ?? null };
+        // From here a pause shows as the small floating note (auth.js slowNote), not the landing page.
+        onHold = null;
+        early = firstPaint(lib).catch(e => { early = null; LIB_READ = null; throw e; });
+        early.catch(() => {});
+      };
+      try { LIB = await readLibraryWhole(force, progress, partial, () => early); }
       finally { onHold = null; }
     }
-    performance.mark('bf:tags-start');
-    stage('Loading genre tags…', 0.96);
-    if (!TAGS) {
-      // 435KB over whatever signal a phone has at the time. This used to be a
-      // bare fetch: one blip threw a TypeError, which is not retryable, which
-      // meant the only way off the screen was Start over — and Start over
-      // cleared a perfectly good sign-in over a failed static file.
-      const raw = await fetchTags();
-      TAGS = {};
-      // shipped as id -> [[tag, 0-10]] ; expand to the shape profile.mjs expects
-      for (const [id, tags] of Object.entries(raw)) TAGS[id] = { tags: tags.map(([n,c]) => [n, c*10]) };
-      // Kept aside so a hand-corrected artist can be put back the way Last.fm
-      // shipped it, without losing every other correction made this session.
-      RAW_TAGS = JSON.parse(JSON.stringify(TAGS));
-      // anything this viewer has fetched for their own artists wins
-      Object.assign(TAGS, (await idb.get('tags_extra')) ?? {});
-    }
-    // Skips and rejections must be in hand before reports are built, since
-    // buildReports filters rejected playlists out of each track's suggestions.
-    await loadFeedback();
-    performance.mark('bf:feedback');
-    stage('Working out where everything goes…', 0.99);
-    CFG = classify(LIB, TAGS);
-    performance.mark('bf:classified');
-    // The first build stays on this thread: nothing else is waiting on the page yet, and a
-    // worker would add its start-up and a copy of the library to the one wait that matters.
-    // Every rebuild after this one (sync, tag fills, corrections) goes through refreshReports().
-    R = buildReports(LIB, CFG, TAGS);
-    performance.mark('bf:reports');
-    $('#land').hidden = true; $('#app').hidden = false;
-    clearRateLimitStreak();
-    // The rail that used to carry this is a bar now; the account line lives in
-    // the More sheet, which is where Disconnect sits too.
-    const whoName = LIB.user?.name ?? LIB.user?.id ?? '';
-    $('#who').textContent = whoName;
-    $('#sheetWho').textContent = whoName;
-    // A new account's first analysis starts by itself (analyse.js): asked before the
-    // first paint so File opens on its progress strip, never on a button.
-    const firstRun = (() => { try { return analyseFirst(); } catch { return false; } })();
-    view = ROUTER.start(); S.inboxAt = 0; render();
-    // An old link such as #/sources opens the Settings sheet on that section.
-    const landed = ROUTER.section; if (landed) openUnderHood(landed);
-    window.scrollTo(0, 0);
-    // Background, after the first paint — never delays it, and only redraws
-    // again if another device actually had feedback this one did not, rather
-    // than resetting the screen on every load for nothing.
-    syncEverything().then(changed => { if (changed) refreshReports(); });
-    // Keyless genres for artists nothing has tagged. Cached per artist, so after
-    // the first load this asks only about artists that are new or stale.
-    // Then Last.fm, with the built-in key, for every artist still thin (the owner's
-    // call, 2026-11-16: every keyless source on by default). Chained after Wikidata
-    // because both write the same tag cache. Asks only new or stale artists, so a
-    // reload costs almost nothing. On an account's first load the same steps run as
-    // its first analysis instead, with listening and progress on File (analyseAuto).
-    (async () => {
-      if (firstRun) await analyseAuto().catch(() => null);
-      else {
-        if (untaggedArtists().size) await fillFromWikidata({ quiet: true }).catch(() => {});
-        // Every load, not only after the first analysis (owner, 2026-11-18: all the data up
-        // front, never a button in Settings to press).
-        if (lfmKey() && !(typeof ANALYSE !== 'undefined' && ANALYSE.running)) {
-          await enrichMissing({ quiet: true }).catch(() => 0);   // rebuilds the reports itself when it asked anything
-        }
-      }
-      // The Engine's map of the playlists, in the worker: from the cache after the first
-      // time, so the Engine screen opens on results, not "Learn my library". Before the
-      // similar artists, which place their picks in it.
-      await engineAutoLearn().catch(() => false);
-      // Release Radar starts by itself too, a little later (radar.js radarAuto), unless Stop was
-      // pressed on this device. Not awaited: it reads Spotify, the similar artists below read others.
-      // After its first read, Tidy › Hard to find checks a batch by itself (DESIGN-PLAN §7.7 A2).
-      // So does Discover's once-a-day look for new music (§7.7 A1), radar or not.
-      if (typeof radarAuto === 'function') radarAuto()
-        .then(ran => ran && SCREEN_MODS.tidy?.background?.(screenCtx('tidy'))).catch(() => false)
-        .then(() => typeof discAuto === 'function' && discAuto()).catch(() => false);
-      // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
-      // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
-      // don't compete with the tag lookups; resumes where the last load stopped.
-      if (typeof bridgeWarm === 'function') await bridgeWarm().catch(() => {});
-    })();
-    // Listening resumes by itself where it left off, if it was switched on — after the first
-    // paint. (On a first run the analysis above starts it.)
-    if (audioSettings().on && !firstRun) setTimeout(() => audioStart({ quiet: true }), 3000);
-    // Score + Tune by itself: first look a minute in, then every five minutes while the tab is in front.
-    try { autoScoreStart(); } catch { /* optional */ }
+    if (early) {
+      // The first paint may still be on its way (the tag table is a download of its own).
+      await early;
+      await takeFullLibrary(LIB);
+    } else await firstPaint(LIB);
+    LIB_READ = null;
+    afterFirstPaint();
   } catch (e) {
+    LIB_READ = null;
+    if (early) {
+      // File is already up on the partial read: keep it, and say the rest did not come.
+      toast('Could not read the rest of your liked songs: ' + e.message + ' Re-sync in Settings to try again.');
+      store.touch('ui.inbox');
+      return;
+    }
     if (retryable(e)) {
       const streak = e.status === 429 ? noteRateLimited() : 0;
       blocked(e.message, () => start(force), e.retryAfterMs, streak >= RATE_LIMIT_OWN_APP_AFTER);

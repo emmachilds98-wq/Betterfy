@@ -2,7 +2,7 @@
 // state, never a dead end (BUILD-6 plan §4.1).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { skip, launch, openApp, ready, swipe, fileCard, until } from './harness.mjs';
+import { skip, launch, openApp, ready, whole, swipe, fileCard, until } from './harness.mjs';
 
 let browser;
 test.before(async () => { if (!skip) browser = await launch(); });
@@ -65,7 +65,7 @@ test('large library: File is usable while Analyse runs', { skip, timeout: 240000
   const app = await openApp(browser, { kind: 'large' });
   try {
     const { page } = app;
-    await ready(page);
+    await whole(page);   // the first analysis starts once the whole library is in
     const c = await fileCard(page, 180000);
     assert.ok(c.left > 1000);
     await page.waitForTimeout(500);
