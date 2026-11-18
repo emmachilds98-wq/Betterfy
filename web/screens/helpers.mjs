@@ -68,7 +68,8 @@ export function helperRows(s = {}) {
   rows.push({ id: 'autoscore', name: 'Checks itself weekly', on: true, kind: au.at && !au.ok ? 'idle' : 'ok',
     status: au.running ? 'On · scoring now' : !au.at ? 'On · first run soon' : !au.ok ? 'On · retrying' : `On · ran ${au.ago ?? 'recently'}`,
     did: `Scores itself on your own filing after listening finishes and every week, and switches on the parts that measure better for you${
-      au.at && au.ago ? `; last run ${au.ago}` : ''}. No button to press.` });
+      au.at && au.ago ? `; last run ${au.ago}` : ''}${Number.isFinite(au.top1) ? `, first pick right for ${Math.round(au.top1 * 100)}% of your filed songs` : ''}${
+      au.build ? ` (build ${au.build})` : ''}. No button to press.` });
   // Release radar (DESIGN-PLAN L5): starts by itself like every other source; only a Stop turns it off.
   const rr = s.radar;
   if (rr) {

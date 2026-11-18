@@ -80,7 +80,7 @@ owner's in-page Score run for the gates. M1 was mostly shipped by #159 (run
 history, `scoreDiff`, Engine › Past runs); "Send to the team" stays copy-only
 while D1 is unanswered. Wave 1 is now running:
 
-- **R1 done** (this PR): the account check runs by itself once per account
+- **R1 done** (#185): the account check runs by itself once per account
   per build (IndexedDB `radar:probe`), on the first Discover visit or just
   before the automatic start; a refused or reshaped artist-albums route holds
   the sync and shows one line with Check again; Settings' row is "New releases
@@ -88,8 +88,8 @@ while D1 is unanswered. Wave 1 is now running:
   an artist with no singles had no album to read, which counted as refused.
   Live confirmation still comes from the first real account that loads it:
   the owner glances at that Settings row once.
-- **M1's last piece** (the Settings row naming the last run's build and
-  top-1) is its own PR after R1.
+- **M1 done**: its last piece, the Settings row naming the last run's build
+  and top-1, merged after R1 (#185).
 - **Q1 and U1** touch disjoint files and can run as parallel threads.
 - **New package P1, from Q1:** see wave 1 below ("P1. First card fast on a
   large library").
@@ -826,7 +826,7 @@ keeps project memory in step.
 
 | Id | Package | Wave | Lane | State | PR | Numbers / notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M1 | Score history, Send to the team | 1 | M | Done but the Settings row | #159 | D1 pending: copy only |
+| M1 | Score history, Send to the team | 1 | M | Done | #159, M1 row PR | D1 pending: copy only |
 | Q1 | Second-account check | 1 | Q | Not started | | |
 | R1 | Radar confirms itself | 1 | R | Done | #168, R1 PR | check once per account per build, refused route holds the sync, Settings row; live check on the first real account |
 | U1 | File you can trust at a glance | 1 | U | Not started | | |
