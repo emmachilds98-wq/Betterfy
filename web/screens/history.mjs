@@ -20,12 +20,14 @@ export function view({ S, esc, isUndone, emptyState, infoBtn }) {
   const one = x => `<div class="row" data-flip data-key="${esc(`h:${x.at}:${x.op}:${x.playlistId ?? ''}`)}"><div class="main">
       <div class="ttl">${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span></div>
       <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))} · ${(x.trackIds??[]).length} track(s)${x.reason?' · '+esc(x.reason):''}</div>
-    </div><div class="acts">${['remove','add','unlike'].includes(x.op) ? (isUndone(x, h) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(x.at)}">Undo</button>`) : ''}</div></div>`;
+    </div><div class="acts">${['remove','add','unlike','like'].includes(x.op) ? (isUndone(x, h) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(x.at)}">Undo</button>`) : ''}</div></div>`;
   const grouped = g => {
     const newest = g[0], oldest = g[g.length - 1];
     const mv = g.find(x => x.move)?.move;
     const add = g.find(x => x.op === 'add'), rem = g.find(x => x.op === 'remove');
-    const title = mv || (add && rem)
+    const swap = g.some(x => x.reason === 'version search shows');
+    const title = swap ? `Swapped to the version search shows <span class="sub">${esc([...new Set(g.map(x => x.playlistName).filter(Boolean))].join(', '))}</span>`
+      : mv || (add && rem)
       ? `Moved <span class="sub">${esc(mv?.fromName ?? rem?.playlistName ?? '')} → ${esc(mv?.toName ?? add?.playlistName ?? '')}</span>`
       : `${esc(newest.op)} <span class="sub">${esc(g.map(x => x.playlistName).filter(Boolean).join(', '))}</span>`;
     const n = new Set(g.flatMap(x => x.trackIds ?? [])).size;

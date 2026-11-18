@@ -4,6 +4,7 @@
  * misfit state and jobs, and emptyState, stay classic in app/screenjobs.js. */
 /* The library health report and the keyboard cleanup sprint (BUILD-6 F9) are at the end of
  * this file; their pure parts (ranking, the sprint's counts) are core/review/health.mjs. */
+import { hiddenView, hiddenActions, hiddenMount, hiddenCount } from './hidden.mjs';
 import { tidyCounts, healthInputs, rankHealth, sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTotals } from '../../core/review/health.mjs';
 
 /* ---------- Tidy: three screens' worth of the same question ----------
@@ -14,6 +15,9 @@ import { tidyCounts, healthInputs, rankHealth, sprintStart, sprintDecide, sprint
  * question is asked once and the answer is a row you tap.
  */
 const TIDY_SECTIONS = [['misfile', 'Wrong place'], ['dupes', 'Repeats'], ['cross', 'Cross-filed']];
+// Hard to find (screens/hidden.mjs) is always last, and like Health is never opened
+// for you: its count is only what a check found, so it is a place you go, not work queued.
+const HIDDEN_SECTION = ['hidden', 'Hard to find'];
 
 export function secDupes(c) {
   const ib = c.infoBtn ?? (() => '');
@@ -200,16 +204,16 @@ export function view(c) {
   const { S, R, esc } = c;
   c.tidySoundWarm();
   const report = healthReport(c);
-  const n = { misfile: tagMisfiles(c).length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount(), health: report.length };
-  const secs = report.length ? [...tidySections(c), ['health', 'Health']] : tidySections(c);
+  const n = { misfile: tagMisfiles(c).length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount(), health: report.length, hidden: hiddenCount(c) };
+  const secs = [...(report.length ? [...tidySections(c), ['health', 'Health']] : tidySections(c)), HIDDEN_SECTION];
   // Opens on the first section with something in it rather than on "Wrong
   // place 0" while Repeats has work. A section the listener picked (S.tidySec,
   // set only by a tap) is kept; one that has gone away falls back the same way.
   // Health is a report, not a list of work: it is never opened for you.
-  const first = (secs.find(([id]) => n[id] > 0 && id !== 'health') ?? secs[0])[0];
+  const first = (secs.find(([id]) => n[id] > 0 && id !== 'health' && id !== 'hidden') ?? secs[0])[0];
   if (S.tidySec != null && !secs.some(([id]) => id === S.tidySec)) S.tidySec = first;
   const sec = S.tidySec ?? first;
-  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound, health: secHealth }[sec];
+  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound, health: secHealth, hidden: hiddenView }[sec];
   return `<h1>Tidy</h1>
     <div class="seg tidysecs" role="group" aria-label="Section">${secs.map(([id, label]) =>
       `<button type="button" aria-pressed="${sec === id}" data-act="section" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
@@ -218,6 +222,7 @@ export function view(c) {
 
 
 export const actions = {
+  ...hiddenActions,
   section(c, el) {
     if (c.S.sprint) endSprint(c);
     c.S.tidySec = el.dataset.tidy; c.S.tidyPl = null; c.render();
@@ -616,6 +621,7 @@ function sprintKeys(doc) {
 }
 
 export function mount(c) {
+  hiddenMount(c);
   const doc = c.document;
   if (!doc?.body) return;
   if (!doc.getElementById('tidyLive')) {

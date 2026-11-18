@@ -21,7 +21,8 @@
 // Optional on the account (test/backup.test.mjs): `catalog`, more tracks Spotify
 // knows that are in no playlist; `strictIds`, a playlist add holding an id the
 // fake does not know answers 400 and adds nothing, as Spotify does. GET
-// /search?q=isrc:X finds a known track by ISRC (any other search is empty).
+// /search?q=isrc:X finds a known track by ISRC (any other search is empty, unless
+// the account sets `searchText`).
 //
 // `.log` records every API call as { method, path, body } so a spec can assert
 // that a swipe really reached the server, and `.playlist(id)` reads the state.
@@ -94,11 +95,21 @@ export async function startFakeSpotify(account) {
         const ids = uriIds((body?.uris ?? []).join(','));
         if (account.strictIds && ids.some(id => !findTrack(id))) return json(res, 400, { error: { status: 400, message: 'Payload contains a non-existing ID' } });
         // The real endpoint adds duplicates; so does this.
-        for (const id of ids) { const t = findTrack(id); if (t) pl.tracks.push(t); }
+        // `position` inserts there, as Spotify does; without it, at the end.
+        const at = Number.isInteger(body?.position) ? body.position : pl.tracks.length;
+        pl.tracks.splice(at, 0, ...ids.map(findTrack).filter(Boolean));
         pl.snapshot_id = 's' + Date.now();
         wrote++;
         if (sw.loseResponse > 0) { sw.loseResponse--; req.socket.destroy(); return; }
         return json(res, 201, { snapshot_id: pl.snapshot_id });
+      }
+      if (m === 'PUT' && Number.isInteger(body?.range_start)) {
+        // Reorder, as Spotify does: lift range_length tracks from range_start, put them before insert_before.
+        const n = body.range_length ?? 1, from = body.range_start, to = body.insert_before;
+        const moved = pl.tracks.splice(from, n);
+        pl.tracks.splice(to > from ? to - n : to, 0, ...moved);
+        pl.snapshot_id = 's' + Date.now();
+        return json(res, 200, { snapshot_id: pl.snapshot_id });
       }
       if (m === 'DELETE') {
         const gone = new Set(uriIds(((body?.items ?? body?.tracks) ?? []).map(o => o.uri).join(',')));
@@ -130,6 +141,15 @@ export async function startFakeSpotify(account) {
     if (p === '/search') {
       const isrc = (q.get('q') ?? '').match(/^isrc:(\w+)$/i)?.[1]?.toUpperCase();
       const hit = isrc ? allTracks().find(t => t.external_ids?.isrc === isrc) : null;
+      // `searchText` on the account (test/e2e/hidden.test.mjs): "<title> <first artist>"
+      // finds every known track by that title and artist, catalog first, the way
+      // Spotify's search puts the current release on top.
+      if (!isrc && account.searchText) {
+        const want = (q.get('q') ?? '').toLowerCase().trim();
+        const seen = new Set(), items = [];
+        for (const t of allTracks()) if (!seen.has(t.id) && `${t.name} ${t.artists?.[0]?.name ?? ''}`.toLowerCase() === want) { seen.add(t.id); items.push(t); }
+        return json(res, 200, { tracks: { items: items.slice(0, +(q.get('limit') ?? 5)) } });
+      }
       return json(res, 200, { tracks: { items: hit ? [hit] : [] } });
     }
     // Release Radar (docs/RELEASE-RADAR-PLAN.md): the catalogue is every album the

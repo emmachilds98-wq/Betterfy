@@ -1,0 +1,11 @@
+  /* ---------- Tidy › Hard to find (web/screens/hidden.mjs) ----------
+     Reuses .row, .chip, .b and the empty state; this only places the search
+     box and the "where it sits" chips. */
+  .hd-find{margin:0 0 18px}
+  .hd-find input{width:100%; min-height:44px; box-sizing:border-box; margin:0 0 10px}
+  .hd-find .rows{margin:0 0 10px}
+  .hd-where{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px}
+  .hd-where .chip{cursor:default}
+  .hd-tag{display:inline-block; margin-top:4px; font-size:var(--fs-small); color:var(--ink-2)}
+  .hd-ask{font-size:var(--fs-small); color:var(--ink-2); align-self:center}
+  .hd-status{margin:0 0 8px}

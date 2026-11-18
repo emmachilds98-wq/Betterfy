@@ -57,6 +57,8 @@ async function dispatchAct(e) {
 SCREEN_CTX.tidy = () => ({
   S, R, FB, LIB, CFG, T, TSOUND, esc, thumbHTML, cmpTable, emptyState, moreButton, shownOf, tagChips, tagEditorHTML,
   store, getListening, toast, render, saveTheme, recordKeep, recordMove, playlistIds, delTracks, addTracks,
+  // Hard to find (screens/hidden.mjs): search, and swapping a copy in place.
+  sp, idb, playlistEntries, plCall, libraryCall,
   logAction, getLog, undoAction, newGroup, tidySoundOn, tidySoundRows, tidySoundCount, tidySoundWarm,
   get bandChip() { return typeof bandChip === 'function' ? bandChip : undefined; },
   get skeleton() { return typeof skeleton === 'function' ? skeleton : undefined; },
