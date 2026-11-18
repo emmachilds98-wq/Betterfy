@@ -131,6 +131,8 @@ Object.assign(SCREEN_CTX, {
                  render, openUnderHood, openSettings, morphArt, deck: screenView('inbox'),
                  // The "today" header (DESIGN-PLAN L8 step 2): the same counts as the tab badges.
                  tidyCount: tidyTodo, ideasCount: ideasTodo, now: Date.now(),
+                 // Liked songs still coming in behind File on a large first read (boot.js, BUILD-7 P1).
+                 reading: () => typeof LIB_READ !== 'undefined' && LIB_READ ? libReadText() : '',
                  listenOff: () => typeof audioSettings === 'function' && !audioSettings().on && LS.getItem('bf_sound_nudge') !== 'no',
                  // The radar's stored rows, read once (no request); File repaints when they are in.
                  radar: typeof RADAR === 'undefined' ? null

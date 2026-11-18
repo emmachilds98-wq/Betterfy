@@ -44,9 +44,17 @@ export function statusParts(ctx) {
   const parts = [];
   const backlog = R.backlog.length;
   const liked = R.likedIn?.liked ?? LIB?.liked?.length ?? 0;
-  parts.push({ key: 'file', n: backlog, text: liked > backlog ? `to file of ${liked.toLocaleString()} liked` : 'to file' });
-  const total = R.likedIn?.total;
-  if (total != null && total > liked) parts.push({ key: 'short', text: `Spotify has ${total.toLocaleString()} liked: sync again to read the rest`, act: 'opensync' });
+  // A large first read draws File from its first liked page while the rest comes in
+  // (boot.js, BUILD-7 P1): the counts are "so far" until it ends, and the read says how far it is.
+  const reading = ctx.reading?.() ?? '';
+  if (reading) {
+    parts.push({ key: 'file', n: backlog, text: 'to file so far' });
+    parts.push({ key: 'reading', text: reading });
+  } else {
+    parts.push({ key: 'file', n: backlog, text: liked > backlog ? `to file of ${liked.toLocaleString()} liked` : 'to file' });
+    const total = R.likedIn?.total;
+    if (total != null && total > liked) parts.push({ key: 'short', text: `Spotify has ${total.toLocaleString()} liked: sync again to read the rest`, act: 'opensync' });
+  }
   const fresh = newReleases(ctx);
   if (fresh) parts.push({ key: 'radar', n: fresh, text: fresh === 1 ? 'new release' : 'new releases', go: 'discover', side: 'radar' });
   const toTidy = typeof ctx.tidyCount === 'function' ? ctx.tidyCount() : R.within.length + R.misfiled.length;
@@ -54,7 +62,8 @@ export function statusParts(ctx) {
   // While the first analysis runs it says what it is doing (and listening's
   // count is inside it); otherwise listening speaks for itself, and nothing at
   // all is said about it until it has run.
-  const analysing = ctx.analyseLine?.() ?? '';
+  // The first analysis waits for the whole read, so it has nothing to say until then.
+  const analysing = reading ? '' : ctx.analyseLine?.() ?? '';
   const listen = typeof listenStatus === 'function' ? listenStatus() : '';
   if (analysing) parts.push({ key: 'analyse', text: analysing });
   else if (listen) parts.push({ key: 'listen', text: listen, act: 'openlisten' });

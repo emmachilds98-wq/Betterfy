@@ -162,7 +162,21 @@ async function dropParts() {
   for (const k of await idb.keys()) if (typeof k === 'string' && k.startsWith('part:')) await idb.del(k);
 }
 
-async function syncLibrary(force, onProgress) {
+/* A large first read is ~170 calls at 250 ms each (auth.js MIN_GAP), most of
+ * them liked songs, and File used to wait for every one of them with the page
+ * hidden: ~42 s on a 5,000-liked account before the first card. The playlists
+ * come first and are read whole, so where each song already sits, Tidy and
+ * the picks are all real; then, once the first page of liked songs is in and
+ * enough of the rest is still to come to be worth it, `onPartial` gets a
+ * library marked `partial` to draw File from while the read carries on
+ * (docs/BUILD-7-PLAN.md P1). Its `playlists` is the very array the finished
+ * library carries, so a filing made in the meantime is not lost when the full
+ * one takes over. A partial library is never the cache: boot reads one back as
+ * nothing, and the liked-head shortcut below does not trust it. */
+const PARTIAL_AFTER = 50;        // liked rows in hand before File can draw
+const PARTIAL_MIN_LEFT = 8;      // liked pages still to read (~2 s) to be worth drawing early
+
+async function syncLibrary(force, onProgress, onPartial) {
   // A forced re-read means "go and ask Spotify again", so the pieces banked by
   // an earlier read are dropped first — but only once, at the top. The pieces
   // this read banks as it goes still count, so a forced re-read that is
@@ -229,7 +243,7 @@ async function syncLibrary(force, onProgress) {
   // head, so the head read is checked against Spotify's own total, and the whole
   // list is re-read anyway once a week.
   const prev = await idb.get('library');   // kept on a forced re-read too: that is the button people press when nothing changed
-  const cached = prev?.liked_shape === SHAPE && Array.isArray(prev.liked) && prev.liked_total != null
+  const cached = !prev?.partial && prev?.liked_shape === SHAPE && Array.isArray(prev.liked) && prev.liked_total != null
     && Date.now() - (prev.liked_full_at ?? 0) < LIKED_FULL_EVERY ? prev : null;
   let likedTotal = null, fullAt = Date.now();
   let liked = banked[PART('liked')]?.liked;
@@ -255,19 +269,32 @@ async function syncLibrary(force, onProgress) {
     }
   }
   if (!liked) liked = { rows: [], next: '/me/tracks?limit=50' };
+  likedTotal ??= liked.total ?? null;
+  const user = { id:me.id, name:me.display_name };
+  let early = !onPartial;
   for (let page = 0; liked.next; page++) {
+    if (!early && liked.rows.length >= PARTIAL_AFTER
+        && (likedTotal == null || Math.ceil((likedTotal - liked.rows.length) / 50) >= PARTIAL_MIN_LEFT)) {
+      early = true;
+      try {
+        onPartial({ captured_at:new Date().toISOString(), user, playlists, liked: liked.rows.slice(),
+                    liked_total: likedTotal, liked_shape: SHAPE, liked_full_at: fullAt, partial: true });
+      } catch { /* drawing early is a bonus: the read goes on either way */ }
+    }
     // Thousands of liked songs is dozens of pages, and they all used to report
     // the same "liked songs" at the same 95% — several silent minutes that look
     // identical to a hang. A number that moves is the difference.
-    onProgress?.(liked.rows.length ? `liked songs — ${liked.rows.length.toLocaleString()} so far` : 'liked songs', 0.95);
+    onProgress?.(liked.rows.length ? `liked songs — ${liked.rows.length.toLocaleString()} so far` : 'liked songs', 0.95,
+                 { done: liked.rows.length, total: likedTotal });
     const box = await sp(liked.next);
     likedTotal = box?.total ?? likedTotal;
+    liked.total = likedTotal;
     liked.rows.push(...(box?.items ?? []).filter(hasId).map(likedRow));
     liked.next = box?.next ?? null;
     if (!liked.next || page % 10 === 9) await idb.set(PART('liked'), { shape:SHAPE, at:Date.now(), liked });
   }
 
-  const lib = { captured_at:new Date().toISOString(), user:{ id:me.id, name:me.display_name },
+  const lib = { captured_at:new Date().toISOString(), user,
                 playlists, liked: liked.rows, liked_total: likedTotal, liked_shape: SHAPE, liked_full_at: fullAt };
   await idb.set('library', lib);
   await dropParts();
