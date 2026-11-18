@@ -22,6 +22,7 @@
 
 import { identify, genreLevel, TEMPO_CONF } from './identify.mjs';
 import { nearest, genreMembership, playlistConcepts } from './match.mjs';
+import { tempoRangeOf } from '../ontology/tempo.mjs';
 import { audioIndex } from '../intrinsic/audio.mjs';
 import { tempoRange } from '../intrinsic/tempo.mjs';
 import { conceptLabel } from '../recommend/gaps.mjs';
@@ -176,7 +177,8 @@ export function createProfiler(lib, records, { index = null, targets = null, isM
       const key = `${id}|${p.id}`;
       if (!named.has(key)) { pending++; continue; }
       const r = named.get(key);
-      if (r?.bpm && r.bpm.conf >= TEMPO_CONF) bpms.push(r.bpm.value);
+      // T2/T3: the shown BPM (folded into its genre's DJ range); an unsettled octave is unknown, left out.
+      if (r?.bpm && r.bpm.conf >= TEMPO_CONF && r.bpm.settled !== false) bpms.push(r.bpm.shown ?? r.bpm.value);
       if (!r?.genre) continue;
       identified++;
       const g = genres.get(r.genre.slug) ?? { slug: r.genre.slug, name: r.genre.name, n: 0, ids: [] };
@@ -199,10 +201,20 @@ export function createProfiler(lib, records, { index = null, targets = null, isM
       bpms.sort((a, b) => a - b);
       out.bpm = [Math.round(quantile(bpms, 0.1)), Math.round(quantile(bpms, 0.9))];
     }
+    // T2: at the octave the playlist's own genre is played at, when its name says one.
+    const gRange = playlistConcepts(p.name).map(tempoRangeOf).find(Boolean) ?? null;
+    const settle = r => {
+      if (!r || !gRange) return r;
+      const mid = (r[0] + r[1]) / 2;
+      if (mid >= gRange[0] && mid <= gRange[1]) return r;
+      for (const k of [2, 0.5]) if (mid * k >= gRange[0] && mid * k <= gRange[1]) return r.map(x => Math.round(x * k)).sort((a, b) => a - b);
+      return r;
+    };
+    out.bpm = settle(out.bpm);
     // E3: the tight middle half, octave-aware, only for a playlist with 12+ heard tempos.
     // Display only: its measured effect on ranking missed the bar (test/temporange.test.mjs).
     const tr = tempoRange(bpms);
-    if (tr) out.tempo = [Math.round(tr.lo), Math.round(tr.hi)];
+    if (tr) out.tempo = settle([Math.round(tr.lo), Math.round(tr.hi)]);
     if (!pending) out.split = splitOf(p, heard.length, identified, genres);
     return out;
   }

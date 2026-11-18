@@ -57,9 +57,9 @@ test('key stays hidden by default; tempo shows alone above its measured confiden
   assert.equal(bpmShown(memLS({ [DSP_UI_KEY]: '0' })), false, "'0' hides tempo too");
   const rec = { id: 'x', dsp: { v: DSP_VERSION, bpm: 128.2, bpmConf: 0.9, key: 'A minor', camelot: '8A', keyConf: 0.8 } };
   assert.deepEqual(dspSoundVM(rec, { show: false, bpm: true, key: false }), { bpm: 128, bpmConf: 0.9 }, 'no key by default');
-  assert.equal(dspSoundVM({ id: 'y', dsp: { bpm: 120, bpmConf: BPM_MIN_CONF - 0.01 } }, { show: false, bpm: true, key: false }), null, 'below the measured bar');
+  assert.deepEqual(dspSoundVM({ id: 'y', dsp: { bpm: 120, bpmConf: BPM_MIN_CONF - 0.01 } }, { show: false, bpm: true, key: false }), { bpmUnknown: 'unsure' }, 'below the measured bar: "BPM unknown" (T3)');
   assert.deepEqual(dspSoundVM({ id: 'z', dsp: { bpm: 87, bpmConf: 0.5, octaveAmbiguous: true, bpmAlt: 174, key: 'C major', keyConf: 0.9 } }, { show: false, bpm: true, key: false }),
-    { bpm: 87, bpmConf: 0.5, bpmAlt: 174 });
+    { bpmUnknown: 'octave' }, 'an unsettled 87-or-174 is unknown, never a pair (T3)');
   for (const r of [null, undefined, { id: 'm', miss: MISS.NO_PREVIEW }, { id: 'n', dsp: null }])
     assert.equal(soundChip(dspSoundVM(r, { show: false, bpm: true, key: false })), '', 'no data, no markup');
 });

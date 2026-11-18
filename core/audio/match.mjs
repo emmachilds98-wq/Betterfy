@@ -10,6 +10,7 @@
 
 import { resolveConcept } from '../ontology/index.mjs';
 import { mirrorPredicate } from '../playlists/mirror.mjs';
+import { tempoRangeOf } from '../ontology/tempo.mjs';
 
 export const MATCH_VERSION = '1.0.0';
 
@@ -191,3 +192,80 @@ export function mixesWith(trackId, index, { k = 8, bpm = null, tolerance = MIX_T
   }
   return out.slice(0, k);
 }
+
+/** Shown only at or above this confidence (86% within +-1 BPM there); equal to MIX_MIN_CONF and dsp-view's BPM_MIN_CONF. */
+export const BPM_MIN_CONF = MIX_MIN_CONF;
+/** Below this the preview had no steady pulse to speak of. */
+export const BPM_NO_BEAT_CONF = 0.15;
+
+const within = (b, [lo, hi]) => b >= lo && b <= hi;
+
+/**
+ * One BPM everywhere (SOUND-ENGINE-PLAN T2): settle a reading into a range by
+ * x2 or x1/2 only. Returns the reading itself when it is already in range, the
+ * fold that lands in it, or null when neither does (nothing is forced).
+ * @param {number} bpm
+ * @param {[number, number]} range
+ * @returns {number|null}
+ */
+export function foldIntoRange(bpm, range) {
+  if (!(bpm > 0) || !range) return null;
+  if (within(bpm, range)) return bpm;
+  for (const k of [2, 0.5]) if (within(bpm * k, range)) return bpm * k;
+  return null;
+}
+
+/**
+ * The BPM a listener sees for a track, in the convention they play it in.
+ * Order: the range of a playlist the track is in or suggested for (padded by
+ * the mixing tolerance), then the working range of the genre it sounds like;
+ * at each, the reading as measured (or its flagged alternative) if it sits in
+ * range, else x2 or x1/2 if that lands in it; else the reading as measured.
+ * `settled` is false only for a reading flagged "87 or 174" that nothing settled.
+ * @param {object} record  a stored AudioRecord
+ * @param {{ playlistRange?: {lo: number, hi: number}|[number, number]|null, genres?: Array<string|[string, number]> }} [ctx]
+ *        genres: ontology slugs, most specific first
+ * @returns {{ bpm: number, from: 'measured'|'playlist'|'genre', conf: number, settled: boolean, alt: number|null } | null}
+ */
+export function displayTempo(record, { playlistRange = null, genres = [] } = {}) {
+  const t = tempoOf(record);
+  if (!t) return null;
+  const cands = t.alt ? [t.bpm, t.alt] : [t.bpm];
+  const stages = [];
+  const pr = Array.isArray(playlistRange) ? playlistRange : playlistRange ? [playlistRange.lo, playlistRange.hi] : null;
+  if (pr && pr[0] > 0 && pr[1] >= pr[0]) stages.push(['playlist', [[pr[0] * (1 - MIX_TOLERANCE), pr[1] * (1 + MIX_TOLERANCE)]]]);
+  const gr = [];
+  for (const g of genres ?? []) { const r = tempoRangeOf(Array.isArray(g) ? g[0] : g); if (r) gr.push(r); }
+  if (gr.length) stages.push(['genre', gr]);
+  const out = (bpm, from, settled) => ({ bpm: +bpm.toFixed(1), from, conf: t.conf, settled, alt: settled ? null : t.alt });
+  for (const [from, ranges] of stages) {
+    for (const c of cands) if (ranges.some(r => within(c, r))) return out(c, c === t.bpm ? 'measured' : from, true);
+    for (const c of cands) for (const r of ranges) { const f = foldIntoRange(c, r); if (f) return out(f, from, true); }
+  }
+  return out(t.bpm, 'measured', !t.alt);
+}
+
+/**
+ * SOUND-ENGINE-PLAN T3: one sure BPM, or "BPM unknown" with the reason.
+ * Sure means confidence at or above BPM_MIN_CONF and the octave settled.
+ * `why`: 'no-audio' (never heard), 'no-beat' (no steady pulse in the preview),
+ * 'octave' (87 or 174, nothing settled it), 'unsure' (a pulse, not reliable).
+ * @returns {{ state: 'sure', bpm: number, from: string, conf: number } | { state: 'unknown', why: string }}
+ */
+export function tempoShown(record, ctx = {}) {
+  if (!record || record.miss) return { state: 'unknown', why: 'no-audio' };
+  const t = tempoOf(record);
+  if (!t || t.conf < BPM_NO_BEAT_CONF) return { state: 'unknown', why: 'no-beat' };
+  if (t.conf < BPM_MIN_CONF) return { state: 'unknown', why: 'unsure' };
+  const d = displayTempo(record, ctx);
+  if (!d.settled) return { state: 'unknown', why: 'octave' };
+  return { state: 'sure', bpm: d.bpm, from: d.from, conf: d.conf };
+}
+
+/** The words behind each "BPM unknown" (shown on tap or hover). */
+export const TEMPO_UNKNOWN_TEXT = Object.freeze({
+  'no-audio': 'Not heard yet: no preview on Deezer',
+  'no-beat': 'The beat wasn\u2019t clear in the 30 s preview',
+  'octave': 'Could be half or double: file it to a playlist and it will settle',
+  'unsure': 'A pulse, but the reading isn\u2019t reliable enough to show',
+});

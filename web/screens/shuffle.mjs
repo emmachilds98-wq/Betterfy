@@ -2,10 +2,14 @@
 /* The Shuffle screen (docs/archive/BUILD-5-PLAN.md A4): view and actions only. The spacing, DJ-order and
  * All Songs mirror code stays classic in web/app/shuffle-engine.js; ctx comes from SCREEN_CTX.shuffle. */
 const mixPct = x => `${Math.round(x * 100)}%`;
-export function mixBpmOf(index, id) {
-  const d = index.get(id)?.rec?.dsp;
-  return d?.bpm > 0 ? Math.round(d.bpm) : null;
+import { tempoShown, playlistConcepts } from '../../core/audio/match.mjs';
+/** The BPM a mix row shows (T2/T3): the sure one in its playlist's genre convention, else null ("BPM unknown"). */
+export function mixBpmOf(index, id, ctx = {}) {
+  const t = tempoShown(index.get(id)?.rec, ctx);
+  return t.state === 'sure' ? Math.round(t.bpm) : null;
 }
+/** The genre ctx a playlist's name gives its rows (so 87 reads 174 in a Drum & Bass playlist). */
+export const mixTempoCtx = p => ({ genres: playlistConcepts(p?.name) });
 /** The energy along the mix as a row of bars; only once energy labels have been checked. */
 function mixEnergyHTML(energy, { labelsShownNow, esc }) {
   const shown = labelsShownNow();
@@ -18,14 +22,16 @@ function mixHTML(mix, tracks, p, { S, esc, emptyState, skeleton, artistOf, MIX_P
     ? emptyState('The mix couldn’t load', esc(MIX_PAGE.err), { compact: true })
     : emptyState('Working out the mix…', 'Matching tempos and sounds across what listening has heard.', { compact: true }) + (skeleton ? skeleton('rows', 4) : '');
   const st = mix.stats, nv = mix.naive, bpmOn = BetterfyAudio?.bpmShown ? BetterfyAudio.bpmShown() : true;
+  const tctx = mixTempoCtx(p);
+  const shownBpms = bpmOn ? mix.order.slice(0, mix.mixed).map(t => mixBpmOf(mix.index, t.id, tctx)).filter(Boolean) : [];
   const row = (t, i) => {
     const heard = i < mix.mixed, step = i > 0 && i < mix.mixed ? mix.steps[i - 1] : null;
-    const bpm = heard && bpmOn ? mixBpmOf(mix.index, t.id) : null;
+    const bpm = heard && bpmOn ? mixBpmOf(mix.index, t.id, tctx) : null;
     const jump = step && !step.rel;
     return `<div class="${jump ? 'mx-jump' : ''}${heard ? '' : ' mx-unheard'}" data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>
       <span class="t">${esc(t.name)}</span>
-      <span class="a">${esc(artistOf(t))}</span>${bpm ? `<span class="mx-bpm"${step?.rel && step.rel !== 'same' ? ` title="${step.rel === 'half' ? 'double' : 'half'} time"` : ''}>${bpm}</span>` : ''}${jump ? '<span class="mx-tag">tempo change</span>' : ''}</div>`;
+      <span class="a">${esc(artistOf(t))}</span>${bpm ? `<span class="mx-bpm"${step?.rel && step.rel !== 'same' ? ` title="${step.rel === 'half' ? 'double' : 'half'} time"` : ''}>${bpm}</span>` : heard && bpmOn ? '<span class="mx-bpm mx-bpm-unknown" title="The tempo isn\u2019t sure, so this track is placed by sound">BPM unknown</span>' : ''}${jump ? '<span class="mx-tag">tempo change</span>' : ''}</div>`;
   };
   return `<div class="vs">
       <div class="bad"><div class="l">Shuffled</div><div class="n">${nv.share === null ? '—' : mixPct(nv.share)}</div>
@@ -34,7 +40,7 @@ function mixHTML(mix, tracks, p, { S, esc, emptyState, skeleton, artistOf, MIX_P
         <div class="d">can be beatmatched${st.shift !== null ? `, ${(st.shift * 100).toFixed(1)}% pitch change on average` : ''}</div></div>
     </div>
     ${mixEnergyHTML(st.energy, { labelsShownNow, esc })}
-    <p class="lede mx-sum">${mix.mixed} heard tracks in the mix${bpmOn && st.bpm ? ` · ${Math.round(st.bpm[0])}–${Math.round(st.bpm[1])} BPM` : ''}${mix.rest ? ` · ${mix.rest} not heard yet follow in the spaced shuffle` : ''}${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
+    <p class="lede mx-sum">${mix.mixed} heard tracks in the mix${shownBpms.length ? ` · ${Math.min(...shownBpms)}–${Math.max(...shownBpms)} BPM` : ''}${mix.rest ? ` · ${mix.rest} not heard yet follow in the spaced shuffle` : ''}${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
     <h2>Order</h2>
     <div class="order mx-order">${mix.order.slice(0,40).map(row).join('')}</div>`;
 }
