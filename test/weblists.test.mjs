@@ -154,12 +154,13 @@ test('Sources holds the three genre sources and the Listening card', () => {
   const sb = load();
   const html = SOURCES.view({ lfmKey: () => '', ...sb, playlistMixes: vm.runInContext('playlistMixes', sb) });
   assert.match(html, /data-lfmconnect/, 'Last.fm connects through the one shared sheet');
-  for (const id of ['enrich', 'fillWikidata', 'discogsKey', 'saveDiscogs']) assert.ok(html.includes(`id="${id}"`), id);
-  assert.match(html, /<button class="b p" id="enrich" data-act="enrich" disabled>/); // no key yet
+  for (const id of ['enrich', 'discogsKey', 'saveDiscogs']) assert.ok(html.includes(`id="${id}"`), id);
+  assert.match(html, /<button class="b sm" id="enrich" data-act="enrich" disabled>Ask again now</); // no key yet
+  assert.ok(!html.includes('fillWikidata'), 'Wikidata runs by itself at start-up; no button of its own');
   assert.match(html, /<section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h"><div id="audioPanel">panel<\/div><\/section>/);
 });
 
-test('Sources actions: the Discogs token clears and redraws', () => {
+test('Sources actions: the Discogs token clears and redraws', async () => {
   const kept = new Map(), said = [];
   let drawn = 0;
   const c = { LS: { setItem: (k, v) => kept.set(k, v), removeItem: k => kept.delete(k) },
@@ -172,9 +173,8 @@ test('Sources actions: the Discogs token clears and redraws', () => {
   assert.deepEqual(said, ['Token cleared.']);
   assert.equal(drawn, 1);
   const seen = [];
-  SOURCES.actions.enrich({ enrichMissing: () => seen.push('enrich') });
-  SOURCES.actions.fillWikidata({ fillFromWikidata: () => seen.push('wikidata') });
-  assert.deepEqual(seen, ['enrich', 'wikidata']);
+  await SOURCES.actions.enrich({ fillFromWikidata: o => seen.push('wikidata:' + o.quiet), enrichMissing: () => seen.push('enrich') });
+  assert.deepEqual(seen, ['wikidata:true', 'enrich']);
 });
 
 test('health also reads twins, repeats and staleness, and says nothing without them', () => {

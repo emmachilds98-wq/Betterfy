@@ -35,12 +35,12 @@ export function secDupes(c) {
     </div></div>`).join('') || emptyState('None found', 'Nothing in your library matches this.', { compact: true })}</div>
     ${moreButton(key, list.length)}`;
   const lede = `<p class="lede">Same track twice in one playlist.${ib('tidy-dupes', 'Repeats', '<p>Only duplicates <b>inside a single playlist</b> are offered for removal. A track in several playlists is treated as deliberate — that is the Cross-filed section.</p>')}</p>${plChip(c)}`;
-  // Both lists empty is one answer, not two grey boxes under two headings.
+  // Both lists empty is one answer, not two grey boxes under two headings; one empty list is no heading at all.
   if (!exact.length && !clash.length) return `${lede}
     ${emptyState('No repeats', 'None of your playlists has the same track in it twice, as the same recording or as a different cut.')}`;
   return `${lede}
-    ${sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.', 'dupes-exact')}
-    ${sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash')}`;
+    ${exact.length ? sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.', 'dupes-exact') : ''}
+    ${clash.length ? sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash') : ''}`;
 }
 
 /** Why a cross-filed row is ranked where it is: the reading behind its suspicion. */

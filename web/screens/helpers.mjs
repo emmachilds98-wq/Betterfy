@@ -33,10 +33,10 @@ export function helperRows(s = {}) {
   const lfm = s.lfm ?? {};
   rows.push({ id: 'lastfm', name: 'Last.fm', on: !!lfm.key, kind: lfm.key ? 'ok' : 'off',
     status: !lfm.key ? 'Off' : lfm.own ? 'On · your key' : 'On · built-in key',
-    did: lfm.key ? `Crowd genre tags for artists the table misses${lfm.asked ? `; ${n(lfm.asked)} artists asked so far` : ''}. Asked again by itself as your library grows.` : 'Add a key to get crowd genre tags.' });
+    did: lfm.key ? `Crowd genre tags for artists the table misses${lfm.asked ? `; ${n(lfm.asked)} artists asked so far` : ''}. Asked by itself every time Betterfy opens.` : 'Add a key to get crowd genre tags.' });
   const b = s.bridge ?? {};
   rows.push({ id: 'wikidata', name: 'Wikidata', on: true, kind: 'ok', status: 'On · no key',
-    did: b.wikidataAsked ? `Genres and MusicBrainz ids: knows ${b.wikidataPct}% of your artists (${n(b.wikidataAsked)} asked).` : 'Genres for untagged artists, asked by itself after the library loads.' });
+    did: b.wikidataAsked ? `Genres and MusicBrainz ids: knows ${b.wikidataPct}% of your artists (${n(b.wikidataAsked)} asked).` : 'Genres for untagged artists, asked by itself every time Betterfy opens.' });
   rows.push({ id: 'deezer', name: 'Deezer', on: b.on !== false, kind: b.on === false ? 'off' : 'ok', status: b.on === false ? 'Off' : 'On · no key',
     did: `Similar artists${b.deezerAsked ? ` (knows ${b.deezerPct}% of your artists)` : ''}, Discover picks without a key, and the 30-second previews Listening and Discover play.` });
   rows.push({ id: 'listenbrainz', name: 'ListenBrainz', on: b.on !== false, kind: b.on === false ? 'off' : 'ok', status: b.on === false ? 'Off' : 'On · no key',

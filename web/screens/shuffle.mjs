@@ -82,8 +82,8 @@ export function view(ctx) {
     <p class="lede">Spotify's shuffle clusters artists; this spaces them out.${ctx.infoBtn?.('shuffle', 'Shuffle', `<p>This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>`) ?? ''}</p>
     <p class="lede" style="margin-top:-8px">${allSongs
       ? `Shuffling from <b>${esc(allSongs.name)}</b> by default — everything in your library, kept in one place.`
-      : `No single playlist has everything you own yet.`}
-      <button class="b sm" data-act="syncAllSongs" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Build it'}</button></p>
+      : `To shuffle everything you own, first gather it into one playlist.`}
+      <button class="b sm" data-act="syncAllSongs" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Make it'}</button></p>
     <div class="rowbtns" style="margin-bottom:22px">
       <select id="shufPl" data-act="shufPl" aria-label="Playlist to shuffle">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
       <button class="b p" id="shufApply" ${S.shufOrder.length?'':'disabled'} data-act="shufApply">Create shuffled playlist</button>
@@ -91,8 +91,8 @@ export function view(ctx) {
       <button class="b sm" data-act="shufAgain" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
     </div>
     ${order.length ? `<div class="rowbtns" style="margin:-12px 0 18px">${canFlow ? `
-      <label class="pls-f"><input type="checkbox" data-act="shufFlow" ${flow ? 'checked' : ''}> keep neighbours alike</label>` : ''}
-      <label class="pls-f"><input type="checkbox" data-act="shufRedisc" ${S.shufRedisc ? 'checked' : ''}> rediscover: what you have not been playing first</label></div>` : ''}
+      <label class="pls-f"><input type="checkbox" data-act="shufFlow" ${flow ? 'checked' : ''}> Keep neighbours alike</label>` : ''}
+      <label class="pls-f"><input type="checkbox" data-act="shufRedisc" ${S.shufRedisc ? 'checked' : ''}> Rediscover: what you have not been playing first</label></div>` : ''}
     ${mix ? mixHTML(mix, tracks, p, ctx) : good ? `<div class="vs">
       <div class="bad"><div class="l">Spotify's shuffle</div><div class="n">${naive.minGap}</div>
         <div class="d">${naive.minGap === 1 ? 'slot' : 'slots'} between the same artist, ${naive.within3} ${naive.within3 === 1 ? 'pair' : 'pairs'} within three</div></div>

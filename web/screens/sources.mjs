@@ -85,16 +85,15 @@ export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlis
       'How much each source knows about the artists in your own library, worked out on this device.', body) + '\n\n    ' : '')(
       coverageHTML((d => d && artistCoverage(d))(sourceCoverage())))}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'On · your key' : lfm ? 'On · built-in key' : 'Off',
       'Crowd genre tags for the artists the shipped set doesn\'t cover. '
-        + (!lfmOwn && lfm ? 'On for everyone with Betterfy\'s built-in key, and asked again by itself as your library grows. Your own key is optional.' : lfm ? 'Asked again by itself as your library grows.' : 'Needs a free API key.'),
-      `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : lfm ? 'Use my own key' : 'Connect Last.fm'}</button></div>
-      <div class="rowbtns"><button class="b p" id="enrich" data-act="enrich" ${lfm ? '' : 'disabled'}>Fetch missing tags (${cov.missing.toLocaleString()})</button></div>`)}
+        + (!lfmOwn && lfm ? 'On for everyone with Betterfy\'s built-in key, and asked by itself every time Betterfy opens, most-played artists first. Your own key is optional.' : lfm ? 'Asked by itself every time Betterfy opens, most-played artists first.' : 'Needs a free API key.'),
+      `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : lfm ? 'Use my own key' : 'Connect Last.fm'}</button>
+        <button class="b sm" id="enrich" data-act="enrich" ${lfm ? '' : 'disabled'}>Ask again now</button></div>`)}
 
     ${sourceCard('wikidata', 'Wikidata', 'ok', 'On · no key',
-      'Genres for about a third of artists, mostly established ones. Runs once by itself after the library loads.',
-      `<div class="rowbtns"><button class="b" id="fillWikidata" data-act="fillWikidata">Fill missing genres free</button></div>`)}
+      'Genres for about a third of artists, mostly established ones. Asked by itself every time Betterfy opens, before Last.fm.', '')}
 
     ${sourceCard('discogs', 'Discogs', discogs ? 'ok' : 'idle', discogs ? 'Token saved' : 'Optional',
-      'Styles from an artist\'s own releases, finer than one flat tag. Only fills total gaps, as part of Fetch missing tags.',
+      'Styles from an artist\'s own releases, finer than one flat tag. Only fills gaps Last.fm leaves, as part of the same start-up check.',
       `<div class="rowbtns">
         <input id="discogsKey" placeholder="Discogs personal access token" size="34" value="${esc(discogs)}" aria-label="Discogs personal access token">
         <button class="b" id="saveDiscogs" data-act="saveDiscogs">Save token</button>
@@ -172,7 +171,8 @@ export const actions = {
     else { c.LS.removeItem('bf_discogs'); c.toast('Token cleared.'); }
     c.render();
   },
-  enrich: c => c.enrichMissing(),
+  /** Normally all of this runs by itself at every start (boot.js); the button is only a re-ask now. */
+  async enrich(c) { try { await c.fillFromWikidata?.({ quiet: true }); } catch { /* Last.fm still asks */ } return c.enrichMissing(); },
   bkSave: c => c.backupDownload(),
   bkPick(c, el) { const r = c.BK.plan?.[+el.dataset.i]; if (r) r.pick = el.checked; c.render(); },
   bkGo: c => c.restoreGo(),
@@ -181,5 +181,4 @@ export const actions = {
   wipeAsk(c) { c.BK.wipe = true; c.render(); },
   wipeNo(c) { c.BK.wipe = false; c.render(); },
   wipeGo: c => c.wipeThisDevice(),
-  fillWikidata: c => c.fillFromWikidata(),
 };
