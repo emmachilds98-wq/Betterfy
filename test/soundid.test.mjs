@@ -46,7 +46,9 @@ test('every genre in the tempo table is a real genre, and every genre has an ans
 
 test('tempo fits its genre straight, half and double time count for less, and rock says nothing', () => {
   assert.equal(tempoFit(172, 'jungle').fit, 1);
-  assert.deepEqual(tempoFit(87, 'drum-and-bass'), { fit: 0.6, bpm: 174 }, 'a tracker’s half-time slip is not a miss');
+  assert.deepEqual(tempoFit(87, 'drum-and-bass'), { fit: 1, bpm: 174 }, 'DnB is written at 87 or 174: full credit (T1)');
+  assert.equal(tempoFit(87, 'liquid-dnb').fit, 1, 'children inherit it');
+  assert.equal(tempoFit(62, 'house').fit, 0.6, 'other genres keep the weaker octave credit');
   assert.equal(tempoFit(70, 'dubstep').fit, 1, 'dubstep is felt at half time: full credit');
   assert.equal(tempoFit(124, 'drum-and-bass').fit, 0);
   assert.equal(tempoFit(120, 'rock'), null);
@@ -126,6 +128,17 @@ test('a confident tempo marks down a genre it cannot be: 172 BPM is not breakbea
 test('a half-time reading is put right by the genre it sounds like', () => {
   const r = identify(rec('t', { styles: [['Drum n Bass', 0.7]], bpm: 87, alt: 174 }));
   assert.deepEqual([r.bpm.value, r.bpm.from], [174, 'genre']);
+});
+
+test('T1: a DnB track read at 87 with no flag is not marked down, and shows 174', () => {
+  const styles = [['Drum n Bass', 0.45], ['Hip Hop', 0.4]];
+  const r = identify(rec('t', { styles, bpm: 87 }));
+  assert.equal(r.genre.slug, 'drum-and-bass');
+  assert.equal(r.bpm.value, 174);
+  assert.equal(r.bpm.fit, 1);
+  const hh = identify(rec('h', { styles: [['Hip Hop', 0.7]], bpm: 87 }));
+  assert.equal(hh.genre.slug, 'hip-hop');
+  assert.equal(hh.bpm.value, 87, 'a straight hip-hop reading is left alone');
 });
 
 test('two genres in one clip are named as a blend', () => {

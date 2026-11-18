@@ -230,6 +230,8 @@ fair say.
 87 and 174 (BUILD-5-PROGRESS, Beatport labels), so a strict tempo check
 mislabels a correct track as an error.
 
+**Tempo part (a) is built as SOUND-ENGINE-PLAN T1:** `DOUBLE_OK` in `core/ontology/tempo.mjs` gives DnB, jungle, footwork, juke and breakcore (and children) full credit at ×2, and `identify()` lets the genres heard pick the octave of every confident reading. Her Score run confirms the 77 → ≥ 95 and 51% → ≥ 70% bars.
+
 **What.** `core/audio/identify.mjs` (naming weights `SOURCES`, `SPECIFIC`,
 `MIN_GENRE`) and `core/ontology/tempo.mjs`: (a) make the per-genre range
 **octave-aware for DnB** (87 and 174 count as one); (b) name against *the
@@ -555,7 +557,7 @@ and B1 (add-only until the lane's package merges).
 | I2 | Sure earned in pockets | 1 | E | Not started | | bar: Sure ≥ 95% at ≥ 25% of tracks |
 | N1 | Never-filed artists | 2 | E | Not started | | bar: +3 top-1 on 205 tracks |
 | S2 | Small playlists | 2 | E, U | Not started | | bar: +10 recall on the under-12 group |
-| D1 | Drum & Bass named | 2 | E | Not started | | bar: 77/199 → 110/199 at ≥ 90% |
+| D1 | Drum & Bass named | 2 | E | Tempo part built as SOUND-ENGINE T1 (awaiting Score run); (b) library naming not started | | bar: 77/199 → 110/199 at ≥ 90% |
 | W1 | Wikidata coverage, MusicBrainz probe | 2 | K | Not started | | bar: +10 points artist coverage |
 | M2 | Mood chips earn their way | 2 | E | Not started | | bar: 1 → 3 of 8 |
 | B1 | Big mixed playlists | 3 | E, U | Not started | | bar: +5 recall where medoids apply |
