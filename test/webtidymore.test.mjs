@@ -67,12 +67,13 @@ test('the two repeats sections page independently', () => {
   assert.match(html, /data-more="dupes-clash"/);
 });
 
-test('cross-filed pages per threshold, so changing the filter starts from the top', () => {
+test('cross-filed pages at the one fixed threshold, with no threshold row (§7.7 C4)', () => {
   const s = tidy({ cross: 200 });
-  s.S.crossMin = 3; more(s, 'cross-3');
-  assert.equal(rows(TIDY.secCross(s)), 120);
-  s.S.crossMin = 2;
-  const html = TIDY.secCross(s);
+  let html = TIDY.secCross(s);
   assert.equal(rows(html), 60);
-  assert.match(html, /data-more="cross-2"/);
+  assert.match(html, /data-more="cross"/);
+  assert.doesNotMatch(html, /data-act="cmin"|\d\+ playlists/);
+  more(s, 'cross');
+  html = TIDY.secCross(s);
+  assert.equal(rows(html), 120);
 });

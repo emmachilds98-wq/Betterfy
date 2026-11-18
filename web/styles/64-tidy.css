@@ -27,3 +27,26 @@
     .seg.tidysecs, .seg.mfbands{display:flex; width:100%}
     .seg.tidysecs>button, .seg.mfbands>button{flex:1; justify-content:center}
   }
+
+  /* ---------- L4: the section switch on phone (DESIGN-PLAN §4) ----------
+     Each part carries its full label (.lg) and a short one (.sh); a phone
+     shows the short one so the switch stays on one line at 390 px. A part
+     with nothing in it is dimmed, not hidden, and stays tappable. */
+  .seg.tidysecs>button{white-space:nowrap}
+  .seg.tidysecs .sh{display:none}
+  .seg.tidysecs>button.zero:not([aria-pressed="true"]){color:var(--ink-3)}
+  .seg.tidysecs>button.zero:not([aria-pressed="true"]) .n{opacity:.7}
+  @media (max-width: 760px){
+    /* Big counts still never wrap a label: the switch scrolls sideways instead. */
+    .seg.tidysecs{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none}
+    .seg.tidysecs .lg{display:none}
+    .seg.tidysecs .sh{display:inline}
+    .seg.tidysecs>button{min-width:0; padding-left:6px; padding-right:6px; gap:4px; font-size:13px}
+  }
+  @media (max-width: 360px){
+    .seg.tidysecs>button{font-size:12px; padding-left:4px; padding-right:4px}
+  }
+
+  /* §7.7 M3: a Wrong place row found by listening, not by tags. */
+  .bysound{display:inline-block; margin-right:6px; padding:1px 7px; border-radius:999px;
+    font-size:var(--fs-small, 12px); font-weight:600; color:var(--accent); border:1px solid currentColor; vertical-align:1px}

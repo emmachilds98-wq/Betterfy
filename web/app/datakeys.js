@@ -48,6 +48,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
   { where:'local', key:'bf_teach', group:'Your library', why:'This account\'s own teach-queue measurement from the last Score run (the engine\'s score on your filed tracks before and after 20 simulated answers), which decides whether File shows the teach questions.' },
   { where:'local', key:'bf_tidy_sprint', group:'Your library', why:'Your last 20 Tidy sprints: how many tracks you decided, how fast, and how many moves you kept. Counts only, kept here and never sent.' },
+  { where:'local', key:'bf_hidden_auto', group:'Your library', why:'When Tidy last checked a batch of your songs against Spotify search by itself, so it does that at most once a day.' },
   { where:'local', key:'bf_mergesplit', group:'Your library', why:'Which merge and split offers (twin playlists, playlists that are two genres) were shown, dismissed or made, and when. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 

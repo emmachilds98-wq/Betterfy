@@ -65,12 +65,12 @@ test('no repeats at all is one empty state, not two under two headings', () => {
   assert.match(html, /No repeats/);
 });
 
-test('cross-filed: nothing at all versus nothing at this threshold', () => {
+test('cross-filed: an empty state when nothing is, and every track in two or more listed (§7.7 C4)', () => {
   assert.match(vm.runInContext('secCross()', tidy({ misfiled: [], within: [], across: [] })), /Nothing cross-filed/);
   const two = { title: 'X', artist: 'A', placements: [1, 2].map(n => ({ playlistId: 'p' + n, trackId: 't', playlist: 'P' + n, axis: 'g' })) };
   const html = vm.runInContext('secCross()', tidy({ misfiled: [], within: [], across: [two] }));
-  assert.match(html, /empty-state compact/);
-  assert.match(html, /Nothing at 3\+ playlists/);
+  assert.doesNotMatch(html, /empty-state|data-act="cmin"/);
+  assert.match(html, /data-act="xpl" data-xpl="p1"/);
 });
 
 // ---- New playlists ----
