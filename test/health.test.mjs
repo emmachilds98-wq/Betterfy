@@ -240,3 +240,17 @@ test('switching section ends a sprint and clears the playlist filter', () => {
   assert.equal(c.S.tidyPl, null);
   assert.equal(JSON.parse(c.store_.get('bf_tidy_sprint'))[0].keeps, 1);
 });
+
+// DESIGN-PLAN §7.7 M3: By sound's rows are Wrong place rows, so the sprint walks them first.
+test('the Wrong place sprint walks the band\'s by-sound rows, then the tag rows', () => {
+  const snd = { id: 's1', from: 'p1', to: 'p2', fromName: 'House', toName: 'Techno', band: 'sure', why: ['x'] };
+  const c = ctx({ tidySoundRows: () => [snd, { ...snd, id: 's2', band: 'likely' }], tidySoundCount: () => 2 });
+  assert.deepEqual(TIDY.sprintRows(c, 'misfile').map(x => x.id), ['s1', 'h1', 'h2', 't1']);
+  c.S.mfBand = 'medium';
+  assert.deepEqual(TIDY.sprintRows(c, 'misfile').map(x => x.id), ['s2', 'h3']);
+  c.S.mfBand = 'low';
+  assert.deepEqual(TIDY.sprintRows(c, 'misfile').map(x => x.id), []);
+  // Library's "Tidy N" link to sound lands on Wrong place, on the band that has rows.
+  TIDY.actions.hgo(c, { dataset: { hpl: 'p1', hsec: 'sound' } });
+  assert.deepEqual([c.S.tidySec, c.S.mfBand, c.S.tidyPl], ['misfile', 'high', 'p1']);
+});

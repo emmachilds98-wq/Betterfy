@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-0604">
+<meta name="bf-build" content="2026-11-18-0615">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1068,6 +1068,29 @@ main:focus{outline:none}
     .seg.tidysecs, .seg.mfbands{display:flex; width:100%}
     .seg.tidysecs>button, .seg.mfbands>button{flex:1; justify-content:center}
   }
+
+  /* ---------- L4: the section switch on phone (DESIGN-PLAN §4) ----------
+     Each part carries its full label (.lg) and a short one (.sh); a phone
+     shows the short one so the switch stays on one line at 390 px. A part
+     with nothing in it is dimmed, not hidden, and stays tappable. */
+  .seg.tidysecs>button{white-space:nowrap}
+  .seg.tidysecs .sh{display:none}
+  .seg.tidysecs>button.zero:not([aria-pressed="true"]){color:var(--ink-3)}
+  .seg.tidysecs>button.zero:not([aria-pressed="true"]) .n{opacity:.7}
+  @media (max-width: 760px){
+    /* Big counts still never wrap a label: the switch scrolls sideways instead. */
+    .seg.tidysecs{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none}
+    .seg.tidysecs .lg{display:none}
+    .seg.tidysecs .sh{display:inline}
+    .seg.tidysecs>button{min-width:0; padding-left:6px; padding-right:6px; gap:4px; font-size:13px}
+  }
+  @media (max-width: 360px){
+    .seg.tidysecs>button{font-size:12px; padding-left:4px; padding-right:4px}
+  }
+
+  /* §7.7 M3: a Wrong place row found by listening, not by tags. */
+  .bysound{display:inline-block; margin-right:6px; padding:1px 7px; border-radius:999px;
+    font-size:var(--fs-small, 12px); font-weight:600; color:var(--accent); border:1px solid currentColor; vertical-align:1px}
   /* New playlists: proposals by sound (docs/AUDIO-BUILD-PLAN.md WP-H2,
      UI-BUILD-PLAN §2.8). One row shape for all three, told apart by a strip
      down the left edge: a hybrid blends two hues, "new genre?" is broken, a
@@ -1807,7 +1830,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-0604</span>
+    <span class="mono">build 2026-11-18-0615</span>
   </p>
 
   <div class="feat">
@@ -1900,7 +1923,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0604</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0615</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2017,7 +2040,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-0604. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-0615. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5853,7 +5876,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-0604`,
+    `Betterfy engine score — build 2026-11-18-0615`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -6766,8 +6789,10 @@ const { songsToCheck, judge, shapeHit, searchQuery, hiddenRows, hiddenProgress, 
  *   - "Find a song": type what you would type into Spotify. Your library answers
  *     at once (where it sits, liked or not), and "Ask Spotify" runs that search
  *     and marks every answer that is the same song under another id.
- *   - "Check my playlists": the same question for every song, oldest adds first,
- *     a run of RUN_SIZE at a time, remembered on this device for RECHECK_MS.
+ *   - The check: the same question for every song, oldest adds first, a run of
+ *     RUN_SIZE at a time, remembered on this device for RECHECK_MS. A run starts by
+ *     itself once a day, after the radar's first read (hiddenAuto, DESIGN-PLAN §7.7
+ *     A2, provisional); a small "Check N more" asks again now.
  * Every fix asks first, says where it will change, and lands in History with Undo. */
 
 
@@ -6808,6 +6833,23 @@ async function hiddenRun(c) {
     }
   } catch (err) { H.err = err?.message ?? String(err); }
   finally { H.running = false; await save(c); c.store?.touch?.('ui.tidy'); }
+}
+
+const AUTO_KEY = 'bf_hidden_auto';
+const AUTO_EVERY_MS = 20 * 3600_000;
+/** One run by itself, at most once a day on this device, and only while there are songs
+ *  left to ask about. Not on Data Saver. Resolves true when it ran. */
+async function hiddenAuto(c, now = Date.now()) {
+  if (H.running || !c.sp || !c.LIB) return false;
+  if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
+  let last = 0;
+  try { last = +(c.LS?.getItem(AUTO_KEY) ?? 0) || 0; } catch { /* private mode */ }
+  if (now - last < AUTO_EVERY_MS) return false;
+  if (!H.checks) await (H.loading ?? Promise.resolve(c.idb?.get?.(KEY)).then(v => { H.checks = v ?? {}; }, () => { H.checks = {}; }));
+  if (!hiddenProgress(c.LIB, H.checks).left) return false;
+  try { c.LS?.setItem(AUTO_KEY, String(now)); } catch { /* private mode */ }
+  await hiddenRun(c);
+  return true;
 }
 
 /** Library copies of the same song as a search answer, under any id. */
@@ -6912,9 +6954,11 @@ function hiddenView(c) {
   const rows = hiddenRows(c.LIB, H.checks);
   const vers = rows.filter(r => r.state === 'version'), gone = rows.filter(r => r.state === 'missing');
   const status = H.running ? `Checking with Spotify search: ${H.done.toLocaleString()} of ${H.of.toLocaleString()}…`
-    : `${prog.checked.toLocaleString()} of ${prog.total.toLocaleString()} songs checked${prog.left ? '' : ', all of them'}.${H.err ? ` Stopped: ${esc(H.err)}` : ''}`;
+    : prog.checked ? `${prog.checked.toLocaleString()} of ${prog.total.toLocaleString()} songs checked${prog.left ? ', a batch more each day by itself' : ', all of them'}.${H.err ? ` Stopped: ${esc(H.err)}` : ''}`
+    : `None checked yet. A batch of your oldest songs is checked by itself a little after the app opens.${H.err ? ` Stopped: ${esc(H.err)}` : ''}`;
+  // The run starts by itself (hiddenAuto); this only asks again now, so it is small and never filled.
   const run = prog.left && !H.running && c.sp
-    ? `<button class="b sm ${prog.checked ? '' : 'go'}" data-act="hdRun">${prog.checked ? `Check ${Math.min(RUN_SIZE, prog.left)} more` : `Check my oldest ${Math.min(RUN_SIZE, prog.left)}`}</button>` : '';
+    ? `<button class="b sm" data-act="hdRun">Check ${Math.min(RUN_SIZE, prog.left).toLocaleString()} more</button>` : '';
   const vRow = r => `<div class="row" data-flip data-key="${esc('hv:' + r.id)}">${c.thumbHTML({ id: r.id, title: r.track.name, art: r.track.art })}<div class="main">
       <div class="ttl">${esc(r.track.name)} <span class="sub">— ${esc(artistLine(r.track))}</span></div>
       <div class="why">${esc(versionNote(r.track, r.to))}</div>${where(c, r)}
@@ -6978,7 +7022,7 @@ function hiddenMount(c) {
     input.addEventListener('input', () => { H.q = input.value; c.render(); });
   }
 }
-return { H, hiddenLoad, hiddenCount, hiddenRun, hiddenSwap, hiddenView, hiddenActions, hiddenMount };
+return { H, hiddenLoad, hiddenCount, hiddenRun, hiddenAuto, hiddenSwap, hiddenView, hiddenActions, hiddenMount };
 })();
 /* ---- core/review/health.mjs ---- */
 __mod["core/review/health.mjs"] = (function () {
@@ -7112,7 +7156,7 @@ return { HEALTH_VERSION, REPORT_N, HEALTHY, SPRINT_KEEP, tidyCounts, sectionFor,
 })();
 /* ---- web/screens/tidy.mjs ---- */
 __mod["web/screens/tidy.mjs"] = (function () {
-const { hiddenView, hiddenActions, hiddenMount, hiddenCount } = __mod["web/screens/hidden.mjs"];
+const { hiddenView, hiddenActions, hiddenMount, hiddenCount, hiddenAuto } = __mod["web/screens/hidden.mjs"];
 const { tidyCounts, healthInputs, rankHealth, sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTotals } = __mod["core/review/health.mjs"];
 /* The Tidy screen (docs/BUILD-5-PLAN.md A4): an ES module. It touches nothing outside `ctx`
  * (web/README.md, "Screen modules"); SCREEN_CTX.tidy in app/screens.js builds it. The sound
@@ -7129,10 +7173,16 @@ const { tidyCounts, healthInputs, rankHealth, sprintStart, sprintDecide, sprintU
  * screen now, with a section each and the counts on the switcher, so the
  * question is asked once and the answer is a row you tap.
  */
-const TIDY_SECTIONS = [['misfile', 'Wrong place'], ['dupes', 'Repeats'], ['cross', 'Cross-filed']];
+/* [id, label, short label]: the short one is what a phone shows (DESIGN-PLAN L4), so the
+ * switch fits one line at 390 px; desktop and the ⓘ text keep the full words. By sound is
+ * not a part of its own any more (§7.7 M3): its rows sit in Wrong place with a badge. */
+const TIDY_SECTIONS = [['misfile', 'Wrong place', 'Misfiled'], ['dupes', 'Repeats', 'Repeats'], ['cross', 'Cross-filed', 'In two']];
+const HEALTH_SECTION = ['health', 'Health', 'Health'];
 // Hard to find (screens/hidden.mjs) is always last, and like Health is never opened
 // for you: its count is only what a check found, so it is a place you go, not work queued.
-const HIDDEN_SECTION = ['hidden', 'Hard to find'];
+const HIDDEN_SECTION = ['hidden', 'Hard to find', 'Hidden'];
+/** Cross-filed means two or more playlists. The 2+…6+ row went (§7.7 C4, provisional). */
+const CROSS_MIN = 2;
 
 function secDupes(c) {
   const ib = c.infoBtn ?? (() => '');
@@ -7166,12 +7216,10 @@ function crossNote(x) {
 
 function secCross(c) {
   const ib = c.infoBtn ?? (() => '');
-  const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton } = c;
-  const a = R.across.filter(x => x.placements.length >= S.crossMin);
+  const { R, esc, thumbHTML, shownOf, emptyState, moreButton } = c;
+  const a = R.across.filter(x => x.placements.length >= CROSS_MIN);
   return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is removed unless you tap. The likeliest slips come first, with the best-fitting playlist starred.${ib('tidy-cross', 'Cross-filed', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
-    <div class="rowbtns" style="margin-bottom:14px">${[2, 3, 4, 5, 6].map(n =>
-      `<button class="b sm ${S.crossMin === n ? 'p' : ''}" data-act="cmin" data-cmin="${n}">${n}+ playlists</button>`).join('')}</div>
-    <div class="rows">${a.slice(0, shownOf('cross-' + S.crossMin)).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
+    <div class="rows">${a.slice(0, shownOf('cross')).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
       ${crossNote(c)}
@@ -7179,10 +7227,8 @@ function secCross(c) {
         `<button class="chip${p.playlistId === c.keeper ? ' keeper' : ''}" data-act="xpl" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}${p.playlistId === c.keeper ? ' — the best fit' : ''}">${p.playlistId === c.keeper ? '★ ' : ''}${esc(p.playlist)}</button>`).join('')}
         ${c.keeper && c.suspicion >= 2 ? `<button class="b sm" data-act="xkeep" data-xkeeper="${esc(c.keeper)}" data-xtr="${esc(c.placements[0].trackId)}" data-xall="${esc(c.placements.map(p => p.playlistId).join(','))}">Keep only in ${esc(c.placements.find(p => p.playlistId === c.keeper)?.playlist ?? '')}</button>` : ''}</div>
     </div></div>`).join('')
-      || (R.across.length
-        ? emptyState(`Nothing at ${S.crossMin}+ playlists`, 'Lower the threshold to see tracks filed in fewer places.', { compact: true })
-        : emptyState('Nothing cross-filed', 'Every track you have filed sits in one playlist only.'))}</div>
-    ${moreButton('cross-' + S.crossMin, a.length)}`;
+      || emptyState('Nothing cross-filed', 'Every track you have filed sits in one playlist only.')}</div>
+    ${moreButton('cross', a.length)}`;
 }
 
 /* The misfile confidence tiers, in calibrate's words (UI-BUILD-PLAN R5): the
@@ -7212,40 +7258,35 @@ function tagMisfiles(c) {
 /** A cosine fit in words, not a percentage nobody can calibrate. */
 const mfFitWord = v => v >= 0.5 ? 'strong' : v >= 0.25 ? 'fair' : v >= 0.1 ? 'weak' : 'barely';
 
-function tidySections(c) {
-  return c.tidySoundOn() ? [...TIDY_SECTIONS, ['sound', 'By sound']] : TIDY_SECTIONS;
-}
 function tidySoundTrack(LIB, id) {
   for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id === id)
     return { id, title: t.name ?? '', artist: (t.artists ?? []).map(a => a?.name).filter(Boolean).join(', '), art: t.art ?? null, dur: t.duration_ms ?? 0 };
   return { id, title: id, artist: '', art: null, dur: 0 };
 }
-const TS_BANDS = [['sure', 'HIGH'], ['likely', 'LIKELY']];
-function secSound(c) {
-  const ib = c.infoBtn ?? (() => '');
-  const { S, esc, thumbHTML, shownOf, emptyState, moreButton, TSOUND, LIB, tidySoundRows } = c;
-  const rows = onlyPl(c, tidySoundRows(), x => x.from);
-  const band = S.tsBand ?? 'sure';
-  const counts = { sure: 0, likely: 0 };
-  for (const x of rows) counts[x.band]++;
-  const acc = TSOUND.res?.accuracy;
-  const pct = v => `${Math.round(v * 100)}%`;
-  const checked = acc?.scored ? `<p class="sub tsacc">Checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
-    acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>` : '';
-  const lede = `<p class="lede">Filed in one playlist, but it sounds like another.${ib('tidy-sound', 'Sounds wrong', '<p>Filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one, and its sound doesn\'t place it where it is. Only heard tracks, and only playlists with at least five heard tracks, are judged.</p>')}</p>${plChip(c)}`;
-  if (TSOUND.status === 'working' && !TSOUND.res) return lede + emptyState('Listening through your playlists', 'Comparing every heard track with the ones it sounds like. This takes a few seconds.', { compact: true }) + (c.skeleton ? c.skeleton('rows', 3) : '');
-  if (TSOUND.status === 'error' && !TSOUND.res) return lede + emptyState('Couldn’t compare by sound', esc(TSOUND.err ?? ''), { compact: true });
-  if (S.sprint?.sec === 'sound') return lede + sprintPanel(c, 'sound');
-  const m = rows.filter(x => x.band === band);
-  return `${lede}${checked}
-    ${rows.length ? `<div class="seg mfbands tsbands" role="group" aria-label="How sure">${TS_BANDS.map(([b, vm]) =>
-      `<button type="button" aria-pressed="${band === b}" data-act="tsb" data-tsb="${b}">${mfBandChip(c, vm === 'HIGH' ? 'high' : 'medium')} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
-    ${sprintBar(c, 'sound', sprintRows(c, 'sound').length)}
-    <div class="rows">${m.slice(0, shownOf('tsound-' + band)).map(x => {
-      const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
-      return `<div class="row tsrow ${done ? 'done' : ''}" data-flip data-key="${esc(`ts:${x.id}`)}">${thumbHTML(t)}<div class="main">
+
+/* ---------- Wrong place, by tags and by sound (§7.7 M3, provisional) ----------
+ * The sound tier's rows (core/audio/misfit.mjs, through ctx.tidySoundRows) used to be a
+ * section of their own with the same Move / Keep here / Play. They are Wrong place rows now,
+ * with a "by sound" badge: sound's Sure joins Sure, its Likely joins Likely, and they come
+ * first in their band. Where both tiers flag the same track in the same playlist, the sound
+ * row is the one shown (tagMisfiles already drops the tag row where they disagree). */
+const SOUND_BAND = { sure: 'high', likely: 'medium' };
+const BAND_SOUND = { high: 'sure', medium: 'likely' };
+
+/** Both tiers' rows for Wrong place, before the playlist chip and the band filter. */
+function misfileRows(c) {
+  const sound = (typeof c.tidySoundRows === 'function' ? c.tidySoundRows() : null) ?? [];
+  const heard = new Set(sound.map(x => `${x.id}|${x.from}`));
+  const tag = tagMisfiles(c).filter(m => !heard.has(`${m.id}|${m.currentPlaylistId}`));
+  return { sound, tag };
+}
+
+function soundRow(c, x) {
+  const { S, esc, thumbHTML } = c;
+  const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
+  return `<div class="row tsrow ${done ? 'done' : ''}" data-flip data-key="${esc(`ts:${x.id}`)}">${thumbHTML(t)}<div class="main">
         <div class="ttl">${esc(t.title)} <span class="sub">— ${esc(t.artist)}</span></div>
-        <div class="tssound">${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
+        <div class="tssound"><span class="bysound">by sound</span> ${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
         <div class="swap"><span class="from">${esc(x.fromName)}</span><span class="arw">→</span><span class="to">${esc(x.toName)}</span>
           <span class="mono" style="color:var(--ink-3)">${x.near.from} → ${x.near.to} of ${x.near.k} sound-alikes</span></div>
         <div class="why">${esc(x.why.join('; '))}.</div>
@@ -7253,21 +7294,34 @@ function secSound(c) {
         <button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtier="${esc(x.band)}" data-act="move" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.from)}" data-mvto="${esc(x.to)}">${done ? 'Moved' : 'Move'}</button>
         ${done ? '' : `<button class="b sm" data-act="tskeep" data-tsfrom="${esc(x.from)}" data-tskeep="${esc(x.id)}" data-tsto="${esc(x.to)}">Keep here</button>`}
         <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${t.dur}">Play</button></div></div>`;
-    }).join('')
-      || (rows.length
-        ? emptyState(`Nothing ${band === 'sure' ? 'sure' : 'likely'}`, band === 'sure' ? 'Likely has the more speculative ones.' : 'Try Sure.', { compact: true })
-        : emptyState('Everything sounds where it is', 'No heard track sits in a genre playlist its sound-alikes avoid. More show up as listening hears more of your library.'))}</div>
-    ${moreButton('tsound-' + band, m.length)}`;
+}
+
+/** The sound tier's own state, as one line under the lede (it was a whole section). */
+function soundNote(c, sound) {
+  const T = c.TSOUND;
+  if (!T || typeof c.tidySoundOn !== 'function' || !c.tidySoundOn()) return '';
+  if (T.status === 'working' && !T.res) return '<p class="sub tsacc">Also listening through your playlists for tracks that sound out of place. They join this list when that is done.</p>';
+  if (T.status === 'error' && !T.res) return `<p class="sub tsacc">Couldn’t compare by sound: ${c.esc(T.err ?? '')}</p>`;
+  const acc = T.res?.accuracy;
+  if (!sound.length || !acc?.scored) return '';
+  const pct = v => `${Math.round(v * 100)}%`;
+  return `<p class="sub tsacc">By sound, checked on ${acc.scored.toLocaleString()} tracks you filed yourself: put in the wrong playlist on purpose, ${pct(acc.caught)} were caught and sent home${
+    acc.sure?.precision != null ? ` (${pct(acc.sure.precision)} of the sure ones right)` : ''}; ${pct(acc.falseAlarm)} of tracks left where you filed them were flagged anyway.</p>`;
 }
 
 function secMisfile(c) {
   const ib = c.infoBtn ?? (() => '');
-  const { S, R, esc, thumbHTML, shownOf, emptyState, moreButton, tagChips, tagEditorHTML, store, getListening } = c;
+  const { S, esc, thumbHTML, shownOf, emptyState, moreButton, tagChips, tagEditorHTML, store, getListening } = c;
   const LISTENING_CACHE = c.LISTENING_CACHE, LISTENING_PENDING = c.LISTENING_PENDING;
   const counts = { high: 0, medium: 0, low: 0 };
-  const MF = onlyPl(c, tagMisfiles(c), x => x.currentPlaylistId);
+  const both = misfileRows(c);
+  const MF = onlyPl(c, both.tag, x => x.currentPlaylistId);
+  const SD = onlyPl(c, both.sound, x => x.from);
   for (const x of MF) counts[x.confidence]++;
+  for (const x of SD) counts[SOUND_BAND[x.band] ?? 'medium']++;
+  const sd = SD.filter(x => (SOUND_BAND[x.band] ?? 'medium') === S.mfBand);
   const m = MF.filter(x => x.confidence === S.mfBand);
+  const all = [...sd.map(x => ['s', x]), ...m.map(x => ['t', x])];
   // Best-effort, fetched once and reused: a "misfiled" track you actually
   // play a lot is more likely a deliberate keep than a mistake. Doesn't
   // change the confidence tier — just gives you the context to judge it —
@@ -7278,13 +7332,9 @@ function secMisfile(c) {
   // Only draw the (stateful, id-bearing) editor once, even if the artist
   // being fixed has several other misfiled tracks in the same list.
   let editorDrawn = false;
-  const lede = `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p>')}</p>${plChip(c)}`;
-  if (S.sprint?.sec === 'misfile') return lede + sprintPanel(c, 'misfile');
-  return `${lede}
-    ${MF.length ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
-      `<button type="button" aria-pressed="${S.mfBand === b}" data-act="mfb" data-mfb="${b}">${mfBandChip(c, b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
-    ${sprintBar(c, 'misfile', sprintRows(c, 'misfile').length)}
-    <div class="rows">${m.slice(0, shownOf('misfile-' + S.mfBand)).map(x => {
+  const lede = `<p class="lede">Filed somewhere that fits worse than another playlist.${ib('tidy-misfile', 'Wrong place', '<p>Only playlists <b>on the same axis</b> are compared. Each row is a move, not a score, and every move lands in History.</p><p>Rows marked <b>by sound</b> come from listening: filed in a genre playlist, but <b>the tracks it sounds most like</b> are almost all in another one. Only heard tracks, and only playlists with at least five heard tracks, are judged that way.</p>')}</p>${plChip(c)}${soundNote(c, SD)}`;
+  if (S.sprint?.sec === 'misfile' || S.sprint?.sec === 'sound') return lede + sprintPanel(c, S.sprint.sec);
+  const tagRow = x => {
       const to = x.suggest.filter(sg => sg.id)[0];
       const done = S.moved.has(x.id);
       const playedALot = recentlyActive?.has(x.artist);
@@ -7307,31 +7357,46 @@ function secMisfile(c) {
         ${!editorDrawn && S.editingArtist && x.artists?.some(a => a.id === S.editingArtist)
           ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
       </div>` : ''}</div>`;
-    }).join('')
-      || (MF.length
+  };
+  const any = MF.length + SD.length;
+  return `${lede}
+    ${any ? `<div class="seg mfbands" role="group" aria-label="How sure">${MF_BANDS.map(([b]) =>
+      `<button type="button" aria-pressed="${S.mfBand === b}" data-act="mfb" data-mfb="${b}">${mfBandChip(c, b)} <span class="n">${counts[b].toLocaleString()}</span></button>`).join('')}</div>` : ''}
+    ${sprintBar(c, 'misfile', sprintRows(c, 'misfile').length)}
+    <div class="rows">${all.slice(0, shownOf('misfile-' + S.mfBand)).map(([k, x]) => k === 's' ? soundRow(c, x) : tagRow(x)).join('')
+      || (any
         ? emptyState(`Nothing ${mfBandWord(S.mfBand)}`, S.mfBand === 'high'
             ? 'Nothing is clearly in the wrong place. Likely has the more speculative ones.' : 'Try another of the three.', { compact: true })
         : emptyState('Everything fits where it is', 'No track sits in a playlist that fits far worse than another one on the same axis. New ones show up here after a sync.'))}</div>
-    ${moreButton('misfile-' + S.mfBand, m.length)}`;
+    ${moreButton('misfile-' + S.mfBand, all.length)}`;
 }
 
 function view(c) {
-  const { S, R, esc } = c;
+  const { S, R } = c;
   c.tidySoundWarm();
   const report = healthReport(c);
-  const n = { misfile: tagMisfiles(c).length, dupes: R.within.length, cross: R.across.length, sound: c.tidySoundCount(), health: report.length, hidden: hiddenCount(c) };
-  const secs = [...(report.length ? [...tidySections(c), ['health', 'Health']] : tidySections(c)), HIDDEN_SECTION];
+  const both = misfileRows(c);
+  const n = { misfile: both.tag.length + both.sound.length, dupes: R.within.length, cross: R.across.length,
+    health: report.length, hidden: hiddenCount(c) };
+  const secs = [...TIDY_SECTIONS, ...(report.length ? [HEALTH_SECTION] : []), HIDDEN_SECTION];
   // Opens on the first section with something in it rather than on "Wrong
   // place 0" while Repeats has work. A section the listener picked (S.tidySec,
   // set only by a tap) is kept; one that has gone away falls back the same way.
   // Health is a report, not a list of work: it is never opened for you.
   const first = (secs.find(([id]) => n[id] > 0 && id !== 'health' && id !== 'hidden') ?? secs[0])[0];
+  // By sound was a section; a remembered one is Wrong place now, on sound's band, while it has rows.
+  if (S.tidySec === 'sound') {
+    S.tidySec = n.misfile ? 'misfile' : first;
+    if (n.misfile && S.tsBand) S.mfBand = SOUND_BAND[S.tsBand] ?? S.mfBand;
+  }
   if (S.tidySec != null && !secs.some(([id]) => id === S.tidySec)) S.tidySec = first;
   const sec = S.tidySec ?? first;
-  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, sound: secSound, health: secHealth, hidden: hiddenView }[sec];
+  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, health: secHealth, hidden: hiddenView }[sec];
+  // A section with nothing in it is dimmed, not hidden: it stays tappable (L4).
+  const label = (full, short) => full === short ? full : `<span class="lg">${full}</span><span class="sh">${short}</span>`;
   return `<h1>Tidy</h1>
-    <div class="seg tidysecs" role="group" aria-label="Section">${secs.map(([id, label]) =>
-      `<button type="button" aria-pressed="${sec === id}" data-act="section" data-tidy="${id}">${label} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
+    <div class="seg tidysecs" role="group" aria-label="Section">${secs.map(([id, full, short]) =>
+      `<button${n[id] ? '' : ' class="zero"'} type="button" aria-pressed="${sec === id}" data-act="section" data-tidy="${id}">${label(full, short)} <span class="n">${n[id].toLocaleString()}</span></button>`).join('')}</div>
     ${body(c)}`;
 }
 
@@ -7342,15 +7407,6 @@ const actions = {
     if (c.S.sprint) endSprint(c);
     c.S.tidySec = el.dataset.tidy; c.S.tidyPl = null; c.render();
   },
-
-  cmin(c, el) {
-    const { S, T } = c;
-    S.crossMin = +el.dataset.cmin;
-    if (T.rememberFilters) { T.crossMin = S.crossMin; c.saveTheme(); }
-    c.render();
-  },
-
-  tsb(c, el) { c.S.tsBand = el.dataset.tsb; c.render(); },
 
   async tskeep(c, el) {
     await c.recordKeep(el.dataset.tskeep, el.dataset.tsfrom, [el.dataset.tsto]);
@@ -7440,16 +7496,16 @@ const actions = {
 
   /** Open Tidy at one playlist: its first section with rows, on the first band that has some. */
   hgo(c, el) {
-    const { S } = c, pl = el.dataset.hpl, sec = el.dataset.hsec;
+    const { S } = c, pl = el.dataset.hpl;
+    // By sound's rows live in Wrong place now (M3), so a link to 'sound' lands there.
+    const sec = el.dataset.hsec === 'sound' ? 'misfile' : el.dataset.hsec;
     if (S.sprint) endSprint(c);
     S.tidyPl = pl; S.tidySec = sec;
     if (sec === 'misfile') {
-      const mine = tagMisfiles(c).filter(x => x.currentPlaylistId === pl);
-      S.mfBand = ['high', 'medium', 'low'].find(b => mine.some(x => x.confidence === b)) ?? S.mfBand;
-    }
-    if (sec === 'sound') {
-      const mine = c.tidySoundRows().filter(x => x.from === pl);
-      S.tsBand = ['sure', 'likely'].find(b => mine.some(x => x.band === b)) ?? S.tsBand;
+      const { sound, tag } = misfileRows(c);
+      const bands = [...sound.filter(x => x.from === pl).map(x => SOUND_BAND[x.band] ?? 'medium'),
+                     ...tag.filter(x => x.currentPlaylistId === pl).map(x => x.confidence)];
+      S.mfBand = ['high', 'medium', 'low'].find(b => bands.includes(b)) ?? S.mfBand;
     }
     S.tidyFocus = 'rows';
     c.render();
@@ -7600,22 +7656,31 @@ const left = n => (n ? `${n} left.` : 'That was the last one.');
 /** What the sprint walks, in the list's own order, decided ones gone. */
 function sprintRows(c, sec) {
   const { S } = c;
-  if (sec === 'misfile') return onlyPl(c, tagMisfiles(c), x => x.currentPlaylistId)
+  // Wrong place walks its rows in the order shown: the band's by-sound rows, then the tag ones.
+  if (sec === 'misfile') return [...(BAND_SOUND[S.mfBand] ? soundSprintRows(c, BAND_SOUND[S.mfBand]) : []),
+    ...onlyPl(c, misfileRows(c).tag, x => x.currentPlaylistId)
     .filter(x => x.confidence === S.mfBand && !S.moved.has(x.id))
     .map(x => {
       const to = (x.suggest ?? []).find(sg => sg.id);
       return to ? { id: x.id, title: x.title ?? '', artist: x.artist ?? '', art: x.art ?? null, from: x.currentPlaylistId, fromName: x.current ?? '',
         to: to.id, toName: to.name ?? to.id, tier: MF_TIER[S.mfBand] ?? '', away: x.suggest.filter(sg => sg.id).slice(0, 2).map(sg => sg.id),
         why: `${mfFitWord(x.currentScore)} fit here, ${mfFitWord(to.score)} there`, row: x } : null;
-    }).filter(Boolean);
-  if (sec === 'sound' && typeof c.tidySoundRows === 'function') return onlyPl(c, c.tidySoundRows(), x => x.from)
-    .filter(x => x.band === (S.tsBand ?? 'sure') && !S.moved.has(x.id))
+    }).filter(Boolean)];
+  if (sec === 'sound') return soundSprintRows(c, S.tsBand ?? 'sure');
+  return [];
+}
+
+/** The sound tier's rows of one band (sure / likely), shaped for the sprint. */
+function soundSprintRows(c, band) {
+  const { S } = c;
+  if (typeof c.tidySoundRows !== 'function') return [];
+  return onlyPl(c, c.tidySoundRows(), x => x.from)
+    .filter(x => x.band === band && !S.moved.has(x.id))
     .map(x => {
       const t = tidySoundTrack(c.LIB, x.id);
       return { id: x.id, title: t.title, artist: t.artist, art: t.art, from: x.from, fromName: x.fromName, to: x.to, toName: x.toName,
         tier: x.band, away: [x.to], why: (x.why ?? []).join('; ') };
     });
-  return [];
 }
 
 function readSprints(c) {
@@ -7735,6 +7800,10 @@ function sprintKeys(doc) {
   };
 }
 
+/** Tidy's background work, called by boot once the radar's first read has run (§7.7 A2):
+ *  Hard to find checks a batch by itself, so its count is real before anyone opens it. */
+function background(c) { return hiddenAuto(c); }
+
 function mount(c) {
   hiddenMount(c);
   const doc = c.document;
@@ -7754,7 +7823,7 @@ function mount(c) {
   else if (want === 'sprintstart') (doc.getElementById('sprintGo') ?? doc.querySelector('#main .tidysecs [aria-pressed="true"]'))?.focus();
   else if (want === 'rows') (doc.querySelector('#main .rows .row .acts button:not([disabled])') ?? doc.querySelector('#main .tidypl button'))?.focus();
 }
-return { secDupes, secCross, tagMisfiles, secSound, secMisfile, view, actions, healthReport, secHealth, sprintRows, mount };
+return { secDupes, secCross, tagMisfiles, misfileRows, secMisfile, view, actions, healthReport, secHealth, sprintRows, background, mount };
 })();
 /* ---- web/screens/helpers.mjs ---- */
 __mod["web/screens/helpers.mjs"] = (function () {
@@ -10599,7 +10668,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-0604';
+const BUILD = '2026-11-18-0615';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10937,7 +11006,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-0604', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-0615', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11722,7 +11791,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-0604');
+    const w = new Worker('reports-worker.js?v=2026-11-18-0615');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15278,7 +15347,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-0604';
+    s.src = 'engine.js?v=2026-11-18-0615';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15300,7 +15369,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-0604');
+    const w = new Worker('engine-worker.js?v=2026-11-18-0615');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16011,7 +16080,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-0604';
+    s.src = 'audio.js?v=2026-11-18-0615';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16065,7 +16134,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0604', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0615', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17225,7 +17294,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0604', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0615', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -17982,6 +18051,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_fill', group:'Your library', why:'This account\'s own "Fill this playlist" score from the last Score run, which decides whether Fill is shown.' },
   { where:'local', key:'bf_teach', group:'Your library', why:'This account\'s own teach-queue measurement from the last Score run (the engine\'s score on your filed tracks before and after 20 simulated answers), which decides whether File shows the teach questions.' },
   { where:'local', key:'bf_tidy_sprint', group:'Your library', why:'Your last 20 Tidy sprints: how many tracks you decided, how fast, and how many moves you kept. Counts only, kept here and never sent.' },
+  { where:'local', key:'bf_hidden_auto', group:'Your library', why:'When Tidy last checked a batch of your songs against Spotify search by itself, so it does that at most once a day.' },
   { where:'local', key:'bf_mergesplit', group:'Your library', why:'Which merge and split offers (twin playlists, playlists that are two genres) were shown, dismissed or made, and when. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_onb_done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 
@@ -19134,7 +19204,9 @@ async function start(force) {
       await engineAutoLearn().catch(() => false);
       // Release Radar starts by itself too, a little later (radar.js radarAuto), unless Stop was
       // pressed on this device. Not awaited: it reads Spotify, the similar artists below read others.
-      if (typeof radarAuto === 'function') radarAuto().catch(() => false);
+      // After its first read, Tidy › Hard to find checks a batch by itself (DESIGN-PLAN §7.7 A2).
+      if (typeof radarAuto === 'function') radarAuto()
+        .then(ran => ran && SCREEN_MODS.tidy?.background?.(screenCtx('tidy'))).catch(() => false);
       // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
       // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
       // don't compete with the tag lookups; resumes where the last load stopped.

@@ -323,7 +323,9 @@ async function start(force) {
       await engineAutoLearn().catch(() => false);
       // Release Radar starts by itself too, a little later (radar.js radarAuto), unless Stop was
       // pressed on this device. Not awaited: it reads Spotify, the similar artists below read others.
-      if (typeof radarAuto === 'function') radarAuto().catch(() => false);
+      // After its first read, Tidy › Hard to find checks a batch by itself (DESIGN-PLAN §7.7 A2).
+      if (typeof radarAuto === 'function') radarAuto()
+        .then(ran => ran && SCREEN_MODS.tidy?.background?.(screenCtx('tidy'))).catch(() => false);
       // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
       // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
       // don't compete with the tag lookups; resumes where the last load stopped.

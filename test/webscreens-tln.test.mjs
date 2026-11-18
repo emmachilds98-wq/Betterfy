@@ -7,13 +7,14 @@ import * as NEW from '../web/screens/new.mjs';
 // Tidy, Playlists and New playlists as screen modules (docs/BUILD-5-PLAN.md A4):
 // their actions, on fixture ctxs.
 
-test('Tidy: choosing a section and the cross-filed threshold repaint, and the threshold is remembered only on request', () => {
+test('Tidy: choosing a section and a band repaint, and the band is remembered only on request', () => {
   let drawn = 0, saved = 0;
   const c = { S: {}, T: { rememberFilters: false }, render: () => drawn++, saveTheme: () => saved++ };
   TIDY.actions.section(c, { dataset: { tidy: 'cross' } });
   assert.equal(c.S.tidySec, 'cross');
-  TIDY.actions.cmin(c, { dataset: { cmin: '4' } });
-  assert.equal(c.S.crossMin, 4);
+  // Cross-filed's 2+…6+ row is gone (DESIGN-PLAN §7.7 C4): fixed at two or more.
+  assert.equal(TIDY.actions.cmin, undefined);
+  TIDY.actions.mfb(c, { dataset: { mfb: 'medium' } });
   assert.equal(saved, 0);
   c.T.rememberFilters = true;
   TIDY.actions.mfb(c, { dataset: { mfb: 'low' } });
