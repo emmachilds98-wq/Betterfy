@@ -60,7 +60,7 @@ by screen in A4.
 | `app/render.js` | `VIEWS`, `render()`, `go()` |
 | `app/gestures.js` | touch gestures |
 | `app/sheet.js` | dragging the Settings sheet down to close it |
-| `app/shell.js` | the 4-tab shell (UI-D): the Settings sheet's "Under the hood" sections (Sources, Engine, History), Library's switch, the File status line |
+| `app/shell.js`, `screens/settings.mjs` | the 4-tab shell (UI-D) and the Settings sheet: one list of collapsible sections, each with a one-line status (settings.mjs has the order, words and markup; shell.js holds which are open; styles in `styles/82-settings.css`), Library's switch, the File status line |
 | `app/errors.js` | `guard()`, `fire()`: nothing fails in silence |
 | `app/engine.js` | engine glue: lazy `engine.js`, the worker, calibration, the neighbour bridge |
 | `app/audio.js` | listening glue: lazy `audio.js`, settings, mood/voice/energy |

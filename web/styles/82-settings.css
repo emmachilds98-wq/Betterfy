@@ -1,0 +1,55 @@
+/* The Settings sheet as one list of collapsible sections (web/screens/settings.mjs, web/app/shell.js).
+   Every row, toggle and button here is built from the existing tokens; nothing is drawn inline. */
+
+  /* The list: the sections, then Disconnect. */
+  #underHood{display:flex; flex-direction:column}
+  .settings-body #underHood{gap:0}
+  .uh{margin:0 0 10px}
+  .uhhead{min-height:56px}
+  .uhhead:focus-visible{outline:2px solid var(--accent); outline-offset:-2px; border-radius:var(--r-2)}
+  .uhs{white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.35}
+  .uhbody>:first-child{margin-top:0}
+  .uhbody[hidden]{display:none}
+  .uhdisc{margin-top:14px; padding-top:16px; border-top:1px solid var(--line)}
+  .uhdisc .hint{margin:0 0 10px}
+  .uhdisc .b{color:var(--warn); border-color:var(--warn)}
+
+  /* A heading inside a section's body. */
+  .settings-body .uhsub{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:600; margin:20px 0 6px}
+  .uhbody>.uhsub:first-child{margin-top:0}
+  .uhbody section{margin:0}
+  .uhbody .rowbtns{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0}
+  .uhbody input:not([type]), .uhbody input[type="text"]{flex:1 1 180px; min-width:0; width:auto}
+
+  /* The score line at the head of "Your score & how it picks". */
+  .scoreline{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 12px; margin:0 0 4px}
+  .scoreline .scoretxt{font-size:15px; min-width:0}
+  .scoreline .rowbtns{margin:0}
+
+  /* Sources and the list of what is helping: flat inside their section, not cards in a card. */
+  .helpers.bare{background:none; border:0; padding:0; margin:0 0 14px}
+  .hsum{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:0 0 6px}
+  .uhbody .srcgrid{grid-template-columns:1fr; gap:0}
+  .uhbody .srccard{background:none; border:0; border-top:1px solid var(--line); border-radius:0; padding:14px 0 6px}
+  .uhbody .srchead h2{margin:0; font-size:var(--fs-h3, 15px)}
+  .uhbody .srcline{margin:0 0 10px}
+  .uhbody .yourdata.bare{margin-top:0}
+  .uhbody .yourdata .bkh:first-child{margin-top:0}
+
+  /* Listening: one state line, the three things you can set, the buttons, then Deep listen. */
+  .lp-state{display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; margin:0 0 8px}
+  .lp-heard{color:var(--ink-2); font-size:13.5px}
+  .lp-opts{display:flex; flex-direction:column; gap:2px; margin:6px 0 4px}
+  .lp-opt{display:flex; align-items:center; gap:6px 9px; font-size:13.5px; color:var(--ink-2); padding:6px 0; cursor:pointer; min-height:36px}
+  .lp-opt input[type=checkbox]{width:16px; height:16px; flex:none; accent-color:var(--accent)}
+  .lp-opt.lp-sel{flex-wrap:wrap}
+  .lp-opt select{max-width:100%; min-width:0}
+  .lp-note{margin:8px 0}
+  .lp-bar{width:100%}
+  .lp-deep{margin-top:16px; padding-top:14px; border-top:1px solid var(--line)}
+  .lp-deep h3{margin:0 0 4px}
+
+  @media (max-width:640px){
+    .lp-opt{min-height:44px}
+    .lp-opt input[type=checkbox]{width:19px; height:19px}
+  }

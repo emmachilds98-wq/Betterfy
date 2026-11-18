@@ -59,38 +59,25 @@ export function coverageHTML(cov) {
     ${unasked.length ? `<p class="srcline sub">Asked so far: ${unasked.join(', ')}. The rest are looked up as File, Score and Discover need them.</p>` : ''}`;
 }
 
-/** Where genre data and (later) listening come from — moved out of Playlists,
- *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
- *  same ids, same handlers as before; only the location changed. */
-export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
-                       sourceCoverage = () => null, helpersPanelHTML = () => '', ...rest }) {
-  const cov = tagCoverage();
-  const { base } = playlistMixes();
-  const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
-  const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
-  return `<h1>Sources</h1>
-    <p class="lede">Where your genre data comes from.${infoBtn('sources', 'Genre sources', `<p>Spotify provides no genre data, so tags come from Last.fm and Wikidata, and, once Listening is on, from how your tracks sound. This page ships a prebuilt set covering many
-        artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
-        Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
-        <b>Wrong tags?</b> under it on a Tidy or File row.</p>
-      ${genreShare === null ? '' : `<p>Of all the tag weight across your library, <b>${genreShare}%</b> describes a
-        sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
-        evidence of genre.</p>`}`)}</p>
-    ${helpersPanelHTML()}
-    <p class="srccov"><b class="mono">${cov.have.toLocaleString()}</b> of <span class="mono">${cov.total.toLocaleString()}</span>
-      artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
+/** The Listening section's body: the one panel (on/off, Wi-Fi rule, scope, Deep listen), then the label check. */
+export function listeningHTML({ audioPanelHTML = () => '', labelCheckHTML = () => '' }) {
+  return `<div class="srclisten" id="src-listening">${audioPanelHTML()}</div>${labelCheckHTML()}`;
+}
 
+/** The sources section's body (Settings > What's helping your picks): every source with its live
+ *  check, then what each knows about this account and the two that take a key. */
+export function sourcesHTML({ LS, esc, lfmKey, sourceCoverage = () => null, helpersPanelHTML = () => '' }) {
+  const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
+  const cov = (body => body ? sourceCard('coverage', 'Your artists', 'ok', 'This account',
+      'How much each source knows about the artists in your own library, worked out on this device.', body) : '')(
+      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())));
+  return `${helpersPanelHTML({ bare: true })}
     <div class="srcgrid">
-    ${(body => body ? sourceCard('coverage', 'Your artists', 'ok', 'This account',
-      'How much each source knows about the artists in your own library, worked out on this device.', body) + '\n\n    ' : '')(
-      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())))}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'On · your key' : lfm ? 'On · built-in key' : 'Off',
+    ${cov}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'On · your key' : lfm ? 'On · built-in key' : 'Off',
       'Crowd genre tags for the artists the shipped set doesn\'t cover. '
         + (!lfmOwn && lfm ? 'On for everyone with Betterfy\'s built-in key, and asked by itself every time Betterfy opens, most-played artists first. Your own key is optional.' : lfm ? 'Asked by itself every time Betterfy opens, most-played artists first.' : 'Needs a free API key.'),
       `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : lfm ? 'Use my own key' : 'Connect Last.fm'}</button>
         <button class="b sm" id="enrich" data-act="enrich" ${lfm ? '' : 'disabled'}>Ask again now</button></div>`)}
-
-    ${sourceCard('wikidata', 'Wikidata', 'ok', 'On · no key',
-      'Genres for about a third of artists, mostly established ones. Asked by itself every time Betterfy opens, before Last.fm.', '')}
 
     ${sourceCard('discogs', 'Discogs', discogs ? 'ok' : 'idle', discogs ? 'Token saved' : 'Optional',
       'Styles from an artist\'s own releases, finer than one flat tag. Only fills gaps Last.fm leaves, as part of the same start-up check.',
@@ -99,9 +86,28 @@ export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlis
         <button class="b" id="saveDiscogs" data-act="saveDiscogs">Save token</button>
         <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
       </div>`)}
+    </div>`;
+}
 
-    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>${labelCheckHTML()}
-    </div>${rest.DATA_KEYS ? '\n    ' + yourDataHTML({ esc, ...rest }) : ''}`;
+/** The whole of what used to be the Sources screen. The Settings sheet draws the same parts as three
+ *  sections (Listening, What's helping your picks, Your data); this stays for the tests and as one page. */
+export function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
+                       sourceCoverage = () => null, helpersPanelHTML = () => '', ...rest }) {
+  const cov = tagCoverage();
+  const { base } = playlistMixes();
+  const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
+  return `<h1>Sources</h1>
+    <p class="lede">Where your genre data comes from.${infoBtn('sources', 'Genre sources', `<p>Spotify provides no genre data, so tags come from Last.fm and Wikidata, and, once Listening is on, from how your tracks sound. This page ships a prebuilt set covering many
+        artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
+        Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
+        <b>Wrong tags?</b> under it on a Tidy or File row.</p>
+      ${genreShare === null ? '' : `<p>Of all the tag weight across your library, <b>${genreShare}%</b> describes a
+        sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
+        evidence of genre.</p>`}`)}</p>
+    <p class="srccov"><b class="mono">${cov.have.toLocaleString()}</b> of <span class="mono">${cov.total.toLocaleString()}</span>
+      artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
+    ${sourcesHTML({ LS, esc, lfmKey, sourceCoverage, helpersPanelHTML })}
+    ${listeningHTML({ audioPanelHTML, labelCheckHTML })}${rest.DATA_KEYS ? '\n    ' + yourDataHTML({ esc, ...rest }) : ''}`;
 }
 
 const WHERE = { local: 'This browser', idb: 'This browser (database)', 'idb-db': 'This browser (database)', firestore: 'Firestore' };
@@ -130,12 +136,12 @@ function restoreHTML(BK, esc) {
 }
 
 /** Settings › Your data: backup and restore, every key kept and why, who hears what, and the wipe (BUILD-6 F7/F8). */
-export function yourDataHTML({ esc, BK = { stage: 'idle' }, DATA_KEYS = [], DATA_SERVICES = [], myPlaylists = () => 0 }) {
+export function yourDataHTML({ esc, BK = { stage: 'idle' }, DATA_KEYS = [], DATA_SERVICES = [], myPlaylists = () => 0, bare = false }) {
   const groups = new Map();
   for (const k of DATA_KEYS) (groups.get(k.group) ?? groups.set(k.group, []).get(k.group)).push(k);
   const n = myPlaylists();
-  return `<section class="srccard yourdata" id="src-data" aria-labelledby="src-data-h">
-    <div class="srchead"><h2 id="src-data-h">Your data</h2><span class="tag ok">On this device</span></div>
+  return `<section class="yourdata${bare ? ' bare' : ' srccard'}" id="src-data"${bare ? '' : ' aria-labelledby="src-data-h"'}>
+    ${bare ? '' : '<div class="srchead"><h2 id="src-data-h">Your data</h2><span class="tag ok">On this device</span></div>'}
     <p class="srcline">What Betterfy keeps lives in this browser. Nothing from your library is pooled with other accounts or uploaded anywhere
       except to the services listed below, and only for the reason given.</p>
 
@@ -147,7 +153,7 @@ export function yourDataHTML({ esc, BK = { stage: 'idle' }, DATA_KEYS = [], DATA
     ${restoreHTML(BK, esc)}
 
     <details class="bkkeys"><summary>What is kept, and why (${DATA_KEYS.length})</summary>
-      ${[...groups].map(([g, ks]) => `<h4>${esc(g)}</h4><dl>${ks.map(k => `<dt>${esc(k.name ?? k.key)} <span class="sub">${WHERE[k.where] ?? esc(k.where)}</span> <code class="bkraw">${esc(k.key)}${k.prefix ? '…' : ''}</code></dt><dd>${esc(k.why)}</dd>`).join('')}</dl>`).join('')}
+      ${[...groups].map(([g, ks]) => `<h4>${esc(g)}</h4><dl>${ks.map(k => `<dt>${esc(k.name ?? k.key)} <span class="sub">${WHERE[k.where] ?? esc(k.where)}</span></dt><dd>${esc(k.why)}</dd>`).join('')}</dl>`).join('')}
     </details>
     <details class="bkkeys"><summary>Who hears from Betterfy (${DATA_SERVICES.length})</summary>
       <dl>${DATA_SERVICES.map(s => `<dt>${esc(s.name)}</dt><dd>${esc(s.what)}</dd>`).join('')}</dl>

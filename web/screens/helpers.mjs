@@ -140,7 +140,7 @@ export function helperAttention(rows, checks = {}) {
 /** The panel (DESIGN-PLAN L5): folded to its header ("12 of 12 on") plus any row that asks
  *  for a look; the whole list opens on tap. `checks` are the live results by row id;
  *  `running` while a check is out; `open` keeps the fold open across repaints. */
-export function helpersHTML(rows, { checks = {}, running = false, at = null, open = false, esc = s => String(s ?? '') } = {}) {
+export function helpersHTML(rows, { checks = {}, running = false, at = null, open = false, bare = false, esc = s => String(s ?? '') } = {}) {
   const row = r => { const c = checks?.[r.id];
     return `<li class="hrow2 h-${r.kind}${c?.ok === false ? ' h-fail' : ''}" data-helper="${esc(r.id)}">
         <span class="hdot" aria-hidden="true"></span>
@@ -148,6 +148,13 @@ export function helpersHTML(rows, { checks = {}, running = false, at = null, ope
           c ? `<span class="hcheck${c.ok === false ? ' bad' : c.ok ? ' good' : ''}">${esc(checkWords(c))}</span>` : ''}</span>
         <span class="tag ${r.kind === 'off' ? 'idle' : r.kind}">${esc(r.status)}</span></li>`; };
   const look = helperAttention(rows, checks);
+  const btn = `<button class="b sm" type="button" data-hcheck${running ? ' disabled' : ''}>${running ? 'Checking…' : at ? 'Check again' : 'Check they all answer'}</button>`;
+  // Inside its own Settings section (owner's ask 2026-11-18): the section header is the fold, so the
+  // whole list is shown, every source on with its live check, under one summary line.
+  if (bare) return `<div class="helpers bare" id="helpers">
+    <p class="hsum">${look.length ? `<span class="tag warn">${esc(helperSummary(rows, checks))}</span>` : ''}${btn}</p>
+    <ul class="hlist">${rows.map(row).join('')}</ul>
+  </div>`;
   return `<section class="helpers" id="helpers" aria-labelledby="helpers-h">
     <details class="helpers-fold" data-hfold${open ? ' open' : ''}>
       <summary class="helpers-head"><h3 id="helpers-h">What's helping your picks</h3><span class="tag ${look.length ? 'warn' : 'ok'}">${esc(helperSummary(rows, checks))}</span></summary>

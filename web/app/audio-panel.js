@@ -2,12 +2,13 @@
 let AUDIO_DRAW = 0;
 function audioRedraw() {
   setListen(AUDIO.vm);
-  if (!settingsOpen() || S.uhOpen !== 'sources') return;
+  if (!settingsOpen()) return;
   if (AUDIO_DRAW) return;
   AUDIO_DRAW = requestAnimationFrame(() => {
     AUDIO_DRAW = 0;
     const el = document.getElementById('audioPanel');
     if (el) el.outerHTML = audioPanelHTML();
+    if (typeof uhSummaryTick === 'function') uhSummaryTick();
   });
 }
 
@@ -134,7 +135,7 @@ function audioPanelHTML() {
   const nMissed = missed.reduce((s, [, n]) => s + n, 0);
   const running = vm.state === 'running';
   const tidy = listenTidyText(vm);
-  const status = !set.on ? 'Off.'
+  const status = !set.on ? 'Tick “Listen to my music” to start.'
     : running && tidy ? `Tidying up after this run: ${esc(tidy)}.` + (vm.reason && vm.reason !== 'stopped' ? ` (${esc(vm.reason)})` : '')
     : running ? (vm.total ? `Listening… ${vm.done.toLocaleString()} of ${vm.total.toLocaleString()} this run.` : 'Starting…')
       + (vm.reason && vm.reason !== 'stopped' ? ` (${esc(vm.reason)})` : '')
@@ -144,33 +145,33 @@ function audioPanelHTML() {
     : vm.state === 'done' ? 'Up to date for this scope.'
     : vm.state === 'paused' ? `Stopped${vm.reason && vm.reason !== 'stopped' ? ': ' + esc(vm.reason) : ''}. It carries on where it left off.`
     : 'Ready.';
-  return `<div id="audioPanel">
-    <div class="srchead"><h2 id="src-listening-h">Listen to my music</h2><span class="tag ${!set.on ? 'idle' : running || vm.state === 'done' ? 'ok' : 'idle'}">${
-      !set.on ? 'Off' : running ? 'Listening' : vm.state === 'done' ? 'Up to date' : 'Paused'}</span></div>
-    <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. On by default; untick it to stop.</p>
-    ${infoBtn('listen', 'Listening', `<p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
+  const state = !set.on ? ['idle', 'Off'] : running ? ['ok', 'Listening'] : vm.state === 'done' ? ['ok', 'Up to date'] : ['idle', 'Paused'];
+  const lib = libTrackCount(), heard = (typeof listenHeard === 'function' ? listenHeard() : 0) || vm.heard || 0;
+  const bar = running && tidy ? `<progress class="lp-bar" max="${vm.tidy.total}" value="${Math.min(vm.tidy.done, vm.tidy.total)}"></progress>`
+    : running && vm.total ? `<progress class="lp-bar" max="${vm.total}" value="${vm.done}"></progress>` : '';
+  return `<div id="audioPanel" class="lp">
+    <p class="lp-state"><span class="tag ${state[0]}">${state[1]}</span>
+      <span class="lp-heard">${heard ? `Heard ${heard.toLocaleString()}${lib >= heard ? ` of ${lib.toLocaleString()}` : ''} track${(lib >= heard ? lib : heard) === 1 ? '' : 's'} so far.` : 'Nothing heard yet.'}</span></p>
+    <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. It is on unless you untick it.${infoBtn('listen', 'Listening', `<p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
       30-second preview, found by the track’s ISRC) and remembers what it sounds like. The audio is never stored, only a
       ~2.5 KB summary on this device. Switching it on downloads the listening model once (about 37 MB),
       then about 330 KB per track. “What I’m playing + unfiled” also hears up to 20 tracks from each genre
-      playlist, so there is something to compare the rest against.</p>`)}
-    <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioOn" ${set.on ? 'checked' : ''}> Listen to my music</label>
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioWifi" ${set.wifiOnly ? 'checked' : ''}> Wi-Fi only</label>
-      <select id="audioScope" aria-label="Which tracks to listen to">${Object.entries(scopes).map(([k, v]) =>
-        `<option value="${k}" ${set.scope === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
-      ${running ? '<button class="b" id="audioStop">Stop</button>'
-        : set.on ? '<button class="b p" id="audioGo">Listen now</button>' : ''}
+      playlist, so there is something to compare the rest against.</p>`)}</p>
+    <div class="lp-opts">
+      <label class="lp-opt"><input type="checkbox" id="audioOn" ${set.on ? 'checked' : ''}> Listen to my music</label>
+      <label class="lp-opt"><input type="checkbox" id="audioWifi" ${set.wifiOnly ? 'checked' : ''}> Only on Wi-Fi, so it never uses mobile data</label>
+      <label class="lp-opt lp-sel">Listen to <select id="audioScope" aria-label="Which tracks to listen to">${Object.entries(scopes).map(([k, v]) =>
+        `<option value="${k}" ${set.scope === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
     </div>
-    ${set.on && vm.reason === 'ask' ? `<p class="sub" style="margin:8px 0">This browser doesn’t say whether it is on Wi-Fi.
+    <div class="rowbtns">${running ? '<button class="b" id="audioStop">Stop</button>'
+        : set.on ? '<button class="b p" id="audioGo">Listen now</button>' : ''}</div>
+    ${set.on && vm.reason === 'ask' ? `<p class="sub lp-note">This browser doesn’t say whether it is on Wi-Fi.
       <button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button></p>` : ''}
-    <p class="sub" id="audioStatus" style="margin:8px 0">${status}
-      ${vm.heard ? ` ${vm.heard.toLocaleString()} track${vm.heard === 1 ? '' : 's'} heard so far.` : ''}
-      ${running && tidy ? `<progress max="${vm.tidy.total}" value="${Math.min(vm.tidy.done, vm.tidy.total)}" style="width:100%"></progress>`
-        : running && vm.total ? `<progress max="${vm.total}" value="${vm.done}" style="width:100%"></progress>` : ''}</p>
+    <p class="sub lp-note" id="audioStatus">${status}</p>${bar}
     ${listenPill(vm)}
-    ${missedList(vm) || (nMissed ? `<details class="sub" style="margin:8px 0"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
+    ${missedList(vm) || (nMissed ? `<details class="sub lp-note"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
-    ${AUDIO.err ? `<p class="sub">${esc(AUDIO.err)}</p>` : ''}
+    ${AUDIO.err ? `<p class="sub">${esc(SCREEN_MODS.settings?.plainProblem?.(AUDIO.err) || AUDIO.err)}</p>` : ''}
     ${set.on ? deepPanelHTML() : ''}
   </div>`;
 }
@@ -180,15 +181,15 @@ function audioPanelHTML() {
 function deepPanelHTML() {
   const d = deepSettings();
   const why = ear => { const a = deepAllowed(ear); return d[ear] && a !== 'ok' && a !== 'off'
-    ? `<p class="sub" style="margin:4px 0">${esc(globalThis.BetterfyAudio?.DEEP_TEXT?.[a] ?? a)}</p>` : ''; };
-  return `<div id="deepPanel" style="margin-top:12px">
-    <h3 id="src-deep-h">Deep listen (laptop)</h3>
-    <p class="srcline">Larger listening models, for a computer on Wi-Fi. Both are on: each downloads once, only on Wi-Fi. Untick one to skip it.</p>
-    <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMaest" ${d.maest ? 'checked' : ''}> Second ear (MAEST, about 90 MB)</label>
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP, about 77 MB)</label>
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepBeats" ${d.beats ? 'checked' : ''}> Better tempo (Beat This, about 10 MB)</label>
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has the memory (8 GB or more)</label>
+    ? `<p class="sub lp-note">${esc(globalThis.BetterfyAudio?.DEEP_TEXT?.[a] ?? a)}</p>` : ''; };
+  return `<div id="deepPanel" class="lp-deep">
+    <h3 id="src-deep-h">Deep listen</h3>
+    <p class="srcline">Finer listening for a computer on Wi-Fi. Each part downloads once, only on Wi-Fi, and is on until you untick it.</p>
+    <div class="lp-opts">
+      <label class="lp-opt"><input type="checkbox" id="deepMaest" ${d.maest ? 'checked' : ''}> A second ear for genre (about 90 MB)</label>
+      <label class="lp-opt"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description, like “warm dub techno” (about 77 MB)</label>
+      <label class="lp-opt"><input type="checkbox" id="deepBeats" ${d.beats ? 'checked' : ''}> Better tempo, fixing half-time and double-time mix-ups (about 10 MB)</label>
+      <label class="lp-opt"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has 8 GB of memory or more</label>
     </div>
     ${why('maest')}${d.maest ? maestLineHTML() : ''}${why('clap')}${clapStatusHTML(d)}${why('beats')}${beatsStatusHTML(d)}
   </div>`;
@@ -198,10 +199,10 @@ function maestLineHTML() {
   const v = AUDIO.maestVm, run = v?.state === 'running';
   const text = globalThis.BetterfyAudio?.maestStatusText ? BetterfyAudio.maestStatusText(v) : '';
   const ok = deepAllowed('maest') === 'ok';
-  return `<p class="sub" id="maestStatus" style="margin:4px 0">${esc(text)}
+  return `<p class="sub lp-note" id="maestStatus">${esc(text)}
     ${run ? '<button class="b sm" id="maestStop">Stop</button>' : v?.state === 'waiting' ? '' : ok && audioSettings().on ? '<button class="b sm" id="maestGo">Listen with the second ear now</button>' : ''}
     ${deepAllowed('maest') === 'unknown' ? '<button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button>' : ''}</p>
-    <p class="sub">It changes no suggestion until a Score run (More → Engine) shows it places your tracks better than the first ear.</p>`;
+    <p class="sub lp-note">It changes no suggestion until a score (under “Your score & how it picks”) shows it places your tracks better than the first ear.</p>`;
 }
 
 /** Beat This's line: how many octave-unsure tempos it has re-listened to. Nothing while off. */
@@ -209,7 +210,7 @@ function beatsStatusHTML(d) {
   if (!d.beats || deepAllowed('beats') !== 'ok' || !globalThis.BetterfyAudio?.needsBeatsFlagged) return '';
   const flagged = [...(AUDIO.records?.values() ?? [])].filter(r => !r.miss && r.dsp?.octaveAmbiguous === true);
   const left = flagged.filter(r => BetterfyAudio.needsBeatsFlagged(r)).length;
-  return `<p class="sub" style="margin:4px 0">${left ? `${left.toLocaleString()} track${left === 1 ? '' : 's'} where half or double time was unsure still to re-check, ${BetterfyAudio.BEATS_FILL_PER_RUN} more each time it listens.` : 'Every tempo that was unsure between half and double time has been re-checked.'} Tempos that were already clear are left alone. The model is about 10 MB, downloaded once.</p>`;
+  return `<p class="sub lp-note">${left ? `${left.toLocaleString()} track${left === 1 ? '' : 's'} where half or double time was unsure still to re-check, ${BetterfyAudio.BEATS_FILL_PER_RUN} more each time it listens.` : 'Every tempo that was unsure between half and double time has been re-checked.'} Tempos that were already clear are left alone. The model is about 10 MB, downloaded once.</p>`;
 }
 
 /** CLAP's line in the Deep listen block: how many heard tracks it has described. Nothing while off. */
@@ -217,6 +218,6 @@ function clapStatusHTML(d) {
   if (!d.clap || deepAllowed('clap') !== 'ok' || !globalThis.BetterfyAudio?.needsClap) return '';
   const heard = [...(AUDIO.records?.values() ?? [])].filter(r => !r.miss);
   const done = heard.filter(r => !BetterfyAudio.needsClap(r)).length;
-  return `<p class="sub" style="margin:4px 0">Described ${done.toLocaleString()} of ${heard.length.toLocaleString()} heard track${heard.length === 1 ? '' : 's'}${
+  return `<p class="sub lp-note">Described ${done.toLocaleString()} of ${heard.length.toLocaleString()} heard track${heard.length === 1 ? '' : 's'}${
     done < heard.length ? `, ${BetterfyAudio.CLAP_FILL_PER_RUN} more each time it listens` : ''}. The model is about 77 MB, downloaded once.</p>`;
 }

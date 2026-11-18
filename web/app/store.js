@@ -43,7 +43,7 @@ for (const screen of STORE_SCREENS)
 function storeRepaint(screens) {
   // History and Sources are sections of the Settings sheet now: repaint
   // the one that is open, and not the page behind it.
-  if (typeof settingsOpen === 'function' && settingsOpen() && screens.includes(S.uhOpen)) underHoodRefresh();
+  if (typeof settingsOpen === 'function' && settingsOpen() && typeof uhOpenMods === 'function' && uhOpenMods().some(m => screens.includes(m))) underHoodRefresh();
   if (typeof view === 'undefined' || !screens.includes(view) || !document.getElementById('main')) return;
   render();
 }

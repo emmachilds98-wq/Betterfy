@@ -16,7 +16,7 @@ test.after(async () => { await browser?.close(); });
 async function openYourData(page) {
   await page.click('#btnSettings');
   await page.waitForSelector('#settingsPanel.open');
-  if (!(await page.locator('#src-data').count())) await page.click('[data-uhtoggle="sources"]');
+  if (!(await page.locator('#src-data').count())) await page.click('[data-uhtoggle="data"]');
   await page.waitForSelector('#src-data');
 }
 

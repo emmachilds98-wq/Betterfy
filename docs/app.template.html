@@ -206,101 +206,105 @@ __STYLES__</style>
     <button class="iconbtn" id="closeSettings" aria-label="Close settings">✕</button>
   </div>
   <div class="settings-body">
-    <!-- Listening, the genre sources, the engine and History: filled by
-         app/shell.js, one open section at a time. -->
+    <!-- One list of collapsible sections (web/screens/settings.mjs has the order and the words).
+         The first five are drawn into #uhBody by app/shell.js; Appearance and About & updates are
+         markup here, wired once by id, and only shown or hidden by shell.js. Disconnect is last. -->
     <section id="underHood">
-      <h3>Under the hood</h3>
       <div id="uhBody"></div>
-    </section>
-    <section>
-      <h3>Appearance</h3>
-      <p class="hint">Betterfy opens in Nightshift. System follows whatever your phone is doing, including its sunset schedule.</p>
-      <div class="modes" id="modeGroup">
-        <button type="button" class="night" data-mode="dark"><span class="sw"><i></i><i></i></span>Nightshift</button>
-        <button type="button" class="day" data-mode="light"><span class="sw"><i></i><i></i></span>Daylight</button>
-        <button type="button" class="sys" data-mode="system"><span class="sw"><i></i><i></i></span>System</button>
+      <div class="uh" data-uhsec="appearance">
+        <button class="uhhead" type="button" id="uh-appearance-h" data-uhtoggle="appearance" aria-expanded="false" aria-controls="uh-appearance-b">
+          <span class="uht"><b>Appearance</b><span class="uhs"></span></span><span class="chev" aria-hidden="true"></span></button>
+        <div class="uhbody" id="uh-appearance-b" role="region" aria-labelledby="uh-appearance-h" hidden>
+          <h4 class="uhsub">Theme</h4>
+          <p class="hint">Betterfy opens in Nightshift. System follows whatever your phone is doing, including its sunset schedule.</p>
+          <div class="modes" id="modeGroup">
+            <button type="button" class="night" data-mode="dark"><span class="sw"><i></i><i></i></span>Nightshift</button>
+            <button type="button" class="day" data-mode="light"><span class="sw"><i></i><i></i></span>Daylight</button>
+            <button type="button" class="sys" data-mode="system"><span class="sw"><i></i><i></i></span>System</button>
+          </div>
+          <h4 class="uhsub">Accent colour</h4>
+          <p class="hint">Each one has a light and a dark twin, so it stays readable in both themes.</p>
+          <div class="swatches" id="swatches"></div>
+          <div class="accentnow"><span class="nm" id="accentName">Ember</span><span class="hex" id="accentHex"></span></div>
+          <!-- The twelve above are the ones worth having. The wheel underneath is
+               still there for anyone who had already dialled in their own, and for
+               anyone who wants a colour the twelve don't cover. -->
+          <details class="custom" id="customAccent">
+            <summary>Custom colour</summary>
+            <label class="slider-row">Hue <input type="range" id="hue" min="0" max="360" step="1"><span id="hueVal"></span></label>
+            <label class="slider-row">Depth <input type="range" id="depth" min="0" max="100" step="1"><span id="depthVal"></span></label>
+            <label class="slider-row">Brightness <input type="range" id="bright" min="15" max="85" step="1"><span id="brightVal"></span></label>
+            <div class="preview-row"><span class="preview-chip">Preview</span></div>
+            <h4 class="uhsub">Apply colour to</h4>
+            <label class="check-row"><input type="checkbox" data-region="nav"> Navigation highlight</label>
+            <label class="check-row"><input type="checkbox" data-region="btn"> Primary buttons</label>
+            <label class="check-row"><input type="checkbox" data-region="progress"> Progress bar</label>
+            <label class="check-row"><input type="checkbox" data-region="tag"> Tags &amp; chips</label>
+            <label class="check-row"><input type="checkbox" data-region="hover"> Hover &amp; focus</label>
+          </details>
+          <!-- The App icon preview was cut (DESIGN-PLAN §7.7 C7, provisional): a picture of the icon, no control. -->
+          <h4 class="uhsub">Lists</h4>
+          <label class="check-row"><input type="checkbox" id="compactToggle"> Compact rows (denser lists)</label>
+          <label class="check-row"><input type="checkbox" id="rememberToggle"> Remember last filters (Tidy)</label>
+          <div class="rowbtns"><button class="b" id="resetTheme" type="button">Reset look to defaults</button></div>
+        </div>
       </div>
-    </section>
-    <section>
-      <h3>Accent colour</h3>
-      <p class="hint">Each one has a light and a dark twin, so it stays readable in both themes.</p>
-      <div class="swatches" id="swatches"></div>
-      <div class="accentnow"><span class="nm" id="accentName">Ember</span><span class="hex" id="accentHex"></span></div>
-      <!-- The twelve above are the ones worth having. The wheel underneath is
-           still there for anyone who had already dialled in their own, and for
-           anyone who wants a colour the twelve don't cover. -->
-      <details class="custom" id="customAccent">
-        <summary>Custom colour</summary>
-        <label class="slider-row">Hue <input type="range" id="hue" min="0" max="360" step="1"><span id="hueVal"></span></label>
-        <label class="slider-row">Depth <input type="range" id="depth" min="0" max="100" step="1"><span id="depthVal"></span></label>
-        <label class="slider-row">Brightness <input type="range" id="bright" min="15" max="85" step="1"><span id="brightVal"></span></label>
-        <div class="preview-row"><span class="preview-chip">Preview</span></div>
-        <h3 style="margin-top:18px">Apply colour to</h3>
-        <label class="check-row"><input type="checkbox" data-region="nav"> Navigation highlight</label>
-        <label class="check-row"><input type="checkbox" data-region="btn"> Primary buttons</label>
-        <label class="check-row"><input type="checkbox" data-region="progress"> Progress bar</label>
-        <label class="check-row"><input type="checkbox" data-region="tag"> Tags &amp; chips</label>
-        <label class="check-row"><input type="checkbox" data-region="hover"> Hover &amp; focus</label>
-      </details>
-    </section>
-    <!-- The App icon preview was cut (DESIGN-PLAN §7.7 C7, provisional): a picture of the icon, no control. -->
-    <section>
-      <h3>Behaviour</h3>
-      <label class="check-row"><input type="checkbox" id="compactToggle"> Compact rows (denser lists)</label>
-      <label class="check-row"><input type="checkbox" id="rememberToggle"> Remember last filters (Tidy)</label>
-    </section>
-    <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, plus a
-         pull-down and two footer buttons. Next to the update button it read as
-         "get the latest Betterfy", which it is not: it re-reads every playlist
-         from Spotify, hundreds of calls against a quota that belongs to the app
-         rather than the listener — so pressing it by mistake is how a working
-         app becomes a rate-limited one. One home, named for what it does, in
-         the place you go on purpose. -->
-    <section id="librarySection">
-      <h3>Your library</h3>
-      <p class="hint">Betterfy keeps up as you file, so this is only for changes made
-        <em>outside</em> Betterfy — a playlist edited in Spotify itself. It re-reads every
-        playlist and can take a few minutes on a large library. This is not the app
-        update: that is <b>Check for updates</b>, under About below.</p>
-      <button class="b" id="settingsResync" type="button">Re-sync library from Spotify</button>
-    </section>
-    <!-- Hidden entirely unless the build has a Firebase project configured —
-         no config baked in, no section, same as the shared tag table it
-         reuses the project from. -->
-    <section id="syncSection" hidden>
-      <h3>Sync across devices</h3>
-      <p class="hint">Skips and rejections, tags you've corrected by hand, and which
-        playlists are genre playlists show up on your other signed-in devices too. Nothing
-        else is shared — not your library, not the tags fetched for you — and nothing
-        leaves this device until you link a second one.</p>
-      <div class="rowbtns" style="margin-bottom:8px">
-        <button class="b" id="syncShowCode" type="button">Link another device</button>
-        <button class="b" id="syncForget" type="button">Forget linked devices</button>
+      <div class="uh" data-uhsec="about">
+        <button class="uhhead" type="button" id="uh-about-h" data-uhtoggle="about" aria-expanded="false" aria-controls="uh-about-b">
+          <span class="uht"><b>About &amp; updates</b><span class="uhs"></span></span><span class="chev" aria-hidden="true"></span></button>
+        <div class="uhbody" id="uh-about-b" role="region" aria-labelledby="uh-about-h" hidden>
+          <p class="hint">Betterfy, build __BUILD__. <span id="sheetWho" class="mono"></span></p>
+          <div class="rowbtns"><button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button></div>
+          <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, which read as "get the latest
+               Betterfy". It is not: it re-reads every playlist from Spotify, hundreds of calls against a
+               quota that belongs to the app rather than the listener, so pressing it by mistake is how a
+               working app becomes a rate-limited one. One home, named for what it does. -->
+          <section id="librarySection">
+            <h4 class="uhsub">Your library</h4>
+            <p class="hint">Betterfy keeps up as you file, so this is only for changes made
+              <em>outside</em> Betterfy, like a playlist edited in Spotify itself. It re-reads every
+              playlist and can take a few minutes on a large library. It is not the app
+              update: that is <b>Check for updates</b>, above.</p>
+            <div class="rowbtns"><button class="b" id="settingsResync" type="button">Re-sync library from Spotify</button></div>
+          </section>
+          <!-- Hidden entirely unless the build has a Firebase project configured: no config baked in,
+               no section, same as the shared tag table it reuses the project from. -->
+          <section id="syncSection" hidden>
+            <h4 class="uhsub">Sync across devices</h4>
+            <p class="hint">Skips and rejections, tags you've corrected by hand, and which
+              playlists are genre playlists show up on your other signed-in devices too. Nothing
+              else is shared (not your library, not the tags fetched for you) and nothing
+              leaves this device until you link a second one.</p>
+            <div class="rowbtns">
+              <button class="b" id="syncShowCode" type="button">Link another device</button>
+              <button class="b" id="syncForget" type="button">Forget linked devices</button>
+            </div>
+            <div id="syncCodeBox" class="hint mono" hidden></div>
+            <div class="rowbtns">
+              <input id="syncRedeemInput" placeholder="Code from the other device" size="22" inputmode="numeric" maxlength="6">
+              <button class="b" id="syncRedeem" type="button">Link this device</button>
+            </div>
+          </section>
+          <section id="aboutSection">
+            <h4 class="uhsub">Credits</h4>
+            <p class="hint">
+              <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
+              genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
+              <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
+              release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
+              <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.</p>
+            <p class="hint" id="licences">Licences: the listening model is Discogs-EffNet and its mood, voice and danceability heads by the
+              Music Technology Group, Universitat Pompeu Fabra
+              (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
+              used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>; the optional second ear (MAEST) is by the same group, quantised, same licence. Previews from Deezer.</p>
+          </section>
+        </div>
       </div>
-      <div id="syncCodeBox" class="hint mono" style="margin-bottom:8px" hidden></div>
-      <div class="rowbtns">
-        <input id="syncRedeemInput" placeholder="Code from the other device" size="22" inputmode="numeric" maxlength="6">
-        <button class="b" id="syncRedeem" type="button">Link this device</button>
-      </div>
-    </section>
-    <section id="aboutSection">
-      <h3>About</h3>
-      <p class="hint">Betterfy, build __BUILD__. <span id="sheetWho" class="mono"></span><br>
-        <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
-        genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
-        <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
-        release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
-        <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.</p>
-      <p class="hint" id="licences">Licences: the listening model is Discogs-EffNet and its mood, voice and danceability heads by the
-        Music Technology Group, Universitat Pompeu Fabra
-        (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
-        used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>; the optional second ear (MAEST) is by the same group, quantised, same licence. Previews from Deezer.</p>
-      <div class="rowbtns">
-        <button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button>
+      <div class="uhdisc">
+        <p class="hint">Signs you out of Spotify on this device. Your playlists are not touched.</p>
         <button class="b" id="disconnect" type="button">Disconnect</button>
       </div>
     </section>
-    <button class="b" id="resetTheme" type="button">Reset look to defaults</button>
   </div>
 </div>
 

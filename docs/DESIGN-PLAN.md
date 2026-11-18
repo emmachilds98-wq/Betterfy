@@ -224,6 +224,8 @@ and New's is one sentence. Tests: `test/webdiscover.test.mjs`,
 
 ### L5: The Settings sheet
 
+**Refurbished (2026-11-18, owner's ask "better overall"):** the sheet is one list of collapsible sections, each with a status line while closed: Your score & how it picks, Listening (open first), What's helping your picks, Your data, History, Appearance, About & updates, then Disconnect. Several can be open; `#/engine`, `#/sources` and `#/history` open the section of that name. Words and markup are in `web/screens/settings.mjs`, state in `web/app/shell.js`, styles in `web/styles/82-settings.css`. The Sources screen's duplicate of the helpers list is gone; Deep listen labels are plain words; failures read as `plainProblem()`.
+
 **Done (2026-11-18), with C7 and A4, all provisional:** "What's helping your
 picks" folds to its header ("13 of 13 on") plus any row that is off, stuck or
 not answering, and opens on tap; a Release radar row says on, "reading N of M"
