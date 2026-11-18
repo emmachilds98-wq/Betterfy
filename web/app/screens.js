@@ -100,6 +100,9 @@ SCREEN_CTX.lists = () => ({
   TAGS, addTracks, logAction, undoAction, newGroup, engineLoad,
   engineAudio: () => (typeof engineAudio === 'function' ? engineAudio() : null),
   get BetterfyFill() { return globalThis.BetterfyFill; },
+  // A3: the same measure the background tick takes (app/autoscore.js), and whether it is running now.
+  fillMeasure: typeof fillMeasureNow === 'function' ? fillMeasureNow : undefined,
+  fillAutoRunning: () => typeof AUTOFILL !== 'undefined' && AUTOFILL.running,
   coldKick: needCold => coldKick(needCold),
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
   // "Find tracks that sound like…" lives in Library (F1): it searches your own library, not new music.

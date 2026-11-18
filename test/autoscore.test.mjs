@@ -79,6 +79,10 @@ test('the page runs it: bundled, in the manifest, started from boot, noted on a 
   assert.match(page, /engineValidate\(\)[\s\S]*engineTune\(\)[\s\S]*tuneApply\(\)/, 'Score, then Tune, then keep what cleared');
   assert.match(page, /saveData/, 'skipped with Data Saver on');
   assert.match(page, /document\.hidden/, 'only while the tab is in front');
+  // A3: Fill's measure on a quiet tick when no Score run is due, or after one that failed.
+  assert.match(page, /if \(!why\) \{ await autoFillTick\(\); return null; \}/);
+  assert.match(page, /if \(!ok\) await autoFillTick\(\)/);
+  assert.match(page, /fillMeasured\(\)/, 'only while nothing has been measured');
 });
 
 // ---- every run, kept (BUILD-7 M1) ----

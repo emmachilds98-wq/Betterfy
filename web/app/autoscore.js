@@ -45,7 +45,7 @@ async function autoScoreTick() {
   if (typeof document !== 'undefined' && document.hidden) return null;
   if (navigator.connection?.saveData) return null;
   const why = autoScoreDue();
-  if (!why) return null;
+  if (!why) { await autoFillTick(); return null; }
   AUTOSCORE_RUN.running = true; AUTOSCORE_RUN.why = why; store.touch('eng');
   let ok = false;
   try {
@@ -63,7 +63,41 @@ async function autoScoreTick() {
     autoScoreNote(why, ok);
     AUTOSCORE_RUN.running = false; store.touch('eng');
   }
+  // A Score run that ended early may not have reached Fill's measure: take it on its own.
+  if (!ok) await autoFillTick();
   return why;
+}
+
+/* ---------- Fill's measure, by itself (DESIGN-PLAN A3) ----------
+ * Every Score run already measures "Fill this playlist" (engine.js writes
+ * bf_fill). This covers the rest: an account too small for a Score run, or a
+ * run that failed, gets the same measure on the next quiet tick, so Library's
+ * Fill section never waits on a button. Only while nothing has been measured. */
+const AUTOFILL = { running: false };
+
+function fillMeasured() {
+  try { return Number.isFinite(JSON.parse(LS.getItem('bf_fill') || 'null')?.recall); } catch { return false; }
+}
+
+/** Hide a fifth of each playlist and see whether Fill finds those tracks again; kept in bf_fill. */
+async function fillMeasureNow() {
+  AUTOFILL.running = true; store.touch('lists');
+  try {
+    await engineLoad();
+    await new Promise(r => setTimeout(r, 30));   // let "Checking…" paint before the main thread is busy
+    const audio = typeof engineAudio === 'function' ? await engineAudio() : null;
+    const m = BetterfyFill.fillRecall(LIB, { tags: TAGS, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist });
+    if (m.recall == null) throw new Error('no playlist has 10 or more tracks to check it on');
+    LS.setItem('bf_fill', JSON.stringify({ ...m, at: Date.now() }));
+    return m;
+  } finally { AUTOFILL.running = false; store.touch('lists'); }
+}
+
+async function autoFillTick() {
+  if (AUTOFILL.running || fillMeasured() || autoScoreBusy() || !LIB?.playlists?.length) return false;
+  if (typeof document !== 'undefined' && document.hidden) return false;
+  if (navigator.connection?.saveData) return false;
+  try { await fillMeasureNow(); return true; } catch { return false; }
 }
 
 /** Started once from boot, after the first paint. */

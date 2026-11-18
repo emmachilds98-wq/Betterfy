@@ -104,3 +104,15 @@ test('the owner flag shows it below the bar, and says what it measured', async (
   LISTS.fillHTML(c, 'PB', c.LIB.playlists[1]); await c.rendered();
   assert.match(LISTS.fillHTML(c, 'PB', c.LIB.playlists[1]), /Shown by the flag; it measured 20%/);
 });
+
+test('A3: unmeasured says it checks itself; Check now uses the page measure when there is one', async () => {
+  const { c } = ctx();
+  assert.match(LISTS.fillHTML(c, 'PA', c.LIB.playlists[0]), /by itself in the background[^]*>Check now</);
+  c.fillAutoRunning = () => true;
+  assert.match(LISTS.fillHTML(c, 'PA', c.LIB.playlists[0]), /disabled>Checking…</);
+  let ran = 0;
+  const { c: c2 } = ctx();
+  c2.fillMeasure = async () => { ran++; };
+  await LISTS.actions.fillcheck(c2);
+  assert.equal(ran, 1);
+});

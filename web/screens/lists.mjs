@@ -393,10 +393,12 @@ export function fillHTML(c, id, pl) {
   const gate = fillGateOf(measure, LS.getItem('bf_fill_force') === '1');
   const head = '<section class="pls-sec plfill" aria-labelledby="plfill-h"><h3 id="plfill-h">Fill this playlist</h3>';
   if (!gate.on && !gate.measured) {
-    return `${head}<p class="hint">Liked songs you haven’t filed that fit here. It’s checked on your own playlists first:
-      hide a fifth of each one and see whether it finds those tracks again.</p>
+    // A3: it checks itself in the background (app/autoscore.js); the button is only for not waiting.
+    const busy = FILL_CHECK === 'working' || !!c.fillAutoRunning?.();
+    return `${head}<p class="hint">Liked songs you haven’t filed that fit here. It checks itself on your own playlists first,
+      by itself in the background: it hides a fifth of each one and sees whether it finds those tracks again.</p>
       ${typeof FILL_CHECK === 'string' && FILL_CHECK !== 'working' ? `<p class="hint">That didn’t work: ${esc(FILL_CHECK)}</p>` : ''}
-      <button class="b sm" data-act="fillcheck" ${FILL_CHECK === 'working' ? 'disabled' : ''}>${FILL_CHECK === 'working' ? 'Checking…' : 'Check it on my library'}</button></section>`;
+      <button class="b sm" data-act="fillcheck" ${busy ? 'disabled' : ''}>${busy ? 'Checking…' : 'Check now'}</button></section>`;
   }
   if (!gate.on) {
     return `${head}<p class="hint">Not enough to go on for this playlist yet.</p></section>`;
@@ -482,11 +484,12 @@ async function fillAdd(c, id, ids, el) {
   }
 }
 
-/** The measure, run here when no Score run has made one yet. */
+/** The measure now, without waiting for the background tick (A3). */
 async function fillCheck(c) {
   FILL_CHECK = 'working';
   c.render();
   try {
+    if (c.fillMeasure) { await c.fillMeasure(); FILL_CHECK = null; c.render(); return; }
     await c.engineLoad();
     await new Promise(r => setTimeout(r, 30));   // let "Checking…" paint before the main thread is busy
     const audio = c.engineAudio ? await c.engineAudio() : null;

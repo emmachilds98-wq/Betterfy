@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1117">
+<meta name="bf-build" content="2026-11-18-1125">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1977,7 +1977,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1117</span>
+    <span class="mono">build 2026-11-18-1125</span>
   </p>
 
   <div class="feat">
@@ -2070,7 +2070,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1117</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1125</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2180,7 +2180,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-1117. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-1125. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -6733,7 +6733,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1117`,
+    `Betterfy engine score — build 2026-11-18-1125`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -9396,10 +9396,12 @@ function fillHTML(c, id, pl) {
   const gate = fillGateOf(measure, LS.getItem('bf_fill_force') === '1');
   const head = '<section class="pls-sec plfill" aria-labelledby="plfill-h"><h3 id="plfill-h">Fill this playlist</h3>';
   if (!gate.on && !gate.measured) {
-    return `${head}<p class="hint">Liked songs you haven’t filed that fit here. It’s checked on your own playlists first:
-      hide a fifth of each one and see whether it finds those tracks again.</p>
+    // A3: it checks itself in the background (app/autoscore.js); the button is only for not waiting.
+    const busy = FILL_CHECK === 'working' || !!c.fillAutoRunning?.();
+    return `${head}<p class="hint">Liked songs you haven’t filed that fit here. It checks itself on your own playlists first,
+      by itself in the background: it hides a fifth of each one and sees whether it finds those tracks again.</p>
       ${typeof FILL_CHECK === 'string' && FILL_CHECK !== 'working' ? `<p class="hint">That didn’t work: ${esc(FILL_CHECK)}</p>` : ''}
-      <button class="b sm" data-act="fillcheck" ${FILL_CHECK === 'working' ? 'disabled' : ''}>${FILL_CHECK === 'working' ? 'Checking…' : 'Check it on my library'}</button></section>`;
+      <button class="b sm" data-act="fillcheck" ${busy ? 'disabled' : ''}>${busy ? 'Checking…' : 'Check now'}</button></section>`;
   }
   if (!gate.on) {
     return `${head}<p class="hint">Not enough to go on for this playlist yet.</p></section>`;
@@ -9485,11 +9487,12 @@ async function fillAdd(c, id, ids, el) {
   }
 }
 
-/** The measure, run here when no Score run has made one yet. */
+/** The measure now, without waiting for the background tick (A3). */
 async function fillCheck(c) {
   FILL_CHECK = 'working';
   c.render();
   try {
+    if (c.fillMeasure) { await c.fillMeasure(); FILL_CHECK = null; c.render(); return; }
     await c.engineLoad();
     await new Promise(r => setTimeout(r, 30));   // let "Checking…" paint before the main thread is busy
     const audio = c.engineAudio ? await c.engineAudio() : null;
@@ -10926,7 +10929,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1117';
+const BUILD = '2026-11-18-1125';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11264,7 +11267,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1117', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1125', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12049,7 +12052,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1117');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1125');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15694,7 +15697,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1117';
+    s.src = 'engine.js?v=2026-11-18-1125';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15716,7 +15719,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1117');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1125');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16427,7 +16430,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1117';
+    s.src = 'audio.js?v=2026-11-18-1125';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16481,7 +16484,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1117', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1125', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17641,7 +17644,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1117', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1125', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -18009,7 +18012,7 @@ async function autoScoreTick() {
   if (typeof document !== 'undefined' && document.hidden) return null;
   if (navigator.connection?.saveData) return null;
   const why = autoScoreDue();
-  if (!why) return null;
+  if (!why) { await autoFillTick(); return null; }
   AUTOSCORE_RUN.running = true; AUTOSCORE_RUN.why = why; store.touch('eng');
   let ok = false;
   try {
@@ -18027,7 +18030,41 @@ async function autoScoreTick() {
     autoScoreNote(why, ok);
     AUTOSCORE_RUN.running = false; store.touch('eng');
   }
+  // A Score run that ended early may not have reached Fill's measure: take it on its own.
+  if (!ok) await autoFillTick();
   return why;
+}
+
+/* ---------- Fill's measure, by itself (DESIGN-PLAN A3) ----------
+ * Every Score run already measures "Fill this playlist" (engine.js writes
+ * bf_fill). This covers the rest: an account too small for a Score run, or a
+ * run that failed, gets the same measure on the next quiet tick, so Library's
+ * Fill section never waits on a button. Only while nothing has been measured. */
+const AUTOFILL = { running: false };
+
+function fillMeasured() {
+  try { return Number.isFinite(JSON.parse(LS.getItem('bf_fill') || 'null')?.recall); } catch { return false; }
+}
+
+/** Hide a fifth of each playlist and see whether Fill finds those tracks again; kept in bf_fill. */
+async function fillMeasureNow() {
+  AUTOFILL.running = true; store.touch('lists');
+  try {
+    await engineLoad();
+    await new Promise(r => setTimeout(r, 30));   // let "Checking…" paint before the main thread is busy
+    const audio = typeof engineAudio === 'function' ? await engineAudio() : null;
+    const m = BetterfyFill.fillRecall(LIB, { tags: TAGS, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist });
+    if (m.recall == null) throw new Error('no playlist has 10 or more tracks to check it on');
+    LS.setItem('bf_fill', JSON.stringify({ ...m, at: Date.now() }));
+    return m;
+  } finally { AUTOFILL.running = false; store.touch('lists'); }
+}
+
+async function autoFillTick() {
+  if (AUTOFILL.running || fillMeasured() || autoScoreBusy() || !LIB?.playlists?.length) return false;
+  if (typeof document !== 'undefined' && document.hidden) return false;
+  if (navigator.connection?.saveData) return false;
+  try { await fillMeasureNow(); return true; } catch { return false; }
 }
 
 /** Started once from boot, after the first paint. */
@@ -18291,6 +18328,9 @@ SCREEN_CTX.lists = () => ({
   TAGS, addTracks, logAction, undoAction, newGroup, engineLoad,
   engineAudio: () => (typeof engineAudio === 'function' ? engineAudio() : null),
   get BetterfyFill() { return globalThis.BetterfyFill; },
+  // A3: the same measure the background tick takes (app/autoscore.js), and whether it is running now.
+  fillMeasure: typeof fillMeasureNow === 'function' ? fillMeasureNow : undefined,
+  fillAutoRunning: () => typeof AUTOFILL !== 'undefined' && AUTOFILL.running,
   coldKick: needCold => coldKick(needCold),
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
   // "Find tracks that sound like…" lives in Library (F1): it searches your own library, not new music.
