@@ -121,8 +121,8 @@ async function shoot(b, FORM, THEME) {
   await touchBack();
   // The Settings sheet, closed to open: its sections one at a time (UI-D).
   await pg.evaluate(() => go('inbox'));
-  for (const sec of [null, 'sources', 'engine', 'history']) {
-    await pg.evaluate(s => { try { S.uhOpen = s; openUnderHood(s); } catch (e) { console.log(e); } }, sec);
+  for (const sec of [null, 'sources', 'helpers', 'data', 'engine', 'history', 'appearance', 'about']) {
+    await pg.evaluate(s => { try { S.uhSet = new Set(s ? [s] : []); S.uhOpen = s; openUnderHood(s); } catch (e) { console.log(e); } }, sec);
     await pg.waitForTimeout(sec === 'engine' ? 2500 : 900);
     await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-settings${sec ? '-' + sec : ''}.png`) });
     await pg.evaluate(() => openSettings(false));

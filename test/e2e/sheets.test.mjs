@@ -52,3 +52,44 @@ test('Settings opens from the gear, Back closes it, and ✕ closes it too', { sk
   await page.click('#closeSettings');
   await until(async () => !(await page.evaluate(() => document.querySelector('#settingsPanel').classList.contains('open'))), 'Settings to close on ✕');
 });
+
+test('Settings is one list of collapsible sections in a fixed order, Listening open first, Disconnect last (owner\'s ask 2026-11-18)', { skip }, async () => {
+  const { page } = app;
+  await fileCard(page);
+  await page.click('#btnSettings');
+  await page.waitForSelector('#settingsPanel.open');
+  await page.waitForSelector('#uh-sources-h');
+  const heads = () => page.$$eval('#settingsPanel .uhhead', els => els.map(e => ({ id: e.dataset.uhtoggle, open: e.getAttribute('aria-expanded') === 'true', line: e.querySelector('.uhs').textContent.trim() })));
+  const order = ['engine', 'sources', 'helpers', 'data', 'history', 'appearance', 'about'];
+  let hs = await heads();
+  assert.deepEqual(hs.map(h => h.id), order);
+  assert.deepEqual(hs.filter(h => h.open).map(h => h.id), ['sources'], 'only the most used one is open to begin with');
+  for (const h of hs) assert.ok(h.line.length > 3 && !/undefined|NaN|ARMS_|UNDECIDED/.test(h.line), `${h.id} says where it stands while closed: "${h.line}"`);
+  assert.match(hs.find(h => h.id === 'sources').line, /^(On|Off)/);
+  assert.match(hs.find(h => h.id === 'helpers').line, /\d+ of \d+ on/);
+  // Disconnect is after every section.
+  assert.ok(await page.evaluate(() => !!(document.querySelector('#uh-about-h').compareDocumentPosition(document.querySelector('#disconnect')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+  // Each section expands and shows a body, then collapses again.
+  for (const id of order) {
+    if (id === 'sources') await page.click('#uh-sources-h');   // close the open one first
+    else await page.click(`#uh-${id}-h`);
+    const open = async () => (await heads()).find(h => h.id === id).open;
+    if (id === 'sources') { assert.equal(await open(), false); await page.click('#uh-sources-h'); }
+    await until(open, `${id} to open`);
+    assert.ok(await page.locator(`#uh-${id}-b`).isVisible(), `${id} shows its body`);
+    assert.ok((await page.locator(`#uh-${id}-b`).innerText()).trim().length > 20, `${id} has something in it`);
+    if (id !== 'sources') { await page.click(`#uh-${id}-h`); assert.equal(await open(), false, `${id} closes`); await page.waitForTimeout(50); assert.equal(await page.locator(`#uh-${id}-b`).isVisible(), false); }
+  }
+  // The old routes land on the right section.
+  await page.evaluate(() => go('engine'));
+  await page.waitForSelector('[data-uh="engine"]');
+  assert.equal((await heads()).find(h => h.id === 'engine').open, true, '#/engine opens the score section');
+  // Back closes the sheet and focus returns to the gear; so does Escape.
+  await page.goBack();
+  await until(async () => !(await page.evaluate(() => document.querySelector('#settingsPanel').classList.contains('open'))), 'Back to close Settings');
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'btnSettings', 'focus returns to the gear');
+  await page.click('#btnSettings');
+  await page.waitForSelector('#settingsPanel.open');
+  await page.keyboard.press('Escape');
+  await until(async () => !(await page.evaluate(() => document.querySelector('#settingsPanel').classList.contains('open'))), 'Escape to close Settings');
+});

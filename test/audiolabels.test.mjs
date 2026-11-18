@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as SOURCES from '../web/screens/sources.mjs';
 import {
@@ -38,6 +38,8 @@ test('Sources with no audio is byte-identical to main before this change', () =>
   vm.createContext(sb);
   vm.runInContext(between('let LABELCHECKS = null;', '/** The heard tracks for the engine') + CODE, sb);
   const out = SOURCES.view({ lfmKey: () => '', ...sb, playlistMixes: vm.runInContext('playlistMixes', sb) });
+  // The Settings refurbish (2026-11-18) redrew this page on purpose; UPDATE_FIXTURES=1 rewrites the golden.
+  if (process.env.UPDATE_FIXTURES) writeFileSync(new URL('./fixtures/labels/sources-no-audio.html', import.meta.url), out);
   assert.equal(out, readFileSync(new URL('./fixtures/labels/sources-no-audio.html', import.meta.url), 'utf8'));
 });
 
