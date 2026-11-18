@@ -165,7 +165,7 @@ test('Sheet: suggestions as chips that fill the field, and Rename sends what the
   const c = ctx({ $: q => fields[q], renamePlaylist: async (id, name) => { renamed.push([id, name]); return 'at1'; } });
   const html = LISTS.nameSheetHTML(c, 'p2', c.LIB.playlists[1]);
   assert.match(html, /Your name stays first/);
-  assert.match(html, /data-act="lnamepick" data-name="Sunday · Melancholy Indie Rock"/);
+  assert.match(html, /data-act="lnamepick" data-pl="p2" data-name="Sunday · Melancholy Indie Rock"/);
   assert.equal(LISTS.nameSheetHTML(c, 'all', c.LIB.playlists[2]), '', 'no renaming the mirror');
   LISTS.actions.lnamepick(c, { dataset: { name: 'Sunday · Indie Rock', why: 'keeps your name' } });
   assert.equal(fields['#plname-in'].value, 'Sunday · Indie Rock');
@@ -210,4 +210,24 @@ test('renamePlaylist: PUT to Spotify, the held library follows, History logs it,
   assert.match(html, /Renamed <span class="sub">My Playlist #4 → 90s Hip-Hop<\/span>/);
   assert.match(html, /<span class="sub">Undone<\/span>/);
   assert.ok(!/0 track\(s\)/.test(html.split('Renamed')[1].split('</div></div>')[0]), 'a rename has no track count');
+});
+
+test('Library: tapping a suggestion opens the sheet with it in the name field, to change before saving', async () => {
+  const opened = [], renamed = [];
+  const c = ctx({ openPlSheet: id => opened.push(id), renamePlaylist: async (id, name) => { renamed.push([id, name]); return 'at2'; } });
+  const html = LISTS.namesListHTML(c);
+  assert.match(html, /data-act="lnameedit" data-pl="p1" data-name="90s Hip-Hop"/);
+  LISTS.actions.lnameedit(c, { dataset: { pl: 'p1', name: '90s Hip-Hop', why: '100% Hip-Hop' } });
+  assert.deepEqual(opened, ['p1']);
+  assert.deepEqual(renamed, [], 'nothing is renamed by opening it');
+  const sheet = LISTS.nameSheetHTML(c, 'p1', c.LIB.playlists[0]);
+  assert.match(sheet, /id="plname-in" value="90s Hip-Hop"/, 'the suggestion is in the field, editable');
+  assert.match(sheet, /Why: 100% Hip-Hop\./);
+  assert.match(LISTS.nameSheetHTML(c, 'p2', c.LIB.playlists[1]), /id="plname-in" value="Sunday"/, 'only on the playlist it was picked for');
+  // Edited, then saved: what the field says is the name.
+  c.$ = q => ({ '#plname-in': { value: '90s Hip-Hop Classics' } })[q];
+  await LISTS.actions.lrename(c, { dataset: { pl: 'p1', from: 'input' } });
+  assert.deepEqual(renamed, [['p1', '90s Hip-Hop Classics']]);
+  assert.match(LISTS.nameSheetHTML(c, 'p1', c.LIB.playlists[0]), /id="plname-in" value="My Playlist #4"/, 'the picked name is let go once saved');
+  LISTS.actions.plopen({ ...c, openPlSheet() {} }, { dataset: { pl: 'p1' } });
 });

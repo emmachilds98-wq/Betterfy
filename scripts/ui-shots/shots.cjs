@@ -121,7 +121,10 @@ async function shoot(b, FORM, THEME) {
   await pg.evaluate(() => closePlSheet());
   await pg.waitForTimeout(400);
   // The same sheet on a playlist whose name says nothing: its Name section's suggestions.
-  await pg.evaluate(() => openPlSheet('plz'));
+  // Opened from Library's "Names that could say more" row, so the suggestion is in the field to edit.
+  await pg.evaluate(() => { go('lists'); });
+  await pg.waitForTimeout(700);
+  await pg.evaluate(() => { const b = document.querySelector('[data-act="lnameedit"]'); if (b) b.click(); else openPlSheet('plz'); });
   await pg.waitForTimeout(900);
   await pg.evaluate(() => document.querySelector('.plnamesec')?.scrollIntoView({ block: 'start' }));
   await pg.waitForTimeout(300);

@@ -234,7 +234,7 @@ export function scoreCardHTML(c, now = Date.now()) {
  * ontology); until it is here nothing is suggested and the sheet still renames by
  * hand. What each playlist holds is read once per library, tag table and set of
  * names, and kept; the style is learned from this account's own playlist names. */
-const NAMES = { stamp: null, facts: new Map(), memo: new Map(), style: null, loading: false };
+const NAMES = { stamp: null, facts: new Map(), memo: new Map(), style: null, loading: false, prefill: null };
 const NAME_SKIP = 'bf_name_skip';
 
 function nameKit(c) {
@@ -272,8 +272,8 @@ export function namesListHTML(c) {
   if (!rows.length) return '';
   return `<section class="plsugg plnames" aria-labelledby="plname-h">
       <div class="plsugg-head"><h2 id="plname-h">Names that could say more</h2></div>
-      <p class="hint">Suggested from the music in each, written the way you name playlists. Tap one for other names; undo from History.</p>
-      <div class="plrows">${rows.slice(0, 3).map(r => `<div class="plline"><button class="plrow" type="button" data-act="plopen" data-pl="${esc(r.id)}" aria-haspopup="dialog">
+      <p class="hint">Suggested from the music in each, written the way you name playlists. Tap a name to change it before saving; undo from History.</p>
+      <div class="plrows">${rows.slice(0, 3).map(r => `<div class="plline"><button class="plrow" type="button" data-act="lnameedit" data-pl="${esc(r.id)}" data-name="${esc(r.best.name)}" data-why="${esc(r.best.why)}" aria-haspopup="dialog" aria-label="${esc(`Edit the name for ${r.name}, starting from ${r.best.name}`)}">
         <span class="plmain"><span class="ttl">${esc(r.name)}</span>
           <span class="plmeta"><span class="plname-to">→ ${esc(r.best.name)}</span>${r.vague ? '' : ` · ${esc(r.why)}`}</span></span></button>
         <span class="placts"><button class="b sm p" type="button" data-act="lrename" data-pl="${esc(r.id)}" data-name="${esc(r.best.name)}"
@@ -287,17 +287,19 @@ export function nameSheetHTML(c, id, pl) {
   const { esc } = c;
   if (c.isMirrorPlaylist?.(pl)) return '';
   const kit = nameKit(c);
+  // A suggestion picked in Library opens here in the field, to change before saving.
+  const pre = NAMES.prefill?.id === id ? NAMES.prefill : null;
   const s = kit ? kit.D.suggestNames(pl.name, kit.factsOf(pl), c.LISTS_SOUND?.profile?.(id) ?? null, kit.style) : null;
   const said = !s ? '' : s.misleading ? `${s.misleading}.`
     : s.vague && s.names.length ? 'Its name doesn’t say what’s in it yet.'
     : s.fits ? 'Its name already says what’s in it; these add a little more.'
     : s.names.length ? 'Your name stays first; these add what’s in it.' : '';
   const chips = s?.names?.length ? `<div class="rowbtns plnamechips">${s.names.map(n =>
-    `<button class="chip" type="button" data-act="lnamepick" data-name="${esc(n.name)}" data-why="${esc(n.why)}" title="${esc(n.why)}">${esc(n.name)}</button>`).join('')}</div>` : '';
+    `<button class="chip" type="button" data-act="lnamepick" data-pl="${esc(id)}" data-name="${esc(n.name)}" data-why="${esc(n.why)}" title="${esc(n.why)}">${esc(n.name)}</button>`).join('')}</div>` : '';
   return `<section class="pls-sec plnamesec"><h3>Name</h3>
       ${said ? `<p class="hint">${esc(said)}</p>` : ''}${chips}
-      <p class="hint plname-why" id="plname-why" aria-live="polite"></p>
-      <label class="pls-f plname-f"><input id="plname-in" value="${esc(pl.name)}" maxlength="100" aria-label="New name for ${esc(pl.name)}"></label>
+      <p class="hint plname-why" id="plname-why" aria-live="polite">${pre?.why ? esc(`Why: ${pre.why}.`) : ''}</p>
+      <label class="pls-f plname-f"><input id="plname-in" value="${esc(pre?.name ?? pl.name)}" maxlength="100" aria-label="New name for ${esc(pl.name)}"></label>
       <div class="rowbtns"><button class="b sm p" type="button" data-act="lrename" data-pl="${esc(id)}" data-from="input">Rename</button></div>
       <p class="hint">${s?.names?.length ? 'Suggested from its artists’ tags, release years and, once heard, how it sounds. ' : ''}Renames it in Spotify too; undo from History.</p></section>`;
 }
@@ -311,6 +313,7 @@ async function renameNow(c, id, name, el) {
   if (el) el.disabled = true;
   try {
     const at = await c.renamePlaylist(id, to);
+    NAMES.prefill = null;
     c.render();
     c.toast(`Renamed “${from}” to “${to}”.`, at ? async () => { await c.undoAction(at); c.render(); } : null);
   } catch (err) {
@@ -808,7 +811,7 @@ export const actions = {
   /** The Score card's Copy results: the same text as the Engine screen's. */
   scorecopy(c) { return c.scoreCopy?.(); },
   /** Tap a playlist: its detail sheet. */
-  plopen(c, el) { if (WIZ?.status !== 'working') WIZ = null; c.openPlSheet(el.dataset.pl); },
+  plopen(c, el) { if (WIZ?.status !== 'working') WIZ = null; NAMES.prefill = null; c.openPlSheet(el.dataset.pl); },
 
   /** The sheet's Shuffle: the Shuffle screen on this playlist, as a spaced shuffle. */
   plshuffle(c, el) { return plShuffle(c, el.dataset.pl, ''); },
@@ -881,10 +884,24 @@ export const actions = {
     const name = el.dataset.from === 'input' ? c.$?.('#plname-in')?.value : el.dataset.name;
     return renameNow(c, el.dataset.pl, name, el);
   },
+  /** A "Names that could say more" row: its playlist's sheet, with the suggestion in the name field, selected,
+   *  to change before saving. Nothing is renamed until Rename. */
+  lnameedit(c, el) {
+    const id = el.dataset.pl;
+    NAMES.prefill = { id, name: el.dataset.name ?? '', why: el.dataset.why ?? '' };
+    if (WIZ?.status !== 'working') WIZ = null;
+    c.openPlSheet(id);
+    setTimeout(() => {
+      const box = c.$?.('#plname-in');
+      box?.closest?.('.plnamesec')?.scrollIntoView?.({ block: 'nearest' });
+      box?.focus?.(); box?.select?.();
+    }, 60);
+  },
   /** A suggested name tapped in the sheet: into the field, with why, to edit or keep. */
   lnamepick(c, el) {
     const box = c.$?.('#plname-in');
     if (box) { box.value = el.dataset.name; box.focus?.(); }
+    if (el.dataset.pl) NAMES.prefill = { id: el.dataset.pl, name: el.dataset.name ?? '', why: el.dataset.why ?? '' };
     const why = c.$?.('#plname-why');
     if (why) why.textContent = el.dataset.why ? `Why: ${el.dataset.why}.` : '';
   },
