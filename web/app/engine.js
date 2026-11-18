@@ -247,10 +247,13 @@ function engineFamilyFit(rows) {
   const families = engineFamilies();
   const acc = BetterfyFamily.familyAccuracy(rows, families, { report: r => BetterfyCalibrate.calibrationReport(r) });
   if (!acc) return null;
-  const use = BetterfyFamily.familyInUse(acc);
+  // Build 8 I1: in use when family top-1 clears its bar, or when the family's
+  // confident calls do (familyGate says which, and why not).
+  const gate = BetterfyFamily.familyGate(acc);
+  const use = gate.use;
   const cal = BetterfyFamily.fitFamilyCalibration(acc.rows);
   const summary = { n: acc.n, family: acc.family, within: acc.within, flat: acc.flat, families: acc.families,
-                    sure: acc.sure?.checked ?? null, holds: acc.sure?.holds ?? null, use };
+                    sure: acc.sure?.checked ?? null, holds: acc.sure?.holds ?? null, use, by: gate.by, why: gate.why };
   return { summary, keep: { use, cal, family: acc.family, families: acc.families } };
 }
 
