@@ -30,7 +30,7 @@ over anything that needs a file most users won't have.
 ## Where the fuller context lives
 
 - `docs/DESIGN-PLAN.md` — the design and layout plan (2026-11-18, review 2):
-  principles, screen-by-screen findings, packages L1–L7 with gates, and
+  principles, screen-by-screen findings, packages L1–L5 and L7 with gates, and
   thread briefs. Run it alongside build 7.
 
 - `docs/BUILD-7-PLAN.md` — **start here (2026-11-17, after #157)**: the audio

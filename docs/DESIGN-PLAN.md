@@ -79,7 +79,6 @@ These are the rules each package is measured against.
 | Tidy | Sections with 0 look the same as ones with work | L4 |
 | Settings | "What's helping your picks" is 12 rows long before any section, so Sources, Engine and History are a long scroll away. The radar isn't listed | L5 |
 | Settings › Engine | It was laid out for a full screen: the rung tag wraps ("a few / buckets"), and facts rows are tight at 390 px. 61 inline styles | L5 |
-| Shuffle | One filled and three outlined buttons, a dropdown and two checkboxes on one screen (the owner chose not to build a simpler one yet; see §4 L6) | L6, not now |
 | New playlists | A large dashed empty box with three bold run-in paragraphs | L3 |
 | Everywhere | Heading sizes and spacing set inline in places (`font-size:19px`), so the h2 scale differs between screens | L5 |
 
@@ -163,30 +162,6 @@ These are the rules each package is measured against.
   without scrolling. `grep -c 'style="' web/screens/engine.mjs` is 0. The
   engine tests are unchanged apart from class names.
 
-### L6: Shuffle, one action (described, not built: the owner asked to hear more first)
-
-What it would look like:
-
-- One playlist picker, then one filled button, **Shuffle into a new
-  playlist**, with a small **and play it** check beside it.
-- The Spotify vs Betterfy comparison stays as it is (it is the one place
-  that shows why the screen exists).
-- **Shuffle again** goes. Every press of the main button makes a fresh
-  order, and the comparison updates live as the picker changes.
-- "Keep neighbours alike", "Rediscover" and the DJ-order dropdown move into
-  one **Options** fold, closed by default, which remembers what was ticked.
-- The "gather everything into one playlist" line moves to Library's footer,
-  where "Shuffle everything" already is.
-
-What you'd gain: one decision per visit (which playlist), and one button.
-The screen drops from about eight controls to three.
-
-What you'd lose:
-
-- Previewing an order before it's written. Today "Shuffle again" lets you
-  look at the numbers and re-roll without making a playlist.
-- One-tap access to DJ order and the two options. They become two taps.
-
 ### L7: Inline styles and type scale (housekeeping)
 
 - **Goal:** move the remaining inline styles (File's 21, Discover's 9,
@@ -203,7 +178,10 @@ What you'd lose:
   partials and modules.
 - **Wave B:** L3, then L1. L1 goes last because it lays out what L2 and L3
   leave.
-- **Wave C:** L7, once File is quiet. L6 waits for the owner's yes.
+- **Wave C:** L7, once File is quiet.
+
+Not planned: a simpler Shuffle screen. It was described to the owner on
+2026-11-18, and she decided not to build it.
 
 Owned files per package are listed under each package above. Shared files
 are add-only: `50-components.css`, `80-responsive.css` (L1 owns the
