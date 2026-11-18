@@ -49,3 +49,32 @@ test('New playlists: a gap needs a name, then creates through gapsCreate', async
   await NEW.actions.gap(c, el);
   assert.deepEqual(made, [['Donk', ['a', 'b']]]);
 });
+
+test('New playlists: a backlog group creates through gapsCreate, so it is in History with an Undo (F3)', async () => {
+  const made = [], said = [];
+  let drawn = 0;
+  const g = { ids: ['x', 'y'], size: 2 };
+  const c = { R: { clusters: [{ ids: ['q'] }, g] }, $: () => ({ value: ' Jungle ' }), toast: m => said.push(m), render: () => drawn++,
+    gapsCreate: async (n, ids, why) => made.push([n, ids, why]) };
+  await NEW.actions.cluster(c, { dataset: { cluster: '1' }, disabled: false });
+  assert.deepEqual(made, [['Jungle', ['x', 'y'], 'group in your backlog']]);
+  assert.deepEqual(c.R.clusters, [{ ids: ['q'] }]);
+  assert.equal(drawn, 1);
+});
+
+test('New playlists › By sound: the Engine\'s "New genre?" groups (moved from Library, M5)', async () => {
+  const esc = s => String(s ?? '');
+  const COLD = { status: 'ready', active: new Set(['Hot']),
+    newGenre: [{ ids: ['1', '2', '3', '4'], tracks: [{ artists: ['Hot'] }], suggest: { name: 'Donk' } }, { ids: ['5'] }] };
+  const rows = NEW.engineGenreRows({ COLD, esc });
+  assert.match(rows, /Donk\? <span class="tag snd">by sound<\/span> <span class="tag">4 tracks<\/span> <span class="tag ok">1 you're playing/);
+  assert.match(rows, /<input id="newgnm0"[^>]*value="Donk">/);
+  assert.equal(NEW.engineGenreRows({ COLD: { status: 'working' }, esc }), '');
+  const made = [], confirmed = [];
+  const c = { COLD, $: () => ({ value: 'Donk' }), toast() {}, render() {}, clapConfirm: async (ids, n) => confirmed.push(n),
+    gapsCreate: async (n, ids, why) => made.push([n, ids, why]) };
+  await NEW.actions.newg(c, { dataset: { newg: '0' } });
+  assert.deepEqual(made, [['Donk', ['1', '2', '3', '4'], 'new genre']]);
+  assert.deepEqual(confirmed, ['Donk']);
+  assert.equal(COLD.newGenre.length, 1);
+});

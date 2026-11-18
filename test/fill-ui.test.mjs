@@ -43,7 +43,7 @@ test('no section without liked-but-unfiled tracks, or on a short playlist', () =
   assert.equal(LISTS.fillHTML(c2, 'PA', { ...c2.LIB.playlists[0], tracks: c2.LIB.playlists[0].tracks.slice(0, 9) }), '');
 });
 
-test('unmeasured: offers the check; below the bar: off, with the number', () => {
+test('unmeasured: offers the check; below the bar: off, in one line (C3)', () => {
   const { c } = ctx();
   const html = LISTS.fillHTML(c, 'PA', c.LIB.playlists[0]);
   assert.match(html, /Fill this playlist/);
@@ -51,8 +51,7 @@ test('unmeasured: offers the check; below the bar: off, with the number', () => 
   assert.ok(!html.includes('data-act="filladd"'));
   const low = ctx({ measure: { recall: 0.31, random: 0.02 } }).c;
   const off = LISTS.fillHTML(low, 'PA', low.LIB.playlists[0]);
-  assert.match(off, /Off for your library: it found <b class="mono">31%<\/b>/);
-  assert.match(off, /needs 40%/);
+  assert.match(off, /Not enough to go on for this playlist yet\./);
   assert.ok(!off.includes('data-act="filladd"') && !off.includes('fillcheck'));
 });
 

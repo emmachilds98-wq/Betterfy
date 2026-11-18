@@ -6,6 +6,11 @@ import vm from 'node:vm';
 import * as NEW from '../web/screens/new.mjs';
 
 export function installNew(sandbox, slice) {
+  // gapsCreate logs to History (DESIGN-PLAN F3); the log itself is app/actionlog.js, not under test here.
+  sandbox.logs ??= [];
+  sandbox.logAction ??= async e => { sandbox.logs.push(e); return 'at' + sandbox.logs.length; };
+  sandbox.newGroup ??= () => 'g1';
+  sandbox.undoAction ??= async () => {};
   vm.runInContext(slice('function emptyState(', '/* ---------- Tidy by sound')
     + slice('/* ======================= gaps: docs/SMARTER-GENRES-PLAN.md, phase 3', '/* ---------- shuffle: spacing'), sandbox);
   const jobs = vm.runInContext('({ emptyState, GAPS, gapsCompute, gapsCreate, gapsFile })', sandbox);

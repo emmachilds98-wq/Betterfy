@@ -128,6 +128,8 @@ test('creating makes one private playlist with exactly those tracks, and touches
     ['sp', '/me/playlists', 'POST', JSON.stringify({ name: 'Donk', public: false })],
     ['add', 'new-pl', ids.length],
   ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(s.logs)), [{ op: 'add', group: 'g1', playlistId: 'new-pl', playlistName: 'Donk', trackIds: [...ids],
+    created: true, reason: 'new playlist' }], 'in History as one add that made the playlist, so one Undo deletes it');
   assert.match(vm.runInContext('vNew()', s), /<span class="tag ok">created<\/span>/);
 });
 
