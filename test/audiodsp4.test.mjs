@@ -346,7 +346,7 @@ test('soundChip: BPM and key with Camelot, confidence in the title', () => {
 test('soundChip: half/double time unsure reads 87/174; low confidence is marked unsure', () => {
   const h = soundChip({ bpm: 174, bpmAlt: 87, bpmConf: 0.4 });
   assert.match(h, /87\/174 <span class="snd-unit">BPM<\/span>/);
-  assert.match(h, /half\/double time is unsure \(87 or 174\)/);
+  assert.match(h, /it could be 87 or 174/);
   assert.match(h, /class="snd-bpm snd-unsure"/);
   assert.match(h, /<span class="snd-q">\?<\/span>/);
 });

@@ -11,17 +11,6 @@ const AXES = ['genre','mood','era','event','djset','context','inbox'];
 /** The axis names in plain words, for the sheet's picker (USER-REVIEW item 8). The values stay the axis ids. */
 const AXIS_WORDS = { genre: 'genre', mood: 'mood', era: 'era or year', event: 'an event', djset: 'a DJ set',
   context: 'a time or place', inbox: 'an inbox to sort later' };
-/** "64% genre · 19% mood" — what a playlist's tags are actually made of,
- *  which is the evidence behind a content-guessed axis and a sanity check on
- *  every other one. Facets under a tenth are left out as noise. */
-function mixLabel(mix) {
-  if (!mix || !mix.tracks) return '';
-  const parts = ['genre','mood','era','occasion','descriptor']
-    .map(f => [f, mix[f]]).filter(([, x]) => x >= 0.1)
-    .sort((a, b) => b[1] - a[1]).slice(0, 3)
-    .map(([f, x]) => `${Math.round(x * 100)}% ${f}`);
-  return parts.join(' · ');
-}
 
 /** The proposals worth a line at the top of Library: genres with no playlist, hybrids and new
  *  genres by sound, backlog groups. Nothing until the gaps are worked out; nothing already made.
@@ -261,7 +250,6 @@ export function sheetHTML(c, id) {
   const undecided = p.why === c.NO_SIGNAL;
   const info = plInfo(c, { id, ...p }, new Set(split ? [id] : []), new Set(undecided ? [id] : []));
   const { health } = info;
-  const mix = mixLabel(c.playlistMixes().mix.get(id));
   const prof = profileRow(info.vm);
   const few = p.tracks < MIN_FOR_TARGET;
   const canMix = c.mixHeardIn(pl.tracks) >= (c.BetterfyOrder?.MIN_MIX ?? 8);
@@ -273,7 +261,7 @@ export function sheetHTML(c, id) {
   const notNow = key => ms.dismissed[key] || ms.made[key] ? '' : `<button class="b sm" data-act="wizdismiss" data-key="${esc(key)}">Not now</button>`;
   return `<div class="pls-head"><h2>${esc(pl.name)}</h2><button class="iconbtn" type="button" data-plclose aria-label="Close">✕</button></div>
     <div class="pls-body">
-    <p class="plmeta"><span class="mono">${p.tracks}</span> tracks${mix ? ` · ${esc(mix)}` : ''}</p>
+    <p class="plmeta"><span class="mono">${p.tracks}</span> tracks</p>
     ${health ? `<section class="pls-sec"><h3>Health</h3>
       <p class="plhealth plh-${health.score >= 85 ? 'ok' : health.score >= 65 ? 'fine' : 'low'}"><b class="mono">${health.score}</b> ${esc(health.word)}</p>
       ${health.notes.length ? `<ul class="plnotes">${health.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : '<p class="hint">Nothing out of place.</p>'}</section>` : ''}
@@ -322,7 +310,7 @@ export function weakRows(c) {
 }
 const weakWhen = (at, now = Date.now()) => {
   const days = Number.isFinite(at) ? Math.floor((now - at) / 864e5) : null;
-  return days == null ? '' : days <= 0 ? ' (scored today)' : days === 1 ? ' (scored yesterday)' : ` (scored ${days} days ago)`;
+  return days == null ? '' : days <= 0 ? ' (checked today)' : days === 1 ? ' (checked yesterday)' : ` (checked ${days} days ago)`;
 };
 export function weakSheetHTML(c, id) {
   const { esc } = c;
@@ -688,7 +676,7 @@ export function view(c) {
   // One line of the Engine's score (owner, 2026-11-18): the Engine itself lives in Settings.
   // The footer is one line (L2): the score sentence, then where to go from here.
   const knows = rows.some(p => p.target) ? `<span class="plknows">${esc(eng?.running ? 'Checking how well it knows you…' : knowsYouLine(eng))}</span>` : '';
-  const footHTML = `<p class="axcov plfoot">${knows}<span class="plfoot-b">${knows ? '<button class="b sm" data-go="engine">Engine</button>' : ''}
+  const footHTML = `<p class="axcov plfoot">${knows}<span class="plfoot-b">${knows ? '<button class="b sm" data-go="engine">How it picks</button>' : ''}
       <button class="b sm" data-act="lshufall">Shuffle everything</button></span></p>`;
   return `<h1>Library</h1>
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>

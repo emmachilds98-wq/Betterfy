@@ -123,7 +123,7 @@ function tagEditorHTML(id, name) {
       <button class="b sm" data-addtag="${esc(id)}">Add</button>
       <button class="b sm" data-refetchtags="${esc(id)}" data-artistname="${esc(name)}"
         ${lfmKey() ? '' : 'disabled title="Add a Last.fm key on the Sources screen first"'}>Refetch from Last.fm</button>
-      <button class="b sm" data-resettags="${esc(id)}">Reset to shipped</button>
+      <button class="b sm" data-resettags="${esc(id)}">Reset to the default tags</button>
       <button class="b sm" data-closetagedit="1">Done</button>
     </div>
   </div>`;

@@ -18,7 +18,7 @@ import { sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintT
 /* [id, label, short label]: the short one is what a phone shows (DESIGN-PLAN L4), so the
  * switch fits one line at 390 px; desktop and the ⓘ text keep the full words. By sound is
  * not a part of its own any more (§7.7 M3): its rows sit in Wrong place with a badge. */
-const TIDY_SECTIONS = [['misfile', 'Wrong place', 'Misfiled'], ['dupes', 'Repeats', 'Repeats'], ['cross', 'Cross-filed', 'In two']];
+const TIDY_SECTIONS = [['misfile', 'Wrong place', 'Misfiled'], ['dupes', 'Repeats', 'Repeats'], ['cross', 'In two playlists', 'In two']];
 // Hard to find (screens/hidden.mjs) is always last, and is never opened
 // for you: its count is only what a check found, so it is a place you go, not work queued.
 const HIDDEN_SECTION = ['hidden', 'Hard to find', 'Hidden'];
@@ -45,7 +45,7 @@ export function secDupes(c) {
   if (!exact.length && !clash.length) return `${lede}
     ${emptyState('No repeats', 'None of your playlists has the same track in it twice, as the same recording or as a different cut.')}`;
   return `${lede}
-    ${exact.length ? sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.', 'dupes-exact') : ''}
+    ${exact.length ? sec('The same recording, twice', exact, 'Both copies are the same recording, on two releases. Removing one loses nothing.', 'dupes-exact') : ''}
     ${clash.length ? sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash') : ''}`;
 }
 
@@ -59,7 +59,7 @@ export function secCross(c) {
   const ib = c.infoBtn ?? (() => '');
   const { R, esc, thumbHTML, shownOf, emptyState, moreButton } = c;
   const a = R.across.filter(x => x.placements.length >= CROSS_MIN);
-  return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is removed unless you tap. The likeliest slips come first, with the best-fitting playlist starred.${ib('tidy-cross', 'Cross-filed', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
+  return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is removed unless you tap. The likeliest slips come first, with the best-fitting playlist starred.${ib('tidy-cross', 'In two playlists', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
     <div class="rows">${a.slice(0, shownOf('cross')).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
@@ -484,13 +484,13 @@ function readSprints(c) {
 function sprintBar(c, sec, n) {
   if (!n) return '';
   const tot = sprintTotals(readSprints(c));
-  const past = tot.perMin != null ? ` <span class="sub">Your sprints so far: ${tot.perMin} decisions a minute${tot.kept != null ? `, ${Math.round(tot.kept * 100)}% of moves kept` : ''}.</span>` : '';
+  const past = tot.perMin != null ? `${tot.kept != null ? ` <span class="sub">Your sprints so far: ${Math.round(tot.kept * 100)}% of moves kept.</span>` : ''}` : '';
   return `<div class="sprintbar"><button type="button" class="b sm" id="sprintGo" data-act="spstart" data-spsec="${sec}" aria-describedby="sprintHint">Sprint through ${n.toLocaleString()}</button>
     <span class="hint" id="sprintHint">One at a time by keyboard: <kbd>→</kbd> move, <kbd>←</kbd> keep, <kbd>U</kbd> undo, <kbd>Esc</kbd> stop.</span>${past}</div>`;
 }
 
 function sprintTally(st) {
-  return `${st.decisions} decided${st.perMin != null ? ` · ${st.perMin} a minute` : ''}${st.kept != null ? ` · ${Math.round(st.kept * 100)}% of moves kept` : ''}`;
+  return `${st.decisions} decided${st.kept != null ? ` · ${Math.round(st.kept * 100)}% of moves kept` : ''}`;
 }
 
 function sprintPanel(c, sec) {

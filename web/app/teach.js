@@ -113,7 +113,7 @@ function teachAct(el) {
 /** The teach card above File's deck, or '' where it does not apply. */
 function teachHTML() {
   if (TEACH_UI.hidden || S.roll || !R?.backlog?.length || typeof teachQueue !== 'function' || !teachGateOpen()) return '';
-  const head = (sub, extra = '') => `<div class="teach-h"><h2 id="teachH">Teach the engine</h2>
+  const head = (sub, extra = '') => `<div class="teach-h"><h2 id="teachH">Help it learn</h2>
       <button class="teach-x" data-act="teach" data-teach="hide" aria-label="Hide the teach questions" title="Hide"><span aria-hidden="true">✕</span></button>
     </div><p class="sub teach-sub">${sub}</p>${extra}`;
   const wrap = inner => `<section class="card teach" aria-labelledby="teachH">${inner}</section>`;

@@ -217,7 +217,7 @@ export function radarView(ctx) {
     const when = auto ? 'It starts by itself a minute or two after Betterfy opens. ' : 'Off on this device since you pressed Stop. ';
     return head + `<p class="lede">New releases from the ${est.artists.toLocaleString('en-GB')} artists in your library, newest first.</p>
       <div class="rr-start">
-        <p>${when}The first read asks Spotify about each artist in turn: about <b>${est.minutes} minute${est.minutes === 1 ? '' : 's'}</b> (${est.requests.toLocaleString('en-GB')} requests). You can keep using the app, and what has been read shows as it arrives.</p>
+        <p>${when}The first read asks Spotify about each artist in turn: about <b>${est.minutes} minute${est.minutes === 1 ? '' : 's'}</b>. You can keep using the app, and what has been read shows as it arrives.</p>
         <div class="rowbtns"><button class="b${auto ? '' : ' p'}" type="button" data-act="rrStart" id="rrStart">${auto ? 'Start now' : 'Start the radar'}</button></div>
         ${R.err || R.probe ? probeHTML(R, esc) : ''}
       </div></section>`;

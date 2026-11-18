@@ -37,7 +37,7 @@ test('no artists, no data: zeros, never a division by zero', () => {
 test('the card says the sentence, and says a source never asked was not asked', () => {
   const html = coverageHTML(artistCoverage({ ids: [A, B], shipped: { [A]: [['h', 1]] },
     bridge: { [A]: { deezerId: 1, deezerAt: 1 } } }));
-  assert.match(html, /Deezer knows <b class="mono">50%<\/b>, Wikidata <b>not asked yet<\/b>,\s+shared table <b class="mono">50%<\/b> of your <span class="mono">2<\/span> artists/);
+  assert.match(html, /Deezer knows <b class="mono">50%<\/b>, Wikidata <b>not asked yet<\/b>,\s+the shared tag list <b class="mono">50%<\/b> of your <span class="mono">2<\/span> artists/);
   assert.match(html, /Asked so far: Deezer about 1\./);
   assert.equal(coverageHTML(null), '', 'not read yet: no card');
   assert.equal(coverageHTML(artistCoverage({ ids: [] })), '', 'no artists: no card');
@@ -55,7 +55,7 @@ test('the Sources screen draws the card from ctx.sourceCoverage, and nothing new
   assert.equal(view({ ...ctx, sourceCoverage: () => ({ ids: [], shipped: {}, extra: {}, bridge: {} }) }), without);
   const withData = view({ ...ctx, sourceCoverage: () => ({ ids: [A, B], shipped: { [A]: [0] }, extra: {}, bridge: {} }) });
   assert.match(withData, /id="src-coverage"/);
-  assert.match(withData, /shared table <b class="mono">50%<\/b> of your <span class="mono">2<\/span> artists/);
+  assert.match(withData, /the shared tag list <b class="mono">50%<\/b> of your <span class="mono">2<\/span> artists/);
 });
 
 test('the page hands the Sources screen its coverage, read from this device only', () => {

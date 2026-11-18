@@ -153,7 +153,7 @@ test('Library: the advice for each weak playlist, a merge only through the wizar
   assert.match(list, /Add 7 more that only belong here/);
   const sheet = LISTS.weakSheetHTML(c, 'P');
   assert.match(sheet, /Help it learn this one/);
-  assert.match(sheet, /0% of the 7 tracks it was checked on \(scored today\)/);
+  assert.match(sheet, /0% of the 7 tracks it was checked on \(checked today\)/);
   assert.match(sheet, /data-act="wizmerge" data-a="P" data-b="Q">Merge with Bashment…/);
   assert.ok(!LISTS.weakSheetHTML(c, 'L').includes('wizmerge'), 'adding tracks is the listener\'s to do');
   assert.equal(LISTS.weakSheetHTML(c, 'Q'), '');
