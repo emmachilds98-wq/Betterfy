@@ -208,7 +208,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
   // them define a playlist's sound does, and buildSpace handles that.
   const audioOpts = audioOptions(audio);
   const sound = audioOpts ? { all: tally(), neverFiled: tally(), heard: 0, heardNeverFiled: 0,
-                              judged: 0, changed: 0, rows: collect ? [] : null } : null;
+                              judged: 0, changed: 0, rows: collect ? [] : null, led: collect ? [] : null } : null;
   const limit3 = collect ? Infinity : 3;
   // `fitParts`: every held-out track's raw components against every
   // destination of its own fold's space, for core/validate/weights.mjs to fit
@@ -294,6 +294,8 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
         const s3 = r.slice(0, 3).some(x => want.has(x.playlistId));
         if (space.audio?.index.has(id)) { sound.heard++; if (fresh) sound.heardNeverFiled++; }
         if (r[0]?.parts && ('audio' in r[0].parts || 'learned' in r[0].parts)) sound.judged++;
+        // S1: the tracks File would lead with sound (soundPicks keeps results sound had a say in).
+        if (sound.led && space.audio && r.some(x => x.parts && ('audio' in x.parts || 'learned' in x.parts))) sound.led.push(id);
         if (r[0]?.playlistId !== ranked[0]?.playlistId) sound.changed++;
         sound.all.scored++; if (s1) sound.all.top1++; if (s3) sound.all.top3++;
         if (fresh) { sound.neverFiled.scored++; if (s1) sound.neverFiled.top1++; if (s3) sound.neverFiled.top3++; }
@@ -378,6 +380,8 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
     ...(soundWeights ? { soundFirst: true } : {}),
     learner: audioOpts.learn !== false && audioOpts.learn !== null,
     ...(sound.rows ? { rows: sound.rows } : {}),
+    // S1 (docs/BUILD-7-PLAN.md): ids of the scored tracks sound led on, with `collect` only.
+    ...(sound.led ? { led: sound.led } : {}),
   } : null;
 
   const result = {

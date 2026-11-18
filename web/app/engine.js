@@ -318,7 +318,7 @@ async function engineCalibrate(v) {
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
-  if (mine.withAudio) delete mine.withAudio.rows;
+  if (mine.withAudio) { delete mine.withAudio.rows; delete mine.withAudio.led; }
   for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
   ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}),
                 ...(mood ? { mood } : {}), ...(pairs ? { pairs } : {}), at: Date.now() };

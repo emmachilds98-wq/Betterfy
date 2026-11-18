@@ -27,6 +27,11 @@ function helpersState() {
     bridge: { on: typeof bridgeOn === 'function' ? bridgeOn() : true, ...(br ?? {}),
               ...(typeof bridgeWarmState === 'function' ? { warm: bridgeWarmState() } : {}) },
     audio, deep,
+    // S1: the last Score run's verdict on sound and the blend (app/blend.js routeKeep).
+    soundRoute: (() => { try {
+      const r = typeof ENG !== 'undefined' && ENG.val?.blend?.route && typeof routeKeep === 'function' ? routeKeep(ENG.val.blend.route)
+        : typeof BLEND !== 'undefined' ? BLEND.seenRoute : null;
+      return r ?? null; } catch { return null; } })(),
     discogs: !!LS.getItem('bf_discogs'),
     engine: { status: typeof ENG !== 'undefined' ? ENG.status : null,
       targets: (() => { try { return LIB ? engineTargets().length : null; } catch { return null; } })() },

@@ -165,3 +165,24 @@ export function decideCard(scores, cal, famCal, families, opts = {}) {
   if (inside.length === 1) return { kind: 'sure', playlists: inside, p: +lead[1].toFixed(4), via: 'family' };
   return { kind: 'family', family: lead[0], playlists: inside.slice(0, 2), p: +lead[1].toFixed(4) };
 }
+
+/**
+ * S1 (docs/BUILD-7-PLAN.md): the family a track's ranking is confident about,
+ * or null. The family-level "confident" of `decideCard`, on its own: the
+ * playlists' probabilities (temperature `T`) summed per family, and the leader
+ * confident under `famCal` (fitFamilyCalibration). Used to keep a pick inside
+ * that family when this account's Score run said doing so helps.
+ */
+export function familyConfident(scores, families, T, famCal) {
+  if (!scores?.length || !famCal || !families || !Number.isFinite(T)) return null;
+  const fr = familyRow({ scores }, families, T);
+  const d = decide(asScores(fr.fams), famCal);
+  return d.kind === 'confident' && d.playlists[0] === fr.fams[0]?.[0] ? fr.fams[0][0] : null;
+}
+
+/** A ranking kept to one family's playlists; the ranking itself when none of it is. */
+export function narrowToFamily(ids, family, families) {
+  if (!family) return ids;
+  const kept = ids.filter(id => famOf(families, id) === family);
+  return kept.length ? kept : ids;
+}

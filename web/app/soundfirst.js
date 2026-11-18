@@ -187,6 +187,24 @@ function moodChipsFor(t) {
   return SOUND.moodMemo.get(key);
 }
 
+/** S1 (docs/BUILD-7-PLAN.md): the sound-first engine's whole ranking for one
+ *  track, `{ key, scores: [[playlist id, score]] }`, as the Score run's "with
+ *  sound" rows have it, for the three-way blend and the family view. Null
+ *  until the sound space is ready. */
+function soundScoresOf(t) {
+  const space = typeof bridgedSpace === 'function' ? bridgedSpace(SOUND.space) : SOUND.space;
+  if (!t?.id || !space?.audio || !globalThis.BetterfyIntrinsic || !globalThis.BetterfyCalibrate) return null;
+  const key = `${t.id}|${space.audio.index.size}${typeof bridgeVer === 'function' ? '|' + bridgeVer() : ''}`;
+  if (SOUND.scoreMemo?.key === key) return SOUND.scoreMemo;
+  if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
+  const raw = SOUND.byId.get(t.id);
+  if (!raw) return null;
+  soundHear(t.id);
+  const out = BetterfyIntrinsic.placements(raw, space, { limit: Infinity, soundFirst: (typeof tuneSoundFirst === 'function' ? tuneSoundFirst() : null) ?? true });
+  SOUND.scoreMemo = { key, scores: BetterfyCalibrate.scoresOf(out.results ?? []) };
+  return SOUND.scoreMemo;
+}
+
 /** Sound-led picks for one track on the File screen, or [] when it hasn't been
  *  heard, the space isn't ready, or sound can't tell (too few heard members). */
 function soundPicks(t) {

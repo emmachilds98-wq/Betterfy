@@ -55,6 +55,20 @@ export function helperRows(s = {}) {
     status: !a.on ? 'Off' : a.problem ? 'On · paused' : a.state === 'running' ? 'On · listening' : 'On',
     did: !a.on ? 'Places tracks by how they sound. Switch it on in Listening.' : a.problem ? `Paused: ${a.problem}` :
       `Places tracks by how they sound against your playlists${a.all ? ', hearing your whole library' : ''}${a.heard ? `; ${n(a.heard)} tracks heard` : ''}.` });
+  // S1 (BUILD-7): how sound is weighed against tags and your filing on File, once a Score run has measured it.
+  const sr = s.soundRoute;
+  if (sr && a.on) {
+    const pc = x => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '—');
+    const how = { blend: 'tags and your filing', three: 'tags, your filing and sound together',
+                  route: 'sound for artists you haven’t filed yet, tags and your filing for the rest',
+                  route3: 'sound for artists you haven’t filed yet, all three together for the rest' }[sr.choice];
+    const fam = sr.family?.use ? ' Picks stay inside a genre family when it is clear which one.' : '';
+    rows.push({ id: 'soundroute', name: 'Sound with tags and your filing', on: true, kind: sr.use || sr.family?.use ? 'ok' : 'idle',
+      status: sr.use ? 'On' : 'On · sound leads',
+      did: (sr.use && how
+        ? `Your last Score run: heard tracks are placed by ${how}, right first time ${pc(sr.chosen?.top1)} against ${pc(sr.today?.top1)} with sound leading.`
+        : `Your last Score run: sound leading is still best for heard tracks (${pc(sr.today?.top1)} right first time), so File keeps it.`) + fam });
+  }
   const d = s.deep ?? {};
   const deepOn = d.maest || d.clap;
   rows.push({ id: 'deep', name: 'Deep listen', on: !!deepOn, kind: !deepOn ? 'off' : d.blocked ? 'idle' : 'ok',

@@ -269,6 +269,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     ...bridgeLines(v, pc),
     ...blendLines(v, pc),
     ...audioLines(v, pc, maestScoreText),
+    ...routeLines(v, pc),
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
@@ -420,6 +421,42 @@ function blendLines(v, pc) {
     nf?.scored ? `Never-filed artists blended: top-1 ${pc(nf.top1)}, top-3 ${pc(nf.top3)} (today's ${pc(nf.tags.top1)}, `
       + `this engine ${pc(nf.native.top1)}; ${nf.scored} tracks)` : null,
     `Phase 1: ${blendVerdict(b).short}`,
+  ].filter(Boolean);
+}
+
+/** S1 (docs/BUILD-7-PLAN.md): sound joins the blend, per situation. Each way a
+ *  heard track's picks can be made, on the blend's own held-out tracks, and
+ *  which one File uses. Counts and rates only. [] before a run that measured it. */
+export const ROUTE_NAMES = Object.freeze({
+  today: 'Sound leads on heard tracks (today’s File)',
+  blend: 'Blend only',
+  three: 'Tags + engine + sound blended',
+  route: 'By situation (never-filed: sound leads; filed: blend)',
+  route3: 'By situation (never-filed: sound leads; filed: three-way)',
+});
+export function routeLines(v, pc) {
+  const r = v?.blend?.route;
+  if (!r?.arms?.today) return [];
+  const pts = x => `${x >= 0 ? '+' : ''}${Math.round(x * 1000) / 10}`;
+  const arm = k => {
+    const a = r.arms[k];
+    if (!a) return null;
+    const w = k === 'three' || k === 'route3' ? (r.weights ? ` [tags ${r.weights[0]}, engine ${r.weights[1]}, sound ${r.weights[2]}]` : '') : '';
+    return `  ${ROUTE_NAMES[k]}${w}: top-1 ${pc(a.top1)}, top-3 ${pc(a.top3)}; never-filed ${pc(a.neverFiled?.top1)} / ${pc(a.neverFiled?.top3)}`;
+  };
+  const c = r.choice ? r.arms[r.choice] : null;
+  const verdict = !r.blendOnFile ? 'File doesn’t run the blend, so sound keeps leading'
+    : c ? `${ROUTE_NAMES[r.choice]} beats sound leading by ${pts(c.top1 - r.arms.today.top1)} points — File uses it`
+    : 'nothing beats sound leading by a point without losing never-filed artists — File unchanged';
+  const f = r.family;
+  const famArm = f?.arm, famBase = f ? r.arms[f.base] : null;
+  return [
+    `Sound and the blend on the same ${r.scored} tracks (${r.heard} sound could place):`,
+    ...['today', 'blend', 'three', 'route', 'route3'].map(arm).filter(Boolean),
+    `Sound and the blend: ${verdict}`,
+    f?.confident != null && famArm && famBase
+      ? `Family narrowing: family confident on ${pc(f.confident)} of tracks, right ${pc(f.right)}; picks kept in the family top-1 ${pc(famArm.top1)}, top-3 ${pc(famArm.top3)} (without ${pc(famBase.top1)} / ${pc(famBase.top3)}) — ${f.use ? 'File uses it' : 'not used'}`
+      : null,
   ].filter(Boolean);
 }
 
