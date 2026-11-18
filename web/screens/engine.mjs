@@ -278,6 +278,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     ...(v.pairsLine ? [v.pairsLine] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),
+    onlineLine(v.online, pc),
     ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
@@ -312,6 +313,12 @@ export function teachLine(t, pc) {
   if (t.before == null) return `Teach questions: off (${t.why})`;
   return `Teach questions${t.sound ? " (with sound)" : ""}: top-1 ${pc(t.before)} -> ${pc(t.after)} after ${t.asked} simulated answers, ${t.scored} hidden tracks — ${
     t.pass ? 'shown on File' : `off (${t.why})`}`;
+}
+/** E1: the Score's folds replayed in order, each tap learnt at once (core/validate/online.mjs). */
+export function onlineLine(o, pc) {
+  if (!o?.scored) return null;
+  return `Learning from each tap: top-1 ${pc(o.static.top1)} -> ${pc(o.online.top1)} on ${o.scored} filed tracks replayed in order (${
+    o.repeat.scored} by an artist filed earlier: ${pc(o.repeat.static.top1)} -> ${pc(o.repeat.online.top1)})`;
 }
 function teachRow(t, p) {
   if (!t || t.before == null) return '';

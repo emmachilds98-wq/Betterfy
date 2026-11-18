@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1451">
+<meta name="bf-build" content="2026-11-18-1603">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -2001,7 +2001,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1451</span>
+    <span class="mono">build 2026-11-18-1603</span>
   </p>
 
   <div class="feat">
@@ -2094,7 +2094,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1451</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1603</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2204,7 +2204,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-1451. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-1603. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3997,6 +3997,10 @@ const TEACH = {
   singleWeight: 0.6,
   /** Best guesses shown for a track the Engine is not sure about. */
   guesses: 3,
+  /** E1: a close call teaches more (ENGINE-REVIEW layer 5). Up to this much more value… */
+  closeBoost: 0.5,
+  /** …when the top two are level, falling to none at this score margin. */
+  closeAt: 0.1,
 };
 
 /** decide() kinds as the bands filequeue.mjs reads uncertainty by. */
@@ -4041,12 +4045,14 @@ function choicesOf(row, decision, guesses = null) {
  * How much one answer about this row should teach, 0 when there is nothing to
  * ask. `spread` is artistSpread over the waiting rows.
  */
-function teachValue(row, { kind = null, choices = [] } = {}, { weights = null, tracks = null, spread = null } = {}) {
+function teachValue(row, { kind = null, choices = [], margin = null } = {}, { weights = null, tracks = null, spread = null } = {}) {
   if (!choices?.length || kind === 'confident') return 0;
   const base = valueOf(row, { weights, tracks, bandOf: () => KIND_BAND[kind] ?? null });
   const reach = 1 + Math.log2(Math.max(1, spread?.get?.(artistKeyOf(row)) ?? 1));
   const open = choices.length >= 2 ? 1 : TEACH.singleWeight;
-  return +(base * reach * open).toFixed(4);
+  // E1: the top two close together (`margin`, the score gap) is where one answer decides most.
+  const close = Number.isFinite(margin) ? 1 + TEACH.closeBoost * Math.max(0, 1 - margin / TEACH.closeAt) : 1;
+  return +(base * reach * open * close).toFixed(4);
 }
 
 /**
@@ -4060,7 +4066,7 @@ function teachValue(row, { kind = null, choices = [] } = {}, { weights = null, t
  * One question per artist.
  */
 function teachQueue(rows, { decisionOf = null, guesses = null, weights = null, tracks = null,
-                                   limit = TEACH.batch, answered = null, rejected = null } = {}) {
+                                   limit = TEACH.batch, answered = null, rejected = null, marginOf = null } = {}) {
   const list = (rows ?? []).filter(r => r?.id && !(r.skips > 0) && !answered?.has?.(r.id));
   const spread = artistSpread(list);
   const out = [];
@@ -4071,7 +4077,7 @@ function teachQueue(rows, { decisionOf = null, guesses = null, weights = null, t
     const choices = rejected ? c.choices.filter(x => !rejected(row, x.id)) : c.choices;
     if (!choices.length) continue;
     const kind = d?.kind ?? 'unsure';
-    const value = teachValue(row, { kind, choices }, { weights, tracks, spread });
+    const value = teachValue(row, { kind, choices, margin: marginOf?.(row) ?? null }, { weights, tracks, spread });
     if (value > 0) out.push({ row, choices, checked: c.checked, kind, value });
   }
   out.sort((a, b) => b.value - a.value || (b.row.added ?? '').localeCompare(a.row.added ?? '')
@@ -7010,7 +7016,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1451`,
+    `Betterfy engine score — build 2026-11-18-1603`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7037,6 +7043,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     ...(v.pairsLine ? [v.pairsLine] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),
+    onlineLine(v.online, pc),
     ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
@@ -7071,6 +7078,12 @@ function teachLine(t, pc) {
   if (t.before == null) return `Teach questions: off (${t.why})`;
   return `Teach questions${t.sound ? " (with sound)" : ""}: top-1 ${pc(t.before)} -> ${pc(t.after)} after ${t.asked} simulated answers, ${t.scored} hidden tracks — ${
     t.pass ? 'shown on File' : `off (${t.why})`}`;
+}
+/** E1: the Score's folds replayed in order, each tap learnt at once (core/validate/online.mjs). */
+function onlineLine(o, pc) {
+  if (!o?.scored) return null;
+  return `Learning from each tap: top-1 ${pc(o.static.top1)} -> ${pc(o.online.top1)} on ${o.scored} filed tracks replayed in order (${
+    o.repeat.scored} by an artist filed earlier: ${pc(o.repeat.static.top1)} -> ${pc(o.repeat.online.top1)})`;
 }
 function teachRow(t, p) {
   if (!t || t.before == null) return '';
@@ -7561,7 +7574,7 @@ const actions = {
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakCard, weakBuckets, summary, fillLine, teachLine, blendVerdict, pastRunsCard, view, tuneCardHtml, actions };
+return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakCard, weakBuckets, summary, fillLine, teachLine, onlineLine, blendVerdict, pastRunsCard, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -11198,7 +11211,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1451';
+const BUILD = '2026-11-18-1603';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11536,7 +11549,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1451', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1603', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11740,6 +11753,8 @@ async function recordReject(trackId, playlistId) {
   const f = fbFor(trackId);
   if (!f.rejected.includes(playlistId)) f.rejected.push(playlistId);
   fbStamp(f, 'rejectedAt', [playlistId]);
+  // The artist's next card already knows (E1, app/soundfirst.js learnRejectNow).
+  try { if (typeof learnRejectNow === 'function') learnRejectNow(trackId, playlistId); } catch { /* the rebuild catches up */ }
   await saveFeedback();
 }
 
@@ -11762,6 +11777,8 @@ async function forgetAccept(trackId, playlistIds) {
   f.accepted = f.accepted.filter(p => !ids.includes(p));
   if (!f.accepted.length) delete f.accepted;
   fbUnstamp(f, 'acceptedAt', ids);
+  // E1: the quick learn is taken back too (app/soundfirst.js learnUndoNow).
+  try { if (typeof learnUndoNow === 'function') learnUndoNow(trackId, ids); } catch { /* the rebuild catches up */ }
   await saveFeedback();
 }
 
@@ -11793,6 +11810,11 @@ async function recordMove(trackId, fromId, toId) {
   fbUnstamp(f, 'rejectedAt', [toId]); fbUnstamp(f, 'acceptedAt', [fromId]);
   if (fromId && fromId !== toId) fbStamp(f, 'rejectedAt', [fromId]);
   if (toId) fbStamp(f, 'acceptedAt', [toId]);
+  // E1: a move counts at once, both halves.
+  try {
+    if (toId && typeof learnNow === 'function') learnNow(trackId, [toId], { fromCard: false });
+    if (fromId && fromId !== toId && typeof learnRejectNow === 'function') learnRejectNow(trackId, fromId);
+  } catch { /* the rebuild catches up */ }
   await saveFeedback();
 }
 
@@ -12348,7 +12370,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1451');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1603');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16042,7 +16064,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1451';
+    s.src = 'engine.js?v=2026-11-18-1603';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -16064,7 +16086,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1451');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1603');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16648,7 +16670,9 @@ const engineValidate = guard(async () => {
       try { fill = BetterfyFill.fillRecall(LIB, { tags, audio: engineAudioScore(audio), isMirror: isMirrorPlaylist }); } catch { fill = null; }
       let teach = null;
       try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true, audio: engineAudioIn(audio) }); } catch { teach = null; }
-      ENG.val = { mine, base, blend, identify, weights, fill, teach, tagTops, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      let online = null;
+      try { online = BetterfyOnline.onlineAccuracy(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true }); } catch { online = null; }
+      ENG.val = { mine, base, blend, identify, weights, fill, teach, online, tagTops, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).
     try { if (ENG.val.fill?.recall != null) LS.setItem('bf_fill', JSON.stringify({ ...ENG.val.fill, at: Date.now() })); } catch { /* shown next run */ }
@@ -16775,7 +16799,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1451';
+    s.src = 'audio.js?v=2026-11-18-1603';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16829,7 +16853,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1451', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1603', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17138,16 +17162,53 @@ function soundIdOf(t) {
  *  playlist in the File and Engine spaces before the next card, so another
  *  track by that artist, or one that sounds like it, already counts it. The
  *  background rebuild replaces this with the exact space later. */
-function learnNow(trackId, playlistIds) {
+function learnNow(trackId, playlistIds, { fromCard = true } = {}) {
+  const ids = [].concat(playlistIds).filter(Boolean);
+  // A pick of the second choice over the first (E1): the card's first pick is a "not there".
+  const top = fromCard ? learnTopPick(trackId) : null;
+  learnApply(trackId, (space, raw) => {
+    let changed = false;
+    for (const pid of ids) changed = BetterfyIntrinsic.learnFiled(space, raw, pid) || changed;
+    if (top && !ids.includes(top)) changed = (BetterfyIntrinsic.learnRejected?.(space, raw, top) ?? false) || changed;
+    return changed;
+  });
+}
+
+/* E1 (docs/BUILD-7-PLAN.md): every tap counts at once, not only a filing. */
+
+/** The card's first pick for this track, as it was shown: the sound picks, else the tag picks. */
+function learnTopPick(trackId) {
+  if (SOUND.memo?.key?.startsWith(trackId + '|') && SOUND.memo.picks?.[0]) return SOUND.memo.picks[0].id;
+  try { return (typeof R !== 'undefined' ? R?.backlog?.find(r => r.id === trackId)?.suggest?.[0]?.id : null) ?? null; }
+  catch { return null; }
+}
+
+/** Run one learn on the File and Engine spaces, and drop what was worked out from them. */
+function learnApply(trackId, fn) {
   if (!globalThis.BetterfyIntrinsic?.learnFiled) return;
   if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
   const raw = SOUND.byId.get(trackId);
   if (!raw) return;
   let changed = false;
   for (const space of new Set([SOUND.space, typeof ENG !== 'undefined' ? ENG.space : null].filter(Boolean)))
-    for (const pid of [].concat(playlistIds)) changed = BetterfyIntrinsic.learnFiled(space, raw, pid) || changed;
+    changed = fn(space, raw) || changed;
   if (changed) { SOUND.memo = null; SOUND.idMemo = null; SOUND.moodMemo = new Map();
                  if (typeof bridgeSpaceStale === 'function') bridgeSpaceStale(); }
+}
+
+/** "Not that playlist" (or a move away from it), learnt before the next card. */
+function learnRejectNow(trackId, playlistId) {
+  if (!playlistId) return;
+  learnApply(trackId, (space, raw) => BetterfyIntrinsic.learnRejected?.(space, raw, playlistId) ?? false);
+}
+
+/** A filing was undone: take back what it taught, when it is the newest learn. */
+function learnUndoNow(trackId, playlistIds) {
+  learnApply(trackId, space => {
+    let changed = false;
+    for (const pid of [].concat(playlistIds).reverse()) changed = (BetterfyIntrinsic.learnUndone?.(space, { trackId, playlistId: pid }) ?? false) || changed;
+    return changed;
+  });
 }
 
 /** Mood "also fits" chips for one heard track (core/intrinsic/mood.mjs): the mood
@@ -18029,7 +18090,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1451', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1603', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;

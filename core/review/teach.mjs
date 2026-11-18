@@ -33,6 +33,10 @@ export const TEACH = {
   singleWeight: 0.6,
   /** Best guesses shown for a track the Engine is not sure about. */
   guesses: 3,
+  /** E1: a close call teaches more (ENGINE-REVIEW layer 5). Up to this much more value… */
+  closeBoost: 0.5,
+  /** …when the top two are level, falling to none at this score margin. */
+  closeAt: 0.1,
 };
 
 /** decide() kinds as the bands filequeue.mjs reads uncertainty by. */
@@ -77,12 +81,14 @@ export function choicesOf(row, decision, guesses = null) {
  * How much one answer about this row should teach, 0 when there is nothing to
  * ask. `spread` is artistSpread over the waiting rows.
  */
-export function teachValue(row, { kind = null, choices = [] } = {}, { weights = null, tracks = null, spread = null } = {}) {
+export function teachValue(row, { kind = null, choices = [], margin = null } = {}, { weights = null, tracks = null, spread = null } = {}) {
   if (!choices?.length || kind === 'confident') return 0;
   const base = valueOf(row, { weights, tracks, bandOf: () => KIND_BAND[kind] ?? null });
   const reach = 1 + Math.log2(Math.max(1, spread?.get?.(artistKeyOf(row)) ?? 1));
   const open = choices.length >= 2 ? 1 : TEACH.singleWeight;
-  return +(base * reach * open).toFixed(4);
+  // E1: the top two close together (`margin`, the score gap) is where one answer decides most.
+  const close = Number.isFinite(margin) ? 1 + TEACH.closeBoost * Math.max(0, 1 - margin / TEACH.closeAt) : 1;
+  return +(base * reach * open * close).toFixed(4);
 }
 
 /**
@@ -96,7 +102,7 @@ export function teachValue(row, { kind = null, choices = [] } = {}, { weights = 
  * One question per artist.
  */
 export function teachQueue(rows, { decisionOf = null, guesses = null, weights = null, tracks = null,
-                                   limit = TEACH.batch, answered = null, rejected = null } = {}) {
+                                   limit = TEACH.batch, answered = null, rejected = null, marginOf = null } = {}) {
   const list = (rows ?? []).filter(r => r?.id && !(r.skips > 0) && !answered?.has?.(r.id));
   const spread = artistSpread(list);
   const out = [];
@@ -107,7 +113,7 @@ export function teachQueue(rows, { decisionOf = null, guesses = null, weights = 
     const choices = rejected ? c.choices.filter(x => !rejected(row, x.id)) : c.choices;
     if (!choices.length) continue;
     const kind = d?.kind ?? 'unsure';
-    const value = teachValue(row, { kind, choices }, { weights, tracks, spread });
+    const value = teachValue(row, { kind, choices, margin: marginOf?.(row) ?? null }, { weights, tracks, spread });
     if (value > 0) out.push({ row, choices, checked: c.checked, kind, value });
   }
   out.sort((a, b) => b.value - a.value || (b.row.added ?? '').localeCompare(a.row.added ?? '')

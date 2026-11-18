@@ -44,6 +44,8 @@ async function recordReject(trackId, playlistId) {
   const f = fbFor(trackId);
   if (!f.rejected.includes(playlistId)) f.rejected.push(playlistId);
   fbStamp(f, 'rejectedAt', [playlistId]);
+  // The artist's next card already knows (E1, app/soundfirst.js learnRejectNow).
+  try { if (typeof learnRejectNow === 'function') learnRejectNow(trackId, playlistId); } catch { /* the rebuild catches up */ }
   await saveFeedback();
 }
 
@@ -66,6 +68,8 @@ async function forgetAccept(trackId, playlistIds) {
   f.accepted = f.accepted.filter(p => !ids.includes(p));
   if (!f.accepted.length) delete f.accepted;
   fbUnstamp(f, 'acceptedAt', ids);
+  // E1: the quick learn is taken back too (app/soundfirst.js learnUndoNow).
+  try { if (typeof learnUndoNow === 'function') learnUndoNow(trackId, ids); } catch { /* the rebuild catches up */ }
   await saveFeedback();
 }
 
@@ -97,6 +101,11 @@ async function recordMove(trackId, fromId, toId) {
   fbUnstamp(f, 'rejectedAt', [toId]); fbUnstamp(f, 'acceptedAt', [fromId]);
   if (fromId && fromId !== toId) fbStamp(f, 'rejectedAt', [fromId]);
   if (toId) fbStamp(f, 'acceptedAt', [toId]);
+  // E1: a move counts at once, both halves.
+  try {
+    if (toId && typeof learnNow === 'function') learnNow(trackId, [toId], { fromCard: false });
+    if (fromId && fromId !== toId && typeof learnRejectNow === 'function') learnRejectNow(trackId, fromId);
+  } catch { /* the rebuild catches up */ }
   await saveFeedback();
 }
 

@@ -25,7 +25,7 @@
 //                  teach card is shown only where it passes (per account, on
 //                  this device; nothing is shared). Like every number here it
 //                  is the account grading the engine with its own answers.
-import { buildSpace, placements } from '../intrinsic/space.mjs';
+import { buildSpace, placements, learnRejected } from '../intrinsic/space.mjs';
 import { scoresOf, decide, calibrationReport } from '../intrinsic/calibrate.mjs';
 import { placementAccuracy, foldOf, truthOf, scoredTracks } from './loo.mjs';
 import { libraryWithout } from './baseline.mjs';
@@ -65,6 +65,7 @@ export function decisionsFor(space, tracks, cal, { soundFirst = false } = {}) {
   for (const t of tracks) {
     const results = placements(t, space, { limit: Infinity, soundFirst }).results ?? [];
     out.set(t.id, { decision: decide(scoresOf(results), cal),
+                    margin: results.length >= 2 ? results[0].score - results[1].score : null,
                     guesses: results.slice(0, TEACH.guesses).map(r => ({ id: r.playlistId, name: r.name })) });
   }
   return out;
@@ -83,7 +84,13 @@ export function decisionsFor(space, tracks, cal, { soundFirst = false } = {}) {
  */
 export function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH.batch, strategy = 'teach',
                                     folds = 5, targets = null, genreGraph = false, cal = null, calLimit = null,
-                                    isMirror = null, audio = null } = {}) {
+                                    isMirror = null, audio = null, online = false, close = false } = {}) {
+  // Both off by default: measured on the shaped seeds (docs/BUILD-7-PLAN.md E1),
+  // neither opens the gate on more seeds, and close calls cost tracks.
+  // `online` (E1): each answer's "not those" (the short list's picks above the
+  // right one, or all of it when the right one was missing) is learnt at once
+  // and replayed onto every rebuilt space, as the page learns from each tap.
+  // `close`: the queue favours close calls (teach.mjs TEACH.closeBoost).
   // With `audio` (ENGINE-REVIEW layer 5) the engine is the one File places heard
   // tracks with: sound-first, and each answer joins its playlist's sound, so a
   // single answer counts for every track that sounds like it.
@@ -95,6 +102,7 @@ export function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH
   const asked = [];
   const first = buildSpace(lib, spaceOpts);
   let cur = lib, space = first, inList = 0;
+  const noes = [];
   while (asked.length < answers) {
     const done = new Set(asked.map(([t]) => t.id));
     const left = pending.filter(t => !done.has(t.id));
@@ -106,7 +114,7 @@ export function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH
     let picks;
     if (strategy === 'teach') {
       picks = teachQueue(rows, { decisionOf: r => dec.get(r.id).decision, guesses: r => dec.get(r.id).guesses,
-                                 limit: want })
+                                 limit: want, marginOf: close ? r => dec.get(r.id).margin : null })
         .map(q => ({ t: byId.get(q.row.id), choices: q.choices.map(c => c.id) }));
     } else {
       // The File card shows its top three too: same tap, the queue's own order.
@@ -122,10 +130,12 @@ export function simulateTeach(lib, { waiting, truth, answers = 20, batch = TEACH
       const hit = choices.find(id => real.includes(id));
       if (hit) inList++;
       round.push([t, hit ?? real[0]]);
+      if (online) for (const id of hit ? choices.slice(0, choices.indexOf(hit)) : choices) noes.push([t, id]);
     }
     asked.push(...round);
     cur = withAnswers(cur, round);
     space = buildSpace(cur, spaceOpts);
+    for (const [t, id] of noes) learnRejected(space, t, id);
   }
   const done = new Set(asked.map(([t]) => t.id));
   const rest = pending.filter(t => !done.has(t.id));
@@ -170,7 +180,8 @@ export function teachGate(lib, { targets = null, isMirror = null, genreGraph = f
   if (truth.size < o.answers + o.minScored) return { ...out, why: `not enough filed tracks yet (${truth.size} of ${o.answers + o.minScored})` };
   const base = libraryWithout(lib, new Set(truth.keys()));
   const r = simulateTeach(base, { waiting: hidden, truth, answers: o.answers, targets, genreGraph, isMirror,
-                                  folds: o.calFolds, calLimit: o.calLimit, audio });
+                                  folds: o.calFolds, calLimit: o.calLimit, audio,
+                                  ...(o.online != null ? { online: o.online } : {}), ...(o.close != null ? { close: o.close } : {}) });
   Object.assign(out, { asked: r.asked, inList: r.inList, scored: r.before.n, before: r.before.top1, after: r.after.top1,
                        ...(r.sound ? { sound: true } : {}),
                        gain: r.gain, right: [r.before.right, r.after.right] });

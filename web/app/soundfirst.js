@@ -125,16 +125,53 @@ function soundIdOf(t) {
  *  playlist in the File and Engine spaces before the next card, so another
  *  track by that artist, or one that sounds like it, already counts it. The
  *  background rebuild replaces this with the exact space later. */
-function learnNow(trackId, playlistIds) {
+function learnNow(trackId, playlistIds, { fromCard = true } = {}) {
+  const ids = [].concat(playlistIds).filter(Boolean);
+  // A pick of the second choice over the first (E1): the card's first pick is a "not there".
+  const top = fromCard ? learnTopPick(trackId) : null;
+  learnApply(trackId, (space, raw) => {
+    let changed = false;
+    for (const pid of ids) changed = BetterfyIntrinsic.learnFiled(space, raw, pid) || changed;
+    if (top && !ids.includes(top)) changed = (BetterfyIntrinsic.learnRejected?.(space, raw, top) ?? false) || changed;
+    return changed;
+  });
+}
+
+/* E1 (docs/BUILD-7-PLAN.md): every tap counts at once, not only a filing. */
+
+/** The card's first pick for this track, as it was shown: the sound picks, else the tag picks. */
+function learnTopPick(trackId) {
+  if (SOUND.memo?.key?.startsWith(trackId + '|') && SOUND.memo.picks?.[0]) return SOUND.memo.picks[0].id;
+  try { return (typeof R !== 'undefined' ? R?.backlog?.find(r => r.id === trackId)?.suggest?.[0]?.id : null) ?? null; }
+  catch { return null; }
+}
+
+/** Run one learn on the File and Engine spaces, and drop what was worked out from them. */
+function learnApply(trackId, fn) {
   if (!globalThis.BetterfyIntrinsic?.learnFiled) return;
   if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
   const raw = SOUND.byId.get(trackId);
   if (!raw) return;
   let changed = false;
   for (const space of new Set([SOUND.space, typeof ENG !== 'undefined' ? ENG.space : null].filter(Boolean)))
-    for (const pid of [].concat(playlistIds)) changed = BetterfyIntrinsic.learnFiled(space, raw, pid) || changed;
+    changed = fn(space, raw) || changed;
   if (changed) { SOUND.memo = null; SOUND.idMemo = null; SOUND.moodMemo = new Map();
                  if (typeof bridgeSpaceStale === 'function') bridgeSpaceStale(); }
+}
+
+/** "Not that playlist" (or a move away from it), learnt before the next card. */
+function learnRejectNow(trackId, playlistId) {
+  if (!playlistId) return;
+  learnApply(trackId, (space, raw) => BetterfyIntrinsic.learnRejected?.(space, raw, playlistId) ?? false);
+}
+
+/** A filing was undone: take back what it taught, when it is the newest learn. */
+function learnUndoNow(trackId, playlistIds) {
+  learnApply(trackId, space => {
+    let changed = false;
+    for (const pid of [].concat(playlistIds).reverse()) changed = (BetterfyIntrinsic.learnUndone?.(space, { trackId, playlistId: pid }) ?? false) || changed;
+    return changed;
+  });
 }
 
 /** Mood "also fits" chips for one heard track (core/intrinsic/mood.mjs): the mood
