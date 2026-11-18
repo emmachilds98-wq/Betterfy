@@ -162,7 +162,8 @@ test('new releases: the radar\'s stored rows from the last two weeks that are no
     row('gone', day(2)), row('mine', day(2), { owned: 'all' }), row('feat', day(2), { lane: 'features' })] };
   assert.equal(HOME.newReleases({ radar: { R }, now }), 2);
   const s = file(); s.now = now; s.radar = { R };
-  assert.match(html(s), /<button class="st-radar" data-go="discover"><b>2<\/b> new releases<\/button>/);
+  assert.match(html(s), /<button class="st-radar" data-go="discover" data-side="radar"><b>2<\/b> new releases<\/button>/);
+  // L3: it opens Discover on its New releases side (events.js sets S.discSide from data-side).
   let asked = 0;
   assert.equal(HOME.newReleases({ radar: { R: { loaded: false }, load: () => asked++ }, now }), 0);
   assert.equal(asked, 1, 'not read yet: read the stored rows (no request), say nothing for now');

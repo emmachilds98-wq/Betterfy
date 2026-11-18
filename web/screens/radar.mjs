@@ -187,17 +187,12 @@ export function probeHTML(R, esc) {
     <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></details></div>`;
 }
 
-/** Releases new enough to count on Discover's "New releases" side: the main lane (no reissues), released
- *  in the last `days` days, not dismissed and not already owned in full. The same rule the home header uses. */
+/** Releases new enough to count on Discover's "New releases" side: the same rule as File's header
+ *  (home.mjs newReleases): unheard, main lane, released in the last `days` days, not dismissed. */
 export function newReleaseCount(R, now = Date.now(), days = 14) {
-  const cut = now - days * 864e5, dismissed = R?.dismissed ?? new Set();
-  let n = 0;
-  for (const r of R?.rows ?? []) {
-    if (!r || r.lane !== 'main' || r.reissue || r.owned === 'all' || dismissed.has(r.key)) continue;
-    const ts = parseDate(r.releaseDate, r.precision)?.ts ?? r.ts;
-    if (Number.isFinite(ts) && ts >= cut && ts <= now + 864e5) n++;
-  }
-  return n;
+  const since = now - days * 864e5;
+  return feedRows(R?.rows, { filter: 'unheard', dismissed: R?.dismissed ?? new Set(), now })
+    .filter(r => parseDate(r.releaseDate, r.precision).ts >= since).length;
 }
 
 /** The whole section. '' when the page gives no radar (tests of the rest of Discover, old builds). */

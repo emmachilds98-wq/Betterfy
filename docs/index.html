@@ -5013,17 +5013,12 @@ function probeHTML(R, esc) {
     <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></details></div>`;
 }
 
-/** Releases new enough to count on Discover's "New releases" side: the main lane (no reissues), released
- *  in the last `days` days, not dismissed and not already owned in full. The same rule the home header uses. */
+/** Releases new enough to count on Discover's "New releases" side: the same rule as File's header
+ *  (home.mjs newReleases): unheard, main lane, released in the last `days` days, not dismissed. */
 function newReleaseCount(R, now = Date.now(), days = 14) {
-  const cut = now - days * 864e5, dismissed = R?.dismissed ?? new Set();
-  let n = 0;
-  for (const r of R?.rows ?? []) {
-    if (!r || r.lane !== 'main' || r.reissue || r.owned === 'all' || dismissed.has(r.key)) continue;
-    const ts = parseDate(r.releaseDate, r.precision)?.ts ?? r.ts;
-    if (Number.isFinite(ts) && ts >= cut && ts <= now + 864e5) n++;
-  }
-  return n;
+  const since = now - days * 864e5;
+  return feedRows(R?.rows, { filter: 'unheard', dismissed: R?.dismissed ?? new Set(), now })
+    .filter(r => parseDate(r.releaseDate, r.precision).ts >= since).length;
 }
 
 /** The whole section. '' when the page gives no radar (tests of the rest of Discover, old builds). */
@@ -5191,7 +5186,7 @@ function statusParts(ctx) {
   const total = R.likedIn?.total;
   if (total != null && total > liked) parts.push({ key: 'short', text: `Spotify has ${total.toLocaleString()} liked: sync again to read the rest`, act: 'opensync' });
   const fresh = newReleases(ctx);
-  if (fresh) parts.push({ key: 'radar', n: fresh, text: fresh === 1 ? 'new release' : 'new releases', go: 'discover' });
+  if (fresh) parts.push({ key: 'radar', n: fresh, text: fresh === 1 ? 'new release' : 'new releases', go: 'discover', side: 'radar' });
   const toTidy = typeof ctx.tidyCount === 'function' ? ctx.tidyCount() : R.within.length + R.misfiled.length;
   parts.push({ key: 'tidy', n: toTidy, text: 'to tidy', go: 'tidy' });
   // While the first analysis runs it says what it is doing (and listening's
@@ -5213,7 +5208,7 @@ function partHTML(p, esc) {
   const body = `${p.n != null ? `<b>${p.n.toLocaleString()}</b> ` : ''}${esc(p.text)}`;
   if (p.key === 'analyse') return `<span class="st-analyse" id="analyseStrip" aria-live="polite"><span class="txt">${body}</span></span>`;
   if (p.key === 'listen') return `<button class="st-listen" data-act="openlisten" data-listenstat>${body}</button>`;
-  if (p.go) return `<button class="st-${p.key}" data-go="${p.go}">${body}</button>`;
+  if (p.go) return `<button class="st-${p.key}" data-go="${p.go}"${p.side ? ` data-side="${p.side}"` : ''}>${body}</button>`;
   if (p.act) return `<button class="st-${p.key}" data-act="${p.act}">${body}</button>`;
   return `<span class="st-${p.key}">${body}</span>`;
 }
@@ -18965,7 +18960,8 @@ document.addEventListener('click', guard(async e => {
     return go(nav.dataset.v);
   }
 
-  const gto = e.target.closest('[data-go]'); if (gto) return go(gto.dataset.go);
+  // data-side picks Discover's side on the way there (L3: File's "N new releases" opens New releases).
+  const gto = e.target.closest('[data-go]'); if (gto) { if (gto.dataset.side) S.discSide = gto.dataset.side; return go(gto.dataset.go); }
   const more = e.target.closest('[data-more]');
   if (more) { S.shown[more.dataset.more] = shownOf(more.dataset.more) + TIDY_PAGE; return render(); }
 
