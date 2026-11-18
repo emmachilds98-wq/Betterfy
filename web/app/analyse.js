@@ -107,9 +107,10 @@ function analyseDeps() {
     listen: () => audioStart({ quiet: true }),
     listenVM: () => AUDIO.vm,
     status: st => {
+      // The home header's part ticks in place; it appears and goes with a redraw.
       const el = document.getElementById('analyseStrip');
-      if (el) { el.hidden = !st.running; el.querySelector('.txt').textContent = analyseStatus(st); }
-      const b = document.getElementById('analyseGo'); if (b) b.disabled = !!st.running;
+      if (el) el.querySelector('.txt').textContent = analyseStatus(st);
+      if (!el !== !st.running && typeof store !== 'undefined') store.touch('ui.inbox');
     },
     go: v => { if (view === 'inbox') go(v); },
   };
@@ -150,19 +151,16 @@ async function engineAutoLearn() {
   return ENG.status === 'ready';
 }
 
-/** Home's button and its progress strip. Empty when there is nothing to offer. */
-function analyseHTML() {
-  if (ANALYSE.running || ANALYSE.pending) return `<div class="analyse" id="analyseStrip" role="status" aria-live="polite"><span class="txt">${esc(analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen, stage: ANALYSE.stage }))}</span></div>`;
-  // Once analysed, every load keeps the tags and listening going by itself (boot.js): no button.
-  if (LS.getItem('bf_analysed')) return '';
-  if (!analyseWanted().any) return '';
-  return `<div class="analyse"><button class="b p" id="analyseGo" data-act="analyseGo">Analyse my library</button>
-    <span class="d">Reads tags and listens to your liked songs, then suggests where each goes.</span></div>
-    <div class="analyse" id="analyseStrip" role="status" aria-live="polite" hidden><span class="txt"></span></div>`;
+/** The home header's analysis part while the first analysis runs ("Reading tags 120/400 · listening 37/412"),
+ *  '' otherwise. The "Analyse my library" button is gone (DESIGN-PLAN C1): boot runs the first analysis by
+ *  itself (analyseAuto), and analyseGo stays as the code path behind it. */
+function analyseLine() {
+  if (!ANALYSE.running && !ANALYSE.pending) return '';
+  return analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen, stage: ANALYSE.stage });
 }
 
 /* ---------- First run (docs/BUILD-6-PLAN.md O1) ----------
- * A 3-step strip on File for a new account: connected, analysed, first five filed. It counts the
+ * A count in the home header for a new account: the first five filed. It counts the
  * filings from the History log (so it needs nothing stored but "done") and disappears for good once
  * five have gone in, or at once for anyone who has already filed that many. */
 const ONB = { n: null, busy: false };
@@ -182,18 +180,14 @@ function onbCount() {
   }).catch(() => {}).finally(() => { ONB.busy = false; });
 }
 
-function onbHTML() {
-  if (typeof LIB === 'undefined' || !LIB || LS.getItem('bf_onb_done')) return '';
-  if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return '';
+/** The home header's getting-started part: { n, goal } until five are filed, then null for good.
+ *  "Connected" and "Analyse" were steps of the old strip; both happen by themselves now. */
+function onbState() {
+  if (typeof LIB === 'undefined' || !LIB || LS.getItem('bf_onb_done')) return null;
+  if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return null;
   onbCount();
-  const n = ONB.n; if (n == null || n >= ONB_GOAL) return '';
-  const busy = ANALYSE.running || ANALYSE.pending;
-  const analysed = !!LS.getItem('bf_analysed') || busy || !analyseWanted().any;
-  const steps = [['Connected', true], [busy ? 'Analysing' : 'Analyse your library', analysed],
-    ['File your first five (' + n + '/' + ONB_GOAL + ')', false]];
-  const cur = steps.findIndex(x => !x[1]);
-  return `<ol class="onb" aria-label="Getting started">${steps.map(([t, done], i) =>
-    `<li class="${done ? 'done' : i === cur ? 'now' : ''}"${i === cur ? ' aria-current="step"' : ''}>${esc(t)}</li>`).join('')}</ol>`;
+  const n = ONB.n; if (n == null || n >= ONB_GOAL) return null;
+  return { n, goal: ONB_GOAL };
 }
 
 /** Cold start on File: no genre playlist at all, so offer the groups Library offers. [] otherwise. */

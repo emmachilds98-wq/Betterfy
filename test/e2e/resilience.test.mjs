@@ -84,9 +84,10 @@ test('a batch that fails partway is reconciled and the rest can be retried', { s
   assert.deepEqual([...state.log].sort(), landed.map(s => s.id).sort(), 'the log matches Spotify');
   assert.deepEqual(state.queued.sort(), sure.filter(s => !landed.includes(s)).map(s => s.id).sort(), 'unlanded cards stay');
   if (landed.length < sure.length) {
-    assert.match(await page.locator('.surebatch').innerText(), /landed/);
+    // The toast offers the rest (the card no longer repeats it, DESIGN-PLAN C1).
+    assert.match(await page.locator('#toast').innerText(), /landed/);
     fake.sw.failAfterWrites = -1;
-    await page.click('[data-act="filesure"]');
+    await page.locator('#toast button', { hasText: 'Retry the rest' }).click();
     await until(() => sure.every(s => fake.playlist(s.pl).includes(s.id)), 'the rest to land');
     for (const s of sure) assert.equal(dupes(fake, s.pl), 0, 'no duplicates');
     await until(async () => (await groups(page)).length === 1, 'still one History group');

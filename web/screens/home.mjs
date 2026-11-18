@@ -1,27 +1,86 @@
 // @bundle screens home 10
-/* File, the home tab (docs/BUILD-5-PLAN.md §4.1, UI-D). Home and File were two
- * screens; this is one: a single status line, the "Analyse my library" strip,
- * the File deck itself (the `inbox` module, handed in as ctx.deck), and Up next
- * as a horizontal strip. With nothing left to file it is the done state and the
- * library bar. The old Home's hero, four cards and facts panel are gone: the
- * tab bar is the four cards, and Settings holds the rest. */
+import { feedRows } from './radar.mjs';
+import { parseDate } from '../../core/release/dates.mjs';
+/* File, the home tab (docs/BUILD-5-PLAN.md §4.1, UI-D; docs/DESIGN-PLAN.md L8
+ * step 2). The top is a calm "today" header: a greeting, then one line of
+ * status ("72 to file · 3 new releases · 1 to tidy · tidying up: keys 5/40"),
+ * each part a tap to where it lives. The old status line, the getting-started
+ * strip, the analysis strip, the liked line's count and the "listen to my
+ * music" nudge all fold into that line (DESIGN-PLAN §7.7 M1, A5) and go when
+ * they have nothing to say. Under it, the File deck itself (the `inbox`
+ * module, handed in as ctx.deck), and Up next as a horizontal strip. With
+ * nothing left to file it is the done state and the library bar. Nothing here
+ * reads new data: R, LIB, the radar's stored rows, LISTEN and the File queue. */
 
-/** "42 to file · 1 to tidy · listening 37/412", each part only when there is something to say. */
-export function statusParts({ R, listenStatus }) {
-  const backlog = R.backlog.length, toTidy = R.within.length + R.misfiled.length;
-  const listen = typeof listenStatus === 'function' ? listenStatus() : '';
-  return { backlog, toTidy, listen };
+/** Released in the last two weeks, not in the library, not dismissed: what "new releases" counts. */
+export const NEW_RELEASE_DAYS = 14;
+
+/** How many new releases the radar holds (0 until its stored rows are read; reading them is no request). */
+export function newReleases({ radar, now }) {
+  const R = radar?.R;
+  if (!R) return 0;
+  if (!R.loaded) { radar.load?.(); return 0; }
+  const at = now ?? Date.now(), since = at - NEW_RELEASE_DAYS * 864e5;
+  return feedRows(R.rows, { filter: 'unheard', dismissed: R.dismissed ?? new Set(), now: at })
+    .filter(r => parseDate(r.releaseDate, r.precision).ts >= since).length;
 }
 
+/** "Good morning, Sam": the first word of the Spotify display name, when there is one. */
+export function greeting({ LIB, now }) {
+  const h = new Date(now ?? Date.now()).getHours();
+  const part = h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  const name = String(LIB?.user?.name ?? '').trim().split(/\s+/)[0];
+  return name ? `${part}, ${name}` : part;
+}
+
+/**
+ * Every part of the header's line that has something to say, in order. Each is
+ * `{ key, n?, text, go?, act? }`: `go` is the screen it opens, `act` the action.
+ * The counts are the same ones the tab badges show (render.js), so a part and
+ * the badge of the tab it opens never disagree (§7.7 F4).
+ */
+export function statusParts(ctx) {
+  const { R, LIB, listenStatus } = ctx;
+  const parts = [];
+  const backlog = R.backlog.length;
+  const liked = R.likedIn?.liked ?? LIB?.liked?.length ?? 0;
+  parts.push({ key: 'file', n: backlog, text: liked > backlog ? `to file of ${liked.toLocaleString()} liked` : 'to file' });
+  const total = R.likedIn?.total;
+  if (total != null && total > liked) parts.push({ key: 'short', text: `Spotify has ${total.toLocaleString()} liked: sync again to read the rest`, act: 'opensync' });
+  const fresh = newReleases(ctx);
+  if (fresh) parts.push({ key: 'radar', n: fresh, text: fresh === 1 ? 'new release' : 'new releases', go: 'discover' });
+  const toTidy = typeof ctx.tidyCount === 'function' ? ctx.tidyCount() : R.within.length + R.misfiled.length;
+  parts.push({ key: 'tidy', n: toTidy, text: 'to tidy', go: 'tidy' });
+  // While the first analysis runs it says what it is doing (and listening's
+  // count is inside it); otherwise listening speaks for itself, and nothing at
+  // all is said about it until it has run.
+  const analysing = ctx.analyseLine?.() ?? '';
+  const listen = typeof listenStatus === 'function' ? listenStatus() : '';
+  if (analysing) parts.push({ key: 'analyse', text: analysing });
+  else if (listen) parts.push({ key: 'listen', text: listen, act: 'openlisten' });
+  else if (ctx.listenOff?.()) parts.push({ key: 'off', text: 'listening is off', act: 'openlisten' });
+  const onb = ctx.onbState?.();
+  if (onb) parts.push({ key: 'onb', text: `first ${onb.goal} filed: ${onb.n}/${onb.goal}` });
+  const ideas = ctx.ideasCount?.() ?? 0;
+  if (ideas) parts.push({ key: 'ideas', n: ideas, text: ideas === 1 ? 'new playlist idea' : 'new playlist ideas', go: 'new' });
+  return parts;
+}
+
+function partHTML(p, esc) {
+  const body = `${p.n != null ? `<b>${p.n.toLocaleString()}</b> ` : ''}${esc(p.text)}`;
+  if (p.key === 'analyse') return `<span class="st-analyse" id="analyseStrip" aria-live="polite"><span class="txt">${body}</span></span>`;
+  if (p.key === 'listen') return `<button class="st-listen" data-act="openlisten" data-listenstat>${body}</button>`;
+  if (p.go) return `<button class="st-${p.key}" data-go="${p.go}">${body}</button>`;
+  if (p.act) return `<button class="st-${p.key}" data-act="${p.act}">${body}</button>`;
+  return `<span class="st-${p.key}">${body}</span>`;
+}
+
+/** The "today" header: a greeting over the one line of status. */
 export function statusHTML(ctx) {
   const { esc } = ctx;
-  const { backlog, toTidy, listen } = statusParts(ctx);
-  const parts = [`<span class="st-file"><b>${backlog.toLocaleString()}</b> to file</span>`,
-    `<button class="st-tidy" data-go="tidy"><b>${toTidy.toLocaleString()}</b> to tidy</button>`];
-  // Nothing is said about listening until it has run, so a listener who never
-  // turns it on reads the same line as before.
-  if (listen) parts.push(`<button class="st-listen" data-act="openlisten" data-listenstat>${esc(listen)}</button>`);
-  return `<div class="status" id="fileStatus" role="status">${parts.join('<span class="dot" aria-hidden="true">·</span>')}</div>`;
+  const line = statusParts(ctx).map(p => partHTML(p, esc)).join('<span class="dot" aria-hidden="true">·</span>');
+  return `<header class="today" aria-label="Today"><p class="hello">${esc(greeting(ctx))}</p>
+    <div class="status" id="fileStatus" role="status">${line}</div></header>`;
 }
 
 /** Where the library sits, as one bar over one population: your liked songs. */
@@ -88,8 +147,8 @@ export function coldHTML({ esc, onbColdOffers }) {
 }
 
 export function view(ctx) {
-  const { R, LIB, analyseHTML, deck } = ctx;
-  const head = statusHTML(ctx) + (ctx.onbHTML?.() ?? '') + analyseHTML();
+  const { R, LIB, deck } = ctx;
+  const head = statusHTML(ctx);
   // A brand-new account: File's own message says what to do; no bar of zeros under it.
   if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return `${head}${deck()}`;
   // Nothing to file: the deck's own done card, then where the library stands.
@@ -98,7 +157,6 @@ export function view(ctx) {
 }
 
 export const actions = {
-  analyseGo: ({ analyseGo }) => analyseGo(),
   /** Make the playlist for one offered group, then the deck has somewhere to file into. */
   async coldStart({ COLD, gapsCreate, onbColdOffers, $, toast, render }, el) {
     const i = +el.dataset.cold, o = onbColdOffers()[i], name = $('#fcoldnm' + i)?.value.trim();
@@ -113,6 +171,8 @@ export const actions = {
     } catch (err) { el.disabled = false; toast('Failed: ' + err.message); }
   },
   openlisten: ({ openUnderHood }) => openUnderHood('sources'),
+  // "Spotify has more liked than were read": the sync lives in the Settings sheet.
+  opensync: ({ openSettings }) => openSettings?.(true),
   // A card under "Up next" opens the queue on that track, not at the top.
   // Its index is an absolute position in the queue, not an offset from wherever
   // the queue was left.

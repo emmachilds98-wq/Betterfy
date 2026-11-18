@@ -190,11 +190,8 @@ export function sureBatchHTML(ctx) {
   const { S, esc } = ctx;
   if (S.roll) return '';
   const n = sureList(ctx).length;
-  // E1: a batch that stopped partway says what landed and offers the rest.
-  if (S.partial && n) return `<div class="card surebatch" role="status" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
-    <span><b>${esc(String(S.partial.landed))} of ${esc(String(S.partial.total))} landed.</b> <span class="sub">${esc(String(n))} didn't. What did land is in History as one group.</span></span>
-    <button class="b sm p" data-act="filesure">Retry the rest</button>
-  </div>`;
+  // E1: a batch that stopped partway is offered again by its toast ("Retry the
+  // rest"); the card below carries on the same History group (DESIGN-PLAN C1).
   if (n < 2) return '';
   return `<div class="card surebatch" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
     <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
@@ -280,33 +277,26 @@ export async function fileSureOnes(ctx) {
   render();
 }
 
-/** One line under the title: liked, filed here, left to file. It opens to where the ones left already sit. */
-export function likedLineHTML({ R, esc }) {
-  const b = R?.likedIn;
-  if (!b?.liked) return '';
-  const f = n => Number(n).toLocaleString();
-  const short = b.total != null && b.total > b.liked ? ` Spotify says you have ${f(b.total)}, so sync again to read the rest.` : '';
-  return `<details class="liked-line"><summary>${f(b.liked)} liked · ${f(b.filed)} filed here · ${f(b.toFile)} to file</summary>
-    <p>Every liked song waits here until you file it, even one that is already in a playlist.${short}</p>
-    ${b.placed ? `<p>${f(b.placed)} of the ${f(b.toFile)} are already in a playlist: ${b.top.map(x => `${esc(x.name)} (${f(x.n)})`).join(', ')}${b.playlists > b.top.length ? `, and ${f(b.playlists - b.top.length)} more` : ''}. Filing one where it already is adds no second copy.</p>` : ''}
-    <p>Songs that fit none of your playlists? <button class="linkbtn" data-go="new">See suggested new playlists</button></p>
-  </details>`;
-}
-
 /** A liked song that already sits in a playlist: keep it there, or take it out of Liked Songs.
  *  Picking other playlists above still files it there as well. Remove asks for a second tap. */
 export function alreadyHTML({ S, esc }, t) {
   const pl = t?.inPl ?? [];
   if (!pl.length) return '';
   const names = pl.slice(0, 3).map(p => `<b>${esc(p.name)}</b>`).join(', ') + (pl.length > 3 ? ` and ${pl.length - 3} more` : '');
-  const ask = S.unlikeAsk === t.id;
   return `<div class="already" role="group" aria-label="Already in a playlist">
     <p>Already in ${names}. Pick more playlists above to add it there too, or:</p>
     <div class="rowbtns">
       <button class="b sm" data-act="keepthere">Keep it there</button>
-      <button class="b sm${ask ? ' warn' : ''}" data-act="unlikeask" aria-live="polite">${ask ? 'Tap again to remove from Liked' : 'Remove from Liked'}</button>
+      ${unlikeButtonHTML(S, t)}
     </div>
   </div>`;
+}
+
+/** The one way to take a song out of Liked Songs (DESIGN-PLAN M2): a second tap confirms.
+ *  It sits under "Already in…" when the song is in a playlist, else in the card's ⋯. */
+export function unlikeButtonHTML(S, t) {
+  const ask = S.unlikeAsk === t.id;
+  return `<button class="b sm${ask ? ' warn' : ''}" data-act="unlikeask" aria-live="polite">${ask ? 'Tap again to remove from Liked' : 'Remove from Liked'}</button>`;
 }
 
 export function view(ctx) {
@@ -322,7 +312,7 @@ export function view(ctx) {
       <p>${hasPl ? 'File sorts your liked songs into your playlists. Like a few songs in Spotify and they will show up here.'
         : 'Like some songs in Spotify, or make a playlist, then reopen Betterfy. It files your liked songs into your playlists.'}</p></div></div>`;
   }
-  if (!rows.length) return `<h1>File</h1>${likedLineHTML(ctx)}${digestHTML(ctx)}
+  if (!rows.length) return `<h1>File</h1>${digestHTML(ctx)}
     <div class="empty done">
       <svg viewBox="0 0 32 32" aria-hidden="true">
         <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
@@ -369,8 +359,8 @@ export function view(ctx) {
     : '';
 
   // The teach questions (BUILD-6 SG, app/teach.js): '' unless this account's Score run said they help.
-  return `${likedLineHTML(ctx)}${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
-      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}${t.inPl?.length ? ` · already in ${t.inPl.slice(0, 2).map(p => esc(p.name)).join(', ')}${t.inPl.length > 2 ? ` +${t.inPl.length - 2}` : ''}` : ''}</span>
+  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">liked ${esc(t.added)}${t.inPl?.length ? ` · already in ${t.inPl.slice(0, 2).map(p => esc(p.name)).join(', ')}${t.inPl.length > 2 ? ` +${t.inPl.length - 2}` : ''}` : ''}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
     <div class="deck">
@@ -419,10 +409,9 @@ export function view(ctx) {
           <button class="b big go grow" data-act="filesel" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
           <button class="b big" data-act="skip">Skip</button>
         </div>
-        <details class="cardmore"><summary aria-label="More: unlike, or add another playlist" title="More">\u22EF</summary>
+        <details class="cardmore"${S.unlikeAsk === t.id && !t.inPl?.length ? ' open' : ''}><summary aria-label="More: remove from Liked, or add another playlist" title="More">\u22EF</summary>
           <div class="rowbtns">
-            <button class="b sm" data-act="unlike">Unlike</button>
-            <button class="b sm" data-go="new" title="Playlists Betterfy suggests making from songs that fit nowhere yet">Suggest a new playlist</button>
+            ${t.inPl?.length ? '' : unlikeButtonHTML(S, t)}
             <select id="anyPl" data-act="anyPl"><option value="">Add another playlist…</option>${opts.filter(o => !S.fileSel.has(o.id)).map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
           </div>
         </details>
@@ -430,7 +419,7 @@ export function view(ctx) {
     </div>
     <div class="prog" style="margin-top:16px"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
     ${touch ? '' : `<div class="swipehint" role="note"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span>
-      <span><b>1–3</b> pick · <b>Enter</b> file · <b>S</b> skip · <b>U</b> unlike</span></div>`}`;
+      <span><b>1–3</b> pick · <b>Enter</b> file · <b>S</b> skip · <b>U</b> twice remove from Liked</span></div>`}`;
 }
 
 /** Toggle one playlist in or out of the pending selection for the track on screen. */
@@ -571,13 +560,18 @@ export const actions = {
   filesel: (ctx) => fileCurrent(ctx, ctx.S.fileSel.size ? [...ctx.S.fileSel] : ctx.filePicks(inboxTrack(ctx))[0]?.id),
   play: (ctx) => inboxAct(ctx, 'play'),
   skip: (ctx) => inboxAct(ctx, 'skip'),
-  unlike: (ctx) => inboxAct(ctx, 'unlike'),
   // Already in a playlist: file it where it is (nothing written), or remove it from Liked on a second tap.
   keepthere: (ctx) => { const t = inboxTrack(ctx); if (t?.inPl?.length) return fileCurrent(ctx, t.inPl.map(p => p.id)); },
   unlikeask(ctx) {
     const t = inboxTrack(ctx); if (!t) return;
     if (ctx.S.unlikeAsk === t.id) { ctx.S.unlikeAsk = null; return inboxAct(ctx, 'unlike'); }
     ctx.S.unlikeAsk = t.id; ctx.render();
+  },
+  /** The U key: the same two steps as the button, and the first one says so. */
+  unlikekey(ctx) {
+    const t = inboxTrack(ctx); if (!t) return;
+    if (ctx.S.unlikeAsk === t.id) { ctx.S.unlikeAsk = null; return inboxAct(ctx, 'unlike'); }
+    ctx.S.unlikeAsk = t.id; ctx.toast(`Press U again to remove “${t.title}” from Liked.`); ctx.render();
   },
   async roll(ctx, el) {
     if (el.dataset.roll === 'no') { ctx.S.roll = null; return ctx.render(); }

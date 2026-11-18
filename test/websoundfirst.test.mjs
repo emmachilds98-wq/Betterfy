@@ -144,18 +144,14 @@ test('a sound pick you rejected is not offered again', async () => {
   assert.ok(!picksOf(vm.runInContext('vInbox()', s)).includes('p-jungle'));
 });
 
-test('listening off: the tag picks, untouched, and one line offering to listen', async () => {
+test('listening off: the tag picks, untouched, and no nudge on the card (the home header says it, DESIGN-PLAN A5)', async () => {
   const s = page({ on: false, heardNew: false });
   s.AUDIO.records = null;
   const html = vm.runInContext('vInbox()', s);
   await settle(s);
   assert.equal(s.builds, 0, 'nothing is built for someone who has not switched listening on');
   assert.deepEqual(picksOf(html), ['p-tech', 'p-deep']);
-  assert.match(html, /These picks come from artist tags\./);
-  assert.match(html, /data-soundon/);
-  const quiet = page({ on: false, heardNew: false, nudge: 'no' });
-  quiet.AUDIO.records = null;
-  assert.doesNotMatch(vm.runInContext('vInbox()', quiet), /sndnote/, '"Not now" is remembered');
+  assert.doesNotMatch(html, /sndnote|data-soundon/);
 });
 
 test('a changed set of genre playlists rebuilds the space; renders alone do not', async () => {

@@ -12,14 +12,17 @@ test.afterEach(async () => {
   if (app) { assert.deepEqual(app.errors, [], 'no uncaught page errors'); await app.close(); app = null; }
 });
 
-test('the ⋯ menu opens on the File card and offers Unlike', { skip }, async () => {
+test('the ⋯ menu opens on the File card and offers Remove from Liked (DESIGN-PLAN M2)', { skip }, async () => {
   const { page } = app;
   await fileCard(page);
   const more = page.locator('#swipeCard details.cardmore');
   assert.equal(await more.evaluate(d => d.open), false);
   await more.locator('summary').click();
   assert.equal(await more.evaluate(d => d.open), true);
-  assert.ok(await more.locator('button[data-act="unlike"]').isVisible());
+  // Under "Already in…" instead when the song sits in a playlist: one way per card, never both.
+  const inPl = await page.locator('#swipeCard .already').count();
+  assert.equal(await more.locator('button[data-act="unlikeask"]').count(), inPl ? 0 : 1);
+  assert.equal(await more.locator('button[data-act="unlike"]').count(), 0, 'no one-tap Unlike');
 });
 
 test('a Library row opens the playlist sheet and Back closes it', { skip }, async () => {
