@@ -131,7 +131,6 @@ export function view(ctx) {
           <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
           <a class="b sm" href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">Open</a>
           <select data-act="discAnyPl" id="discAnyPl"><option value="">Add to another playlist…</option>${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select>
-          ${t.isrc ? `<button class="b sm" type="button" data-act="dprev" data-tid="${esc(t.id)}">${ctx.previewState?.(t.id) === 'playing' ? 'Pause preview' : 'Preview'}</button>` : ''}
         </div>
       </div>
     </div>

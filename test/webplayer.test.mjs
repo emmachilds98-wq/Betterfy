@@ -217,3 +217,37 @@ test('a device that refuses is reported, not swallowed', async () => {
   await app.playFrom('t1', 1000);
   assert.deepEqual(app.calls.at(-1), { toast: 'No open Spotify device' });
 });
+
+/* ---------- after Next: the card moved on, the device did not ---------- */
+
+// Pressing Next shows a new track on the card while the device carries on with
+// the old one. The bar used to keep showing the old track's pause button and
+// position, so it read as "this is playing" and the only way to start the new
+// card was its cover.
+
+test('after Next the bar offers Play for the card and says what is still playing', async () => {
+  const app = load({ ...NOW, item: { id: 't1', name: 'Old Song', duration_ms: 200000 } },
+                   { id: 't2', track: 'New Song', dur: 181000 });
+  await app.playerPoll();
+  const els = app.dom.els;
+  assert.equal(els['#pToggle'].attrs['aria-label'], 'Play this track');
+  assert.match(els['#pToggle'].innerHTML, /M8 5.5v13/, 'a play icon, not pause');
+  assert.equal(els['#pTime'].textContent, '0:00');
+  assert.equal(els['#pDur'].textContent, '3:01', "the card's own length");
+  assert.equal(els['#seek'].disabled, true, 'no scrubbing a track that is not playing');
+  assert.equal(els['#seek'].value, '0');
+  assert.match(els['#pDev'].textContent, /still playing Old Song on Emma's iPhone/);
+
+  await app.playerToggle();                   // one tap on ▶ plays the card
+  assert.equal(app.state().id, 't2');
+  assert.equal(els['#pToggle'].attrs['aria-label'], 'Pause');
+  assert.match(els['#pDev'].textContent, /^playing on Emma's iPhone$/);
+  app.playerStop();
+});
+
+test('nothing said about the old track once it is paused', async () => {
+  const app = load({ ...NOW, is_playing: false }, { id: 't2', dur: 181000 });
+  await app.playerPoll();
+  assert.equal(app.dom.els['#pDev'].textContent, '');
+  assert.equal(app.dom.els['#pToggle'].attrs['aria-label'], 'Play this track');
+});

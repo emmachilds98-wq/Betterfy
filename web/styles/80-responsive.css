@@ -58,27 +58,12 @@
     /* The top padding clears the fixed header for the first thing in the scroller. */
     main{padding:calc(var(--sat) + 68px) calc(14px + var(--sar)) calc(var(--tabh) + var(--sab) + 26px) calc(14px + var(--sal)); max-width:none}
     h1{font-size:26px; margin-bottom:2px} h1::before{width:28px; height:3px; margin-bottom:8px}
+    /* The header already names the screen here (#mtitle), so the page's own
+       title would only say it again, 90px further down. Kept for screen readers. */
+    #main > h1{position:absolute; width:1px; height:1px; margin:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap}
     h2{font-size:16px; margin-top:24px}
     .lede{font-size:14px}
     .card{padding:18px 18px 20px; border-radius:var(--r-3)}
-    /* The hero is the whole of a phone screen if it keeps desktop proportions,
-       and the four cards it introduces end up below the fold. */
-    .hero{padding:24px 20px 22px; border-radius:var(--r-3); margin-bottom:18px}
-    .hero h1{font-size:26px; max-width:none}
-    .hero p{font-size:15px}
-    .hero .in{gap:20px}
-    /* Two up rather than four stacked: the counts are the point, and stacked
-       they push everything else off the screen. */
-    .acts4{grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px}
-    .acts4.five{grid-template-columns:1fr 1fr; gap:10px}
-    .acts4.five .act{padding:15px 15px 16px}
-    .acts4.five .act:last-child{grid-column:1/-1}
-    .act{padding:15px 15px 16px; border-radius:var(--r-2); gap:3px}
-    .act .ic{width:32px; height:32px; border-radius:11px; margin-bottom:7px}
-    .act .ic svg{width:17px; height:17px}
-    .act .n{font-size:29px}
-    .act .l{font-size:13.5px}
-    .act .d{font-size:12.5px; line-height:1.4}
     .split{gap:10px; margin-bottom:18px}
     .panel{padding:18px 19px; border-radius:var(--r-3)}
     .panel .ph h2{font-size:17px}
@@ -124,6 +109,5 @@
     .check-row{padding:9px 0} .check-row input{width:19px; height:19px}
   }
   @media (max-width:344px){
-    .acts4{grid-template-columns:1fr}
     aside .nav .lbl{font-size:9.5px}
   }

@@ -100,6 +100,17 @@ async function shoot(b, FORM, THEME) {
   await pg.waitForTimeout(700);
   await pg.screenshot({ path: path.join(OUT, `${FORM}-${THEME}-discover-picks.png`), fullPage: true });
   await touchBack();
+  // After Next: the card moved on while the device still plays the first pick. The bar
+  // has to belong to the card (▶ for it) and say what is still playing, quietly.
+  await pg.evaluate(() => {
+    const first = S.discover[0];
+    Object.assign(PLAYER, { id: first.id, name: first.track, device: 'Demo phone', dur: first.dur, pos: 61000,
+                            playing: true, lastPoll: Date.now() + 60000 });
+    S.discAt = 1; render();
+  });
+  await pg.waitForTimeout(500);
+  await pg.locator('.card.disc').screenshot({ path: path.join(OUT, `${FORM}-${THEME}-discover-next.png`) });
+  await touchBack();
   // Library's playlist detail sheet (UI-E).
   await pg.evaluate(() => { go('lists'); openPlSheet(Object.keys(CFG)[0]); });
   await pg.waitForTimeout(900);

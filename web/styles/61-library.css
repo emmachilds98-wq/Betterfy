@@ -45,7 +45,6 @@
   .plrow .thumb{width:40px; height:40px; border-radius:var(--r-1, 6px); flex:none; object-fit:cover}
   .plrow .thumb.ph{display:grid; place-items:center; color:#fff; font-weight:700; font-size:15px}
   .plf{color:var(--ink-2)}
-  .plf-style{font-style:italic}
   .plscore{display:flex; flex-direction:column; align-items:flex-end; flex:none; min-width:58px; line-height:1.1}
   .plscore .mono{font-size:17px; font-weight:600}
   .plscore span{font-size:11px; color:var(--ink-3)}

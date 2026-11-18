@@ -30,20 +30,7 @@
          display:flex; flex-direction:column; gap:12px}
 .sk-art{width:100%; aspect-ratio:1; max-height:260px; border-radius:var(--r-2)}
 
-/* ---- large title into the header title as the page scrolls ----
-   Opt-in markup: .lgtitle (the big one in the page) and .hdrtitle (the small
-   one in the bar, rendered hidden-by-opacity). Browsers without scroll-driven
-   animations just show the large title and no header title. */
-@supports (animation-timeline: scroll()) {
-  .hdrtitle{opacity:0; animation:hdrTitleIn linear both; animation-timeline:scroll(root block); animation-range:0 120px}
-  .lgtitle{animation:lgTitleOut linear both; animation-timeline:scroll(root block); animation-range:0 120px}
-  @keyframes hdrTitleIn{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
-  @keyframes lgTitleOut{from{opacity:1; transform:none} to{opacity:0; transform:translateY(-8px)}}
-}
-
 @media (prefers-reduced-motion:reduce){
   .sk{animation:none}
-  .hdrtitle{animation:none}
-  .lgtitle{animation:none}
-  @starting-style{ .lpill, [data-flip], .toast, [popover]:popover-open, .acts4 .act{opacity:1; transform:none} }
+  @starting-style{ .lpill, [data-flip], .toast, [popover]:popover-open{opacity:1; transform:none} }
 }
