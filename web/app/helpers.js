@@ -28,9 +28,11 @@ function helpersState() {
               ...(typeof bridgeWarmState === 'function' ? { warm: bridgeWarmState() } : {}) },
     audio, deep,
     discogs: !!LS.getItem('bf_discogs'),
-    engine: { status: typeof ENG !== 'undefined' ? ENG.status : null },
+    engine: { status: typeof ENG !== 'undefined' ? ENG.status : null,
+      targets: (() => { try { return LIB ? engineTargets().length : null; } catch { return null; } })() },
     auto: (() => { try { const l = autoScoreLast(); return { at: l?.at ?? null, ok: l?.ok !== false,
-      ago: l?.at && typeof agoWords === 'function' ? agoWords(Date.now() - l.at) : null, running: AUTOSCORE_RUN.running }; }
+      ago: l?.at && typeof agoWords === 'function' ? agoWords(Date.now() - l.at) : null, running: AUTOSCORE_RUN.running,
+      filed: LIB ? autoScoreFiled() : null, minFiled: typeof AUTOSCORE !== 'undefined' ? AUTOSCORE.minFiled : 60 }; }
       catch { return {}; } })(),
     radar: (() => { try {
       if (typeof RADAR === 'undefined') return null;

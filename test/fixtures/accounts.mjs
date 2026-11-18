@@ -6,11 +6,13 @@
 //
 // Deterministic: the same seed gives the same library, byte for byte.
 //
-//   makeAccount('empty' | 'small' | 'typical' | 'large') ->
+//   makeAccount('empty' | 'small' | 'moodOnly' | 'typical' | 'large') ->
 //     { me, playlists: [{ id, name, owner, snapshot_id, tracks }], liked: [track] }
 //
 //   empty    nothing at all (a brand-new account)
 //   small    3 playlists with NO genre in their names, ~40 liked songs
+//   moodOnly 12 playlists, none named after a genre and most after a mood,
+//            600 liked songs (BUILD-7 Q1): nothing for genre filing to aim at
 //   typical  ~700 tracks over 14 genre-named playlists, ~175 liked
 //   large    5,000+ liked songs, 60 playlists
 import { readFileSync } from 'node:fs';
@@ -23,7 +25,7 @@ function rng(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) /
 const SYL = ['ka', 'ro', 'mi', 'dex', 'vel', 'an', 'tor', 'lu', 'sen', 'ray', 'fo', 'zi', 'nor', 'bel', 'quin'];
 const cap = s => s[0].toUpperCase() + s.slice(1);
 
-export const ACCOUNT_KINDS = ['empty', 'small', 'typical', 'large'];
+export const ACCOUNT_KINDS = ['empty', 'small', 'moodOnly', 'typical', 'large'];
 
 export function makeAccount(kind, seed = 11) {
   const rnd = rng(seed);
@@ -54,6 +56,19 @@ export function makeAccount(kind, seed = 11) {
     for (const [name, g] of moods) out.playlists.push(pl(name, pool(g).slice(0, 8).map(track)));
     for (const [, g] of moods) for (const id of pool(g).slice(20, 33)) out.liked.push(track(id));
     out.liked.push(...out.playlists.flatMap(x => x.tracks.slice(0, 1)));
+    return out;
+  }
+  if (kind === 'moodOnly') {
+    // Mood and occasion names only, each over artists of mixed genres, as a
+    // listener who never sorts by genre would build them.
+    const names = ['Chill', 'Late Night', 'Happy', 'Sad Songs', 'Focus', 'Rainy Day', 'Summer Vibes',
+      'Road Trip', 'Workout', 'Sunday Morning', 'Party', 'Feels'];
+    names.forEach((name, i) => {
+      const gs = [GENRES[i % GENRES.length], GENRES[(i + 5) % GENRES.length], GENRES[(i + 11) % GENRES.length]];
+      out.playlists.push(pl(name, Array.from({ length: 25 }, (_, k) => { const ids = pool(gs[k % 3]); return track(ids[(i * 5 + k) % ids.length]); })));
+    });
+    for (let k = 0; k < 570; k++) { const ids = pool(GENRES[(k * 7) % GENRES.length]); out.liked.push(track(ids[(k * 5 + 80) % ids.length])); }
+    for (const x of out.playlists.slice(0, 10)) out.liked.push(...x.tracks.slice(0, 3));
     return out;
   }
   if (kind !== 'typical' && kind !== 'large') throw new Error('unknown account kind ' + kind);
