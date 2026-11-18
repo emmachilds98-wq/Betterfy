@@ -5,8 +5,8 @@ import vm from 'node:vm';
 import * as HOME from '../web/screens/home.mjs';
 import { ctxOf } from './screenctx.mjs';
 
-// File, the home tab (UI-D): the status line, the "Analyse my library" strip,
-// the deck and Up next, and the done state. The sound layer must be invisible
+// File, the home tab (UI-D, DESIGN-PLAN L8 step 2): the "today" header, the
+// deck and Up next, and the done state. The sound layer must be invisible
 // to anyone who never turns listening on: with no ListenVM, File renders byte
 // for byte what it renders when nothing ever called setListen(), and the
 // chrome's slot stays empty. These run the real code out of the built page.
@@ -29,7 +29,7 @@ function file({ backlog } = {}) {
   const sandbox = {
     slot, statN, calls,
     esc: s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
-    isMirrorPlaylist: () => false, analyseHTML: () => '',
+    isMirrorPlaylist: () => false,
     view: 'inbox', go() {}, openUnderHood() {},
     render() { calls.render++; },
     deck: () => '<div class="deck-stub"></div>',
@@ -126,11 +126,46 @@ test('nothing to file: the done state and the library bar, with no Up next', () 
   assert.ok(!/upnext/.test(h));
 });
 
-test('the "Analyse my library" strip stays on File', () => {
-  const s = file(); s.analyseHTML = () => '<div class="analyse"><button id="analyseGo" data-act="analyseGo">Analyse my library</button></div>';
-  assert.match(html(s), /id="analyseGo"/);
-  const done = []; HOME.actions.analyseGo({ analyseGo: () => done.push(1) });
-  assert.equal(done.length, 1);
+test('the home header: a greeting over one line, each part a tap to where it lives (DESIGN-PLAN L8.2)', () => {
+  const s = file();
+  s.now = new Date(2026, 10, 18, 9, 0).getTime();
+  s.tidyCount = () => 7; s.ideasCount = () => 2;
+  s.analyseLine = () => ''; s.onbState = () => ({ n: 2, goal: 5 });
+  const h = html(s);
+  assert.match(h, /<header class="today" aria-label="Today"><p class="hello">Good morning, Sam<\/p>/);
+  assert.match(h, /<button class="st-tidy" data-go="tidy"><b>7<\/b> to tidy<\/button>/, 'the same count as the Tidy badge');
+  assert.match(h, /<span class="st-onb">first 5 filed: 2\/5<\/span>/, 'the getting-started strip is one part now');
+  assert.match(h, /<button class="st-ideas" data-go="new"><b>2<\/b> new playlist ideas<\/button>/);
+  assert.ok(h.indexOf('class="today"') < h.indexOf('deck-stub'), 'the header is above the deck');
+});
+
+test('the header folds in the liked count and the analysis, and says when listening is off', () => {
+  const s = file();
+  s.R.likedIn = { liked: 1240, total: 1300 };
+  s.analyseLine = () => 'Reading tags 120/400';
+  vm.runInContext("setListen({ state: 'running', done: 37, total: 412, missed: {}, heard: 120 })", s);
+  const h = html(s);
+  assert.match(h, /<b>3<\/b> to file of 1,240 liked/);
+  assert.match(h, /data-act="opensync">Spotify has 1,300 liked: sync again to read the rest/);
+  assert.match(h, /<span class="st-analyse" id="analyseStrip" aria-live="polite"><span class="txt">Reading tags 120\/400<\/span><\/span>/);
+  assert.ok(!/data-listenstat/.test(h), 'while it analyses, listening is inside that part');
+  const off = file(); off.listenOff = () => true;
+  assert.match(html(off), /<button class="st-off" data-act="openlisten">listening is off<\/button>/);
+  assert.ok(!/Analyse my library|analyseGo/.test(html(off)), 'no "Analyse my library" button (C1)');
+});
+
+test('new releases: the radar\'s stored rows from the last two weeks that are not in the library', () => {
+  const now = Date.UTC(2026, 10, 18);
+  const day = n => new Date(now - n * 864e5).toISOString().slice(0, 10);
+  const row = (key, d, extra = {}) => ({ key, releaseDate: d, precision: 'day', lane: 'main', owned: 'none', ...extra });
+  const R = { loaded: true, dismissed: new Set(['gone']), rows: [row('a', day(1)), row('b', day(3)), row('old', day(40)),
+    row('gone', day(2)), row('mine', day(2), { owned: 'all' }), row('feat', day(2), { lane: 'features' })] };
+  assert.equal(HOME.newReleases({ radar: { R }, now }), 2);
+  const s = file(); s.now = now; s.radar = { R };
+  assert.match(html(s), /<button class="st-radar" data-go="discover"><b>2<\/b> new releases<\/button>/);
+  let asked = 0;
+  assert.equal(HOME.newReleases({ radar: { R: { loaded: false }, load: () => asked++ }, now }), 0);
+  assert.equal(asked, 1, 'not read yet: read the stored rows (no request), say nothing for now');
 });
 
 test('the audio side feeds the indicator: every redraw and switching off hand the ListenVM over', () => {
@@ -152,4 +187,21 @@ test('the shell: four tabs, no pager dots, no More, no download icon in the corn
   assert.match(PAGE, /<section id="underHood">/);
   assert.match(PAGE, /<button class="b" id="btnUpdate"/, 'the update check lives in Settings now');
   assert.match(PAGE, /id="disconnect"/);
+});
+
+test('swipes and arrow keys walk the four tabs and stop at Library (DESIGN-PLAN F4)', () => {
+  const swipe = slice('function bindAppGestures()', 'app.addEventListener(\'touchend\'', 'the screen swipe');
+  assert.match(swipe, /TABS\.indexOf\(view\)/);
+  assert.ok(!/VORDER/.test(swipe), 'not the view order, which runs on to New playlists and Shuffle');
+  const keys = slice('// Keyboard parity for the swipe', 'document.addEventListener(\'keydown\', e => {', 'the arrow keys');
+  assert.match(keys, /TABS\.indexOf\(view\)/);
+  assert.ok(!/VORDER/.test(keys));
+});
+
+test('the tab badges count what the screens they open show', () => {
+  const r = slice('function render(dir)', '/** Move to another screen', 'render');
+  assert.match(r, /tidy:tidyTodo\(\), new:ideasTodo\(\)/);
+  assert.match(r, /tidy\.misfileRows\(screenCtx\('tidy'\)\)/, 'Tidy: Wrong place, as its switch counts it');
+  assert.match(r, /wrong = m\.tag\.length \+ m\.sound\.length/);
+  assert.match(r, /lists\.suggestionsOf\(/, 'Library: its Suggested playlists');
 });
