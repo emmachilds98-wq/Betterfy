@@ -24,6 +24,15 @@
 // the first such run, new records get their `clap` field in the same pass,
 // and records heard before are topped up after DSP, the same lazy way.
 // Without loadClap, or with clapOn() false, nothing here differs from before.
+//
+// Tidy-up (DESIGN-PLAN L0): the four top-ups after the queue (DSP, CLAP, Beat
+// This, key v4) used to run with no progress of their own, so a finished
+// queue read "listening 1/1" for minutes. Each now sets `tidy` on the vm,
+// { step, done, total }, which the pill and status lines show instead. Every
+// per-track step and every model load has a time limit (core/audio/timeout.mjs):
+// a step that never settles counts as failed, is tried again on a later run,
+// and the run carries on to `done`.
+import { withTimeout, TRACK_TIMEOUT_MS, MODEL_TIMEOUT_MS } from '../../core/audio/timeout.mjs';
 import { runQueue, fillDsp } from '../../core/audio/worker.js';
 import { MISS } from '../../core/audio/record.mjs';
 import { measureWindows, needsDsp } from '../../core/audio/dsp/combine.mjs';
@@ -116,6 +125,8 @@ export function createWorkerEar(worker, init) {
  *        key v4: loads the key model, once; logp(windows) → 24 log-probabilities
  * @param {() => boolean} [deps.keyNetOn]  asked at each start(); on unless it says false (owner rule: on by default)
  * @param {number} [deps.keyNetFillPerRun] heard records given key v4 per start (default KEYNET_FILL_PER_RUN)
+ * @param {number} [deps.trackTimeoutMs] per-track limit, queue and top-ups (default TRACK_TIMEOUT_MS; 0 = none)
+ * @param {number} [deps.modelTimeoutMs] per-model-load limit (default MODEL_TIMEOUT_MS; 0 = none)
  */
 export function createAudioController(deps) {
   const st = { state: 'off', done: 0, total: 0, reason: null, failed: 0, missed: {}, heard: 0, last: null };
@@ -131,13 +142,23 @@ export function createAudioController(deps) {
   const keyNetBudget = deps.keyNetFillPerRun ?? KEYNET_FILL_PER_RUN;
   const noKeyNet = new Set(); // the same, for key v4
   let keyNet = null, keyNetFailed = false;
+  const trackMs = deps.trackTimeoutMs ?? TRACK_TIMEOUT_MS;
+  const modelMs = deps.modelTimeoutMs ?? MODEL_TIMEOUT_MS;
+  /** A model load, bounded. */
+  const load = (fn, what) => withTimeout(fn, modelMs, `loading the ${what}`);
+  /** One top-up step on one record, bounded: a timeout is a failure, tried again on a later run. */
+  const step = fn => withTimeout(fn, trackMs, 'one track').catch(e => (e?.timeout ? { failed: { stage: 'timeout', detail: e.message } } : { skip: 'error' }));
+  /** Start a tidy-up step: the pill and status show it instead of the finished queue's "1/1". */
+  const tidyStart = (name, total) => { st.tidy = { step: name, done: 0, total }; emit(); };
+  const tidyTick = () => { if (st.tidy) { st.tidy.done++; emit(); } };
+  const tidyEnd = () => { if (st.tidy) { st.tidy = null; emit(); } };
 
   /** The key v4 model when it is on and loads; null otherwise (never fails a run, not retried this session). */
   async function keyNetNow() {
     if (!deps.loadKeyNet || deps.keyNetOn?.() === false || keyNetFailed) return null;
     if (keyNet) return keyNet;
     st.reason = 'loading the key model'; emit();
-    try { keyNet = await deps.loadKeyNet(); } catch (e) { keyNet = null; keyNetFailed = true; st.keyNetError = String(e?.message ?? e); }
+    try { keyNet = await load(deps.loadKeyNet, 'key model'); } catch (e) { keyNet = null; keyNetFailed = true; st.keyNetError = String(e?.message ?? e); }
     st.reason = null; emit();
     return keyNet;
   }
@@ -149,7 +170,7 @@ export function createAudioController(deps) {
     if (!deps.loadBeats || !deps.beatsOn?.()) return null;
     if (beatsTracker) return beatsTracker;
     st.reason = 'loading the tempo model'; emit();
-    try { beatsTracker = await deps.loadBeats(); } catch (e) { beatsTracker = null; st.beatsError = String(e?.message ?? e); }
+    try { beatsTracker = await load(deps.loadBeats, 'tempo model'); } catch (e) { beatsTracker = null; st.beatsError = String(e?.message ?? e); }
     st.reason = null; emit();
     return beatsTracker;
   }
@@ -159,7 +180,7 @@ export function createAudioController(deps) {
     if (!deps.loadClap || !deps.clapOn?.()) return null;
     if (clapEar) return clapEar;
     st.reason = 'loading the describe-in-words model'; emit();
-    try { clapEar = await deps.loadClap(); } catch (e) { clapEar = null; st.clapError = String(e?.message ?? e); }
+    try { clapEar = await load(deps.loadClap, 'describe-in-words model'); } catch (e) { clapEar = null; st.clapError = String(e?.message ?? e); }
     st.reason = null; emit();
     return clapEar;
   }
@@ -167,7 +188,7 @@ export function createAudioController(deps) {
   const emit = () => { try { deps.onChange?.(vm()); } catch { /* a render bug must not stop the queue */ } };
   const vm = () => ({ state: st.state, done: st.done, total: st.total, reason: st.reason ?? undefined,
                       missed: { ...st.missed, ...(st.failed ? { [MISS.FAILED]: st.failed } : {}) },
-                      heard: st.heard, last: st.last });
+                      heard: st.heard, last: st.last, ...(st.tidy ? { tidy: { ...st.tidy } } : {}) });
 
   /** Re-count heard tracks and cacheable misses from what the store holds. */
   async function refresh() {
@@ -188,7 +209,7 @@ export function createAudioController(deps) {
     if (running) return running;
     abort = new AbortController();
     const signal = abort.signal;
-    Object.assign(st, { state: 'running', done: 0, total: tracks.length, reason: null, last: null });
+    Object.assign(st, { state: 'running', done: 0, total: tracks.length, reason: null, last: null, tidy: null });
     emit();
     running = (async () => {
       try {
@@ -204,7 +225,7 @@ export function createAudioController(deps) {
         }
         if (!ears) {
           st.reason = 'loading the listening model'; emit();
-          try { ears = await deps.loadEar(); }
+          try { ears = await load(deps.loadEar, 'listening model'); }
           catch (e) { ears = null; st.state = 'paused'; st.reason = `couldn’t load the model: ${e?.message ?? e}`; return { done: 0, stopped: true }; }
           st.reason = null; emit();
         }
@@ -214,7 +235,7 @@ export function createAudioController(deps) {
         const analyse = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
                           ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp: keyed(dsp, net) } : {}),
                           ...(clap ? { clap } : {}) };
-        const res = await runQueue(analyse, tracks, { signal, onResult: async (r, t) => {
+        const res = await runQueue(analyse, tracks, { signal, timeoutMs: trackMs, onResult: async (r, t) => {
           if (r.record) { await deps.store.put(r.record); st.heard++; }
           else if (r.miss) { await deps.store.put(r.miss); st.missed[r.miss.miss] = (st.missed[r.miss.miss] ?? 0) + 1; }
           else st.failed++;
@@ -228,7 +249,7 @@ export function createAudioController(deps) {
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
-        running = null; abort = null;
+        running = null; abort = null; st.tidy = null;
         emit();
       }
     })();
@@ -239,29 +260,37 @@ export function createAudioController(deps) {
   async function topUpDsp(analyse, signal) {
     const all = await deps.store.getAll();
     const due = [...all.values()].filter(r => needsDsp(r) && !noFill.has(r.id)).slice(0, fillBudget);
-    for (const rec of due) {
-      if (signal.aborted) return;
-      let r;
-      try { r = await fillDsp(analyse, rec); } catch { r = { skip: 'error' }; }
-      if (r.record) r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
-      if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; emit(); }
-      else if (r.skip) noFill.add(rec.id);
-      // a failed download is tried again on a later run
-    }
+    if (!due.length) return;
+    tidyStart('dsp', due.length);
+    try {
+      for (const rec of due) {
+        if (signal.aborted) return;
+        const r = await step(() => fillDsp(analyse, rec));
+        if (r.record) r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
+        if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; }
+        else if (r.skip) noFill.add(rec.id);
+        // a failed download, or one that timed out, is tried again on a later run
+        tidyTick();
+      }
+    } finally { tidyEnd(); }
   }
 
   /** Give stored records their CLAP embedding, a few per run, stoppable like the queue. */
   async function topUpClap(analyse, signal) {
     const all = await deps.store.getAll();
     const due = [...all.values()].filter(r => needsClap(r) && !noClap.has(r.id)).slice(0, clapBudget);
-    for (const rec of due) {
-      if (signal.aborted) return;
-      let r;
-      try { r = await fillClap(analyse, rec); } catch { r = { skip: 'error' }; }
-      if (r.record) { await deps.store.put(r.record); st.clapFilled = (st.clapFilled ?? 0) + 1; emit(); }
-      else if (r.skip) noClap.add(rec.id);
-      // a failed download is tried again on a later run
-    }
+    if (!due.length) return;
+    tidyStart('clap', due.length);
+    try {
+      for (const rec of due) {
+        if (signal.aborted) return;
+        const r = await step(() => fillClap(analyse, rec));
+        if (r.record) { await deps.store.put(r.record); st.clapFilled = (st.clapFilled ?? 0) + 1; }
+        else if (r.skip) noClap.add(rec.id);
+        // a failed download, or one that timed out, is tried again on a later run
+        tidyTick();
+      }
+    } finally { tidyEnd(); }
   }
 
   /** Beat This (opt-in): re-listen to records whose half/double time the DSP flagged, a few per run. */
@@ -270,21 +299,25 @@ export function createAudioController(deps) {
     const all = await deps.store.getAll();
     const due = [...all.values()].filter(r => needsBeatsFlagged(r) && !noBeats.has(r.id)).slice(0, beatsBudget);
     if (!due.length) return;
-    const tracker = await beatsNow();
-    if (!tracker) return;
-    const withTempo = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
-                        dsp: keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet) };
-    for (const rec of due) {
-      if (signal.aborted) return;
-      let r;
-      try { r = await fillDsp(withTempo, rec); } catch { r = { skip: 'error' }; }
-      if (r.record) {
-        r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
-        await deps.store.put(r.record);
-        if (r.record.dsp?.beatsV) { st.beatsFilled = (st.beatsFilled ?? 0) + 1; emit(); }
-        else noBeats.add(rec.id);   // the tracker failed on it: not again this session
-      } else if (r.skip) noBeats.add(rec.id);
-    }
+    if (!deps.loadBeats || !deps.beatsOn?.()) return;
+    tidyStart('beats', due.length);
+    try {
+      const tracker = await beatsNow();
+      if (!tracker) return;
+      const withTempo = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
+                          dsp: keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet) };
+      for (const rec of due) {
+        if (signal.aborted) return;
+        const r = await step(() => fillDsp(withTempo, rec));
+        if (r.record) {
+          r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
+          await deps.store.put(r.record);
+          if (r.record.dsp?.beatsV) st.beatsFilled = (st.beatsFilled ?? 0) + 1;
+          else noBeats.add(rec.id);   // the tracker failed on it: not again this session
+        } else if (r.skip) noBeats.add(rec.id);
+        tidyTick();
+      }
+    } finally { tidyEnd(); }
   }
 
   /**
@@ -296,17 +329,21 @@ export function createAudioController(deps) {
     const all = await deps.store.getAll();
     const due = [...all.values()].filter(r => needsKeyNet(r) && !noKeyNet.has(r.id)).slice(0, keyNetBudget);
     if (!due.length) return;
-    const net = await keyNetNow();
-    if (!net) return;
-    for (const rec of due) {
-      if (signal.aborted) return;
-      const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
-                        dsp: async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; } };
-      let r;
-      try { r = await fillDsp(onlyKey, rec); } catch { r = { skip: 'error' }; }
-      if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; emit(); }
-      else if (r.skip) noKeyNet.add(rec.id);
-    }
+    if (!deps.loadKeyNet || deps.keyNetOn?.() === false || keyNetFailed) return;
+    tidyStart('keys', due.length);
+    try {
+      const net = await keyNetNow();
+      if (!net) return;
+      for (const rec of due) {
+        if (signal.aborted) return;
+        const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
+                          dsp: async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; } };
+        const r = await step(() => fillDsp(onlyKey, rec));
+        if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; }
+        else if (r.skip) noKeyNet.add(rec.id);
+        tidyTick();
+      }
+    } finally { tidyEnd(); }
   }
 
   /** Finish the track in flight, start no more. */
@@ -318,7 +355,10 @@ export function createAudioController(deps) {
     return running;
   }
 
-  return { start, stop, refresh, vm, get running() { return !!running; } };
+  /** Resolves when no run is going (at once if none is). The second ear waits on this. */
+  const whenIdle = () => (running ? running.then(() => undefined, () => undefined) : Promise.resolve());
+
+  return { start, stop, refresh, vm, whenIdle, get running() { return !!running; } };
 }
 
 /** ListenVM for web/ui/sound.mjs, from the controller's state and the settings. */

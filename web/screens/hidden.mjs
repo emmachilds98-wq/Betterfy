@@ -11,8 +11,10 @@
  *   - "Find a song": type what you would type into Spotify. Your library answers
  *     at once (where it sits, liked or not), and "Ask Spotify" runs that search
  *     and marks every answer that is the same song under another id.
- *   - "Check my playlists": the same question for every song, oldest adds first,
- *     a run of RUN_SIZE at a time, remembered on this device for RECHECK_MS.
+ *   - The check: the same question for every song, oldest adds first, a run of
+ *     RUN_SIZE at a time, remembered on this device for RECHECK_MS. A run starts by
+ *     itself once a day, after the radar's first read (hiddenAuto, DESIGN-PLAN §7.7
+ *     A2, provisional); a small "Check N more" asks again now.
  * Every fix asks first, says where it will change, and lands in History with Undo. */
 import { songsToCheck, judge, shapeHit, searchQuery, hiddenRows, hiddenProgress, findInLibrary,
          sameSong, versionNote, artistLine, RUN_SIZE } from '../../core/review/hidden.mjs';
@@ -54,6 +56,23 @@ export async function hiddenRun(c) {
     }
   } catch (err) { H.err = err?.message ?? String(err); }
   finally { H.running = false; await save(c); c.store?.touch?.('ui.tidy'); }
+}
+
+const AUTO_KEY = 'bf_hidden_auto';
+const AUTO_EVERY_MS = 20 * 3600_000;
+/** One run by itself, at most once a day on this device, and only while there are songs
+ *  left to ask about. Not on Data Saver. Resolves true when it ran. */
+export async function hiddenAuto(c, now = Date.now()) {
+  if (H.running || !c.sp || !c.LIB) return false;
+  if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
+  let last = 0;
+  try { last = +(c.LS?.getItem(AUTO_KEY) ?? 0) || 0; } catch { /* private mode */ }
+  if (now - last < AUTO_EVERY_MS) return false;
+  if (!H.checks) await (H.loading ?? Promise.resolve(c.idb?.get?.(KEY)).then(v => { H.checks = v ?? {}; }, () => { H.checks = {}; }));
+  if (!hiddenProgress(c.LIB, H.checks).left) return false;
+  try { c.LS?.setItem(AUTO_KEY, String(now)); } catch { /* private mode */ }
+  await hiddenRun(c);
+  return true;
 }
 
 /** Library copies of the same song as a search answer, under any id. */
@@ -158,9 +177,11 @@ export function hiddenView(c) {
   const rows = hiddenRows(c.LIB, H.checks);
   const vers = rows.filter(r => r.state === 'version'), gone = rows.filter(r => r.state === 'missing');
   const status = H.running ? `Checking with Spotify search: ${H.done.toLocaleString()} of ${H.of.toLocaleString()}…`
-    : `${prog.checked.toLocaleString()} of ${prog.total.toLocaleString()} songs checked${prog.left ? '' : ', all of them'}.${H.err ? ` Stopped: ${esc(H.err)}` : ''}`;
+    : prog.checked ? `${prog.checked.toLocaleString()} of ${prog.total.toLocaleString()} songs checked${prog.left ? ', a batch more each day by itself' : ', all of them'}.${H.err ? ` Stopped: ${esc(H.err)}` : ''}`
+    : `None checked yet. A batch of your oldest songs is checked by itself a little after the app opens.${H.err ? ` Stopped: ${esc(H.err)}` : ''}`;
+  // The run starts by itself (hiddenAuto); this only asks again now, so it is small and never filled.
   const run = prog.left && !H.running && c.sp
-    ? `<button class="b sm ${prog.checked ? '' : 'go'}" data-act="hdRun">${prog.checked ? `Check ${Math.min(RUN_SIZE, prog.left)} more` : `Check my oldest ${Math.min(RUN_SIZE, prog.left)}`}</button>` : '';
+    ? `<button class="b sm" data-act="hdRun">Check ${Math.min(RUN_SIZE, prog.left).toLocaleString()} more</button>` : '';
   const vRow = r => `<div class="row" data-flip data-key="${esc('hv:' + r.id)}">${c.thumbHTML({ id: r.id, title: r.track.name, art: r.track.art })}<div class="main">
       <div class="ttl">${esc(r.track.name)} <span class="sub">— ${esc(artistLine(r.track))}</span></div>
       <div class="why">${esc(versionNote(r.track, r.to))}</div>${where(c, r)}

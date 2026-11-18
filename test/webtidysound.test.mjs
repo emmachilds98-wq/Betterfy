@@ -43,33 +43,61 @@ function tidy({ audio = false, rows = [], fb = {} } = {}) {
 test('without heard tracks Tidy has its three sections, Hard to find, and nothing about sound', () => {
   const html = vm.runInContext('vTidy()', tidy());
   assert.equal((html.match(/data-tidy="/g) ?? []).length, 4);
-  assert.match(html, /data-tidy="hidden">Hard to find/);
-  assert.ok(!/By sound|data-tsb|tsrow/.test(html));
+  assert.match(html, /data-tidy="hidden"><span class="lg">Hard to find<\/span><span class="sh">Hidden<\/span>/);
+  assert.ok(!/By sound|by sound|data-tsb|tsrow/.test(html));
 });
 
-test('with heard tracks a fourth section counts the moves by sound', () => {
+// DESIGN-PLAN §7.7 M3 (provisional): By sound is not a section any more. Its rows are
+// Wrong place rows with a "by sound" badge, Sure with Sure and Likely with Likely.
+test('with heard tracks there is no fifth section: Wrong place counts the moves by sound', () => {
   const s = tidy({ audio: true, rows: [ROW, { ...ROW, id: 't2', band: 'likely' }] });
   const html = vm.runInContext('vTidy()', s);
-  assert.match(html, /data-tidy="sound">By sound <span class="n">2<\/span>/);
+  assert.ok(!/data-tidy="sound"/.test(html));
+  assert.match(html, /data-tidy="misfile"><span class="lg">Wrong place<\/span><span class="sh">Misfiled<\/span> <span class="n">2<\/span>/);
+  assert.match(html, /data-mfb="high">[^]*?<span class="n">1<\/span>/);
+  assert.match(html, /data-mfb="medium">[^]*?<span class="n">1<\/span>/);
 });
 
-test('a row says what it sounds like, where it sits, and moves with the usual Move button', () => {
+test('a by-sound row says what it sounds like, where it sits, and moves with the usual Move button', () => {
   const s = tidy({ audio: true, rows: [ROW] });
-  vm.runInContext("S.tidySec = 'sound'", s);
   const html = vm.runInContext('vTidy()', s);
-  assert.match(html, /Sounds like <b>Jungle<\/b> <span class="mono">172 BPM<\/span>, sits in <b>House<\/b>/);
+  assert.match(html, /<span class="bysound">by sound<\/span> Sounds like <b>Jungle<\/b> <span class="mono">172 BPM<\/span>, sits in <b>House<\/b>/);
   assert.match(html, /data-mvtr="t1" data-mvfrom="pl-house" data-mvto="pl-jungle">Move</);
   assert.match(html, /data-tskeep="t1" data-tsto="pl-jungle">Keep here/);
   assert.match(html, /Stray/);
-  assert.match(html, /Checked on 400 tracks you filed yourself: .*82% were caught and sent home \(95% of the sure ones right\); 3% /);
+  assert.match(html, /By sound, checked on 400 tracks you filed yourself: .*82% were caught and sent home \(95% of the sure ones right\); 3% /);
+});
+
+test('a Likely by-sound row shows under Likely, not Sure', () => {
+  const s = tidy({ audio: true, rows: [{ ...ROW, band: 'likely' }] });
+  assert.ok(!/data-mvtr="t1"/.test(vm.runInContext('vTidy()', s)));
+  vm.runInContext("S.mfBand = 'medium'", s);
+  assert.match(vm.runInContext('vTidy()', s), /data-mvtier="likely" data-act="move" data-mvtr="t1"/);
+});
+
+test('where both tiers flag the same track in the same playlist, one row shows: the sound one', () => {
+  const s = tidy({ audio: true, rows: [ROW] });
+  s.R.misfiled = [{ id: 't1', currentPlaylistId: 'pl-house', current: 'House', confidence: 'high', currentScore: 0.05,
+    suggest: [{ id: 'pl-jungle', name: 'Jungle', score: 0.6 }], title: 'Stray' }];
+  const html = vm.runInContext('vTidy()', s);
+  assert.equal((html.match(/data-act="move" data-mvtr="t1"|data-mvtr="t1" data-mvfrom/g) ?? []).length, 1);
+  assert.match(html, /data-tidy="misfile">[^]*?<span class="n">1<\/span>/);
 });
 
 test('"Keep here" (a rejection of that playlist) hides the row', () => {
   const s = tidy({ audio: true, rows: [ROW], fb: { t1: { rejected: ['pl-jungle'] } } });
-  vm.runInContext("S.tidySec = 'sound'", s);
   const html = vm.runInContext('vTidy()', s);
   assert.ok(!/data-mvtr="t1"/.test(html));
-  assert.match(html, /Everything sounds where it is/);
+  assert.match(html, /Everything fits where it is/);
+});
+
+test('a remembered By sound section opens Wrong place on sound\'s band', () => {
+  const s = tidy({ audio: true, rows: [{ ...ROW, band: 'likely' }] });
+  vm.runInContext("S.tidySec = 'sound'; S.tsBand = 'likely'", s);
+  const html = vm.runInContext('vTidy()', s);
+  assert.equal(vm.runInContext('S.tidySec', s), 'misfile');
+  assert.equal(vm.runInContext('S.mfBand', s), 'medium');
+  assert.match(html, /data-mvtr="t1"/);
 });
 
 test('a remembered By sound section falls back to Wrong place once there is no sound', () => {
@@ -77,6 +105,16 @@ test('a remembered By sound section falls back to Wrong place once there is no s
   vm.runInContext("S.tidySec = 'sound'", s);
   vm.runInContext('vTidy()', s);
   assert.equal(vm.runInContext('S.tidySec', s), 'misfile');
+});
+
+// L4: short labels on a phone, and a section with nothing in it is dimmed but tappable.
+test('every part has its full and short label, and empty ones are marked zero', () => {
+  const s = tidy();
+  s.R.within = [REPEAT];
+  const html = vm.runInContext('vTidy()', s);
+  assert.match(html, /<button class="zero" type="button" aria-pressed="false" data-act="section" data-tidy="misfile">/);
+  assert.match(html, /<button type="button" aria-pressed="true" data-act="section" data-tidy="dupes">Repeats <span class="n">1<\/span>/);
+  assert.match(html, /data-tidy="cross"><span class="lg">Cross-filed<\/span><span class="sh">In two<\/span>/);
 });
 
 // BUILD-5-PLAN §4.1 / UI-A: Tidy opens on the first section with work in it,
@@ -94,12 +132,13 @@ test('with nothing in Wrong place, Tidy opens on the first section that has work
   assert.equal(vm.runInContext('S.tidySec', s), undefined, 'the automatic pick is not stored as a choice');
 });
 
-test('the first non-empty section can be Cross-filed, or By sound', () => {
+test('the first non-empty section can be Cross-filed, and sound rows open Wrong place', () => {
   const s = tidy();
   s.R.across = [{ title: 'x', placements: [] }];
   assert.equal(pressed(vm.runInContext('vTidy()', s)), 'cross');
   const t = tidy({ audio: true, rows: [ROW] });
-  assert.equal(pressed(vm.runInContext('vTidy()', t)), 'sound');
+  t.R.within = [REPEAT];
+  assert.equal(pressed(vm.runInContext('vTidy()', t)), 'misfile');
 });
 
 test('Wrong place still comes first when it has rows', () => {

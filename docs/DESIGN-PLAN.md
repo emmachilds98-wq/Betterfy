@@ -87,6 +87,12 @@ These are the rules each package is measured against.
 
 ### L0: Fix the second ear looking stuck at "listening 1/1" (bug, do first)
 
+**Done (2026-11-18):** the run shows "Tidying up · keys 5 / 40" during its
+top-ups (`vm.tidy`), every per-track step has a 60 s limit and every model load
+5 min (`core/audio/timeout.mjs`), and the second-ear button queues behind a
+listening run. Tests: `test/audiotidy.test.mjs`. Still to do: emma watches one
+real run with Deep listen on.
+
 - **What emma sees:** after a listening run, the pill and status say
   "Listening 1/1" (or "N/N") for a long time, and "Listen with the second
   ear now" seems to do nothing.
