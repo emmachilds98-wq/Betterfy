@@ -1237,8 +1237,8 @@ or after it.
 | T2 | One BPM everywhere | S1 | E, U | Not started | | +15 in range; ≤ 1% moved on house/techno |
 | T3 | One sure BPM or "BPM unknown" | S1 | U | Not started | | shown BPMs ≥ 90% right; "known on N%" printed |
 | T4 | Deezer BPM as a second opinion | S1 | E | Not started | | +10 shown; ≥ 90% right on GTZAN |
-| L2 | Prefetch the next track | S1 | M | Not started | | ≥ 1.4× tracks/min |
-| L3 | One download per top-up | S1 | M | Not started | | ≤ 1.1 downloads/record |
+| L2 | Prefetch the next track | S1 | M | Built: `runQueue` fetches the next track (lookup + both windows) while this one is heard, one ahead, dropped on stop; scripted run (15 ms lookup, 35 ms download, 50 ms model, 8 tracks) 1.6× tracks/min, records identical (`test/audioprefetch.test.mjs`); real-device number needs a Score run with L1 | | ≥ 1.4× tracks/min |
+| L3 | One download per top-up | S1 | M | Built: a per-run cache of the raw preview windows (`createPreviewCache`, 64 records, no URL kept) shared by the four top-ups; 1.0 downloads/record on the test, records identical; `ctrl.topupDownloads()` | | ≤ 1.1 downloads/record |
 | T5 | Third window + Beat This on unsure tempos | S1b | E, M | Not started | | each step: ≥ 90% right, ≥ 15% of unknowns settled |
 | T6 | Calibrated tempo confidence per family | S1b | E | Not started | | every family ≥ 90%; +10 shown on Beatport |
 | T8 | Tap the beat | S1b | U | Not started | | display/measurement |
