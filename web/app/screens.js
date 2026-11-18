@@ -112,6 +112,8 @@ SCREEN_CTX.lists = () => ({
 SCREEN_CTX.new = () => ({
   R, GAPS, esc, $, emptyState, fire, gapsCompute, gapsCreate, gapsFile, toast, render, sp, addTracks,
   mergeSplitOpen: spec => SCREEN_MODS.lists.wizardOpen(screenCtx('lists'), spec),
+  // "New genre?" from the Engine (M5, was Library's): the same cold-start job Library and File kick.
+  COLD, engineGenreKick: () => coldKick(!Object.values(CFG).some(v => v.axis === 'genre')),
   get BetterfyGaps() { return globalThis.BetterfyGaps; },
   get clapConfirm() { return typeof clapConfirm === 'function' ? clapConfirm : undefined; },
 });
