@@ -1,7 +1,7 @@
 // @bundle screens discover 60
 /* The Discover screen (docs/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
  * ranking stay classic in web/app/discover-engine.js; ctx comes from SCREEN_CTX.discover. */
-import { radarView, radarActions, radarMount } from './radar.mjs';
+import { radarView, radarActions, radarMount, newReleaseCount } from './radar.mjs';
 
 /** A fit score in the same words as everywhere else, not a percentage. */
 export const fitWord = v => v >= 0.7 ? 'Sure' : v >= 0.45 ? 'Likely' : 'Unsure';
@@ -70,47 +70,60 @@ export function anyPlaylistMenu(ctx, t) {
   return top + all;
 }
 
+/** Which side of Discover shows (L3): 'find' (new music, the default) or 'radar' (new releases).
+ *  Without a radar on the page there is only the one side. */
+export const sideOf = ctx => ctx.radar && ctx.S?.discSide === 'radar' ? 'radar' : 'find';
+
+/** The two-way switch at the top: Find new music | New releases, with the count of recent releases. */
+export function sideSwitchHTML(ctx, side) {
+  if (!ctx.radar) return '';
+  const R = ctx.radar.R ?? {}, now = ctx.radar.now?.() ?? Date.now();
+  const n = newReleaseCount(R, now);
+  const btn = (id, label, extra = '') => `<button type="button" aria-pressed="${side === id}" data-act="discSide" data-side="${id}">${label}${extra}</button>`;
+  return `<div class="seg discside" role="group" aria-label="Show">${btn('find', 'Find new music')}${btn('radar', 'New releases',
+    n ? ` <span class="n" title="${n} released in the last two weeks">${n.toLocaleString('en-GB')}</span>` : '')}</div>`;
+}
+
 export function view(ctx) {
-  const { S, LIB, CFG, esc, lfmKey, emptyState, discListenOn, soundSearchHTML, discSoundLine, discFitHTML,
+  const { S, LIB, esc, lfmKey, emptyState, discSoundLine, discFitHTML,
           artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY } = ctx;
   const ib = ctx.infoBtn ?? (() => '');
   const d = S.discover ?? [];
+  const side = sideOf(ctx);
+  // Discover leads with what you came for (L3): the radar is the other side of the switch, and keeps
+  // reading in the background (web/app/radar.js) whichever side is showing.
+  if (side === 'radar') return `<h1>Discover</h1>${sideSwitchHTML(ctx, side)}${radarView(ctx)}`;
   const pls = LIB.playlists.filter(p => p.tracks.length >= 10).sort((a,b) => b.tracks.length - a.tracks.length);
   const hasKey = !!lfmKey();
-  // Release radar is Discover's first section (BUILD-6-PLAN §2.3); '' without ctx.radar.
-  const radar = radarView(ctx);
-  const head = `<h1>Discover</h1>${radar}${radar ? '<h2 class="disc-h2">Find new music</h2>' : ''}
+  const busy = !!ctx.discBusy?.();
+  // One filled button per side: the Find button while there are no picks, the card's Add once there are.
+  const runBtn = `<button class="b${d.length ? '' : ' p'}" data-act="discRun" id="discRun"${busy ? ' disabled' : ''}>${busy ? 'Finding…' : d.length ? 'Find more' : 'Find new music'}</button>`;
+  const head = `<h1>Discover</h1>${sideSwitchHTML(ctx, side)}
     <p class="lede">New music, with everything you already own taken out.${ib('discover', 'Discover', `<p>Every artist and track you already own is subtracted before ranking, including each artist named inside a collaboration, so nothing here recycles your library.</p>
-      <p><b>Everything I listen to</b> weights your top artists and recent plays above what is merely filed; pick a playlist instead for that playlist's radio.</p>`)}</p>
-    ${hasKey ? '' : `<div class="note discnokey">
-      <b>No key needed.</b> Picks come from Deezer's and ListenBrainz's “fans also like” for the artists you play${discListenOn() ? ', then ranked by how they sound' : ''}.
-      A free Last.fm key adds its own similar artists and genre tags.
-      <div class="rowbtns" style="margin-top:8px"><button class="b" type="button" data-lfmconnect>Connect Last.fm</button></div>
-    </div>`}
-    <div class="rowbtns" style="margin-bottom:16px">
+      <p>It looks by itself once a day, from your top artists and recent plays. <b>Everything I listen to</b> weights those above what is merely filed; pick a playlist instead for that playlist's radio.</p>`)}</p>
+    <div class="rowbtns discbar">
       <select data-act="discPl" id="discPl" aria-label="Find new music from">
         <option value="">Everything I listen to</option>
         <optgroup label="Playlist radio">
           ${pls.map(p => `<option value="${esc(p.id)}" ${S.discSeed===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
         </optgroup>
       </select>
-      <button class="b p" data-act="discRun" id="discRun" >Find new music</button>
+      ${runBtn}
     </div>`;
 
-  // WP-C3: "find tracks that sound like ___". '' without CLAP records.
-  const sounds = soundSearchHTML();
-  // Every empty state gets a button (USER-REVIEW): here it is the Find button itself.
-  if (!d.length) return head + sounds + emptyState('Nothing found yet', 'One run takes a minute or two, and leaves out everything you already own.',
-    { acts: '<button class="b p" type="button" data-act="discRun">Find new music from what I play</button>' });
+  // No picks yet: a compact line, no second button (C5). The Find button above is the way on.
+  if (!d.length) return head + `<div class="disc-empty">${busy
+    ? emptyState('Looking for new music', 'Asking who sits near the artists you play. Picks show here in a minute or two.', { compact: true })
+    : emptyState('Nothing found yet', 'One run takes a minute or two, and leaves out everything you already own.', { compact: true })}</div>`;
 
   const i = Math.min(S.discAt ?? 0, d.length - 1), t = d[i];
   const menu = anyPlaylistMenu(ctx, t);
-  const art = artHTML({ art:t.art, id:t.id, title:t.track },
-                      `data-dplay="${esc(t.id)}" data-ddur="${t.dur ?? 0}"`);
+  // No play-on-art (C5): the card's own player and the row's ▶ play it.
+  const art = artHTML({ art:t.art, id:t.id, title:t.track }, 'data-noplay="1"').replace(' title="Play"', '');
 
   const best = (t.suggest ?? [])[0];
-  return head + sounds + discSoundLine() + `<div class="counter" style="margin:0 0 14px">
-      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
+  return head + discSoundLine() + `<div class="counter disccount">
+      <span class="discvia">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
       <span>from ${esc(S.discoverFrom)}</span>
     </div>
     <div class="deck">
@@ -134,8 +147,8 @@ export function view(ctx) {
 
         ${whyLine(t, esc)}
         ${(t.tags??[]).length ? tagChips(t.tags, t.thinData) : ''}
-        ${best ? `<button class="fitcall" data-act="dfile" data-dfile="${esc(best.id)}">
-            <span class="mid"><span class="nm">Would sit well in ${esc(best.name)}</span>
+        ${best ? `<button class="fitcall discadd" data-act="dfile" data-dfile="${esc(best.id)}">
+            <span class="mid"><span class="nm">Add to ${esc(best.name)}</span>
               <span class="ax">${best.axis ? `<b>${esc(best.axis)}</b> playlist · ` : ''}${fitHow(best)}</span>${pickEvidence(best)}</span>
             ${pickBand(best)}<span class="sc">${fitWord(best.score)}</span>
           </button>` : ''}
@@ -144,13 +157,12 @@ export function view(ctx) {
            <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.axis ? `${esc(sg.axis)} playlist` : sg.via === 'seed' ? 'the playlist this radio is from' : 'playlist'}</span>${pickEvidence(sg)}</span>
            <span class="rt">${pickBand(sg)}<span class="sc">${fitWord(sg.score)}</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
-        ${(t.suggest??[]).length ? '' : `<p class="why" style="margin-top:20px">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
+        ${(t.suggest??[]).length ? '' : `<p class="why discnofit">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
 
-        <div class="rowbtns" style="margin-top:20px">
-          ${best ? `<button class="b big go grow" data-act="dfile" data-dfile="${esc(best.id)}">Add to ${esc(best.name)}</button>` : ''}
-          <button class="b big" data-act="dnav" data-dnav="1" ${i>=d.length-1?'disabled':''}>Next →</button>
+        <div class="rowbtns discnav">
+          <button class="b big grow" data-act="dnav" data-dnav="1" ${i>=d.length-1?'disabled':''}>Next →</button>
         </div>
-        <div class="rowbtns" style="margin-top:10px">
+        <div class="rowbtns discmore">
           <button class="b sm" data-act="dnav" data-dnav="-1" ${i===0?'disabled':''}>← Back</button>
           <button class="b sm" data-act="dpass" data-dpass="${esc(t.id)}" title="Not for me: this artist won't be offered again">Not for me</button>
           <button class="b sm" data-act="like" data-like="${esc(t.id)}">Like</button>
@@ -164,12 +176,23 @@ export function view(ctx) {
 
 
 /** After paint: the radar's search field and windowed feed. */
-export function mount(ctx) { radarMount(ctx); }
+export function mount(ctx) {
+  ctx.discRestore?.();
+  // The radar's stored rows load on either side: the switch counts new releases from them.
+  if (sideOf(ctx) === 'radar') radarMount(ctx); else ctx.radar?.load?.();
+}
 
 export const actions = {
   ...radarActions,
   discRun: ({ S, runDiscovery }) => runDiscovery(S.discSeed || null),
   discPl({ S }, el) { S.discSeed = el.value; },
+  /** The switch: Find new music | New releases. Kept with the remembered filters when those are on. */
+  discSide(ctx, el) {
+    const side = el.dataset.side === 'radar' ? 'radar' : 'find';
+    ctx.S.discSide = side;
+    if (ctx.T?.rememberFilters) { ctx.T.discSide = side; ctx.saveTheme?.(); }
+    ctx.render();
+  },
   discAnyPl(ctx, el) { if (el.value) return discAdd(ctx, el.value); },
   dfile(ctx, el) { return discAdd(ctx, el.dataset.dfile); },
   /** A row's "+ playlist": that pick, into the playlist it fits best. */

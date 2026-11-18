@@ -43,16 +43,18 @@ test('a refused artist list means the radar cannot run, and says which read', as
   assert.deepEqual(probeVerdict([]), { ok: false, missing: NEEDED });
 });
 
-test('the page: a button first, then the answer in words with the table and a copy button', async () => {
+test('the page: a button first, then one plain line, with the table and a copy button behind Details (F5)', async () => {
   assert.match(probeHTML({}, esc), /data-act="rrProbe">Check it works on this account</);
   assert.match(probeHTML({ probe: { running: true } }, esc), /disabled>Checking…/);
   const rows = await probeEndpoints(devModeGet(), 'a');
   const ok = probeHTML({ probe: { rows, verdict: probeVerdict(rows) } }, esc);
   assert.match(ok, /<b>Works\.<\/b> Spotify answers everything the radar needs/);
+  assert.match(ok, /<details class="rr-pdet"><summary>Details<\/summary>[^]*<table/, 'the table is folded');
   assert.equal((ok.match(/<tr /g) ?? []).length, 7);
   assert.match(ok, /data-act="rrProbeCopy"/);
   const bad = probeHTML({ probe: { rows: [], verdict: probeVerdict([]) } }, esc);
-  assert.match(bad, /Doesn’t work yet\.[^]*list, album, track/);
+  assert.match(bad, /<p><b>Spotify isn’t sharing new releases with this account\.<\/b><\/p>/, 'one plain line');
+  assert.match(bad, /Refused: [^]*list, album, track/, 'what was refused is in Details');
   assert.match(probeHTML({ probe: { err: '<x>' } }, esc), /couldn’t run: &lt;x&gt;/);
   const calls = [];
   radarActions.rrProbe({ radar: { probe: () => calls.push('probe') } });

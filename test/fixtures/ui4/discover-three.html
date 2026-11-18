@@ -1,23 +1,22 @@
 <h1>Discover</h1>
     <p class="lede">New music, with everything you already own taken out.</p>
-    
-    <div class="rowbtns" style="margin-bottom:16px">
+    <div class="rowbtns discbar">
       <select data-act="discPl" id="discPl" aria-label="Find new music from">
         <option value="">Everything I listen to</option>
         <optgroup label="Playlist radio">
           <option value="p1" >Jungle &amp; Breaks</option><option value="p2" >Late Night &lt;Deep&gt;</option>
         </optgroup>
       </select>
-      <button class="b p" data-act="discRun" id="discRun" >Find new music</button>
-    </div><div class="counter" style="margin:0 0 14px">
-      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">via dwarde, Sherelle · 1 of 2</span>
+      <button class="b" data-act="discRun" id="discRun">Find more</button>
+    </div><div class="counter disccount">
+      <span class="discvia">via dwarde, Sherelle · 1 of 2</span>
       <span>from Jungle &amp; Breaks</span>
     </div>
     <div class="deck">
       <div class="card disc">
         <div class="prog"><i style="width:50.00%"></i></div>
         <div class="now">
-          <div class="artwrap"><img class="art" src="https://i.test/a.jpg" alt="" data-dplay="d1" data-ddur="254000" title="Play" loading="lazy" decoding="async"></div>
+          <div class="artwrap"><img class="art" src="https://i.test/a.jpg" alt="" data-noplay="1" loading="lazy" decoding="async"></div>
           <div class="txt">
             <p class="t">Rinse It</p><p class="a">Tim Reaper</p>
             <div class="m"><span>Future Retro</span><span>2023</span><span>4:14</span></div>
@@ -34,8 +33,8 @@
 
         <p class="why discwhy">Because you listen to <b>dwarde and Sherelle</b>.</p>
         <div class="tagrow"><span class="tag" title="genre tag">jungle</span><span class="tag" title="genre tag">breakbeat</span></div>
-        <button class="fitcall" data-act="dfile" data-dfile="p1">
-            <span class="mid"><span class="nm">Would sit well in Jungle &amp; Breaks</span>
+        <button class="fitcall discadd" data-act="dfile" data-dfile="p1">
+            <span class="mid"><span class="nm">Add to Jungle &amp; Breaks</span>
               <span class="ax"><b>genre</b> playlist · ranked by the same model the file queue uses</span></span>
             <span class="sc">Likely</span>
           </button>
@@ -48,11 +47,10 @@
              <span class="bar"><i style="width:21%"></i></span></span></button></div>
         
 
-        <div class="rowbtns" style="margin-top:20px">
-          <button class="b big go grow" data-act="dfile" data-dfile="p1">Add to Jungle &amp; Breaks</button>
-          <button class="b big" data-act="dnav" data-dnav="1" >Next →</button>
+        <div class="rowbtns discnav">
+          <button class="b big grow" data-act="dnav" data-dnav="1" >Next →</button>
         </div>
-        <div class="rowbtns" style="margin-top:10px">
+        <div class="rowbtns discmore">
           <button class="b sm" data-act="dnav" data-dnav="-1" disabled>← Back</button>
           <button class="b sm" data-act="dpass" data-dpass="d1" title="Not for me: this artist won't be offered again">Not for me</button>
           <button class="b sm" data-act="like" data-like="d1">Like</button>

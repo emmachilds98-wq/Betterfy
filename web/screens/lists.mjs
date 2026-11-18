@@ -691,7 +691,7 @@ export function view(c) {
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
     ${ticksHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
-    ${footHTML}`;
+    ${c.soundSearchHTML?.() ?? ''}${footHTML}`;
 }
 
 

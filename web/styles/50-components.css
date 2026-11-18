@@ -318,3 +318,14 @@
 .alsofits { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
 .alsofits .chip.mood { border-style:dashed; }
 .alsofits .chip.mood.on { border-style:solid; border-color:var(--accent); background:var(--surface-2); }
+
+/* L3: the big empty state turns compact on a phone where a screen asks for it (.es-phone),
+   so no dashed box fills the screen above the tab bar. Add-only. */
+@media (max-width:560px){
+  .es-phone .empty-state{padding:16px; border:0; background:var(--surface-2); border-radius:var(--r-2);
+       display:flex; align-items:center; gap:12px; text-align:left}
+  .es-phone .empty-state .es-mark{height:24px; gap:3px; margin:0; flex:none}
+  .es-phone .empty-state .es-mark i{width:5px; border-radius:2px}
+  .es-phone .empty-state b{font-size:15px; margin-bottom:2px}
+  .es-phone .empty-state p{margin:0; max-width:none; font-size:var(--fs-small)}
+}

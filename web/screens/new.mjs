@@ -171,8 +171,8 @@ export function view(c) {
   // Every section empty is one answer. Some empty is one line under the rest,
   // naming each so nothing silently disappears from the screen.
   const none = !empty.length || g.card ? '' : !full.length && !sound
-    ? emptyState('Nothing to propose yet', `${empty.map(x => `<strong>${esc(x.title)}:</strong> ${esc(x.none)}.`).join(' ')}
-      New ideas show up here as your library grows.`)
+    // One sentence (L3), compact on a phone (.es-phone, 50-components.css).
+    ? `<div class="es-phone">${emptyState('Nothing to propose yet', 'No genre without a playlist, no playlist that is really two genres, and no group in your backlog yet: ideas show up here as your library grows.')}</div>`
     : emptyState('Nothing else to propose', empty.map(x => `<strong>${esc(x.title)}:</strong> ${esc(x.none)}.`).join(' '), { compact: true });
   return `${head}
     ${g.card}${full.map(x => sec(x) + (x === g.sections[0] ? g.untagged ?? '' : '')).join('')}

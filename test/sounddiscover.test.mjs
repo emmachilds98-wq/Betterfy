@@ -276,7 +276,7 @@ test('without a key, candidates come from the cached neighbour lookups and Spoti
   const calls = { bridge: null, saved: null, search: [] };
   const p = page({
     LIB: { liked: [track('l1', 'Seed One')], playlists: [{ id: 'p', name: 'P', tracks: [track('p1', 'Seed Two')] }] },
-    isMirrorPlaylist: () => false, norm, ownsAnyOf, stage() {}, performance: { now: () => 0 },
+    isMirrorPlaylist: () => false, norm, ownsAnyOf, stage() {}, discStage() {}, performance: { now: () => 0 },
     engineLoad: async () => true, deezerJsonp() {}, corsJson() {},
     BRIDGE_KEY: 'bridge-raw',
     idb: { get: async () => ({ raw: { old: { deezer: [] } } }), set: async (k, v) => { calls.saved = [k, Object.keys(v.raw)]; } },

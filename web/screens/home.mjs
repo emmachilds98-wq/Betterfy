@@ -48,7 +48,7 @@ export function statusParts(ctx) {
   const total = R.likedIn?.total;
   if (total != null && total > liked) parts.push({ key: 'short', text: `Spotify has ${total.toLocaleString()} liked: sync again to read the rest`, act: 'opensync' });
   const fresh = newReleases(ctx);
-  if (fresh) parts.push({ key: 'radar', n: fresh, text: fresh === 1 ? 'new release' : 'new releases', go: 'discover' });
+  if (fresh) parts.push({ key: 'radar', n: fresh, text: fresh === 1 ? 'new release' : 'new releases', go: 'discover', side: 'radar' });
   const toTidy = typeof ctx.tidyCount === 'function' ? ctx.tidyCount() : R.within.length + R.misfiled.length;
   parts.push({ key: 'tidy', n: toTidy, text: 'to tidy', go: 'tidy' });
   // While the first analysis runs it says what it is doing (and listening's
@@ -70,7 +70,7 @@ function partHTML(p, esc) {
   const body = `${p.n != null ? `<b>${p.n.toLocaleString()}</b> ` : ''}${esc(p.text)}`;
   if (p.key === 'analyse') return `<span class="st-analyse" id="analyseStrip" aria-live="polite"><span class="txt">${body}</span></span>`;
   if (p.key === 'listen') return `<button class="st-listen" data-act="openlisten" data-listenstat>${body}</button>`;
-  if (p.go) return `<button class="st-${p.key}" data-go="${p.go}">${body}</button>`;
+  if (p.go) return `<button class="st-${p.key}" data-go="${p.go}"${p.side ? ` data-side="${p.side}"` : ''}>${body}</button>`;
   if (p.act) return `<button class="st-${p.key}" data-act="${p.act}">${body}</button>`;
   return `<span class="st-${p.key}">${body}</span>`;
 }

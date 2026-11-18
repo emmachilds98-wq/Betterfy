@@ -27,3 +27,16 @@
     .dacts{width:100%; padding-left:56px}
     .dacts .dadd{max-width:none; flex:1}
   }
+
+/* L3: Discover's two-way switch, its toolbar and the card's rows (no inline styles). */
+  .discside{margin:0 0 14px}
+  .discside>button{min-height:40px; padding-inline:14px}
+  .discbar{margin-bottom:16px}
+  .disc-empty{margin:0 0 16px}
+  .disccount{margin:0 0 14px}
+  .discvia{font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)}
+  .discnofit{margin-top:20px}
+  .fitcall.discadd .nm{font-size:16.5px; font-weight:700}
+  .discnav{margin-top:16px}
+  .discmore{margin-top:10px}
+  @media (max-width:520px){ .discside{display:flex} .discside>button{flex:1} }

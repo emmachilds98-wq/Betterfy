@@ -324,8 +324,10 @@ async function start(force) {
       // Release Radar starts by itself too, a little later (radar.js radarAuto), unless Stop was
       // pressed on this device. Not awaited: it reads Spotify, the similar artists below read others.
       // After its first read, Tidy › Hard to find checks a batch by itself (DESIGN-PLAN §7.7 A2).
+      // So does Discover's once-a-day look for new music (§7.7 A1), radar or not.
       if (typeof radarAuto === 'function') radarAuto()
-        .then(ran => ran && SCREEN_MODS.tidy?.background?.(screenCtx('tidy'))).catch(() => false);
+        .then(ran => ran && SCREEN_MODS.tidy?.background?.(screenCtx('tidy'))).catch(() => false)
+        .then(() => typeof discAuto === 'function' && discAuto()).catch(() => false);
       // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
       // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
       // don't compete with the tag lookups; resumes where the last load stopped.
@@ -383,7 +385,7 @@ const FRIENDLY = {
 };
 
 (async () => {
-  if (T.rememberFilters) { if (T.crossMin) S.crossMin = T.crossMin; if (T.mfBand) S.mfBand = T.mfBand; }
+  if (T.rememberFilters) { if (T.crossMin) S.crossMin = T.crossMin; if (T.mfBand) S.mfBand = T.mfBand; if (T.discSide) S.discSide = T.discSide; }
 
   // Insert the "use your own app" hint shared by access_denied and a 403
   // discovered after sign-in (the reason=not_allowlisted branch below).

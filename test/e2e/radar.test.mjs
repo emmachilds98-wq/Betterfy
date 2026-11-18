@@ -41,6 +41,7 @@ test('radar: Start, partial progress said out loud, filters, the owned marker', 
     const { page, fake } = app;
     await ready(page);
     await page.evaluate(() => go('discover'));
+    await page.click('[data-act="discSide"][data-side="radar"]');   // L3: Find new music leads
     await page.waitForSelector('#rrStart');
     assert.match(await page.locator('#radar').innerText(), /about \d+ minutes?/, 'an honest estimate before Start');
 
@@ -107,6 +108,7 @@ test('radar: a quota stop mid-sync keeps what was read and says how far it got',
     const { page, fake } = app;
     await ready(page);
     await page.evaluate(() => go('discover'));
+    await page.click('[data-act="discSide"][data-side="radar"]');   // L3: Find new music leads
     await page.waitForSelector('#rrStart');
     fake.sw.latencyMs = 80;
     await page.click('#rrStart');

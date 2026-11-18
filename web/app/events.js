@@ -5,7 +5,8 @@ document.addEventListener('click', guard(async e => {
     return go(nav.dataset.v);
   }
 
-  const gto = e.target.closest('[data-go]'); if (gto) return go(gto.dataset.go);
+  // data-side picks Discover's side on the way there (L3: File's "N new releases" opens New releases).
+  const gto = e.target.closest('[data-go]'); if (gto) { if (gto.dataset.side) S.discSide = gto.dataset.side; return go(gto.dataset.go); }
   const more = e.target.closest('[data-more]');
   if (more) { S.shown[more.dataset.more] = shownOf(more.dataset.more) + TIDY_PAGE; return render(); }
 

@@ -171,6 +171,20 @@ real run with Deep listen on.
 
 ### L3: Discover order, and compact empty states everywhere
 
+**Done (2026-11-18), with M7, C5, A1, F1 and F5, all provisional:** Discover
+opens on a two-way switch, **Find new music | New releases** (the count is
+main-lane releases from the last 14 days, unowned, not dismissed), remembered
+with the remembered filters; the radar keeps reading whichever side shows. One
+filled button per side ("Find new music" until there are picks, then a plain
+"Find more" and the card's Add). The fit line *is* the Add button. Discover
+looks by itself once a day after the radar's first read (`discAuto`, quiet,
+never on Data Saver; last picks kept in `disc:picks`). Cut: the empty state's
+second button, the keyless note, play-on-art, the radar's Features fold. "Find
+tracks that sound like…" sits in Library. The radar's account check is one
+line plus Details. Empty states on Discover and New are compact on a phone,
+and New's is one sentence. Tests: `test/webdiscover.test.mjs`,
+`test/discauto.test.mjs`, the radar e2e.
+
 - **Goal:** Discover leads with what you came for.
   - Put a two-way switch at the top: **Find new music | New releases**.
     Remember the last choice in the existing remembered filters.

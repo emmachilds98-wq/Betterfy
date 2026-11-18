@@ -171,21 +171,31 @@ function rowHTML(r, { esc, suggest }) {
   </li>`;
 }
 
-/** The whole section. '' when the page gives no radar (tests of the rest of Discover, old builds). */
-/** The "Check it works on this account" block: a button, then the answer in words and the table. */
+/** The account check (F5, BUILD-7 R1): one plain line, and the per-route table behind Details. */
 export function probeHTML(R, esc) {
   const P = R?.probe;
   const btn = `<button class="b sm" type="button" data-act="rrProbe"${P?.running ? ' disabled' : ''}>${P?.running ? 'Checking…' : P ? 'Check again' : 'Check it works on this account'}</button>`;
   if (!P || P.running) return `<div class="rr-probe">${btn}</div>`;
   if (P.err) return `<div class="rr-probe"><p class="why">The check couldn’t run: ${esc(P.err)}</p>${btn}</div>`;
   const v = P.verdict ?? { ok: false, missing: [] };
-  const words = v.ok ? 'Spotify answers everything the radar needs on this account.'
-    : `Spotify refused what the radar needs (${v.missing.map(esc).join(', ')}), so it can’t run on this account yet.`;
-  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p><b>${v.ok ? 'Works.' : 'Doesn’t work yet.'}</b> ${words}</p>
+  const line = v.ok ? '<b>Works.</b> Spotify answers everything the radar needs on this account.'
+    : '<b>Spotify isn’t sharing new releases with this account.</b>';
+  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p>${line}</p>
+    <details class="rr-pdet"><summary>Details</summary>
+    ${v.ok ? '' : `<p class="why">Refused: ${v.missing.map(esc).join(', ')}.</p>`}
     <table class="rr-ptab"><tbody>${(P.rows ?? []).map(r => `<tr class="${r.ok ? 'ok' : 'no'}"><td>${esc(r.label)}</td><td class="mono">${esc(r.status)}</td><td>${esc(r.note)}</td></tr>`).join('')}</tbody></table>
-    <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></div>`;
+    <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></details></div>`;
 }
 
+/** Releases new enough to count on Discover's "New releases" side: the same rule as File's header
+ *  (home.mjs newReleases): unheard, main lane, released in the last `days` days, not dismissed. */
+export function newReleaseCount(R, now = Date.now(), days = 14) {
+  const since = now - days * 864e5;
+  return feedRows(R?.rows, { filter: 'unheard', dismissed: R?.dismissed ?? new Set(), now })
+    .filter(r => parseDate(r.releaseDate, r.precision).ts >= since).length;
+}
+
+/** The whole section. '' when the page gives no radar (tests of the rest of Discover, old builds). */
 export function radarView(ctx) {
   const rad = ctx.radar;
   if (!rad) return '';
@@ -251,15 +261,10 @@ export function radarView(ctx) {
         <ul class="rr-rows">${g.rows.map(r => rowHTML(r, { esc, suggest: sugg })).join('')}</ul></li>`).join('')}</ol>
       ${rows.length > shown.length ? `<button class="b rr-more" type="button" data-act="rrMore" id="rrMore">Show more (${(rows.length - shown.length).toLocaleString('en-GB')} left)</button>` : ''}`;
   }
-  // The features lane: a collapsed strip under All, never mixed into it.
-  const feats = filter === 'all' && !R.artist ? feedRows(R.rows, { ...opts, filter: 'features' }) : [];
-  const strip = feats.length ? `<details class="rr-feat"><summary>Features and remixes · ${feats.length.toLocaleString('en-GB')}</summary>
-      <ul class="rr-rows">${feats.slice(0, 10).map(r => rowHTML(r, { esc, suggest: null })).join('')}</ul>
-      ${feats.length > 10 ? `<button class="b sm" type="button" data-act="rrFilter" data-f="features">See all ${feats.length.toLocaleString('en-GB')}</button>` : ''}
-    </details>` : '';
+  // The features lane is the Features chip only (C5): the fold under All showed the same rows.
   const partial = !st.complete && rows.length ? `<p class="rr-partial">Not the whole radar yet: ${R.running ? 'still reading' : 'some artists are still to be read'}.</p>` : '';
   const count = `<p class="rr-count vh" aria-live="polite">${rows.length.toLocaleString('en-GB')} release${rows.length === 1 ? '' : 's'}</p>`;
-  return head + status + (R.probe || (R.err && !R.running) ? probeHTML(R, esc) : '') + chips + search + count + partial + strip + feed + '</section>';
+  return head + status + (R.probe || (R.err && !R.running) ? probeHTML(R, esc) : '') + chips + search + count + partial + feed + '</section>';
 }
 
 export const radarActions = {
