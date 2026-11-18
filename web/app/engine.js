@@ -628,7 +628,9 @@ const engineValidate = guard(async () => {
       try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true, audio: engineAudioIn(audio) }); } catch { teach = null; }
       let online = null;
       try { online = BetterfyOnline.onlineAccuracy(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true }); } catch { online = null; }
-      ENG.val = { mine, base, blend, identify, weights, fill, teach, online, tagTops, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      let tempoRange = null;
+      try { tempoRange = BetterfyTempoRange.tempoRangeAccuracy(LIB, { ...common, limit: 300, collect: false, fitParts: false, sources: false }); } catch { tempoRange = null; }
+      ENG.val = { mine, base, blend, identify, weights, fill, teach, online, tempoRange, tagTops, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).
     try { if (ENG.val.fill?.recall != null) LS.setItem('bf_fill', JSON.stringify({ ...ENG.val.fill, at: Date.now() })); } catch { /* shown next run */ }

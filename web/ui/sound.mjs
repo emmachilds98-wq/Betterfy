@@ -31,7 +31,7 @@ export const SOUND_UI_VERSION = 1;
  *
  * @typedef {{ tags?: number, history?: number, sound?: number, learned?: number }} EvidenceVM
  * @typedef {'HIGH'|'LIKELY'|'AMBIGUOUS'|null} BandVM
- * @typedef {{ heard: number, members: number, bpm?: [number, number],
+ * @typedef {{ heard: number, members: number, bpm?: [number, number], tempo?: [number, number],
  *             energy?: [number, number], styles?: Array<[string, number]> }} ProfileVM
  * @typedef {{ state: 'off'|'running'|'paused'|'done', done: number, total: number,
  *             reason?: string, missed?: Record<string, number> }} ListenVM
@@ -260,7 +260,10 @@ export function profileRow(vm) {
   const bpm = sRange(vm.bpm);
   if (bpm && bpm[1] > 0) {
     const [lo, hi] = bpm.map(Math.round);
-    parts.push(`<span class="sprof-bpm">${lo === hi ? lo : `${lo}–${hi}`} <span class="sprof-unit">BPM</span></span>`);
+    const tight = sRange(vm.tempo);
+    const title = tight && tight[1] > 0 ? ` title="${sEsc(`most of this playlist is ${Math.round(tight[0])}–${Math.round(tight[1])} BPM`)}"` : '';
+    parts.push(`<span class="sprof-bpm"${title}>${lo === hi ? lo : `${lo}–${hi}`} <span class="sprof-unit">BPM</span></span>`);
+    if (tight && tight[1] > 0) parts.push(`<span class="sprof-tempo">most is ${Math.round(tight[0])}–${Math.round(tight[1])}</span>`);
   }
   const en = sRange(vm.energy);
   if (en) {

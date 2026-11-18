@@ -174,7 +174,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          weights = null, targets = null, bridge = null,
                                          audio = null, collect = false,
                                          genreGraph = false, soundWeights = null,
-                                         fitParts = false, sources = false } = {}) {
+                                         fitParts = false, sources = false, tempoRange = false } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -287,7 +287,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
       if (sound) {
         const more = space.audio
-          ? placements(track, space, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
+          ? placements(track, space, { limit: limit3, weights: soundWeights ?? base, useAudio: true, ...(tempoRange ? { tempoRange } : {}) }) : out;
         const r = more.results ?? [];
         if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort(), ...(sources ? { src: sourceTops(r) } : {}) });
         const s1 = r[0] && want.has(r[0].playlistId);
@@ -300,7 +300,7 @@ export function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
         arms.forEach((a, i) => {
           const sp = armSpaces[i];
-          const res = sp.audio ? placements(track, sp, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
+          const res = sp.audio ? placements(track, sp, { limit: limit3, weights: soundWeights ?? base, useAudio: true, ...(tempoRange ? { tempoRange } : {}) }) : out;
           const ra = res.results ?? [];
           if (a.t.rows) a.t.rows.push({ id, scores: scoresOf(ra), truth: [...want].sort(), ...(sources ? { src: sourceTops(ra) } : {}) });
           const a1 = ra[0] && want.has(ra[0].playlistId);

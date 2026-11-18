@@ -103,7 +103,7 @@ const LISTS_SOUND = {
     // (core/audio/plprofile.mjs). Until that is worked out, the model's styles.
     const pp = listsProfiles()?.get(id);
     if (vm && pp) vm = { ...vm, ...(pp.mix.length ? { styles: pp.mix.slice(0, 3).map(m => [m.name, m.share]) } : {}),
-                         ...(pp.bpm ? { bpm: pp.bpm } : {}) };
+                         ...(pp.bpm ? { bpm: pp.bpm } : {}), ...(pp.tempo ? { tempo: pp.tempo } : {}) };
     return BetterfyAudio.withProfileEnergy && typeof labelsShownNow === 'function'
       ? BetterfyAudio.withProfileEnergy(vm, p, AUDIO.records, labelsShownNow()) : vm;
   },

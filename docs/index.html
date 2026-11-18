@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1625">
+<meta name="bf-build" content="2026-11-18-1650">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -2001,7 +2001,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1625</span>
+    <span class="mono">build 2026-11-18-1650</span>
   </p>
 
   <div class="feat">
@@ -2094,7 +2094,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1625</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1650</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2204,7 +2204,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-1625. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-1650. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -4362,7 +4362,7 @@ const SOUND_UI_VERSION = 1;
  *
  * @typedef {{ tags?: number, history?: number, sound?: number, learned?: number }} EvidenceVM
  * @typedef {'HIGH'|'LIKELY'|'AMBIGUOUS'|null} BandVM
- * @typedef {{ heard: number, members: number, bpm?: [number, number],
+ * @typedef {{ heard: number, members: number, bpm?: [number, number], tempo?: [number, number],
  *             energy?: [number, number], styles?: Array<[string, number]> }} ProfileVM
  * @typedef {{ state: 'off'|'running'|'paused'|'done', done: number, total: number,
  *             reason?: string, missed?: Record<string, number> }} ListenVM
@@ -4591,7 +4591,10 @@ function profileRow(vm) {
   const bpm = sRange(vm.bpm);
   if (bpm && bpm[1] > 0) {
     const [lo, hi] = bpm.map(Math.round);
-    parts.push(`<span class="sprof-bpm">${lo === hi ? lo : `${lo}–${hi}`} <span class="sprof-unit">BPM</span></span>`);
+    const tight = sRange(vm.tempo);
+    const title = tight && tight[1] > 0 ? ` title="${sEsc(`most of this playlist is ${Math.round(tight[0])}–${Math.round(tight[1])} BPM`)}"` : '';
+    parts.push(`<span class="sprof-bpm"${title}>${lo === hi ? lo : `${lo}–${hi}`} <span class="sprof-unit">BPM</span></span>`);
+    if (tight && tight[1] > 0) parts.push(`<span class="sprof-tempo">most is ${Math.round(tight[0])}–${Math.round(tight[1])}</span>`);
   }
   const en = sRange(vm.energy);
   if (en) {
@@ -7016,7 +7019,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1625`,
+    `Betterfy engine score — build 2026-11-18-1650`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7045,6 +7048,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     teachLine(v.teach, pc),
     onlineLine(v.online, pc),
     situationLine(v, pc),
+    tempoRangeLine(v.tempoRange, pc),
     ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
@@ -7095,6 +7099,12 @@ function situationLine(v, pc) {
   if (!parts.length) return null;
   const beats = !!(s?.beats || b?.beatsOne);
   return `Weights per situation (filed artist / never filed): ${parts.join('; ')} — ${beats ? 'ahead, not used yet' : 'not ahead, not used'}`;
+}
+/** E3: each playlist's own tempo range as evidence, measured with and without; display-only unless it clears the bar. */
+function tempoRangeLine(t, pc) {
+  if (!t || t.off == null) return null;
+  return `Tempo range: top-1 ${pc(t.off)} -> ${pc(t.on)} on ${t.scored} heard tracks (${t.points >= 0 ? '+' : ''}${t.points} points; weakest five playlists ${t.weakest >= 0 ? '+' : ''}${t.weakest} tracks) — ${
+    t.pass ? 'ahead on this library, not applied yet' : 'not ahead, shown in Library only'}`;
 }
 function teachRow(t, p) {
   if (!t || t.before == null) return '';
@@ -7585,7 +7595,7 @@ const actions = {
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakCard, weakBuckets, summary, fillLine, teachLine, onlineLine, situationLine, blendVerdict, pastRunsCard, view, tuneCardHtml, actions };
+return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakCard, weakBuckets, summary, fillLine, teachLine, onlineLine, situationLine, tempoRangeLine, blendVerdict, pastRunsCard, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -11222,7 +11232,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1625';
+const BUILD = '2026-11-18-1650';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11560,7 +11570,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1625', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1650', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12381,7 +12391,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1625');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1650');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -13313,7 +13323,7 @@ const LISTS_SOUND = {
     // (core/audio/plprofile.mjs). Until that is worked out, the model's styles.
     const pp = listsProfiles()?.get(id);
     if (vm && pp) vm = { ...vm, ...(pp.mix.length ? { styles: pp.mix.slice(0, 3).map(m => [m.name, m.share]) } : {}),
-                         ...(pp.bpm ? { bpm: pp.bpm } : {}) };
+                         ...(pp.bpm ? { bpm: pp.bpm } : {}), ...(pp.tempo ? { tempo: pp.tempo } : {}) };
     return BetterfyAudio.withProfileEnergy && typeof labelsShownNow === 'function'
       ? BetterfyAudio.withProfileEnergy(vm, p, AUDIO.records, labelsShownNow()) : vm;
   },
@@ -16075,7 +16085,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1625';
+    s.src = 'engine.js?v=2026-11-18-1650';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -16097,7 +16107,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1625');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1650');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16683,7 +16693,9 @@ const engineValidate = guard(async () => {
       try { teach = BetterfyTeach.teachGate(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true, audio: engineAudioIn(audio) }); } catch { teach = null; }
       let online = null;
       try { online = BetterfyOnline.onlineAccuracy(LIB, { targets: engineTargets(), isMirror: isMirrorPlaylist, genreGraph: true }); } catch { online = null; }
-      ENG.val = { mine, base, blend, identify, weights, fill, teach, online, tagTops, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
+      let tempoRange = null;
+      try { tempoRange = BetterfyTempoRange.tempoRangeAccuracy(LIB, { ...common, limit: 300, collect: false, fitParts: false, sources: false }); } catch { tempoRange = null; }
+      ENG.val = { mine, base, blend, identify, weights, fill, teach, online, tempoRange, tagTops, ...extra, ms: Math.round(performance.now() - t1), where: 'page' };
     }
     // Library's "Fill this playlist" shows only once this clears its bar (BUILD-6 F2).
     try { if (ENG.val.fill?.recall != null) LS.setItem('bf_fill', JSON.stringify({ ...ENG.val.fill, at: Date.now() })); } catch { /* shown next run */ }
@@ -16810,7 +16822,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1625';
+    s.src = 'audio.js?v=2026-11-18-1650';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16864,7 +16876,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1625', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1650', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -18101,7 +18113,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1625', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1650', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
