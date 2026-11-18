@@ -1,7 +1,7 @@
-// A8 of docs/BUILD-5-PLAN.md: golden HTML compares on normalised whitespace,
+// A8 of docs/archive/BUILD-5-PLAN.md: golden HTML compares on normalised whitespace,
 // so a new empty slot on its own line (or a re-indented template) no longer
 // breaks a byte-for-byte golden. The old "put the slot on the same line" rule
-// in docs/HANDOFF.md §4 is retired by this.
+// in docs/archive/HANDOFF.md §4 is retired by this.
 //
 // The rule is JSX's: whitespace that contains a line break and touches a tag
 // is formatting, so it is dropped; any other run of whitespace collapses to

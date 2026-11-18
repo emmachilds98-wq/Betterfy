@@ -1,5 +1,5 @@
 // @bundle engine BetterfyPairs 109
-// The playlists it confuses (docs/NEXT-WORKPLAN.md package 5).
+// The playlists it confuses (docs/archive/NEXT-WORKPLAN.md package 5).
 //
 // Family first (#145) already settles "it's drum & bass" and asks only which
 // playlist inside the family. What is left is telling two neighbours apart:

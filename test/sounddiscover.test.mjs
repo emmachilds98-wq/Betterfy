@@ -10,7 +10,7 @@ import { soundRecord } from './fixtures/sound-library.mjs';
 import { norm } from '../norm.mjs';
 import { ownsAnyOf } from '../credits.mjs';
 
-// Discover by sound (docs/SOUND-EVERYWHERE-PLAN.md S4): picks heard and
+// Discover by sound (docs/archive/SOUND-EVERYWHERE-PLAN.md S4): picks heard and
 // re-ranked by fit to the seed's sound, sound-led playlist picks for a heard
 // pick, and the keyless candidate path. Synthetic sound: tracks built around
 // fixed directions in embedding space (test/fixtures/sound-library.mjs).

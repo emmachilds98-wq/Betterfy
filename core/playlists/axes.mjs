@@ -5,7 +5,7 @@
 // (build-web.mjs, exposed as globals beside profile.mjs) and wraps it in
 // classify() in web/app/classify.js; the Node CLI `axes.mjs` imports it and
 // wraps it with its own hand overrides. The two used to be separate copies that
-// claimed to mirror each other and had drifted (docs/BUILD-5-PLAN.md B10).
+// claimed to mirror each other and had drifted (docs/archive/BUILD-5-PLAN.md B10).
 //
 // Pure: no DOM, no storage, no file system. Everything that differs between the
 // page and the CLI — which playlist is the All Songs mirror, the genre

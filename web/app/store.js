@@ -1,4 +1,4 @@
-/* The store (docs/BUILD-5-PLAN.md A3). Background jobs (engine, listening,
+/* The store (docs/archive/BUILD-5-PLAN.md A3). Background jobs (engine, listening,
  * sync, tag fills, the Gaps and Tidy-by-sound builds) say WHAT changed by
  * writing a slice, instead of calling render() blind. The slices are named in
  * the plan: lib, reports, eng, sound, audio, gaps, player and ui.<screen>.

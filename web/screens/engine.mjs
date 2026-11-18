@@ -1,5 +1,5 @@
 // @bundle screens engine 30
-/* The Engine screen (docs/BUILD-5-PLAN.md A4): an ES module, not a page script.
+/* The Engine screen (docs/archive/BUILD-5-PLAN.md A4): an ES module, not a page script.
  * It touches nothing outside `ctx` (see web/README.md, "Screen modules"); the
  * ctx for it is built by SCREEN_CTX.engine in web/app/screens.js. The long
  * jobs (learn, score, the similar-artist lookups) stay in web/app/engine.js,

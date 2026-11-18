@@ -1,4 +1,4 @@
-/* Screen-change motion (docs/BUILD-5-PLAN.md §4.2, UI-B).
+/* Screen-change motion (docs/archive/BUILD-5-PLAN.md §4.2, UI-B).
  * swapScreen(dir, update) runs `update` (which redraws the screen) inside a
  * same-document View Transition when the browser has one, with a forward/back
  * type; elsewhere it just runs `update`. Either way <html data-dir> says which
@@ -26,7 +26,7 @@ function swapScreen(dir, update) {
   t.finished.finally(() => { delete root.dataset.dir; });
 }
 
-/* ---- FLIP for rows that move or leave (docs/BUILD-5-PLAN.md §4.2, UI-G) ----
+/* ---- FLIP for rows that move or leave (docs/archive/BUILD-5-PLAN.md §4.2, UI-G) ----
  * Rows opt in with data-flip (and a data-key, which the keyed patcher already
  * wants). flipRecord(root) notes where each one is; after the DOM changes,
  * flipPlay(root, before) slides every row that moved from its old place to its

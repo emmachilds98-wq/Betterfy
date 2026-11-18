@@ -1,4 +1,4 @@
-// A5 wired into render() (docs/BUILD-5-PLAN.md): a redraw of the screen already
+// A5 wired into render() (docs/archive/BUILD-5-PLAN.md): a redraw of the screen already
 // showing patches #main in place, so a focused input keeps focus and its value;
 // the row lists that opt into FLIP carry data-key and data-flip.
 import test from 'node:test';

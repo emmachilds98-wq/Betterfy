@@ -1,4 +1,4 @@
-// Performance on a 5k library (docs/BUILD-6-PLAN.md P1; budgets in BUILD-5-PLAN §7).
+// Performance on a 5k library (docs/archive/BUILD-6-PLAN.md P1; budgets in BUILD-5-PLAN §7).
 //
 //   npm run build:web && npm run perf [-- --throttle=4 --liked=5000 --json]
 //

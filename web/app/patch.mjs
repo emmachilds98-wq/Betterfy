@@ -1,4 +1,4 @@
-// A5 of docs/BUILD-5-PLAN.md: the keyed patcher.
+// A5 of docs/archive/BUILD-5-PLAN.md: the keyed patcher.
 //
 // patch(el, html) makes el's children match `html` while reusing the nodes it
 // already has, so a re-render after a click no longer throws away the focused

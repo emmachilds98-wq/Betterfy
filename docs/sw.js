@@ -1,4 +1,4 @@
-/* The service worker (docs/BUILD-6-PLAN.md F6). build-web.mjs writes it to
+/* The service worker (docs/archive/BUILD-6-PLAN.md F6). build-web.mjs writes it to
  * docs/sw.js with the build stamp filled in; web/app/offline.js registers it.
  *
  * What it does, and only this:
@@ -17,7 +17,7 @@
  * No Background Sync: iOS Safari and Firefox have none, so decisions made
  * offline are replayed by the page itself when it is next open and online
  * (web/app/offline.js). */
-const BUILD = '2026-11-18-1615';
+const BUILD = '2026-11-18-1625';
 const PREFIX = 'betterfy-shell-';
 const CACHE = PREFIX + BUILD;
 

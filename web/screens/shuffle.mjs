@@ -1,5 +1,5 @@
 // @bundle screens shuffle 50
-/* The Shuffle screen (docs/BUILD-5-PLAN.md A4): view and actions only. The spacing, DJ-order and
+/* The Shuffle screen (docs/archive/BUILD-5-PLAN.md A4): view and actions only. The spacing, DJ-order and
  * All Songs mirror code stays classic in web/app/shuffle-engine.js; ctx comes from SCREEN_CTX.shuffle. */
 const mixPct = x => `${Math.round(x * 100)}%`;
 export function mixBpmOf(index, id) {

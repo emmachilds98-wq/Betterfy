@@ -1,4 +1,4 @@
-/* Library (UI-E, docs/BUILD-5-PLAN.md §4.1): compact playlist rows, the Suggested
+/* Library (UI-E, docs/archive/BUILD-5-PLAN.md §4.1): compact playlist rows, the Suggested
    section, the detail sheet, and the way back on New playlists / Shuffle. */
   .libnav{background:none; padding:0; border-radius:0; width:auto; display:flex; align-items:center; gap:10px; overflow:visible}
 

@@ -324,7 +324,7 @@ function backlogSuggest(t, lib, cfg, tags, profiles, idf,
 /* ---------- reports, off the main thread (page side) ---------- */
 /* buildReports is the biggest single piece of work the page does: on a 5k-liked,
  * 60-playlist library it holds the main thread for over a second (scripts/perf.mjs,
- * docs/BUILD-6-PLAN.md D4), at every sync, tag fill and correction. The same
+ * docs/archive/BUILD-6-PLAN.md D4), at every sync, tag fill and correction. The same
  * function, byte for byte, runs in docs/reports-worker.js (build-web.mjs cuts
  * this file at the marker above) and the page asks it for the answer. The
  * page-side state it reads — rejections, the pinned mirror, the listening weights,

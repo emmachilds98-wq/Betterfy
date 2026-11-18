@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { patch } from '../web/app/patch.mjs';
 import { mount } from './fixtures/minidom.mjs';
 
-// A5 of docs/BUILD-5-PLAN.md: the keyed patcher, run against a small fake DOM
+// A5 of docs/archive/BUILD-5-PLAN.md: the keyed patcher, run against a small fake DOM
 // that blurs and un-scrolls a node when it moves, as browsers do.
 
 const li = (k, txt = k) => `<li data-key="${k}">${txt}</li>`;

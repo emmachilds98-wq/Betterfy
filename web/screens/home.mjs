@@ -1,7 +1,7 @@
 // @bundle screens home 10
 import { feedRows } from './radar.mjs';
 import { parseDate } from '../../core/release/dates.mjs';
-/* File, the home tab (docs/BUILD-5-PLAN.md §4.1, UI-D; docs/DESIGN-PLAN.md L8
+/* File, the home tab (docs/archive/BUILD-5-PLAN.md §4.1, UI-D; docs/DESIGN-PLAN.md L8
  * step 2). The top is a calm "today" header: a greeting, then one line of
  * status ("72 to file · 3 new releases · 1 to tidy · tidying up: keys 5/40"),
  * each part a tap to where it lives. The old status line, the getting-started

@@ -7,7 +7,7 @@ import { feedbackExamples } from '../core/intrinsic/audio-feedback.mjs';
 
 // A move in Tidy is two writes to Spotify — add to the new playlist, remove
 // from the old — and to the listener it is one thing. These pin that down
-// (docs/BUILD-5-PLAN.md §1.3 B1, B2, and the move half of B7):
+// (docs/archive/BUILD-5-PLAN.md §1.3 B1, B2, and the move half of B7):
 //
 //   B1  Undo used to reverse only the newest entry (the remove), so after
 //       Undo the track sat in both playlists. A move is now one group, and

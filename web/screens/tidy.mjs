@@ -1,5 +1,5 @@
 // @bundle screens tidy 40
-/* The Tidy screen (docs/BUILD-5-PLAN.md A4): an ES module. It touches nothing outside `ctx`
+/* The Tidy screen (docs/archive/BUILD-5-PLAN.md A4): an ES module. It touches nothing outside `ctx`
  * (web/README.md, "Screen modules"); SCREEN_CTX.tidy in app/screens.js builds it. The sound
  * misfit state and jobs, and emptyState, stay classic in app/screenjobs.js. */
 /* The keyboard cleanup sprint (BUILD-6 F9) is at the end of this file; its pure parts are

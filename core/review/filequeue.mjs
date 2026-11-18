@@ -1,4 +1,4 @@
-// The File queue's order and its sure batch (docs/BUILD-5-PLAN.md §5.2).
+// The File queue's order and its sure batch (docs/archive/BUILD-5-PLAN.md §5.2).
 //
 // Pure counts over what Spotify already gives every account: the three
 // top-artist windows, recently played and /me/top/tracks. Nothing here is

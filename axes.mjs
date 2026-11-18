@@ -2,7 +2,7 @@
 // for you to hand-correct; everything downstream reads that file, not these rules.
 //
 // The rules are not here: they are core/playlists/axes.mjs, the same module the
-// browser build's classify() runs (docs/BUILD-5-PLAN.md A2, fixing B10). What
+// browser build's classify() runs (docs/archive/BUILD-5-PLAN.md A2, fixing B10). What
 // this file adds is the CLI's own equivalent of the page's saved corrections —
 // the OVERRIDE table and the previous playlists.config.json.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';

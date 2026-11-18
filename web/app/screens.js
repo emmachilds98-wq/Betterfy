@@ -1,4 +1,4 @@
-/* ---------- screen modules (docs/BUILD-5-PLAN.md A4) ----------
+/* ---------- screen modules (docs/archive/BUILD-5-PLAN.md A4) ----------
  * A migrated screen is web/screens/<name>.mjs: an ES module that build-web.mjs
  * bundles (its `// @bundle screens <name> <order>` header is the whole
  * registration) and exposes here as BetterfyScreens.<name>. It exports

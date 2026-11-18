@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import * as sound from '../web/ui/sound.mjs';
 import { assembledTemplate } from '../web/manifest.mjs';
 
-// UI-0 of docs/UI-BUILD-PLAN.md: the stylesheet lives in web/styles/ partials so
+// UI-0 of docs/archive/UI-BUILD-PLAN.md: the stylesheet lives in web/styles/ partials so
 // packages restyling different screens own different files, and the sound
 // layer's renderers exist under fixed names before anything calls them.
 

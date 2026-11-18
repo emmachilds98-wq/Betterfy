@@ -86,14 +86,14 @@ const APPCHECK_APP_ID = arg('appcheck-app-id') ?? readEnv('APPCHECK_APP_ID')
  * These are inlined because the page cannot draw a single screen without them. */
 const V1_MODULES = ['norm.mjs', 'credits.mjs', 'profile.mjs'];
 
-/* Which axis each playlist is on (docs/BUILD-5-PLAN.md A2): the one copy that
+/* Which axis each playlist is on (docs/archive/BUILD-5-PLAN.md A2): the one copy that
  * both the page's classify() and the Node CLI axes.mjs use, so the two cannot
  * drift apart again (B10). Exposed as globals like v1 (`classifyAxes`,
  * `MIN_FOR_TARGET`, `NO_SIGNAL`, ...), because web/app/classify.js and the
  * Playlists screen use them as bare identifiers. */
 const AXES_MODULES = ['core/playlists/axes.mjs'];
 
-/* The sound layer's renderers (docs/UI-BUILD-PLAN.md §5). Inlined and exposed as
+/* The sound layer's renderers (docs/archive/UI-BUILD-PLAN.md §5). Inlined and exposed as
  * globals like v1, because every screen calls them; with no audio data each one
  * returns '' so they cost a listener who never turns listening on nothing but
  * their few hundred bytes. */
@@ -103,7 +103,7 @@ const UI_MODULES = ['web/ui/sound.mjs', 'web/app/patch.mjs'];
  * pieces and the pure ordering built on them. Exposed as globals like v1. */
 const FILE_MODULES = ['core/personal/relevance.mjs', 'core/review/filequeue.mjs', 'core/review/teach.mjs', 'core/review/autoscore.mjs'];
 
-/* Screen modules (docs/BUILD-5-PLAN.md A4): web/screens/<name>.mjs, each opting
+/* Screen modules (docs/archive/BUILD-5-PLAN.md A4): web/screens/<name>.mjs, each opting
  * in with `// @bundle screens <name> <order>` (see bundler.mjs discoverBundles;
  * the second field is the screen's name, not a global). They are bundled with
  * the rest and collected on one global, `BetterfyScreens.<name>`, which
@@ -116,7 +116,7 @@ const core = `${coreCode}\nglobalThis.BetterfyScreens = { ${Object.entries(SCREE
   .map(([name, path]) => `${name}: __mod[${JSON.stringify(path)}]`).join(', ')} };`;
 
 /* The stylesheet, kept as partials in web/styles/ so packages that restyle
- * different screens own different files (docs/UI-BUILD-PLAN.md §3). Inlined in
+ * different screens own different files (docs/archive/UI-BUILD-PLAN.md §3). Inlined in
  * file-name order — the numeric prefixes are the cascade order — so the page is
  * still one file with no second request. */
 const STYLES = readdirSync('web/styles').filter(f => f.endsWith('.css')).sort()
@@ -168,7 +168,7 @@ self.onmessage = function (e) {
   var mirrors = new Set(m.mirrorIds || []);
   var isMirror = function (p) { return !!p && mirrors.has(p.id); };
   // The hosted app fits nothing to playlist membership: its sound learner is
-  // prototypes only (docs/BUILD-5-PLAN.md §2.3, option b), whatever arrives.
+  // prototypes only (docs/archive/BUILD-5-PLAN.md §2.3, option b), whatever arrives.
   var prototypesOnly = function (a) {
     if (!a) return null;
     var o = (typeof a === 'object' && !Array.isArray(a) && ('records' in a || 'index' in a)) ? a : { records: a };
@@ -397,7 +397,7 @@ self.onmessage = async function (e) {
  * page share one vocabulary. */
 const GENRE_WORDS = genreWords();
 
-/* The worker that builds the reports off the main thread (docs/BUILD-6-PLAN.md D4).
+/* The worker that builds the reports off the main thread (docs/archive/BUILD-6-PLAN.md D4).
  *
  * buildReports() is the one heavy piece of the page's own code: scoring every
  * liked track against every playlist took 1.4s of main thread on a 5k-liked
@@ -436,7 +436,7 @@ self.onmessage = function (e) {
  * cache is named after the build the page and workers carry. */
 const SW = readFileSync('web/sw.js', 'utf8').replaceAll('__BUILD__', BUILD);
 
-/* The page's own script lives in web/app/ and web/screens/ (docs/BUILD-5-PLAN.md
+/* The page's own script lives in web/app/ and web/screens/ (docs/archive/BUILD-5-PLAN.md
  * A1), listed in load order in web/manifest.mjs, and goes back in where the
  * template says __APP__ before any other placeholder is filled. */
 const html = assembledTemplate()

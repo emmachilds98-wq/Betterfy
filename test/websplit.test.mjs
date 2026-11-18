@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { APP_FILES, appSource } from '../web/manifest.mjs';
 
-// A1 of docs/BUILD-5-PLAN.md: the page's script lives in web/app/ and
+// A1 of docs/archive/BUILD-5-PLAN.md: the page's script lives in web/app/ and
 // web/screens/, joined in APP_FILES order where the template says __APP__.
 
 const read = p => readFileSync(new URL('../' + p, import.meta.url), 'utf8');

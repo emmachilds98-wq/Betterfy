@@ -1,4 +1,4 @@
-// F6 (docs/BUILD-6-PLAN.md): the service worker and the offline decision queue,
+// F6 (docs/archive/BUILD-6-PLAN.md): the service worker and the offline decision queue,
 // in airplane mode against the fake Spotify. Ten decisions made offline are
 // held, survive an offline reload (which shows the app, not a browser error),
 // and are applied exactly once each when the page is next open online, with

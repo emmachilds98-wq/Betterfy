@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { APP_FILES } from '../web/manifest.mjs';
 
-// A3 of docs/BUILD-5-PLAN.md: background jobs write a store slice; only the
+// A3 of docs/archive/BUILD-5-PLAN.md: background jobs write a store slice; only the
 // mounted screen that watches it repaints. They never call render() blind.
 const read = f => readFileSync(new URL(`../web/${f}`, import.meta.url), 'utf8');
 const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' ')).replace(/\/\/.*$/gm, '');

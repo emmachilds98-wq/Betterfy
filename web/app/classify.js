@@ -4,7 +4,7 @@
  * facet fallback and the default target — live in core/playlists/axes.mjs,
  * bundled into the scoring core above and exposed as globals (`classifyAxes`,
  * `MIN_FOR_TARGET`, `NO_SIGNAL`, ...). The Node CLI axes.mjs runs the very same
- * module, so the two cannot drift apart again (docs/BUILD-5-PLAN.md B10). What
+ * module, so the two cannot drift apart again (docs/archive/BUILD-5-PLAN.md B10). What
  * stays here is what only the page has: the genre vocabulary baked in at build
  * time, which playlist is this account's All Songs mirror, and the corrections
  * the listener has saved.
