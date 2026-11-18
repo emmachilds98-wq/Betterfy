@@ -29,8 +29,12 @@ function helpersState() {
     audio, deep,
     discogs: !!LS.getItem('bf_discogs'),
     engine: { status: typeof ENG !== 'undefined' ? ENG.status : null },
-    auto: (() => { try { const l = autoScoreLast(); return { at: l?.at ?? null, ok: l?.ok !== false,
-      ago: l?.at && typeof agoWords === 'function' ? agoWords(Date.now() - l.at) : null, running: AUTOSCORE_RUN.running }; }
+    auto: (() => { try { const l = autoScoreLast();
+      // The newest kept Score run (BUILD-7 M1): its build and top-1, for the row's words.
+      const last = typeof runHistoryList === 'function' ? runHistoryList().find(r => r.kind === 'score' && !r.recovered) : null;
+      return { at: l?.at ?? null, ok: l?.ok !== false,
+      ago: l?.at && typeof agoWords === 'function' ? agoWords(Date.now() - l.at) : null, running: AUTOSCORE_RUN.running,
+      build: last?.build || null, top1: Number.isFinite(last?.top1) ? last.top1 : null }; }
       catch { return {}; } })(),
     radar: (() => { try {
       if (typeof RADAR === 'undefined') return null;

@@ -114,3 +114,10 @@ test('the panel folds to its header plus any row that asks for a look, and opens
   // Discogs off is an optional extra: never asks for a look.
   assert.ok(!helperAttention(helperRows(DEFAULTS)).some(r => r.id === 'discogs'));
 });
+
+test('the weekly check names its last run’s build and top-1 (BUILD-7 M1)', () => {
+  const row = st => helperRows({ ...DEFAULTS, auto: st }).find(r => r.id === 'autoscore');
+  const r = row({ at: 1, ok: true, ago: '3 days ago', build: '2026-11-18-0140', top1: 0.664 });
+  assert.match(r.did, /last run 3 days ago, first pick right for 66% of your filed songs \(build 2026-11-18-0140\)\. No button/);
+  assert.ok(!/build|first pick right/.test(row({ at: 1, ok: true, ago: 'just now' }).did), 'no run kept yet: nothing claimed');
+});
