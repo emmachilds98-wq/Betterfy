@@ -807,3 +807,13 @@ test('without a fit that earned its place, the comparison is byte-identical to t
   assert.equal(opts.weights.graph, 8);
   assert.equal(vm.runInContext('withFittedWeights({ limit: 3 }, "bridge").weights', s), undefined);
 });
+
+test('the Engine screen has no inline style, and one small "Run again now" in place of Score and Score + Tune (DESIGN-PLAN L5, A4)', () => {
+  const src = readFileSync(new URL('../web/screens/engine.mjs', import.meta.url), 'utf8');
+  assert.equal((src.match(/style="/g) ?? []).length, 0);
+  assert.match(src, /<button class="b sm" data-act="scoreTune"/);
+  assert.ok(!/data-act="validate"/.test(src), 'no separate Score button');
+  assert.ok(!/>Score \+ Tune</.test(src), 'no separate Score + Tune button');
+  assert.match(src, /'Run again now' : 'Run now'/);
+  assert.ok(!/App icon/.test(PAGE.split('<script>')[0]), 'the App icon preview is cut (C7)');
+});

@@ -200,6 +200,13 @@ real run with Deep listen on.
 
 ### L5: The Settings sheet
 
+**Done (2026-11-18), with C7 and A4, all provisional:** "What's helping your
+picks" folds to its header ("13 of 13 on") plus any row that is off, stuck or
+not answering, and opens on tap; a Release radar row says on, "reading N of M"
+or "Off since Stop". The Engine has no inline style (`66-engine.css`; the score
+bars are SVG), its rung tag drops under the heading as a whole, and Score and
+Score + Tune are one small "Run again now". The App icon preview is gone.
+
 - **Goal:** sections are reachable without a long scroll, and the Engine fits
   the sheet.
   - Fold "What's helping your picks" to its header ("12 of 12 on") plus any

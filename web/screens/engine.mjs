@@ -76,11 +76,11 @@ function calibCard(p, calib) {
     ? `<b>Doesn't hold yet.</b> "Confident" was right ${p(k.confidentRight)} on tracks it hadn't been fitted on, short of the ${p(c.base.target)} it has to mean, so read those as "probably".`
     : `<b>Nothing is sure enough to call confident yet.</b> No score level was right ${p(c.base.target)} of the time on enough of your tracks. More filed tracks per playlist, or a stronger signal, would change that. The short lists are where it helps for now.`;
   const b = c.bridge?.checked;
-  return `<h3 style="margin:18px 0 6px; font-size:16px">How sure it is, checked</h3>
+  return `<h3 class="eng-h3">How sure it is, checked</h3>
     <p class="why">Fitted on half of the tracks above and checked on the other half, then swapped, so these
       numbers come from tracks it wasn't tuned on. Each track gets one of three answers; the share of
       tracks given each is on the right.</p>
-    <div class="facts" style="margin-top:10px">
+    <div class="facts eng-mt10">
       ${earned ? `<div><span><b>Confident</b>: names one playlist</span><b class="mono">${p(k.confidentShare)}</b></div>
       <div><span>…and was right</span><b class="mono">${p(k.confidentRight)}</b></div>` : ''}
       <div><span><b>Short list</b>, ${k.chooseSize == null ? '—' : k.chooseSize.toFixed(1)} playlists on average</span><b class="mono">${p(k.chooseShare)}</b></div>
@@ -89,8 +89,8 @@ function calibCard(p, calib) {
       ${b?.n ? `<hr><div><span>With similar artists: short list / not sure</span><b class="mono">${p(b.chooseShare)} / ${p(b.unsureShare)}</b></div>
       ${c.bridge.cal?.tau != null && b.confidentN ? `<div><span>…confident, and right</span><b class="mono">${p(b.confidentShare)}, ${p(b.confidentRight)}</b></div>` : ''}` : ''}
     </div>
-    <p class="why" style="margin-top:12px">${verdict}</p>
-    ${(c.audio?.agree ?? c.base?.agree) ? `<p class="why" id="agreeLine" style="margin-top:8px">${agreeText(c.audio?.agree ?? c.base.agree, p)}</p>` : ''}`;
+    <p class="why eng-mt12">${verdict}</p>
+    ${(c.audio?.agree ?? c.base?.agree) ? `<p class="why eng-mt8" id="agreeLine">${agreeText(c.audio?.agree ?? c.base.agree, p)}</p>` : ''}`;
 }
 
 /** The with/without comparison on the score card. Empty when there is none. */
@@ -98,13 +98,13 @@ function bridgeCard(v, p, esc) {
   if (!v || v.error) return '';
   if (v.bridgeOff) return '';
   const w = v.mine?.withBridge;
-  if (!w) return v.bridgeErr ? `<p class="why" style="margin-top:14px">Similar artists couldn't be looked up
+  if (!w) return v.bridgeErr ? `<p class="why eng-mt14">Similar artists couldn't be looked up
     (${esc(v.bridgeErr)}), so this was scored without them.</p>` : '';
   const nf = v.mine.neverFiled, c = w.coverage ?? {}, verdict = bridgeVerdict(v);
-  return `<h3 style="margin:18px 0 6px; font-size:16px">Adding similar artists</h3>
+  return `<h3 class="eng-h3">Adding similar artists</h3>
     <p class="why">Deezer's "fans also like" and ListenBrainz's listening sessions say who sits near each artist.
       They never name a genre: only where <b>you</b> filed those neighbours counts. Same tracks, same folds as above.</p>
-    <div class="facts" style="margin-top:10px">
+    <div class="facts eng-mt10">
       <div><span><b>With similar artists</b> — right first time</span><b class="mono">${p(w.top1)}</b></div>
       <div><span>…without</span><b class="mono">${p(v.mine.top1)}</b></div>
       <hr>
@@ -118,7 +118,7 @@ function bridgeCard(v, p, esc) {
       ${v.bridgeStats?.quota ? `<p>Deezer asked the app to slow down partway, so some artists weren't looked up this time.
         Running it again later picks up where it stopped.</p>` : ''}
     </div>
-    ${verdict ? `<p class="why" style="margin-top:12px"><b>${verdict.pass === true ? 'Helps.' : verdict.pass === false ? 'Not yet.' : 'Undecided.'}</b>
+    ${verdict ? `<p class="why eng-mt12"><b>${verdict.pass === true ? 'Helps.' : verdict.pass === false ? 'Not yet.' : 'Undecided.'}</b>
       ${esc(verdict.text)}</p>` : ''}`;
 }
 
@@ -138,12 +138,14 @@ function pairBars(esc, label, without, withSound, p, line = null, names = ['with
   const d = Math.round((withSound - without) * 1000) / 10;
   const delta = d === 0 ? 'level' : `${d > 0 ? '+' : '−'}${Math.abs(d)} points`;
   const met = line ? withSound + 1e-9 >= line.at : null;
+  // SVG attributes rather than an inline style (DESIGN-PLAN L5): the bar's length and the gate's place.
+  const pct = x => (clamp(x) * 100).toFixed(2);
+  const bar = (x, extra = '') => `<svg class="trk-svg" aria-hidden="true" focusable="false"><rect class="trk-v" x="0" y="0" height="100%" width="${pct(x)}%" rx="5"></rect>${extra}</svg>`;
   return `<div class="pair" role="img" aria-label="${esc(label)}: ${p(without)} ${esc(names[0])}, ${p(withSound)} ${esc(names[1])}${
       line ? `; ${esc(line.label)} at ${p(line.at)}` : ''}">
     <div class="pair-h"><span>${esc(label)}</span><span class="pair-d mono ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${delta}</span></div>
-    <div class="pbar"><span class="pl">${esc(names[0])}</span><span class="trk"><i style="--v:${clamp(without).toFixed(4)}"></i></span><b class="mono">${p(without)}</b></div>
-    <div class="pbar with"><span class="pl">${esc(names[1])}</span><span class="trk"><i style="--v:${clamp(withSound).toFixed(4)}"></i>${
-      line ? `<s class="gate ${met ? 'met' : ''}" style="--g:${clamp(line.at).toFixed(4)}" title="${esc(line.label)}"></s>` : ''}</span><b class="mono">${p(withSound)}</b></div>
+    <div class="pbar"><span class="pl">${esc(names[0])}</span><span class="trk">${bar(without)}</span><b class="mono">${p(without)}</b></div>
+    <div class="pbar with"><span class="pl">${esc(names[1])}</span><span class="trk">${bar(withSound, line ? `<line class="gate${met ? ' met' : ''}" x1="${pct(line.at)}%" x2="${pct(line.at)}%" y1="-4" y2="14"><title>${esc(line.label)}</title></line>` : '')}</span><b class="mono">${p(withSound)}</b></div>
   </div>`;
 }
 
@@ -155,7 +157,7 @@ export function audioCard(v, p, esc, maestScoreText) {
   const liftPts = Math.round(lift * 100);
   const tone = g.pass === true ? 'ok' : g.pass === false ? 'warn' : 'idle';
   return `<div class="sndscore">
-    <h3 style="margin:18px 0 6px; font-size:16px">Adding how it sounds</h3>
+    <h3 class="eng-h3">Adding how it sounds</h3>
     <p class="why">Each playlist's sound is learned from the tracks you filed there that have been listened to.
       A track never hears itself: same tracks, same folds as above.</p>
     <div class="pairs">
@@ -168,19 +170,19 @@ export function audioCard(v, p, esc, maestScoreText) {
       time on never-filed artists, and no loss overall. ${w.soundFirst
         ? 'The File screen leads with sound for heard tracks either way (your call); this is how that measures up on your own filing.'
         : 'Below it, sound is shown but changes no suggestion.'}</span></p>
-    <div class="facts" style="margin-top:10px">
+    <div class="facts eng-mt10">
       <div><span>Tracks by artists not in any genre playlist yet</span><b class="mono">${nf.scored.toLocaleString()}</b></div>
       <div><span>Scored tracks listened to</span><b class="mono">${w.heard.toLocaleString()} of ${v.mine.scored.toLocaleString()}</b></div>
       <div><span>…of them by never-filed artists</span><b class="mono">${w.heardNeverFiled.toLocaleString()}</b></div>
       <div><span>Top answers sound changed</span><b class="mono">${w.changed.toLocaleString()}</b></div>
     </div>
-    <p class="why gateverdict" style="margin-top:12px"><span class="tag ${tone}">${g.pass === true ? 'passed' : g.pass === false ? 'not passed' : 'undecided'}</span>
+    <p class="why gateverdict eng-mt12"><span class="tag ${tone}">${g.pass === true ? 'passed' : g.pass === false ? 'not passed' : 'undecided'}</span>
       <b>${w.soundFirst
         ? (g.pass === true ? 'Helps.' : g.pass === false ? 'Not ahead of tags yet on your filing; sound still leads, by your call.' : 'Undecided; sound still leads, by your call.')
         : (g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.')}</b>
       ${esc(g.text ?? '')}</p>
-    ${w.arms?.maest && maestScoreText ? `<p class="why" id="maestScore" style="margin-top:8px">${esc(maestScoreText(w))}</p>` : ''}
-    ${w.nearChoice?.text ? `<p class="why" id="nearScore" style="margin-top:8px">${esc(w.nearChoice.text)}</p>` : ''}
+    ${w.arms?.maest && maestScoreText ? `<p class="why eng-mt8" id="maestScore">${esc(maestScoreText(w))}</p>` : ''}
+    ${w.nearChoice?.text ? `<p class="why eng-mt8" id="nearScore">${esc(w.nearChoice.text)}</p>` : ''}
     ${identifyHTML(v.identify, p, esc)}
   </div>`;
 }
@@ -188,14 +190,14 @@ export function audioCard(v, p, esc, maestScoreText) {
 /** How well it names genres by sound, on tracks you've already filed (core/audio/identify.mjs). */
 function identifyHTML(a, p, esc) {
   if (!a?.scored) return '';
-  return `<h3 style="margin:18px 0 6px; font-size:16px">Naming genres by sound</h3>
+  return `<h3 class="eng-h3">Naming genres by sound</h3>
     <p class="why">Each heard track in a genre playlist whose name says a genre, named from its sound with itself
       left out: the sound model's styles, the filed tracks it sounds most like, its artist's tags, and its tempo.</p>
     <div class="pairs">
       ${pairBars(esc, 'Genre right (Drum & Bass, House…)', a.modelOnly.genre, a.genre, p, null, ['model alone', 'with your library'])}
       ${pairBars(esc, 'Sub-genre right too (Jungle, Donk…)', a.modelOnly.specific, a.specific, p, null, ['model alone', 'with your library'])}
     </div>
-    <div class="facts" style="margin-top:10px">
+    <div class="facts eng-mt10">
       <div><span>Tracks scored</span><b class="mono">${a.scored.toLocaleString()}</b></div>
       ${a.tempo != null ? `<div><span>Tempo fits the playlist's genre</span><b class="mono">${p(a.tempo)} of ${a.tempoJudged.toLocaleString()}</b></div>` : ''}
       ${a.byGenre.map(g => `<div><span>${esc(g.name)}</span><b class="mono">${g.right} of ${g.n}</b></div>`).join('')}
@@ -209,20 +211,20 @@ export function weakCard(v, LIB, p, esc) {
   const names = new Map((LIB?.playlists ?? []).map(x => [x.id, x.name]));
   const nameOf = id => names.get(id) ?? id;
   if (Array.isArray(v?.weak)) {
-    if (!v.weak.length) return `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+    if (!v.weak.length) return `<h3 class="eng-h3">Playlists it understands least</h3>
       <p class="why">None: every genre playlist with enough scored tracks is offered in the top three at least half the time.</p>`;
-    return `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+    return `<h3 class="eng-h3">Playlists it understands least</h3>
       <p class="why">How often each one was offered in the top three, for tracks that really are in it, by the engine that files
         (sound and similar artists included). With the likeliest reason and what would fix it. Nothing changes without a tap.</p>
-      <div class="rows" style="margin-top:10px" id="weakRows">${v.weak.map(d => { const w = weakWords(d, nameOf);
+      <div class="rows eng-mt10" id="weakRows">${v.weak.map(d => { const w = weakWords(d, nameOf);
         return `<div class="row"><div class="main"><div class="ttl">${esc(nameOf(d.id))} <span class="sub">· ${p(d.inTop3)} of ${d.n} scored</span></div>
           <div class="sub">${esc(w.why)} ${esc(w.fix)}</div></div><span class="tag ${d.fix === 'none' || d.fix === 'wait' ? 'ok' : 'warn'}">${esc(FIX_WORDS[d.fix] ?? d.fix)}</span></div>`; }).join('')}
       </div>`;
   }
-  return weakBuckets(v, LIB).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+  return weakBuckets(v, LIB).length ? `<h3 class="eng-h3">Playlists it understands least</h3>
       <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
         Low here means the engine has no real idea what that playlist is for.</p>
-      <div class="facts" style="margin-top:10px">${weakBuckets(v, LIB).map(b =>
+      <div class="facts eng-mt10">${weakBuckets(v, LIB).map(b =>
         `<div><span>${esc(b.name)} <span class="sub">· ${b.n} tracks</span></span><b class="mono">${p(b.inTop3)}</b></div>`).join('')}
       </div>` : '';
 }
@@ -352,9 +354,9 @@ function weightsCard(v, p, esc) {
       ${pairBars(esc, `${title} — right first time`, x.default.top1, x.fitted.top1, p, null, names)}
       ${pairBars(esc, `${title} — in the top three`, x.default.top3, x.fitted.top3, p, null, names)}
     </div>
-    <p class="why" style="margin-top:6px"><span class="tag ${x.use ? 'ok' : 'idle'}">${x.use ? 'used' : 'not used'}</span>
+    <p class="why eng-mt6"><span class="tag ${x.use ? 'ok' : 'idle'}">${x.use ? 'used' : 'not used'}</span>
       ${esc(multipliersText(x.multipliers, withBridge))}.</p>`;
-  return `<h3 style="margin:18px 0 6px; font-size:16px">Weights fitted to your filing</h3>
+  return `<h3 class="eng-h3">Weights fitted to your filing</h3>
     <p class="why">How much the artist graph, the label, the record's shape${f.bridge ? ' and similar artists' : ''} each
       count, chosen on four folds of your filed tracks and scored on the fifth, five times over — so "fitted" is on
       tracks the weights weren't tuned on. They're only used when that beats the defaults by a point.</p>
@@ -411,7 +413,7 @@ function blendCard(v, p, esc) {
   const b = v && !v.error ? v.blend : null;
   if (!b) return '';
   const nf = b.neverFiled, verdict = blendVerdict(b), names = ['today’s', 'blended'];
-  return `<h3 style="margin:18px 0 6px; font-size:16px">Today’s engine and this one, together</h3>
+  return `<h3 class="eng-h3">Today’s engine and this one, together</h3>
     <p class="why">Each playlist gets a score from both engines${b.withBridge ? ' (this one with similar artists)' : ''},
       each scaled so its best pick is 100%, then mixed: ${Math.round(b.weight * 100)}% tags. The mix is chosen on four
       folds and scored on the fifth, five times over, so these are tracks it wasn’t tuned on. A track with no tags
@@ -421,7 +423,7 @@ function blendCard(v, p, esc) {
       ${pairBars(esc, 'In the top three', b.tags.top3, b.top3, p, null, names)}
       ${nf?.scored ? pairBars(esc, 'Right first time, artists not in any genre playlist yet', nf.tags.top1, nf.top1, p, null, names) : ''}
     </div>
-    <p class="why gateverdict" style="margin-top:12px"><span class="tag ${verdict.on ? 'ok' : 'idle'}">${verdict.on ? 'used on File' : 'not used'}</span>
+    <p class="why gateverdict eng-mt12"><span class="tag ${verdict.on ? 'ok' : 'idle'}">${verdict.on ? 'used on File' : 'not used'}</span>
       ${esc(verdict.text)}</p>`;
 }
 
@@ -474,10 +476,10 @@ export function pastRunsCard(runs, esc) {
   };
   const head = runs.slice(0, 4), rest = runs.slice(4);
   return `<div class="card" id="pastRuns">
-    <h2 style="margin:0 0 6px; font-size:19px">Past runs</h2>
+    <h2 class="eng-h2 eng-h2-tight">Past runs</h2>
     <p class="why">Each Score and listening run is kept on this device, so you can copy one later.</p>
-    <div class="rows" style="margin-top:10px">${head.map(row).join('')}</div>
-    ${rest.length ? `<details style="margin-top:8px"><summary class="sub">${rest.length} older</summary>
+    <div class="rows eng-mt10">${head.map(row).join('')}</div>
+    ${rest.length ? `<details class="eng-mt8"><summary class="sub">${rest.length} older</summary>
       <div class="rows">${rest.map(row).join('')}</div></details>` : ''}
   </div>`;
 }
@@ -493,28 +495,28 @@ export function view(c) {
   // Nothing to file into is a setting, not a result: say where it is fixed.
   if (!engineTargets().length) return `${head}
     <div class="card">
-      <h2 style="margin:0 0 12px; font-size:19px">No genre playlists yet</h2>
+      <h2 class="eng-h2">No genre playlists yet</h2>
       <p>Both engines only file into playlists that take suggestions, and none of yours do yet — none of
         their names say what genre they are. Mark the ones that are genre playlists in Library, then
         come back.</p>
-      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Library</button></div>
+      <div class="rowbtns eng-mt18"><button class="b go" data-act="lists">Open Library</button></div>
     </div>${pastCard}`;
 
   if (ENG.status === 'idle') return `${head}
     <div class="card">
-      <h2 style="margin:0 0 12px; font-size:19px">Learn my library</h2>
+      <h2 class="eng-h2">Learn my library</h2>
       <p>Reads your ${LIB.playlists.length.toLocaleString()} playlists once and works out what each one means.
         Takes a few seconds, and is remembered afterwards so it is a one-off. It runs on this device —
         nothing is sent anywhere. It starts by itself a few seconds after the app opens; this button is
         only for when it could not.</p>
-      <div class="rowbtns" style="margin-top:18px">
+      <div class="rowbtns eng-mt18">
         <button class="b big go" data-act="go">Learn my library</button>
       </div>
     </div>${pastCard}`;
 
   if (ENG.status === 'working') return `${head}
     <div class="card">
-      <h2 style="margin:0 0 12px; font-size:19px">Working…</h2>
+      <h2 class="eng-h2">Working…</h2>
       <p>Working out what your playlists mean — the arithmetic for every pair of artists you file together.
         ${engineInBackground() ? 'It runs in the background' : 'On a big library this holds the page up for a moment'},
         and it only happens once.</p>
@@ -522,18 +524,18 @@ export function view(c) {
 
   if (ENG.status === 'error') return `${head}
     <div class="card">
-      <h2 style="margin:0 0 12px; font-size:19px">That didn't work</h2>
+      <h2 class="eng-h2">That didn't work</h2>
       <p class="why">${esc(ENG.err ?? 'Unknown error')}</p>
-      <div class="rowbtns" style="margin-top:16px"><button class="b" data-act="go">Try again</button></div>
+      <div class="rowbtns eng-mt16"><button class="b" data-act="go">Try again</button></div>
     </div>${pastCard}`;
 
   const r = ENG.rung, sh = ENG.shadow;
 
   const rungCard = `<div class="card">
-    <h2 style="margin:0 0 4px; font-size:19px">How much it has to go on
-      <span class="tag ${RUNG_TONE[r.rung] ?? 'warn'}" style="margin-left:6px; vertical-align:middle">${esc(r.name)}</span></h2>
+    <h2 class="eng-h2 eng-rung"><span>How much it has to go on</span>
+      <span class="tag ${RUNG_TONE[r.rung] ?? 'warn'} eng-rungtag">${esc(r.name)}</span></h2>
     <p>${esc(r.reason)}.</p>
-    <div class="facts" style="margin-top:16px">
+    <div class="facts eng-mt16">
       <div><span>Playlists it can file into</span><b class="mono">${r.destinations.toLocaleString()}</b></div>
       <div><span>Artists with neighbours</span><b class="mono">${r.artistsConnected.toLocaleString()}</b></div>
       <div><span>Artists in more than one playlist</span><b class="mono">${Math.round((r.connectedShare ?? 0) * 100)}%</b></div>
@@ -548,7 +550,7 @@ export function view(c) {
   // hand you a different playlist. The score is the next card down.
   const pc = sh.judged ? Math.round((sh.agree / sh.judged) * 100) : null;
   const shadowCard = `<div class="card">
-    <h2 style="margin:0 0 12px; font-size:19px">What it would do differently</h2>
+    <h2 class="eng-h2">What it would do differently</h2>
     <p>The next ${sh.rows.length} ${sh.rows.length === 1 ? 'track' : 'tracks'} waiting to be filed, with today's
       suggestion beside this engine's. These are unfiled, so neither column is <i>known</i> to be right —
       this is only where the two disagree.</p>
@@ -557,7 +559,7 @@ export function view(c) {
           at all — a listener with no tag coverage, which is the case this screen
           exists for — the whole summary vanished and took the one caveat that
           mattered with it. */''}
-    ${sh.rows.length ? `<div class="facts" style="margin-top:16px">
+    ${sh.rows.length ? `<div class="facts eng-mt16">
       ${sh.judged ? `<div><span>Same playlist</span><b class="mono">${pc}% (${sh.agree} of ${sh.judged})</b></div>
       <div><span>Only this engine had an answer</span><b class="mono">${sh.onlyMine}</b></div>
       <div><span>Only today's engine did</span><b class="mono">${sh.onlyTheirs}</b></div>`
@@ -567,7 +569,7 @@ export function view(c) {
       ${sh.decided ? `<hr><div><span>Confident · short list · not sure</span><b class="mono">${
         sh.decided.confident} · ${sh.decided.choose} · ${sh.decided.unsure}</b></div>` : ''}
     </div>` : ''}
-    ${sh.rows.length ? `<div class="rows" style="margin-top:18px">
+    ${sh.rows.length ? `<div class="rows eng-mt18">
       ${engRows(sh.rows, row => {
         // Once calibrated, the checked answer is the answer: "not sure" is no
         // answer, and a short list that includes today's suggestion agrees with it.
@@ -578,9 +580,9 @@ export function view(c) {
           <summary>
             <div class="main">
               <div class="ttl">${esc(row.title)}
-                <span class="tag ${same ? 'ok' : answer ? 'warn' : 'idle'}" style="margin-left:6px">${
+                <span class="tag ${same ? 'ok' : answer ? 'warn' : 'idle'} eng-ml6">${
                   same ? 'agree' : answer && row.theirs ? 'differ' : answer ? 'new answer' : 'no answer'}</span>${
-                  row.shapeOnly ? '<span class="tag idle" style="margin-left:4px">shape only</span>' : ''}</div>
+                  row.shapeOnly ? '<span class="tag idle eng-ml4">shape only</span>' : ''}</div>
               <div class="sub">${esc(row.artist)}</div>
             </div>
             <div class="cmp">
@@ -589,7 +591,7 @@ export function view(c) {
                 : row.mine ? `<b>${esc(row.mine.name)}</b>` : '<i>won&rsquo;t guess</i>'}</div>
             </div>
           </summary>
-          <div style="padding:2px 0 2px">
+          <div class="eng-rowbody">
             ${row.mine ? `<p class="why">${Math.round(row.mine.score * 100)}% fit${
               row.band ? ` · ${esc(String(row.band).toLowerCase())} confidence` : ''}${
               row.declined ? ' · and it declined to commit to it' : ''}</p>` : ''}
@@ -617,15 +619,15 @@ export function view(c) {
   const verdict = v && !v.error && v.base
     ? (v.mine.top1 > v.base.top1 ? 'ahead' : v.mine.top1 < v.base.top1 ? 'behind' : 'level') : null;
   const valCard = `<div class="card">
-    <h2 style="margin:0 0 12px; font-size:19px">Is it actually any better?</h2>
+    <h2 class="eng-h2">Is it actually any better?</h2>
     <p>The honest test, and the one that decides whether this engine should ever take over. Your
       already-filed tracks are the answer key: hold one out, rebuild from a library that never saw it,
       and see whether each engine puts it back where you had it. Both are scored on the same
       ${VALIDATE_N.toLocaleString()} tracks, over the same folds.</p>
     <p class="why">It measures agreement with <b>your</b> habits, not musical truth. If your library is
       systematically misfiled it will reproduce that faithfully, and it cannot tell you so.</p>
-    ${v?.error ? `<p class="why" style="margin-top:12px">That didn't work: ${esc(v.error)}</p>` : ''}
-    ${v && !v.error ? `<div class="facts" style="margin-top:16px">
+    ${v?.error ? `<p class="why eng-mt12">That didn't work: ${esc(v.error)}</p>` : ''}
+    ${v && !v.error ? `<div class="facts eng-mt16">
       <div><span><b>This engine</b> — right first time</span><b class="mono">${p(v.mine.top1)}</b></div>
       <div><span>…in its top three</span><b class="mono">${p(v.mine.top3)}</b></div>
       ${v.weights?.plain ? `<div><span>…with weights fitted to your filing${v.weights.plain.use ? '' : ' (not used)'}</span><b class="mono">${p(v.weights.plain.fitted.top1)} / ${p(v.weights.plain.fitted.top3)}</b></div>` : ''}
@@ -642,7 +644,7 @@ export function view(c) {
         stands on its own.</p>` : ''}
       <p>Took ${v.ms < 950 ? `${v.ms}ms` : `${(v.ms / 1000).toFixed(1)}s`}.</p>
     </div>
-    ${verdict ? `<p class="why" style="margin-top:14px"><b>${
+    ${verdict ? `<p class="why eng-mt14"><b>${
       verdict === 'ahead' ? 'Ahead.' : verdict === 'behind' ? 'Behind.' : 'Level.'}</b> ${
       verdict === 'ahead' ? 'On your library, reading nothing but your own filing beats reading the tag table.'
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
@@ -653,19 +655,20 @@ export function view(c) {
     ${audioCard(v, p, esc, maestScoreText)}
     ${v && !v.error ? calibCard(p, ENG.calib) : ''}
     ${weakCard(v, LIB, p, esc)}` : ''}
-    <label class="check-row" style="margin-top:14px"><input type="checkbox" data-act="bridgeToggle" id="bridgeToggle" ${bridgeOn() ? 'checked' : ''}
+    <label class="check-row eng-mt14"><input type="checkbox" data-act="bridgeToggle" id="bridgeToggle" ${bridgeOn() ? 'checked' : ''}
       ${ENG.valRunning ? 'disabled' : ''}> Also try similar artists (asks Deezer, ListenBrainz and Wikidata about the artists being scored)</label>
-    <div class="rowbtns" style="margin-top:10px">
-      <button class="b ${v ? '' : 'go'}" data-act="validate" ${ENG.valRunning ? 'disabled' : ''}>${
-        ENG.valRunning ? 'Scoring…' : v ? 'Run it again' : 'Score both engines'}</button>
-      <button class="b" data-act="scoreTune" ${ENG.valRunning || c.TUNE?.running ? 'disabled' : ''}>Score + Tune</button>
-      ${v && !v.error && !ENG.valRunning ? `<button class="b" data-act="copy">Copy results</button>` : ''}
+    <div class="rowbtns eng-mt10">
+      ${/* Score + Tune run by themselves (a minute in, then weekly: autoscore.js), so the two
+            buttons became one small "Run again now" (DESIGN-PLAN §7.7 A4, provisional). */''}
+      <button class="b sm" data-act="scoreTune" ${ENG.valRunning || c.TUNE?.running ? 'disabled' : ''}>${
+        ENG.valRunning ? 'Scoring…' : c.TUNE?.running ? 'Tuning…' : v ? 'Run again now' : 'Run now'}</button>
+      ${v && !v.error && !ENG.valRunning ? `<button class="b sm" data-act="copy">Copy results</button>` : ''}
     </div>
-    ${c.autoScoreText ? `<p class="why" id="autoScore" style="margin-top:10px">${esc(c.autoScoreText())}</p>` : ''}
-    ${ENG.valRunning && ENG.valStage === 'bridge' ? `<p class="why" style="margin-top:12px" id="bridgeProgress" aria-live="polite">${esc(bridgeProgressText())}</p>
+    ${c.autoScoreText ? `<p class="why eng-mt10" id="autoScore">${esc(c.autoScoreText())}</p>` : ''}
+    ${ENG.valRunning && ENG.valStage === 'bridge' ? `<p class="why eng-mt12" id="bridgeProgress" aria-live="polite">${esc(bridgeProgressText())}</p>
       <p class="why">The first run asks about each artist being scored — a few hundred, a minute or two. Every answer is
         remembered on this device for two months, so later runs only ask about what's new.</p>` : ''}
-    ${ENG.valRunning && ENG.valStage !== 'bridge' ? `<p class="why" style="margin-top:12px">Learning your library from scratch ten times over —
+    ${ENG.valRunning && ENG.valStage !== 'bridge' ? `<p class="why eng-mt12">Learning your library from scratch ten times over —
       five folds, two engines. ${engineInBackground()
         ? 'It runs in the background, so the app stays usable — just leave this screen open until it finishes.'
         : 'On a big library that can take a while, and the page will freeze in bursts while it happens.'}
@@ -676,11 +679,11 @@ export function view(c) {
   const tuneCard = tuneCardHtml(c, esc);
 
   const pairCard = ENG.pairs?.length ? `<div class="card">
-    <h2 style="margin:0 0 12px; font-size:19px">Playlists it can't tell apart</h2>
+    <h2 class="eng-h2">Playlists it can't tell apart</h2>
     <p>Usually a fact about the library rather than a fault in the engine: two playlists holding the same
       kind of music, or one that is really a view of another. Worth knowing, because a track landing in
       either would be defensible.</p>
-    <div class="rows" style="margin-top:16px">
+    <div class="rows eng-mt16">
       ${/* bucketPairs only ever returns pairs it could NOT separate, so there is
             no "distinct" case to render here. */ ''}
       ${ENG.pairs.map(pr => `<div class="row"><div class="main">
@@ -693,7 +696,7 @@ export function view(c) {
   </div>` : '';
 
   return `${head}
-    <p class="mono" style="font-size:11.5px; color:var(--ink-3); margin:-10px 0 18px">${
+    <p class="mono eng-learnt">${
       ENG.from === 'cache' ? 'revived from this device' : 'learned'} in ${ENG.ms.toLocaleString()}ms${
       idb.durable ? '' : ' · not remembered, because this browser is not letting the app store anything'}</p>
     ${rungCard}
@@ -702,7 +705,7 @@ export function view(c) {
     ${pastCard}
     ${tuneCard}
     ${pairCard}
-    <div class="rowbtns" style="margin:20px 0 0">
+    <div class="rowbtns eng-foot">
       <button class="b sm" data-act="reset">Forget and learn again</button>
     </div>`;
 }
@@ -732,10 +735,10 @@ export function tuneCardHtml(c, esc) {
       <p class="why">A change only counts if it beats today's value on both halves of your held-out tracks by the bar for its group.
         Nothing here is shared, and nothing changes until you choose to keep it.</p>` : '';
   return `<div class="card" id="tuneCard">
-    <h2 style="margin:0 0 12px; font-size:19px">Tune</h2>
+    <h2 class="eng-h2">Tune</h2>
     ${body}
     ${kept.length ? `<p class="why">In use on this device: ${esc(kept.join(', '))}.</p>` : ''}
-    <div class="rowbtns" style="margin-top:10px">
+    <div class="rowbtns eng-mt10">
       ${T.res && nPass && !T.running ? `<button class="b go" data-act="tuneApply">Use the ${nPass} that cleared the bar</button>` : ''}
       ${T.res && !T.running ? `<button class="b" data-act="tuneCopy">Copy tune results</button>` : ''}
       ${T.saved ? `<button class="b sm" data-act="tuneReset">Reset to default</button>` : ''}

@@ -15,3 +15,12 @@
   .hcheck.good{color:var(--ok)} .hcheck.bad{color:var(--warn)}
   .hrow2 .tag{flex:none; white-space:nowrap}
   .h-off .hname{color:var(--ink-2)}
+/* L5: the panel folds to its header plus any row that asks for a look; the whole list opens on tap. */
+  .helpers-fold>summary.helpers-head{list-style:none; cursor:pointer; margin-bottom:0; min-height:32px}
+  .helpers-fold>summary.helpers-head::-webkit-details-marker{display:none}
+  .helpers-fold>summary.helpers-head h3::after{content:" ›"; color:var(--ink-3); font-weight:400; display:inline-block; transition:transform .15s}
+  .helpers-fold[open]>summary.helpers-head h3::after{transform:rotate(90deg)}
+  .helpers-fold[open]>summary.helpers-head{margin-bottom:6px}
+  .helpers-fold+.hlist-look{margin-top:6px}
+  .helpers-fold[open]~.hlist-look{display:none}
+  .helpers .rowbtns{margin-top:8px}

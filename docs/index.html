@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-0620">
+<meta name="bf-build" content="2026-11-18-0627">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1128,17 +1128,39 @@ main:focus{outline:none}
   .pbar .pl{font-size:12px; color:var(--ink-3)}
   .pbar>b{font-size:14px; text-align:right}
   .pbar .trk{position:relative; height:10px; border-radius:999px; background:var(--surface-3)}
-  .pbar .trk>i{position:absolute; inset:0 auto 0 0; width:calc(var(--v) * 100%); border-radius:inherit;
-               background:var(--ink-3); opacity:.55}
-  .pbar.with .trk>i{background:var(--c5); opacity:1}
-  .pbar .trk>s.gate{position:absolute; top:-4px; bottom:-4px; left:calc(var(--g) * 100%); width:0;
-                    border-left:2px dashed var(--ink); transform:translateX(-1px)}
-  .pbar .trk>s.gate.met{border-left-color:var(--ok)}
   .gateline{display:flex; gap:10px; align-items:center; margin:14px 0 0; font-size:13.5px; color:var(--ink-2); line-height:1.5}
   .gateline{align-items:flex-start}
   .gateline>s.gate{flex:none; width:0; height:18px; margin-top:2px; border-left:2px dashed var(--ink)}
   .gateverdict .tag{margin-right:6px}
   @media (max-width: 760px){ .pbar{grid-template-columns:64px 1fr 40px; gap:8px} }
+  /* ---------- Engine: was 61 inline styles (DESIGN-PLAN L5) ----------
+     Doubled classes so these win over `.settings-body h3` and `.uhbody h2`,
+     the sheet's own heading rules, as the inline styles did. In the sheet the
+     headings step down a size so a 390 px sheet doesn't read as a full page. */
+  h2.eng-h2.eng-h2{margin:0 0 12px; font-size:19px}
+  h2.eng-h2.eng-h2-tight{margin-bottom:6px}
+  h3.eng-h3.eng-h3{margin:18px 0 6px; font-size:16px}
+  .uhbody h2.eng-h2.eng-h2{font-size:17px}
+  .uhbody h3.eng-h3.eng-h3{font-size:15px}
+  /* The rung tag keeps its words together and drops under the heading when
+     there's no room beside it, instead of wrapping as "a few / buckets". */
+  h2.eng-h2.eng-rung{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin-bottom:4px}
+  .eng-rungtag{white-space:nowrap; flex:none}
+  .eng-mt6{margin-top:6px} .eng-mt8{margin-top:8px} .eng-mt10{margin-top:10px} .eng-mt12{margin-top:12px}
+  .eng-mt14{margin-top:14px} .eng-mt16{margin-top:16px} .eng-mt18{margin-top:18px}
+  .eng-ml4{margin-left:4px} .eng-ml6{margin-left:6px}
+  .eng-rowbody{padding:2px 0}
+  .eng-learnt{font-size:11.5px; color:var(--ink-3); margin:-10px 0 18px}
+  .rowbtns.eng-foot{margin:20px 0 0}
+  /* Facts rows at 390 px: both sides may wrap; the figure stays right-aligned. */
+  .uhbody .facts div>span{min-width:0}
+  .uhbody .facts div>b{text-align:right}
+  /* The score bars, drawn as SVG so their length needs no inline style. */
+  .pbar .trk-svg{position:absolute; inset:0; width:100%; height:100%; overflow:visible}
+  .pbar .trk-v{fill:var(--ink-3); opacity:.55}
+  .pbar.with .trk-v{fill:var(--c5); opacity:1}
+  .pbar .trk-svg line.gate{stroke:var(--ink); stroke-width:2; stroke-dasharray:4 3}
+  .pbar .trk-svg line.gate.met{stroke:var(--ok)}
   /* Discover: "find tracks that sound like ___" (docs/AUDIO-BUILD-PLAN.md
      WP-C3). Drawn only once CLAP has heard part of the library. The result
      list reuses the proposal cards' numbered list (.prop-eg, 64-tidy.css). */
@@ -1239,12 +1261,6 @@ main:focus{outline:none}
   .accentnow .nm{display:inline-flex; align-items:center; padding:9px 16px; border-radius:999px;
         background:var(--accent); color:var(--accent-ink); font-weight:700; font-size:13.5px}
   .accentnow .hex{font-family:var(--mono); font-size:12px; color:var(--ink-3)}
-  /* App icon preview: the mark on the two grounds it actually lands on. */
-  .iconprev{display:flex; gap:16px; align-items:flex-start}
-  .iconprev figure{margin:0; text-align:center}
-  .iconprev .t{width:76px; height:76px; border-radius:20px; display:grid; place-items:center; border:1px solid var(--line)}
-  .iconprev .t svg{width:52px; height:52px}
-  .iconprev figcaption{font-size:11.5px; color:var(--ink-3); margin-top:7px}
   details.custom{margin-top:16px; border-top:1px solid var(--line); padding-top:14px}
   details.custom summary{font-size:12.5px; font-weight:600; color:var(--ink-2)}
   details.custom[open] summary{margin-bottom:10px; color:var(--ink)}
@@ -1626,6 +1642,15 @@ main:focus{outline:none}
   .hcheck.good{color:var(--ok)} .hcheck.bad{color:var(--warn)}
   .hrow2 .tag{flex:none; white-space:nowrap}
   .h-off .hname{color:var(--ink-2)}
+/* L5: the panel folds to its header plus any row that asks for a look; the whole list opens on tap. */
+  .helpers-fold>summary.helpers-head{list-style:none; cursor:pointer; margin-bottom:0; min-height:32px}
+  .helpers-fold>summary.helpers-head::-webkit-details-marker{display:none}
+  .helpers-fold>summary.helpers-head h3::after{content:" ›"; color:var(--ink-3); font-weight:400; display:inline-block; transition:transform .15s}
+  .helpers-fold[open]>summary.helpers-head h3::after{transform:rotate(90deg)}
+  .helpers-fold[open]>summary.helpers-head{margin-bottom:6px}
+  .helpers-fold+.hlist-look{margin-top:6px}
+  .helpers-fold[open]~.hlist-look{display:none}
+  .helpers .rowbtns{margin-top:8px}
 /* Merge and split (BUILD-6 F4): the wizard drawn into the playlist sheet (lists.mjs wizardHTML). */
   .wiz .wizpart{border:1px solid var(--line); border-radius:var(--r-3); padding:12px 12px 10px; background:var(--surface-2)}
   .wiz .wizname input{flex:1; min-width:0}
@@ -1845,7 +1870,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-0620</span>
+    <span class="mono">build 2026-11-18-0627</span>
   </p>
 
   <div class="feat">
@@ -1938,7 +1963,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0620</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0627</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2006,14 +2031,7 @@ main:focus{outline:none}
         <label class="check-row"><input type="checkbox" data-region="hover"> Hover &amp; focus</label>
       </details>
     </section>
-    <section>
-      <h3>App icon</h3>
-      <p class="hint">The mark keeps its five colours in both themes. Added to a Home Screen it uses the white tile, which is what iOS masks cleanly.</p>
-      <div class="iconprev">
-        <figure><div class="t" style="background:#FFF"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/><rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" style="fill:var(--m1)"/><rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7" style="fill:var(--m2)"/><rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/><rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/></svg></div><figcaption>Home Screen</figcaption></figure>
-        <figure><div class="t" style="background:#231E1A"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/><rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" style="fill:var(--m1)"/><rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7" style="fill:var(--m2)"/><rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/><rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/></svg></div><figcaption>In-app, dark</figcaption></figure>
-      </div>
-    </section>
+    <!-- The App icon preview was cut (DESIGN-PLAN §7.7 C7, provisional): a picture of the icon, no control. -->
     <section>
       <h3>Behaviour</h3>
       <label class="check-row"><input type="checkbox" id="compactToggle"> Compact rows (denser lists)</label>
@@ -2055,7 +2073,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-0620. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-0627. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5718,11 +5736,11 @@ function calibCard(p, calib) {
     ? `<b>Doesn't hold yet.</b> "Confident" was right ${p(k.confidentRight)} on tracks it hadn't been fitted on, short of the ${p(c.base.target)} it has to mean, so read those as "probably".`
     : `<b>Nothing is sure enough to call confident yet.</b> No score level was right ${p(c.base.target)} of the time on enough of your tracks. More filed tracks per playlist, or a stronger signal, would change that. The short lists are where it helps for now.`;
   const b = c.bridge?.checked;
-  return `<h3 style="margin:18px 0 6px; font-size:16px">How sure it is, checked</h3>
+  return `<h3 class="eng-h3">How sure it is, checked</h3>
     <p class="why">Fitted on half of the tracks above and checked on the other half, then swapped, so these
       numbers come from tracks it wasn't tuned on. Each track gets one of three answers; the share of
       tracks given each is on the right.</p>
-    <div class="facts" style="margin-top:10px">
+    <div class="facts eng-mt10">
       ${earned ? `<div><span><b>Confident</b>: names one playlist</span><b class="mono">${p(k.confidentShare)}</b></div>
       <div><span>…and was right</span><b class="mono">${p(k.confidentRight)}</b></div>` : ''}
       <div><span><b>Short list</b>, ${k.chooseSize == null ? '—' : k.chooseSize.toFixed(1)} playlists on average</span><b class="mono">${p(k.chooseShare)}</b></div>
@@ -5731,8 +5749,8 @@ function calibCard(p, calib) {
       ${b?.n ? `<hr><div><span>With similar artists: short list / not sure</span><b class="mono">${p(b.chooseShare)} / ${p(b.unsureShare)}</b></div>
       ${c.bridge.cal?.tau != null && b.confidentN ? `<div><span>…confident, and right</span><b class="mono">${p(b.confidentShare)}, ${p(b.confidentRight)}</b></div>` : ''}` : ''}
     </div>
-    <p class="why" style="margin-top:12px">${verdict}</p>
-    ${(c.audio?.agree ?? c.base?.agree) ? `<p class="why" id="agreeLine" style="margin-top:8px">${agreeText(c.audio?.agree ?? c.base.agree, p)}</p>` : ''}`;
+    <p class="why eng-mt12">${verdict}</p>
+    ${(c.audio?.agree ?? c.base?.agree) ? `<p class="why eng-mt8" id="agreeLine">${agreeText(c.audio?.agree ?? c.base.agree, p)}</p>` : ''}`;
 }
 
 /** The with/without comparison on the score card. Empty when there is none. */
@@ -5740,13 +5758,13 @@ function bridgeCard(v, p, esc) {
   if (!v || v.error) return '';
   if (v.bridgeOff) return '';
   const w = v.mine?.withBridge;
-  if (!w) return v.bridgeErr ? `<p class="why" style="margin-top:14px">Similar artists couldn't be looked up
+  if (!w) return v.bridgeErr ? `<p class="why eng-mt14">Similar artists couldn't be looked up
     (${esc(v.bridgeErr)}), so this was scored without them.</p>` : '';
   const nf = v.mine.neverFiled, c = w.coverage ?? {}, verdict = bridgeVerdict(v);
-  return `<h3 style="margin:18px 0 6px; font-size:16px">Adding similar artists</h3>
+  return `<h3 class="eng-h3">Adding similar artists</h3>
     <p class="why">Deezer's "fans also like" and ListenBrainz's listening sessions say who sits near each artist.
       They never name a genre: only where <b>you</b> filed those neighbours counts. Same tracks, same folds as above.</p>
-    <div class="facts" style="margin-top:10px">
+    <div class="facts eng-mt10">
       <div><span><b>With similar artists</b> — right first time</span><b class="mono">${p(w.top1)}</b></div>
       <div><span>…without</span><b class="mono">${p(v.mine.top1)}</b></div>
       <hr>
@@ -5760,7 +5778,7 @@ function bridgeCard(v, p, esc) {
       ${v.bridgeStats?.quota ? `<p>Deezer asked the app to slow down partway, so some artists weren't looked up this time.
         Running it again later picks up where it stopped.</p>` : ''}
     </div>
-    ${verdict ? `<p class="why" style="margin-top:12px"><b>${verdict.pass === true ? 'Helps.' : verdict.pass === false ? 'Not yet.' : 'Undecided.'}</b>
+    ${verdict ? `<p class="why eng-mt12"><b>${verdict.pass === true ? 'Helps.' : verdict.pass === false ? 'Not yet.' : 'Undecided.'}</b>
       ${esc(verdict.text)}</p>` : ''}`;
 }
 
@@ -5780,12 +5798,14 @@ function pairBars(esc, label, without, withSound, p, line = null, names = ['with
   const d = Math.round((withSound - without) * 1000) / 10;
   const delta = d === 0 ? 'level' : `${d > 0 ? '+' : '−'}${Math.abs(d)} points`;
   const met = line ? withSound + 1e-9 >= line.at : null;
+  // SVG attributes rather than an inline style (DESIGN-PLAN L5): the bar's length and the gate's place.
+  const pct = x => (clamp(x) * 100).toFixed(2);
+  const bar = (x, extra = '') => `<svg class="trk-svg" aria-hidden="true" focusable="false"><rect class="trk-v" x="0" y="0" height="100%" width="${pct(x)}%" rx="5"></rect>${extra}</svg>`;
   return `<div class="pair" role="img" aria-label="${esc(label)}: ${p(without)} ${esc(names[0])}, ${p(withSound)} ${esc(names[1])}${
       line ? `; ${esc(line.label)} at ${p(line.at)}` : ''}">
     <div class="pair-h"><span>${esc(label)}</span><span class="pair-d mono ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${delta}</span></div>
-    <div class="pbar"><span class="pl">${esc(names[0])}</span><span class="trk"><i style="--v:${clamp(without).toFixed(4)}"></i></span><b class="mono">${p(without)}</b></div>
-    <div class="pbar with"><span class="pl">${esc(names[1])}</span><span class="trk"><i style="--v:${clamp(withSound).toFixed(4)}"></i>${
-      line ? `<s class="gate ${met ? 'met' : ''}" style="--g:${clamp(line.at).toFixed(4)}" title="${esc(line.label)}"></s>` : ''}</span><b class="mono">${p(withSound)}</b></div>
+    <div class="pbar"><span class="pl">${esc(names[0])}</span><span class="trk">${bar(without)}</span><b class="mono">${p(without)}</b></div>
+    <div class="pbar with"><span class="pl">${esc(names[1])}</span><span class="trk">${bar(withSound, line ? `<line class="gate${met ? ' met' : ''}" x1="${pct(line.at)}%" x2="${pct(line.at)}%" y1="-4" y2="14"><title>${esc(line.label)}</title></line>` : '')}</span><b class="mono">${p(withSound)}</b></div>
   </div>`;
 }
 
@@ -5797,7 +5817,7 @@ function audioCard(v, p, esc, maestScoreText) {
   const liftPts = Math.round(lift * 100);
   const tone = g.pass === true ? 'ok' : g.pass === false ? 'warn' : 'idle';
   return `<div class="sndscore">
-    <h3 style="margin:18px 0 6px; font-size:16px">Adding how it sounds</h3>
+    <h3 class="eng-h3">Adding how it sounds</h3>
     <p class="why">Each playlist's sound is learned from the tracks you filed there that have been listened to.
       A track never hears itself: same tracks, same folds as above.</p>
     <div class="pairs">
@@ -5810,19 +5830,19 @@ function audioCard(v, p, esc, maestScoreText) {
       time on never-filed artists, and no loss overall. ${w.soundFirst
         ? 'The File screen leads with sound for heard tracks either way (your call); this is how that measures up on your own filing.'
         : 'Below it, sound is shown but changes no suggestion.'}</span></p>
-    <div class="facts" style="margin-top:10px">
+    <div class="facts eng-mt10">
       <div><span>Tracks by artists not in any genre playlist yet</span><b class="mono">${nf.scored.toLocaleString()}</b></div>
       <div><span>Scored tracks listened to</span><b class="mono">${w.heard.toLocaleString()} of ${v.mine.scored.toLocaleString()}</b></div>
       <div><span>…of them by never-filed artists</span><b class="mono">${w.heardNeverFiled.toLocaleString()}</b></div>
       <div><span>Top answers sound changed</span><b class="mono">${w.changed.toLocaleString()}</b></div>
     </div>
-    <p class="why gateverdict" style="margin-top:12px"><span class="tag ${tone}">${g.pass === true ? 'passed' : g.pass === false ? 'not passed' : 'undecided'}</span>
+    <p class="why gateverdict eng-mt12"><span class="tag ${tone}">${g.pass === true ? 'passed' : g.pass === false ? 'not passed' : 'undecided'}</span>
       <b>${w.soundFirst
         ? (g.pass === true ? 'Helps.' : g.pass === false ? 'Not ahead of tags yet on your filing; sound still leads, by your call.' : 'Undecided; sound still leads, by your call.')
         : (g.pass === true ? 'Helps, so it now has a say.' : g.pass === false ? 'Not yet, so it only shows.' : 'Undecided, so it only shows.')}</b>
       ${esc(g.text ?? '')}</p>
-    ${w.arms?.maest && maestScoreText ? `<p class="why" id="maestScore" style="margin-top:8px">${esc(maestScoreText(w))}</p>` : ''}
-    ${w.nearChoice?.text ? `<p class="why" id="nearScore" style="margin-top:8px">${esc(w.nearChoice.text)}</p>` : ''}
+    ${w.arms?.maest && maestScoreText ? `<p class="why eng-mt8" id="maestScore">${esc(maestScoreText(w))}</p>` : ''}
+    ${w.nearChoice?.text ? `<p class="why eng-mt8" id="nearScore">${esc(w.nearChoice.text)}</p>` : ''}
     ${identifyHTML(v.identify, p, esc)}
   </div>`;
 }
@@ -5830,14 +5850,14 @@ function audioCard(v, p, esc, maestScoreText) {
 /** How well it names genres by sound, on tracks you've already filed (core/audio/identify.mjs). */
 function identifyHTML(a, p, esc) {
   if (!a?.scored) return '';
-  return `<h3 style="margin:18px 0 6px; font-size:16px">Naming genres by sound</h3>
+  return `<h3 class="eng-h3">Naming genres by sound</h3>
     <p class="why">Each heard track in a genre playlist whose name says a genre, named from its sound with itself
       left out: the sound model's styles, the filed tracks it sounds most like, its artist's tags, and its tempo.</p>
     <div class="pairs">
       ${pairBars(esc, 'Genre right (Drum & Bass, House…)', a.modelOnly.genre, a.genre, p, null, ['model alone', 'with your library'])}
       ${pairBars(esc, 'Sub-genre right too (Jungle, Donk…)', a.modelOnly.specific, a.specific, p, null, ['model alone', 'with your library'])}
     </div>
-    <div class="facts" style="margin-top:10px">
+    <div class="facts eng-mt10">
       <div><span>Tracks scored</span><b class="mono">${a.scored.toLocaleString()}</b></div>
       ${a.tempo != null ? `<div><span>Tempo fits the playlist's genre</span><b class="mono">${p(a.tempo)} of ${a.tempoJudged.toLocaleString()}</b></div>` : ''}
       ${a.byGenre.map(g => `<div><span>${esc(g.name)}</span><b class="mono">${g.right} of ${g.n}</b></div>`).join('')}
@@ -5851,20 +5871,20 @@ function weakCard(v, LIB, p, esc) {
   const names = new Map((LIB?.playlists ?? []).map(x => [x.id, x.name]));
   const nameOf = id => names.get(id) ?? id;
   if (Array.isArray(v?.weak)) {
-    if (!v.weak.length) return `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+    if (!v.weak.length) return `<h3 class="eng-h3">Playlists it understands least</h3>
       <p class="why">None: every genre playlist with enough scored tracks is offered in the top three at least half the time.</p>`;
-    return `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+    return `<h3 class="eng-h3">Playlists it understands least</h3>
       <p class="why">How often each one was offered in the top three, for tracks that really are in it, by the engine that files
         (sound and similar artists included). With the likeliest reason and what would fix it. Nothing changes without a tap.</p>
-      <div class="rows" style="margin-top:10px" id="weakRows">${v.weak.map(d => { const w = weakWords(d, nameOf);
+      <div class="rows eng-mt10" id="weakRows">${v.weak.map(d => { const w = weakWords(d, nameOf);
         return `<div class="row"><div class="main"><div class="ttl">${esc(nameOf(d.id))} <span class="sub">· ${p(d.inTop3)} of ${d.n} scored</span></div>
           <div class="sub">${esc(w.why)} ${esc(w.fix)}</div></div><span class="tag ${d.fix === 'none' || d.fix === 'wait' ? 'ok' : 'warn'}">${esc(FIX_WORDS[d.fix] ?? d.fix)}</span></div>`; }).join('')}
       </div>`;
   }
-  return weakBuckets(v, LIB).length ? `<h3 style="margin:18px 0 6px; font-size:16px">Playlists it understands least</h3>
+  return weakBuckets(v, LIB).length ? `<h3 class="eng-h3">Playlists it understands least</h3>
       <p class="why">How often each one was even offered in the top three, for tracks that really are in it.
         Low here means the engine has no real idea what that playlist is for.</p>
-      <div class="facts" style="margin-top:10px">${weakBuckets(v, LIB).map(b =>
+      <div class="facts eng-mt10">${weakBuckets(v, LIB).map(b =>
         `<div><span>${esc(b.name)} <span class="sub">· ${b.n} tracks</span></span><b class="mono">${p(b.inTop3)}</b></div>`).join('')}
       </div>` : '';
 }
@@ -5891,7 +5911,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-0620`,
+    `Betterfy engine score — build 2026-11-18-0627`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -5994,9 +6014,9 @@ function weightsCard(v, p, esc) {
       ${pairBars(esc, `${title} — right first time`, x.default.top1, x.fitted.top1, p, null, names)}
       ${pairBars(esc, `${title} — in the top three`, x.default.top3, x.fitted.top3, p, null, names)}
     </div>
-    <p class="why" style="margin-top:6px"><span class="tag ${x.use ? 'ok' : 'idle'}">${x.use ? 'used' : 'not used'}</span>
+    <p class="why eng-mt6"><span class="tag ${x.use ? 'ok' : 'idle'}">${x.use ? 'used' : 'not used'}</span>
       ${esc(multipliersText(x.multipliers, withBridge))}.</p>`;
-  return `<h3 style="margin:18px 0 6px; font-size:16px">Weights fitted to your filing</h3>
+  return `<h3 class="eng-h3">Weights fitted to your filing</h3>
     <p class="why">How much the artist graph, the label, the record's shape${f.bridge ? ' and similar artists' : ''} each
       count, chosen on four folds of your filed tracks and scored on the fifth, five times over — so "fitted" is on
       tracks the weights weren't tuned on. They're only used when that beats the defaults by a point.</p>
@@ -6053,7 +6073,7 @@ function blendCard(v, p, esc) {
   const b = v && !v.error ? v.blend : null;
   if (!b) return '';
   const nf = b.neverFiled, verdict = blendVerdict(b), names = ['today’s', 'blended'];
-  return `<h3 style="margin:18px 0 6px; font-size:16px">Today’s engine and this one, together</h3>
+  return `<h3 class="eng-h3">Today’s engine and this one, together</h3>
     <p class="why">Each playlist gets a score from both engines${b.withBridge ? ' (this one with similar artists)' : ''},
       each scaled so its best pick is 100%, then mixed: ${Math.round(b.weight * 100)}% tags. The mix is chosen on four
       folds and scored on the fifth, five times over, so these are tracks it wasn’t tuned on. A track with no tags
@@ -6063,7 +6083,7 @@ function blendCard(v, p, esc) {
       ${pairBars(esc, 'In the top three', b.tags.top3, b.top3, p, null, names)}
       ${nf?.scored ? pairBars(esc, 'Right first time, artists not in any genre playlist yet', nf.tags.top1, nf.top1, p, null, names) : ''}
     </div>
-    <p class="why gateverdict" style="margin-top:12px"><span class="tag ${verdict.on ? 'ok' : 'idle'}">${verdict.on ? 'used on File' : 'not used'}</span>
+    <p class="why gateverdict eng-mt12"><span class="tag ${verdict.on ? 'ok' : 'idle'}">${verdict.on ? 'used on File' : 'not used'}</span>
       ${esc(verdict.text)}</p>`;
 }
 
@@ -6116,10 +6136,10 @@ function pastRunsCard(runs, esc) {
   };
   const head = runs.slice(0, 4), rest = runs.slice(4);
   return `<div class="card" id="pastRuns">
-    <h2 style="margin:0 0 6px; font-size:19px">Past runs</h2>
+    <h2 class="eng-h2 eng-h2-tight">Past runs</h2>
     <p class="why">Each Score and listening run is kept on this device, so you can copy one later.</p>
-    <div class="rows" style="margin-top:10px">${head.map(row).join('')}</div>
-    ${rest.length ? `<details style="margin-top:8px"><summary class="sub">${rest.length} older</summary>
+    <div class="rows eng-mt10">${head.map(row).join('')}</div>
+    ${rest.length ? `<details class="eng-mt8"><summary class="sub">${rest.length} older</summary>
       <div class="rows">${rest.map(row).join('')}</div></details>` : ''}
   </div>`;
 }
@@ -6135,28 +6155,28 @@ function view(c) {
   // Nothing to file into is a setting, not a result: say where it is fixed.
   if (!engineTargets().length) return `${head}
     <div class="card">
-      <h2 style="margin:0 0 12px; font-size:19px">No genre playlists yet</h2>
+      <h2 class="eng-h2">No genre playlists yet</h2>
       <p>Both engines only file into playlists that take suggestions, and none of yours do yet — none of
         their names say what genre they are. Mark the ones that are genre playlists in Library, then
         come back.</p>
-      <div class="rowbtns" style="margin-top:18px"><button class="b go" data-act="lists">Open Library</button></div>
+      <div class="rowbtns eng-mt18"><button class="b go" data-act="lists">Open Library</button></div>
     </div>${pastCard}`;
 
   if (ENG.status === 'idle') return `${head}
     <div class="card">
-      <h2 style="margin:0 0 12px; font-size:19px">Learn my library</h2>
+      <h2 class="eng-h2">Learn my library</h2>
       <p>Reads your ${LIB.playlists.length.toLocaleString()} playlists once and works out what each one means.
         Takes a few seconds, and is remembered afterwards so it is a one-off. It runs on this device —
         nothing is sent anywhere. It starts by itself a few seconds after the app opens; this button is
         only for when it could not.</p>
-      <div class="rowbtns" style="margin-top:18px">
+      <div class="rowbtns eng-mt18">
         <button class="b big go" data-act="go">Learn my library</button>
       </div>
     </div>${pastCard}`;
 
   if (ENG.status === 'working') return `${head}
     <div class="card">
-      <h2 style="margin:0 0 12px; font-size:19px">Working…</h2>
+      <h2 class="eng-h2">Working…</h2>
       <p>Working out what your playlists mean — the arithmetic for every pair of artists you file together.
         ${engineInBackground() ? 'It runs in the background' : 'On a big library this holds the page up for a moment'},
         and it only happens once.</p>
@@ -6164,18 +6184,18 @@ function view(c) {
 
   if (ENG.status === 'error') return `${head}
     <div class="card">
-      <h2 style="margin:0 0 12px; font-size:19px">That didn't work</h2>
+      <h2 class="eng-h2">That didn't work</h2>
       <p class="why">${esc(ENG.err ?? 'Unknown error')}</p>
-      <div class="rowbtns" style="margin-top:16px"><button class="b" data-act="go">Try again</button></div>
+      <div class="rowbtns eng-mt16"><button class="b" data-act="go">Try again</button></div>
     </div>${pastCard}`;
 
   const r = ENG.rung, sh = ENG.shadow;
 
   const rungCard = `<div class="card">
-    <h2 style="margin:0 0 4px; font-size:19px">How much it has to go on
-      <span class="tag ${RUNG_TONE[r.rung] ?? 'warn'}" style="margin-left:6px; vertical-align:middle">${esc(r.name)}</span></h2>
+    <h2 class="eng-h2 eng-rung"><span>How much it has to go on</span>
+      <span class="tag ${RUNG_TONE[r.rung] ?? 'warn'} eng-rungtag">${esc(r.name)}</span></h2>
     <p>${esc(r.reason)}.</p>
-    <div class="facts" style="margin-top:16px">
+    <div class="facts eng-mt16">
       <div><span>Playlists it can file into</span><b class="mono">${r.destinations.toLocaleString()}</b></div>
       <div><span>Artists with neighbours</span><b class="mono">${r.artistsConnected.toLocaleString()}</b></div>
       <div><span>Artists in more than one playlist</span><b class="mono">${Math.round((r.connectedShare ?? 0) * 100)}%</b></div>
@@ -6190,7 +6210,7 @@ function view(c) {
   // hand you a different playlist. The score is the next card down.
   const pc = sh.judged ? Math.round((sh.agree / sh.judged) * 100) : null;
   const shadowCard = `<div class="card">
-    <h2 style="margin:0 0 12px; font-size:19px">What it would do differently</h2>
+    <h2 class="eng-h2">What it would do differently</h2>
     <p>The next ${sh.rows.length} ${sh.rows.length === 1 ? 'track' : 'tracks'} waiting to be filed, with today's
       suggestion beside this engine's. These are unfiled, so neither column is <i>known</i> to be right —
       this is only where the two disagree.</p>
@@ -6199,7 +6219,7 @@ function view(c) {
           at all — a listener with no tag coverage, which is the case this screen
           exists for — the whole summary vanished and took the one caveat that
           mattered with it. */''}
-    ${sh.rows.length ? `<div class="facts" style="margin-top:16px">
+    ${sh.rows.length ? `<div class="facts eng-mt16">
       ${sh.judged ? `<div><span>Same playlist</span><b class="mono">${pc}% (${sh.agree} of ${sh.judged})</b></div>
       <div><span>Only this engine had an answer</span><b class="mono">${sh.onlyMine}</b></div>
       <div><span>Only today's engine did</span><b class="mono">${sh.onlyTheirs}</b></div>`
@@ -6209,7 +6229,7 @@ function view(c) {
       ${sh.decided ? `<hr><div><span>Confident · short list · not sure</span><b class="mono">${
         sh.decided.confident} · ${sh.decided.choose} · ${sh.decided.unsure}</b></div>` : ''}
     </div>` : ''}
-    ${sh.rows.length ? `<div class="rows" style="margin-top:18px">
+    ${sh.rows.length ? `<div class="rows eng-mt18">
       ${engRows(sh.rows, row => {
         // Once calibrated, the checked answer is the answer: "not sure" is no
         // answer, and a short list that includes today's suggestion agrees with it.
@@ -6220,9 +6240,9 @@ function view(c) {
           <summary>
             <div class="main">
               <div class="ttl">${esc(row.title)}
-                <span class="tag ${same ? 'ok' : answer ? 'warn' : 'idle'}" style="margin-left:6px">${
+                <span class="tag ${same ? 'ok' : answer ? 'warn' : 'idle'} eng-ml6">${
                   same ? 'agree' : answer && row.theirs ? 'differ' : answer ? 'new answer' : 'no answer'}</span>${
-                  row.shapeOnly ? '<span class="tag idle" style="margin-left:4px">shape only</span>' : ''}</div>
+                  row.shapeOnly ? '<span class="tag idle eng-ml4">shape only</span>' : ''}</div>
               <div class="sub">${esc(row.artist)}</div>
             </div>
             <div class="cmp">
@@ -6231,7 +6251,7 @@ function view(c) {
                 : row.mine ? `<b>${esc(row.mine.name)}</b>` : '<i>won&rsquo;t guess</i>'}</div>
             </div>
           </summary>
-          <div style="padding:2px 0 2px">
+          <div class="eng-rowbody">
             ${row.mine ? `<p class="why">${Math.round(row.mine.score * 100)}% fit${
               row.band ? ` · ${esc(String(row.band).toLowerCase())} confidence` : ''}${
               row.declined ? ' · and it declined to commit to it' : ''}</p>` : ''}
@@ -6259,15 +6279,15 @@ function view(c) {
   const verdict = v && !v.error && v.base
     ? (v.mine.top1 > v.base.top1 ? 'ahead' : v.mine.top1 < v.base.top1 ? 'behind' : 'level') : null;
   const valCard = `<div class="card">
-    <h2 style="margin:0 0 12px; font-size:19px">Is it actually any better?</h2>
+    <h2 class="eng-h2">Is it actually any better?</h2>
     <p>The honest test, and the one that decides whether this engine should ever take over. Your
       already-filed tracks are the answer key: hold one out, rebuild from a library that never saw it,
       and see whether each engine puts it back where you had it. Both are scored on the same
       ${VALIDATE_N.toLocaleString()} tracks, over the same folds.</p>
     <p class="why">It measures agreement with <b>your</b> habits, not musical truth. If your library is
       systematically misfiled it will reproduce that faithfully, and it cannot tell you so.</p>
-    ${v?.error ? `<p class="why" style="margin-top:12px">That didn't work: ${esc(v.error)}</p>` : ''}
-    ${v && !v.error ? `<div class="facts" style="margin-top:16px">
+    ${v?.error ? `<p class="why eng-mt12">That didn't work: ${esc(v.error)}</p>` : ''}
+    ${v && !v.error ? `<div class="facts eng-mt16">
       <div><span><b>This engine</b> — right first time</span><b class="mono">${p(v.mine.top1)}</b></div>
       <div><span>…in its top three</span><b class="mono">${p(v.mine.top3)}</b></div>
       ${v.weights?.plain ? `<div><span>…with weights fitted to your filing${v.weights.plain.use ? '' : ' (not used)'}</span><b class="mono">${p(v.weights.plain.fitted.top1)} / ${p(v.weights.plain.fitted.top3)}</b></div>` : ''}
@@ -6284,7 +6304,7 @@ function view(c) {
         stands on its own.</p>` : ''}
       <p>Took ${v.ms < 950 ? `${v.ms}ms` : `${(v.ms / 1000).toFixed(1)}s`}.</p>
     </div>
-    ${verdict ? `<p class="why" style="margin-top:14px"><b>${
+    ${verdict ? `<p class="why eng-mt14"><b>${
       verdict === 'ahead' ? 'Ahead.' : verdict === 'behind' ? 'Behind.' : 'Level.'}</b> ${
       verdict === 'ahead' ? 'On your library, reading nothing but your own filing beats reading the tag table.'
       : verdict === 'behind' ? 'On your library the tag table still wins, so this engine should not take over. That is what the test is for.'
@@ -6295,19 +6315,20 @@ function view(c) {
     ${audioCard(v, p, esc, maestScoreText)}
     ${v && !v.error ? calibCard(p, ENG.calib) : ''}
     ${weakCard(v, LIB, p, esc)}` : ''}
-    <label class="check-row" style="margin-top:14px"><input type="checkbox" data-act="bridgeToggle" id="bridgeToggle" ${bridgeOn() ? 'checked' : ''}
+    <label class="check-row eng-mt14"><input type="checkbox" data-act="bridgeToggle" id="bridgeToggle" ${bridgeOn() ? 'checked' : ''}
       ${ENG.valRunning ? 'disabled' : ''}> Also try similar artists (asks Deezer, ListenBrainz and Wikidata about the artists being scored)</label>
-    <div class="rowbtns" style="margin-top:10px">
-      <button class="b ${v ? '' : 'go'}" data-act="validate" ${ENG.valRunning ? 'disabled' : ''}>${
-        ENG.valRunning ? 'Scoring…' : v ? 'Run it again' : 'Score both engines'}</button>
-      <button class="b" data-act="scoreTune" ${ENG.valRunning || c.TUNE?.running ? 'disabled' : ''}>Score + Tune</button>
-      ${v && !v.error && !ENG.valRunning ? `<button class="b" data-act="copy">Copy results</button>` : ''}
+    <div class="rowbtns eng-mt10">
+      ${/* Score + Tune run by themselves (a minute in, then weekly: autoscore.js), so the two
+            buttons became one small "Run again now" (DESIGN-PLAN §7.7 A4, provisional). */''}
+      <button class="b sm" data-act="scoreTune" ${ENG.valRunning || c.TUNE?.running ? 'disabled' : ''}>${
+        ENG.valRunning ? 'Scoring…' : c.TUNE?.running ? 'Tuning…' : v ? 'Run again now' : 'Run now'}</button>
+      ${v && !v.error && !ENG.valRunning ? `<button class="b sm" data-act="copy">Copy results</button>` : ''}
     </div>
-    ${c.autoScoreText ? `<p class="why" id="autoScore" style="margin-top:10px">${esc(c.autoScoreText())}</p>` : ''}
-    ${ENG.valRunning && ENG.valStage === 'bridge' ? `<p class="why" style="margin-top:12px" id="bridgeProgress" aria-live="polite">${esc(bridgeProgressText())}</p>
+    ${c.autoScoreText ? `<p class="why eng-mt10" id="autoScore">${esc(c.autoScoreText())}</p>` : ''}
+    ${ENG.valRunning && ENG.valStage === 'bridge' ? `<p class="why eng-mt12" id="bridgeProgress" aria-live="polite">${esc(bridgeProgressText())}</p>
       <p class="why">The first run asks about each artist being scored — a few hundred, a minute or two. Every answer is
         remembered on this device for two months, so later runs only ask about what's new.</p>` : ''}
-    ${ENG.valRunning && ENG.valStage !== 'bridge' ? `<p class="why" style="margin-top:12px">Learning your library from scratch ten times over —
+    ${ENG.valRunning && ENG.valStage !== 'bridge' ? `<p class="why eng-mt12">Learning your library from scratch ten times over —
       five folds, two engines. ${engineInBackground()
         ? 'It runs in the background, so the app stays usable — just leave this screen open until it finishes.'
         : 'On a big library that can take a while, and the page will freeze in bursts while it happens.'}
@@ -6318,11 +6339,11 @@ function view(c) {
   const tuneCard = tuneCardHtml(c, esc);
 
   const pairCard = ENG.pairs?.length ? `<div class="card">
-    <h2 style="margin:0 0 12px; font-size:19px">Playlists it can't tell apart</h2>
+    <h2 class="eng-h2">Playlists it can't tell apart</h2>
     <p>Usually a fact about the library rather than a fault in the engine: two playlists holding the same
       kind of music, or one that is really a view of another. Worth knowing, because a track landing in
       either would be defensible.</p>
-    <div class="rows" style="margin-top:16px">
+    <div class="rows eng-mt16">
       ${/* bucketPairs only ever returns pairs it could NOT separate, so there is
             no "distinct" case to render here. */ ''}
       ${ENG.pairs.map(pr => `<div class="row"><div class="main">
@@ -6335,7 +6356,7 @@ function view(c) {
   </div>` : '';
 
   return `${head}
-    <p class="mono" style="font-size:11.5px; color:var(--ink-3); margin:-10px 0 18px">${
+    <p class="mono eng-learnt">${
       ENG.from === 'cache' ? 'revived from this device' : 'learned'} in ${ENG.ms.toLocaleString()}ms${
       idb.durable ? '' : ' · not remembered, because this browser is not letting the app store anything'}</p>
     ${rungCard}
@@ -6344,7 +6365,7 @@ function view(c) {
     ${pastCard}
     ${tuneCard}
     ${pairCard}
-    <div class="rowbtns" style="margin:20px 0 0">
+    <div class="rowbtns eng-foot">
       <button class="b sm" data-act="reset">Forget and learn again</button>
     </div>`;
 }
@@ -6374,10 +6395,10 @@ function tuneCardHtml(c, esc) {
       <p class="why">A change only counts if it beats today's value on both halves of your held-out tracks by the bar for its group.
         Nothing here is shared, and nothing changes until you choose to keep it.</p>` : '';
   return `<div class="card" id="tuneCard">
-    <h2 style="margin:0 0 12px; font-size:19px">Tune</h2>
+    <h2 class="eng-h2">Tune</h2>
     ${body}
     ${kept.length ? `<p class="why">In use on this device: ${esc(kept.join(', '))}.</p>` : ''}
-    <div class="rowbtns" style="margin-top:10px">
+    <div class="rowbtns eng-mt10">
       ${T.res && nPass && !T.running ? `<button class="b go" data-act="tuneApply">Use the ${nPass} that cleared the bar</button>` : ''}
       ${T.res && !T.running ? `<button class="b" data-act="tuneCopy">Copy tune results</button>` : ''}
       ${T.saved ? `<button class="b sm" data-act="tuneReset">Reset to default</button>` : ''}
@@ -7811,7 +7832,7 @@ const n = x => (Number.isFinite(x) ? x.toLocaleString('en-GB') : '0');
  * part may be missing): { lib: { playlists, liked }, listening: { artists },
  * cov: { pct, have, total }, lfm: { key, own, asked }, bridge: { on, deezerAsked,
  * deezerPct, wikidataAsked, wikidataPct, warm: { asked, total, running, quota, gate } }, audio: { on, state, heard, reason },
- * deep: { maest, clap }, discogs, engine: { status } }.
+ * deep: { maest, clap }, discogs, engine: { status }, auto, radar: { off, running, done, total, err, at, ago, artists } }.
  * Each row: { id, name, on, kind: 'ok'|'idle'|'warn'|'off', status, did, optional? }.
  */
 function helperRows(s = {}) {
@@ -7865,6 +7886,18 @@ function helperRows(s = {}) {
     status: au.running ? 'On · scoring now' : !au.at ? 'On · first run soon' : !au.ok ? 'On · retrying' : `On · ran ${au.ago ?? 'recently'}`,
     did: `Scores itself on your own filing after listening finishes and every week, and switches on the parts that measure better for you${
       au.at && au.ago ? `; last run ${au.ago}` : ''}. No button to press.` });
+  // Release radar (DESIGN-PLAN L5): starts by itself like every other source; only a Stop turns it off.
+  const rr = s.radar;
+  if (rr) {
+    const rOff = !!rr.off, rErr = !rOff && !rr.running && rr.err;
+    rows.push({ id: 'radar', name: 'Release radar', on: !rOff, kind: rOff ? 'off' : rErr ? 'warn' : rr.at || rr.running ? 'ok' : 'idle',
+      status: rOff ? 'Off since Stop' : rr.running ? (rr.total ? `On · reading ${n(rr.done)} of ${n(rr.total)}` : 'On · starting')
+        : rErr ? 'On · stopped' : rr.at ? 'On' : 'On · starts soon',
+      did: rOff ? 'New releases from your artists. Off since you pressed Stop; Start on the radar turns it back on.'
+        : rErr ? `Stopped: ${String(rr.err).replace(/https?:\/\/\S+/g, '').slice(0, 80).trim()}. It tries again next time Betterfy opens.`
+        : `New releases from the artists in your library, read by itself a while after Betterfy opens${
+            rr.artists ? `; ${n(rr.artists)} artists checked${rr.ago ? `, last ${rr.ago}` : ''}` : ''}.` });
+  }
   rows.push({ id: 'discogs', name: 'Discogs', on: !!s.discogs, kind: s.discogs ? 'ok' : 'idle', status: s.discogs ? 'On · your token' : 'Optional', optional: true,
     did: 'Release styles for artists nothing else knows. Needs a personal token, so it stays an extra.' });
   return rows;
@@ -7888,21 +7921,33 @@ function checkWords(c) {
   return `not answering${c.err ? `: ${c.err}` : ''}`;
 }
 
-/** The panel. `checks` are the live results by row id; `running` while a check is out. */
-function helpersHTML(rows, { checks = {}, running = false, at = null, esc = s => String(s ?? '') } = {}) {
-  return `<section class="helpers" id="helpers" aria-labelledby="helpers-h">
-    <div class="helpers-head"><h3 id="helpers-h">What's helping your picks</h3><span class="tag ok">${esc(helperSummary(rows, checks))}</span></div>
-    <ul class="hlist">${rows.map(r => { const c = checks?.[r.id];
-      return `<li class="hrow2 h-${r.kind}${c?.ok === false ? ' h-fail' : ''}" data-helper="${esc(r.id)}">
+/** The rows that ask for a look: off (and not an optional extra), stuck, or not answering a check. */
+function helperAttention(rows, checks = {}) {
+  return rows.filter(r => r.kind === 'warn' || (r.kind === 'off' && !r.optional) || checks?.[r.id]?.ok === false);
+}
+
+/** The panel (DESIGN-PLAN L5): folded to its header ("12 of 12 on") plus any row that asks
+ *  for a look; the whole list opens on tap. `checks` are the live results by row id;
+ *  `running` while a check is out; `open` keeps the fold open across repaints. */
+function helpersHTML(rows, { checks = {}, running = false, at = null, open = false, esc = s => String(s ?? '') } = {}) {
+  const row = r => { const c = checks?.[r.id];
+    return `<li class="hrow2 h-${r.kind}${c?.ok === false ? ' h-fail' : ''}" data-helper="${esc(r.id)}">
         <span class="hdot" aria-hidden="true"></span>
         <span class="hmain"><span class="hname">${esc(r.name)}</span><span class="hdid">${esc(r.did)}</span>${
           c ? `<span class="hcheck${c.ok === false ? ' bad' : c.ok ? ' good' : ''}">${esc(checkWords(c))}</span>` : ''}</span>
-        <span class="tag ${r.kind === 'off' ? 'idle' : r.kind}">${esc(r.status)}</span></li>`; }).join('')}</ul>
+        <span class="tag ${r.kind === 'off' ? 'idle' : r.kind}">${esc(r.status)}</span></li>`; };
+  const look = helperAttention(rows, checks);
+  return `<section class="helpers" id="helpers" aria-labelledby="helpers-h">
+    <details class="helpers-fold" data-hfold${open ? ' open' : ''}>
+      <summary class="helpers-head"><h3 id="helpers-h">What's helping your picks</h3><span class="tag ${look.length ? 'warn' : 'ok'}">${esc(helperSummary(rows, checks))}</span></summary>
+      <ul class="hlist">${rows.map(row).join('')}</ul>
+    </details>
+    ${look.length ? `<ul class="hlist hlist-look">${look.map(row).join('')}</ul>` : ''}
     <div class="rowbtns"><button class="b sm" type="button" data-hcheck${running ? ' disabled' : ''}>${running ? 'Checking…' : at ? 'Check again' : 'Check they all answer'}</button>
       <button class="b sm" type="button" data-uhgo="sources">Listening and sources</button></div>
   </section>`;
 }
-return { helperRows, helperSummary, checkWords, helpersHTML };
+return { helperRows, helperSummary, checkWords, helperAttention, helpersHTML };
 })();
 /* ---- core/playlists/mergesplit.mjs ---- */
 __mod["core/playlists/mergesplit.mjs"] = (function () {
@@ -10688,7 +10733,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-0620';
+const BUILD = '2026-11-18-0627';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11026,7 +11071,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-0620', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-0627', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11811,7 +11856,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-0620');
+    const w = new Worker('reports-worker.js?v=2026-11-18-0627');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15375,7 +15420,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-0620';
+    s.src = 'engine.js?v=2026-11-18-0627';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15397,7 +15442,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-0620');
+    const w = new Worker('engine-worker.js?v=2026-11-18-0627');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16108,7 +16153,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-0620';
+    s.src = 'audio.js?v=2026-11-18-0627';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16162,7 +16207,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0620', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0627', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17322,7 +17367,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0620', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0627', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -18607,7 +18652,7 @@ document.addEventListener('click', guard(async e => {
  * the same transports the features use (sp(), deezerJsonp(), corsJson(),
  * fetch), and keeps the answers for this session. A source that is off is
  * not asked. Nothing is stored. */
-const HELPERS = { checks: {}, running: false, at: null };
+const HELPERS = { checks: {}, running: false, at: null, open: false };
 
 function helpersState() {
   let audio = { on: false };
@@ -18635,6 +18680,14 @@ function helpersState() {
     auto: (() => { try { const l = autoScoreLast(); return { at: l?.at ?? null, ok: l?.ok !== false,
       ago: l?.at && typeof agoWords === 'function' ? agoWords(Date.now() - l.at) : null, running: AUTOSCORE_RUN.running }; }
       catch { return {}; } })(),
+    radar: (() => { try {
+      if (typeof RADAR === 'undefined') return null;
+      const p = RADAR.progress, ix = RADAR.index;
+      return { off: typeof radarAutoOff === 'function' && radarAutoOff() && !RADAR.running, running: !!RADAR.running,
+        done: p?.artistsDone ?? 0, total: p?.artistsTotal ?? 0, err: RADAR.err || null,
+        at: ix?.at ?? null, artists: ix?.artists ?? 0,
+        ago: ix?.at && typeof agoWords === 'function' ? agoWords(Date.now() - ix.at) : null };
+    } catch { return null; } })(),
   };
 }
 
@@ -18704,6 +18757,9 @@ function helpersRepaint() {
   if (typeof underHoodRefresh === 'function') underHoodRefresh();
   try { store.touch('ui.sources'); } catch { /* before the store */ }
 }
+
+// The fold stays as the listener left it when a check or a source repaints the panel.
+document.addEventListener('toggle', e => { if (e.target?.matches?.('[data-hfold]')) HELPERS.open = e.target.open; }, true);
 
 document.addEventListener('click', e => {
   if (e.target.closest?.('[data-hcheck]')) return void helpersCheck();
