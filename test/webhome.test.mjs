@@ -35,6 +35,7 @@ function file({ backlog } = {}) {
     deck: () => '<div class="deck-stub"></div>',
     store: { get() {}, on() {}, set() { calls.render++; }, touch() { calls.render++; } },
     listenPill: vm => vm ? `<span class="pill">${vm.state}</span>` : '',
+    listenTidyText: () => '',
     document: { getElementById: id => id === 'listenSlot' ? slot : null },
     $: sel => sel === '#listenSlot' ? slot : sel === '#main' ? {} : sel === '#main [data-listenstat]' ? statN : null,
     S: { inboxAt: 0 },

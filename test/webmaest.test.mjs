@@ -100,7 +100,9 @@ test('page source: the MAEST model and worker are reached only from maestStart, 
   const at = s => { const k = body.indexOf(s); assert.ok(k >= 0, s); return k; };
   assert.ok(at('if (!deepSettings().maest || !LIB) return;') < at("if (deepAllowed('maest') !== 'ok') return"));
   assert.ok(at("if (deepAllowed('maest') !== 'ok') return") < at('createMaestRunner('));
-  assert.ok(at('if (AUDIO.ctrl?.running) return;') < at('AUDIO.maest.start()'));
+  // While listening runs it waits for that run to end (DESIGN-PLAN L0), and checks the gate again after.
+  assert.ok(at('if (AUDIO.ctrl?.running) {') < at('await AUDIO.ctrl.whenIdle()'));
+  assert.ok(at('await AUDIO.ctrl.whenIdle()') < at('AUDIO.maest.start()'));
   // The labels file is never fetched by the page: names come with the record.
   assert.doesNotMatch(SRC, /MAEST_LABELS_FILE/);
 });
