@@ -135,3 +135,8 @@ test('D2: queue order can fail: a head skipped as often as the tail does not bea
   // Entries without a position are left out.
   assert.equal(measureHistory([filing(), skip(), skip({ queuePos: 0 })]).queue.n, 1);
 });
+
+test('A5: a count below its minimum says how many more it needs', () => {
+  const lines = measureLines(measureHistory([]));
+  assert.ok(lines.some(l => /\(0 of 10, 10 more to measure this\)/.test(l)));
+});

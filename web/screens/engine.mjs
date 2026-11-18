@@ -277,6 +277,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
     ...(v.family ? [familyLine(v.family, pc)] : []),
+    v.confusionLine || null,
     ...(v.moodLine ? [v.moodLine] : []),
     ...(v.agreeLine ? [v.agreeLine] : []),
     ...(v.pairsLine ? [v.pairsLine] : []),

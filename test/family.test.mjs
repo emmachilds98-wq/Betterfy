@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { playlistFamilies, conceptsIn, familyRow, familyAccuracy, familyInUse, fitFamilyCalibration,
-         decideCard, FAMILY_GATE, FAMILY_CONFIDENT_GATE, familyGate } from '../core/intrinsic/family.mjs';
+         decideCard, FAMILY_GATE, FAMILY_CONFIDENT_GATE, familyGate, familyConfusion, confusionLine, CONFUSION_MIN } from '../core/intrinsic/family.mjs';
 import { fitCalibration, calibrationReport } from '../core/intrinsic/calibrate.mjs';
 import { familyLine } from '../web/screens/engine.mjs';
 
@@ -122,4 +122,25 @@ test('I1: the Score line says which bar it cleared, or why not', () => {
               sure: { confidentN: 228, confidentShare: 0.38, confidentRight: 0.97 } };
   assert.match(familyLine({ ...f, use: true, by: 'confident' }, pc), /confident on 38% of tracks, right 97% — used where it is confident/);
   assert.match(familyLine({ ...f, use: false, why: 'confident family calls right 93%, 95% needed' }, pc), /not used \(confident family calls right 93%, 95% needed\)/);
+});
+
+test('A1: mix-ups by family, in playlist names and counts, and "needs N more" below the minimum', () => {
+  const fams = playlistFamilies([['ro', 'Rollers'], ['ju', 'Jungle'], ['tec', 'Techno']]);
+  const row = (i, truth, first) => ({ id: `c${i}`, truth: [truth], scores: [[first, 3], [truth === first ? 'tec' : truth, 1]] });
+  const rows = [];
+  for (let i = 0; i < 30; i++) rows.push(row(i, 'ro', 'ro'));
+  for (let i = 30; i < 39; i++) rows.push(row(i, 'ro', 'ju'));
+  for (let i = 39; i < 42; i++) rows.push(row(i, 'tec', 'ro'));
+  const c = familyConfusion(rows, fams);
+  assert.equal(c.n, 42); assert.equal(c.misses, 12); assert.equal(c.need, 0);
+  assert.deepEqual(c.pairs[0], { from: 'ro', to: 'ju', n: 9, sibling: fams.get('ro') === fams.get('ju') && !String(fams.get('ro')).startsWith('own:') });
+  assert.equal(c.pairs[1].from, 'tec');
+  const name = id => ({ ro: 'Rollers', ju: 'Jungle', tec: 'Techno' })[id];
+  const line = confusionLine(c, name);
+  assert.match(line, /^Mix-ups by family \(12 misses of 42\): Rollers read as Jungle 9 times/);
+  assert.match(line, /Techno read as Rollers 3 times/);
+  const few = familyConfusion(rows.slice(0, 10), fams);
+  assert.equal(few.need, CONFUSION_MIN - 10);
+  assert.equal(confusionLine(few, name), `Mix-ups by family: needs ${CONFUSION_MIN - 10} more scored tracks`);
+  assert.equal(confusionLine(null), '');
 });

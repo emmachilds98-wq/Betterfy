@@ -550,8 +550,8 @@ and B1 (add-only until the lane's package merges).
 
 | Id | Package | Wave | Lane | State | PR | Numbers / notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| A1 to A7 | Further analysis lines | 0 | M | Not started | | |
-| I1 | Family first on its confident part | 1 | E | Built, switches itself on at the next Score run | | bar: confident ≥ 95% at ≥ 25% on ≥ 20 tracks; D4 = yes (family-level Sure offered) |
+| A1, A2, A5 | Mix-ups by family, playlist precision, counts that fill | 0 | M | Built | | display only; A3, A4, A6, A7 not started |
+| I1 | Family first on its confident part | 1 | E | Merged, switches itself on at the next Score run | #199 | bar: confident ≥ 95% at ≥ 25% on ≥ 20 tracks; D4 = yes (family-level Sure offered) |
 | I2 | Sure earned in pockets | 1 | E | Not started | | bar: Sure ≥ 95% at ≥ 25% of tracks |
 | N1 | Never-filed artists | 2 | E | Not started | | bar: +3 top-1 on 205 tracks |
 | S2 | Small playlists | 2 | E, U | Not started | | bar: +10 recall on the under-12 group |

@@ -438,7 +438,8 @@ export function weakSheetHTML(c, id) {
   const merge = d.fix === 'merge' && d.partner
     ? `<div class="rowbtns"><button class="b sm p" data-act="wizmerge" data-a="${esc(id)}" data-b="${esc(d.partner)}">Merge with ${esc(weakName(c, d.partner))}…</button></div>` : '';
   return `<section class="pls-sec" id="plweak"><h3>Help it learn this one</h3>
-    <p class="hint">Offered in its top three for ${pc(d.inTop3)} of the ${d.n} tracks it was checked on${esc(weakWhen(c.weakSaved?.()?.at))}. ${esc(w.why)}</p>
+    <p class="hint">Offered in its top three for ${pc(d.inTop3)} of the ${d.n} tracks it was checked on${esc(weakWhen(c.weakSaved?.()?.at))}.${d.calls != null && d.top1 != null
+      ? esc(` ${d.calls ? `When Betterfy names it first, it is right ${pc(d.precision)} of ${d.calls} times` : 'Betterfy never named it first'}; it finds ${pc(d.top1)} of its own tracks.`) : ''} ${esc(w.why)}</p>
     <p class="hint"><b>${esc(w.fix)}</b></p>${merge}</section>`;
 }
 export function weakListHTML(c) {
