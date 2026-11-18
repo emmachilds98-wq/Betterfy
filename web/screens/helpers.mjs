@@ -15,7 +15,7 @@ const n = x => (Number.isFinite(x) ? x.toLocaleString('en-GB') : '0');
  * part may be missing): { lib: { playlists, liked }, listening: { artists },
  * cov: { pct, have, total }, lfm: { key, own, asked }, bridge: { on, deezerAsked,
  * deezerPct, wikidataAsked, wikidataPct, warm: { asked, total, running, quota, gate } }, audio: { on, state, heard, reason },
- * deep: { maest, clap }, discogs, engine: { status } }.
+ * deep: { maest, clap }, discogs, engine: { status }, auto, radar: { off, running, done, total, err, at, ago, artists } }.
  * Each row: { id, name, on, kind: 'ok'|'idle'|'warn'|'off', status, did, optional? }.
  */
 export function helperRows(s = {}) {
@@ -69,6 +69,18 @@ export function helperRows(s = {}) {
     status: au.running ? 'On · scoring now' : !au.at ? 'On · first run soon' : !au.ok ? 'On · retrying' : `On · ran ${au.ago ?? 'recently'}`,
     did: `Scores itself on your own filing after listening finishes and every week, and switches on the parts that measure better for you${
       au.at && au.ago ? `; last run ${au.ago}` : ''}. No button to press.` });
+  // Release radar (DESIGN-PLAN L5): starts by itself like every other source; only a Stop turns it off.
+  const rr = s.radar;
+  if (rr) {
+    const rOff = !!rr.off, rErr = !rOff && !rr.running && rr.err;
+    rows.push({ id: 'radar', name: 'Release radar', on: !rOff, kind: rOff ? 'off' : rErr ? 'warn' : rr.at || rr.running ? 'ok' : 'idle',
+      status: rOff ? 'Off since Stop' : rr.running ? (rr.total ? `On · reading ${n(rr.done)} of ${n(rr.total)}` : 'On · starting')
+        : rErr ? 'On · stopped' : rr.at ? 'On' : 'On · starts soon',
+      did: rOff ? 'New releases from your artists. Off since you pressed Stop; Start on the radar turns it back on.'
+        : rErr ? `Stopped: ${String(rr.err).replace(/https?:\/\/\S+/g, '').slice(0, 80).trim()}. It tries again next time Betterfy opens.`
+        : `New releases from the artists in your library, read by itself a while after Betterfy opens${
+            rr.artists ? `; ${n(rr.artists)} artists checked${rr.ago ? `, last ${rr.ago}` : ''}` : ''}.` });
+  }
   rows.push({ id: 'discogs', name: 'Discogs', on: !!s.discogs, kind: s.discogs ? 'ok' : 'idle', status: s.discogs ? 'On · your token' : 'Optional', optional: true,
     did: 'Release styles for artists nothing else knows. Needs a personal token, so it stays an extra.' });
   return rows;
@@ -92,16 +104,28 @@ export function checkWords(c) {
   return `not answering${c.err ? `: ${c.err}` : ''}`;
 }
 
-/** The panel. `checks` are the live results by row id; `running` while a check is out. */
-export function helpersHTML(rows, { checks = {}, running = false, at = null, esc = s => String(s ?? '') } = {}) {
-  return `<section class="helpers" id="helpers" aria-labelledby="helpers-h">
-    <div class="helpers-head"><h3 id="helpers-h">What's helping your picks</h3><span class="tag ok">${esc(helperSummary(rows, checks))}</span></div>
-    <ul class="hlist">${rows.map(r => { const c = checks?.[r.id];
-      return `<li class="hrow2 h-${r.kind}${c?.ok === false ? ' h-fail' : ''}" data-helper="${esc(r.id)}">
+/** The rows that ask for a look: off (and not an optional extra), stuck, or not answering a check. */
+export function helperAttention(rows, checks = {}) {
+  return rows.filter(r => r.kind === 'warn' || (r.kind === 'off' && !r.optional) || checks?.[r.id]?.ok === false);
+}
+
+/** The panel (DESIGN-PLAN L5): folded to its header ("12 of 12 on") plus any row that asks
+ *  for a look; the whole list opens on tap. `checks` are the live results by row id;
+ *  `running` while a check is out; `open` keeps the fold open across repaints. */
+export function helpersHTML(rows, { checks = {}, running = false, at = null, open = false, esc = s => String(s ?? '') } = {}) {
+  const row = r => { const c = checks?.[r.id];
+    return `<li class="hrow2 h-${r.kind}${c?.ok === false ? ' h-fail' : ''}" data-helper="${esc(r.id)}">
         <span class="hdot" aria-hidden="true"></span>
         <span class="hmain"><span class="hname">${esc(r.name)}</span><span class="hdid">${esc(r.did)}</span>${
           c ? `<span class="hcheck${c.ok === false ? ' bad' : c.ok ? ' good' : ''}">${esc(checkWords(c))}</span>` : ''}</span>
-        <span class="tag ${r.kind === 'off' ? 'idle' : r.kind}">${esc(r.status)}</span></li>`; }).join('')}</ul>
+        <span class="tag ${r.kind === 'off' ? 'idle' : r.kind}">${esc(r.status)}</span></li>`; };
+  const look = helperAttention(rows, checks);
+  return `<section class="helpers" id="helpers" aria-labelledby="helpers-h">
+    <details class="helpers-fold" data-hfold${open ? ' open' : ''}>
+      <summary class="helpers-head"><h3 id="helpers-h">What's helping your picks</h3><span class="tag ${look.length ? 'warn' : 'ok'}">${esc(helperSummary(rows, checks))}</span></summary>
+      <ul class="hlist">${rows.map(row).join('')}</ul>
+    </details>
+    ${look.length ? `<ul class="hlist hlist-look">${look.map(row).join('')}</ul>` : ''}
     <div class="rowbtns"><button class="b sm" type="button" data-hcheck${running ? ' disabled' : ''}>${running ? 'Checking…' : at ? 'Check again' : 'Check they all answer'}</button>
       <button class="b sm" type="button" data-uhgo="sources">Listening and sources</button></div>
   </section>`;

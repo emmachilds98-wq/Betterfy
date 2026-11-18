@@ -10,14 +10,36 @@
   .pbar .pl{font-size:12px; color:var(--ink-3)}
   .pbar>b{font-size:14px; text-align:right}
   .pbar .trk{position:relative; height:10px; border-radius:999px; background:var(--surface-3)}
-  .pbar .trk>i{position:absolute; inset:0 auto 0 0; width:calc(var(--v) * 100%); border-radius:inherit;
-               background:var(--ink-3); opacity:.55}
-  .pbar.with .trk>i{background:var(--c5); opacity:1}
-  .pbar .trk>s.gate{position:absolute; top:-4px; bottom:-4px; left:calc(var(--g) * 100%); width:0;
-                    border-left:2px dashed var(--ink); transform:translateX(-1px)}
-  .pbar .trk>s.gate.met{border-left-color:var(--ok)}
   .gateline{display:flex; gap:10px; align-items:center; margin:14px 0 0; font-size:13.5px; color:var(--ink-2); line-height:1.5}
   .gateline{align-items:flex-start}
   .gateline>s.gate{flex:none; width:0; height:18px; margin-top:2px; border-left:2px dashed var(--ink)}
   .gateverdict .tag{margin-right:6px}
   @media (max-width: 760px){ .pbar{grid-template-columns:64px 1fr 40px; gap:8px} }
+  /* ---------- Engine: was 61 inline styles (DESIGN-PLAN L5) ----------
+     Doubled classes so these win over `.settings-body h3` and `.uhbody h2`,
+     the sheet's own heading rules, as the inline styles did. In the sheet the
+     headings step down a size so a 390 px sheet doesn't read as a full page. */
+  h2.eng-h2.eng-h2{margin:0 0 12px; font-size:19px}
+  h2.eng-h2.eng-h2-tight{margin-bottom:6px}
+  h3.eng-h3.eng-h3{margin:18px 0 6px; font-size:16px}
+  .uhbody h2.eng-h2.eng-h2{font-size:17px}
+  .uhbody h3.eng-h3.eng-h3{font-size:15px}
+  /* The rung tag keeps its words together and drops under the heading when
+     there's no room beside it, instead of wrapping as "a few / buckets". */
+  h2.eng-h2.eng-rung{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin-bottom:4px}
+  .eng-rungtag{white-space:nowrap; flex:none}
+  .eng-mt6{margin-top:6px} .eng-mt8{margin-top:8px} .eng-mt10{margin-top:10px} .eng-mt12{margin-top:12px}
+  .eng-mt14{margin-top:14px} .eng-mt16{margin-top:16px} .eng-mt18{margin-top:18px}
+  .eng-ml4{margin-left:4px} .eng-ml6{margin-left:6px}
+  .eng-rowbody{padding:2px 0}
+  .eng-learnt{font-size:11.5px; color:var(--ink-3); margin:-10px 0 18px}
+  .rowbtns.eng-foot{margin:20px 0 0}
+  /* Facts rows at 390 px: both sides may wrap; the figure stays right-aligned. */
+  .uhbody .facts div>span{min-width:0}
+  .uhbody .facts div>b{text-align:right}
+  /* The score bars, drawn as SVG so their length needs no inline style. */
+  .pbar .trk-svg{position:absolute; inset:0; width:100%; height:100%; overflow:visible}
+  .pbar .trk-v{fill:var(--ink-3); opacity:.55}
+  .pbar.with .trk-v{fill:var(--c5); opacity:1}
+  .pbar .trk-svg line.gate{stroke:var(--ink); stroke-width:2; stroke-dasharray:4 3}
+  .pbar .trk-svg line.gate.met{stroke:var(--ok)}

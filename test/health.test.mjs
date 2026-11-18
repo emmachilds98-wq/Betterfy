@@ -147,25 +147,17 @@ function ctx(over = {}) {
     ...over };
 }
 
-test('Tidy has a Health section only when a playlist scores under 85, and never opens on it', () => {
+// DESIGN-PLAN §7.7 M4 (provisional): health lives in Library only; Tidy has no Health part.
+test('Tidy has no Health part, and a remembered one falls back to the first with work', () => {
   const c = ctx();
-  const html = TIDY.view(c);
-  assert.match(html, /data-tidy="health">Health <span class="n">2<\/span>/);
-  assert.match(html, /aria-pressed="true" data-act="section" data-tidy="misfile"/);
-  // Without Library's score (an older ctx) there is no Health section at all.
-  assert.ok(!/data-tidy="health"/.test(TIDY.view(ctx({ libHealth: undefined }))));
-  // Nothing misfiled, no repeats: nothing under 85.
-  assert.ok(!/data-tidy="health"/.test(TIDY.view(ctx({ R: { within: [], across: [], misfiled: [], drift: [] } }))));
+  assert.ok(!/data-tidy="health"/.test(TIDY.view(c)));
+  c.S.tidySec = 'health';
+  assert.match(TIDY.view(c), /aria-pressed="true" data-act="section" data-tidy="misfile"/);
+  assert.equal(c.S.tidySec, 'misfile');
 });
 
-test('the report lists the worst first with why, and Tidy N opens at that playlist', () => {
+test('opened at one playlist, Tidy shows only its rows until Show every playlist', () => {
   const c = ctx();
-  c.S.tidySec = 'health';
-  const html = TIDY.view(c);
-  const ids = [...html.matchAll(/data-hpl="(\w+)"/g)].map(m => m[1]);
-  assert.deepEqual(ids, ['p1', 'p2'], 'House (3 misfiled of 12) before Techno (1)');
-  assert.match(html, /3 tracks look misfiled/);
-  assert.match(html, /data-act="hgo" data-hpl="p1" data-hsec="misfile" aria-label="Tidy 3 in House">Tidy 3</);
   TIDY.actions.hgo(c, { dataset: { hpl: 'p2', hsec: 'misfile' } });
   assert.equal(c.S.tidyPl, 'p2');
   assert.equal(c.S.tidySec, 'misfile');
@@ -179,7 +171,7 @@ test('the report lists the worst first with why, and Tidy N opens at that playli
   assert.match(TIDY.view(c), /data-mvtr="h1"/);
 });
 
-test('the report picks the band that has the playlist\'s rows', () => {
+test('opening at a playlist picks the band that has its rows', () => {
   const c = ctx();
   c.R.misfiled = c.R.misfiled.filter(m => m.id === 'h3');
   TIDY.actions.hgo(c, { dataset: { hpl: 'p1', hsec: 'misfile' } });
