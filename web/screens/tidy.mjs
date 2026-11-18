@@ -2,10 +2,11 @@
 /* The Tidy screen (docs/BUILD-5-PLAN.md A4): an ES module. It touches nothing outside `ctx`
  * (web/README.md, "Screen modules"); SCREEN_CTX.tidy in app/screens.js builds it. The sound
  * misfit state and jobs, and emptyState, stay classic in app/screenjobs.js. */
-/* The library health report and the keyboard cleanup sprint (BUILD-6 F9) are at the end of
- * this file; their pure parts (ranking, the sprint's counts) are core/review/health.mjs. */
+/* The keyboard cleanup sprint (BUILD-6 F9) is at the end of this file; its pure parts are
+ * core/review/health.mjs. Playlist health lives in Library only (DESIGN-PLAN §7.7 M4): a
+ * Library row's "Tidy N" opens this screen at that playlist. */
 import { hiddenView, hiddenActions, hiddenMount, hiddenCount, hiddenAuto } from './hidden.mjs';
-import { tidyCounts, healthInputs, rankHealth, sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTotals } from '../../core/review/health.mjs';
+import { sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTotals } from '../../core/review/health.mjs';
 
 /* ---------- Tidy: three screens' worth of the same question ----------
  *
@@ -18,8 +19,7 @@ import { tidyCounts, healthInputs, rankHealth, sprintStart, sprintDecide, sprint
  * switch fits one line at 390 px; desktop and the ⓘ text keep the full words. By sound is
  * not a part of its own any more (§7.7 M3): its rows sit in Wrong place with a badge. */
 const TIDY_SECTIONS = [['misfile', 'Wrong place', 'Misfiled'], ['dupes', 'Repeats', 'Repeats'], ['cross', 'Cross-filed', 'In two']];
-const HEALTH_SECTION = ['health', 'Health', 'Health'];
-// Hard to find (screens/hidden.mjs) is always last, and like Health is never opened
+// Hard to find (screens/hidden.mjs) is always last, and is never opened
 // for you: its count is only what a check found, so it is a place you go, not work queued.
 const HIDDEN_SECTION = ['hidden', 'Hard to find', 'Hidden'];
 /** Cross-filed means two or more playlists. The 2+…6+ row went (§7.7 C4, provisional). */
@@ -215,16 +215,15 @@ export function secMisfile(c) {
 export function view(c) {
   const { S, R } = c;
   c.tidySoundWarm();
-  const report = healthReport(c);
   const both = misfileRows(c);
   const n = { misfile: both.tag.length + both.sound.length, dupes: R.within.length, cross: R.across.length,
-    health: report.length, hidden: hiddenCount(c) };
-  const secs = [...TIDY_SECTIONS, ...(report.length ? [HEALTH_SECTION] : []), HIDDEN_SECTION];
+    hidden: hiddenCount(c) };
+  const secs = [...TIDY_SECTIONS, HIDDEN_SECTION];
   // Opens on the first section with something in it rather than on "Wrong
   // place 0" while Repeats has work. A section the listener picked (S.tidySec,
   // set only by a tap) is kept; one that has gone away falls back the same way.
-  // Health is a report, not a list of work: it is never opened for you.
-  const first = (secs.find(([id]) => n[id] > 0 && id !== 'health' && id !== 'hidden') ?? secs[0])[0];
+  // A remembered 'health' (the part went, M4) has gone away and falls back the same way.
+  const first = (secs.find(([id]) => n[id] > 0 && id !== 'hidden') ?? secs[0])[0];
   // By sound was a section; a remembered one is Wrong place now, on sound's band, while it has rows.
   if (S.tidySec === 'sound') {
     S.tidySec = n.misfile ? 'misfile' : first;
@@ -232,7 +231,7 @@ export function view(c) {
   }
   if (S.tidySec != null && !secs.some(([id]) => id === S.tidySec)) S.tidySec = first;
   const sec = S.tidySec ?? first;
-  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, health: secHealth, hidden: hiddenView }[sec];
+  const body = { misfile: secMisfile, dupes: secDupes, cross: secCross, hidden: hiddenView }[sec];
   // A section with nothing in it is dimmed, not hidden: it stays tappable (L4).
   const label = (full, short) => full === short ? full : `<span class="lg">${full}</span><span class="sh">${short}</span>`;
   return `<h1>Tidy</h1>
@@ -333,7 +332,7 @@ export const actions = {
       el.classList.remove('go'); el.textContent = 'Moved';
     } catch (err) { c.toast('Failed: ' + err.message); el.disabled = false; }
   },
-  /* ---- the library health report (BUILD-6 F9) ---- */
+  /* ---- Tidy at one playlist ---- */
 
   /** Open Tidy at one playlist: its first section with rows, on the first band that has some. */
   hgo(c, el) {
@@ -351,8 +350,6 @@ export const actions = {
     S.tidyFocus = 'rows';
     c.render();
   },
-  /** Nothing Tidy can act on: the playlist's own sheet in Library says the rest. */
-  hopen(c, el) { c.go?.('lists'); c.openPlSheet?.(el.dataset.hpl); },
   hclear(c) { if (c.S.sprint) endSprint(c); c.S.tidyPl = null; c.S.tidyFocus = 'rows'; c.render(); },
 
   /* ---- the keyboard sprint (BUILD-6 F9, D7) ---- */
@@ -427,51 +424,7 @@ export const actions = {
   spend(c) { endSprint(c, true); c.render(); },
 };
 
-/* ---------- the library health report (BUILD-6 F9) ----------
- * Library's own health score (lists.mjs's playlistHealth, read through ctx.libHealth) for every
- * playlist, the worst five listed with why, and one tap into Tidy at that playlist. */
-
-const HCACHE = new WeakMap();
-export function healthReport(c) {
-  const H = c.libHealth;
-  if (typeof H?.playlistHealth !== 'function' || !c.CFG || !c.LIB?.playlists || !c.R) return [];
-  const sound = (typeof c.tidySoundRows === 'function' ? c.tidySoundRows() : null) ?? [];
-  const splits = c.healthSplits?.() ?? [];
-  const key = [c.R.misfiled?.length, c.R.within?.length, sound.length, Object.keys(c.CFG).length, c.LIB.playlists.length, splits.length].join('|');
-  const hit = HCACHE.get(c.R);
-  if (hit?.key === key) return hit.out;
-  const byId = new Map(c.LIB.playlists.map(p => [p.id, p]));
-  const twins = typeof H.twinsOf === 'function' ? H.twinsOf(c.twinPairs?.()) : new Map();
-  const splitIds = new Set(splits);
-  const undecidedIds = new Set(Object.entries(c.CFG).filter(([, v]) => c.NO_SIGNAL != null && v?.why === c.NO_SIGNAL).map(([id]) => id));
-  const counts = tidyCounts({ misfiled: tagMisfiles(c), soundRows: sound, within: c.R.within });
-  const rows = Object.entries(c.CFG).filter(([id, v]) => !c.isMirrorPlaylist?.({ id, name: v?.name ?? byId.get(id)?.name })).map(([id, v]) => {
-    const list = byId.get(id)?.tracks ?? [];
-    const tracks = v?.tracks ?? list.length;
-    const health = H.playlistHealth(healthInputs({ id, tracks, list, misfiled: c.R.misfiled, drift: c.R.drift, splitIds, undecidedIds, twins }, H));
-    return { id, name: v?.name ?? byId.get(id)?.name ?? id, tracks, health, tidy: counts.get(id) };
-  });
-  const out = rankHealth(rows);
-  HCACHE.set(c.R, { key, out });
-  return out;
-}
-
-export function secHealth(c) {
-  const { esc, emptyState } = c;
-  const ib = c.infoBtn ?? (() => '');
-  const rep = healthReport(c);
-  return `<p class="lede">The playlists in the worst shape, by the health score Library shows for each.${ib('tidy-health', 'Health', '<p>The same score as a playlist’s sheet in Library: tracks that look misfiled, newest additions that read differently, two genres in one, a twin it can’t be told from, repeats, nothing added for a year, no axis decided. Only playlists under 85 are listed, worst first.</p>')}</p>
-    ${rep.length ? `<ol class="hrep">${rep.map(h => `<li class="hrow">
-      <div class="hmain"><div class="ttl">${esc(h.name)}</div>
-        <p class="plhealth plh-${h.score >= 65 ? 'fine' : 'low'}"><b class="mono">${h.score}</b> ${esc(h.word)}</p>
-        ${h.why.length ? `<ul class="plnotes">${h.why.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</div>
-      ${h.section
-        ? `<button type="button" class="b sm go" data-act="hgo" data-hpl="${esc(h.id)}" data-hsec="${h.section}" aria-label="${esc(`Tidy ${h.fixable} in ${h.name}`)}">Tidy ${h.fixable.toLocaleString()}</button>`
-        : `<button type="button" class="b sm" data-act="hopen" data-hpl="${esc(h.id)}" aria-label="${esc(`Open in Library: ${h.name}`)}">Open in Library</button>`}</li>`).join('')}</ol>`
-      : emptyState('Every playlist is healthy', 'None scores under 85.', { compact: true })}`;
-}
-
-/** Rows of one playlist only, when the report opened Tidy at it. */
+/** Rows of one playlist only, when Library's "Tidy N" opened Tidy at it. */
 function onlyPl(c, list, key) {
   const pl = c.S.tidyPl;
   return pl ? (list ?? []).filter(x => key(x) === pl) : list;
@@ -485,7 +438,7 @@ function plChip(c) {
 
 /* ---------- the keyboard sprint (BUILD-6 F9, D7) ----------
  * One track at a time from Wrong place or By sound (the band showing, and the playlist the
- * report opened, if any): → moves it to the suggested playlist, ← keeps it where it is, U
+ * Library's "Tidy N" opened, if any): → moves it to the suggested playlist, ← keeps it where it is, U
  * undoes the newest decision, Esc stops. The buttons do the same for a pointer. Every
  * decision is said in a live region, and focus stays on the track being decided. Decisions a
  * minute and the share of moves kept are counted on this device only (SPRINT_KEY). */
