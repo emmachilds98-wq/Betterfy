@@ -1,4 +1,4 @@
-# Sound engine plan: listen, analyse, name, place, show tempo (2026-11-18, after `0e47de1`)
+# Sound engine plan: listen, analyse, name, place, show tempo (2026-11-18, after `0e47de1`; revised the same day for SD2)
 
 **What this is.** A review of the whole sound pipeline, end to end in the code,
 with new measurements, and a ranked work plan for making it more accurate and
@@ -13,6 +13,14 @@ playlists, N1 never-filed artists, M2 mood coverage, A3 learning curve), this
 plan adds only what the review found that the package does not say, and names
 the package. Rules, lanes, the agent brief and the merge routine are
 BUILD-7 §1, §2.4, §8 and BUILD-8 §5; they apply unchanged.
+
+**Revised 2026-11-18 for the owner's answer to SD2:** *"When bpm is unsure we
+should say unknown but improve engine and how we find these things so we can
+give all the right info."* So T3 now shows one sure BPM or "BPM unknown" (no
+"~174", no "87/174"), §2.5-§2.6 add what is known about tempo outside
+electronic music and every place a BPM could come from, and four new
+packages (T5-T8) bring the number of unknowns down with more evidence rather
+than a lower bar.
 
 Every number here is one of three kinds, and says which:
 
@@ -53,12 +61,27 @@ Contents:
    the genre it is in (×2 or ×½ only) moves DnB readings in range from
    **19 to 31 of 40** and hip-hop from **17 to 30 of 49**, and moves **no**
    House, Techno or Breaks reading off Beatport's own number (T2).
-3. **A fifth of tempos are hidden that could be shown.** BPM shows only at
-   confidence ≥ 0.3. Of the readings between 0.15 and 0.3 (19% of tracks),
-   **84% are right up to half/double time** (59 of 70); after T2's fold they
-   can show as "about 174" (T3). 55% of DnB and 51% of hip-hop sit below 0.3
-   today.
-4. **Listening is strictly one track at a time on one CPU thread.** Lookup,
+3. **An unsure tempo says "unknown", never a guess** (owner's answer to SD2,
+   2026-11-18). Today BPM shows only at confidence ≥ 0.3, as "87/174" when
+   the octave is unsure, and as a blank below that. After T3 every surface
+   shows either one BPM that is sure, or "BPM unknown" with the reason on
+   tap. No "~174", no "87/174". 55% of DnB and 51% of hip-hop sit below 0.3
+   today, and outside electronic music the tempo is right on only 61.5% of
+   GTZAN, so "unknown" would be common. That is the honest answer, and §0
+   point 4 is how the count comes down.
+4. **Fewer unknowns comes from more evidence, not a lower bar** (owner,
+   2026-11-18: "improve engine and how we find these things"). Unsure
+   readings get a ladder of cheap second opinions, each measured before it
+   counts: Deezer's own BPM (T4), the last third of the preview that is
+   downloaded today and never heard (T5), Beat This on every unsure reading,
+   not just octave-flagged ones and switched on by default (T5), a
+   confidence that is calibrated per genre family so "sure" means the same
+   right-rate everywhere (T6), and a better detector for the music it is
+   weakest on: classical 25%, jazz 47%, metal 52%, country 56% on GTZAN (T7).
+   A listener can also tap the beat on an unknown track (T8). The page prints
+   "BPM known on N% of heard tracks, right on M% of the checked ones" so the
+   count can be watched going down.
+5. **Listening is strictly one track at a time on one CPU thread.** Lookup,
    download, decode and the model run in series (`core/audio/worker.js`
    `runQueue`), the WASM runtime is single-threaded (`numThreads = 1`, no
    cross-origin isolation on GitHub Pages), and each of the four top-ups
@@ -67,18 +90,18 @@ Contents:
    time each stage (L1), overlap the network with the model (L2), one download
    per top-up record (L3). Full upgrades: one worker per core on a PC (U1) and
    WebGPU where the browser has it (U2).
-5. **A model update would switch sound off for every account.** `MODEL` is
+6. **A model update would switch sound off for every account.** `MODEL` is
    checked in `isCurrent()`, and `audioIndex()` drops every record whose model
    differs, so bumping the ear empties the index until the whole library is
    heard again (7,161 tracks on her PC). Rule: a new ear goes in as a second
    ear (`EARS`, record v2 already supports it) and takes over per account
    only when it covers the library and passes Score (R1).
-6. **The ear's geometry is not the problem.** Two cheap changes to how a
+7. **The ear's geometry is not the problem.** Two cheap changes to how a
    track is compared to a playlist were measured on 374 public scene tracks:
    centring each account's embeddings lost 2.7 points of top-1, scoring each
    window separately changed nothing (§2.1). Both are closed. Build 8's levers
    (who is heard, small playlists, never-filed artists) stay the right ones.
-7. **Non-electronic music is named coarsely.** The ear knows 400 Discogs
+8. **Non-electronic music is named coarsely.** The ear knows 400 Discogs
    styles; the ontology has 108 genres, 59 of them electronic. All 35 Latin
    styles map to one node, 25 jazz styles to four, 27 folk/world/country styles
    to four, reggae has no roots, rocksteady or ska (checked:
@@ -87,11 +110,11 @@ Contents:
    own vote can say only "Latin" or "Reggae" (G1). The ear itself is fine
    there: 81% top-1 by sound on 18 mostly non-electronic genres, against 68%
    on scene genres (§2.2).
-8. **Deezer already sends a BPM** for about half of mainstream tracks, in the
+9. **Deezer already sends a BPM** for about half of mainstream tracks, in the
    lookup the page makes, and the page drops it. Where both exist it agrees
    with the measured tempo 76% of the time (84% when the measure is sure). A
    free second opinion (T4); almost absent for scene music (5%).
-9. **What cannot be fixed:** tracks Deezer has no preview for, songs whose
+10. **What cannot be fixed:** tracks Deezer has no preview for, songs whose
    character is outside the 30 s preview, and key on every track from 20 s of
    audio. §5 says what to do instead of each.
 
@@ -110,7 +133,7 @@ Contents:
 | **Second ears** | MAEST (Deep listen, ≥ 8 GB), CLAP (Wi-Fi), Beat This (opt-in, octave-flagged tempos only) | `core/audio/maest.mjs`, `clap.mjs`, `dsp/beats.mjs` | MAEST 61 vs 60, not used to place (BUILD-8 §1.2) |
 | **Name a genre** | Votes from the model's styles, the filed tracks it sounds most like, artist tags; tempo checks each genre; the path goes down while a child holds half its parent | `core/audio/identify.mjs` | Her run: genre 72%, sub-genre 92% when named; DnB 77 of 199; tempo fits 51% of 213 |
 | **Place** | Cosine to each playlist's centroid of unit embeddings (≥ 5 heard members), or the prototype learner; joins the blend per situation (S1) | `core/intrinsic/audio.mjs`, `audio-learn.mjs`, `space.mjs` | Her run: sound-first 60 / 86, blend 66 / 89, never-filed with sound 63% |
-| **Show** | BPM at confidence ≥ 0.3 ("87/174" when flagged unsure), key at ≥ 0.65, playlist tempo range in Library (E3) | `web/audio/dsp-view.mjs`, `web/ui/sound.mjs`, `web/app/soundslots.js`, `web/screens/{shuffle,tidy,lists}.mjs` | |
+| **Show** | BPM at confidence ≥ 0.3 ("87/174" when flagged unsure; blank below 0.3; T3 replaces both with one sure BPM or "BPM unknown"), key at ≥ 0.65, playlist tempo range in Library (E3) | `web/audio/dsp-view.mjs`, `web/ui/sound.mjs`, `web/app/soundslots.js`, `web/screens/{shuffle,tidy,lists}.mjs` | |
 
 ---
 
@@ -166,7 +189,7 @@ drum and bass 22, rnb 21, metal 21, trap 20, country 20, folk 20, indie rock
 - **The ear separates broad genres well** (81% top-1, 79% from nine
   examples), better than scene genres (68%). So for a listener with
   non-electronic playlists, placing by sound already works; what is coarse is
-  the *naming* (§0 point 7, G1), not the hearing.
+  the *naming* (§0 point 8, G1), not the hearing.
 - The weakest are the genres that overlap in sound: hip-hop against trap and
   rnb, soul against rnb and pop, dancehall against reggae and afrobeats.
   Those are where tags and the bridge must carry more of the blend, which S1's
@@ -229,6 +252,48 @@ Deezer's number is not a ground truth (it is unverified, and absent for
 almost all scene music), so this is agreement, not accuracy. But it is a free
 second opinion on mainstream music, exactly where the Beatport check says
 nothing, at no extra request. T4 uses it.
+
+### 2.5 Tempo outside electronic music (already measured, not re-run)
+
+From `docs/BUILD-5-PROGRESS.md` ("Tempo: non-EDM check (GTZAN)"), with
+`scripts/audio-dsp/gtzan-tempo-eval.mjs`: 998 GTZAN clips with annotated
+beats, the same two 10 s windows. Right ±1 BPM, shipped tempo:
+
+| disco | hiphop | reggae | pop | rock | blues | country | metal | jazz | classical | **all** |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 89% | 80% | 75% | 70% | 62% | 59% | 56% | 52% | 47.5% | 25% | **61.5%** |
+
+Against 84% on Beatport. So tempo is good on music with a drum machine and
+weak on played, swung or rubato music, and most of the "unknown" tempos after
+T3 will be there. The errors are not only octaves: on jazz and metal more
+than half of the misses are neither ×2 nor ×½ (BUILD-5-PROGRESS's x/y
+columns). That is why T7 is a detector change and not another fold.
+
+Also already measured: Beat This on Beatport, octave-flagged records only,
+82.7% against 80.9% (fixed 21, broke 14; inside the CI), so it ships opt-in
+and off by default. It has **not** been measured on GTZAN, the music it was
+built for (its paper reports state-of-the-art beat tracking across many
+non-electronic sets). T5 and T7 measure it there first.
+
+### 2.6 Where else a BPM could come from (checked 2026-11-18)
+
+| Source | What it gives | Verdict |
+| --- | --- | --- |
+| Spotify `/audio-features` | tempo | Dead (403/404, README). Don't look again (CLAUDE.md) |
+| Deezer `track.bpm` | an unverified BPM | **Use** (T4): 52% of mainstream, 5% of scene tracks, no extra request |
+| The preview's last 10 s | 50% more audio for the detector | **Use for unsure tempos only** (T5): already reachable by the same signed URL, one more byte range |
+| Beat This (self-hosted, MIT) | beat times, so a tempo and its octave | **Use on every unsure reading** (T5), default on where listening runs, once it passes its bar |
+| The account's own playlists | the octave a listener files a track at | **Use for the octave only** (T2); never to raise confidence in the number |
+| The listener's tap | a tempo they felt | **Optional** (T8): in-page, per account, also a check set |
+| iTunes Search | a preview, no BPM | For hearing misses only (U3), not a BPM source |
+| MusicBrainz, Last.fm, Discogs | no BPM field | Nothing to use |
+| AcousticBrainz | BPM per recording | Shut down by MetaBrainz (stopped in 2022; dumps only, no live API), and a dump is far too large for a hosted page. Rejected |
+| GetSongBPM API | BPM by artist and title | Not probed from here. As its public pages describe it: one app key (which a public page would expose) and a required backlink; where its numbers come from is not stated. Matching is by name (wrong 1 in 19 here). Not planned; a bonus probe only after T4-T7, and only if its terms allow a public page |
+| Rekordbox, Beatport, Tunebat | DJ-checked BPM | Need an export or scraping. The owner has no Rekordbox library; not for every account (CLAUDE.md) |
+
+So the plan uses what every account already has (the preview, Deezer's
+lookup, its own playlists, a self-hosted model) and adds nothing that needs a
+key, an export or an app.
 
 ---
 
@@ -300,7 +365,7 @@ nothing, at no extra request. T4 uses it.
   fitting when `tempoFit` ≥ 0.8, and a double-time reading can score at most
   0.6, so a right 87 for DnB is always "doesn't fit". After T1 the same tracks
   must be re-scored before anyone reads the 51% as an accuracy number.
-- **Non-electronic coverage.** See §0 point 7 and §2.2. The ontology's
+- **Non-electronic coverage.** See §0 point 8 and §2.2. The ontology's
   breadth decides what a listener's playlist names can be matched to
   (`gaps.mjs` `conceptLabel`, the playlist concept parser), not only what the
   ear can say.
@@ -332,8 +397,13 @@ nothing, at no extra request. T4 uses it.
   read 87 shows "85-89 BPM".
 - **Unsure display.** At 0.3 and above: a number, or "87/174" when flagged.
   Below 0.3: nothing. Key: shown at ≥ 0.65 only. The key rule is right (it
-  is measured). The tempo rule hides a band that is right up to ×2 84% of the
-  time (§2.3).
+  is measured). For tempo the owner chose (SD2, 2026-11-18): **one sure BPM
+  or "BPM unknown"**, never a guess or a pair (T3). The 0.15-0.3 band, right
+  up to ×2 84% of the time (§2.3), is not shown as "about"; it is where T5's
+  second opinions are tried first, because it is closest to sure.
+- **Unknown is a value, not a gap.** Shuffle's mix order, Tidy's tempo sort
+  and the Library range must treat an unknown tempo as unknown (left out of
+  the range, placed by sound in a mix), not as 0 or as its raw reading.
 - **Half-time genres** (`HALF_TIME`: dubstep, trap, drill, phonk) get full
   credit at half tempo in `tempoFit`. DnB, jungle and footwork, whose
   convention is the opposite way round (written at either), do not.
@@ -398,19 +468,41 @@ and the count of readings the fold moved. **Bar: +15 points in range on
 playlists with a DnB, dubstep or hip-hop genre; on house, techno and
 breaks playlists, ≤ 1% of readings moved** (Beatport: 0 of 142). **Effort** S.
 
-#### T3. Show "about" tempos instead of hiding them (lane U, S; after T2)
+#### T3. One sure BPM, or "BPM unknown" (lane U, S; after T2; SD2 answered)
 
-**Goal.** Fewer blank BPMs, without showing wrong ones as sure.
+**Goal.** A listener never sees a tempo the engine is not sure of, and never
+sees a blank that looks like a bug. Owner's rule (2026-11-18): *"when bpm is
+unsure we should say unknown"*.
 
-**What.** `dsp-view.mjs`: readings with confidence 0.15-0.3 show as "~174"
-(lighter, title "about 174 BPM; measured from 20 s of the preview") **only
-when T2 settled them** against a playlist range or the genre table. Below
-0.15 stays hidden. The exact number at ≥ 0.3 is unchanged.
+**What.**
+- `core/audio/match.mjs` (beside T2's `displayTempo`): `tempoShown(record,
+  ctx)` returns `{ state: 'sure', bpm, from }` or `{ state: 'unknown', why }`.
+  Sure means: confidence ≥ `BPM_MIN_CONF` (0.3) **and** the octave is settled
+  (not flagged, or flagged and settled by T2's playlist/genre range, T4's
+  Deezer number or T5's Beat This), or a T5/T6 rule that has passed its bar
+  says so. Everything else is unknown. `why` is one of `no-audio` (never
+  heard: L4's miss reason), `no-beat` (the preview has no steady pulse),
+  `octave` (87 or 174, nothing settled it), `unsure` (a pulse, but the
+  reading is not reliable).
+- `web/audio/dsp-view.mjs`, `web/ui/sound.mjs`, `web/screens/shuffle.mjs`,
+  `web/screens/tidy.mjs`, `web/app/soundslots.js`: show the number when sure;
+  else "BPM unknown" in the muted text style, with the reason on tap or
+  hover ("The beat wasn't clear in the 30 s preview", "Could be 87 or 174:
+  file it to a playlist and it will settle", "Not heard yet: no preview on
+  Deezer"). The "87/174" pair goes. A track the listener tapped (T8) shows
+  their number, marked as theirs.
+- Sorting and ranges: unknown tempos are left out of the Library range (E3)
+  and of Tidy's tempo sort, and Shuffle's mix order places them by sound
+  alone (§3.5).
+- Score report: **"BPM known on N% of heard tracks"**, and per reason, so
+  every later package (T4-T8) moves one printed number.
 
-**Measure and bar.** Beatport, before shipping: the 0.15-0.3 band right up to
-×2 is 84% (59/70); after T2 the shown octave must be right on ≥ 80% of that
-band in the DJ convention. In the page: share of heard tracks with a BPM
-shown, before/after. **Effort** S.
+**Measure and bar.** Before shipping, on Beatport half B and GTZAN odd clips
+(the held-out halves): of the BPMs `tempoShown` calls sure, **≥ 90% right in
+the DJ convention** (±1 BPM, the genre's octave) on each set; the share sure
+is printed, not barred (it is what T4-T8 raise). In the page: no surface
+shows a raw reading (unit test over the five view models), and the Score line
+prints on a library with nothing heard. **Effort** S.
 
 #### T4. Deezer's own BPM as a free second opinion (lane E, S)
 
@@ -422,7 +514,8 @@ cost.
 `source.deezerBpm` (optional field, no version bump). Use: (1) when the DSP
 flagged half/double unsure and Deezer's number equals one of the two
 candidates, take that one; (2) when DSP and Deezer agree within 2 BPM, raise
-the shown confidence to at least 0.3. Never use Deezer's number alone.
+the shown confidence to at least 0.3. Never use Deezer's number alone: a
+track with only Deezer's BPM and no confident reading stays "unknown" (T3).
 
 **Measure and bar.** In the page: a Score line "Deezer and the measured tempo
 agree on N of M". Before switching (2) on, on §2.2's set, the share of tracks
@@ -430,6 +523,109 @@ with a BPM shown rises **≥ 10 points**, and on GTZAN (annotated beats, looked
 up on Deezer by artist and title, measurement only) the agreed readings are
 right ±2 BPM on **≥ 90%**. Records heard before T4 get the field at their
 next top-up. **Effort** S.
+
+#### T5. Settle unsure tempos with more listening (lanes E + M, M)
+
+**Goal.** Fewer "BPM unknown", from more evidence on exactly the tracks that
+are unsure, at a cost paid only for them.
+
+**What.** A ladder that runs only on records `tempoShown` calls unknown with
+`why` `unsure` or `octave`, cheapest step first, each a top-up (and, after
+L3, inside the same one download):
+1. **Hear the rest of the preview.** Today two ~10 s windows of the 30 s
+   preview are downloaded (`fetch.mjs` `windows()`); for an unsure tempo add
+   the third (20-30 s), one more byte range from the same signed URL, and
+   re-run `combineTempo` over three windows. More beats in the
+   autocorrelation is the plainest way to a surer reading. Tempo fields only;
+   the embedding stays two-window (the +0.3 top-1 of a third window was not
+   worth it for sound, §5). `dsp.windows: 3` is stored.
+2. **Beat This on every unsure reading**, not only octave-flagged ones, and
+   **on by default** where listening runs (the owner's rule that every part
+   that helps is on by default, 2026-11-16), Wi-Fi only on a phone as today.
+   It settles a reading when its beat tempo agrees with D1's number or one of
+   its ×2, ×½ or ×3/2 partners within 2 BPM; D1 keeps the number. When the
+   two disagree the track stays unknown. `BEATS_FILL_PER_RUN` stays the
+   per-run budget, now spent on the unknown list in queue order.
+3. **The track's own playlists, for the octave only** (T2's range): a
+   reading whose number is sure but whose octave is not is settled by the
+   range of the playlist it is filed in. Never used to make an unsure number
+   sure.
+
+**Measure and bar.** Each step on its own, held-out halves (Beatport B,
+GTZAN odd), against T3's rule: of the readings the step moves from unknown
+to sure, **≥ 90% right in the DJ convention**, and the step must move
+**≥ 15% of the unknowns it is tried on**; a step that misses either ships
+switched off. In the page: Score's "BPM known on N%" before/after each step,
+and L1's seconds per topped-up record. **Effort** M. **Depends on** T3 (the
+rule), L1 (the timing), and best after L3 (one download).
+
+#### T6. A confidence that means the same everywhere (lane E, S-M)
+
+**Goal.** "Sure" is right 90% of the time on every kind of music, so that a
+reading on house is not hidden for a number that only jazz needs, and a
+reading on jazz is not shown for a number that only house earns.
+
+**What.** Today one threshold (0.3) is used for all music, and the right-rate
+behind it differs: on Beatport ≥ 0.3 is right ±1 BPM on 86%, and below it 85 of 104
+are right up to ×2 (§2.3); on GTZAN the same 0.3 means much less (61.5% overall). Fit a small,
+monotone (isotonic) map from `{ confidence, pulse, windows agreeing,
+octaveAmbiguous, Beat This agreed }` to "right in the DJ convention", **per
+genre family** (electronic, hip-hop/R&B, rock/metal, jazz/blues, classical,
+other) on Beatport half A + GTZAN even clips. The family comes from
+`identify()`'s genre path, else the artist's tags; with no family, the
+strictest map. `tempoShown` uses it in place of the flat 0.3. The map is a
+small constant table in `core/audio/dsp/tempo-calib.mjs`; nothing is learned
+in the page and nothing is pooled across accounts.
+
+**Measure and bar.** Held-out halves: **every family's shown BPMs ≥ 90%
+right**, and the share shown **≥ +10 points** over the flat 0.3 rule on
+Beatport (where the 0.15-0.3 band is 84% right up to ×2, §2.3). If a family
+cannot reach 90% at any coverage it shows nothing sure from DSP alone and
+waits for T5/T7. **Effort** S-M. **Depends on** T3.
+
+#### T7. A better detector for played, swung and slow music (lane E, M-L)
+
+**Goal.** Raise GTZAN from 61.5% without losing Beatport's 84%, so classical,
+jazz, metal, country and blues stop being mostly unknown.
+
+**What.** Measure first, on GTZAN (998 clips, already scripted) and Beatport
+B, then build only what wins:
+- **Beat This's own tempo as the number**, not only the octave, for music
+  outside the electronic family: its beats are tracked frame by frame, so a
+  tempo that drifts (rubato, swing, a live drummer) is followed rather than
+  averaged away by a 6 s autocorrelation. D1 refines it to ±1 BPM only when
+  D1's comb has a peak within 3% of it.
+- **A tempogram over the whole heard audio** (three windows, T5) with
+  harmonic summation over 1, 2, 3 and 4 beat periods, so 3:2 and 4:3 ghosts
+  (the "neither ×2 nor ×½" misses on jazz and metal) lose to the true pulse.
+- **A wider slow range**: `tempo()` searches 60-200; ballads, classical and
+  doom sit at 50-70. Searching 45-220 with the prior unchanged, gated by
+  `pulse` as the slow fold is.
+- **Which wins, per family**: the combined rule picks D1 or Beat This per
+  genre family by T6's calibration, not by hand.
+
+**Measure and bar.** GTZAN odd clips (held out; tune on even): **≥ 70% right
+±1 BPM overall (from 61.5%), no genre down by more than its CI**; Beatport B
+**no loss** (84.0%). In the page: Score's "BPM known on N%" on non-electronic
+playlists, before/after. If Beat This does not beat D1 on GTZAN either, the
+package records the number and stops (as P1/P2 did). **Effort** M-L.
+**Depends on** T5 (three windows, Beat This on by default), T6.
+
+#### T8. Tap the beat on an unknown tempo (lane U, S; optional)
+
+**Goal.** A listener who knows the tempo can set it in two seconds, and the
+engine gets a true check set from every account that uses it.
+
+**What.** On "BPM unknown" in the sound card, a "Tap the beat" control: eight
+taps or more, median interval, snapped to D1's nearest candidate within 4%
+when there is one. Stored per account beside the record as
+`tap: { bpm, at }`, synced like other per-account choices, shown as theirs,
+and never pooled or sent anywhere. Score reports "taps agree with the
+measured tempo on N of M" (the in-page check set the owner's library has
+never had, since there is no Rekordbox export).
+
+**Bar.** Display and measurement only; must not change any other track.
+**Effort** S.
 
 #### L1. Time every stage of listening, in the page (lane M, S)
 
@@ -598,10 +794,10 @@ sound. **Bar: +3 points on those tracks, no loss elsewhere.** **Effort** M.
 | **No Deezer preview** (not on Deezer, no preview, region-locked) | The page can only hear audio a public, CORS-open source serves; Spotify's own previews are gone for new apps | Place from tags, the bridge and the artist's other heard tracks (U4); try a second source (U3); L4 says how many |
 | **No ISRC** (local files, some uploads) | Nothing to look the recording up by, and name matching was wrong 1 time in 19 | Same as above; never guess by name on the strict path |
 | **Spotify's audio features** | `/audio-features` and `/recommendations` answer 403/404 (README) | Tempo and key from the preview (§2.3) |
-| **The preview is 30 s, and only 20 s is heard** | Deezer serves 30 s; a third window measured +0.3 top-1 for 50% more work (`scripts/audio-near`) | Keep two windows; T3 shows "about" when unsure; Beat This for flagged tempos |
+| **The preview is 30 s, and only 20 s is heard** | Deezer serves 30 s; a third window measured +0.3 top-1 for 50% more work (`scripts/audio-near`) | Keep two windows for sound; hear the third only for unsure tempos (T5); T3 says "BPM unknown" rather than guess |
 | **A track whose character is outside the clip** (long intro, a drop after 2 min) | The preview's position is Deezer's choice | Sections and hybrids already flag a clip that changes (`sections.mjs`); the listener's tap corrects it and the learner keeps it |
 | **Key on every track** | Measured at its limit for 20 s (57.3% exact; BUILD-5-PROGRESS "Key v4") | Show sure keys only (85% of tracks); no new key work (BUILD-8 D3) |
-| **Tempo that changes inside a track** | One BPM per track is the display's shape | The two windows disagreeing lowers confidence (`combineTempo`); shown as unsure |
+| **Tempo that changes inside a track** | One BPM per track is the display's shape | The windows disagreeing lowers confidence (`combineTempo`); shown as "BPM unknown" (T3), or tapped by the listener (T8) |
 | **Exact BPM by convention** (DnB 87 vs 174) | Both are "right"; Beatport itself is split | Show the listener's convention: their playlist's range first, the genre's second (T2) |
 | **Listening on a phone with the screen off** | Mobile browsers pause pages that are not on screen; a web page cannot run in the background | Listening resumes where it stopped; a computer hears the library faster (U1) and every device reads the same records once synced |
 | **One ear for all of music** | The ear is trained on Discogs styles; weak on scene genres (29% top-1 by label) | It is used as an ear, the account's playlists are the names (unchanged design); G1 widens what it can name |
@@ -616,22 +812,25 @@ lane E thread (BUILD-7 §2.2). Start no wave without asking.
 | Wave | Packages | Fits beside build 8 |
 | --- | --- | --- |
 | S0 | **T1** (lane E, with or as D1's first step), **L1** + **L4** (lane M), **R1** (rule + test) | Wave 0 is lane M too; L1/L4 share `autoscore.mjs` with A1-A7, so one thread does them together |
-| S1 | **T2**, **T3**, **T4** (lanes E + U), **L2**, **L3** (lane M) | After T1; L2/L3 own `worker.js`/`controller.mjs` |
-| S2 | **G1** (lane E) | After BUILD-8 wave 1 (I1, I2) |
+| S1 | **T2**, **T3**, **T4** (lanes E + U), **L2**, **L3** (lane M) | After T1; L2/L3 own `worker.js`/`controller.mjs`. T3 goes first in the wave: it sets the "unknown" rule the rest measure against |
+| S1b | **T5**, **T6** (lanes E + M), **T8** (lane U) | After T3 and L3; T5's top-up lives in `controller.mjs` (lane M), so it follows L2/L3 in the same thread or after them |
+| S2 | **G1**, **T7** (lane E, one after the other) | G1 after BUILD-8 wave 1 (I1, I2); T7 after T5/T6 |
 | S3 | **U1**, then **U2** (lane M); **U3** (lane K); **U4** (lane E, after N1) | Last; each needs L1's before |
 
 **File ownership added.** Lane M (measure and listening speed):
 `core/audio/worker.js`, `web/audio/controller.mjs`, `docs/audio-worker.js`'s
 source in `build-web.mjs`. Lane E adds `core/ontology/tempo.mjs`,
 `core/ontology/genres.mjs`, `core/sources/audio-vocab.mjs`. Lane U adds
-`web/audio/dsp-view.mjs`, `web/ui/sound.mjs`.
+`web/audio/dsp-view.mjs`, `web/ui/sound.mjs`. T3's `tempoShown` and T2's
+`displayTempo` live together in `core/audio/match.mjs` (lane E); T6's table
+in a new `core/audio/dsp/tempo-calib.mjs` (lane E).
 
 **Owner decisions.**
 
 | Id | Question | Recommendation |
 | --- | --- | --- |
 | SD1 | Show BPM in the listener's convention (174 for DnB, the playlist's own octave first) rather than as measured? | Yes: the measured octave is a convention, and the playlist says which one this listener uses |
-| SD2 | Show "~174" for unsure tempos (T3) instead of nothing? | Yes, lighter and with "about" in the title |
+| SD2 | Show "~174" for unsure tempos (T3) instead of nothing? | **Answered 2026-11-18: no.** Unsure shows "BPM unknown", and the engine is improved so fewer are unsure (T5-T8) |
 | SD3 | Try a second preview source (U3, iTunes Search, name + length match, bonus only)? | Yes to the probe; decide on the rest from its result |
 | SD4 | Use more of a computer's cores and its GPU while listening (U1, U2)? | Yes on a computer; phones unchanged |
 
@@ -644,12 +843,16 @@ source in `build-web.mjs`. Lane E adds `core/ontology/tempo.mjs`,
 | L4 | Hearing coverage funnel | S0 | M | Not started | | display |
 | R1 | A new ear never switches sound off | S0 | E | Not started | | guard test |
 | T2 | One BPM everywhere | S1 | E, U | Not started | | +15 in range; ≤ 1% moved on house/techno |
-| T3 | "About" tempos | S1 | U | Not started | | ≥ 80% right in the 0.15-0.3 band |
+| T3 | One sure BPM or "BPM unknown" | S1 | U | Not started | | shown BPMs ≥ 90% right; "known on N%" printed |
 | T4 | Deezer BPM as a second opinion | S1 | E | Not started | | +10 shown; ≥ 90% right on GTZAN |
 | L2 | Prefetch the next track | S1 | M | Not started | | ≥ 1.4× tracks/min |
 | L3 | One download per top-up | S1 | M | Not started | | ≤ 1.1 downloads/record |
+| T5 | Third window + Beat This on unsure tempos | S1b | E, M | Not started | | each step: ≥ 90% right, ≥ 15% of unknowns settled |
+| T6 | Calibrated tempo confidence per family | S1b | E | Not started | | every family ≥ 90%; +10 shown on Beatport |
+| T8 | Tap the beat | S1b | U | Not started | | display/measurement |
 | P1, P2 | Centred space, per-window scoring | – | E | Closed (measured, §2.1) | | −2.7 / ±0.1 top-1 |
 | G1 | Genres beyond electronic | S2 | E | Not started | | +10 on the broad set; no loss |
+| T7 | Better detector for played/swung music | S2 | E | Not started | | GTZAN ≥ 70%; Beatport no loss |
 | U1 | Worker per core | S3 | M | Not started | | ≥ 2.5× on 4 cores |
 | U2 | WebGPU | S3 | M | Not started | | ≥ 3× model step |
 | U3 | Second preview source | S3 | K | Not started | | ≥ 30% of misses heard |
