@@ -67,7 +67,7 @@ const DATA_KEYS = [
   { where:'idb', key:'bridge-raw', group:'Genre data', why:'Similar-artist lists fetched from Deezer, ListenBrainz and Wikidata for the artists in your library.' },
   { where:'local', key:'bf_lfm', group:'Genre data', why:'Your own Last.fm API key, if you added one.' },
   { where:'local', key:'bf_discogs', group:'Genre data', why:'Your Discogs personal access token, if you added one.' },
-  { where:'local', key:'bf_bridge_off', group:'Genre data', why:'Set when you turn similar-artist bridges off in Engine.' },
+  { where:'local', key:'bf_bridge_off', group:'Genre data', why:'Set when you turn similar-artist bridges off in How it picks.' },
   { where:'local', key:'bf_bridge_gate', group:'Genre data', why:'What your last Score run said about similar artists, so File uses them only if they helped your picks.' },
 
   // --- the engine ---
@@ -75,7 +75,7 @@ const DATA_KEYS = [
   { where:'idb', key:'engine-calibration', group:'Engine', why:'How sure the engine\'s picks turned out to be on your own playlists, used for the confidence words.' },
   { where:'idb', key:'engine-blend', group:'Engine', why:'How File blends tag picks with the engine, from your Score run.' },
   { where:'idb', key:'engine-weights', group:'Engine', why:'The engine weights fitted to your library by a Score run.' },
-  { where:'idb', key:'engine-tune', group:'Engine', why:'Tuning you saved from Engine › Tune.' },
+  { where:'idb', key:'engine-tune', group:'Engine', why:'Tuning you saved from How it picks › Tune.' },
   { where:'local', key:'bf_weak', group:'Engine', why:'Which of your genre playlists your last Score run found it understands least, why, and what would help, for Library\'s advice and so listening hears those first.' },
   { where:'local', key:'bf_run_history', group:'Engine', why:'Your last Score runs (each one\'s full report, the text Copy results gives) and how each listening run ended, first ear and Deep listen, so the Engine screen\'s Past runs can copy any of them later.' },
   { where:'local', key:'bf_autoscore', group:'Engine', why:'When Score + Tune last ran (by itself or by hand), how many tracks listening had heard then, and whether it finished, so it runs again by itself after listening or in a week.' },

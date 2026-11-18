@@ -32,7 +32,7 @@ const VORDER = [...TABS, 'new', 'shuffle'];
 // the stylesheet, which have to agree with this.
 const VHUE = { inbox:'m0', tidy:'m1', discover:'m3', lists:'m4', new:'m2', shuffle:'m4', engine:'m2' };
 const VTITLE = { inbox:'File', tidy:'Tidy', discover:'Discover', lists:'Library',
-                 new:'New playlists', shuffle:'Shuffle', engine:'Engine' };
+                 new:'New playlists', shuffle:'Shuffle', engine:'How it picks' };
 // Screens that sit under another tab on the bar.
 const TAB_OF = { new:'lists', shuffle:'lists' };
 const tabOf = v => TAB_OF[v] ?? v;

@@ -45,7 +45,7 @@ export function helperRows(s = {}) {
   const simOff = b.on === false, simGate = w.gate === false;
   rows.push({ id: 'similar', name: 'Similar artists in File', on: !simOff, kind: simOff ? 'off' : simGate ? 'idle' : 'ok',
     status: simOff ? 'Off' : w.running ? 'On · looking up' : simGate ? 'On · not used' : 'On',
-    did: simOff ? 'Turned off in Engine.'
+    did: simOff ? 'Turned off in How it picks.'
       : `${w.total ? `Similar artists: ${n(w.asked)} of ${n(w.total)} artists looked up` : 'Looked up by itself after the library loads'}${w.quota ? ', paused by Deezer for now' : ''}. `
         + (simGate ? 'Your last Score run said they didn’t help your picks, so File leaves them out.'
                    : 'File uses them for artists you haven’t filed yet, no Score run needed.') });

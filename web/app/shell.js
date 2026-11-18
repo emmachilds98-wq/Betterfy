@@ -16,7 +16,7 @@ const UH_SECTIONS = [
     try { key = !!lfmKey(); own = !!LS.getItem('bf_lfm'); } catch { /* no key */ }
     return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? (own ? 'on, your key' : 'on, built-in key') : 'off'} · Wikidata on · Deezer on · ListenBrainz on`;
   }],
-  ['engine', 'Engine', () => {
+  ['engine', 'How it picks', () => {
     // The closed section's one line: the last score, when there is one.
     try { const s = engineSummary(); if (Number.isFinite(s?.top1)) return `Right first time on ${Math.round(s.top1 * 100)}% of what you filed`; }
     catch { /* no score yet */ }

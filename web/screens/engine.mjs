@@ -487,7 +487,7 @@ export function pastRunsCard(runs, esc) {
 export function view(c) {
   const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
   const pastCard = pastRunsCard(c.runHistoryView?.() ?? [], esc);
-  const head = `<h1>Engine</h1>
+  const head = `<h1>How it picks</h1>
     <p class="lede">What Betterfy has learnt from your own playlists, and how often it gets your filing right. Learning and scoring here change nothing in Spotify.${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
       of record, from when. Everything here is what it <i>would</i> do, until the score below shows it, blended with today's engine,
       beating today's engine on your own filing. Then the File screen's picks come from the blend.</p>`) ?? ''}</p>`;

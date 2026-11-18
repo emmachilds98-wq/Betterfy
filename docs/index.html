@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1139">
+<meta name="bf-build" content="2026-11-18-1147">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1976,7 +1976,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1139</span>
+    <span class="mono">build 2026-11-18-1147</span>
   </p>
 
   <div class="feat">
@@ -2069,7 +2069,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1139</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1147</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2179,7 +2179,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-1139. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-1147. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -6732,7 +6732,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1139`,
+    `Betterfy engine score — build 2026-11-18-1147`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -6968,7 +6968,7 @@ function pastRunsCard(runs, esc) {
 function view(c) {
   const { ENG, LIB, esc, VALIDATE_N, idb, engineTargets, engineInBackground, bridgeOn, bridgeProgressText, maestScoreText } = c;
   const pastCard = pastRunsCard(c.runHistoryView?.() ?? [], esc);
-  const head = `<h1>Engine</h1>
+  const head = `<h1>How it picks</h1>
     <p class="lede">What Betterfy has learnt from your own playlists, and how often it gets your filing right. Learning and scoring here change nothing in Spotify.${c.infoBtn?.('engine', 'Engine', `<p>No key, no other website, no genre list written by somebody else: just who you file together, on which label, in what shape
       of record, from when. Everything here is what it <i>would</i> do, until the score below shows it, blended with today's engine,
       beating today's engine on your own filing. Then the File screen's picks come from the blend.</p>`) ?? ''}</p>`;
@@ -8683,7 +8683,7 @@ function helperRows(s = {}) {
   const simOff = b.on === false, simGate = w.gate === false;
   rows.push({ id: 'similar', name: 'Similar artists in File', on: !simOff, kind: simOff ? 'off' : simGate ? 'idle' : 'ok',
     status: simOff ? 'Off' : w.running ? 'On · looking up' : simGate ? 'On · not used' : 'On',
-    did: simOff ? 'Turned off in Engine.'
+    did: simOff ? 'Turned off in How it picks.'
       : `${w.total ? `Similar artists: ${n(w.asked)} of ${n(w.total)} artists looked up` : 'Looked up by itself after the library loads'}${w.quota ? ', paused by Deezer for now' : ''}. `
         + (simGate ? 'Your last Score run said they didn’t help your picks, so File leaves them out.'
                    : 'File uses them for artists you haven’t filed yet, no Score run needed.') });
@@ -10906,7 +10906,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1139';
+const BUILD = '2026-11-18-1147';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11244,7 +11244,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1139', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1147', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12029,7 +12029,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1139');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1147');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12123,7 +12123,7 @@ const VORDER = [...TABS, 'new', 'shuffle'];
 // the stylesheet, which have to agree with this.
 const VHUE = { inbox:'m0', tidy:'m1', discover:'m3', lists:'m4', new:'m2', shuffle:'m4', engine:'m2' };
 const VTITLE = { inbox:'File', tidy:'Tidy', discover:'Discover', lists:'Library',
-                 new:'New playlists', shuffle:'Shuffle', engine:'Engine' };
+                 new:'New playlists', shuffle:'Shuffle', engine:'How it picks' };
 // Screens that sit under another tab on the bar.
 const TAB_OF = { new:'lists', shuffle:'lists' };
 const tabOf = v => TAB_OF[v] ?? v;
@@ -15674,7 +15674,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1139';
+    s.src = 'engine.js?v=2026-11-18-1147';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15696,7 +15696,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1139');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1147');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16407,7 +16407,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1139';
+    s.src = 'audio.js?v=2026-11-18-1147';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16461,7 +16461,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1139', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1147', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17621,7 +17621,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1139', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1147', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -18442,7 +18442,7 @@ const DATA_KEYS = [
   { where:'idb', key:'bridge-raw', group:'Genre data', why:'Similar-artist lists fetched from Deezer, ListenBrainz and Wikidata for the artists in your library.' },
   { where:'local', key:'bf_lfm', group:'Genre data', why:'Your own Last.fm API key, if you added one.' },
   { where:'local', key:'bf_discogs', group:'Genre data', why:'Your Discogs personal access token, if you added one.' },
-  { where:'local', key:'bf_bridge_off', group:'Genre data', why:'Set when you turn similar-artist bridges off in Engine.' },
+  { where:'local', key:'bf_bridge_off', group:'Genre data', why:'Set when you turn similar-artist bridges off in How it picks.' },
   { where:'local', key:'bf_bridge_gate', group:'Genre data', why:'What your last Score run said about similar artists, so File uses them only if they helped your picks.' },
 
   // --- the engine ---
@@ -18450,7 +18450,7 @@ const DATA_KEYS = [
   { where:'idb', key:'engine-calibration', group:'Engine', why:'How sure the engine\'s picks turned out to be on your own playlists, used for the confidence words.' },
   { where:'idb', key:'engine-blend', group:'Engine', why:'How File blends tag picks with the engine, from your Score run.' },
   { where:'idb', key:'engine-weights', group:'Engine', why:'The engine weights fitted to your library by a Score run.' },
-  { where:'idb', key:'engine-tune', group:'Engine', why:'Tuning you saved from Engine › Tune.' },
+  { where:'idb', key:'engine-tune', group:'Engine', why:'Tuning you saved from How it picks › Tune.' },
   { where:'local', key:'bf_weak', group:'Engine', why:'Which of your genre playlists your last Score run found it understands least, why, and what would help, for Library\'s advice and so listening hears those first.' },
   { where:'local', key:'bf_run_history', group:'Engine', why:'Your last Score runs (each one\'s full report, the text Copy results gives) and how each listening run ended, first ear and Deep listen, so the Engine screen\'s Past runs can copy any of them later.' },
   { where:'local', key:'bf_autoscore', group:'Engine', why:'When Score + Tune last ran (by itself or by hand), how many tracks listening had heard then, and whether it finished, so it runs again by itself after listening or in a week.' },
@@ -18814,7 +18814,7 @@ const UH_SECTIONS = [
     try { key = !!lfmKey(); own = !!LS.getItem('bf_lfm'); } catch { /* no key */ }
     return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? (own ? 'on, your key' : 'on, built-in key') : 'off'} · Wikidata on · Deezer on · ListenBrainz on`;
   }],
-  ['engine', 'Engine', () => {
+  ['engine', 'How it picks', () => {
     // The closed section's one line: the last score, when there is one.
     try { const s = engineSummary(); if (Number.isFinite(s?.top1)) return `Right first time on ${Math.round(s.top1 * 100)}% of what you filed`; }
     catch { /* no score yet */ }
