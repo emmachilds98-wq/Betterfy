@@ -153,7 +153,11 @@ export function view(ctx) {
   if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return `${head}${deck()}`;
   // Nothing to file: the deck's own done card, then where the library stands.
   if (!R.backlog.length) return `${head}${deck()}${libraryBarHTML(ctx)}`;
-  return `${head}${coldHTML(ctx)}${deck()}${upNextHTML(ctx)}`;
+  // L1: on a desktop (>=1100px) Up next is a rail beside the card. The wrapper is display:contents below
+  // that, so the phone and narrow layouts are exactly what they were.
+  const next = upNextHTML(ctx);
+  if (!next) return `${head}${coldHTML(ctx)}${deck()}`;
+  return `${head}${coldHTML(ctx)}<div class="wide2 filewide"><div class="w-main">${deck()}</div><div class="w-rail">${next}</div></div>`;
 }
 
 export const actions = {

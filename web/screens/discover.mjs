@@ -126,7 +126,7 @@ export function view(ctx) {
       <span class="discvia">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
       <span>from ${esc(S.discoverFrom)}</span>
     </div>
-    <div class="deck">
+    <div class="wide2 discwide"><div class="w-main"><div class="deck">
       <div class="card disc">
         <div class="prog"><i style="width:${((i+1)/d.length*100).toFixed(2)}%"></i></div>
         <div class="now">
@@ -170,8 +170,8 @@ export function view(ctx) {
           <select data-act="discAnyPl" id="discAnyPl" aria-label="Add to another playlist"><option value="">Add to another playlist…</option>${menu}</select>
         </div>
       </div>
-    </div>
-    ${pickRowsHTML(ctx, d, i)}`;
+    </div></div>
+    <div class="w-rail">${pickRowsHTML(ctx, d, i)}</div></div>`;
 }
 
 

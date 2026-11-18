@@ -48,7 +48,8 @@ async function shoot(b, FORM, THEME) {
   const srv = http.createServer((q, r) => { let f = path.join(ROOT, decodeURIComponent(q.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
     fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, {'content-type': f.endsWith('.html')?'text/html':f.endsWith('.js')?'text/javascript':f.endsWith('.json')?'application/json':f.endsWith('.svg')?'image/svg+xml':'application/octet-stream'}); r.end(b); }); }).listen(0);
   const PORT = srv.address().port;
-  const vp = FORM === 'phone' ? { viewport:{ width:390, height:844 }, deviceScaleFactor:1, isMobile:true, hasTouch:true } : { viewport:{ width:1280, height:860 } };
+  const vp = FORM === 'phone' ? { viewport:{ width:390, height:844 }, deviceScaleFactor:1, isMobile:true, hasTouch:true }
+    : { viewport:{ width: FORM === 'wide' ? 1440 : 1280, height:860 } };   // wide: L1's second desktop width
   const ctx = await b.newContext({ ...vp, colorScheme: THEME });
   await ctx.addInitScript(t => { localStorage.setItem('bf_tok', JSON.stringify({ access_token:'x', refresh_token:'y', expires_at: Date.now()+3.6e6 }));
     localStorage.setItem('betterfy-theme', JSON.stringify({ mode:t })); }, THEME);
@@ -158,8 +159,9 @@ async function shoot(b, FORM, THEME) {
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   const b = await chromium.launch();
-  for (const FORM of ['desk', 'phone']) for (const THEME of ['dark', 'light']) {
+  for (const FORM of ['desk', 'phone', 'wide']) for (const THEME of ['dark', 'light']) {
     if (only && only !== `${FORM}-${THEME}`) continue;
+    if (!only && FORM === 'wide' && THEME === 'light') continue;   // 1440 once, in dark: the layout check
     await shoot(b, FORM, THEME);
     console.log(`${FORM}-${THEME}: done`);
   }

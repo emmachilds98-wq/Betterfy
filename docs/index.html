@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-0637">
+<meta name="bf-build" content="2026-11-18-0658">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1641,6 +1641,50 @@ main:focus{outline:none}
   @media (max-width:344px){
     aside .nav .lbl{font-size:9.5px}
   }
+
+  /* ================= L1: a desktop uses its width (DESIGN-PLAN §4) =================
+     Two things side by side wherever a screen has two. The wrappers (.wide2,
+     .w-main, .w-rail) only lay anything out from 1100px up; below that they
+     are display:contents, so phones and narrow windows stay exactly as they
+     were. Columns of text stay under 760px. */
+  .wide2, .w-main, .w-rail{display:contents}
+  @media (min-width:1100px){
+    /* File and Discover were one 800px column; now the card and what sits
+       beside it share 1180px. */
+    main[data-view="inbox"], main[data-view="discover"]{max-width:1180px}
+    main[data-view="inbox"] > :not(.wide2), main[data-view="discover"] > :not(.wide2){max-width:740px}
+    main[data-view="discover"] > .rr{max-width:none}
+    .wide2{display:grid; gap:28px; align-items:start}
+    .w-main, .w-rail{display:block; min-width:0}
+    .w-rail{position:sticky; top:84px}
+
+    /* File: the card on the left, Up next as a right rail of compact rows. */
+    .filewide{grid-template-columns:minmax(0,740px) minmax(260px,1fr)}
+    .filewide .seehead{margin-bottom:10px}
+    .filewide .upnext.strip{flex-direction:column; gap:8px; overflow:visible; padding:0; scroll-snap-type:none}
+    .filewide .upnext.strip .u{flex:none; display:grid; grid-template-columns:56px minmax(0,1fr); align-items:center;
+          border-radius:var(--r-2)}
+    .filewide .upnext.strip .u .cov{width:56px; height:56px; font-size:22px}
+    .filewide .upnext.strip .u .bd{padding:8px 12px}
+    .filewide .upnext.strip .u .h{margin-top:4px}
+
+    /* Discover: the card with all its picks beside it. */
+    .discwide{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+    .discwide .w-rail{max-height:calc(100vh - 110px); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin}
+    .discwide .drows{margin-top:0}
+    main[data-view="discover"] > .disccount{max-width:calc((100% - 28px) / 2)}
+    /* The release radar: each month's releases in two columns. */
+    .rr-rows{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:28px}
+
+    /* Library and Tidy: rows in two columns. */
+    main[data-view="lists"] > .plrows{display:grid; grid-template-columns:repeat(2,minmax(0,1fr))}
+    main[data-view="lists"] > .plrows > :nth-child(even){border-left:1px solid var(--line)}
+    main[data-view="lists"] > .plrows > :nth-last-child(2):nth-child(odd){border-bottom:0}
+    main[data-view="tidy"] .rows{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start}
+    /* A row with a comparison table, or one on its own, keeps the full width. */
+    main[data-view="tidy"] .rows > :not(.row), main[data-view="tidy"] .rows > .row:only-child,
+    main[data-view="tidy"] .rows > .row:has(table){grid-column:1 / -1}
+  }
 /* "What's helping your picks" (web/screens/helpers.mjs): every source and engine part,
    on or off, at the top of the Settings sheet and of Sources. */
   .helpers{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); padding:12px 14px; margin:0 0 16px}
@@ -1886,7 +1930,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-0637</span>
+    <span class="mono">build 2026-11-18-0658</span>
   </p>
 
   <div class="feat">
@@ -1979,7 +2023,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0637</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0658</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2089,7 +2133,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-0637. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-0658. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5291,7 +5335,11 @@ function view(ctx) {
   if (!LIB.liked.length && !LIB.playlists.some(p => p.tracks?.length)) return `${head}${deck()}`;
   // Nothing to file: the deck's own done card, then where the library stands.
   if (!R.backlog.length) return `${head}${deck()}${libraryBarHTML(ctx)}`;
-  return `${head}${coldHTML(ctx)}${deck()}${upNextHTML(ctx)}`;
+  // L1: on a desktop (>=1100px) Up next is a rail beside the card. The wrapper is display:contents below
+  // that, so the phone and narrow layouts are exactly what they were.
+  const next = upNextHTML(ctx);
+  if (!next) return `${head}${coldHTML(ctx)}${deck()}`;
+  return `${head}${coldHTML(ctx)}<div class="wide2 filewide"><div class="w-main">${deck()}</div><div class="w-rail">${next}</div></div>`;
 }
 
 const actions = {
@@ -6638,7 +6686,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-0637`,
+    `Betterfy engine score — build 2026-11-18-0658`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -10018,7 +10066,7 @@ function view(ctx) {
       <span class="discvia">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
       <span>from ${esc(S.discoverFrom)}</span>
     </div>
-    <div class="deck">
+    <div class="wide2 discwide"><div class="w-main"><div class="deck">
       <div class="card disc">
         <div class="prog"><i style="width:${((i+1)/d.length*100).toFixed(2)}%"></i></div>
         <div class="now">
@@ -10062,8 +10110,8 @@ function view(ctx) {
           <select data-act="discAnyPl" id="discAnyPl" aria-label="Add to another playlist"><option value="">Add to another playlist…</option>${menu}</select>
         </div>
       </div>
-    </div>
-    ${pickRowsHTML(ctx, d, i)}`;
+    </div></div>
+    <div class="w-rail">${pickRowsHTML(ctx, d, i)}</div></div>`;
 }
 
 
@@ -10831,7 +10879,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-0637';
+const BUILD = '2026-11-18-0658';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11169,7 +11217,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-0637', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-0658', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11954,7 +12002,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-0637');
+    const w = new Worker('reports-worker.js?v=2026-11-18-0658');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15599,7 +15647,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-0637';
+    s.src = 'engine.js?v=2026-11-18-0658';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15621,7 +15669,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-0637');
+    const w = new Worker('engine-worker.js?v=2026-11-18-0658');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16332,7 +16380,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-0637';
+    s.src = 'audio.js?v=2026-11-18-0658';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16386,7 +16434,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0637', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0658', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17546,7 +17594,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0637', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0658', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;

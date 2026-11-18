@@ -111,3 +111,47 @@
   @media (max-width:344px){
     aside .nav .lbl{font-size:9.5px}
   }
+
+  /* ================= L1: a desktop uses its width (DESIGN-PLAN §4) =================
+     Two things side by side wherever a screen has two. The wrappers (.wide2,
+     .w-main, .w-rail) only lay anything out from 1100px up; below that they
+     are display:contents, so phones and narrow windows stay exactly as they
+     were. Columns of text stay under 760px. */
+  .wide2, .w-main, .w-rail{display:contents}
+  @media (min-width:1100px){
+    /* File and Discover were one 800px column; now the card and what sits
+       beside it share 1180px. */
+    main[data-view="inbox"], main[data-view="discover"]{max-width:1180px}
+    main[data-view="inbox"] > :not(.wide2), main[data-view="discover"] > :not(.wide2){max-width:740px}
+    main[data-view="discover"] > .rr{max-width:none}
+    .wide2{display:grid; gap:28px; align-items:start}
+    .w-main, .w-rail{display:block; min-width:0}
+    .w-rail{position:sticky; top:84px}
+
+    /* File: the card on the left, Up next as a right rail of compact rows. */
+    .filewide{grid-template-columns:minmax(0,740px) minmax(260px,1fr)}
+    .filewide .seehead{margin-bottom:10px}
+    .filewide .upnext.strip{flex-direction:column; gap:8px; overflow:visible; padding:0; scroll-snap-type:none}
+    .filewide .upnext.strip .u{flex:none; display:grid; grid-template-columns:56px minmax(0,1fr); align-items:center;
+          border-radius:var(--r-2)}
+    .filewide .upnext.strip .u .cov{width:56px; height:56px; font-size:22px}
+    .filewide .upnext.strip .u .bd{padding:8px 12px}
+    .filewide .upnext.strip .u .h{margin-top:4px}
+
+    /* Discover: the card with all its picks beside it. */
+    .discwide{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+    .discwide .w-rail{max-height:calc(100vh - 110px); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin}
+    .discwide .drows{margin-top:0}
+    main[data-view="discover"] > .disccount{max-width:calc((100% - 28px) / 2)}
+    /* The release radar: each month's releases in two columns. */
+    .rr-rows{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:28px}
+
+    /* Library and Tidy: rows in two columns. */
+    main[data-view="lists"] > .plrows{display:grid; grid-template-columns:repeat(2,minmax(0,1fr))}
+    main[data-view="lists"] > .plrows > :nth-child(even){border-left:1px solid var(--line)}
+    main[data-view="lists"] > .plrows > :nth-last-child(2):nth-child(odd){border-bottom:0}
+    main[data-view="tidy"] .rows{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start}
+    /* A row with a comparison table, or one on its own, keeps the full width. */
+    main[data-view="tidy"] .rows > :not(.row), main[data-view="tidy"] .rows > .row:only-child,
+    main[data-view="tidy"] .rows > .row:has(table){grid-column:1 / -1}
+  }
