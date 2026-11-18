@@ -4299,6 +4299,110 @@ function mixesWith(trackId, index, { k = 8, bpm = null, tolerance = MIX_TOLERANC
 }
 return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith };
 })();
+/* ---- core/intrinsic/tempo.mjs ---- */
+__mod["core/intrinsic/tempo.mjs"] = (function () {
+const { tempoOf, MIX_MIN_CONF, MIX_TOLERANCE } = __mod["core/audio/match.mjs"];
+// E3 (docs/BUILD-7-PLAN.md): a playlist's own tempo range, learned from the
+// tracks the account has heard in it, and a bounded penalty for a track whose
+// tempo is far outside it.
+//
+// Per account, nothing fitted: the range is the middle half (IQR) of the
+// heard members' confident tempos, octave-aware (87 and 174 are the same
+// place on the circle of tempos). A playlist only gets a range when it has
+// enough heard members and they are tight (drum & bass at 170-176, house at
+// 124-128); a mixed playlist says nothing and is untouched.
+//
+// The penalty is multiplicative and capped (MAX_PENALTY), so tempo can only
+// nudge a score down, never veto a playlist, and a track with no confident
+// tempo is never touched.
+
+
+
+const TEMPO_RANGE_VERSION = '1.0.0';
+/** Heard members with a confident tempo a playlist needs before it learns a range. */
+const RANGE_MIN_MEMBERS = 12;
+/** The middle half of the members must fit in this many BPM (at their own octave). */
+const RANGE_MAX_IQR = 10;
+/** The most a score can be lowered (a fraction), however far off the tempo is. */
+const MAX_PENALTY = 0.3;
+/** Octaves outside the range (log2) at which the penalty reaches its cap (~15%). */
+const FULL_AT = 0.2;
+
+const RANGE_CACHE = new WeakMap();
+
+const phaseOf = bpm => { const p = Math.log2(bpm); return p - Math.floor(p); };
+/** Quantile of a sorted array, linear between ranks. */
+function q(sorted, p) {
+  const i = (sorted.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+}
+const median = a => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+
+/**
+ * The range of a list of tempos (BPM), octave-folded, or null when there are
+ * too few or the middle half is too wide. `{ lo, hi, center, n, iqr }`, in BPM
+ * at the octave most members were measured in (a 174 playlist reads 170-176).
+ * @param {number[]} bpms
+ */
+function tempoRange(bpms, { minMembers = RANGE_MIN_MEMBERS, maxIqr = RANGE_MAX_IQR } = {}) {
+  const v = (bpms ?? []).filter(b => Number.isFinite(b) && b > 0);
+  const n = v.length;
+  if (n < minMembers) return null;
+  // Phases on the one-octave circle, sorted. Try every cut of the circle and
+  // keep the one where the middle half is tightest, so a playlist at 126-134
+  // is not split at the arbitrary place an octave happens to start.
+  const ph = v.map(phaseOf).sort((a, b) => a - b);
+  let best = null;
+  const rot = new Array(n);
+  for (let k = 0; k < n; k++) {
+    for (let i = 0; i < n; i++) rot[i] = k + i < n ? ph[k + i] : ph[k + i - n] + 1;
+    const lo = q(rot, 0.25), hi = q(rot, 0.75);
+    if (!best || hi - lo < best.hi - best.lo - 1e-12) best = { lo, hi };
+  }
+  const mid = (best.lo + best.hi) / 2;
+  // The octave most members were measured in: the one nearest the raw median.
+  const scale = 2 ** Math.round(Math.log2(median(v)) - mid);
+  const lo = 2 ** best.lo * scale, hi = 2 ** best.hi * scale;
+  if (hi - lo > maxIqr) return null;
+  return { lo: +lo.toFixed(1), hi: +hi.toFixed(1), center: +(2 ** mid * scale).toFixed(1), n, iqr: +(hi - lo).toFixed(1) };
+}
+
+/**
+ * A playlist's range from its audio profile (`ids`) and the sound index,
+ * worked out once per profile. Confident readings only (bpmConf >= MIX_MIN_CONF).
+ */
+function profileTempoRange(profile, index) {
+  if (!profile?.ids || !(index instanceof Map)) return null;
+  if (RANGE_CACHE.has(profile)) return RANGE_CACHE.get(profile);
+  const bpms = [];
+  for (const id of profile.ids) {
+    const t = tempoOf(index.get(id)?.rec);
+    if (t && t.conf >= MIX_MIN_CONF) bpms.push(t.bpm);
+  }
+  const r = tempoRange(bpms);
+  RANGE_CACHE.set(profile, r);
+  return r;
+}
+
+/**
+ * How much to lower a score (0 to MAX_PENALTY) for a track at `bpm` in a
+ * playlist with `range`: 0 inside the range widened by the mixing tolerance
+ * (or at its octave), growing with the distance outside it, capped.
+ */
+function tempoPenalty(bpm, range) {
+  if (!range || !(bpm > 0)) return 0;
+  const pad = Math.log2(1 + MIX_TOLERANCE);
+  const lo = Math.log2(range.lo) - pad, hi = Math.log2(range.hi) + pad;
+  const x = Math.log2(bpm);
+  let d = Infinity;
+  for (let k = -3; k <= 3; k++) {
+    const y = x + k;
+    d = Math.min(d, y < lo ? lo - y : y > hi ? y - hi : 0);
+  }
+  return +(MAX_PENALTY * Math.min(1, d / FULL_AT)).toFixed(4);
+}
+return { TEMPO_RANGE_VERSION, RANGE_MIN_MEMBERS, RANGE_MAX_IQR, MAX_PENALTY, FULL_AT, tempoRange, profileTempoRange, tempoPenalty };
+})();
 /* ---- core/intrinsic/space.mjs ---- */
 __mod["core/intrinsic/space.mjs"] = (function () {
 const { cooccurrence, trackVector, cosine, centroid, norm } = __mod["core/intrinsic/cooccurrence.mjs"];
@@ -4310,6 +4414,7 @@ const { bridgeIndex, artistHomes, bridgeScores } = __mod["core/intrinsic/bridge.
 const { audioIndex, buildAudioProfiles, audioScores } = __mod["core/intrinsic/audio.mjs"];
 const { trainLearner } = __mod["core/intrinsic/audio-learn.mjs"];
 const { tempoOf, tempoRelation, MIX_MIN_CONF } = __mod["core/audio/match.mjs"];
+const { profileTempoRange, tempoPenalty } = __mod["core/intrinsic/tempo.mjs"];
 // The intrinsic space — where a track sits, and which of this account's
 // buckets it sits nearest.
 //
@@ -4323,6 +4428,7 @@ const { tempoOf, tempoRelation, MIX_MIN_CONF } = __mod["core/audio/match.mjs"];
 // thresholds, these have somewhere to go: leave-one-out placement accuracy over
 // the account's own library is a real fitness surface with thousands of rows,
 // and `core/validate/loo.mjs` computes it.
+
 
 
 
@@ -4998,7 +5104,7 @@ function componentParts(track, space, { exclude = null } = {}) {
  * none of them needs prose. A UI asks for it; a sweep does not.
  */
 function placements(track, space, { limit = 5, exclude = null, why = false,
-                                           weights = WEIGHTS, useAudio = false, soundFirst = false } = {}) {
+                                           weights = WEIGHTS, useAudio = false, soundFirst = false, tempoRange = false } = {}) {
   if (!track?.id) return { declined: 'NO_TRACK', results: [] };
   if (!space?.destinations?.size) return { declined: 'NO_DESTINATIONS', results: [] };
   // Sound-first: a heard track is scored with sound let in and leading. An
@@ -5042,10 +5148,17 @@ function placements(track, space, { limit = 5, exclude = null, why = false,
     if (!judged) continue;
     // E1: "not there" taps on this artist lower this playlist at once (0 when none).
     const pen = space.rejected ? rejectPenalty(track, d, space) : 0;
-    const score = pen ? raw * (1 - pen) : raw;
+    let score = pen ? raw * (1 - pen) : raw;
+    // E3: a heard track far outside a tight playlist's own tempo range scores lower there.
+    let tpen = 0;
+    if (tempoRange && tempo) {
+      tpen = tempoPenalty(tempo.bpm, profileTempoRange(space.audio.profiles?.get(d.id), space.audio.index));
+      if (tpen) score *= 1 - tpen;
+    }
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
     const row = { playlistId: d.id, name: d.name, score: +score.toFixed(4),
                   parts: used, judged, sharedArtists: shared, members: d.n };
+    if (tpen) row.tempoPenalty = tpen;
     if (rawSound) {
       row.heard = { audio: rawSound.get(d.id) ?? null,
                     learned: rawLearned?.has(d.id) ? +rawLearned.get(d.id).toFixed(4) : null };
@@ -6611,7 +6724,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
                                          weights = null, targets = null, bridge = null,
                                          audio = null, collect = false,
                                          genreGraph = false, soundWeights = null,
-                                         fitParts = false, sources = false } = {}) {
+                                         fitParts = false, sources = false, tempoRange = false } = {}) {
   const truth = truthOf(lib, { isMirror });
   // With `targets`, the question is "which of my genre playlists", so only
   // tracks filed in one are scored and only those playlists count as right.
@@ -6724,7 +6837,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
       if (sound) {
         const more = space.audio
-          ? placements(track, space, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
+          ? placements(track, space, { limit: limit3, weights: soundWeights ?? base, useAudio: true, ...(tempoRange ? { tempoRange } : {}) }) : out;
         const r = more.results ?? [];
         if (sound.rows) sound.rows.push({ id, scores: scoresOf(r), truth: [...want].sort(), ...(sources ? { src: sourceTops(r) } : {}) });
         const s1 = r[0] && want.has(r[0].playlistId);
@@ -6737,7 +6850,7 @@ function placementAccuracy(lib, { folds = DEFAULT_FOLDS, leaky = false,
 
         arms.forEach((a, i) => {
           const sp = armSpaces[i];
-          const res = sp.audio ? placements(track, sp, { limit: limit3, weights: soundWeights ?? base, useAudio: true }) : out;
+          const res = sp.audio ? placements(track, sp, { limit: limit3, weights: soundWeights ?? base, useAudio: true, ...(tempoRange ? { tempoRange } : {}) }) : out;
           const ra = res.results ?? [];
           if (a.t.rows) a.t.rows.push({ id, scores: scoresOf(ra), truth: [...want].sort(), ...(sources ? { src: sourceTops(ra) } : {}) });
           const a1 = ra[0] && want.has(ra[0].playlistId);
@@ -10891,6 +11004,7 @@ __mod["core/audio/plprofile.mjs"] = (function () {
 const { identify, genreLevel, TEMPO_CONF } = __mod["core/audio/identify.mjs"];
 const { nearest, genreMembership, playlistConcepts } = __mod["core/audio/match.mjs"];
 const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
+const { tempoRange } = __mod["core/intrinsic/tempo.mjs"];
 const { conceptLabel } = __mod["core/recommend/gaps.mjs"];
 // A playlist's sound profile, from the members listening has heard: its genre
 // mix, BPM range, and whether it is really two genres that could be split.
@@ -10912,6 +11026,7 @@ const { conceptLabel } = __mod["core/recommend/gaps.mjs"];
 // Nearest-neighbour lookups and counts on the account's own heard tracks only
 // (SMARTER-GENRES-PLAN.md §3, R3): nothing is trained, nothing leaves the
 // device, nothing is pooled across accounts. With no records, nothing at all.
+
 
 
 
@@ -11082,7 +11197,7 @@ function createProfiler(lib, records, { index = null, targets = null, isMirror =
     const share = (list, total) => [...list.values()].sort((a, b) => b.n - a.n || a.slug.localeCompare(b.slug))
       .map(x => ({ ...x, share: +(x.n / total).toFixed(3) }));
     const out = { id: p.id, heard: heard.length, members: ids.length, identified, pending,
-                  genres: [], mix: [], bpm: null, bpmN: bpms.length, split: null };
+                  genres: [], mix: [], bpm: null, bpmN: bpms.length, tempo: null, split: null };
     if (identified >= MIN_HEARD) {
       out.genres = share(genres, identified).map(({ ids: _ids, ...g }) => g);
       out.mix = share(leaves, identified);
@@ -11091,6 +11206,10 @@ function createProfiler(lib, records, { index = null, targets = null, isMirror =
       bpms.sort((a, b) => a - b);
       out.bpm = [Math.round(quantile(bpms, 0.1)), Math.round(quantile(bpms, 0.9))];
     }
+    // E3: the tight middle half, octave-aware, only for a playlist with 12+ heard tempos.
+    // Display only: its measured effect on ranking missed the bar (test/temporange.test.mjs).
+    const tr = tempoRange(bpms);
+    if (tr) out.tempo = [Math.round(tr.lo), Math.round(tr.hi)];
     if (!pending) out.split = splitOf(p, heard.length, identified, genres);
     return out;
   }
@@ -14387,6 +14506,57 @@ function onlineAccuracy(lib, { folds = DEFAULT_FOLDS, isMirror = null, targets =
 }
 return { ONLINE_SCORE_VERSION, onlineAccuracy };
 })();
+/* ---- core/validate/temporange.mjs ---- */
+__mod["core/validate/temporange.mjs"] = (function () {
+const { placementAccuracy } = __mod["core/validate/loo.mjs"];
+// Does a playlist's own tempo range help place a heard track? (docs/BUILD-7-PLAN.md E3)
+//
+// The same held-out folds, sound path, scored twice: as File places a heard
+// track today, and with the tempo-range penalty (core/intrinsic/tempo.mjs) on.
+// Same tracks, same spaces, so the difference is the range and nothing else.
+// Counts only; nothing leaves the account.
+//
+// The bar (set before measuring): +1 point top-1 overall, or +3 tracks on the
+// account's five weakest playlists. Past it the Score run says so; the penalty
+// itself stays off until the shipped measurement (test/temporange.test.mjs) and
+// this run both clear it.
+
+
+const TEMPO_SCORE_VERSION = '1.0.0';
+const TEMPO_BAR_POINTS = 1;
+const TEMPO_BAR_WEAKEST = 3;
+
+/**
+ * @param {object} lib
+ * @param {object} opts  what placementAccuracy takes (targets, isMirror, genreGraph, audio, soundWeights, limit)
+ * @returns {{ version, scored, off: number, on: number, points: number, weakest: number, pass: boolean }|null}
+ */
+function tempoRangeAccuracy(lib, opts = {}) {
+  if (!opts.audio) return null;
+  const run = tempoRange => placementAccuracy(lib, { ...opts, collect: true, tempoRange })?.withAudio;
+  const off = run(false), on = run(true);
+  if (!off?.rows?.length || !on?.rows?.length) return null;
+  const hit = r => (r && r.truth.includes(r.scores[0]?.[0]) ? 1 : 0);
+  const after = new Map(on.rows.map(r => [r.id, r]));
+  const per = new Map();
+  let a = 0, b = 0;
+  for (const r of off.rows) {
+    const h0 = hit(r), h1 = hit(after.get(r.id));
+    a += h0; b += h1;
+    for (const pid of r.truth) {
+      const p = per.get(pid) ?? { n: 0, off: 0, on: 0 };
+      p.n++; p.off += h0; p.on += h1; per.set(pid, p);
+    }
+  }
+  const n = off.rows.length;
+  const weak = [...per.values()].filter(p => p.n >= 8).sort((x, y) => x.off / x.n - y.off / y.n).slice(0, 5);
+  const weakest = weak.reduce((s, p) => s + p.on - p.off, 0);
+  const points = +((b - a) / n * 100).toFixed(2);
+  return { version: TEMPO_SCORE_VERSION, scored: n, off: +(a / n).toFixed(4), on: +(b / n).toFixed(4), points, weakest,
+           pass: points >= TEMPO_BAR_POINTS || weakest >= TEMPO_BAR_WEAKEST };
+}
+return { TEMPO_SCORE_VERSION, TEMPO_BAR_POINTS, TEMPO_BAR_WEAKEST, tempoRangeAccuracy };
+})();
 globalThis["BetterfyIntrinsic"] = __mod["core/intrinsic/space.mjs"];
 globalThis["BetterfyColdStart"] = __mod["core/intrinsic/coldstart.mjs"];
 globalThis["BetterfyExplain"] = __mod["core/intrinsic/explain.mjs"];
@@ -14421,3 +14591,4 @@ globalThis["BetterfyTune"] = __mod["core/validate/tune.mjs"];
 globalThis["BetterfyRadar"] = __mod["core/release/index.mjs"];
 globalThis["BetterfyTeach"] = __mod["core/validate/teach.mjs"];
 globalThis["BetterfyOnline"] = __mod["core/validate/online.mjs"];
+globalThis["BetterfyTempoRange"] = __mod["core/validate/temporange.mjs"];

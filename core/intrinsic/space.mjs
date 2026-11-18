@@ -22,6 +22,7 @@ import { bridgeIndex, artistHomes, bridgeScores } from './bridge.mjs';
 import { audioIndex, buildAudioProfiles, audioScores } from './audio.mjs';
 import { trainLearner } from './audio-learn.mjs';
 import { tempoOf, tempoRelation, MIX_MIN_CONF } from '../audio/match.mjs';
+import { profileTempoRange, tempoPenalty } from './tempo.mjs';
 
 // 4.1.0: the audio layer (WP-E2 of docs/AUDIO-BUILD-PLAN.md). With no audio
 // passed, every output except this string is byte-identical to 4.0.0
@@ -688,7 +689,7 @@ export function componentParts(track, space, { exclude = null } = {}) {
  * none of them needs prose. A UI asks for it; a sweep does not.
  */
 export function placements(track, space, { limit = 5, exclude = null, why = false,
-                                           weights = WEIGHTS, useAudio = false, soundFirst = false } = {}) {
+                                           weights = WEIGHTS, useAudio = false, soundFirst = false, tempoRange = false } = {}) {
   if (!track?.id) return { declined: 'NO_TRACK', results: [] };
   if (!space?.destinations?.size) return { declined: 'NO_DESTINATIONS', results: [] };
   // Sound-first: a heard track is scored with sound let in and leading. An
@@ -732,10 +733,17 @@ export function placements(track, space, { limit = 5, exclude = null, why = fals
     if (!judged) continue;
     // E1: "not there" taps on this artist lower this playlist at once (0 when none).
     const pen = space.rejected ? rejectPenalty(track, d, space) : 0;
-    const score = pen ? raw * (1 - pen) : raw;
+    let score = pen ? raw * (1 - pen) : raw;
+    // E3: a heard track far outside a tight playlist's own tempo range scores lower there.
+    let tpen = 0;
+    if (tempoRange && tempo) {
+      tpen = tempoPenalty(tempo.bpm, profileTempoRange(space.audio.profiles?.get(d.id), space.audio.index));
+      if (tpen) score *= 1 - tpen;
+    }
     const shared = (track.artists ?? []).filter(a => a?.id && d.artists.has(a.id)).length;
     const row = { playlistId: d.id, name: d.name, score: +score.toFixed(4),
                   parts: used, judged, sharedArtists: shared, members: d.n };
+    if (tpen) row.tempoPenalty = tpen;
     if (rawSound) {
       row.heard = { audio: rawSound.get(d.id) ?? null,
                     learned: rawLearned?.has(d.id) ? +rawLearned.get(d.id).toFixed(4) : null };

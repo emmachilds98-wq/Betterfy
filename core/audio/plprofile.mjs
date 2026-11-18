@@ -23,6 +23,7 @@
 import { identify, genreLevel, TEMPO_CONF } from './identify.mjs';
 import { nearest, genreMembership, playlistConcepts } from './match.mjs';
 import { audioIndex } from '../intrinsic/audio.mjs';
+import { tempoRange } from '../intrinsic/tempo.mjs';
 import { conceptLabel } from '../recommend/gaps.mjs';
 
 export const PLPROFILE_VERSION = '1.0.0';
@@ -189,7 +190,7 @@ export function createProfiler(lib, records, { index = null, targets = null, isM
     const share = (list, total) => [...list.values()].sort((a, b) => b.n - a.n || a.slug.localeCompare(b.slug))
       .map(x => ({ ...x, share: +(x.n / total).toFixed(3) }));
     const out = { id: p.id, heard: heard.length, members: ids.length, identified, pending,
-                  genres: [], mix: [], bpm: null, bpmN: bpms.length, split: null };
+                  genres: [], mix: [], bpm: null, bpmN: bpms.length, tempo: null, split: null };
     if (identified >= MIN_HEARD) {
       out.genres = share(genres, identified).map(({ ids: _ids, ...g }) => g);
       out.mix = share(leaves, identified);
@@ -198,6 +199,10 @@ export function createProfiler(lib, records, { index = null, targets = null, isM
       bpms.sort((a, b) => a - b);
       out.bpm = [Math.round(quantile(bpms, 0.1)), Math.round(quantile(bpms, 0.9))];
     }
+    // E3: the tight middle half, octave-aware, only for a playlist with 12+ heard tempos.
+    // Display only: its measured effect on ranking missed the bar (test/temporange.test.mjs).
+    const tr = tempoRange(bpms);
+    if (tr) out.tempo = [Math.round(tr.lo), Math.round(tr.hi)];
     if (!pending) out.split = splitOf(p, heard.length, identified, genres);
     return out;
   }

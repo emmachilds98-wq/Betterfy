@@ -235,6 +235,9 @@ self.onmessage = function (e) {
       try { result.online = BetterfyOnline.onlineAccuracy(m.lib, { targets: m.targets || null, isMirror: isMirror,
               genreGraph: !!(m.opts && m.opts.genreGraph) }); }
       catch (e) { result.online = null; }
+      // A playlist's own tempo range (BUILD-7 E3): measured with and without, applied by nothing yet.
+      try { result.tempoRange = BetterfyTempoRange.tempoRangeAccuracy(m.lib, Object.assign({}, common, { limit: 300, collect: false, fitParts: false, sources: false })); }
+      catch (e) { result.tempoRange = null; }
     } else if (m.op === 'misfits') {
       // Tidy by sound: an all-pairs nearest-neighbour pass over the heard
       // tracks, too long for the page's thread on a big library.

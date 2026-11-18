@@ -280,6 +280,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     teachLine(v.teach, pc),
     onlineLine(v.online, pc),
     situationLine(v, pc),
+    tempoRangeLine(v.tempoRange, pc),
     ...(log && measureLines ? measureLines(log) : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
@@ -330,6 +331,12 @@ export function situationLine(v, pc) {
   if (!parts.length) return null;
   const beats = !!(s?.beats || b?.beatsOne);
   return `Weights per situation (filed artist / never filed): ${parts.join('; ')} — ${beats ? 'ahead, not used yet' : 'not ahead, not used'}`;
+}
+/** E3: each playlist's own tempo range as evidence, measured with and without; display-only unless it clears the bar. */
+export function tempoRangeLine(t, pc) {
+  if (!t || t.off == null) return null;
+  return `Tempo range: top-1 ${pc(t.off)} -> ${pc(t.on)} on ${t.scored} heard tracks (${t.points >= 0 ? '+' : ''}${t.points} points; weakest five playlists ${t.weakest >= 0 ? '+' : ''}${t.weakest} tracks) — ${
+    t.pass ? 'ahead on this library, not applied yet' : 'not ahead, shown in Library only'}`;
 }
 function teachRow(t, p) {
   if (!t || t.before == null) return '';
