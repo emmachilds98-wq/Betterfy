@@ -124,8 +124,14 @@ SCREEN_CTX.new = () => ({
 // --- home/inbox ---
 Object.assign(SCREEN_CTX, {
   // The File tab: the status line and Up next around the `inbox` module's deck.
-  home: () => ({ S, R, LIB, esc, onbHTML, onbColdOffers, gapsCreate, COLD, toast, $, go, isMirrorPlaylist, listenStatus, analyseHTML, analyseGo, hueOf, filePicks, pickBacked,
-                 render, openUnderHood, morphArt, deck: screenView('inbox') }),
+  home: () => ({ S, R, LIB, esc, onbState, onbColdOffers, gapsCreate, COLD, toast, $, go, isMirrorPlaylist, listenStatus, analyseLine, hueOf, filePicks, pickBacked,
+                 render, openUnderHood, openSettings, morphArt, deck: screenView('inbox'),
+                 // The "today" header (DESIGN-PLAN L8 step 2): the same counts as the tab badges.
+                 tidyCount: tidyTodo, ideasCount: ideasTodo, now: Date.now(),
+                 listenOff: () => typeof audioSettings === 'function' && !audioSettings().on && LS.getItem('bf_sound_nudge') !== 'no',
+                 // The radar's stored rows, read once (no request); File repaints when they are in.
+                 radar: typeof RADAR === 'undefined' ? null
+                   : { R: RADAR, load: () => fire(radarLoad().then(() => store.touch('ui.inbox'))) } }),
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand, pickBacked,
                   addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,

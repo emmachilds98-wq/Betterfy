@@ -7,15 +7,17 @@ const FILE_GLUE = {
 const fileCurrent = (ids, opts) => SCREEN_MODS.inbox.fileCurrent(screenCtx('inbox'), ids, opts);
 const inboxAct = a => SCREEN_MODS.inbox.inboxAct(screenCtx('inbox'), a);
 
-// Keyboard parity for the swipe: the same walk through VORDER, for anyone not
-// using a touchscreen.
+// Keyboard parity for the swipe: the same walk through the four tabs, for
+// anyone not using a touchscreen. It stops at Library (DESIGN-PLAN F4).
 document.addEventListener('keydown', guard(async e => {
   if ($('#app').hidden || e.metaKey || e.ctrlKey || e.altKey) return;
   // Enter in Discover's "sounds like" box searches (WP-C3).
   if (e.key === 'Enter' && e.target.id === 'sndq') { e.preventDefault(); return clapSearch(e.target.value); }
   if (e.target.matches('input,select,textarea')) return;
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  const next = VORDER[VORDER.indexOf(view) + (e.key === 'ArrowRight' ? 1 : -1)];
+  const at = TABS.indexOf(view);
+  if (at < 0) return;
+  const next = TABS[at + (e.key === 'ArrowRight' ? 1 : -1)];
   if (!next) return;
   go(next);
 }));
@@ -27,7 +29,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && (S.fileSel.size || filePicks(t)[0])) fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : filePicks(t)[0].id));
   if (e.key.toLowerCase()==='p') inboxAct('play');
   if (e.key.toLowerCase()==='s') inboxAct('skip');
-  if (e.key.toLowerCase()==='u') inboxAct('unlike');
+  // Remove from Liked asks twice, by key as by tap (DESIGN-PLAN M2).
+  if (e.key.toLowerCase()==='u') fire(SCREEN_MODS.inbox.actions.unlikekey(screenCtx('inbox')));
 });
 
 function cmpTable(o) {

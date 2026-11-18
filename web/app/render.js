@@ -41,8 +41,7 @@ function render(dir) {
   underHoodRefresh();
   plSheetPaint();
 
-  const counts = { inbox:R.backlog.length, tidy:R.within.length + R.misfiled.length,
-                   new:R.clusters.length, lists:LIB.playlists.length };
+  const counts = { inbox:R.backlog.length, tidy:tidyTodo(), new:ideasTodo(), lists:LIB.playlists.length };
   document.querySelectorAll('[data-count]').forEach(el => {
     const n = counts[el.dataset.count] ?? 0;
     // On the tab bar this rides the icon, so it has to stay narrow.
@@ -57,6 +56,23 @@ function render(dir) {
     seek.onchange = guard(async ev => { const to = +ev.target.value; PLAYER.scrub = false; await playerSeek(to); });
     playerRun();
   } else playerStop();
+}
+
+/* The tab badges and the home header count the same things as the screens
+ * they open (DESIGN-PLAN F4): Tidy's is its "Wrong place" (by tags and by
+ * sound) plus "Repeats", the two parts of its switch that are work (Cross-filed is usually deliberate);
+ * Library's is its "Suggested playlists" (what "See all N" opens). */
+function tidyTodo() {
+  const tidy = typeof SCREEN_MODS !== 'undefined' ? SCREEN_MODS.tidy : null;
+  let wrong = R.misfiled.length;
+  try { if (tidy?.misfileRows) { const m = tidy.misfileRows(screenCtx('tidy')); wrong = m.tag.length + m.sound.length; } }
+  catch { /* the plain count */ }
+  return wrong + R.within.length;
+}
+function ideasTodo() {
+  const lists = typeof SCREEN_MODS !== 'undefined' ? SCREEN_MODS.lists : null;
+  try { if (lists?.suggestionsOf) return lists.suggestionsOf(typeof GAPS === 'undefined' ? null : GAPS, R).length; } catch { /* below */ }
+  return R.clusters.length;
 }
 
 /** Move to another screen: animates in the direction of travel and starts at the top. */

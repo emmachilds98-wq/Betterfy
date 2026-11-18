@@ -108,10 +108,9 @@ function soundNote(t, picks) {
   if (typeof audioSettings !== 'function' || typeof SOUND === 'undefined') return '';
   if (picks[0]?.via === 'sound') return '';
   const set = audioSettings();
-  if (!set.on) return LS.getItem('bf_sound_nudge') === 'no' ? ''
-    : `<div class="sndnote" style="margin-top:12px"><p class="why" style="margin:0 0 8px">These picks come from artist tags.
-       Switch on listening to file by how each track sounds instead.</p>
-       <div class="rowbtns"><button class="b sm" data-soundon>Listen to my music</button><button class="b sm" data-soundno>Not now</button></div></div>`;
+  // Listening switched off: the home header says "listening is off" and opens
+  // Settings › Sources (DESIGN-PLAN A5), so the card carries no nudge.
+  if (!set.on) return '';
   if (SOUND.status === 'working') return `<p class="why sndnote" style="margin-top:12px">Learning how your playlists sound…</p>`;
   if (SOUND.status === 'error') return `<p class="why sndnote" style="margin-top:12px">Couldn’t learn how your playlists sound: ${esc(SOUND.err)}. Picks are from tags.</p>`;
   const rec = AUDIO.records?.get(t.id);

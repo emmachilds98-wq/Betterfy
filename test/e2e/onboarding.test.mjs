@@ -17,7 +17,7 @@ test('empty library: says what to do, offers no analysis, writes nothing', { ski
     assert.match(text, /library is empty/i);
     assert.match(text, /like some songs/i);
     assert.equal(await app.page.locator('#analyseGo').count(), 0, 'nothing to analyse');
-    assert.equal(await app.page.locator('.onb').count(), 0, 'no first-run strip over nothing');
+    assert.equal(await app.page.locator('.st-onb').count(), 0, 'no first-run count over nothing');
     assert.deepEqual(app.errors, []);
     assert.equal(app.fake.writes().length, 0);
   } finally { await app.close(); }
@@ -29,8 +29,8 @@ test('no genre playlists: File offers "Start these playlists", and the strip cou
     const { page } = app;
     await ready(page);
     await page.waitForSelector('#swipeCard');
-    await page.waitForSelector('.onb');
-    assert.match(await page.locator('.onb').innerText(), /Connected[\s\S]*first five \(0\/5\)/);
+    await page.waitForSelector('.today .st-onb');
+    assert.match(await page.locator('.st-onb').innerText(), /first 5 filed: 0\/5/);
     await page.waitForSelector('.panel.cold #fcold-h', { timeout: 20000 });
     const before = app.fake.writes().length;
     await page.click('.panel.cold [data-act="coldStart"]');
@@ -46,7 +46,7 @@ test('typical account: first filing, then the strip goes after five', { skip }, 
     const { page } = app;
     await ready(page);
     await fileCard(page);
-    assert.match(await page.locator('.onb').innerText(), /0\/5/);
+    assert.match(await page.locator('.st-onb').innerText(), /0\/5/);
     for (let k = 0; k < 5; k++) {
       const c = await fileCard(page);
       await swipe(page, '#swipeCard', 220);
@@ -56,7 +56,7 @@ test('typical account: first filing, then the strip goes after five', { skip }, 
       await page.waitForTimeout(700);
     }
     await until(() => page.evaluate(() => !!localStorage.getItem('bf_onb_done')).then(Boolean), 'the strip to finish', 10000).catch(() => {});
-    assert.equal(await page.locator('.onb').count(), 0, 'strip gone');
+    assert.equal(await page.locator('.st-onb').count(), 0, 'the count goes from the header');
     assert.deepEqual(app.errors, []);
   } finally { await app.close(); }
 });
@@ -68,7 +68,6 @@ test('large library: File is usable while Analyse runs', { skip, timeout: 240000
     await ready(page);
     const c = await fileCard(page, 180000);
     assert.ok(c.left > 1000);
-    if (await page.locator('#analyseGo').count()) await page.click('#analyseGo');
     await page.waitForTimeout(500);
     assert.ok(await page.locator('#swipeCard').isVisible(), 'the card is still there');
     assert.deepEqual(app.errors, []);

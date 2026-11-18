@@ -116,7 +116,7 @@ function bindSwipeCard() {
   card.addEventListener('touchcancel', () => { mode = null; gestureClaimed = false; reset(); });
 }
 
-/** Swipe left/right anywhere else on a screen to walk VORDER.
+/** Swipe left/right anywhere else on a screen to walk the four tabs.
  *  Pulling down used to re-sync from here. A stray downward swipe at the top of
  *  a list is about the easiest gesture on a phone to make by accident, and what
  *  it triggered was hundreds of calls against a shared quota — so re-syncing is
@@ -153,8 +153,10 @@ function bindAppGestures() {
     $('#main').style.transform = '';
     const m = mode; mode = null;
     if (m === 'page' && Math.abs(dx) > VTH) {
-      const at = VORDER.indexOf(view);
-      const next = VORDER[at + (dx < 0 ? 1 : -1)];
+      // The four tabs only: New playlists and Shuffle have no tab, so a swipe
+      // stops at Library (DESIGN-PLAN F4). From one of them it does nothing.
+      const at = TABS.indexOf(view);
+      const next = at < 0 ? null : TABS[at + (dx < 0 ? 1 : -1)];
       if (next) { buzz(6); go(next); }
     }
   };

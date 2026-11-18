@@ -40,16 +40,15 @@
         font-size:13.5px; font-weight:600; cursor:pointer}
 
 
-/* One-tap analysis: the button and its single progress strip. */
-.analyse { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; }
-.analyse .d { color: var(--ink-3); font-size: 13px; flex: 1 1 240px; }
-.analyse[role="status"] { padding: 10px 14px; border-radius: 12px; background: var(--card, rgba(127,127,127,.1)); font-variant-numeric: tabular-nums; }
-
-/* First-run strip (BUILD-6 O1): three steps, gone once five are filed. */
-.onb { display: flex; gap: 8px; list-style: none; margin: 0 0 14px; padding: 0; flex-wrap: wrap; }
-.onb li { font-size: 13px; color: var(--ink-3); padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(127,127,127,.25); }
-.onb li.done { color: var(--ok); }
-.onb li.now { color: var(--ink); border-color: var(--accent); }
+/* The "today" header (DESIGN-PLAN L8 step 2): a greeting over the one status
+   line (.status, 42-shell.css). Calm: no card, no fill, the line wraps. */
+.today { margin: 0 0 16px; }
+.today .hello { margin: 0 0 4px; font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: -.02em; color: var(--ink); }
+.today .status { margin: 0; }
+.today .st-analyse, .today .st-onb { font-variant-numeric: tabular-nums; }
+.today .st-radar { color: var(--m3-ink, var(--ink-2)); }
+.today .st-off, .today .st-short { color: var(--ink-3); }
+@media (max-width: 560px) { .today .hello { font-size: 19px; } }
 .panel.cold { margin: 0 0 16px; }
 .panel.cold .plrow { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
 .panel.cold .plmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
