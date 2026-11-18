@@ -14,6 +14,7 @@ the coordinator's runbook. The paste-ready thread briefs are in
 
 Contents:
 
+0. Handoff, 2026-11-18 (read this first)
 1. Standing rules (the owner's, unchanged)
 2. How a Claude project runs this plan (coordinator runbook)
 3. State of `main` after #157
@@ -25,6 +26,53 @@ Contents:
 9. Progress table (the coordinator keeps this current)
 
 ---
+
+## 0. Handoff, 2026-11-18 (read this first)
+
+This project is being handed to a new Claude project. As of `main` after
+#168 (`77d89e9`), there are **no open PRs**. What changed since this plan was
+written (#158), what is still open, and where to start:
+
+**Merged on 2026-11-17/18, #158 to #168:**
+
+| PR | What a listener gets |
+|---|---|
+| #158 | This plan and `BUILD-7-BRIEFS.md` |
+| #159 | Engine › Past runs: every Score, Listening and Deep listen report kept (`bf_run_history`), each with Copy |
+| #160 | The Discover player follows the card after Next; duplicate phone titles and dead styles removed |
+| #161 | Discover's File pick agrees with its fit line; the playlist menu lists every playlist you own |
+| #162 | Docs: Every Noise at Once is rejected as a source |
+| #163 | Tidy › Hard to find: songs Spotify's search shows as another version, found and swapped in place |
+| #164, #165 | **Liked Songs is the inbox:** every liked song waits in File until filed there, even if a playlist already holds it |
+| #166 | File: a liked song already in a playlist offers Keep it there or Remove from Liked, and links to suggested new playlists |
+| #167 | Tags and genres (Wikidata, Last.fm, Discogs with a token) gathered by themselves at every start, with no buttons for them. Plus trims on Tidy, Engine, Shuffle and Library |
+| #168 | **Release Radar starts by itself** (`radarAuto`, `bf_radar`). **Engine is back in the Settings sheet**, with one score line on Library. Tidy's table is fixed on desktop. Adds `docs/DESIGN-PLAN.md` |
+
+**Owner decisions from tonight** (also in project memory):
+
+- Every liked song needs filing.
+- All data is gathered at startup, never behind a button.
+- The radar runs by itself.
+- The Engine lives in Settings.
+- **No** "Fill this playlist" inside the automatic Score.
+- **No** simpler Shuffle screen.
+- Every Noise at Once is rejected.
+
+**Where to start:**
+
+1. `docs/DESIGN-PLAN.md` **L0**: the second ear looks stuck at "listening
+   1/1". It is a bug emma hit, and the cause is traced in the brief.
+2. `docs/DESIGN-PLAN.md` **L8**: full UI optimisation and a home page (emma's
+   ask), starting with its inventory. L1 to L5 and L7 are its parts.
+3. This plan's waves 1 to 4, as written below, with these changes:
+   - **R1** is half done: the radar starts by itself (#168), and a failed
+     first read shows the account check. Still open: keep the answer per
+     account, the "isn't sharing new releases" line on a refused route, and
+     the Settings row.
+   - **U2** is replaced by DESIGN-PLAN L1.
+
+Usage is low (emma, 2026-11-15): run few threads at once, and start no new
+wave without asking her.
 
 ## 1. Standing rules
 
@@ -732,17 +780,20 @@ keeps project memory in step.
 | --- | --- | --- | --- | --- | --- | --- |
 | M1 | Score history, Send to the team | 1 | M | Not started | | D1 pending |
 | Q1 | Second-account check | 1 | Q | Not started | | |
-| R1 | Radar confirms itself | 1 | R | Not started | | |
+| R1 | Radar confirms itself | 1 | R | Half done | #168 | starts by itself; still to do: per-account answer, refused-route line, Settings row |
 | U1 | File you can trust at a glance | 1 | U | Not started | | |
 | E1 | Learn from every tap | 2 | E | Not started | | after wave 1 go |
 | E2 | Weights per source and situation | 2 | E | Not started | | after E1 |
 | E3 | Tempo range per playlist | 2 | E | Not started | | after E2 |
-| U2 | Desktop width, calmer File | 3 | U | Not started | | after U1 |
+| U2 | Desktop width, calmer File | 3 | U | Replaced | | by DESIGN-PLAN L1 |
 | U3 | Sound labels in use | 3 | U | Not started | | after U1 |
 | H1 | Docs front door | 3 | H | Not started | | |
 | H2 | CI-built Pages | 3 | H | Not started | | D2 pending |
 | H3 | Branch and dead-code sweep | 3 | H | Not started | | |
 | E4 | Key from more audio | 4 | E | Not started | | D3, optional |
+
+| L0 | Second ear stuck at 1/1 (DESIGN-PLAN) | first | audio | Not started | | bug |
+| L8 | Full UI optimisation + home page (DESIGN-PLAN) | after L0 | U | Not started | | inventory first |
 
 **Suggested calendar at low usage:** wave 1 in one sitting (three threads,
 then U1); a Score paste; wave 2 one package at a time with H1/H3 beside it;
