@@ -91,7 +91,7 @@ while D1 is unanswered. Wave 1 is now running:
 - **M1 done**: its last piece, the Settings row naming the last run's build
   and top-1, merged after R1 (#185).
 - **Q1 and U1** touch disjoint files and can run as parallel threads.
-- **Q1 merged #187, U1 merged #188.** P1 is running in its own thread.
+- **Q1 merged #187, U1 merged #188, P1 merged #189** (first card 41 s → 16 s on `large`).
 - **E1 done** (wave 2): a "not that playlist", a pick of the second choice,
   a move away and an undo change the next card at once
   (`space.mjs` `learnRejected`, `learnUndone`, `rejectPenalty`; page hooks in
@@ -840,7 +840,7 @@ keeps project memory in step.
 | Q1 | Second-account check | 1 | Q | Done | #187 | found P1 |
 | R1 | Radar confirms itself | 1 | R | Done | #168, R1 PR | check once per account per build, refused route holds the sync, Settings row; live check on the first real account |
 | U1 | File you can trust at a glance | 1 | U | Done | #188 | |
-| P1 | First card fast on a large library | 1 | P | Not started | | from Q1: ~42 s to first card on `large` |
+| P1 | First card fast on a large library | 1 | P | Done | #189 | 41 s → 16 s on `large` |
 | E1 | Learn from every tap | 2 | E | Done | E1 PR | online ≥ static on all seeds; teach gate 1 of 3, stays per-account |
 | E2 | Weights per source and situation | 2 | E | Not started | | after E1 |
 | E3 | Tempo range per playlist | 2 | E | Not started | | after E2 |
