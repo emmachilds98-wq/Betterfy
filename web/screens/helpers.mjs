@@ -68,18 +68,24 @@ export function helperRows(s = {}) {
   rows.push({ id: 'autoscore', name: 'Checks itself weekly', on: true, kind: au.at && !au.ok ? 'idle' : 'ok',
     status: au.running ? 'On · scoring now' : !au.at ? 'On · first run soon' : !au.ok ? 'On · retrying' : `On · ran ${au.ago ?? 'recently'}`,
     did: `Scores itself on your own filing after listening finishes and every week, and switches on the parts that measure better for you${
-      au.at && au.ago ? `; last run ${au.ago}` : ''}. No button to press.` });
+      au.at && au.ago ? `; last run ${au.ago}` : ''}${Number.isFinite(au.top1) ? `, first pick right for ${Math.round(au.top1 * 100)}% of your filed songs` : ''}${
+      au.build ? ` (build ${au.build})` : ''}. No button to press.` });
   // Release radar (DESIGN-PLAN L5): starts by itself like every other source; only a Stop turns it off.
   const rr = s.radar;
   if (rr) {
     const rOff = !!rr.off, rErr = !rOff && !rr.running && rr.err;
-    rows.push({ id: 'radar', name: 'Release radar', on: !rOff, kind: rOff ? 'off' : rErr ? 'warn' : rr.at || rr.running ? 'ok' : 'idle',
+    // The account check (BUILD-7 R1) runs by itself once per account per build; its answer shows here.
+    const ck = rr.check, refused = !!ck && !ck.ok;
+    const ckWords = !ck ? ' Spotify’s answer is checked by itself the first time it runs.'
+      : ck.ok ? ` Checked on this account${ck.ago ? ` ${ck.ago}` : ''}: Spotify answers everything it needs.`
+      : ` Checked on this account${ck.ago ? ` ${ck.ago}` : ''}: Spotify refused ${(ck.missing ?? []).join(', ') || 'a read it needs'}, so it waits and checks again with the next update.`;
+    rows.push({ id: 'radar', name: 'New releases (Radar)', on: !rOff, kind: rOff ? 'off' : refused || rErr ? 'warn' : rr.at || rr.running ? 'ok' : 'idle',
       status: rOff ? 'Off since Stop' : rr.running ? (rr.total ? `On · reading ${n(rr.done)} of ${n(rr.total)}` : 'On · starting')
-        : rErr ? 'On · stopped' : rr.at ? 'On' : 'On · starts soon',
-      did: rOff ? 'New releases from your artists. Off since you pressed Stop; Start on the radar turns it back on.'
-        : rErr ? `Stopped: ${String(rr.err).replace(/https?:\/\/\S+/g, '').slice(0, 80).trim()}. It tries again next time Betterfy opens.`
+        : refused ? 'On · Spotify isn’t sharing' : rErr ? 'On · stopped' : rr.at ? 'On' : 'On · starts soon',
+      did: (rOff ? 'New releases from your artists. Off since you pressed Stop; Start on the radar turns it back on.'
+        : rErr && !refused ? `Stopped: ${String(rr.err).replace(/https?:\/\/\S+/g, '').slice(0, 80).trim()}. It tries again next time Betterfy opens.`
         : `New releases from the artists in your library, read by itself a while after Betterfy opens${
-            rr.artists ? `; ${n(rr.artists)} artists checked${rr.ago ? `, last ${rr.ago}` : ''}` : ''}.` });
+            rr.artists ? `; ${n(rr.artists)} artists checked${rr.ago ? `, last ${rr.ago}` : ''}` : ''}.`) + ckWords });
   }
   rows.push({ id: 'discogs', name: 'Discogs', on: !!s.discogs, kind: s.discogs ? 'ok' : 'idle', status: s.discogs ? 'On · your token' : 'Optional', optional: true,
     did: 'Release styles for artists nothing else knows. Needs a personal token, so it stays an extra.' });

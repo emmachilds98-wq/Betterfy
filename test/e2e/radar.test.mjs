@@ -10,6 +10,9 @@ let browser;
 test.before(async () => { if (!skip) browser = await launch(); });
 test.after(async () => { await browser?.close(); });
 
+/** The account check runs by itself on the first Discover visit (BUILD-7 R1): wait for its answer. */
+const probed = page => until(() => page.evaluate(() => RADAR.check && !RADAR.probe?.running && RADAR.check), 'the account check', 20000);
+
 const day = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
 
 /** A small account, trimmed to a handful of artists so the sync is short, with releases to find. */
@@ -44,6 +47,7 @@ test('radar: Start, partial progress said out loud, filters, the owned marker', 
     await page.click('[data-act="discSide"][data-side="radar"]');   // L3: Find new music leads
     await page.waitForSelector('#rrStart');
     assert.match(await page.locator('#radar').innerText(), /about \d+ minutes?/, 'an honest estimate before Start');
+    assert.equal((await probed(page)).ok, true, 'the account check ran by itself and passed');
 
     fake.sw.latencyMs = 120;   // slow enough to see the radar part-read
     const from = fake.log.length;
@@ -110,9 +114,11 @@ test('radar: a quota stop mid-sync keeps what was read and says how far it got',
     await page.evaluate(() => go('discover'));
     await page.click('[data-act="discSide"][data-side="radar"]');   // L3: Find new music leads
     await page.waitForSelector('#rrStart');
+    await probed(page);
     fake.sw.latencyMs = 80;
+    const from = fake.log.length;
     await page.click('#rrStart');
-    await until(async () => fake.log.filter(l => /\/albums\?/.test(l.path)).length >= 4, 'a few artists read', 30000);
+    await until(async () => fake.log.slice(from).filter(l => /\/albums\?/.test(l.path)).length >= 4, 'a few artists read', 30000);
     fake.sw.quota = true;   // the app's quota is gone: sp() says so at once rather than holding
     await page.waitForFunction(() => /Stopped after/.test(document.querySelector('#rrLine')?.textContent ?? ''), null, { timeout: 90000 });
     fake.sw.quota = false; fake.sw.latencyMs = 0;
@@ -128,3 +134,55 @@ test('radar: a quota stop mid-sync keeps what was read and says how far it got',
     assert.ok(fake.log.length > before);
   } finally { await app.close(); }
 });
+
+test('radar: the account check runs by itself once, is kept, and shows in Settings (BUILD-7 R1)', { skip }, async () => {
+  const app = await openApp(browser, { account: radarAccount() });
+  try {
+    const { page, fake } = app;
+    await ready(page);
+    await page.evaluate(() => go('discover'));
+    const kept = await probed(page);
+    assert.equal(kept.ok, true);
+    assert.ok(kept.account, 'kept for this account');
+    const stored = await page.evaluate(() => idb.get('radar:probe'));
+    assert.equal(stored.account, kept.account, 'kept in IndexedDB radar:probe');
+    assert.equal(stored.build, await page.evaluate(() => BUILD));
+    // Once per account per build: another visit asks Spotify nothing more for it.
+    const n = fake.log.length;
+    await page.evaluate(() => radarProbeAuto());
+    assert.equal(fake.log.slice(n).filter(l => /limit=50/.test(l.path)).length, 0, 'not checked again');
+    await page.click('[data-act="discSide"][data-side="radar"]');
+    assert.equal(await page.locator('#radar').innerText().then(t => /isn’t sharing/.test(t)), false, 'a good answer stays out of the way');
+    const row = await page.evaluate(() => helperRowsNow().find(r => r.id === 'radar'));
+    assert.match(row.did, /Checked on this account[^:]*: Spotify answers everything it needs/);
+    assert.deepEqual(app.errors, []);
+  } finally { await app.close(); }
+});
+
+for (const [sw, why] of [['refuseArtistAlbums', 'a refused artist-albums route'], ['albumsNoDates', 'a reshaped answer']]) {
+  test(`radar: ${why} shows one plain line and starts no sync (BUILD-7 R1)`, { skip }, async () => {
+    const app = await openApp(browser, { account: radarAccount() });
+    try {
+      const { page, fake } = app;
+      await ready(page);
+      fake.sw[sw] = true;
+      await page.evaluate(() => go('discover'));
+      await page.click('[data-act="discSide"][data-side="radar"]');
+      const kept = await probed(page);
+      assert.equal(kept.ok, false);
+      await page.waitForFunction(() => /isn’t sharing new releases with this account right now/.test(document.querySelector('#radar')?.textContent ?? ''), null, { timeout: 10000 });
+      assert.equal(await page.locator('#rrStart').count(), 0, 'no Start while held');
+      // The automatic start holds too.
+      assert.equal(await page.evaluate(() => radarAuto({ delay: 0 })), false);
+      assert.equal(await page.evaluate(() => RADAR.index), null, 'no sync ran');
+      const row = await page.evaluate(() => helperRowsNow().find(r => r.id === 'radar'));
+      assert.equal(row.kind, 'warn');
+      assert.match(row.did, /Spotify refused list/);
+      // Once Spotify answers again, Check again lets it run.
+      fake.sw[sw] = false;
+      await page.click('#radar [data-act="rrProbe"]');
+      await until(() => page.evaluate(() => RADAR.check?.ok === true), 'a passing check', 20000);
+      assert.equal(await page.evaluate(() => radarGo({ byHand: true })), true, 'the radar runs once the check passes');
+    } finally { await app.close(); }
+  });
+}

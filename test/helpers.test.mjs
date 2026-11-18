@@ -83,6 +83,19 @@ test('the release radar is listed: on by itself, reading N of M while it runs, o
   assert.ok(!/https?:/.test(bad.did), 'no raw address');
 });
 
+test('the radar row shows its account check: when, and what Spotify refused (BUILD-7 R1)', () => {
+  const at = st => helperRows({ ...DEFAULTS, radar: st }).find(r => r.id === 'radar');
+  assert.equal(at({}).name, 'New releases (Radar)');
+  assert.match(at({}).did, /checked by itself the first time/);
+  const ok = at({ at: 1, artists: 9, check: { ok: true, missing: [], ago: '2 hours ago' } });
+  assert.equal(ok.status, 'On');
+  assert.match(ok.did, /Checked on this account 2 hours ago: Spotify answers everything it needs/);
+  const no = at({ at: 1, check: { ok: false, missing: ['list', 'album'], ago: 'just now' } });
+  assert.equal(no.kind, 'warn');
+  assert.equal(no.status, 'On · Spotify isn’t sharing');
+  assert.match(no.did, /refused list, album, so it waits/);
+});
+
 test('the panel folds to its header plus any row that asks for a look, and opens on tap (DESIGN-PLAN L5)', () => {
   const rows = helperRows(DEFAULTS);
   const html = helpersHTML(rows, { esc });
@@ -100,4 +113,11 @@ test('the panel folds to its header plus any row that asks for a look, and opens
   assert.deepEqual([...look.matchAll(/data-helper="(\w+)"/g)].map(m => m[1]), ['lastfm', 'deezer', 'radar']);
   // Discogs off is an optional extra: never asks for a look.
   assert.ok(!helperAttention(helperRows(DEFAULTS)).some(r => r.id === 'discogs'));
+});
+
+test('the weekly check names its last run’s build and top-1 (BUILD-7 M1)', () => {
+  const row = st => helperRows({ ...DEFAULTS, auto: st }).find(r => r.id === 'autoscore');
+  const r = row({ at: 1, ok: true, ago: '3 days ago', build: '2026-11-18-0140', top1: 0.664 });
+  assert.match(r.did, /last run 3 days ago, first pick right for 66% of your filed songs \(build 2026-11-18-0140\)\. No button/);
+  assert.ok(!/build|first pick right/.test(row({ at: 1, ok: true, ago: 'just now' }).did), 'no run kept yet: nothing claimed');
 });
