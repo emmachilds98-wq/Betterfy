@@ -21,6 +21,7 @@ Contents:
 4. The packages
 5. Waves, file ownership, gate
 6. Thread briefs
+7. UI inventory (L8 step 1) and the provisional merges and cuts
 
 ---
 
@@ -313,3 +314,259 @@ listener>". Before and after screenshots go in
 
 Report in the BUILD-7-BRIEFS shape, with "Numbers" replaced by
 "Shots: <before/after paths>".
+
+## 7. UI inventory (L8 step 1) and the provisional merges and cuts
+
+Read from `main` at `a48e494` (2026-11-18), code only. Nothing was run, so
+"rarely shown" means "the code only draws it when …", not a measured rate.
+
+**Status: provisional.** emma asked (2026-11-18) for the work to keep running
+while she is away, with temporary calls she can change later. Every
+**merge**, **cut** and **automate** below is a provisional call. Each one ships
+as its own small PR (§7.6), so any one can be reverted on its own. Nothing is
+deleted from the code that she can't get back with a revert. Where a call is
+close, the safer one was taken: "fold" or "move" rather than "cut".
+
+How to read the tables:
+
+- **Taps** count from opening the app, which lands on File (0 taps). A sheet
+  opened from a screen adds 1. "⚙" is the Settings sheet; "⚙ › Sources" means
+  the sheet's "Listening and genre sources" section (3 taps: ⚙, the section,
+  then the control).
+- **Auto** is *yes* (runs by itself), *button* (needs a press) or *–* (display).
+- **Mark** is keep, **merge** (two ways to the same thing), **automate** (a
+  button that gathers data), **cut** (no one needs to see it), or **words**
+  (keep, but say it in the listener's words, BUILD-7-PLAN §1).
+
+### 7.1 Shell and navigation
+
+| Function | Where | Taps | Auto | Mark |
+|---|---|---|---|---|
+| Tabs: File, Tidy, Discover, Library, with badges | `app.template.html:166-170`, `render.js:44` | 1 | – | keep. Library's badge counts *suggested new playlists*, not playlists, and Tidy's badge (`within + misfiled`) disagrees with the Tidy switch's counts (`tidy.mjs:207`). **words**: one count rule for both (home page PR) |
+| Swipe / arrow keys between tabs | `gestures.js:119`, `inbox-actions.js:12` | 1 | – | keep, but stop at Library: `VORDER` includes `new` and `shuffle`, so a swipe from Library lands on screens with no tab |
+| Header title | `#mtitle`, `render.js:38` | 0 | yes | keep. The template's placeholder says "Overview" before the first paint |
+| Listening pill | `listening.js:16-46` → ⚙ › Sources | 1 | yes | keep (the one way in to listening status) |
+| Update banner | `app.template.html:190` | 1 | yes | keep |
+| Undo toast, with History | `ui.js:58` | 1 | yes | keep |
+| ⓘ "how this works" sheet | `ui.js` `infoBtn`, `sheet.js` | 1 | – | keep |
+| Routes `#/inbox`, `#/tidy`, `#/discover`, `#/lists`, `#/new`, `#/shuffle`, `#/<v>/settings`, `#/<v>/pl:<id>` | `router.js` | – | – | keep. `#/home`, `#/engine`, `#/sources`, `#/history` stay as redirects (`LEGACY_VIEWS`) |
+
+### 7.2 File (home)
+
+| Function | Where | Taps | Auto | Mark |
+|---|---|---|---|---|
+| Status line: "N to file" | `home.mjs:16` | 0 | yes | **merge** into the home header (L8 step 2) |
+| Status line: "N to tidy" | `home.mjs:20` | 1 | – | **merge** into the home header |
+| Status line: "listening 37/412" | `home.mjs:23` → ⚙ › Sources | 1 | yes | **merge** into the home header (L0's new counts feed it) |
+| Getting-started strip "Connected · Analyse · File your first five" | `analyse.js:185` | 0 | yes | **merge** into the home header; it already goes after five filings |
+| Analysis progress strip | `analyse.js:155` | 0 | yes | **merge** into the home header while it runs |
+| "Analyse my library" button | `analyse.js:159` | 1 | button | **cut** (provisional). Boot runs the first analysis by itself (`boot.js:294-311`) and sets `bf_analysed`, so the button only shows if that never ran. Keep the code path; drop the button |
+| "Start these playlists" (no genre playlist yet) | `home.mjs:78` | 1 | button | keep here. **cut** the copy on Library (`lists.mjs:635`): File is where a new account lands |
+| Liked line "N liked · N filed here · N to file" | `inbox.mjs:284` | 1 | – | **merge** its count into the home header; keep its link to New playlists only (see 7.4) |
+| "Since you last opened" digest | `inbox.mjs:136` | 0 | yes | keep, under the header. **cut** its `bf_digest_measure` count from anything a listener sees |
+| "N are sure. File the N sure ones" | `inbox.mjs:189` | 1 | button | keep. **words**: drop "The engine's checked answer…" |
+| "Retry the rest" (after a failed batch) | `inbox.mjs:194`, toast `:264` | 1 | button | keep the toast, **cut** the card copy |
+| Teach card | `teach.js:114` | 1-2 | button | keep, hidden as today (gated on a Score pass, BUILD-6 SG). **words**: "Help it learn" for "Teach the engine" |
+| Roll-forward "N more by Artist… put them in X too?" | `inbox.mjs:45` | 2 | yes (offered) | keep |
+| Counter "i of N · liked <date>" | `inbox.mjs:372` | 0 | yes | keep the date; **cut** "of N" (the header has it) |
+| The File card: art, play, meta, sound chip and strip, "Sounds like…" | `inbox.mjs:386-395`, `soundslots.js:86` | 0-1 | yes | keep. **words**: "half/double time", "Two genres in one clip" |
+| Picks 1-3, ✕ never suggest, "Also fits" chips | `inbox.mjs:396-412` | 1 | button | keep. **words**: "<axis> playlist" |
+| File in X / Skip (tap, swipe, keys) | `inbox.mjs:419-420` | 1 | button | keep |
+| "Already in X: Keep it there / Remove from Liked" (#166) | `inbox.mjs:298` | 1-2 | button | keep. This is the one home for removing a like |
+| ⋯ › Unlike | `inbox.mjs:424` | 2 | button | **merge** into "Remove from Liked": same action (`inboxAct('unlike')`), but this one has no confirm. Keep the U key, with the same confirm |
+| ⋯ › "Suggest a new playlist" | `inbox.mjs:425` | 2 | – | **cut** (provisional). It only opens New playlists, and its label reads as if it makes one. The liked line and Library already go there |
+| ⋯ › "Add another playlist…" | `inbox.mjs:426` | 2 | button | keep |
+| Sound nudge "Listen to my music / Not now" | `soundslots.js:114` | 1 | button | **automate** (provisional). Listening is on unless someone switched it off (`audio.js:45`); where it is off, the nudge becomes one line in the home header that opens ⚙ › Sources |
+| "That's the lot" and "Where your library sits" | `inbox.mjs:325`, `home.mjs:28` | 0 | yes | keep. **words**: "Cross-filed" → "In two playlists" |
+| Up next (8 covers) | `home.mjs:55` | 1 | – | keep (L1 makes it a right rail on desktop) |
+| Background: sound space, file order, learn from each filing, first-run analysis | `soundfirst.js:30,128`, `inbox.mjs:360`, `boot.js:294` | – | yes | keep |
+
+### 7.3 Tidy
+
+| Function | Where | Taps | Auto | Mark |
+|---|---|---|---|---|
+| Section switch: Wrong place · Repeats · Cross-filed · [By sound] · [Health] · Hard to find | `tidy.mjs:203` | 1-2 | opens on the first with rows | keep. L4 shortens the labels on phone and dims zeros. Up to six parts, not four |
+| Wrong place: Move / second choice / Keep here / Play, Sure·Likely·Unsure filter | `tidy.mjs:148-193` | 2 | button | keep |
+| "Wrong tags? <artist>" tag editor | `tidy.mjs:191`, `tagfix.js:114` | 2 | button | keep. **words**: "Reset to shipped" → "Reset to the default tags" |
+| Sprint (keyboard, one at a time) | `tidy.mjs:510` | 2 | button | keep, desktop only. **words**: drop decisions-per-minute |
+| Repeats: Keep <length> | `tidy.mjs:22` | 2 | button | keep. **words**: "ISRC" → "the same recording" |
+| Cross-filed: remove from one, Keep only in X | `tidy.mjs:52-65` | 2 | button | keep |
+| Cross-filed 2+ … 6+ threshold row | `tidy.mjs:57` | 3 | – | **cut** (provisional): fix it at 2+. Five buttons, one filled, for a section whose own lede says "usually deliberate" |
+| By sound: Move / Keep here / Play | `tidy.mjs:109` | 2 | yes (worker) | **merge** into Wrong place as a "by sound" badge on the row (provisional). The rows use the same buttons and the same Move/undo, and the page already drops the tag row when they disagree (`tidy.mjs:87`). Saves a switch part on phone |
+| Health: worst playlists, "Tidy N" / "Open in Library" | `tidy.mjs:447` | 2 | – | **cut** from Tidy (provisional). Library's rows and sheet carry the same score (`lists.mjs:71`); L2 makes Library show it only where it is low. "Tidy N" goes on the Library row instead |
+| "Only <playlist> · Show every playlist" chip | `tidy.mjs:467` | – | – | keep (Library's "Tidy N" sets it) |
+| Hard to find: find box, "Compare with Spotify search" | `hidden.mjs:109,193` | 2+ | button | keep |
+| Hard to find: "Check my oldest N / Check N more" | `hidden.mjs:40,162` | 3 | button | **automate**: check a batch in the background after the radar's first read, and keep "Check N more" as a small "Ask again now". The section reads 0 until it has run |
+| Hard to find: Use this version → Swap / Cancel | `hidden.mjs:136,204` | 4 | button | keep (confirm-first stays) |
+
+### 7.4 Library, the playlist sheet, Shuffle, New playlists
+
+| Function | Where | Taps | Auto | Mark |
+|---|---|---|---|---|
+| Library rows: art, count, facts, sound strip, health | `lists.mjs:210` | 1 | – | keep. L2: hide the score at 90 and over |
+| "N to file" chip | `lists.mjs:156` | 1 | – | keep; L2 makes it open File on that playlist |
+| "These look like genre playlists" with ticks | `lists.mjs:625` | 1-2 | button | keep (first-run only); same job as the sheet's "It groups by" |
+| "Start these playlists" | `lists.mjs:635` | 2 | button | **cut** here; File keeps it (7.2) |
+| "Possible new genres" | `lists.mjs:643` | 2 | button | **merge** into New playlists › By sound "New genre?" (`new.mjs:102`) |
+| "Playlists that sound the same: Merge… / Not now" | `lists.mjs:656` | 2 | button | keep here; **cut** the sheet's Twins copy (below) |
+| Merge/split "Not now" rate line | `lists.mjs:664` | 1 | – | **cut**: an internal measure |
+| "Playlists it gets wrong most" | `lists.mjs:308` | 1 | – | keep |
+| "Suggested playlists" (3 rows + See all) | `lists.mjs:665` | 1-2 | – | keep as the one way in to New playlists (all four targets already go there). Becomes one row "N suggested playlists ›" |
+| "How well it knows you" + "Engine" | `lists.mjs:674` | 1-2 | – | keep (#168 just put it here). **words**: "Engine" → "How it picks" |
+| Tag coverage line | `lists.mjs:681` | 1 | – | **cut** here; it lives in ⚙ › Sources (`sources.mjs:80`) and in "What's helping your picks" |
+| "Genre sources" button | `lists.mjs:682` | 2 | – | **cut** (provisional): ⚙ is one tap from everywhere |
+| "Shuffle everything" button | `lists.mjs:683` | 2 | – | keep, and fix it: it reopens whatever playlist a sheet last picked (`S.shufPl` isn't reset) |
+| Sheet: header, tag mix "64% genre · 19% mood" | `lists.mjs:224,248` | 2 | – | keep. **words**: drop the facet percentages |
+| Sheet › Health | `lists.mjs:249` | 2 | – | keep (becomes the one home for health) |
+| Sheet › "It groups by" | `lists.mjs:252` | 2 | button | keep. **words**: "an inbox to sort later" |
+| Sheet › "Suggest new tracks for it" | `lists.mjs:256` | 2 | button | keep |
+| Sheet › Sound profile | `lists.mjs:258` | 2 | – | keep |
+| Sheet › "Two genres?" by sound and by tags | `lists.mjs:259-266` | 3 | button | **merge** into one "Two genres?" section with the better of the two (same title, same wizard) |
+| Sheet › Twins "Merge into a new playlist…" | `lists.mjs:267` | 3 | button | **cut** (provisional): Library's "sound the same" and the weak-playlist hint already offer it |
+| Sheet › "Help it learn this one" | `lists.mjs:296` | 2 | – | keep. **words**: "Score" |
+| Sheet › Fill this playlist: ranked rows, Add, Add all | `lists.mjs:356-389` | 2-3 | yes (ranks on open) | keep |
+| Sheet › Fill: "Check it on my library" | `lists.mjs:368` | 3 | button | **automate**: run the recall check in the background after the weekly Score (`autoscore.js`), not on a press |
+| Sheet › Fill: "Off for your library: it found X%…" | `lists.mjs:370` | 2 | – | **cut** to one line, "Not enough to go on for this playlist yet" |
+| Sheet › Shuffle / DJ order | `lists.mjs:273` | 3 | – | keep: it is the "shuffle this playlist" way in; "Shuffle everything" is the other |
+| Merge/split wizard | `lists.mjs:522` | 3+ | button | keep |
+| Shuffle screen: All Songs mirror, picker, order, options, preview | `shuffle.mjs` | 2-3 | button | keep (owner: no simpler Shuffle screen) |
+| Shuffle "Rediscover…" | `shuffle.mjs:93` | 3 | button | keep (a choice about the order, not a data button) |
+| New playlists: gaps job, "Genres with no playlist" | `new.mjs:29-47` | 2-3 | yes / button | keep |
+| New: "Playlists that are two genres" — Split… and per-part "Make 'X'" | `new.mjs:48-53` | 3 | button | **cut** the per-part "Make 'X'" (provisional): it skips the wizard and its undo. Split… stays |
+| New: untagged note | `new.mjs:54` | 2 | – | **cut**: diagnostic |
+| New › By sound: hybrid, "New genre?", "A or B?" | `new.mjs:84-126` | 3 | button | keep (takes Library's "Possible new genres") |
+| New: "Groups in your backlog" Create | `new.mjs:136,217` | 3 | button | keep, but route it through `gapsCreate` so it gets History and undo like the rest |
+
+### 7.5 Discover
+
+| Function | Where | Taps | Auto | Mark |
+|---|---|---|---|---|
+| Release radar: cold card "Start now" | `radar.mjs:201` | 1 | yes (`radarAuto`, 90 s) | keep. **words**: "(N requests)" |
+| Radar status, Stop / Start again | `radar.mjs:216` | 1 | button | keep |
+| Radar account check and its status table, Copy | `radar.mjs:176-186` | 1 | after a failed read | **fold** (provisional): one line "Spotify isn't sharing new releases with this account" plus a "Details" fold holding the table (finishes BUILD-7 R1) |
+| Radar filter chips (7) | `radar.mjs:22,225` | 2 | – | keep, but **cut** the "Features and remixes" fold (`radar.mjs:256`): the Features chip shows the same |
+| Radar: find an artist, Read older releases | `radar.mjs:231` | 2-3 | button | keep |
+| Radar feed: open, File → playlist, dismiss ×, Show more | `radar.mjs:150-167` | 2 | – | keep |
+| "Find new music" source menu and button | `discover.mjs:91-97` | 1 | button | **automate** (provisional): run once a day from top artists and recent plays after the radar's first read, so Discover opens on picks. The button stays as "Find more" |
+| Empty state's second filled "Find new music from what I play" | `discover.mjs:104` | 1 | button | **cut**: one filled button per view |
+| Keyless note and "Connect Last.fm" | `discover.mjs:85` | 1 | – | **cut** from Discover: the hosted build always has the built-in key (`storage.js:55`), so it never shows there. ⚙ › Sources keeps the key box |
+| "Find tracks that sound like…" | `clap.js:81` | 1 | button | **move** (provisional) to Library: it searches your own library, not new music. Its "Search" stops being a filled button |
+| Pick card: art, via, why, tags, fit line | `discover.mjs:109-139` | 1 | – | keep. **words**: "via deezer, listenbrainz", "<axis> playlist" |
+| Card player, art play, row ▶ preview | `discover.mjs:34,109,127` | 1-2 | – | keep the card player and row ▶; **cut** play-on-art |
+| Add: fit line, "Add to X", picks 2-3, row "+ X", "Add to another playlist…" | `discover.mjs:40,137-158` | 2 | button | **merge** the fit line and "Add to X" (same `data-dfile`) into one button |
+| Next / Back, Not for me, Open in Spotify | `discover.mjs:192-207` | 2 | button | keep |
+| Like on the card and on each row | `discover.mjs:39,156` | 2 | button | keep both (the row is a different pick) |
+| "All N picks" rows | `discover.mjs:26` | 1 | – | keep (L1 puts them beside the card) |
+
+### 7.6 Settings sheet (⚙)
+
+| Function | Where | Taps | Auto | Mark |
+|---|---|---|---|---|
+| "What's helping your picks" (12 rows) | `helpers.mjs:24-72` | 1 | yes | keep; L5 folds it to "12 of 12 on" plus any row not OK, and adds the radar row |
+| › Sources: "Your artists" coverage | `sources.mjs:52` | 2 | yes | keep. **words**: "shared table" |
+| › Sources: Last.fm card, own key, "Ask again now" | `sources.mjs:86-90` | 3 | yes + button | keep (small "Ask again now" is allowed by §2.2) |
+| › Sources: Wikidata card | `sources.mjs:92` | 2 | yes | keep |
+| › Sources: Discogs token | `sources.mjs:95` | 3 | button | keep (optional bonus, CLAUDE.md) |
+| › Sources: Listening panel: on/off, Wi-Fi only, scope, Listen now, Stop; Deep listen: second ear, CLAP, Beat This, memory | `audio-panel.js` | 2-3 | yes + button | keep. L0 owns its wording now |
+| › Sources: label check | `sources.mjs:103` | 2 | – | keep |
+| › Sources: Your data: back up, restore (preview, tick, undo), what is kept, who hears, wipe | `sources.mjs:133-165` | 3+ | button | keep. **words**: show plain names, not raw `bf_*` keys, in "What is kept" |
+| › Engine: how much it has to go on, would do differently, Is it any better (Score, Score + Tune, Copy), can't tell apart, Forget and learn again, Tune (use / copy / reset), Past runs (Copy) | `engine.mjs` | 2-3 | yes (weekly, `autoscore.js`) + button | keep. Score and Score + Tune run by themselves now, so their buttons become one small "Run again now" (**automate**, provisional) |
+| › History: log, Undo | `history.mjs` | 2-3 | – | keep |
+| Appearance, accent colour (12 + custom), apply-to ticks | `app.template.html:215-245` | 2 | button | keep |
+| App icon preview | `app.template.html:246` | 1 | – | **cut** (provisional): a picture of the icon, no control |
+| Behaviour: compact rows, remember Tidy filters | `app.template.html:254` | 2 | button | keep |
+| Your library: Re-sync from Spotify | `app.template.html:266` | 2 | button | keep (on purpose a manual, costly read) |
+| Sync across devices | `app.template.html:277` | 2 | button | keep (hidden unless configured) |
+| About: build, credits, licences, Check for updates, Disconnect | `app.template.html:293` | 2 | button | keep |
+| Reset to defaults | `app.template.html:310` | 2 | button | keep; **words**: "Reset look to defaults" (it resets the theme only) |
+
+Automatic jobs at start (`boot.js:290-345`), all kept and all to be named by
+the home header while they run: library read, cross-device sync, Wikidata then
+Last.fm tags, first-run analysis, the Engine's map (`engineAutoLearn`), the
+radar (90 s), similar artists (`bridgeWarm`), listening (3 s, when on), Score +
+Tune (a minute in, then weekly), update check.
+
+### 7.7 The provisional calls, as one list
+
+Each line is one PR unless it says which package carries it. **R** = can be
+reverted on its own.
+
+Merges:
+
+- **M1** File's status line, getting-started strip, analysis strip, liked
+  count and the sound nudge become the home header's one line (L8 step 2). R.
+- **M2** ⋯ › Unlike goes; "Remove from Liked" (with its confirm) is the one
+  way, and the U key gets the same confirm. R.
+- **M3** Tidy › By sound joins Wrong place as a "by sound" badge on the row. R.
+- **M4** Health lives in Library only (row and sheet); Tidy's Health part
+  goes, and the Library row gets "Tidy N". With L2. R.
+- **M5** Library's "Possible new genres" joins New › By sound. R.
+- **M6** The sheet's two "Two genres?" sections become one. R.
+- **M7** Discover's fit line and "Add to X" become one button. With L3. R.
+
+Cuts:
+
+- **C1** File: "Analyse my library" button, ⋯ › "Suggest a new playlist",
+  the card's "Retry the rest" (the toast keeps it), the counter's "of N". R.
+- **C2** Library: "Start these playlists" (File keeps it), tag coverage line,
+  "Genre sources" button, merge/split rate line. With L2. R.
+- **C3** Sheet: Twins section; Fill's "Off for your library" paragraph
+  becomes one line. R.
+- **C4** Tidy: Cross-filed's 2+…6+ row (fixed at 2+). With L4. R.
+- **C5** Discover: second filled button in the empty state, keyless note and
+  "Connect Last.fm", play-on-art, the radar's "Features and remixes" fold.
+  With L3. R.
+- **C6** New: per-part "Make 'X'" (Split… stays), untagged note. R.
+- **C7** Settings: App icon preview. With L5. R.
+
+Automate:
+
+- **A1** Discover finds new music once a day by itself (the button stays as
+  "Find more"). With L3.
+- **A2** Hard to find checks a batch in the background (small "Check more"
+  stays).
+- **A3** Fill's "Check it on my library" runs after the weekly Score.
+- **A4** Engine's Score / Score + Tune buttons become one small "Run again
+  now".
+- **A5** The sound nudge goes into the home header (with M1).
+
+Moves and fixes found on the way (not cuts):
+
+- **F1** "Find tracks that sound like…" moves from Discover to Library.
+- **F2** "Shuffle everything" resets to All Songs.
+- **F3** New's "Groups in your backlog" Create goes through `gapsCreate`,
+  so it gets History and undo.
+- **F4** Swipes stop at Library; tab badges use the same counts as the
+  screens they open.
+- **F5** The radar's account check folds into one plain line plus Details
+  (BUILD-7 R1).
+- **Words** (one PR, L7 wave): the **words** marks above.
+
+Tap counts: no call above makes a function further away. M4 makes playlist
+health one tap closer from File (Library row, not Tidy › Health), F1 makes
+"sound like" search 1 tap from Library as from Discover, and every cut
+function either has another way in at equal or fewer taps or is shown in the
+home header at 0.
+
+### 7.8 How the calls are split into threads
+
+Owned files decide what can run together (§5). The home page goes first,
+after L0 merges, because M1, A5 and F4 sit in `home.mjs`, `inbox.mjs`,
+`shell.js` and `render.js`.
+
+- **Home page** (L8 step 2): M1, A5, C1, M2, F4. Owns `home.mjs`,
+  `inbox.mjs`, `analyse.js`, `soundslots.js` (nudge only), `40-home.css`,
+  `60-file.css`, `render.js` (counts only).
+- **Wave A**, in parallel:
+  - **L2** + M4 (Library side), M5, C2, C3, M6, F2, F3: `lists.mjs`,
+    `new.mjs`, `shuffle.mjs` (F2 only), `61-library.css`, `62-lists.css`.
+  - **L4** + M3, M4 (Tidy side), C4, A2: `tidy.mjs`, `hidden.mjs`,
+    `64-tidy.css`, `63-hidden.css`. L2 and L4 share M4: L4 removes Tidy's
+    Health part only after L2's "Tidy N" link is on `main`.
+  - **L5** + C7, A4: `helpers.mjs`, `engine.mjs`, `66-engine.css`,
+    `70-overlays.css`, the template's Settings markup.
+- **Wave B:** **L3** + M7, C5, A1, F1, F5 (`discover.mjs`, `radar.mjs`,
+  `clap.js`, `discover-engine.js`, and `lists.mjs` for F1's new home, after
+  L2 merges); then **L1**.
+- **Wave C:** **L7** + the words PR. A3 (Fill after Score) goes here too,
+  because it touches `autoscore.js`, which no other package owns.
