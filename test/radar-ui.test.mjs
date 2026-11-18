@@ -57,7 +57,7 @@ test('the status line never calls a partial radar complete', () => {
 test('never synced: an explainer, one Start button, an honest estimate', () => {
   const html = Radar.radarView(ctx(state()));
   assert.match(html, /data-act="rrStart"/);
-  assert.match(html, /about <b>\d+ minutes?<\/b> \([\d,]+ requests\)/);
+  assert.match(html, /about <b>\d+ minutes?<\/b>\. You can keep/);
   assert.doesNotMatch(html, /rr-feed/);
 });
 

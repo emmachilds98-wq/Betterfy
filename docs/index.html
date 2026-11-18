@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1125">
+<meta name="bf-build" content="2026-11-18-1132">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1977,7 +1977,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1125</span>
+    <span class="mono">build 2026-11-18-1132</span>
   </p>
 
   <div class="feat">
@@ -2070,7 +2070,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1125</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1132</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2180,7 +2180,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-1125. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-1132. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -2195,7 +2195,7 @@ main:focus{outline:none}
         <button class="b" id="disconnect" type="button">Disconnect</button>
       </div>
     </section>
-    <button class="b" id="resetTheme" type="button">Reset to defaults</button>
+    <button class="b" id="resetTheme" type="button">Reset look to defaults</button>
   </div>
 </div>
 
@@ -4120,7 +4120,7 @@ function soundChip(vm) {
   if (num(vm.bpm) && vm.bpm > 0) {
     const bpm = Math.round(vm.bpm), alt = num(vm.bpmAlt) && vm.bpmAlt > 0 ? Math.round(vm.bpmAlt) : null;
     const [lo, hi] = alt == null ? [bpm, null] : [Math.min(bpm, alt), Math.max(bpm, alt)];
-    const title = [alt != null ? `${bpm} BPM, but half/double time is unsure (${lo} or ${hi})` : `${bpm} BPM`,
+    const title = [alt != null ? `${bpm} BPM, but it could be ${lo} or ${hi}` : `${bpm} BPM`,
                    num(vm.bpmConf) ? `confidence ${pct(vm.bpmConf)}` : null].filter(Boolean).join(' · ');
     parts.push(item('bpm', `${alt != null ? `${lo}/${hi}` : bpm} <span class="snd-unit">BPM</span>`, title, vm.bpmConf));
   }
@@ -5134,7 +5134,7 @@ function radarView(ctx) {
     const when = auto ? 'It starts by itself a minute or two after Betterfy opens. ' : 'Off on this device since you pressed Stop. ';
     return head + `<p class="lede">New releases from the ${est.artists.toLocaleString('en-GB')} artists in your library, newest first.</p>
       <div class="rr-start">
-        <p>${when}The first read asks Spotify about each artist in turn: about <b>${est.minutes} minute${est.minutes === 1 ? '' : 's'}</b> (${est.requests.toLocaleString('en-GB')} requests). You can keep using the app, and what has been read shows as it arrives.</p>
+        <p>${when}The first read asks Spotify about each artist in turn: about <b>${est.minutes} minute${est.minutes === 1 ? '' : 's'}</b>. You can keep using the app, and what has been read shows as it arrives.</p>
         <div class="rowbtns"><button class="b${auto ? '' : ' p'}" type="button" data-act="rrStart" id="rrStart">${auto ? 'Start now' : 'Start the radar'}</button></div>
         ${R.err || R.probe ? probeHTML(R, esc) : ''}
       </div></section>`;
@@ -5990,7 +5990,7 @@ function sureBatchHTML(ctx) {
   // rest"); the card below carries on the same History group (DESIGN-PLAN C1).
   if (n < 2) return '';
   return `<div class="card surebatch">
-    <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
+    <span><b>${n} are sure.</b></span>
     <button class="b sm p" data-act="filesure">File the ${esc(String(n))} sure ones</button>
   </div>`;
 }
@@ -6188,7 +6188,7 @@ function view(ctx) {
               : sg.via === 'sound' ? `sounds like this playlist${sg.tagsAgree ? ' · tags agree' : ''}`
               : sg.via === 'blend' ? (sg.untagged ? 'where you file this artist and ones like them'
                 : sg.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record')
-              : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
+              : 'its tags fit here'}</span>${pickEvidence(sg)}</span>
             <span class="rt">${pickBand(n === 0 && topBand ? { ...sg, band: topBand } : sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
           </button><button class="nope" type="button" data-act="reject" data-reject="${esc(sg.id)}"
@@ -6733,7 +6733,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1125`,
+    `Betterfy engine score — build 2026-11-18-1132`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7344,7 +7344,7 @@ function coverageHTML(cov) {
   const unasked = [['Deezer', cov.deezerAsked], ['Wikidata', cov.wikidataAsked]]
     .filter(([, k]) => k && k < cov.total).map(([name, k]) => `${name} about ${k.toLocaleString()}`);
   return `<p class="srcline srcknow">${part('Deezer', cov.deezerPct, cov.deezerAsked)}, ${part('Wikidata', cov.wikidataPct, cov.wikidataAsked)},
-      shared table <b class="mono">${cov.sharedPct}%</b> of your <span class="mono">${cov.total.toLocaleString()}</span> artists.</p>
+      the shared tag list <b class="mono">${cov.sharedPct}%</b> of your <span class="mono">${cov.total.toLocaleString()}</span> artists.</p>
     ${unasked.length ? `<p class="srcline sub">Asked so far: ${unasked.join(', ')}. The rest are looked up as File, Score and Discover need them.</p>` : ''}`;
 }
 
@@ -8035,7 +8035,7 @@ const { sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTo
 /* [id, label, short label]: the short one is what a phone shows (DESIGN-PLAN L4), so the
  * switch fits one line at 390 px; desktop and the ⓘ text keep the full words. By sound is
  * not a part of its own any more (§7.7 M3): its rows sit in Wrong place with a badge. */
-const TIDY_SECTIONS = [['misfile', 'Wrong place', 'Misfiled'], ['dupes', 'Repeats', 'Repeats'], ['cross', 'Cross-filed', 'In two']];
+const TIDY_SECTIONS = [['misfile', 'Wrong place', 'Misfiled'], ['dupes', 'Repeats', 'Repeats'], ['cross', 'In two playlists', 'In two']];
 // Hard to find (screens/hidden.mjs) is always last, and is never opened
 // for you: its count is only what a check found, so it is a place you go, not work queued.
 const HIDDEN_SECTION = ['hidden', 'Hard to find', 'Hidden'];
@@ -8062,7 +8062,7 @@ function secDupes(c) {
   if (!exact.length && !clash.length) return `${lede}
     ${emptyState('No repeats', 'None of your playlists has the same track in it twice, as the same recording or as a different cut.')}`;
   return `${lede}
-    ${exact.length ? sec('The same recording, twice', exact, 'Both copies share an ISRC: the same master on two releases. Removing one loses nothing.', 'dupes-exact') : ''}
+    ${exact.length ? sec('The same recording, twice', exact, 'Both copies are the same recording, on two releases. Removing one loses nothing.', 'dupes-exact') : ''}
     ${clash.length ? sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash') : ''}`;
 }
 
@@ -8076,7 +8076,7 @@ function secCross(c) {
   const ib = c.infoBtn ?? (() => '');
   const { R, esc, thumbHTML, shownOf, emptyState, moreButton } = c;
   const a = R.across.filter(x => x.placements.length >= CROSS_MIN);
-  return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is removed unless you tap. The likeliest slips come first, with the best-fitting playlist starred.${ib('tidy-cross', 'Cross-filed', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
+  return `<p class="lede">Tracks in several playlists. Usually deliberate, so nothing is removed unless you tap. The likeliest slips come first, with the best-fitting playlist starred.${ib('tidy-cross', 'In two playlists', '<p>Tap a playlist to remove the track from just that one. Nothing is removed unless you tap it.</p>')}</p>
     <div class="rows">${a.slice(0, shownOf('cross')).map(c => `<div class="row" data-flip data-key="${esc(`x:${c.placements[0]?.trackId ?? c.title}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
@@ -8501,13 +8501,13 @@ function readSprints(c) {
 function sprintBar(c, sec, n) {
   if (!n) return '';
   const tot = sprintTotals(readSprints(c));
-  const past = tot.perMin != null ? ` <span class="sub">Your sprints so far: ${tot.perMin} decisions a minute${tot.kept != null ? `, ${Math.round(tot.kept * 100)}% of moves kept` : ''}.</span>` : '';
+  const past = tot.perMin != null ? `${tot.kept != null ? ` <span class="sub">Your sprints so far: ${Math.round(tot.kept * 100)}% of moves kept.</span>` : ''}` : '';
   return `<div class="sprintbar"><button type="button" class="b sm" id="sprintGo" data-act="spstart" data-spsec="${sec}" aria-describedby="sprintHint">Sprint through ${n.toLocaleString()}</button>
     <span class="hint" id="sprintHint">One at a time by keyboard: <kbd>→</kbd> move, <kbd>←</kbd> keep, <kbd>U</kbd> undo, <kbd>Esc</kbd> stop.</span>${past}</div>`;
 }
 
 function sprintTally(st) {
-  return `${st.decisions} decided${st.perMin != null ? ` · ${st.perMin} a minute` : ''}${st.kept != null ? ` · ${Math.round(st.kept * 100)}% of moves kept` : ''}`;
+  return `${st.decisions} decided${st.kept != null ? ` · ${Math.round(st.kept * 100)}% of moves kept` : ''}`;
 }
 
 function sprintPanel(c, sec) {
@@ -9014,17 +9014,6 @@ const AXES = ['genre','mood','era','event','djset','context','inbox'];
 /** The axis names in plain words, for the sheet's picker (USER-REVIEW item 8). The values stay the axis ids. */
 const AXIS_WORDS = { genre: 'genre', mood: 'mood', era: 'era or year', event: 'an event', djset: 'a DJ set',
   context: 'a time or place', inbox: 'an inbox to sort later' };
-/** "64% genre · 19% mood" — what a playlist's tags are actually made of,
- *  which is the evidence behind a content-guessed axis and a sanity check on
- *  every other one. Facets under a tenth are left out as noise. */
-function mixLabel(mix) {
-  if (!mix || !mix.tracks) return '';
-  const parts = ['genre','mood','era','occasion','descriptor']
-    .map(f => [f, mix[f]]).filter(([, x]) => x >= 0.1)
-    .sort((a, b) => b[1] - a[1]).slice(0, 3)
-    .map(([f, x]) => `${Math.round(x * 100)}% ${f}`);
-  return parts.join(' · ');
-}
 
 /** The proposals worth a line at the top of Library: genres with no playlist, hybrids and new
  *  genres by sound, backlog groups. Nothing until the gaps are worked out; nothing already made.
@@ -9264,7 +9253,6 @@ function sheetHTML(c, id) {
   const undecided = p.why === c.NO_SIGNAL;
   const info = plInfo(c, { id, ...p }, new Set(split ? [id] : []), new Set(undecided ? [id] : []));
   const { health } = info;
-  const mix = mixLabel(c.playlistMixes().mix.get(id));
   const prof = profileRow(info.vm);
   const few = p.tracks < MIN_FOR_TARGET;
   const canMix = c.mixHeardIn(pl.tracks) >= (c.BetterfyOrder?.MIN_MIX ?? 8);
@@ -9276,7 +9264,7 @@ function sheetHTML(c, id) {
   const notNow = key => ms.dismissed[key] || ms.made[key] ? '' : `<button class="b sm" data-act="wizdismiss" data-key="${esc(key)}">Not now</button>`;
   return `<div class="pls-head"><h2>${esc(pl.name)}</h2><button class="iconbtn" type="button" data-plclose aria-label="Close">✕</button></div>
     <div class="pls-body">
-    <p class="plmeta"><span class="mono">${p.tracks}</span> tracks${mix ? ` · ${esc(mix)}` : ''}</p>
+    <p class="plmeta"><span class="mono">${p.tracks}</span> tracks</p>
     ${health ? `<section class="pls-sec"><h3>Health</h3>
       <p class="plhealth plh-${health.score >= 85 ? 'ok' : health.score >= 65 ? 'fine' : 'low'}"><b class="mono">${health.score}</b> ${esc(health.word)}</p>
       ${health.notes.length ? `<ul class="plnotes">${health.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : '<p class="hint">Nothing out of place.</p>'}</section>` : ''}
@@ -9325,7 +9313,7 @@ function weakRows(c) {
 }
 const weakWhen = (at, now = Date.now()) => {
   const days = Number.isFinite(at) ? Math.floor((now - at) / 864e5) : null;
-  return days == null ? '' : days <= 0 ? ' (scored today)' : days === 1 ? ' (scored yesterday)' : ` (scored ${days} days ago)`;
+  return days == null ? '' : days <= 0 ? ' (checked today)' : days === 1 ? ' (checked yesterday)' : ` (checked ${days} days ago)`;
 };
 function weakSheetHTML(c, id) {
   const { esc } = c;
@@ -9691,7 +9679,7 @@ function view(c) {
   // One line of the Engine's score (owner, 2026-11-18): the Engine itself lives in Settings.
   // The footer is one line (L2): the score sentence, then where to go from here.
   const knows = rows.some(p => p.target) ? `<span class="plknows">${esc(eng?.running ? 'Checking how well it knows you…' : knowsYouLine(eng))}</span>` : '';
-  const footHTML = `<p class="axcov plfoot">${knows}<span class="plfoot-b">${knows ? '<button class="b sm" data-go="engine">Engine</button>' : ''}
+  const footHTML = `<p class="axcov plfoot">${knows}<span class="plfoot-b">${knows ? '<button class="b sm" data-go="engine">How it picks</button>' : ''}
       <button class="b sm" data-act="lshufall">Shuffle everything</button></span></p>`;
   return `<h1>Library</h1>
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
@@ -10113,7 +10101,7 @@ function view(ctx) {
 
   const best = (t.suggest ?? [])[0];
   return head + discSoundLine() + `<div class="counter disccount">
-      <span class="discvia">via ${esc((t.via??[]).join(', '))} · ${i+1} of ${d.length}</span>
+      <span class="discvia">${i+1} of ${d.length}</span>
       <span>from ${esc(S.discoverFrom)}</span>
     </div>
     <div class="wide2 discwide"><div class="w-main"><div class="deck">
@@ -10144,7 +10132,7 @@ function view(ctx) {
           </button>` : ''}
         ${(t.suggest??[]).length > 1 ? `<div class="picks">${t.suggest.slice(1,3).map((sg,n)=>
           `<button class="pick" data-act="dfile" data-dfile="${esc(sg.id)}"><span class="k">${n+2}</span>
-           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.axis ? `${esc(sg.axis)} playlist` : sg.via === 'seed' ? 'the playlist this radio is from' : 'playlist'}</span>${pickEvidence(sg)}</span>
+           <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.axis ? 'its tags fit here' : sg.via === 'seed' ? 'the playlist this radio is from' : 'playlist'}</span>${pickEvidence(sg)}</span>
            <span class="rt">${pickBand(sg)}<span class="sc">${fitWord(sg.score)}</span>
              <span class="bar"><i style="width:${(sg.score*100).toFixed(0)}%"></i></span></span></button>`).join('')}</div>` : ''}
         ${(t.suggest??[]).length ? '' : `<p class="why discnofit">No confident suggestion — ${hasKey ? 'Last.fm has no tags for this artist' : 'nothing says what this artist is yet'}, or it fits nothing you have. Pick a playlist below.</p>`}
@@ -10929,7 +10917,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1125';
+const BUILD = '2026-11-18-1132';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11267,7 +11255,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1125', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1132', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12052,7 +12040,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1125');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1132');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12848,11 +12836,11 @@ function soundIdHTML(t) {
   if (!id || (!id.genre && !id.bpm)) return '';
   const band = id.genre ? (id.genre.conf >= 0.7 ? 'HIGH' : id.genre.conf >= 0.45 ? 'LIKELY' : 'AMBIGUOUS') : null;
   const path = id.genre ? id.path.map(p => esc(p.name)).join('<span class="sep">›</span>') : 'No clear genre';
-  const bpm = id.bpm ? `<span class="bpm" title="${id.bpm.from === 'genre' ? 'Half or double time settled by the genre it sounds like' : 'Measured from the preview'}">${Math.round(id.bpm.value)} BPM</span>` : '';
-  const blend = id.blend ? `<span class="tag" title="Two genres in one clip">${esc(id.blend[0])} + ${esc(id.blend[1])}</span>` : '';
+  const bpm = id.bpm ? `<span class="bpm" title="${id.bpm.from === 'genre' ? 'Tempo read the way its genre is felt' : 'Measured from the preview'}">${Math.round(id.bpm.value)} BPM</span>` : '';
+  const blend = id.blend ? `<span class="tag" title="Sounds like a mix of two genres">${esc(id.blend[0])} + ${esc(id.blend[1])}</span>` : '';
   const who = n => { const x = soundTrackName(n.id); return `${esc(x.title)}<span class="sub"> — ${esc(x.artist)}</span>`; };
   const where = n => (n.playlists ?? []).map(p => CFG[p]?.name ?? p).slice(0, 2).map(esc).join(', ');
-  const rel = { double: ' · double time', half: ' · half time', same: '' };
+  const rel = { double: ' · twice the tempo', half: ' · half the tempo', same: '' };
   return `<div class="sndid"><div class="sndid-h"><span>Sounds like</span> <b class="sndid-path">${path}</b>${bpm}${blend}${band ? pickBand({ band }) : ''}</div>
     ${s.neighbours.length || s.mix.length || id.why.length ? `<details><summary>Why, and what it sounds like and mixes with</summary>
       ${id.why.length ? `<span class="why">${esc(id.why.join('; '))}.</span>` : ''}
@@ -15131,7 +15119,7 @@ function tagEditorHTML(id, name) {
       <button class="b sm" data-addtag="${esc(id)}">Add</button>
       <button class="b sm" data-refetchtags="${esc(id)}" data-artistname="${esc(name)}"
         ${lfmKey() ? '' : 'disabled title="Add a Last.fm key on the Sources screen first"'}>Refetch from Last.fm</button>
-      <button class="b sm" data-resettags="${esc(id)}">Reset to shipped</button>
+      <button class="b sm" data-resettags="${esc(id)}">Reset to the default tags</button>
       <button class="b sm" data-closetagedit="1">Done</button>
     </div>
   </div>`;
@@ -15697,7 +15685,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1125';
+    s.src = 'engine.js?v=2026-11-18-1132';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15719,7 +15707,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1125');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1132');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16430,7 +16418,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1125';
+    s.src = 'audio.js?v=2026-11-18-1132';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16484,7 +16472,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1125', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1132', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17403,7 +17391,7 @@ function teachAct(el) {
 /** The teach card above File's deck, or '' where it does not apply. */
 function teachHTML() {
   if (TEACH_UI.hidden || S.roll || !R?.backlog?.length || typeof teachQueue !== 'function' || !teachGateOpen()) return '';
-  const head = (sub, extra = '') => `<div class="teach-h"><h2 id="teachH">Teach the engine</h2>
+  const head = (sub, extra = '') => `<div class="teach-h"><h2 id="teachH">Help it learn</h2>
       <button class="teach-x" data-act="teach" data-teach="hide" aria-label="Hide the teach questions" title="Hide"><span aria-hidden="true">✕</span></button>
     </div><p class="sub teach-sub">${sub}</p>${extra}`;
   const wrap = inner => `<section class="card teach" aria-labelledby="teachH">${inner}</section>`;
@@ -17644,7 +17632,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1125', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1132', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;

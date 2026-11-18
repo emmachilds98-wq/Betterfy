@@ -194,7 +194,7 @@ export function sureBatchHTML(ctx) {
   // rest"); the card below carries on the same History group (DESIGN-PLAN C1).
   if (n < 2) return '';
   return `<div class="card surebatch">
-    <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
+    <span><b>${n} are sure.</b></span>
     <button class="b sm p" data-act="filesure">File the ${esc(String(n))} sure ones</button>
   </div>`;
 }
@@ -392,7 +392,7 @@ export function view(ctx) {
               : sg.via === 'sound' ? `sounds like this playlist${sg.tagsAgree ? ' · tags agree' : ''}`
               : sg.via === 'blend' ? (sg.untagged ? 'where you file this artist and ones like them'
                 : sg.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record')
-              : `${esc(sg.axis ?? '')} playlist`}</span>${pickEvidence(sg)}</span>
+              : 'its tags fit here'}</span>${pickEvidence(sg)}</span>
             <span class="rt">${pickBand(n === 0 && topBand ? { ...sg, band: topBand } : sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
           </button><button class="nope" type="button" data-act="reject" data-reject="${esc(sg.id)}"

@@ -89,11 +89,11 @@ function soundIdHTML(t) {
   if (!id || (!id.genre && !id.bpm)) return '';
   const band = id.genre ? (id.genre.conf >= 0.7 ? 'HIGH' : id.genre.conf >= 0.45 ? 'LIKELY' : 'AMBIGUOUS') : null;
   const path = id.genre ? id.path.map(p => esc(p.name)).join('<span class="sep">›</span>') : 'No clear genre';
-  const bpm = id.bpm ? `<span class="bpm" title="${id.bpm.from === 'genre' ? 'Half or double time settled by the genre it sounds like' : 'Measured from the preview'}">${Math.round(id.bpm.value)} BPM</span>` : '';
-  const blend = id.blend ? `<span class="tag" title="Two genres in one clip">${esc(id.blend[0])} + ${esc(id.blend[1])}</span>` : '';
+  const bpm = id.bpm ? `<span class="bpm" title="${id.bpm.from === 'genre' ? 'Tempo read the way its genre is felt' : 'Measured from the preview'}">${Math.round(id.bpm.value)} BPM</span>` : '';
+  const blend = id.blend ? `<span class="tag" title="Sounds like a mix of two genres">${esc(id.blend[0])} + ${esc(id.blend[1])}</span>` : '';
   const who = n => { const x = soundTrackName(n.id); return `${esc(x.title)}<span class="sub"> — ${esc(x.artist)}</span>`; };
   const where = n => (n.playlists ?? []).map(p => CFG[p]?.name ?? p).slice(0, 2).map(esc).join(', ');
-  const rel = { double: ' · double time', half: ' · half time', same: '' };
+  const rel = { double: ' · twice the tempo', half: ' · half the tempo', same: '' };
   return `<div class="sndid"><div class="sndid-h"><span>Sounds like</span> <b class="sndid-path">${path}</b>${bpm}${blend}${band ? pickBand({ band }) : ''}</div>
     ${s.neighbours.length || s.mix.length || id.why.length ? `<details><summary>Why, and what it sounds like and mixes with</summary>
       ${id.why.length ? `<span class="why">${esc(id.why.join('; '))}.</span>` : ''}

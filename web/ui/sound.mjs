@@ -60,7 +60,7 @@ export function soundChip(vm) {
   if (num(vm.bpm) && vm.bpm > 0) {
     const bpm = Math.round(vm.bpm), alt = num(vm.bpmAlt) && vm.bpmAlt > 0 ? Math.round(vm.bpmAlt) : null;
     const [lo, hi] = alt == null ? [bpm, null] : [Math.min(bpm, alt), Math.max(bpm, alt)];
-    const title = [alt != null ? `${bpm} BPM, but half/double time is unsure (${lo} or ${hi})` : `${bpm} BPM`,
+    const title = [alt != null ? `${bpm} BPM, but it could be ${lo} or ${hi}` : `${bpm} BPM`,
                    num(vm.bpmConf) ? `confidence ${pct(vm.bpmConf)}` : null].filter(Boolean).join(' · ');
     parts.push(item('bpm', `${alt != null ? `${lo}/${hi}` : bpm} <span class="snd-unit">BPM</span>`, title, vm.bpmConf));
   }

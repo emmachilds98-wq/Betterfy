@@ -114,7 +114,7 @@ test('every part has its full and short label, and empty ones are marked zero', 
   const html = vm.runInContext('vTidy()', s);
   assert.match(html, /<button class="zero" type="button" aria-pressed="false" data-act="section" data-tidy="misfile">/);
   assert.match(html, /<button type="button" aria-pressed="true" data-act="section" data-tidy="dupes">Repeats <span class="n">1<\/span>/);
-  assert.match(html, /data-tidy="cross"><span class="lg">Cross-filed<\/span><span class="sh">In two<\/span>/);
+  assert.match(html, /data-tidy="cross"><span class="lg">In two playlists<\/span><span class="sh">In two<\/span>/);
 });
 
 // BUILD-5-PLAN §4.1 / UI-A: Tidy opens on the first section with work in it,

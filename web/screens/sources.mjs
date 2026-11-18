@@ -55,7 +55,7 @@ export function coverageHTML(cov) {
   const unasked = [['Deezer', cov.deezerAsked], ['Wikidata', cov.wikidataAsked]]
     .filter(([, k]) => k && k < cov.total).map(([name, k]) => `${name} about ${k.toLocaleString()}`);
   return `<p class="srcline srcknow">${part('Deezer', cov.deezerPct, cov.deezerAsked)}, ${part('Wikidata', cov.wikidataPct, cov.wikidataAsked)},
-      shared table <b class="mono">${cov.sharedPct}%</b> of your <span class="mono">${cov.total.toLocaleString()}</span> artists.</p>
+      the shared tag list <b class="mono">${cov.sharedPct}%</b> of your <span class="mono">${cov.total.toLocaleString()}</span> artists.</p>
     ${unasked.length ? `<p class="srcline sub">Asked so far: ${unasked.join(', ')}. The rest are looked up as File, Score and Discover need them.</p>` : ''}`;
 }
 
