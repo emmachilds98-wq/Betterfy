@@ -4170,6 +4170,23 @@ const sPillWhy = reason => {
   if (/couldn|fail|error/i.test(why)) return 'tap for details';
   return null;
 };
+/* The tidy-up after a run's songs (DESIGN-PLAN L0): the controller's
+ * vm.tidy = { step, done, total }. Each step in the listener's words. */
+const TIDY_WORDS = { dsp: 'tempo and key', clap: 'describing', beats: 'tempo', keys: 'keys' };
+const sTidy = vm => (vm?.state === 'running' && vm.tidy && typeof vm.tidy === 'object' && sNum(vm.tidy.total) && vm.tidy.total > 0 ? vm.tidy : null);
+
+/**
+ * The tidy-up step a running ListenVM is on, in a few words ("tempo 3 of 12"),
+ * or '' when it is not tidying up. `sep` joins the count ("of", or "/" for the pill).
+ * @param {object|null|undefined} vm
+ */
+function listenTidyText(vm, sep = 'of') {
+  const t = sTidy(vm);
+  if (!t) return '';
+  const done = sNum(t.done) ? Math.min(t.done, t.total) : 0;
+  return `${TIDY_WORDS[t.step] ?? 'finishing'} ${sInt(done)} ${sep} ${sInt(t.total)}`;
+}
+
 const sBars = () => `<span class="lp-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>`;
 const sIsListen = vm => vm && typeof vm === 'object' && ['running', 'paused', 'done'].includes(vm.state);
 
@@ -4183,7 +4200,9 @@ function listenPill(vm) {
   if (!sIsListen(vm)) return '';
   const done = sNum(vm.done) ? vm.done : 0, total = sNum(vm.total) ? vm.total : 0;
   let text;
-  if (vm.state === 'running') text = total ? `Listening · ${sInt(Math.min(done, total))} / ${sInt(total)}` : 'Listening…';
+  const tidy = listenTidyText(vm, '/');
+  if (tidy) text = `Tidying up · ${tidy}`;
+  else if (vm.state === 'running') text = total ? `Listening · ${sInt(Math.min(done, total))} / ${sInt(total)}` : 'Listening…';
   else if (vm.state === 'paused') { const why = sPillWhy(vm.reason); text = `Paused${why ? ` · ${why}` : ''}`; }
   else text = sNum(vm.heard) && vm.heard > 0 ? `Listened · ${sPlural(vm.heard, 'track')} heard` : 'Listened · up to date';
   return `<span class="lpill lpill-${vm.state}" role="status">${sBars()}<span class="lp-txt">${sEsc(text)}</span></span>`;
@@ -4215,7 +4234,9 @@ function listenCard(vm) {
   if (!sIsListen(vm) && !heard) return '';
   const done = sNum(vm.done) ? vm.done : 0, total = sNum(vm.total) ? vm.total : 0;
   let head;
-  if (vm.state === 'running') head = total ? `Listening to ${sInt(Math.min(done, total))} of ${sInt(total)} this run` : 'Starting…';
+  const tidy = sTidy(vm);
+  if (tidy) head = `Tidying up: ${listenTidyText(vm)}`;
+  else if (vm.state === 'running') head = total ? `Listening to ${sInt(Math.min(done, total))} of ${sInt(total)} this run` : 'Starting…';
   else if (vm.state === 'paused') { const why = sPauseWhy(vm.reason); head = why ? `Paused: ${why}` : 'Paused. It carries on where it left off.'; }
   else if (vm.state === 'done') head = 'Up to date for this scope';
   else head = 'Off';
@@ -4223,8 +4244,9 @@ function listenCard(vm) {
   if (heard) stats.push(`<span class="lc-stat"><b>${sInt(heard)}</b> heard</span>`);
   if (missed) stats.push(`<span class="lc-stat"><b>${sInt(missed)}</b> couldn’t be heard</span>`);
   const allMiss = !heard && missed > 0 && vm.state !== 'running';
-  const meter = vm.state === 'running' && total
-    ? `<div class="lc-meter" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${Math.min(done, total)}" aria-label="This run"><i style="width:${sPct(done / total)}"></i></div>` : '';
+  const [mDone, mTotal] = tidy ? [sNum(tidy.done) ? tidy.done : 0, tidy.total] : [done, total];
+  const meter = vm.state === 'running' && mTotal
+    ? `<div class="lc-meter" role="progressbar" aria-valuemin="0" aria-valuemax="${mTotal}" aria-valuenow="${Math.min(mDone, mTotal)}" aria-label="${tidy ? 'Tidying up' : 'This run'}"><i style="width:${sPct(Math.min(mDone, mTotal) / mTotal)}"></i></div>` : '';
   return `<div class="lcard lcard-${sIsListen(vm) ? vm.state : 'off'}">
     <div class="lc-head">${sIsListen(vm) ? `<span class="lpill lpill-${vm.state} lc-bars">${sBars()}</span>` : ''}<span class="lc-title">${sEsc(head)}</span></div>
     ${meter}${stats.length ? `<div class="lc-stats">${stats.join('')}</div>` : ''}
@@ -4245,7 +4267,7 @@ function missedList(vm) {
   return `<details class="smiss"><summary>${sPlural(n, 'track')} couldn’t be heard</summary>
     <ul>${missed.map(([k, c]) => `<li><b>${sInt(c)}</b> ${sEsc(text[k] ?? k)}</li>`).join('')}</ul></details>`;
 }
-return { SOUND_UI_VERSION, SURE_CONF, soundChip, soundMark, sectionStrip, evidenceBadges, bandChip, profileRow, listenPill, listenCard, missedList };
+return { SOUND_UI_VERSION, SURE_CONF, soundChip, soundMark, sectionStrip, evidenceBadges, bandChip, profileRow, listenTidyText, listenPill, listenCard, missedList };
 })();
 /* ---- web/app/patch.mjs ---- */
 __mod["web/app/patch.mjs"] = (function () {
@@ -17251,8 +17273,21 @@ async function maestStart({ quiet = false } = {}) {
   try { await audioInit(); } catch (e) { if (!quiet) toast('Couldn’t start the second ear: ' + e.message); return; }
   const A = BetterfyAudio;
   if (deepAllowed('maest') !== 'ok') return audioRedraw();
-  // Listening has the store: the second ear starts again when that run ends.
-  if (AUDIO.ctrl?.running) return;
+  // Listening has the store (one writer at a time): while it runs, the second
+  // ear says it waits and starts by itself when that run ends (DESIGN-PLAN L0).
+  if (AUDIO.ctrl?.running) {
+    if (AUDIO.maestWaiting) return;
+    AUDIO.maestWaiting = true;
+    AUDIO.maestVm = { ...(AUDIO.maestVm ?? {}), state: 'waiting', reason: null };
+    audioRedraw();
+    if (!quiet) toast('The second ear waits for listening to finish, then starts by itself');
+    try { while (AUDIO.ctrl?.running) await AUDIO.ctrl.whenIdle(); }
+    finally { AUDIO.maestWaiting = false; }
+    if (!deepSettings().maest || deepAllowed('maest') !== 'ok') {
+      AUDIO.maestVm = AUDIO.maest ? AUDIO.maest.vm() : null;
+      return audioRedraw();
+    }
+  }
   AUDIO.maest ??= A.createMaestRunner({
     store: AUDIO.store,
     lookup: (isrc, o) => A.lookup(isrc, { jsonp: deezerJsonp, ...o }),
@@ -17292,7 +17327,9 @@ function audioPanelHTML() {
   const missed = Object.entries(vm.missed ?? {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
   const nMissed = missed.reduce((s, [, n]) => s + n, 0);
   const running = vm.state === 'running';
+  const tidy = listenTidyText(vm);
   const status = !set.on ? 'Off.'
+    : running && tidy ? `Tidying up after this run: ${esc(tidy)}.` + (vm.reason && vm.reason !== 'stopped' ? ` (${esc(vm.reason)})` : '')
     : running ? (vm.total ? `Listening… ${vm.done.toLocaleString()} of ${vm.total.toLocaleString()} this run.` : 'Starting…')
       + (vm.reason && vm.reason !== 'stopped' ? ` (${esc(vm.reason)})` : '')
     : vm.reason === 'ask' ? ''
@@ -17322,7 +17359,8 @@ function audioPanelHTML() {
       <button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button></p>` : ''}
     <p class="sub" id="audioStatus" style="margin:8px 0">${status}
       ${vm.heard ? ` ${vm.heard.toLocaleString()} track${vm.heard === 1 ? '' : 's'} heard so far.` : ''}
-      ${running && vm.total ? `<progress max="${vm.total}" value="${vm.done}" style="width:100%"></progress>` : ''}</p>
+      ${running && tidy ? `<progress max="${vm.tidy.total}" value="${Math.min(vm.tidy.done, vm.tidy.total)}" style="width:100%"></progress>`
+        : running && vm.total ? `<progress max="${vm.total}" value="${vm.done}" style="width:100%"></progress>` : ''}</p>
     ${listenPill(vm)}
     ${missedList(vm) || (nMissed ? `<details class="sub" style="margin:8px 0"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
@@ -17355,7 +17393,7 @@ function maestLineHTML() {
   const text = globalThis.BetterfyAudio?.maestStatusText ? BetterfyAudio.maestStatusText(v) : '';
   const ok = deepAllowed('maest') === 'ok';
   return `<p class="sub" id="maestStatus" style="margin:4px 0">${esc(text)}
-    ${run ? '<button class="b sm" id="maestStop">Stop</button>' : ok && audioSettings().on ? '<button class="b sm" id="maestGo">Listen with the second ear now</button>' : ''}
+    ${run ? '<button class="b sm" id="maestStop">Stop</button>' : v?.state === 'waiting' ? '' : ok && audioSettings().on ? '<button class="b sm" id="maestGo">Listen with the second ear now</button>' : ''}
     ${deepAllowed('maest') === 'unknown' ? '<button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button>' : ''}</p>
     <p class="sub">It changes no suggestion until a Score run (More → Engine) shows it places your tracks better than the first ear.</p>`;
 }
@@ -18420,6 +18458,9 @@ const settingsOpen = () => !!$('#settingsPanel')?.classList.contains('open');
 function listenStatus() {
   if (!listenEverRan()) return '';
   const done = LISTEN.done ?? 0, total = LISTEN.total ?? 0;
+  // After its songs a run tidies up (tempo, keys, descriptions): say so, not "listening 1/1".
+  const tidy = listenTidyText(LISTEN, '/');
+  if (tidy) return `tidying up: ${tidy}`;
   if (LISTEN.state === 'running' && total) return `listening ${Math.min(done, total).toLocaleString()}/${total.toLocaleString()}`;
   const heard = listenHeard();
   return heard ? `${heard.toLocaleString()} heard` : '';

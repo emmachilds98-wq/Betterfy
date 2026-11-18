@@ -250,6 +250,23 @@ const sPillWhy = reason => {
   if (/couldn|fail|error/i.test(why)) return 'tap for details';
   return null;
 };
+/* The tidy-up after a run's songs (DESIGN-PLAN L0): the controller's
+ * vm.tidy = { step, done, total }. Each step in the listener's words. */
+const TIDY_WORDS = { dsp: 'tempo and key', clap: 'describing', beats: 'tempo', keys: 'keys' };
+const sTidy = vm => (vm?.state === 'running' && vm.tidy && typeof vm.tidy === 'object' && sNum(vm.tidy.total) && vm.tidy.total > 0 ? vm.tidy : null);
+
+/**
+ * The tidy-up step a running ListenVM is on, in a few words ("tempo 3 of 12"),
+ * or '' when it is not tidying up. `sep` joins the count ("of", or "/" for the pill).
+ * @param {object|null|undefined} vm
+ */
+export function listenTidyText(vm, sep = 'of') {
+  const t = sTidy(vm);
+  if (!t) return '';
+  const done = sNum(t.done) ? Math.min(t.done, t.total) : 0;
+  return `${TIDY_WORDS[t.step] ?? 'finishing'} ${sInt(done)} ${sep} ${sInt(t.total)}`;
+}
+
 const sBars = () => `<span class="lp-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>`;
 const sIsListen = vm => vm && typeof vm === 'object' && ['running', 'paused', 'done'].includes(vm.state);
 
@@ -263,7 +280,9 @@ export function listenPill(vm) {
   if (!sIsListen(vm)) return '';
   const done = sNum(vm.done) ? vm.done : 0, total = sNum(vm.total) ? vm.total : 0;
   let text;
-  if (vm.state === 'running') text = total ? `Listening · ${sInt(Math.min(done, total))} / ${sInt(total)}` : 'Listening…';
+  const tidy = listenTidyText(vm, '/');
+  if (tidy) text = `Tidying up · ${tidy}`;
+  else if (vm.state === 'running') text = total ? `Listening · ${sInt(Math.min(done, total))} / ${sInt(total)}` : 'Listening…';
   else if (vm.state === 'paused') { const why = sPillWhy(vm.reason); text = `Paused${why ? ` · ${why}` : ''}`; }
   else text = sNum(vm.heard) && vm.heard > 0 ? `Listened · ${sPlural(vm.heard, 'track')} heard` : 'Listened · up to date';
   return `<span class="lpill lpill-${vm.state}" role="status">${sBars()}<span class="lp-txt">${sEsc(text)}</span></span>`;
@@ -295,7 +314,9 @@ export function listenCard(vm) {
   if (!sIsListen(vm) && !heard) return '';
   const done = sNum(vm.done) ? vm.done : 0, total = sNum(vm.total) ? vm.total : 0;
   let head;
-  if (vm.state === 'running') head = total ? `Listening to ${sInt(Math.min(done, total))} of ${sInt(total)} this run` : 'Starting…';
+  const tidy = sTidy(vm);
+  if (tidy) head = `Tidying up: ${listenTidyText(vm)}`;
+  else if (vm.state === 'running') head = total ? `Listening to ${sInt(Math.min(done, total))} of ${sInt(total)} this run` : 'Starting…';
   else if (vm.state === 'paused') { const why = sPauseWhy(vm.reason); head = why ? `Paused: ${why}` : 'Paused. It carries on where it left off.'; }
   else if (vm.state === 'done') head = 'Up to date for this scope';
   else head = 'Off';
@@ -303,8 +324,9 @@ export function listenCard(vm) {
   if (heard) stats.push(`<span class="lc-stat"><b>${sInt(heard)}</b> heard</span>`);
   if (missed) stats.push(`<span class="lc-stat"><b>${sInt(missed)}</b> couldn’t be heard</span>`);
   const allMiss = !heard && missed > 0 && vm.state !== 'running';
-  const meter = vm.state === 'running' && total
-    ? `<div class="lc-meter" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${Math.min(done, total)}" aria-label="This run"><i style="width:${sPct(done / total)}"></i></div>` : '';
+  const [mDone, mTotal] = tidy ? [sNum(tidy.done) ? tidy.done : 0, tidy.total] : [done, total];
+  const meter = vm.state === 'running' && mTotal
+    ? `<div class="lc-meter" role="progressbar" aria-valuemin="0" aria-valuemax="${mTotal}" aria-valuenow="${Math.min(mDone, mTotal)}" aria-label="${tidy ? 'Tidying up' : 'This run'}"><i style="width:${sPct(Math.min(mDone, mTotal) / mTotal)}"></i></div>` : '';
   return `<div class="lcard lcard-${sIsListen(vm) ? vm.state : 'off'}">
     <div class="lc-head">${sIsListen(vm) ? `<span class="lpill lpill-${vm.state} lc-bars">${sBars()}</span>` : ''}<span class="lc-title">${sEsc(head)}</span></div>
     ${meter}${stats.length ? `<div class="lc-stats">${stats.join('')}</div>` : ''}

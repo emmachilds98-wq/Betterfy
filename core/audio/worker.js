@@ -20,6 +20,7 @@
 import { melFrames, melPatches, MEL_VERSION, SAMPLE_RATE } from './mel.mjs';
 import { makeRecord, makeMiss, MISS, CACHEABLE_MISS } from './record.mjs';
 import { addClap } from './clap.mjs';
+import { withTimeout } from './timeout.mjs';
 
 // 1.1.0 (WP-D4): `deps.dsp` gets the decoded windows separately, never the
 // joined samples, and fillDsp() measures dsp for a record heard before it.
@@ -178,12 +179,13 @@ export async function analyseSamples(deps, { id, isrc, samples, parts = null, so
  * `onResult` gets each result as it lands — the caller stores records and misses.
  * @returns {Promise<{ done: number, stopped: boolean }>}
  */
-export async function runQueue(deps, tracks, { signal, onResult = () => {} } = {}) {
+export async function runQueue(deps, tracks, { signal, onResult = () => {}, timeoutMs = 0 } = {}) {
   let done = 0;
   for (const t of tracks) {
     if (signal?.aborted) return { done, stopped: true };
     let r;
-    try { r = await analyseOne(deps, t); }
+    // timeoutMs (DESIGN-PLAN L0): a track that never settles counts as failed, and the queue moves on.
+    try { r = await withTimeout(() => analyseOne(deps, t), timeoutMs, 'hearing one track'); }
     catch (e) { r = { failed: { id: t?.id, stage: 'unknown', detail: String(e?.message ?? e) } }; }
     await onResult(r, t);
     done++;

@@ -460,6 +460,48 @@ function scopeIds(lib, { scope = DEFAULT_AUDIO_SETTINGS.scope, listening = null,
 }
 return { AUDIO_SETTINGS_KEY, SCOPES, DEFAULT_AUDIO_SETTINGS, defaultAudioSettings, readAudioSettings, writeAudioSettings, connectionVerdict, scopeIds };
 })();
+/* ---- core/audio/timeout.mjs ---- */
+__mod["core/audio/timeout.mjs"] = (function () {
+// Time limits for the listening runs (docs/DESIGN-PLAN.md L0).
+//
+// One preview download, decode or model call that never settles must not
+// leave a run "listening" for ever. Each per-track step and each model load
+// is raced against a timer; when the timer wins, the step counts as failed
+// (tried again on a later run) and the run carries on. The step itself can't
+// be cancelled, so its late answer, if it ever comes, is simply ignored.
+
+/** Per track: lookup, download, decode and the model call together. */
+const TRACK_TIMEOUT_MS = 60_000;
+/** Per model load (the largest, CLAP, is about 77 MB, on Wi-Fi only). */
+const MODEL_TIMEOUT_MS = 5 * 60_000;
+
+class TimeoutError extends Error {
+  constructor(what, ms) {
+    super(`${what} took longer than ${ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`}`);
+    this.name = 'TimeoutError';
+    this.timeout = true;
+  }
+}
+
+/**
+ * `p` (a promise, or a function returning one), or a TimeoutError after `ms`.
+ * A missing, zero or non-finite `ms` means no limit.
+ * @template T
+ * @param {Promise<T> | (() => Promise<T>)} p
+ * @param {number} ms
+ * @param {string} [what]
+ * @returns {Promise<T>}
+ */
+function withTimeout(p, ms, what = 'this step') {
+  const work = typeof p === 'function' ? Promise.resolve().then(p) : Promise.resolve(p);
+  if (!(ms > 0) || !Number.isFinite(ms)) return work;
+  let timer;
+  const limit = new Promise((_, bad) => { timer = setTimeout(() => bad(new TimeoutError(what, ms)), ms); });
+  work.catch(() => {}); // a late failure after the timer won is nobody's business
+  return Promise.race([work, limit]).finally(() => clearTimeout(timer));
+}
+return { TRACK_TIMEOUT_MS, MODEL_TIMEOUT_MS, TimeoutError, withTimeout };
+})();
 /* ---- core/audio/mel.mjs ---- */
 __mod["core/audio/mel.mjs"] = (function () {
 // The mel front end for Discogs-EffNet, in plain JS.
@@ -1106,6 +1148,7 @@ __mod["core/audio/worker.js"] = (function () {
 const { melFrames, melPatches, MEL_VERSION, SAMPLE_RATE } = __mod["core/audio/mel.mjs"];
 const { makeRecord, makeMiss, MISS, CACHEABLE_MISS } = __mod["core/audio/record.mjs"];
 const { addClap } = __mod["core/audio/clap.mjs"];
+const { withTimeout } = __mod["core/audio/timeout.mjs"];
 // The audio worker's logic: one Spotify track in, one AudioRecord (or miss) out (WP-B1).
 //
 // Glue only: queue id → lookup → fetchPreview → decodeTo16k → melFrames →
@@ -1125,6 +1168,7 @@ const { addClap } = __mod["core/audio/clap.mjs"];
 // as soon as they are decoded, samples as soon as the mel exists), never
 // keep a preview URL (it lives only inside one analyseOne call), ISRC or
 // nothing, and FAILED is returned as a result, never written as a miss.
+
 
 
 
@@ -1286,12 +1330,13 @@ async function analyseSamples(deps, { id, isrc, samples, parts = null, source })
  * `onResult` gets each result as it lands — the caller stores records and misses.
  * @returns {Promise<{ done: number, stopped: boolean }>}
  */
-async function runQueue(deps, tracks, { signal, onResult = () => {} } = {}) {
+async function runQueue(deps, tracks, { signal, onResult = () => {}, timeoutMs = 0 } = {}) {
   let done = 0;
   for (const t of tracks) {
     if (signal?.aborted) return { done, stopped: true };
     let r;
-    try { r = await analyseOne(deps, t); }
+    // timeoutMs (DESIGN-PLAN L0): a track that never settles counts as failed, and the queue moves on.
+    try { r = await withTimeout(() => analyseOne(deps, t), timeoutMs, 'hearing one track'); }
     catch (e) { r = { failed: { id: t?.id, stage: 'unknown', detail: String(e?.message ?? e) } }; }
     await onResult(r, t);
     done++;
@@ -3210,6 +3255,7 @@ return { KEYNET_VERSION, KEYNET_MODEL_FILE, KEYNET_DSP_W, KEYNET_SURE_P, KEYNET_
 })();
 /* ---- web/audio/controller.mjs ---- */
 __mod["web/audio/controller.mjs"] = (function () {
+const { withTimeout, TRACK_TIMEOUT_MS, MODEL_TIMEOUT_MS } = __mod["core/audio/timeout.mjs"];
 const { runQueue, fillDsp } = __mod["core/audio/worker.js"];
 const { MISS } = __mod["core/audio/record.mjs"];
 const { measureWindows, needsDsp } = __mod["core/audio/dsp/combine.mjs"];
@@ -3242,6 +3288,15 @@ const { withKeyNet, keyNetFields, keepKeyNet, needsKeyNet, KEYNET_FILL_PER_RUN }
 // the first such run, new records get their `clap` field in the same pass,
 // and records heard before are topped up after DSP, the same lazy way.
 // Without loadClap, or with clapOn() false, nothing here differs from before.
+//
+// Tidy-up (DESIGN-PLAN L0): the four top-ups after the queue (DSP, CLAP, Beat
+// This, key v4) used to run with no progress of their own, so a finished
+// queue read "listening 1/1" for minutes. Each now sets `tidy` on the vm,
+// { step, done, total }, which the pill and status lines show instead. Every
+// per-track step and every model load has a time limit (core/audio/timeout.mjs):
+// a step that never settles counts as failed, is tried again on a later run,
+// and the run carries on to `done`.
+
 
 
 
@@ -3334,6 +3389,8 @@ function createWorkerEar(worker, init) {
  *        key v4: loads the key model, once; logp(windows) → 24 log-probabilities
  * @param {() => boolean} [deps.keyNetOn]  asked at each start(); on unless it says false (owner rule: on by default)
  * @param {number} [deps.keyNetFillPerRun] heard records given key v4 per start (default KEYNET_FILL_PER_RUN)
+ * @param {number} [deps.trackTimeoutMs] per-track limit, queue and top-ups (default TRACK_TIMEOUT_MS; 0 = none)
+ * @param {number} [deps.modelTimeoutMs] per-model-load limit (default MODEL_TIMEOUT_MS; 0 = none)
  */
 function createAudioController(deps) {
   const st = { state: 'off', done: 0, total: 0, reason: null, failed: 0, missed: {}, heard: 0, last: null };
@@ -3349,13 +3406,23 @@ function createAudioController(deps) {
   const keyNetBudget = deps.keyNetFillPerRun ?? KEYNET_FILL_PER_RUN;
   const noKeyNet = new Set(); // the same, for key v4
   let keyNet = null, keyNetFailed = false;
+  const trackMs = deps.trackTimeoutMs ?? TRACK_TIMEOUT_MS;
+  const modelMs = deps.modelTimeoutMs ?? MODEL_TIMEOUT_MS;
+  /** A model load, bounded. */
+  const load = (fn, what) => withTimeout(fn, modelMs, `loading the ${what}`);
+  /** One top-up step on one record, bounded: a timeout is a failure, tried again on a later run. */
+  const step = fn => withTimeout(fn, trackMs, 'one track').catch(e => (e?.timeout ? { failed: { stage: 'timeout', detail: e.message } } : { skip: 'error' }));
+  /** Start a tidy-up step: the pill and status show it instead of the finished queue's "1/1". */
+  const tidyStart = (name, total) => { st.tidy = { step: name, done: 0, total }; emit(); };
+  const tidyTick = () => { if (st.tidy) { st.tidy.done++; emit(); } };
+  const tidyEnd = () => { if (st.tidy) { st.tidy = null; emit(); } };
 
   /** The key v4 model when it is on and loads; null otherwise (never fails a run, not retried this session). */
   async function keyNetNow() {
     if (!deps.loadKeyNet || deps.keyNetOn?.() === false || keyNetFailed) return null;
     if (keyNet) return keyNet;
     st.reason = 'loading the key model'; emit();
-    try { keyNet = await deps.loadKeyNet(); } catch (e) { keyNet = null; keyNetFailed = true; st.keyNetError = String(e?.message ?? e); }
+    try { keyNet = await load(deps.loadKeyNet, 'key model'); } catch (e) { keyNet = null; keyNetFailed = true; st.keyNetError = String(e?.message ?? e); }
     st.reason = null; emit();
     return keyNet;
   }
@@ -3367,7 +3434,7 @@ function createAudioController(deps) {
     if (!deps.loadBeats || !deps.beatsOn?.()) return null;
     if (beatsTracker) return beatsTracker;
     st.reason = 'loading the tempo model'; emit();
-    try { beatsTracker = await deps.loadBeats(); } catch (e) { beatsTracker = null; st.beatsError = String(e?.message ?? e); }
+    try { beatsTracker = await load(deps.loadBeats, 'tempo model'); } catch (e) { beatsTracker = null; st.beatsError = String(e?.message ?? e); }
     st.reason = null; emit();
     return beatsTracker;
   }
@@ -3377,7 +3444,7 @@ function createAudioController(deps) {
     if (!deps.loadClap || !deps.clapOn?.()) return null;
     if (clapEar) return clapEar;
     st.reason = 'loading the describe-in-words model'; emit();
-    try { clapEar = await deps.loadClap(); } catch (e) { clapEar = null; st.clapError = String(e?.message ?? e); }
+    try { clapEar = await load(deps.loadClap, 'describe-in-words model'); } catch (e) { clapEar = null; st.clapError = String(e?.message ?? e); }
     st.reason = null; emit();
     return clapEar;
   }
@@ -3385,7 +3452,7 @@ function createAudioController(deps) {
   const emit = () => { try { deps.onChange?.(vm()); } catch { /* a render bug must not stop the queue */ } };
   const vm = () => ({ state: st.state, done: st.done, total: st.total, reason: st.reason ?? undefined,
                       missed: { ...st.missed, ...(st.failed ? { [MISS.FAILED]: st.failed } : {}) },
-                      heard: st.heard, last: st.last });
+                      heard: st.heard, last: st.last, ...(st.tidy ? { tidy: { ...st.tidy } } : {}) });
 
   /** Re-count heard tracks and cacheable misses from what the store holds. */
   async function refresh() {
@@ -3406,7 +3473,7 @@ function createAudioController(deps) {
     if (running) return running;
     abort = new AbortController();
     const signal = abort.signal;
-    Object.assign(st, { state: 'running', done: 0, total: tracks.length, reason: null, last: null });
+    Object.assign(st, { state: 'running', done: 0, total: tracks.length, reason: null, last: null, tidy: null });
     emit();
     running = (async () => {
       try {
@@ -3422,7 +3489,7 @@ function createAudioController(deps) {
         }
         if (!ears) {
           st.reason = 'loading the listening model'; emit();
-          try { ears = await deps.loadEar(); }
+          try { ears = await load(deps.loadEar, 'listening model'); }
           catch (e) { ears = null; st.state = 'paused'; st.reason = `couldn’t load the model: ${e?.message ?? e}`; return { done: 0, stopped: true }; }
           st.reason = null; emit();
         }
@@ -3432,7 +3499,7 @@ function createAudioController(deps) {
         const analyse = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, now: deps.now,
                           ear: ears.ear, heads: ears.heads, summariseHeads: ears.summariseHeads, ...(dsp ? { dsp: keyed(dsp, net) } : {}),
                           ...(clap ? { clap } : {}) };
-        const res = await runQueue(analyse, tracks, { signal, onResult: async (r, t) => {
+        const res = await runQueue(analyse, tracks, { signal, timeoutMs: trackMs, onResult: async (r, t) => {
           if (r.record) { await deps.store.put(r.record); st.heard++; }
           else if (r.miss) { await deps.store.put(r.miss); st.missed[r.miss.miss] = (st.missed[r.miss.miss] ?? 0) + 1; }
           else st.failed++;
@@ -3446,7 +3513,7 @@ function createAudioController(deps) {
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
-        running = null; abort = null;
+        running = null; abort = null; st.tidy = null;
         emit();
       }
     })();
@@ -3457,29 +3524,37 @@ function createAudioController(deps) {
   async function topUpDsp(analyse, signal) {
     const all = await deps.store.getAll();
     const due = [...all.values()].filter(r => needsDsp(r) && !noFill.has(r.id)).slice(0, fillBudget);
-    for (const rec of due) {
-      if (signal.aborted) return;
-      let r;
-      try { r = await fillDsp(analyse, rec); } catch { r = { skip: 'error' }; }
-      if (r.record) r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
-      if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; emit(); }
-      else if (r.skip) noFill.add(rec.id);
-      // a failed download is tried again on a later run
-    }
+    if (!due.length) return;
+    tidyStart('dsp', due.length);
+    try {
+      for (const rec of due) {
+        if (signal.aborted) return;
+        const r = await step(() => fillDsp(analyse, rec));
+        if (r.record) r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
+        if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; }
+        else if (r.skip) noFill.add(rec.id);
+        // a failed download, or one that timed out, is tried again on a later run
+        tidyTick();
+      }
+    } finally { tidyEnd(); }
   }
 
   /** Give stored records their CLAP embedding, a few per run, stoppable like the queue. */
   async function topUpClap(analyse, signal) {
     const all = await deps.store.getAll();
     const due = [...all.values()].filter(r => needsClap(r) && !noClap.has(r.id)).slice(0, clapBudget);
-    for (const rec of due) {
-      if (signal.aborted) return;
-      let r;
-      try { r = await fillClap(analyse, rec); } catch { r = { skip: 'error' }; }
-      if (r.record) { await deps.store.put(r.record); st.clapFilled = (st.clapFilled ?? 0) + 1; emit(); }
-      else if (r.skip) noClap.add(rec.id);
-      // a failed download is tried again on a later run
-    }
+    if (!due.length) return;
+    tidyStart('clap', due.length);
+    try {
+      for (const rec of due) {
+        if (signal.aborted) return;
+        const r = await step(() => fillClap(analyse, rec));
+        if (r.record) { await deps.store.put(r.record); st.clapFilled = (st.clapFilled ?? 0) + 1; }
+        else if (r.skip) noClap.add(rec.id);
+        // a failed download, or one that timed out, is tried again on a later run
+        tidyTick();
+      }
+    } finally { tidyEnd(); }
   }
 
   /** Beat This (opt-in): re-listen to records whose half/double time the DSP flagged, a few per run. */
@@ -3488,21 +3563,25 @@ function createAudioController(deps) {
     const all = await deps.store.getAll();
     const due = [...all.values()].filter(r => needsBeatsFlagged(r) && !noBeats.has(r.id)).slice(0, beatsBudget);
     if (!due.length) return;
-    const tracker = await beatsNow();
-    if (!tracker) return;
-    const withTempo = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
-                        dsp: keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet) };
-    for (const rec of due) {
-      if (signal.aborted) return;
-      let r;
-      try { r = await fillDsp(withTempo, rec); } catch { r = { skip: 'error' }; }
-      if (r.record) {
-        r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
-        await deps.store.put(r.record);
-        if (r.record.dsp?.beatsV) { st.beatsFilled = (st.beatsFilled ?? 0) + 1; emit(); }
-        else noBeats.add(rec.id);   // the tracker failed on it: not again this session
-      } else if (r.skip) noBeats.add(rec.id);
-    }
+    if (!deps.loadBeats || !deps.beatsOn?.()) return;
+    tidyStart('beats', due.length);
+    try {
+      const tracker = await beatsNow();
+      if (!tracker) return;
+      const withTempo = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
+                          dsp: keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet) };
+      for (const rec of due) {
+        if (signal.aborted) return;
+        const r = await step(() => fillDsp(withTempo, rec));
+        if (r.record) {
+          r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
+          await deps.store.put(r.record);
+          if (r.record.dsp?.beatsV) st.beatsFilled = (st.beatsFilled ?? 0) + 1;
+          else noBeats.add(rec.id);   // the tracker failed on it: not again this session
+        } else if (r.skip) noBeats.add(rec.id);
+        tidyTick();
+      }
+    } finally { tidyEnd(); }
   }
 
   /**
@@ -3514,17 +3593,21 @@ function createAudioController(deps) {
     const all = await deps.store.getAll();
     const due = [...all.values()].filter(r => needsKeyNet(r) && !noKeyNet.has(r.id)).slice(0, keyNetBudget);
     if (!due.length) return;
-    const net = await keyNetNow();
-    if (!net) return;
-    for (const rec of due) {
-      if (signal.aborted) return;
-      const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
-                        dsp: async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; } };
-      let r;
-      try { r = await fillDsp(onlyKey, rec); } catch { r = { skip: 'error' }; }
-      if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; emit(); }
-      else if (r.skip) noKeyNet.add(rec.id);
-    }
+    if (!deps.loadKeyNet || deps.keyNetOn?.() === false || keyNetFailed) return;
+    tidyStart('keys', due.length);
+    try {
+      const net = await keyNetNow();
+      if (!net) return;
+      for (const rec of due) {
+        if (signal.aborted) return;
+        const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
+                          dsp: async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; } };
+        const r = await step(() => fillDsp(onlyKey, rec));
+        if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; }
+        else if (r.skip) noKeyNet.add(rec.id);
+        tidyTick();
+      }
+    } finally { tidyEnd(); }
   }
 
   /** Finish the track in flight, start no more. */
@@ -3536,7 +3619,10 @@ function createAudioController(deps) {
     return running;
   }
 
-  return { start, stop, refresh, vm, get running() { return !!running; } };
+  /** Resolves when no run is going (at once if none is). The second ear waits on this. */
+  const whenIdle = () => (running ? running.then(() => undefined, () => undefined) : Promise.resolve());
+
+  return { start, stop, refresh, vm, whenIdle, get running() { return !!running; } };
 }
 
 /** ListenVM for web/ui/sound.mjs, from the controller's state and the settings. */
@@ -6554,6 +6640,7 @@ __mod["web/audio/maest-run.mjs"] = (function () {
 const { fillMaest, needsMaest } = __mod["core/audio/maest.mjs"];
 const { earCurrent, withEar } = __mod["core/audio/record.mjs"];
 const { NEAR_DEFAULT } = __mod["core/intrinsic/audio.mjs"];
+const { withTimeout, TRACK_TIMEOUT_MS, MODEL_TIMEOUT_MS } = __mod["core/audio/timeout.mjs"];
 // The laptop "second ear" run (WP-C1): give heard tracks a MAEST answer.
 //
 // It never hears a new track by itself. It walks the records "Listen to my
@@ -6571,6 +6658,7 @@ const { NEAR_DEFAULT } = __mod["core/intrinsic/audio.mjs"];
 // Inference sits in its own Worker (docs/maest-worker.js) so the ~90 MB model
 // can be dropped with `release()` when the run is done, without touching the
 // first ear's worker.
+
 
 
 
@@ -6619,9 +6707,14 @@ function createWorkerMaest(worker, init) {
  * @param {() => Promise<{ run: Function, release?: Function }>} deps.loadMaest  loads the model, once per start
  * @param {(vm: object) => void} [deps.onChange]
  * @param {number} [deps.perRun]
+ * @param {number} [deps.trackTimeoutMs] per-track limit (default TRACK_TIMEOUT_MS; 0 = none). A track
+ *        over it counts as failed, is tried again on a later run, and the run carries on (DESIGN-PLAN L0).
+ * @param {number} [deps.modelTimeoutMs] model-load limit (default MODEL_TIMEOUT_MS; 0 = none)
  */
 function createMaestRunner(deps) {
   const perRun = deps.perRun ?? MAEST_PER_RUN;
+  const trackMs = deps.trackTimeoutMs ?? TRACK_TIMEOUT_MS;
+  const modelMs = deps.modelTimeoutMs ?? MODEL_TIMEOUT_MS;
   const st = { state: 'off', done: 0, total: 0, heard: 0, waiting: 0, failed: 0, reason: null };
   const skip = new Set();
   let abort = null, running = null;
@@ -6665,14 +6758,20 @@ function createMaestRunner(deps) {
         emit();
         if (!due.length) { st.state = 'done'; return { done: 0, stopped: false }; }
         st.reason = 'loading the second ear'; emit();
-        try { ear = await deps.loadMaest(); }
-        catch (e) { st.state = 'paused'; st.reason = `couldn’t load the second ear: ${e?.message ?? e}`; return { done: 0, stopped: true }; }
+        let loading = null;
+        try { loading = deps.loadMaest(); ear = await withTimeout(loading, modelMs, 'loading the second ear'); }
+        catch (e) {
+          // A load that timed out may still finish later: free that model when it does.
+          if (e?.timeout) loading?.then(m => m?.release?.(), () => {});
+          st.state = 'paused'; st.reason = `couldn’t load the second ear: ${e?.message ?? e}`; return { done: 0, stopped: true };
+        }
         st.reason = null; emit();
         const fill = { lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, maest: ear };
         for (const rec of due) {
           if (signal.aborted) break;
           let r;
-          try { r = await fillMaest(fill, rec); } catch (e) { r = { failed: { id: rec.id, stage: 'unknown', detail: String(e?.message ?? e) } }; }
+          try { r = await withTimeout(() => fillMaest(fill, rec), trackMs, 'one track'); }
+          catch (e) { r = { failed: { id: rec.id, stage: e?.timeout ? 'timeout' : 'unknown', detail: String(e?.message ?? e) } }; }
           // Put the ear on the record as it is now, not as it was when the run began:
           // a listening run may have added CLAP or DSP to it meanwhile (WP-C2).
           if (r.record) { const now = await latest(rec, r.record); r = now ? { record: now } : { skip: 'different-recording' }; }
@@ -6708,6 +6807,7 @@ function createMaestRunner(deps) {
 function maestStatusText(v) {
   if (!v) return '';
   const n = x => x.toLocaleString('en-GB');
+  if (v.state === 'waiting') return 'Second ear: waits for listening to finish, then starts by itself.';
   if (v.state === 'running') return v.reason ? `Second ear: ${v.reason}…` : `Second ear: listening… ${n(v.done)} of ${n(v.total)} this run.`;
   const tail = `${n(v.heard)} track${v.heard === 1 ? '' : 's'} heard by the second ear${v.waiting ? `, ${n(v.waiting)} still to go` : ''}.`;
   if (v.state === 'paused') return `Second ear stopped${v.reason && v.reason !== 'stopped' ? `: ${v.reason}` : ''}. ${tail}`;

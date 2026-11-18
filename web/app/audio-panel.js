@@ -79,8 +79,21 @@ async function maestStart({ quiet = false } = {}) {
   try { await audioInit(); } catch (e) { if (!quiet) toast('Couldn’t start the second ear: ' + e.message); return; }
   const A = BetterfyAudio;
   if (deepAllowed('maest') !== 'ok') return audioRedraw();
-  // Listening has the store: the second ear starts again when that run ends.
-  if (AUDIO.ctrl?.running) return;
+  // Listening has the store (one writer at a time): while it runs, the second
+  // ear says it waits and starts by itself when that run ends (DESIGN-PLAN L0).
+  if (AUDIO.ctrl?.running) {
+    if (AUDIO.maestWaiting) return;
+    AUDIO.maestWaiting = true;
+    AUDIO.maestVm = { ...(AUDIO.maestVm ?? {}), state: 'waiting', reason: null };
+    audioRedraw();
+    if (!quiet) toast('The second ear waits for listening to finish, then starts by itself');
+    try { while (AUDIO.ctrl?.running) await AUDIO.ctrl.whenIdle(); }
+    finally { AUDIO.maestWaiting = false; }
+    if (!deepSettings().maest || deepAllowed('maest') !== 'ok') {
+      AUDIO.maestVm = AUDIO.maest ? AUDIO.maest.vm() : null;
+      return audioRedraw();
+    }
+  }
   AUDIO.maest ??= A.createMaestRunner({
     store: AUDIO.store,
     lookup: (isrc, o) => A.lookup(isrc, { jsonp: deezerJsonp, ...o }),
@@ -120,7 +133,9 @@ function audioPanelHTML() {
   const missed = Object.entries(vm.missed ?? {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
   const nMissed = missed.reduce((s, [, n]) => s + n, 0);
   const running = vm.state === 'running';
+  const tidy = listenTidyText(vm);
   const status = !set.on ? 'Off.'
+    : running && tidy ? `Tidying up after this run: ${esc(tidy)}.` + (vm.reason && vm.reason !== 'stopped' ? ` (${esc(vm.reason)})` : '')
     : running ? (vm.total ? `Listening… ${vm.done.toLocaleString()} of ${vm.total.toLocaleString()} this run.` : 'Starting…')
       + (vm.reason && vm.reason !== 'stopped' ? ` (${esc(vm.reason)})` : '')
     : vm.reason === 'ask' ? ''
@@ -150,7 +165,8 @@ function audioPanelHTML() {
       <button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button></p>` : ''}
     <p class="sub" id="audioStatus" style="margin:8px 0">${status}
       ${vm.heard ? ` ${vm.heard.toLocaleString()} track${vm.heard === 1 ? '' : 's'} heard so far.` : ''}
-      ${running && vm.total ? `<progress max="${vm.total}" value="${vm.done}" style="width:100%"></progress>` : ''}</p>
+      ${running && tidy ? `<progress max="${vm.tidy.total}" value="${Math.min(vm.tidy.done, vm.tidy.total)}" style="width:100%"></progress>`
+        : running && vm.total ? `<progress max="${vm.total}" value="${vm.done}" style="width:100%"></progress>` : ''}</p>
     ${listenPill(vm)}
     ${missedList(vm) || (nMissed ? `<details class="sub" style="margin:8px 0"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
@@ -183,7 +199,7 @@ function maestLineHTML() {
   const text = globalThis.BetterfyAudio?.maestStatusText ? BetterfyAudio.maestStatusText(v) : '';
   const ok = deepAllowed('maest') === 'ok';
   return `<p class="sub" id="maestStatus" style="margin:4px 0">${esc(text)}
-    ${run ? '<button class="b sm" id="maestStop">Stop</button>' : ok && audioSettings().on ? '<button class="b sm" id="maestGo">Listen with the second ear now</button>' : ''}
+    ${run ? '<button class="b sm" id="maestStop">Stop</button>' : v?.state === 'waiting' ? '' : ok && audioSettings().on ? '<button class="b sm" id="maestGo">Listen with the second ear now</button>' : ''}
     ${deepAllowed('maest') === 'unknown' ? '<button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button>' : ''}</p>
     <p class="sub">It changes no suggestion until a Score run (More → Engine) shows it places your tracks better than the first ear.</p>`;
 }
