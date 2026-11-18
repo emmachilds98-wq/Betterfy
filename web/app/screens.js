@@ -168,6 +168,7 @@ SCREEN_CTX.discover = () => ({ S, LIB, LS, CFG, T, saveTheme, $, esc, isMirrorPl
   discRestore: () => typeof discRestore === 'function' ? discRestore() : null,
   artHTML, trackChip, trackStrip, tagChips, pickEvidence, pickBand, mmss, ICON_PLAY,
   runDiscovery, addTracks, logAction, getLog, toast, undoAction, render, libraryCall, discRemember,
+  discAfterChange: () => typeof discAfterChange === 'function' ? discAfterChange() : null,
   thumbHTML, previewToggle, previewState,
   // Release radar, Discover's first section (web/app/radar.js, web/screens/radar.mjs).
   radar: typeof radarCtx === 'function' ? radarCtx() : null,
