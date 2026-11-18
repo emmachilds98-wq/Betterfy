@@ -29,6 +29,11 @@ const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
  * the tag engine's picks (blendPicks, app/blend.js); anywhere else it returns
  * them untouched. */
 function filePicks(t) {
+  const picks = filePicksRouted(t);
+  // S1: kept inside a confident family, only where this account's Score run earned it.
+  return typeof fileFamilyNarrow === 'function' ? fileFamilyNarrow(t, picks) : picks;
+}
+function filePicksRouted(t) {
   const tags = typeof blendPicks === 'function' ? blendPicks(t, t?.suggest ?? []) : t?.suggest ?? [];
   const sound = typeof soundPicks === 'function' ? soundPicks(t) : [];
   if (!sound.length) {
@@ -36,6 +41,12 @@ function filePicks(t) {
     if (!tags.length && typeof bridgePicks === 'function') { const b = bridgePicks(t); if (b.length) return b; }
     return filePairOrder(t, tags);
   }
+  // S1 (docs/BUILD-7-PLAN.md): where this account's Score run said another way
+  // beats sound leading (app/blend.js fileRouteMode), a heard track's picks come
+  // from the blend, or from tags, the engine and sound blended. Otherwise 'sound'.
+  const mode = typeof fileRouteMode === 'function' ? fileRouteMode(t) : 'sound';
+  if (mode === 'three') { const p = blendThreePicks(t, tags); if (p.length) return filePairOrder(t, p); }
+  if (mode === 'blend' && tags.length) return filePairOrder(t, tags);
   const out = sound.slice(0, 2);
   for (const sg of [...tags, ...sound.slice(2)]) {
     if (out.length >= 3) break;

@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1819">
+<meta name="bf-build" content="2026-11-18-1823">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -2009,7 +2009,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1819</span>
+    <span class="mono">build 2026-11-18-1823</span>
   </p>
 
   <div class="feat">
@@ -2102,7 +2102,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1819</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1823</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2212,7 +2212,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-1819. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-1823. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -7035,7 +7035,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1819`,
+    `Betterfy engine score — build 2026-11-18-1823`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7053,6 +7053,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     ...bridgeLines(v, pc),
     ...blendLines(v, pc),
     ...audioLines(v, pc, maestScoreText),
+    ...routeLines(v, pc),
     calibLine('How sure', ENG.calib?.base, pc),
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
@@ -7204,6 +7205,42 @@ function blendLines(v, pc) {
     nf?.scored ? `Never-filed artists blended: top-1 ${pc(nf.top1)}, top-3 ${pc(nf.top3)} (today's ${pc(nf.tags.top1)}, `
       + `this engine ${pc(nf.native.top1)}; ${nf.scored} tracks)` : null,
     `Phase 1: ${blendVerdict(b).short}`,
+  ].filter(Boolean);
+}
+
+/** S1 (docs/BUILD-7-PLAN.md): sound joins the blend, per situation. Each way a
+ *  heard track's picks can be made, on the blend's own held-out tracks, and
+ *  which one File uses. Counts and rates only. [] before a run that measured it. */
+const ROUTE_NAMES = Object.freeze({
+  today: 'Sound leads on heard tracks (today’s File)',
+  blend: 'Blend only',
+  three: 'Tags + engine + sound blended',
+  route: 'By situation (never-filed: sound leads; filed: blend)',
+  route3: 'By situation (never-filed: sound leads; filed: three-way)',
+});
+function routeLines(v, pc) {
+  const r = v?.blend?.route;
+  if (!r?.arms?.today) return [];
+  const pts = x => `${x >= 0 ? '+' : ''}${Math.round(x * 1000) / 10}`;
+  const arm = k => {
+    const a = r.arms[k];
+    if (!a) return null;
+    const w = k === 'three' || k === 'route3' ? (r.weights ? ` [tags ${r.weights[0]}, engine ${r.weights[1]}, sound ${r.weights[2]}]` : '') : '';
+    return `  ${ROUTE_NAMES[k]}${w}: top-1 ${pc(a.top1)}, top-3 ${pc(a.top3)}; never-filed ${pc(a.neverFiled?.top1)} / ${pc(a.neverFiled?.top3)}`;
+  };
+  const c = r.choice ? r.arms[r.choice] : null;
+  const verdict = !r.blendOnFile ? 'File doesn’t run the blend, so sound keeps leading'
+    : c ? `${ROUTE_NAMES[r.choice]} beats sound leading by ${pts(c.top1 - r.arms.today.top1)} points — File uses it`
+    : 'nothing beats sound leading by a point without losing never-filed artists — File unchanged';
+  const f = r.family;
+  const famArm = f?.arm, famBase = f ? r.arms[f.base] : null;
+  return [
+    `Sound and the blend on the same ${r.scored} tracks (${r.heard} sound could place):`,
+    ...['today', 'blend', 'three', 'route', 'route3'].map(arm).filter(Boolean),
+    `Sound and the blend: ${verdict}`,
+    f?.confident != null && famArm && famBase
+      ? `Family narrowing: family confident on ${pc(f.confident)} of tracks, right ${pc(f.right)}; picks kept in the family top-1 ${pc(famArm.top1)}, top-3 ${pc(famArm.top3)} (without ${pc(famBase.top1)} / ${pc(famBase.top3)}) — ${f.use ? 'File uses it' : 'not used'}`
+      : null,
   ].filter(Boolean);
 }
 
@@ -7611,7 +7648,7 @@ const actions = {
     c.render();
   },
 };
-return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakCard, weakBuckets, summary, fillLine, teachLine, onlineLine, situationLine, tempoRangeLine, blendVerdict, pastRunsCard, view, tuneCardHtml, actions };
+return { bridgeVerdict, decisionHtml, familyLine, agreeText, audioCard, weakCard, weakBuckets, summary, fillLine, teachLine, onlineLine, situationLine, tempoRangeLine, ROUTE_NAMES, routeLines, blendVerdict, pastRunsCard, view, tuneCardHtml, actions };
 })();
 /* ---- web/screens/sources.mjs ---- */
 __mod["web/screens/sources.mjs"] = (function () {
@@ -9021,6 +9058,20 @@ function helperRows(s = {}) {
     status: !a.on ? 'Off' : a.problem ? 'On · paused' : a.state === 'running' ? 'On · listening' : 'On',
     did: !a.on ? 'Places tracks by how they sound. Switch it on in Listening.' : a.problem ? `Paused: ${a.problem}` :
       `Places tracks by how they sound against your playlists${a.all ? ', hearing your whole library' : ''}${a.heard ? `; ${n(a.heard)} tracks heard` : ''}.` });
+  // S1 (BUILD-7): how sound is weighed against tags and your filing on File, once a Score run has measured it.
+  const sr = s.soundRoute;
+  if (sr && a.on) {
+    const pc = x => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '—');
+    const how = { blend: 'tags and your filing', three: 'tags, your filing and sound together',
+                  route: 'sound for artists you haven’t filed yet, tags and your filing for the rest',
+                  route3: 'sound for artists you haven’t filed yet, all three together for the rest' }[sr.choice];
+    const fam = sr.family?.use ? ' Picks stay inside a genre family when it is clear which one.' : '';
+    rows.push({ id: 'soundroute', name: 'Sound with tags and your filing', on: true, kind: sr.use || sr.family?.use ? 'ok' : 'idle',
+      status: sr.use ? 'On' : 'On · sound leads',
+      did: (sr.use && how
+        ? `Your last Score run: heard tracks are placed by ${how}, right first time ${pc(sr.chosen?.top1)} against ${pc(sr.today?.top1)} with sound leading.`
+        : `Your last Score run: sound leading is still best for heard tracks (${pc(sr.today?.top1)} right first time), so File keeps it.`) + fam });
+  }
   const d = s.deep ?? {};
   const deepOn = d.maest || d.clap;
   rows.push({ id: 'deep', name: 'Deep listen', on: !!deepOn, kind: !deepOn ? 'off' : d.blocked ? 'idle' : 'ok',
@@ -11284,7 +11335,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1819';
+const BUILD = '2026-11-18-1823';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11622,7 +11673,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1819', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1823', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12443,7 +12494,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1819');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1823');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -13179,6 +13230,11 @@ const pickEvidence = sg => sg?.evidence ? evidenceBadges(sg.evidence) : '';
  * the tag engine's picks (blendPicks, app/blend.js); anywhere else it returns
  * them untouched. */
 function filePicks(t) {
+  const picks = filePicksRouted(t);
+  // S1: kept inside a confident family, only where this account's Score run earned it.
+  return typeof fileFamilyNarrow === 'function' ? fileFamilyNarrow(t, picks) : picks;
+}
+function filePicksRouted(t) {
   const tags = typeof blendPicks === 'function' ? blendPicks(t, t?.suggest ?? []) : t?.suggest ?? [];
   const sound = typeof soundPicks === 'function' ? soundPicks(t) : [];
   if (!sound.length) {
@@ -13186,6 +13242,12 @@ function filePicks(t) {
     if (!tags.length && typeof bridgePicks === 'function') { const b = bridgePicks(t); if (b.length) return b; }
     return filePairOrder(t, tags);
   }
+  // S1 (docs/BUILD-7-PLAN.md): where this account's Score run said another way
+  // beats sound leading (app/blend.js fileRouteMode), a heard track's picks come
+  // from the blend, or from tags, the engine and sound blended. Otherwise 'sound'.
+  const mode = typeof fileRouteMode === 'function' ? fileRouteMode(t) : 'sound';
+  if (mode === 'three') { const p = blendThreePicks(t, tags); if (p.length) return filePairOrder(t, p); }
+  if (mode === 'blend' && tags.length) return filePairOrder(t, tags);
   const out = sound.slice(0, 2);
   for (const sg of [...tags, ...sound.slice(2)]) {
     if (out.length >= 3) break;
@@ -16213,7 +16275,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1819';
+    s.src = 'engine.js?v=2026-11-18-1823';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -16235,7 +16297,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1819');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1823');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16511,7 +16573,7 @@ async function engineCalibrate(v) {
   const audioGate = mine.withAudio?.gate ?? null;
   delete mine.rows;
   if (mine.withBridge) delete mine.withBridge.rows;
-  if (mine.withAudio) delete mine.withAudio.rows;
+  if (mine.withAudio) { delete mine.withAudio.rows; delete mine.withAudio.led; }
   for (const a of Object.values(mine.withAudio?.arms ?? {})) delete a.rows;
   ENG.calib = { base, bridge, audio, audioGate, ...(soundChoice ? { soundChoice } : {}), ...(family ? { family: family.keep } : {}),
                 ...(mood ? { mood } : {}), ...(pairs ? { pairs } : {}), at: Date.now() };
@@ -16981,7 +17043,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1819';
+    s.src = 'audio.js?v=2026-11-18-1823';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -17035,7 +17097,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1819', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1823', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17406,6 +17468,24 @@ function moodChipsFor(t) {
   return SOUND.moodMemo.get(key);
 }
 
+/** S1 (docs/BUILD-7-PLAN.md): the sound-first engine's whole ranking for one
+ *  track, `{ key, scores: [[playlist id, score]] }`, as the Score run's "with
+ *  sound" rows have it, for the three-way blend and the family view. Null
+ *  until the sound space is ready. */
+function soundScoresOf(t) {
+  const space = typeof bridgedSpace === 'function' ? bridgedSpace(SOUND.space) : SOUND.space;
+  if (!t?.id || !space?.audio || !globalThis.BetterfyIntrinsic || !globalThis.BetterfyCalibrate) return null;
+  const key = `${t.id}|${space.audio.index.size}${typeof bridgeVer === 'function' ? '|' + bridgeVer() : ''}`;
+  if (SOUND.scoreMemo?.key === key) return SOUND.scoreMemo;
+  if (SOUND.lib !== LIB) { SOUND.byId = new Map((LIB.liked ?? []).map(x => [x.id, x])); SOUND.lib = LIB; }
+  const raw = SOUND.byId.get(t.id);
+  if (!raw) return null;
+  soundHear(t.id);
+  const out = BetterfyIntrinsic.placements(raw, space, { limit: Infinity, soundFirst: (typeof tuneSoundFirst === 'function' ? tuneSoundFirst() : null) ?? true });
+  SOUND.scoreMemo = { key, scores: BetterfyCalibrate.scoresOf(out.results ?? []) };
+  return SOUND.scoreMemo;
+}
+
 /** Sound-led picks for one track on the File screen, or [] when it hasn't been
  *  heard, the space isn't ready, or sound can't tell (too few heard members). */
 function soundPicks(t) {
@@ -17478,9 +17558,87 @@ async function blendRemember(v) {
       // Fitted on top of this engine's fitted weights (core/validate/weights.mjs):
       // the File screen must then rank with those same weights, or not at all.
       ...(b.nativeFitted ? { nativeFitted: true } : {}),
-      top1: b.top1, top3: b.top3, tags: b.tags, neverFiled: b.neverFiled ?? null });
+      top1: b.top1, top3: b.top3, tags: b.tags, neverFiled: b.neverFiled ?? null,
+      ...(b.route ? { route: routeKeep(b.route) } : {}) });
   } catch { /* not remembered: File keeps today's picks, which is the safe side */ }
   blendForget();
+}
+
+/* S1 (docs/BUILD-7-PLAN.md): sound joins the blend, per situation. The Score
+ * run measures, on the same held-out folds as the blend, today's rule (sound
+ * leads on a heard track) against the blend alone, tags + engine + sound
+ * blended, and routing by situation (core/validate/blend.mjs routeAccuracy).
+ * Only the way that beat today's by a point of top-1, losing no more than a
+ * point on never-filed artists, is kept here and used by filePicks; otherwise
+ * `route.use` is false and File is exactly as before. */
+function routeKeep(r) {
+  const arm = k => (r.arms?.[k] ? { top1: r.arms[k].top1, top3: r.arms[k].top3, nf: r.arms[k].neverFiled?.top1 ?? null } : null);
+  const f = r.family ?? {};
+  return { use: !!r.use, choice: r.choice ?? null, weights: r.weights ?? null, today: arm('today'),
+           chosen: r.choice ? arm(r.choice) : null,
+           family: f.use && f.cal ? { use: true, base: f.base, T: f.T, cal: f.cal, top1: f.arm?.top1 ?? null }
+                                  : { use: false, confident: f.confident ?? null, right: f.right ?? null } };
+}
+
+/** The stored way File places a heard track, when this account's Score run earned one. */
+const fileRoute = () => (blendActive() && BLEND.rec?.route?.use ? BLEND.rec.route : null);
+
+/** Artists already in one of the genre playlists (five or more tracks): "filed". */
+function blendFiledArtists() {
+  const key = engineTargets().join();
+  if (BLEND.filedFor !== LIB || BLEND.filedKey !== key) {
+    const set = new Set(), tg = new Set(engineTargets());
+    for (const p of LIB?.playlists ?? []) {
+      if (!tg.has(p.id) || (typeof isMirrorPlaylist === 'function' && isMirrorPlaylist(p)) || (p.tracks?.length ?? 0) < 5) continue;
+      for (const x of p.tracks) for (const a of x?.artists ?? []) if (a?.id) set.add(a.id);
+    }
+    Object.assign(BLEND, { filed: set, filedFor: LIB, filedKey: key });
+  }
+  return BLEND.filed;
+}
+
+/** How File makes this heard track's picks: 'sound' (today), 'blend' or 'three'. */
+function fileRouteMode(t) {
+  const r = fileRoute();
+  if (!r || typeof BetterfyBlend === 'undefined' || !BetterfyBlend.routeMode) return 'sound';
+  if (BLEND.likedFor !== LIB) { BLEND.liked = new Map((LIB.liked ?? []).map(x => [x.id, x])); BLEND.likedFor = LIB; }
+  const raw = BLEND.liked.get(t?.id), filed = blendFiledArtists();
+  const fresh = !(raw?.artists ?? t?.artists ?? []).some(a => a?.id && filed.has(a.id));
+  return BetterfyBlend.routeMode(r.choice, { fresh, led: true });
+}
+
+/** Tags, the engine and sound blended for one heard track, at this account's fitted weights; [] when it can't be. */
+function blendThreePicks(t, tagPicks) {
+  const r = fileRoute(), snd = typeof soundScoresOf === 'function' ? soundScoresOf(t) : null;
+  if (!r?.weights || !snd?.scores?.length) return [];
+  return blendRanked(t, tagPicks, { snd, w3: r.weights });
+}
+
+/**
+ * Family first, as the Score run measured it (S1's family arm): when the family
+ * view of this track is confident, keep the picks inside that family, topped up
+ * from sound's own ranking there. Not earned, or not confident: the picks as given.
+ */
+function fileFamilyNarrow(t, picks) {
+  const f = BLEND.rec?.route?.family;
+  if (!f?.use || !picks?.length || !blendActive() || typeof BetterfyFamily === 'undefined' || !BetterfyFamily.familyConfident
+      || typeof engineFamiliesMemo !== 'function') return picks;
+  try {
+    const snd = typeof soundScoresOf === 'function' ? soundScoresOf(t) : null;
+    if (!snd?.scores?.length) return picks;
+    const fams = engineFamiliesMemo(), fam = BetterfyFamily.familyConfident(snd.scores, fams, f.T, f.cal);
+    if (!fam) return picks;
+    const famOf = id => fams.get(id) ?? `own:${id}`;
+    const kept = picks.filter(p => famOf(p.id) === fam);
+    if (!kept.length || kept.length === picks.length) return picks;
+    const rejected = FB[t.id]?.rejected ?? [];
+    for (const [id, score] of snd.scores) {
+      if (kept.length >= picks.length) break;
+      if (famOf(id) === fam && CFG[id]?.target && !rejected.includes(id) && !kept.some(p => p.id === id))
+        kept.push({ id, name: CFG[id]?.name ?? id, axis: CFG[id]?.axis ?? null, via: 'sound', score });
+    }
+    return kept;
+  } catch { return picks; }
 }
 
 /** Start again from the stored record on the next File render. */
@@ -17506,6 +17664,8 @@ function blendWarm() {
 async function blendStart() {
   try {
     const rec = await idb.get(BLEND_KEY);
+    // What the last Score said about sound and the blend (S1), for "What's helping your picks".
+    BLEND.seenRoute = rec?.route ?? null;
     const targets = engineTargets();
     // The cheap checks first, so an account it doesn't apply to never fetches engine.js.
     if (!rec?.beatsTags || !rec.withBridge || !bridgeOn()
@@ -17607,35 +17767,48 @@ function blendTags() {
  * track with no tags at all is ranked by the engine and similar artists alone.
  */
 function blendPicks(t, tagPicks) {
+  return blendRanked(t, tagPicks, null);
+}
+
+/** blendPicks' work; with `three` ({ snd: soundScoresOf(t), w3 }), sound is a third side (S1). */
+function blendRanked(t, tagPicks, three) {
   blendWarm();
   if (!t?.id || !blendActive()) return tagPicks;
   const rejected = FB[t.id]?.rejected ?? [];
-  const key = `${t.id}|${rejected.join()}|${BLEND.ver}`;
+  const key = `${t.id}|${rejected.join()}|${BLEND.ver}${three ? `|3|${three.snd.key}|${three.w3.join()}` : ''}`;
   if (BLEND.memo.has(key)) return BLEND.memo.get(key);
   if (BLEND.likedFor !== LIB) { BLEND.liked = new Map((LIB.liked ?? []).map(x => [x.id, x])); BLEND.likedFor = LIB; }
   const raw = BLEND.liked.get(t.id);
-  let picks = tagPicks;
+  let picks = three ? [] : tagPicks;
   if (raw) {
     const tagRanked = R?.profiles && TAGS ? rank(raw, blendTags(), R.profiles, R.idf, { top: Infinity }) : [];
     const nat = BetterfyIntrinsic.placements(raw, BLEND.space,
       BLEND.native ? { limit: Infinity, weights: BLEND.native } : { limit: Infinity }).results ?? [];
     const w = BLEND.rec.weight;
-    const ranked = BetterfyBlend.blendScores(tagRanked, nat, w)
+    const ranked = (three ? BetterfyBlend.blendThree(tagRanked, nat, three.snd.scores, three.w3)
+                          : BetterfyBlend.blendScores(tagRanked, nat, w))
       .filter(([id]) => CFG[id]?.target && !rejected.includes(id));
     if (ranked.length) {
       const tagRaw = new Map(tagRanked.map(b => [b.id, b.score]));
       const natRow = new Map(nat.map(r => [r.playlistId, r]));
-      // The weight actually used: a side with nothing to say drops out.
-      const wt = !tagRaw.size ? 0 : !natRow.size ? 1 : w;
+      const sndRaw = three ? new Map(three.snd.scores) : null;
+      // The weights actually used: a side with nothing to say drops out.
+      const ws = three ? [tagRaw.size, natRow.size, sndRaw.size].map((n, i) => (n ? three.w3[i] : 0))
+                       : [!tagRaw.size ? 0 : !natRow.size ? 1 : w, !tagRaw.size ? 1 : !natRow.size ? 0 : 1 - w, 0];
+      const sum = ws[0] + ws[1] + ws[2] || 1;
       picks = ranked.slice(0, 3).map(([id]) => ({
         id, name: CFG[id]?.name ?? natRow.get(id)?.name ?? id, axis: CFG[id]?.axis ?? null, via: 'blend',
-        // Shown as a fit, so it is the mix of the two raw scores, not the
+        // Shown as a fit, so it is the mix of the raw scores, not the
         // rescaled one the order comes from (whose leader is always near 100%).
-        score: +(wt * (tagRaw.get(id) ?? 0) + (1 - wt) * (natRow.get(id)?.score ?? 0)).toFixed(4),
+        score: +((ws[0] * (tagRaw.get(id) ?? 0) + ws[1] * (natRow.get(id)?.score ?? 0) + ws[2] * (sndRaw?.get(id) ?? 0)) / sum).toFixed(4),
         untagged: !tagRaw.size,
         similar: (natRow.get(id)?.parts?.bridge ?? 0) > 0,
         // This artist already filed here: filing history backs the pick.
-        filed: (natRow.get(id)?.parts?.graph ?? 0) > 0 }));
+        filed: (natRow.get(id)?.parts?.graph ?? 0) > 0,
+        // S1: sound had a say in this pick (shown as "sounds like your …").
+        ...(three ? { evidence: { tags: +(ws[0] / sum * (tagRaw.get(id) ?? 0)).toFixed(4),
+                                  history: +(ws[1] / sum * (natRow.get(id)?.score ?? 0)).toFixed(4),
+                                  sound: +(ws[2] / sum * (sndRaw.get(id) ?? 0)).toFixed(4) } } : {}) }));
     }
   }
   BLEND.memo.set(key, picks);
@@ -18272,7 +18445,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1819', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1823', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -19655,6 +19828,11 @@ function helpersState() {
     bridge: { on: typeof bridgeOn === 'function' ? bridgeOn() : true, ...(br ?? {}),
               ...(typeof bridgeWarmState === 'function' ? { warm: bridgeWarmState() } : {}) },
     audio, deep,
+    // S1: the last Score run's verdict on sound and the blend (app/blend.js routeKeep).
+    soundRoute: (() => { try {
+      const r = typeof ENG !== 'undefined' && ENG.val?.blend?.route && typeof routeKeep === 'function' ? routeKeep(ENG.val.blend.route)
+        : typeof BLEND !== 'undefined' ? BLEND.seenRoute : null;
+      return r ?? null; } catch { return null; } })(),
     discogs: !!LS.getItem('bf_discogs'),
     engine: { status: typeof ENG !== 'undefined' ? ENG.status : null,
       targets: (() => { try { return LIB ? engineTargets().length : null; } catch { return null; } })() },
