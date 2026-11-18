@@ -165,7 +165,8 @@ test('blend on: an untagged track gets picks from the engine and similar artists
   assert.match(untagged, /where you file this artist and ones like them/);
   assert.doesNotMatch(untagged, /No confident suggestion/);
   // A tagged track still leads with what its tags and filing agree on.
-  assert.match(tagged, /class="pick best" data-act="selfile" data-selfile="p-garage"/);
+  // (first, but not lit green: a blend pick with no calibrated band is a choice, BUILD-7 U1)
+  assert.match(tagged, /<div class="picks">\s*<div class="pickw"><button class="pick[^"]*" data-act="selfile" data-selfile="p-garage"/);
   assert.match(tagged, /tags, and where you file/);
 });
 

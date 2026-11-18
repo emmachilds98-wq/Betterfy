@@ -181,6 +181,51 @@ export function evidenceBadges(vm) {
     `<span class="ev ev-${k}" style="--w:${+(sClamp(vm[k] / total)).toFixed(2)}" title="${sEsc(`${word}: ${sPct(vm[k] / total)} of this suggestion — ${why}`)}">${word}</span>`).join('')}</span>`;
 }
 
+/**
+ * @typedef {object} WhyVM   the reason under File's top pick, in words (BUILD-7 U1)
+ * @property {string} playlist          the pick's playlist name
+ * @property {'tags'|'history'|'sound'|'blend'|string} [via]
+ * @property {number} [count]           history: this artist's other tracks already there
+ * @property {number} [total]           history: this artist's other filed tracks
+ * @property {string[]} [tags]          the track's own top tags
+ * @property {boolean} [sound]          sound is part of the pick
+ * @property {boolean} [tagsAgree]      a sound pick the tags name too
+ * @property {boolean} [learned]        the learned part is part of the pick
+ * @property {boolean} [similar]        blend: where you file artists like this
+ * @property {boolean} [untagged]       blend: the artist has no tags
+ */
+
+/**
+ * Why the top pick, in words, never a percentage (USER-REVIEW item 5): e.g.
+ * "4 of 5 other tracks by this artist are already here · tags say liquid dnb ·
+ * not heard yet". Each part only when the pick really carries it.
+ * @param {WhyVM|null|undefined} vm
+ * @returns {string[]}
+ */
+export function evidenceWords(vm) {
+  const name = vm && typeof vm === 'object' ? sLabel(vm.playlist) : null;
+  if (!name) return [];
+  const out = [];
+  const tags = (Array.isArray(vm.tags) ? vm.tags : []).map(sLabel).filter(Boolean).slice(0, 2);
+  if (vm.via === 'history' && sNum(vm.count) && sNum(vm.total))
+    out.push(`${sInt(vm.count)} of ${sInt(vm.total)} other tracks by this artist are already here`);
+  if (vm.sound || vm.via === 'sound') out.push(`sounds like your ${name}`);
+  if (vm.via === 'blend') out.push(vm.untagged ? 'where you file this artist and ones like them'
+    : vm.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record');
+  if (vm.via === 'sound' && vm.tagsAgree) out.push('tags agree');
+  else if (vm.via !== 'history' && vm.via !== 'blend')
+    out.push(tags.length ? `tags say ${tags.join(', ')}` : 'its tags fit here');
+  if (vm.learned) out.push('learned from what you filed');
+  if (!vm.sound && vm.via !== 'sound') out.push('not heard yet');
+  return out;
+}
+
+/** The evidence line itself: one quiet line of words, '' with nothing to say. */
+export function evidenceLine(vm) {
+  const w = evidenceWords(vm);
+  return w.length ? `<span class="ax evline">${w.map(sEsc).join(' · ')}</span>` : '';
+}
+
 /* The engine's bands, plus Tidy's high/medium/low, mapped onto one chip. */
 const SOUND_BANDS = {
   HIGH: ['sure', 'Sure'], LIKELY: ['likely', 'Likely'], AMBIGUOUS: ['unsure', 'Unsure'],
