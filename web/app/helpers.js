@@ -4,7 +4,7 @@
  * the same transports the features use (sp(), deezerJsonp(), corsJson(),
  * fetch), and keeps the answers for this session. A source that is off is
  * not asked. Nothing is stored. */
-const HELPERS = { checks: {}, running: false, at: null };
+const HELPERS = { checks: {}, running: false, at: null, open: false };
 
 function helpersState() {
   let audio = { on: false };
@@ -32,6 +32,14 @@ function helpersState() {
     auto: (() => { try { const l = autoScoreLast(); return { at: l?.at ?? null, ok: l?.ok !== false,
       ago: l?.at && typeof agoWords === 'function' ? agoWords(Date.now() - l.at) : null, running: AUTOSCORE_RUN.running }; }
       catch { return {}; } })(),
+    radar: (() => { try {
+      if (typeof RADAR === 'undefined') return null;
+      const p = RADAR.progress, ix = RADAR.index;
+      return { off: typeof radarAutoOff === 'function' && radarAutoOff() && !RADAR.running, running: !!RADAR.running,
+        done: p?.artistsDone ?? 0, total: p?.artistsTotal ?? 0, err: RADAR.err || null,
+        at: ix?.at ?? null, artists: ix?.artists ?? 0,
+        ago: ix?.at && typeof agoWords === 'function' ? agoWords(Date.now() - ix.at) : null };
+    } catch { return null; } })(),
   };
 }
 
@@ -101,6 +109,9 @@ function helpersRepaint() {
   if (typeof underHoodRefresh === 'function') underHoodRefresh();
   try { store.touch('ui.sources'); } catch { /* before the store */ }
 }
+
+// The fold stays as the listener left it when a check or a source repaints the panel.
+document.addEventListener('toggle', e => { if (e.target?.matches?.('[data-hfold]')) HELPERS.open = e.target.open; }, true);
 
 document.addEventListener('click', e => {
   if (e.target.closest?.('[data-hcheck]')) return void helpersCheck();

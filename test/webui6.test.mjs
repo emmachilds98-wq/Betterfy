@@ -140,8 +140,8 @@ test('the score card pairs without/with bars and draws the gate at +5 on never-f
   const html = ENGINE.audioCard(run({ pass: true, text: 'ok', bar: { minLift: 0.05 } }), p, esc);
   assert.equal(html.match(/class="pair"/g).length, 2);
   assert.match(html, /Adding how it sounds/);
-  assert.match(html, /--v:0\.4000[\s\S]*--v:0\.5000/);
-  assert.match(html, /class="gate met" style="--g:0\.4500" title="\+5 points"/, 'the line sits 5 points above without');
+  assert.match(html, /width="40\.00%"[\s\S]*width="50\.00%"/);
+  assert.match(html, /<line class="gate met" x1="45\.00%" x2="45\.00%"[^>]*><title>\+5 points<\/title>/, 'the line sits 5 points above without');
   assert.match(html, /The bar it has to clear: <b>\+5 points<\/b>/);
   assert.match(html, /\+10 points/);
   assert.match(html, /Helps, so it now has a say\./);
@@ -150,7 +150,7 @@ test('the score card pairs without/with bars and draws the gate at +5 on never-f
 
 test('a lift short of the bar leaves the gate line unmet and says so', () => {
   const html = ENGINE.audioCard(run({ pass: false, text: 'short', bar: { minLift: 0.05 } }, 0.42), p, esc);
-  assert.match(html, /class="gate " style="--g:0\.4500"/);
+  assert.match(html, /<line class="gate" x1="45\.00%"/);
   assert.match(html, /Not yet, so it only shows\./);
 });
 
