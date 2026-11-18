@@ -12,7 +12,7 @@ function helpersState() {
     const set = audioSettings(), vm = AUDIO.vm;
     const why = vm?.reason && !['stopped', 'ask', 'waiting for Wi-Fi', 'offline'].includes(vm.reason) && vm.state !== 'running' && vm.state !== 'done' ? vm.reason : null;
     audio = { on: !!set.on, all: set.scope === 'all', state: vm?.state ?? null, heard: listenHeard() || vm?.heard || 0,
-      problem: why ? String(why).replace(/https?:\/\/\S+/g, '').slice(0, 60).trim() : null };
+      problem: why ? SCREEN_MODS.settings.plainProblem(why) : null };
   } catch { /* before the audio glue */ }
   let deep = {};
   try { const d = deepSettings(); const why = deepAllowed('maest');
@@ -56,8 +56,8 @@ function helpersState() {
 const helperRowsNow = () => SCREEN_MODS.helpers.helperRows(helpersState());
 
 /** The panel, as the Settings sheet and Sources draw it. */
-function helpersPanelHTML() {
-  try { return SCREEN_MODS.helpers.helpersHTML(helperRowsNow(), { ...HELPERS, esc }); }
+function helpersPanelHTML(opts = {}) {
+  try { return SCREEN_MODS.helpers.helpersHTML(helperRowsNow(), { ...HELPERS, ...opts, esc }); }
   catch (e) { return `<p class="hint">Couldn’t list the sources: ${esc(e.message)}</p>`; }
 }
 
@@ -126,5 +126,5 @@ document.addEventListener('toggle', e => { if (e.target?.matches?.('[data-hfold]
 document.addEventListener('click', e => {
   if (e.target.closest?.('[data-hcheck]')) return void helpersCheck();
   const go = e.target.closest?.('[data-uhgo]');
-  if (go) { S.uhOpen = go.dataset.uhgo; S.uhJump = true; if (typeof underHoodOpen === 'function') underHoodOpen(); }
+  if (go) openUnderHood(go.dataset.uhgo);
 });

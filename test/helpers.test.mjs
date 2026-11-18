@@ -55,10 +55,10 @@ test('the live check adds one line per source and a count of what is not answeri
   assert.equal(checkWords(null), '');
 });
 
-test('the page shows the list at the top of the Settings sheet and of Sources, and checks every source it lists', () => {
+test('the page shows the list in its own Settings section, and checks every source it lists', () => {
   const page = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
-  assert.match(page, /return \(typeof helpersPanelHTML === 'function' \? helpersPanelHTML\(\) : ''\) \+ UH_SECTIONS/);
-  assert.match(page, /\$\{helpersPanelHTML\(\)\}/);
+  assert.match(page, /case 'helpers': return SCREEN_MODS\.sources\.sourcesHTML\(/);
+  assert.match(page, /\$\{helpersPanelHTML\(\{ bare: true \}\)\}/);
   const glue = readFileSync(new URL('../web/app/helpers.js', import.meta.url), 'utf8');
   for (const id of ['spotify', 'lastfm', 'wikidata', 'deezer', 'listenbrainz', 'sound', 'discogs'])
     assert.match(glue, new RegExp(`\\n  ${id}: async`), `${id} has a live check`);

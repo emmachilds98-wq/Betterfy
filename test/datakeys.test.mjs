@@ -227,11 +227,12 @@ test('no stale rows: every registry key is written somewhere, or marked readOnly
   assert.deepEqual(stale.map(r => r.where + ':' + r.key), []);
 });
 
-test('Your data shows each key by its plain name, with the raw key as small print', async () => {
+test('Your data shows each key by its plain name only, never the raw bf_ key', async () => {
   const { yourDataHTML } = await import('../web/screens/sources.mjs');
   const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
   const { keys, services } = loadRegistry();
   const html = yourDataHTML({ esc, DATA_KEYS: keys, DATA_SERVICES: services });
-  assert.match(html, /<dt>Your Spotify sign-in <span class="sub">[^<]*<\/span> <code class="bkraw">bf_tok<\/code><\/dt>/);
+  assert.match(html, /<dt>Your Spotify sign-in <span class="sub">[^<]*<\/span><\/dt>/);
+  assert.doesNotMatch(html, /bkraw/, 'no raw key as small print');
   assert.match(html, /<h4>How it picks<\/h4>/);
 });

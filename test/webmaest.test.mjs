@@ -74,7 +74,7 @@ test('page: the Score run gets the ear arms only when some records have a second
 test('page: the Deep listen block says the second ear changes nothing until a Score run', () => {
   const html = sandbox({ vm: { state: 'done', heard: 3, waiting: 2 } }).deepPanelHTML();
   assert.match(html, /3 tracks heard by the second ear, 2 still to go/);
-  assert.match(html, /changes no suggestion until a Score run/);
+  assert.match(html, /changes no suggestion until a score/);
   assert.match(html, /id="maestGo"/);
   const low = sandbox({ mem: 4 }).deepPanelHTML();
   assert.match(low, /less than 8 GB/);

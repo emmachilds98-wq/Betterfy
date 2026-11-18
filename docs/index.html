@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1650">
+<meta name="bf-build" content="2026-11-18-1837">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1772,6 +1772,61 @@ main:focus{outline:none}
   .helpers-fold+.hlist-look{margin-top:6px}
   .helpers-fold[open]~.hlist-look{display:none}
   .helpers .rowbtns{margin-top:8px}
+/* The Settings sheet as one list of collapsible sections (web/screens/settings.mjs, web/app/shell.js).
+   Every row, toggle and button here is built from the existing tokens; nothing is drawn inline. */
+
+  /* The list: the sections, then Disconnect. */
+  #underHood{display:flex; flex-direction:column}
+  .settings-body #underHood{gap:0}
+  .uh{margin:0 0 10px}
+  .uhhead{min-height:56px}
+  .uhhead:focus-visible{outline:2px solid var(--accent); outline-offset:-2px; border-radius:var(--r-2)}
+  .uhs{white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.35}
+  .uhbody>:first-child{margin-top:0}
+  .uhbody[hidden]{display:none}
+  .uhdisc{margin-top:14px; padding-top:16px; border-top:1px solid var(--line)}
+  .uhdisc .hint{margin:0 0 10px}
+  .uhdisc .b{color:var(--warn); border-color:var(--warn)}
+
+  /* A heading inside a section's body. */
+  .settings-body .uhsub{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:600; margin:20px 0 6px}
+  .uhbody>.uhsub:first-child{margin-top:0}
+  .uhbody section{margin:0}
+  .uhbody .rowbtns{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0}
+  .uhbody input:not([type]), .uhbody input[type="text"]{flex:1 1 180px; min-width:0; width:auto}
+
+  /* The score line at the head of "Your score & how it picks". */
+  .scoreline{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 12px; margin:0 0 4px}
+  .scoreline .scoretxt{font-size:15px; min-width:0}
+  .scoreline .rowbtns{margin:0}
+
+  /* Sources and the list of what is helping: flat inside their section, not cards in a card. */
+  .helpers.bare{background:none; border:0; padding:0; margin:0 0 14px}
+  .hsum{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:0 0 6px}
+  .uhbody .srcgrid{grid-template-columns:1fr; gap:0}
+  .uhbody .srccard{background:none; border:0; border-top:1px solid var(--line); border-radius:0; padding:14px 0 6px}
+  .uhbody .srchead h2{margin:0; font-size:var(--fs-h3, 15px)}
+  .uhbody .srcline{margin:0 0 10px}
+  .uhbody .yourdata.bare{margin-top:0}
+  .uhbody .yourdata .bkh:first-child{margin-top:0}
+
+  /* Listening: one state line, the three things you can set, the buttons, then Deep listen. */
+  .lp-state{display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; margin:0 0 8px}
+  .lp-heard{color:var(--ink-2); font-size:13.5px}
+  .lp-opts{display:flex; flex-direction:column; gap:2px; margin:6px 0 4px}
+  .lp-opt{display:flex; align-items:center; gap:6px 9px; font-size:13.5px; color:var(--ink-2); padding:6px 0; cursor:pointer; min-height:36px}
+  .lp-opt input[type=checkbox]{width:16px; height:16px; flex:none; accent-color:var(--accent)}
+  .lp-opt.lp-sel{flex-wrap:wrap}
+  .lp-opt select{max-width:100%; min-width:0}
+  .lp-note{margin:8px 0}
+  .lp-bar{width:100%}
+  .lp-deep{margin-top:16px; padding-top:14px; border-top:1px solid var(--line)}
+  .lp-deep h3{margin:0 0 4px}
+
+  @media (max-width:640px){
+    .lp-opt{min-height:44px}
+    .lp-opt input[type=checkbox]{width:19px; height:19px}
+  }
 /* Merge and split (BUILD-6 F4): the wizard drawn into the playlist sheet (lists.mjs wizardHTML). */
   .wiz .wizpart{border:1px solid var(--line); border-radius:var(--r-3); padding:12px 12px 10px; background:var(--surface-2)}
   .wiz .wizname input{flex:1; min-width:0}
@@ -2001,7 +2056,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1650</span>
+    <span class="mono">build 2026-11-18-1837</span>
   </p>
 
   <div class="feat">
@@ -2094,7 +2149,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1650</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1837</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2125,101 +2180,105 @@ main:focus{outline:none}
     <button class="iconbtn" id="closeSettings" aria-label="Close settings">✕</button>
   </div>
   <div class="settings-body">
-    <!-- Listening, the genre sources, the engine and History: filled by
-         app/shell.js, one open section at a time. -->
+    <!-- One list of collapsible sections (web/screens/settings.mjs has the order and the words).
+         The first five are drawn into #uhBody by app/shell.js; Appearance and About & updates are
+         markup here, wired once by id, and only shown or hidden by shell.js. Disconnect is last. -->
     <section id="underHood">
-      <h3>Under the hood</h3>
       <div id="uhBody"></div>
-    </section>
-    <section>
-      <h3>Appearance</h3>
-      <p class="hint">Betterfy opens in Nightshift. System follows whatever your phone is doing, including its sunset schedule.</p>
-      <div class="modes" id="modeGroup">
-        <button type="button" class="night" data-mode="dark"><span class="sw"><i></i><i></i></span>Nightshift</button>
-        <button type="button" class="day" data-mode="light"><span class="sw"><i></i><i></i></span>Daylight</button>
-        <button type="button" class="sys" data-mode="system"><span class="sw"><i></i><i></i></span>System</button>
+      <div class="uh" data-uhsec="appearance">
+        <button class="uhhead" type="button" id="uh-appearance-h" data-uhtoggle="appearance" aria-expanded="false" aria-controls="uh-appearance-b">
+          <span class="uht"><b>Appearance</b><span class="uhs"></span></span><span class="chev" aria-hidden="true"></span></button>
+        <div class="uhbody" id="uh-appearance-b" role="region" aria-labelledby="uh-appearance-h" hidden>
+          <h4 class="uhsub">Theme</h4>
+          <p class="hint">Betterfy opens in Nightshift. System follows whatever your phone is doing, including its sunset schedule.</p>
+          <div class="modes" id="modeGroup">
+            <button type="button" class="night" data-mode="dark"><span class="sw"><i></i><i></i></span>Nightshift</button>
+            <button type="button" class="day" data-mode="light"><span class="sw"><i></i><i></i></span>Daylight</button>
+            <button type="button" class="sys" data-mode="system"><span class="sw"><i></i><i></i></span>System</button>
+          </div>
+          <h4 class="uhsub">Accent colour</h4>
+          <p class="hint">Each one has a light and a dark twin, so it stays readable in both themes.</p>
+          <div class="swatches" id="swatches"></div>
+          <div class="accentnow"><span class="nm" id="accentName">Ember</span><span class="hex" id="accentHex"></span></div>
+          <!-- The twelve above are the ones worth having. The wheel underneath is
+               still there for anyone who had already dialled in their own, and for
+               anyone who wants a colour the twelve don't cover. -->
+          <details class="custom" id="customAccent">
+            <summary>Custom colour</summary>
+            <label class="slider-row">Hue <input type="range" id="hue" min="0" max="360" step="1"><span id="hueVal"></span></label>
+            <label class="slider-row">Depth <input type="range" id="depth" min="0" max="100" step="1"><span id="depthVal"></span></label>
+            <label class="slider-row">Brightness <input type="range" id="bright" min="15" max="85" step="1"><span id="brightVal"></span></label>
+            <div class="preview-row"><span class="preview-chip">Preview</span></div>
+            <h4 class="uhsub">Apply colour to</h4>
+            <label class="check-row"><input type="checkbox" data-region="nav"> Navigation highlight</label>
+            <label class="check-row"><input type="checkbox" data-region="btn"> Primary buttons</label>
+            <label class="check-row"><input type="checkbox" data-region="progress"> Progress bar</label>
+            <label class="check-row"><input type="checkbox" data-region="tag"> Tags &amp; chips</label>
+            <label class="check-row"><input type="checkbox" data-region="hover"> Hover &amp; focus</label>
+          </details>
+          <!-- The App icon preview was cut (DESIGN-PLAN §7.7 C7, provisional): a picture of the icon, no control. -->
+          <h4 class="uhsub">Lists</h4>
+          <label class="check-row"><input type="checkbox" id="compactToggle"> Compact rows (denser lists)</label>
+          <label class="check-row"><input type="checkbox" id="rememberToggle"> Remember last filters (Tidy)</label>
+          <div class="rowbtns"><button class="b" id="resetTheme" type="button">Reset look to defaults</button></div>
+        </div>
       </div>
-    </section>
-    <section>
-      <h3>Accent colour</h3>
-      <p class="hint">Each one has a light and a dark twin, so it stays readable in both themes.</p>
-      <div class="swatches" id="swatches"></div>
-      <div class="accentnow"><span class="nm" id="accentName">Ember</span><span class="hex" id="accentHex"></span></div>
-      <!-- The twelve above are the ones worth having. The wheel underneath is
-           still there for anyone who had already dialled in their own, and for
-           anyone who wants a colour the twelve don't cover. -->
-      <details class="custom" id="customAccent">
-        <summary>Custom colour</summary>
-        <label class="slider-row">Hue <input type="range" id="hue" min="0" max="360" step="1"><span id="hueVal"></span></label>
-        <label class="slider-row">Depth <input type="range" id="depth" min="0" max="100" step="1"><span id="depthVal"></span></label>
-        <label class="slider-row">Brightness <input type="range" id="bright" min="15" max="85" step="1"><span id="brightVal"></span></label>
-        <div class="preview-row"><span class="preview-chip">Preview</span></div>
-        <h3 style="margin-top:18px">Apply colour to</h3>
-        <label class="check-row"><input type="checkbox" data-region="nav"> Navigation highlight</label>
-        <label class="check-row"><input type="checkbox" data-region="btn"> Primary buttons</label>
-        <label class="check-row"><input type="checkbox" data-region="progress"> Progress bar</label>
-        <label class="check-row"><input type="checkbox" data-region="tag"> Tags &amp; chips</label>
-        <label class="check-row"><input type="checkbox" data-region="hover"> Hover &amp; focus</label>
-      </details>
-    </section>
-    <!-- The App icon preview was cut (DESIGN-PLAN §7.7 C7, provisional): a picture of the icon, no control. -->
-    <section>
-      <h3>Behaviour</h3>
-      <label class="check-row"><input type="checkbox" id="compactToggle"> Compact rows (denser lists)</label>
-      <label class="check-row"><input type="checkbox" id="rememberToggle"> Remember last filters (Tidy)</label>
-    </section>
-    <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, plus a
-         pull-down and two footer buttons. Next to the update button it read as
-         "get the latest Betterfy", which it is not: it re-reads every playlist
-         from Spotify, hundreds of calls against a quota that belongs to the app
-         rather than the listener — so pressing it by mistake is how a working
-         app becomes a rate-limited one. One home, named for what it does, in
-         the place you go on purpose. -->
-    <section id="librarySection">
-      <h3>Your library</h3>
-      <p class="hint">Betterfy keeps up as you file, so this is only for changes made
-        <em>outside</em> Betterfy — a playlist edited in Spotify itself. It re-reads every
-        playlist and can take a few minutes on a large library. This is not the app
-        update: that is <b>Check for updates</b>, under About below.</p>
-      <button class="b" id="settingsResync" type="button">Re-sync library from Spotify</button>
-    </section>
-    <!-- Hidden entirely unless the build has a Firebase project configured —
-         no config baked in, no section, same as the shared tag table it
-         reuses the project from. -->
-    <section id="syncSection" hidden>
-      <h3>Sync across devices</h3>
-      <p class="hint">Skips and rejections, tags you've corrected by hand, and which
-        playlists are genre playlists show up on your other signed-in devices too. Nothing
-        else is shared — not your library, not the tags fetched for you — and nothing
-        leaves this device until you link a second one.</p>
-      <div class="rowbtns" style="margin-bottom:8px">
-        <button class="b" id="syncShowCode" type="button">Link another device</button>
-        <button class="b" id="syncForget" type="button">Forget linked devices</button>
+      <div class="uh" data-uhsec="about">
+        <button class="uhhead" type="button" id="uh-about-h" data-uhtoggle="about" aria-expanded="false" aria-controls="uh-about-b">
+          <span class="uht"><b>About &amp; updates</b><span class="uhs"></span></span><span class="chev" aria-hidden="true"></span></button>
+        <div class="uhbody" id="uh-about-b" role="region" aria-labelledby="uh-about-h" hidden>
+          <p class="hint">Betterfy, build 2026-11-18-1837. <span id="sheetWho" class="mono"></span></p>
+          <div class="rowbtns"><button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button></div>
+          <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, which read as "get the latest
+               Betterfy". It is not: it re-reads every playlist from Spotify, hundreds of calls against a
+               quota that belongs to the app rather than the listener, so pressing it by mistake is how a
+               working app becomes a rate-limited one. One home, named for what it does. -->
+          <section id="librarySection">
+            <h4 class="uhsub">Your library</h4>
+            <p class="hint">Betterfy keeps up as you file, so this is only for changes made
+              <em>outside</em> Betterfy, like a playlist edited in Spotify itself. It re-reads every
+              playlist and can take a few minutes on a large library. It is not the app
+              update: that is <b>Check for updates</b>, above.</p>
+            <div class="rowbtns"><button class="b" id="settingsResync" type="button">Re-sync library from Spotify</button></div>
+          </section>
+          <!-- Hidden entirely unless the build has a Firebase project configured: no config baked in,
+               no section, same as the shared tag table it reuses the project from. -->
+          <section id="syncSection" hidden>
+            <h4 class="uhsub">Sync across devices</h4>
+            <p class="hint">Skips and rejections, tags you've corrected by hand, and which
+              playlists are genre playlists show up on your other signed-in devices too. Nothing
+              else is shared (not your library, not the tags fetched for you) and nothing
+              leaves this device until you link a second one.</p>
+            <div class="rowbtns">
+              <button class="b" id="syncShowCode" type="button">Link another device</button>
+              <button class="b" id="syncForget" type="button">Forget linked devices</button>
+            </div>
+            <div id="syncCodeBox" class="hint mono" hidden></div>
+            <div class="rowbtns">
+              <input id="syncRedeemInput" placeholder="Code from the other device" size="22" inputmode="numeric" maxlength="6">
+              <button class="b" id="syncRedeem" type="button">Link this device</button>
+            </div>
+          </section>
+          <section id="aboutSection">
+            <h4 class="uhsub">Credits</h4>
+            <p class="hint">
+              <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
+              genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
+              <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
+              release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
+              <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.</p>
+            <p class="hint" id="licences">Licences: the listening model is Discogs-EffNet and its mood, voice and danceability heads by the
+              Music Technology Group, Universitat Pompeu Fabra
+              (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
+              used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>; the optional second ear (MAEST) is by the same group, quantised, same licence. Previews from Deezer.</p>
+          </section>
+        </div>
       </div>
-      <div id="syncCodeBox" class="hint mono" style="margin-bottom:8px" hidden></div>
-      <div class="rowbtns">
-        <input id="syncRedeemInput" placeholder="Code from the other device" size="22" inputmode="numeric" maxlength="6">
-        <button class="b" id="syncRedeem" type="button">Link this device</button>
-      </div>
-    </section>
-    <section id="aboutSection">
-      <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-1650. <span id="sheetWho" class="mono"></span><br>
-        <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
-        genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
-        <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
-        release styles from <a href="https://www.discogs.com/developers" target="_blank" rel="noopener">Discogs</a> ·
-        <a href="https://github.com/emmachilds98-wq/Betterfy" target="_blank" rel="noopener">source on GitHub</a>.</p>
-      <p class="hint" id="licences">Licences: the listening model is Discogs-EffNet and its mood, voice and danceability heads by the
-        Music Technology Group, Universitat Pompeu Fabra
-        (<a href="https://essentia.upf.edu/models.html" target="_blank" rel="noopener">Essentia models</a>),
-        used under <a href="models/LICENSE" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>; the optional second ear (MAEST) is by the same group, quantised, same licence. Previews from Deezer.</p>
-      <div class="rowbtns">
-        <button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button>
+      <div class="uhdisc">
+        <p class="hint">Signs you out of Spotify on this device. Your playlists are not touched.</p>
         <button class="b" id="disconnect" type="button">Disconnect</button>
       </div>
     </section>
-    <button class="b" id="resetTheme" type="button">Reset look to defaults</button>
   </div>
 </div>
 
@@ -7019,7 +7078,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1650`,
+    `Betterfy engine score — build 2026-11-18-1837`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7659,38 +7718,25 @@ function coverageHTML(cov) {
     ${unasked.length ? `<p class="srcline sub">Asked so far: ${unasked.join(', ')}. The rest are looked up as File, Score and Discover need them.</p>` : ''}`;
 }
 
-/** Where genre data and (later) listening come from — moved out of Playlists,
- *  which had grown into two screens in one (UI-BUILD-PLAN R3). Same controls,
- *  same ids, same handlers as before; only the location changed. */
-function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
-                       sourceCoverage = () => null, helpersPanelHTML = () => '', ...rest }) {
-  const cov = tagCoverage();
-  const { base } = playlistMixes();
-  const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
-  const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
-  return `<h1>Sources</h1>
-    <p class="lede">Where your genre data comes from.${infoBtn('sources', 'Genre sources', `<p>Spotify provides no genre data, so tags come from Last.fm and Wikidata, and, once Listening is on, from how your tracks sound. This page ships a prebuilt set covering many
-        artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
-        Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
-        <b>Wrong tags?</b> under it on a Tidy or File row.</p>
-      ${genreShare === null ? '' : `<p>Of all the tag weight across your library, <b>${genreShare}%</b> describes a
-        sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
-        evidence of genre.</p>`}`)}</p>
-    ${helpersPanelHTML()}
-    <p class="srccov"><b class="mono">${cov.have.toLocaleString()}</b> of <span class="mono">${cov.total.toLocaleString()}</span>
-      artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
+/** The Listening section's body: the one panel (on/off, Wi-Fi rule, scope, Deep listen), then the label check. */
+function listeningHTML({ audioPanelHTML = () => '', labelCheckHTML = () => '' }) {
+  return `<div class="srclisten" id="src-listening">${audioPanelHTML()}</div>${labelCheckHTML()}`;
+}
 
+/** The sources section's body (Settings > What's helping your picks): every source with its live
+ *  check, then what each knows about this account and the two that take a key. */
+function sourcesHTML({ LS, esc, lfmKey, sourceCoverage = () => null, helpersPanelHTML = () => '' }) {
+  const lfmOwn = LS.getItem('bf_lfm') || '', lfm = lfmOwn || lfmKey() || '', discogs = LS.getItem('bf_discogs') || '';
+  const cov = (body => body ? sourceCard('coverage', 'Your artists', 'ok', 'This account',
+      'How much each source knows about the artists in your own library, worked out on this device.', body) : '')(
+      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())));
+  return `${helpersPanelHTML({ bare: true })}
     <div class="srcgrid">
-    ${(body => body ? sourceCard('coverage', 'Your artists', 'ok', 'This account',
-      'How much each source knows about the artists in your own library, worked out on this device.', body) + '\n\n    ' : '')(
-      coverageHTML((d => d && artistCoverage(d))(sourceCoverage())))}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'On · your key' : lfm ? 'On · built-in key' : 'Off',
+    ${cov}${sourceCard('lastfm', 'Last.fm', lfm ? 'ok' : 'idle', lfmOwn ? 'On · your key' : lfm ? 'On · built-in key' : 'Off',
       'Crowd genre tags for the artists the shipped set doesn\'t cover. '
         + (!lfmOwn && lfm ? 'On for everyone with Betterfy\'s built-in key, and asked by itself every time Betterfy opens, most-played artists first. Your own key is optional.' : lfm ? 'Asked by itself every time Betterfy opens, most-played artists first.' : 'Needs a free API key.'),
       `<div class="rowbtns"><button class="b" type="button" data-lfmconnect>${lfmOwn ? 'Change key' : lfm ? 'Use my own key' : 'Connect Last.fm'}</button>
         <button class="b sm" id="enrich" data-act="enrich" ${lfm ? '' : 'disabled'}>Ask again now</button></div>`)}
-
-    ${sourceCard('wikidata', 'Wikidata', 'ok', 'On · no key',
-      'Genres for about a third of artists, mostly established ones. Asked by itself every time Betterfy opens, before Last.fm.', '')}
 
     ${sourceCard('discogs', 'Discogs', discogs ? 'ok' : 'idle', discogs ? 'Token saved' : 'Optional',
       'Styles from an artist\'s own releases, finer than one flat tag. Only fills gaps Last.fm leaves, as part of the same start-up check.',
@@ -7699,9 +7745,28 @@ function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes,
         <button class="b" id="saveDiscogs" data-act="saveDiscogs">Save token</button>
         <a class="b sm" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Get a token</a>
       </div>`)}
+    </div>`;
+}
 
-    <section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h">${audioPanelHTML()}</section>${labelCheckHTML()}
-    </div>${rest.DATA_KEYS ? '\n    ' + yourDataHTML({ esc, ...rest }) : ''}`;
+/** The whole of what used to be the Sources screen. The Settings sheet draws the same parts as three
+ *  sections (Listening, What's helping your picks, Your data); this stays for the tests and as one page. */
+function view({ infoBtn = () => '', LS, esc, lfmKey, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
+                       sourceCoverage = () => null, helpersPanelHTML = () => '', ...rest }) {
+  const cov = tagCoverage();
+  const { base } = playlistMixes();
+  const genreShare = base.tracks ? Math.round(base.genre * 100) : null;
+  return `<h1>Sources</h1>
+    <p class="lede">Where your genre data comes from.${infoBtn('sources', 'Genre sources', `<p>Spotify provides no genre data, so tags come from Last.fm and Wikidata, and, once Listening is on, from how your tracks sound. This page ships a prebuilt set covering many
+        artists; the sources below fill in the rest, into this device only. A Last.fm tag always wins; Wikidata and
+        Discogs only ever fill an artist with no tags at all. To fix an artist that has tags but has them wrong, tap
+        <b>Wrong tags?</b> under it on a Tidy or File row.</p>
+      ${genreShare === null ? '' : `<p>Of all the tag weight across your library, <b>${genreShare}%</b> describes a
+        sound — the rest is moods, decades, occasions and things like nationality, which are not counted as
+        evidence of genre.</p>`}`)}</p>
+    <p class="srccov"><b class="mono">${cov.have.toLocaleString()}</b> of <span class="mono">${cov.total.toLocaleString()}</span>
+      artists have genre tags (${cov.pct}%).${cov.pct < 85 ? ' Suggestions will be thin until this improves.' : ''}</p>
+    ${sourcesHTML({ LS, esc, lfmKey, sourceCoverage, helpersPanelHTML })}
+    ${listeningHTML({ audioPanelHTML, labelCheckHTML })}${rest.DATA_KEYS ? '\n    ' + yourDataHTML({ esc, ...rest }) : ''}`;
 }
 
 const WHERE = { local: 'This browser', idb: 'This browser (database)', 'idb-db': 'This browser (database)', firestore: 'Firestore' };
@@ -7730,12 +7795,12 @@ function restoreHTML(BK, esc) {
 }
 
 /** Settings › Your data: backup and restore, every key kept and why, who hears what, and the wipe (BUILD-6 F7/F8). */
-function yourDataHTML({ esc, BK = { stage: 'idle' }, DATA_KEYS = [], DATA_SERVICES = [], myPlaylists = () => 0 }) {
+function yourDataHTML({ esc, BK = { stage: 'idle' }, DATA_KEYS = [], DATA_SERVICES = [], myPlaylists = () => 0, bare = false }) {
   const groups = new Map();
   for (const k of DATA_KEYS) (groups.get(k.group) ?? groups.set(k.group, []).get(k.group)).push(k);
   const n = myPlaylists();
-  return `<section class="srccard yourdata" id="src-data" aria-labelledby="src-data-h">
-    <div class="srchead"><h2 id="src-data-h">Your data</h2><span class="tag ok">On this device</span></div>
+  return `<section class="yourdata${bare ? ' bare' : ' srccard'}" id="src-data"${bare ? '' : ' aria-labelledby="src-data-h"'}>
+    ${bare ? '' : '<div class="srchead"><h2 id="src-data-h">Your data</h2><span class="tag ok">On this device</span></div>'}
     <p class="srcline">What Betterfy keeps lives in this browser. Nothing from your library is pooled with other accounts or uploaded anywhere
       except to the services listed below, and only for the reason given.</p>
 
@@ -7747,7 +7812,7 @@ function yourDataHTML({ esc, BK = { stage: 'idle' }, DATA_KEYS = [], DATA_SERVIC
     ${restoreHTML(BK, esc)}
 
     <details class="bkkeys"><summary>What is kept, and why (${DATA_KEYS.length})</summary>
-      ${[...groups].map(([g, ks]) => `<h4>${esc(g)}</h4><dl>${ks.map(k => `<dt>${esc(k.name ?? k.key)} <span class="sub">${WHERE[k.where] ?? esc(k.where)}</span> <code class="bkraw">${esc(k.key)}${k.prefix ? '…' : ''}</code></dt><dd>${esc(k.why)}</dd>`).join('')}</dl>`).join('')}
+      ${[...groups].map(([g, ks]) => `<h4>${esc(g)}</h4><dl>${ks.map(k => `<dt>${esc(k.name ?? k.key)} <span class="sub">${WHERE[k.where] ?? esc(k.where)}</span></dt><dd>${esc(k.why)}</dd>`).join('')}</dl>`).join('')}
     </details>
     <details class="bkkeys"><summary>Who hears from Betterfy (${DATA_SERVICES.length})</summary>
       <dl>${DATA_SERVICES.map(s => `<dt>${esc(s.name)}</dt><dd>${esc(s.what)}</dd>`).join('')}</dl>
@@ -7782,7 +7847,7 @@ const actions = {
   wipeNo(c) { c.BK.wipe = false; c.render(); },
   wipeGo: c => c.wipeThisDevice(),
 };
-return { artistCoverage, coverageHTML, view, yourDataHTML, actions };
+return { artistCoverage, coverageHTML, listeningHTML, sourcesHTML, view, yourDataHTML, actions };
 })();
 /* ---- core/review/hidden.mjs ---- */
 __mod["core/review/hidden.mjs"] = (function () {
@@ -9076,7 +9141,7 @@ function helperAttention(rows, checks = {}) {
 /** The panel (DESIGN-PLAN L5): folded to its header ("12 of 12 on") plus any row that asks
  *  for a look; the whole list opens on tap. `checks` are the live results by row id;
  *  `running` while a check is out; `open` keeps the fold open across repaints. */
-function helpersHTML(rows, { checks = {}, running = false, at = null, open = false, esc = s => String(s ?? '') } = {}) {
+function helpersHTML(rows, { checks = {}, running = false, at = null, open = false, bare = false, esc = s => String(s ?? '') } = {}) {
   const row = r => { const c = checks?.[r.id];
     return `<li class="hrow2 h-${r.kind}${c?.ok === false ? ' h-fail' : ''}" data-helper="${esc(r.id)}">
         <span class="hdot" aria-hidden="true"></span>
@@ -9084,6 +9149,13 @@ function helpersHTML(rows, { checks = {}, running = false, at = null, open = fal
           c ? `<span class="hcheck${c.ok === false ? ' bad' : c.ok ? ' good' : ''}">${esc(checkWords(c))}</span>` : ''}</span>
         <span class="tag ${r.kind === 'off' ? 'idle' : r.kind}">${esc(r.status)}</span></li>`; };
   const look = helperAttention(rows, checks);
+  const btn = `<button class="b sm" type="button" data-hcheck${running ? ' disabled' : ''}>${running ? 'Checking…' : at ? 'Check again' : 'Check they all answer'}</button>`;
+  // Inside its own Settings section (owner's ask 2026-11-18): the section header is the fold, so the
+  // whole list is shown, every source on with its live check, under one summary line.
+  if (bare) return `<div class="helpers bare" id="helpers">
+    <p class="hsum">${look.length ? `<span class="tag warn">${esc(helperSummary(rows, checks))}</span>` : ''}${btn}</p>
+    <ul class="hlist">${rows.map(row).join('')}</ul>
+  </div>`;
   return `<section class="helpers" id="helpers" aria-labelledby="helpers-h">
     <details class="helpers-fold" data-hfold${open ? ' open' : ''}>
       <summary class="helpers-head"><h3 id="helpers-h">What's helping your picks</h3><span class="tag ${look.length ? 'warn' : 'ok'}">${esc(helperSummary(rows, checks))}</span></summary>
@@ -9095,6 +9167,97 @@ function helpersHTML(rows, { checks = {}, running = false, at = null, open = fal
   </section>`;
 }
 return { helperRows, helperSummary, checkWords, helperAttention, helpersHTML };
+})();
+/* ---- web/screens/settings.mjs ---- */
+__mod["web/screens/settings.mjs"] = (function () {
+/* The Settings sheet's structure (DESIGN-PLAN L5, owner's ask 2026-11-18: "refurbish the
+ * settings area"). One list of sections, top to bottom, each collapsible, each with a
+ * one-line status that shows when it is closed. This file is only the words and the
+ * markup: web/app/shell.js holds which are open and paints them. Plain listener words;
+ * nothing here names an internal state. */
+
+/** Every section in order. `mod` is the screen module whose actions its controls use
+ *  (the sheet finds them through the [data-uh] wrapper); `fixed` sections are markup in
+ *  the page template, wired once, and only shown or hidden. */
+const SECTIONS = [
+  { id: 'engine', title: 'Your score & how it picks', mod: 'engine' },
+  { id: 'sources', title: 'Listening', mod: 'sources' },
+  { id: 'helpers', title: 'What’s helping your picks', mod: 'sources' },
+  { id: 'data', title: 'Your data', mod: 'sources' },
+  { id: 'history', title: 'History', mod: 'history' },
+  { id: 'appearance', title: 'Appearance', fixed: true },
+  { id: 'about', title: 'About & updates', fixed: true },
+];
+
+/** Section ids that open by default: the one people come for. */
+const OPEN_BY_DEFAULT = ['sources'];
+
+const num = x => (Number.isFinite(x) ? Math.round(x).toLocaleString('en-GB') : '0');
+
+/** A raw failure turned into something a listener can act on. Never shows a stack or a URL. */
+function plainProblem(raw) {
+  const s = String(raw ?? '').replace(/https?:\/\/\S+/g, '').trim();
+  if (!s) return '';
+  if (/dynamically imported|failed to fetch|networkerror|load failed|net::|timed? ?out|no answer/i.test(s))
+    return 'couldn’t download the listening model, so it will try again later';
+  if (/memory|allocation|out of/i.test(s)) return 'this device ran out of memory';
+  if (/wasm|webassembly|onnx|runtime/i.test(s)) return 'this browser couldn’t run the listening model';
+  return s.slice(0, 80);
+}
+
+/** "Listening: on, heard 7,161 of 9,000": the closed line. */
+function listeningSummary({ on = false, state = null, reason = null, done = 0, total = 0, heard = 0, library = 0 } = {}) {
+  if (!on) return 'Off';
+  const h = heard ? `heard ${num(heard)}${library >= heard ? ` of ${num(library)}` : ''}` : 'nothing heard yet';
+  if (state === 'running') return total ? `On, listening ${num(Math.min(done, total))} of ${num(total)} · ${h}` : `On, starting · ${h}`;
+  if (reason === 'waiting for Wi-Fi') return `On, waiting for Wi-Fi · ${h}`;
+  if (reason === 'offline') return `On, offline · ${h}`;
+  return `On, ${h}`;
+}
+
+/** "Your score": the last Score run, or what it is waiting for. */
+function scoreSummary({ top1 = null, running = false } = {}) {
+  if (running) return 'Scoring now…';
+  if (Number.isFinite(top1)) return `Right first time on ${Math.round(top1 * 100)}% of what you filed`;
+  return 'Not scored yet. It scores itself once you have filed enough';
+}
+
+function dataSummary({ playlists = 0 } = {}) {
+  return `Kept on this device${playlists ? ` · ${num(playlists)} playlists to back up` : ''}`;
+}
+
+function historySummary({ count = null } = {}) {
+  return Number.isFinite(count) && count > 0
+    ? `${num(count)} thing${count === 1 ? '' : 's'} Betterfy wrote to Spotify, each with undo`
+    : 'Everything Betterfy wrote to Spotify, with undo';
+}
+
+const MODES = { dark: 'Nightshift', light: 'Daylight', system: 'System' };
+function appearanceSummary({ mode = 'dark', accent = null } = {}) {
+  return `${MODES[mode] ?? MODES.dark}${accent ? ` · ${accent}` : ''}`;
+}
+
+function aboutSummary({ build = '' } = {}) {
+  return build && !String(build).startsWith('__') ? `Build ${build} · updates and library re-read` : 'Updates and library re-read';
+}
+
+/** Each section's closed line, from one plain snapshot of the page. */
+function sectionSummaries(s = {}) {
+  return {
+    engine: scoreSummary(s.score), sources: listeningSummary(s.listening), helpers: s.helpers ?? '',
+    data: dataSummary(s.data), history: historySummary(s.history),
+    appearance: appearanceSummary(s.appearance), about: aboutSummary(s.about),
+  };
+}
+
+/** One section's header (a button, aria-expanded) and, when open, its body. */
+function sectionHTML({ id, title, summary, open, body = '', mod = null, esc = x => String(x ?? '') }) {
+  return `<div class="uh${open ? ' open' : ''}" data-uhsec="${esc(id)}">
+    <button class="uhhead" type="button" id="uh-${esc(id)}-h" data-uhtoggle="${esc(id)}" aria-expanded="${!!open}" aria-controls="uh-${esc(id)}-b">
+      <span class="uht"><b>${esc(title)}</b><span class="uhs">${esc(summary)}</span></span><span class="chev" aria-hidden="true"></span>
+    </button>${open ? `<div class="uhbody" id="uh-${esc(id)}-b" role="region" aria-labelledby="uh-${esc(id)}-h"${mod ? ` data-uh="${esc(mod)}"` : ''}>${body}</div>` : ''}</div>`;
+}
+return { SECTIONS, OPEN_BY_DEFAULT, plainProblem, listeningSummary, scoreSummary, dataSummary, historySummary, appearanceSummary, aboutSummary, sectionSummaries, sectionHTML };
 })();
 /* ---- core/playlists/mergesplit.mjs ---- */
 __mod["core/playlists/mergesplit.mjs"] = (function () {
@@ -10832,7 +10995,7 @@ Object.assign(globalThis, __mod["core/review/teach.mjs"]);
 Object.assign(globalThis, __mod["core/review/autoscore.mjs"]);
 Object.assign(globalThis, __mod["web/ui/sound.mjs"]);
 Object.assign(globalThis, __mod["web/app/patch.mjs"]);
-globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], tidy: __mod["web/screens/tidy.mjs"], helpers: __mod["web/screens/helpers.mjs"], lists: __mod["web/screens/lists.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"], new: __mod["web/screens/new.mjs"] };
+globalThis.BetterfyScreens = { home: __mod["web/screens/home.mjs"], history: __mod["web/screens/history.mjs"], inbox: __mod["web/screens/inbox.mjs"], engine: __mod["web/screens/engine.mjs"], sources: __mod["web/screens/sources.mjs"], tidy: __mod["web/screens/tidy.mjs"], helpers: __mod["web/screens/helpers.mjs"], settings: __mod["web/screens/settings.mjs"], lists: __mod["web/screens/lists.mjs"], shuffle: __mod["web/screens/shuffle.mjs"], discover: __mod["web/screens/discover.mjs"], new: __mod["web/screens/new.mjs"] };
 /* =============================================================== */
 
 const $ = s => document.querySelector(s);
@@ -10936,7 +11099,7 @@ for (const screen of STORE_SCREENS)
 function storeRepaint(screens) {
   // History and Sources are sections of the Settings sheet now: repaint
   // the one that is open, and not the page behind it.
-  if (typeof settingsOpen === 'function' && settingsOpen() && screens.includes(S.uhOpen)) underHoodRefresh();
+  if (typeof settingsOpen === 'function' && settingsOpen() && typeof uhOpenMods === 'function' && uhOpenMods().some(m => screens.includes(m))) underHoodRefresh();
   if (typeof view === 'undefined' || !screens.includes(view) || !document.getElementById('main')) return;
   render();
 }
@@ -11232,7 +11395,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1650';
+const BUILD = '2026-11-18-1837';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11570,7 +11733,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1650', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1837', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12391,7 +12554,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1650');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1837');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16085,7 +16248,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1650';
+    s.src = 'engine.js?v=2026-11-18-1837';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -16107,7 +16270,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1650');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1837');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16822,7 +16985,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1650';
+    s.src = 'audio.js?v=2026-11-18-1837';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16876,7 +17039,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1650', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1837', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -18015,12 +18178,13 @@ function soundSearchHTML() {
 let AUDIO_DRAW = 0;
 function audioRedraw() {
   setListen(AUDIO.vm);
-  if (!settingsOpen() || S.uhOpen !== 'sources') return;
+  if (!settingsOpen()) return;
   if (AUDIO_DRAW) return;
   AUDIO_DRAW = requestAnimationFrame(() => {
     AUDIO_DRAW = 0;
     const el = document.getElementById('audioPanel');
     if (el) el.outerHTML = audioPanelHTML();
+    if (typeof uhSummaryTick === 'function') uhSummaryTick();
   });
 }
 
@@ -18113,7 +18277,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1650', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1837', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -18147,7 +18311,7 @@ function audioPanelHTML() {
   const nMissed = missed.reduce((s, [, n]) => s + n, 0);
   const running = vm.state === 'running';
   const tidy = listenTidyText(vm);
-  const status = !set.on ? 'Off.'
+  const status = !set.on ? 'Tick “Listen to my music” to start.'
     : running && tidy ? `Tidying up after this run: ${esc(tidy)}.` + (vm.reason && vm.reason !== 'stopped' ? ` (${esc(vm.reason)})` : '')
     : running ? (vm.total ? `Listening… ${vm.done.toLocaleString()} of ${vm.total.toLocaleString()} this run.` : 'Starting…')
       + (vm.reason && vm.reason !== 'stopped' ? ` (${esc(vm.reason)})` : '')
@@ -18157,33 +18321,33 @@ function audioPanelHTML() {
     : vm.state === 'done' ? 'Up to date for this scope.'
     : vm.state === 'paused' ? `Stopped${vm.reason && vm.reason !== 'stopped' ? ': ' + esc(vm.reason) : ''}. It carries on where it left off.`
     : 'Ready.';
-  return `<div id="audioPanel">
-    <div class="srchead"><h2 id="src-listening-h">Listen to my music</h2><span class="tag ${!set.on ? 'idle' : running || vm.state === 'done' ? 'ok' : 'idle'}">${
-      !set.on ? 'Off' : running ? 'Listening' : vm.state === 'done' ? 'Up to date' : 'Paused'}</span></div>
-    <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. On by default; untick it to stop.</p>
-    ${infoBtn('listen', 'Listening', `<p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
+  const state = !set.on ? ['idle', 'Off'] : running ? ['ok', 'Listening'] : vm.state === 'done' ? ['ok', 'Up to date'] : ['idle', 'Paused'];
+  const lib = libTrackCount(), heard = (typeof listenHeard === 'function' ? listenHeard() : 0) || vm.heard || 0;
+  const bar = running && tidy ? `<progress class="lp-bar" max="${vm.tidy.total}" value="${Math.min(vm.tidy.done, vm.tidy.total)}"></progress>`
+    : running && vm.total ? `<progress class="lp-bar" max="${vm.total}" value="${vm.done}"></progress>` : '';
+  return `<div id="audioPanel" class="lp">
+    <p class="lp-state"><span class="tag ${state[0]}">${state[1]}</span>
+      <span class="lp-heard">${heard ? `Heard ${heard.toLocaleString()}${lib >= heard ? ` of ${lib.toLocaleString()}` : ''} track${(lib >= heard ? lib : heard) === 1 ? '' : 's'} so far.` : 'Nothing heard yet.'}</span></p>
+    <p class="srcline">Places tracks by how they sound against your own playlists, not only by tags. It is on unless you untick it.${infoBtn('listen', 'Listening', `<p>Betterfy listens to a 20-second sample of each track (two short windows of Deezer’s
       30-second preview, found by the track’s ISRC) and remembers what it sounds like. The audio is never stored, only a
       ~2.5 KB summary on this device. Switching it on downloads the listening model once (about 37 MB),
       then about 330 KB per track. “What I’m playing + unfiled” also hears up to 20 tracks from each genre
-      playlist, so there is something to compare the rest against.</p>`)}
-    <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioOn" ${set.on ? 'checked' : ''}> Listen to my music</label>
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="audioWifi" ${set.wifiOnly ? 'checked' : ''}> Wi-Fi only</label>
-      <select id="audioScope" aria-label="Which tracks to listen to">${Object.entries(scopes).map(([k, v]) =>
-        `<option value="${k}" ${set.scope === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
-      ${running ? '<button class="b" id="audioStop">Stop</button>'
-        : set.on ? '<button class="b p" id="audioGo">Listen now</button>' : ''}
+      playlist, so there is something to compare the rest against.</p>`)}</p>
+    <div class="lp-opts">
+      <label class="lp-opt"><input type="checkbox" id="audioOn" ${set.on ? 'checked' : ''}> Listen to my music</label>
+      <label class="lp-opt"><input type="checkbox" id="audioWifi" ${set.wifiOnly ? 'checked' : ''}> Only on Wi-Fi, so it never uses mobile data</label>
+      <label class="lp-opt lp-sel">Listen to <select id="audioScope" aria-label="Which tracks to listen to">${Object.entries(scopes).map(([k, v]) =>
+        `<option value="${k}" ${set.scope === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
     </div>
-    ${set.on && vm.reason === 'ask' ? `<p class="sub" style="margin:8px 0">This browser doesn’t say whether it is on Wi-Fi.
+    <div class="rowbtns">${running ? '<button class="b" id="audioStop">Stop</button>'
+        : set.on ? '<button class="b p" id="audioGo">Listen now</button>' : ''}</div>
+    ${set.on && vm.reason === 'ask' ? `<p class="sub lp-note">This browser doesn’t say whether it is on Wi-Fi.
       <button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button></p>` : ''}
-    <p class="sub" id="audioStatus" style="margin:8px 0">${status}
-      ${vm.heard ? ` ${vm.heard.toLocaleString()} track${vm.heard === 1 ? '' : 's'} heard so far.` : ''}
-      ${running && tidy ? `<progress max="${vm.tidy.total}" value="${Math.min(vm.tidy.done, vm.tidy.total)}" style="width:100%"></progress>`
-        : running && vm.total ? `<progress max="${vm.total}" value="${vm.done}" style="width:100%"></progress>` : ''}</p>
+    <p class="sub lp-note" id="audioStatus">${status}</p>${bar}
     ${listenPill(vm)}
-    ${missedList(vm) || (nMissed ? `<details class="sub" style="margin:8px 0"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
+    ${missedList(vm) || (nMissed ? `<details class="sub lp-note"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}
-    ${AUDIO.err ? `<p class="sub">${esc(AUDIO.err)}</p>` : ''}
+    ${AUDIO.err ? `<p class="sub">${esc(SCREEN_MODS.settings?.plainProblem?.(AUDIO.err) || AUDIO.err)}</p>` : ''}
     ${set.on ? deepPanelHTML() : ''}
   </div>`;
 }
@@ -18193,15 +18357,15 @@ function audioPanelHTML() {
 function deepPanelHTML() {
   const d = deepSettings();
   const why = ear => { const a = deepAllowed(ear); return d[ear] && a !== 'ok' && a !== 'off'
-    ? `<p class="sub" style="margin:4px 0">${esc(globalThis.BetterfyAudio?.DEEP_TEXT?.[a] ?? a)}</p>` : ''; };
-  return `<div id="deepPanel" style="margin-top:12px">
-    <h3 id="src-deep-h">Deep listen (laptop)</h3>
-    <p class="srcline">Larger listening models, for a computer on Wi-Fi. Both are on: each downloads once, only on Wi-Fi. Untick one to skip it.</p>
-    <div class="rowbtns" style="margin-bottom:8px;align-items:center;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMaest" ${d.maest ? 'checked' : ''}> Second ear (MAEST, about 90 MB)</label>
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description (CLAP, about 77 MB)</label>
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepBeats" ${d.beats ? 'checked' : ''}> Better tempo (Beat This, about 10 MB)</label>
-      <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has the memory (8 GB or more)</label>
+    ? `<p class="sub lp-note">${esc(globalThis.BetterfyAudio?.DEEP_TEXT?.[a] ?? a)}</p>` : ''; };
+  return `<div id="deepPanel" class="lp-deep">
+    <h3 id="src-deep-h">Deep listen</h3>
+    <p class="srcline">Finer listening for a computer on Wi-Fi. Each part downloads once, only on Wi-Fi, and is on until you untick it.</p>
+    <div class="lp-opts">
+      <label class="lp-opt"><input type="checkbox" id="deepMaest" ${d.maest ? 'checked' : ''}> A second ear for genre (about 90 MB)</label>
+      <label class="lp-opt"><input type="checkbox" id="deepClap" ${d.clap ? 'checked' : ''}> Search by description, like “warm dub techno” (about 77 MB)</label>
+      <label class="lp-opt"><input type="checkbox" id="deepBeats" ${d.beats ? 'checked' : ''}> Better tempo, fixing half-time and double-time mix-ups (about 10 MB)</label>
+      <label class="lp-opt"><input type="checkbox" id="deepMemory" ${d.memoryOverride ? 'checked' : ''}> This computer has 8 GB of memory or more</label>
     </div>
     ${why('maest')}${d.maest ? maestLineHTML() : ''}${why('clap')}${clapStatusHTML(d)}${why('beats')}${beatsStatusHTML(d)}
   </div>`;
@@ -18211,10 +18375,10 @@ function maestLineHTML() {
   const v = AUDIO.maestVm, run = v?.state === 'running';
   const text = globalThis.BetterfyAudio?.maestStatusText ? BetterfyAudio.maestStatusText(v) : '';
   const ok = deepAllowed('maest') === 'ok';
-  return `<p class="sub" id="maestStatus" style="margin:4px 0">${esc(text)}
+  return `<p class="sub lp-note" id="maestStatus">${esc(text)}
     ${run ? '<button class="b sm" id="maestStop">Stop</button>' : v?.state === 'waiting' ? '' : ok && audioSettings().on ? '<button class="b sm" id="maestGo">Listen with the second ear now</button>' : ''}
     ${deepAllowed('maest') === 'unknown' ? '<button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button>' : ''}</p>
-    <p class="sub">It changes no suggestion until a Score run (More → Engine) shows it places your tracks better than the first ear.</p>`;
+    <p class="sub lp-note">It changes no suggestion until a score (under “Your score & how it picks”) shows it places your tracks better than the first ear.</p>`;
 }
 
 /** Beat This's line: how many octave-unsure tempos it has re-listened to. Nothing while off. */
@@ -18222,7 +18386,7 @@ function beatsStatusHTML(d) {
   if (!d.beats || deepAllowed('beats') !== 'ok' || !globalThis.BetterfyAudio?.needsBeatsFlagged) return '';
   const flagged = [...(AUDIO.records?.values() ?? [])].filter(r => !r.miss && r.dsp?.octaveAmbiguous === true);
   const left = flagged.filter(r => BetterfyAudio.needsBeatsFlagged(r)).length;
-  return `<p class="sub" style="margin:4px 0">${left ? `${left.toLocaleString()} track${left === 1 ? '' : 's'} where half or double time was unsure still to re-check, ${BetterfyAudio.BEATS_FILL_PER_RUN} more each time it listens.` : 'Every tempo that was unsure between half and double time has been re-checked.'} Tempos that were already clear are left alone. The model is about 10 MB, downloaded once.</p>`;
+  return `<p class="sub lp-note">${left ? `${left.toLocaleString()} track${left === 1 ? '' : 's'} where half or double time was unsure still to re-check, ${BetterfyAudio.BEATS_FILL_PER_RUN} more each time it listens.` : 'Every tempo that was unsure between half and double time has been re-checked.'} Tempos that were already clear are left alone. The model is about 10 MB, downloaded once.</p>`;
 }
 
 /** CLAP's line in the Deep listen block: how many heard tracks it has described. Nothing while off. */
@@ -18230,7 +18394,7 @@ function clapStatusHTML(d) {
   if (!d.clap || deepAllowed('clap') !== 'ok' || !globalThis.BetterfyAudio?.needsClap) return '';
   const heard = [...(AUDIO.records?.values() ?? [])].filter(r => !r.miss);
   const done = heard.filter(r => !BetterfyAudio.needsClap(r)).length;
-  return `<p class="sub" style="margin:4px 0">Described ${done.toLocaleString()} of ${heard.length.toLocaleString()} heard track${heard.length === 1 ? '' : 's'}${
+  return `<p class="sub lp-note">Described ${done.toLocaleString()} of ${heard.length.toLocaleString()} heard track${heard.length === 1 ? '' : 's'}${
     done < heard.length ? `, ${BetterfyAudio.CLAP_FILL_PER_RUN} more each time it listens` : ''}. The model is about 77 MB, downloaded once.</p>`;
 }
 /* ===========================================================================
@@ -18713,7 +18877,7 @@ const SCREEN_CTX = {
   history: () => ({ S, esc, isUndone, emptyState, undoAction, getLog, toast, render }),
   sources: () => ({ LS, esc, lfmKey, $, tagCoverage, playlistMixes, audioPanelHTML, labelCheckHTML,
                     toast, render, enrichMissing, fillFromWikidata, sourceCoverage,
-                    helpersPanelHTML: () => (typeof helpersPanelHTML === 'function' ? helpersPanelHTML() : '') }),
+                    helpersPanelHTML: o => (typeof helpersPanelHTML === 'function' ? helpersPanelHTML(o) : '') }),
   engine: () => ({ ENG, LIB, LS, esc, idb, SPACE_KEY, CAL_KEY, VALIDATE_N, toast, render, go,
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
@@ -19297,31 +19461,61 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
   fire(restoreStart(f));
 });
 /* ---------- the shell: four tabs and the Settings sheet (docs/archive/BUILD-5-PLAN.md §4.1, UI-D) ----------
- * File, Tidy, Discover and Library are the tabs. Everything that used to be a
- * screen of its own and is not one of those lives in the Settings sheet under
- * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs),
- * Engine and History. Their modules are
- * unchanged: this file paints each one's view into the sheet, one section open
- * at a time, and dispatchAct() (screens.js) finds their actions through the
- * [data-uh] wrapper. Anything still asking for the old screens by name is sent
- * to the right place (LEGACY_VIEWS, used by go() and the router). */
+ * File, Tidy, Discover and Library are the tabs. Everything else is the Settings
+ * sheet, one list of collapsible sections (web/screens/settings.mjs has the order,
+ * the words and the markup): Your score & how it picks, Listening, What's helping
+ * your picks, Your data, History, Appearance, About & updates, then Disconnect.
+ * Each shows a one-line status while closed. The first five are drawn here from the
+ * screen modules (sources.mjs, engine.mjs, history.mjs, unchanged in what they do);
+ * Appearance and About are markup in the page template, wired once, and only
+ * shown or hidden here. dispatchAct() (screens.js) finds a section's actions through
+ * its [data-uh] wrapper. The routes #/sources, #/engine and #/history open the
+ * section of that name (LEGACY_VIEWS, used by go() and the router). */
 
-/** The sections of "Under the hood", in order, and what each says when closed. */
-const UH_SECTIONS = [
-  ['sources', 'Listening and genre sources', () => {
-    let on = false, key = false, own = false;
-    try { on = !!audioSettings().on; } catch { /* before the audio glue loads */ }
-    try { key = !!lfmKey(); own = !!LS.getItem('bf_lfm'); } catch { /* no key */ }
-    return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? (own ? 'on, your key' : 'on, built-in key') : 'off'} · Wikidata on · Deezer on · ListenBrainz on`;
-  }],
-  ['engine', 'How it picks', () => {
-    // The closed section's one line: the last score, when there is one.
-    try { const s = engineSummary(); if (Number.isFinite(s?.top1)) return `Right first time on ${Math.round(s.top1 * 100)}% of what you filed`; }
-    catch { /* no score yet */ }
-    return 'How picks are scored, and how well';
-  }],
-  ['history', 'History', () => 'Everything Betterfy wrote to Spotify, with undo'],
-];
+/** Section ids that are open now. Several can be open; the default is Listening. */
+const uhSet = () => (S.uhSet ??= new Set(SCREEN_MODS.settings?.OPEN_BY_DEFAULT ?? ['sources']));
+const uhIsOpen = name => uhSet().has(name);
+/** The screen modules whose sections are open: what store changes should repaint. */
+const uhOpenMods = () => (SCREEN_MODS.settings?.SECTIONS ?? []).filter(x => x.mod && uhIsOpen(x.id)).map(x => x.mod);
+
+/** Tracks in the library, each once: the "M" in "heard N of M". */
+let UH_LIBN = { lib: null, n: 0 };
+function libTrackCount() {
+  if (!LIB) return 0;
+  if (UH_LIBN.lib === LIB && UH_LIBN.at === (LIB.liked?.length ?? 0)) return UH_LIBN.n;
+  const ids = new Set();
+  for (const t of LIB.liked ?? []) ids.add(t.id);
+  for (const p of LIB.playlists ?? []) for (const t of p.tracks ?? []) ids.add(t.id);
+  UH_LIBN = { lib: LIB, at: LIB.liked?.length ?? 0, n: ids.size };
+  return ids.size;
+}
+
+/** One plain snapshot of the page for the sections' closed lines. */
+function uhSnapshot() {
+  const snap = {};
+  try { const m = engineSummary(); snap.score = { top1: m?.top1, running: !!m?.running }; } catch { snap.score = {}; }
+  try {
+    const set = audioSettings(), vm = AUDIO.vm ?? {};
+    snap.listening = { on: !!set.on, state: vm.state, reason: vm.reason, done: vm.done, total: vm.total, heard: listenHeard() || vm.heard || 0, library: libTrackCount() };
+  } catch { snap.listening = {}; }
+  try { snap.helpers = SCREEN_MODS.helpers.helperSummary(helperRowsNow(), HELPERS.checks); } catch { snap.helpers = ''; }
+  snap.data = { playlists: LIB?.playlists?.length ?? 0 };
+  snap.history = { count: Array.isArray(S.history) ? S.history.length : null };
+  snap.appearance = { mode: T?.mode, accent: $('#accentName')?.textContent || null };
+  snap.about = { build: typeof BUILD === 'string' ? BUILD : '' };
+  return snap;
+}
+
+/** The sections' closed lines, by id. */
+const uhSummaries = () => SCREEN_MODS.settings.sectionSummaries(uhSnapshot());
+
+/** The score line that heads the first section: the number, and the two things to do with it. */
+function uhScoreLine(sum) {
+  const known = typeof ENG !== 'undefined' && !!ENG.val?.mine;
+  if (!known && !/^Right first time/.test(sum)) return '';   // nothing to point at yet: the section's own words say what it waits for
+  return `<div class="scoreline"><b class="scoretxt">${esc(sum)}</b>
+    <div class="rowbtns"><button class="b sm" type="button" data-uhscroll="score">See results</button>${known ? '<button class="b sm" type="button" data-act="copy">Copy results</button>' : ''}</div></div>`;
+}
 
 /** The screens whose modules answer a click on the page behind `v`: File is two. */
 const actScreens = v => v === 'inbox' ? ['home', 'inbox'] : [v];
@@ -19396,21 +19590,51 @@ function closePlSheet() {
   if (!settingsOpen()) (back?.isConnected ? back : document.querySelector('[data-act="plopen"][data-pl="' + CSS.escape(closedId) + '"]'))?.focus();
 }
 
+/** The body of one drawn section (only called while it is open). */
+function uhBody(id) {
+  const strip = h => h.replace(/^\s*<h1>[^<]*<\/h1>/, '');   // the module's page heading is the section title here
+  const ctx = n => screenCtx(n);
+  switch (id) {
+    case 'engine': return uhScoreLine(uhSummaries().engine) + strip(SCREEN_MODS.engine.view(ctx('engine')));
+    case 'sources': return SCREEN_MODS.sources.listeningHTML(ctx('sources'));
+    case 'helpers': return SCREEN_MODS.sources.sourcesHTML(ctx('sources'));
+    case 'data': { const c = ctx('sources'); return c.DATA_KEYS ? SCREEN_MODS.sources.yourDataHTML({ ...c, bare: true }) : ''; }
+    case 'history': return strip(SCREEN_MODS.history.view(ctx('history')));
+    default: return '';
+  }
+}
+
 function underHoodHTML() {
-  // Every source and engine part, on or off, at the top: always shown, never folded (app/helpers.js).
-  return (typeof helpersPanelHTML === 'function' ? helpersPanelHTML() : '') + UH_SECTIONS.map(([name, title, sub]) => {
-    const open = S.uhOpen === name;
+  const sums = uhSummaries(), M = SCREEN_MODS.settings;
+  return M.SECTIONS.filter(x => !x.fixed).map(x => {
+    const open = uhIsOpen(x.id);
     let body = '';
-    if (open) {
-      // The module's own page heading is the section title here.
-      try { body = SCREEN_MODS[name].view(screenCtx(name)).replace(/^\s*<h1>[^<]*<\/h1>/, ''); }
-      catch (e) { body = `<p class="hint">Couldn’t draw this: ${esc(e.message)}</p>`; }
-    }
-    return `<div class="uh${open ? ' open' : ''}" data-uhsec="${name}">
-      <button class="uhhead" type="button" data-uhtoggle="${name}" aria-expanded="${open}">
-        <span class="uht"><b>${esc(title)}</b><span class="uhs">${esc(sub())}</span></span><span class="chev" aria-hidden="true"></span>
-      </button>${open ? `<div class="uhbody" data-uh="${name}">${body}</div>` : ''}</div>`;
+    if (open) { try { body = uhBody(x.id); } catch (e) { body = `<p class="hint">Couldn’t draw this: ${esc(e.message)}</p>`; } }
+    return M.sectionHTML({ id: x.id, title: x.title, summary: sums[x.id], open, body, mod: x.mod, esc });
   }).join('');
+}
+
+/** Refresh only the closed lines, in place: listening ticks every few seconds and must not repaint a section. */
+function uhSummaryTick() {
+  if (!settingsOpen()) return;
+  const sums = uhSummaries();
+  for (const [id, text] of Object.entries(sums)) {
+    const line = document.querySelector(`[data-uhsec="${id}"] > .uhhead .uhs`);
+    if (line && line.textContent !== text) line.textContent = text;
+  }
+}
+
+/** The sections that are markup in the template: show or hide each, and keep its closed line current. */
+function uhSyncFixed() {
+  const sums = uhSummaries();
+  for (const x of SCREEN_MODS.settings.SECTIONS.filter(y => y.fixed)) {
+    const box = document.querySelector(`[data-uhsec="${x.id}"]`); if (!box) continue;
+    const open = uhIsOpen(x.id);
+    box.classList.toggle('open', open);
+    box.querySelector('[data-uhtoggle]')?.setAttribute('aria-expanded', String(open));
+    const body = box.querySelector('.uhbody'); if (body) body.hidden = !open;
+    const line = box.querySelector('.uhs'); if (line) line.textContent = sums[x.id];
+  }
 }
 
 /** Repaint the sections while the sheet is up. Keeps the sheet's scroll where it was. */
@@ -19418,13 +19642,16 @@ function underHoodRefresh() {
   const host = $('#uhBody');
   if (!host || !settingsOpen()) return;
   const scroller = host.closest('.settings-body'), top = scroller?.scrollTop ?? 0;
+  const focusId = document.activeElement?.closest?.('#uhBody') ? document.activeElement.id : '';
   host.innerHTML = underHoodHTML();
+  uhSyncFixed();
   if (scroller) scroller.scrollTop = top;
+  if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
 }
 
-/** Load what the open section needs, then paint. The sheet calls this each time it opens. */
+/** Load what the open sections need, then paint. The sheet calls this each time it opens. */
 async function underHoodOpen() {
-  if (S.uhOpen === 'history') S.history = await getLog();
+  if (uhIsOpen('history')) S.history = await getLog();
   underHoodRefresh();
   if (S.uhJump) {
     S.uhJump = false;
@@ -19434,16 +19661,23 @@ async function underHoodOpen() {
 
 /** Open the Settings sheet on one of its sections (or just open it with none). */
 function openUnderHood(section) {
-  if (section) { S.uhOpen = section; S.uhJump = true; }
+  if (section && SCREEN_MODS.settings?.SECTIONS.some(x => x.id === section)) { uhSet().add(section); S.uhOpen = section; S.uhJump = true; }
   if (settingsOpen()) underHoodOpen(); else openSettings(true);
 }
 
 document.addEventListener('click', guard(async e => {
+  const sc = e.target.closest?.('[data-uhscroll]');
+  if (sc) {   // "See results": the Score card inside the open score section
+    const h = [...document.querySelectorAll('[data-uh="engine"] h2')].find(x => /any better/i.test(x.textContent));
+    h?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return;
+  }
   const t = e.target.closest?.('[data-uhtoggle]');
   if (!t) return;
-  const name = t.dataset.uhtoggle;
-  S.uhOpen = S.uhOpen === name ? null : name;
+  const name = t.dataset.uhtoggle, set = uhSet();
+  if (set.has(name)) set.delete(name); else { set.add(name); S.uhOpen = name; }
   await underHoodOpen();
+  document.getElementById(`uh-${name}-h`)?.focus({ preventScroll: true });
 }));
 /* ---------- "What's helping your picks": the page's half (web/screens/helpers.mjs draws it) ----------
  * helpersState() reads what the page already holds, with no request.
@@ -19459,7 +19693,7 @@ function helpersState() {
     const set = audioSettings(), vm = AUDIO.vm;
     const why = vm?.reason && !['stopped', 'ask', 'waiting for Wi-Fi', 'offline'].includes(vm.reason) && vm.state !== 'running' && vm.state !== 'done' ? vm.reason : null;
     audio = { on: !!set.on, all: set.scope === 'all', state: vm?.state ?? null, heard: listenHeard() || vm?.heard || 0,
-      problem: why ? String(why).replace(/https?:\/\/\S+/g, '').slice(0, 60).trim() : null };
+      problem: why ? SCREEN_MODS.settings.plainProblem(why) : null };
   } catch { /* before the audio glue */ }
   let deep = {};
   try { const d = deepSettings(); const why = deepAllowed('maest');
@@ -19503,8 +19737,8 @@ function helpersState() {
 const helperRowsNow = () => SCREEN_MODS.helpers.helperRows(helpersState());
 
 /** The panel, as the Settings sheet and Sources draw it. */
-function helpersPanelHTML() {
-  try { return SCREEN_MODS.helpers.helpersHTML(helperRowsNow(), { ...HELPERS, esc }); }
+function helpersPanelHTML(opts = {}) {
+  try { return SCREEN_MODS.helpers.helpersHTML(helperRowsNow(), { ...HELPERS, ...opts, esc }); }
   catch (e) { return `<p class="hint">Couldn’t list the sources: ${esc(e.message)}</p>`; }
 }
 
@@ -19573,7 +19807,7 @@ document.addEventListener('toggle', e => { if (e.target?.matches?.('[data-hfold]
 document.addEventListener('click', e => {
   if (e.target.closest?.('[data-hcheck]')) return void helpersCheck();
   const go = e.target.closest?.('[data-uhgo]');
-  if (go) { S.uhOpen = go.dataset.uhgo; S.uhJump = true; if (typeof underHoodOpen === 'function') underHoodOpen(); }
+  if (go) openUnderHood(go.dataset.uhgo);
 });
 document.addEventListener('click', guard(async e => {
   if (await dispatchAct(e)) return;

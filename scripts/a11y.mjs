@@ -68,8 +68,8 @@ async function run(b, FORM, THEME) {
   await pg.evaluate(() => { go('lists'); openPlSheet(Object.keys(CFG)[0]); }); await pg.waitForTimeout(900); await scan('lists-sheet');
   await pg.evaluate(() => closePlSheet()); await pg.waitForTimeout(400);
   await pg.evaluate(() => go('inbox'));
-  for (const sec of [null, 'sources', 'engine', 'history']) {
-    await pg.evaluate(s => { S.uhOpen = s; openUnderHood(s); }, sec); await pg.waitForTimeout(sec === 'engine' ? 2500 : 900);
+  for (const sec of [null, 'sources', 'helpers', 'data', 'engine', 'history', 'appearance', 'about']) {
+    await pg.evaluate(s => { S.uhSet = new Set(s ? [s] : []); S.uhOpen = s; openUnderHood(s); }, sec); await pg.waitForTimeout(sec === 'engine' ? 2500 : 900);
     await scan('settings' + (sec ? '-' + sec : ''));
     await pg.evaluate(() => openSettings(false)); await pg.waitForTimeout(400);
   }

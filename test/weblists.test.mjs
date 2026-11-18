@@ -172,7 +172,7 @@ test('Sources holds the three genre sources and the Listening card', () => {
   for (const id of ['enrich', 'discogsKey', 'saveDiscogs']) assert.ok(html.includes(`id="${id}"`), id);
   assert.match(html, /<button class="b sm" id="enrich" data-act="enrich" disabled>Ask again now</); // no key yet
   assert.ok(!html.includes('fillWikidata'), 'Wikidata runs by itself at start-up; no button of its own');
-  assert.match(html, /<section class="srccard srclisten" id="src-listening" aria-labelledby="src-listening-h"><div id="audioPanel">panel<\/div><\/section>/);
+  assert.match(html, /<div class="srclisten" id="src-listening"><div id="audioPanel">panel<\/div><\/div>/);
 });
 
 test('Sources actions: the Discogs token clears and redraws', async () => {

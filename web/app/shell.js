@@ -1,29 +1,59 @@
 /* ---------- the shell: four tabs and the Settings sheet (docs/archive/BUILD-5-PLAN.md §4.1, UI-D) ----------
- * File, Tidy, Discover and Library are the tabs. Everything that used to be a
- * screen of its own and is not one of those lives in the Settings sheet under
- * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs),
- * Engine and History. Their modules are
- * unchanged: this file paints each one's view into the sheet, one section open
- * at a time, and dispatchAct() (screens.js) finds their actions through the
- * [data-uh] wrapper. Anything still asking for the old screens by name is sent
- * to the right place (LEGACY_VIEWS, used by go() and the router). */
+ * File, Tidy, Discover and Library are the tabs. Everything else is the Settings
+ * sheet, one list of collapsible sections (web/screens/settings.mjs has the order,
+ * the words and the markup): Your score & how it picks, Listening, What's helping
+ * your picks, Your data, History, Appearance, About & updates, then Disconnect.
+ * Each shows a one-line status while closed. The first five are drawn here from the
+ * screen modules (sources.mjs, engine.mjs, history.mjs, unchanged in what they do);
+ * Appearance and About are markup in the page template, wired once, and only
+ * shown or hidden here. dispatchAct() (screens.js) finds a section's actions through
+ * its [data-uh] wrapper. The routes #/sources, #/engine and #/history open the
+ * section of that name (LEGACY_VIEWS, used by go() and the router). */
 
-/** The sections of "Under the hood", in order, and what each says when closed. */
-const UH_SECTIONS = [
-  ['sources', 'Listening and genre sources', () => {
-    let on = false, key = false, own = false;
-    try { on = !!audioSettings().on; } catch { /* before the audio glue loads */ }
-    try { key = !!lfmKey(); own = !!LS.getItem('bf_lfm'); } catch { /* no key */ }
-    return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? (own ? 'on, your key' : 'on, built-in key') : 'off'} · Wikidata on · Deezer on · ListenBrainz on`;
-  }],
-  ['engine', 'How it picks', () => {
-    // The closed section's one line: the last score, when there is one.
-    try { const s = engineSummary(); if (Number.isFinite(s?.top1)) return `Right first time on ${Math.round(s.top1 * 100)}% of what you filed`; }
-    catch { /* no score yet */ }
-    return 'How picks are scored, and how well';
-  }],
-  ['history', 'History', () => 'Everything Betterfy wrote to Spotify, with undo'],
-];
+/** Section ids that are open now. Several can be open; the default is Listening. */
+const uhSet = () => (S.uhSet ??= new Set(SCREEN_MODS.settings?.OPEN_BY_DEFAULT ?? ['sources']));
+const uhIsOpen = name => uhSet().has(name);
+/** The screen modules whose sections are open: what store changes should repaint. */
+const uhOpenMods = () => (SCREEN_MODS.settings?.SECTIONS ?? []).filter(x => x.mod && uhIsOpen(x.id)).map(x => x.mod);
+
+/** Tracks in the library, each once: the "M" in "heard N of M". */
+let UH_LIBN = { lib: null, n: 0 };
+function libTrackCount() {
+  if (!LIB) return 0;
+  if (UH_LIBN.lib === LIB && UH_LIBN.at === (LIB.liked?.length ?? 0)) return UH_LIBN.n;
+  const ids = new Set();
+  for (const t of LIB.liked ?? []) ids.add(t.id);
+  for (const p of LIB.playlists ?? []) for (const t of p.tracks ?? []) ids.add(t.id);
+  UH_LIBN = { lib: LIB, at: LIB.liked?.length ?? 0, n: ids.size };
+  return ids.size;
+}
+
+/** One plain snapshot of the page for the sections' closed lines. */
+function uhSnapshot() {
+  const snap = {};
+  try { const m = engineSummary(); snap.score = { top1: m?.top1, running: !!m?.running }; } catch { snap.score = {}; }
+  try {
+    const set = audioSettings(), vm = AUDIO.vm ?? {};
+    snap.listening = { on: !!set.on, state: vm.state, reason: vm.reason, done: vm.done, total: vm.total, heard: listenHeard() || vm.heard || 0, library: libTrackCount() };
+  } catch { snap.listening = {}; }
+  try { snap.helpers = SCREEN_MODS.helpers.helperSummary(helperRowsNow(), HELPERS.checks); } catch { snap.helpers = ''; }
+  snap.data = { playlists: LIB?.playlists?.length ?? 0 };
+  snap.history = { count: Array.isArray(S.history) ? S.history.length : null };
+  snap.appearance = { mode: T?.mode, accent: $('#accentName')?.textContent || null };
+  snap.about = { build: typeof BUILD === 'string' ? BUILD : '' };
+  return snap;
+}
+
+/** The sections' closed lines, by id. */
+const uhSummaries = () => SCREEN_MODS.settings.sectionSummaries(uhSnapshot());
+
+/** The score line that heads the first section: the number, and the two things to do with it. */
+function uhScoreLine(sum) {
+  const known = typeof ENG !== 'undefined' && !!ENG.val?.mine;
+  if (!known && !/^Right first time/.test(sum)) return '';   // nothing to point at yet: the section's own words say what it waits for
+  return `<div class="scoreline"><b class="scoretxt">${esc(sum)}</b>
+    <div class="rowbtns"><button class="b sm" type="button" data-uhscroll="score">See results</button>${known ? '<button class="b sm" type="button" data-act="copy">Copy results</button>' : ''}</div></div>`;
+}
 
 /** The screens whose modules answer a click on the page behind `v`: File is two. */
 const actScreens = v => v === 'inbox' ? ['home', 'inbox'] : [v];
@@ -98,21 +128,51 @@ function closePlSheet() {
   if (!settingsOpen()) (back?.isConnected ? back : document.querySelector('[data-act="plopen"][data-pl="' + CSS.escape(closedId) + '"]'))?.focus();
 }
 
+/** The body of one drawn section (only called while it is open). */
+function uhBody(id) {
+  const strip = h => h.replace(/^\s*<h1>[^<]*<\/h1>/, '');   // the module's page heading is the section title here
+  const ctx = n => screenCtx(n);
+  switch (id) {
+    case 'engine': return uhScoreLine(uhSummaries().engine) + strip(SCREEN_MODS.engine.view(ctx('engine')));
+    case 'sources': return SCREEN_MODS.sources.listeningHTML(ctx('sources'));
+    case 'helpers': return SCREEN_MODS.sources.sourcesHTML(ctx('sources'));
+    case 'data': { const c = ctx('sources'); return c.DATA_KEYS ? SCREEN_MODS.sources.yourDataHTML({ ...c, bare: true }) : ''; }
+    case 'history': return strip(SCREEN_MODS.history.view(ctx('history')));
+    default: return '';
+  }
+}
+
 function underHoodHTML() {
-  // Every source and engine part, on or off, at the top: always shown, never folded (app/helpers.js).
-  return (typeof helpersPanelHTML === 'function' ? helpersPanelHTML() : '') + UH_SECTIONS.map(([name, title, sub]) => {
-    const open = S.uhOpen === name;
+  const sums = uhSummaries(), M = SCREEN_MODS.settings;
+  return M.SECTIONS.filter(x => !x.fixed).map(x => {
+    const open = uhIsOpen(x.id);
     let body = '';
-    if (open) {
-      // The module's own page heading is the section title here.
-      try { body = SCREEN_MODS[name].view(screenCtx(name)).replace(/^\s*<h1>[^<]*<\/h1>/, ''); }
-      catch (e) { body = `<p class="hint">Couldn’t draw this: ${esc(e.message)}</p>`; }
-    }
-    return `<div class="uh${open ? ' open' : ''}" data-uhsec="${name}">
-      <button class="uhhead" type="button" data-uhtoggle="${name}" aria-expanded="${open}">
-        <span class="uht"><b>${esc(title)}</b><span class="uhs">${esc(sub())}</span></span><span class="chev" aria-hidden="true"></span>
-      </button>${open ? `<div class="uhbody" data-uh="${name}">${body}</div>` : ''}</div>`;
+    if (open) { try { body = uhBody(x.id); } catch (e) { body = `<p class="hint">Couldn’t draw this: ${esc(e.message)}</p>`; } }
+    return M.sectionHTML({ id: x.id, title: x.title, summary: sums[x.id], open, body, mod: x.mod, esc });
   }).join('');
+}
+
+/** Refresh only the closed lines, in place: listening ticks every few seconds and must not repaint a section. */
+function uhSummaryTick() {
+  if (!settingsOpen()) return;
+  const sums = uhSummaries();
+  for (const [id, text] of Object.entries(sums)) {
+    const line = document.querySelector(`[data-uhsec="${id}"] > .uhhead .uhs`);
+    if (line && line.textContent !== text) line.textContent = text;
+  }
+}
+
+/** The sections that are markup in the template: show or hide each, and keep its closed line current. */
+function uhSyncFixed() {
+  const sums = uhSummaries();
+  for (const x of SCREEN_MODS.settings.SECTIONS.filter(y => y.fixed)) {
+    const box = document.querySelector(`[data-uhsec="${x.id}"]`); if (!box) continue;
+    const open = uhIsOpen(x.id);
+    box.classList.toggle('open', open);
+    box.querySelector('[data-uhtoggle]')?.setAttribute('aria-expanded', String(open));
+    const body = box.querySelector('.uhbody'); if (body) body.hidden = !open;
+    const line = box.querySelector('.uhs'); if (line) line.textContent = sums[x.id];
+  }
 }
 
 /** Repaint the sections while the sheet is up. Keeps the sheet's scroll where it was. */
@@ -120,13 +180,16 @@ function underHoodRefresh() {
   const host = $('#uhBody');
   if (!host || !settingsOpen()) return;
   const scroller = host.closest('.settings-body'), top = scroller?.scrollTop ?? 0;
+  const focusId = document.activeElement?.closest?.('#uhBody') ? document.activeElement.id : '';
   host.innerHTML = underHoodHTML();
+  uhSyncFixed();
   if (scroller) scroller.scrollTop = top;
+  if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
 }
 
-/** Load what the open section needs, then paint. The sheet calls this each time it opens. */
+/** Load what the open sections need, then paint. The sheet calls this each time it opens. */
 async function underHoodOpen() {
-  if (S.uhOpen === 'history') S.history = await getLog();
+  if (uhIsOpen('history')) S.history = await getLog();
   underHoodRefresh();
   if (S.uhJump) {
     S.uhJump = false;
@@ -136,14 +199,21 @@ async function underHoodOpen() {
 
 /** Open the Settings sheet on one of its sections (or just open it with none). */
 function openUnderHood(section) {
-  if (section) { S.uhOpen = section; S.uhJump = true; }
+  if (section && SCREEN_MODS.settings?.SECTIONS.some(x => x.id === section)) { uhSet().add(section); S.uhOpen = section; S.uhJump = true; }
   if (settingsOpen()) underHoodOpen(); else openSettings(true);
 }
 
 document.addEventListener('click', guard(async e => {
+  const sc = e.target.closest?.('[data-uhscroll]');
+  if (sc) {   // "See results": the Score card inside the open score section
+    const h = [...document.querySelectorAll('[data-uh="engine"] h2')].find(x => /any better/i.test(x.textContent));
+    h?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return;
+  }
   const t = e.target.closest?.('[data-uhtoggle]');
   if (!t) return;
-  const name = t.dataset.uhtoggle;
-  S.uhOpen = S.uhOpen === name ? null : name;
+  const name = t.dataset.uhtoggle, set = uhSet();
+  if (set.has(name)) set.delete(name); else { set.add(name); S.uhOpen = name; }
   await underHoodOpen();
+  document.getElementById(`uh-${name}-h`)?.focus({ preventScroll: true });
 }));
