@@ -5,7 +5,7 @@ and evidence to match genre, sub-genre and mood playlists, and what the
 strongest design would be. It was written from `main` at `e491a9e` and is
 review only: no code was changed. It pairs with
 [USER-REVIEW.md](USER-REVIEW.md) and
-[HANDOFF-2026-11-16.md](HANDOFF-2026-11-16.md).
+[HANDOFF-2026-11-16.md](../archive/HANDOFF-2026-11-16.md).
 
 All numbers here come from the repo's own docs:
 

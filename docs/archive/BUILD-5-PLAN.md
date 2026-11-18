@@ -1,5 +1,7 @@
 # Build 5 — review of where Betterfy stands, and the plan for the next big upgrade (2026-11-14)
 
+> **Archived 2026-11-18, superseded by [`BUILD-6-PLAN.md`](BUILD-6-PLAN.md); its measurements stay in [`BUILD-5-PROGRESS.md`](../BUILD-5-PROGRESS.md).** Kept for history: paths, section numbers and "start here" lines below are as they were when it was written. For the current state start at [`BUILD-7-PLAN.md`](../BUILD-7-PLAN.md) §0.
+
 **Start here for build 5.** `docs/HANDOFF.md` is still accurate for the sound
 features file by file; this file supersedes its §6 ("next work, ranked") and
 `docs/UI-BUILD-PLAN.md` §2/§6 (the UI direction). It was written from a full

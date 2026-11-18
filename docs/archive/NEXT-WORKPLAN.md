@@ -1,6 +1,8 @@
 # Next work plan (2026-11-16, after #149)
 
-> **Complete, and superseded by [`BUILD-7-PLAN.md`](BUILD-7-PLAN.md)
+> **Archived 2026-11-18, superseded by [`BUILD-7-PLAN.md`](../BUILD-7-PLAN.md).** Kept for history: paths, section numbers and "start here" lines below are as they were when it was written. For the current state start at [`BUILD-7-PLAN.md`](../BUILD-7-PLAN.md) §0.
+
+> **Complete, and superseded by [`BUILD-7-PLAN.md`](../BUILD-7-PLAN.md)
 > (2026-11-17).** Every package below is built or measured and closed.
 
 **Start here.** This plan replaces `docs/review/HANDOFF-2026-11-16.md` §"next

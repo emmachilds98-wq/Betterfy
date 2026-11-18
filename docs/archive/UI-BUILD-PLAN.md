@@ -1,5 +1,7 @@
 # UI refresh — review and build plan for parallel agents
 
+> **Archived 2026-11-18, superseded by [`BUILD-5-PLAN.md`](BUILD-5-PLAN.md) §4 and then [`DESIGN-PLAN.md`](../DESIGN-PLAN.md); who owns which stylesheet partial is in [`web/README.md`](../../web/README.md).** Kept for history: paths, section numbers and "start here" lines below are as they were when it was written. For the current state start at [`BUILD-7-PLAN.md`](../BUILD-7-PLAN.md) §0.
+
 The audio build (`docs/AUDIO-BUILD-PLAN.md`) is about to give every track
 things the app has never been able to show: how it *sounds* (style labels,
 mood, voice/instrumental, danceability), what changes inside it (sections),

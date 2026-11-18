@@ -1,6 +1,6 @@
 # Build 5 — progress log
 
-Live status of `docs/BUILD-5-PLAN.md` §8's waves. Update this file with every
+Live status of `docs/archive/BUILD-5-PLAN.md` §8's waves. Update this file with every
 merge so a fresh session can pick up where the last one stopped.
 
 ## Done (on `main`)

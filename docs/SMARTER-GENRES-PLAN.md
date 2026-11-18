@@ -600,7 +600,7 @@ only backlog clusters before. There's no separate Gaps screen.
 runtime LLM over Spotify data (R1), Chrome's Prompt API (R1, and not
 reliably available), and Spotify genres/audio features (still dead).
 
-`docs/UPGRADE-PLAN.md`'s other items (Release Radar, PR #41, collaborative
+`docs/archive/UPGRADE-PLAN.md`'s other items (Release Radar, PR #41, collaborative
 playlists) are independent of this and keep their place.
 
 ---
