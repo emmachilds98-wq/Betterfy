@@ -10,14 +10,14 @@
   build concatenates them verbatim in that order; `assembledTemplate()` gives
   the template with the script back in, which tests that slice the source use.
 - `styles/`: the stylesheet, as partials inlined in file-name order
-  (`docs/UI-BUILD-PLAN.md` §3). CSS goes here, never into the template.
+  (`docs/archive/UI-BUILD-PLAN.md` §3). CSS goes here, never into the template.
 - `ui/sound.mjs`: the sound layer's renderers, bundled as globals.
 - `audio/`: "Listen to my music", bundled into the lazy `docs/audio.js`.
 
 ## app/ and screens/
 
 These are **classic scripts sharing one top-level scope**, cut verbatim from
-what was a single inline script (`docs/BUILD-5-PLAN.md` A1). A file may use
+what was a single inline script (`docs/archive/BUILD-5-PLAN.md` A1). A file may use
 anything declared in a file above it in `APP_FILES`, and functions are hoisted
 across all of them, so moving code between files is safe only if it keeps
 top-level statements running in the same order. They become ES modules screen

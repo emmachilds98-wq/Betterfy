@@ -274,7 +274,7 @@ The coordinator's review is at high effort whatever the package used.
 | WP-D4 DSP into records and UI | Merged, #77, behind a flag. #86 then measured tempo and key on a public EDM set: BPM is shown, key stays hidden |
 | WP-L2 learning from feedback | Merged, #79 |
 | Mood, voice and energy | Merged, #83: shown once checked on real previews |
-| UI-1 to UI-6 | Merged: #72, #80, #69, #71, #70, #81 (see `docs/UI-BUILD-PLAN.md`) |
+| UI-1 to UI-6 | Merged: #72, #80, #69, #71, #70, #81 (see `docs/archive/UI-BUILD-PLAN.md`) |
 | WP-C3 naming and text search | Merged, #85. **Dormant until WP-C2 ships**: `docs/models/` has no `clap-text-table.json` and no record has a `clap` ear yet, so naming and "sounds like" search draw nothing (byte-identical, as its tests pin) |
 | Record v2 contract (C1 + C2) | Merged, #82 |
 | Deep listen settings (C1 + C2) | Merged, #84 |

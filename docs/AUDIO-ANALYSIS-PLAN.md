@@ -1,7 +1,7 @@
 # Audio analysis — plan for v3 phase 5
 
 Status: **phase 0 measured (§0); nothing in the product built yet.** Sequenced **after** the account-native
-engine's gate (PR #43, see `docs/UPGRADE-PLAN.md` §2): if that engine loses on
+engine's gate (PR #43, see `docs/archive/UPGRADE-PLAN.md` §2): if that engine loses on
 tracks by artists the account has never filed, audio is the fix; if it wins,
 audio is a refinement. It also builds on #43: its `bundler.mjs` is how the
 audio worker reaches the page, and the embedding should enter #43's learned

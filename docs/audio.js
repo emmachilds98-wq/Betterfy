@@ -5545,11 +5545,18 @@ function checksFor(all, userId) {
  * reading the listener was shown, kept so a later mapping change can tell
  * which verdicts were about what. `ok` null clears the verdict.
  */
-function withVerdict(all, userId, trackId, type, ok, seen, at = Date.now()) {
+function withVerdict(all, userId, trackId, type, ok, seen, at = Date.now(), from = null) {
   if (!userId || !trackId || !LABEL_TYPES.includes(type)) return all ?? {};
   const mine = { ...checksFor(all, userId) };
   const cur = { ...(mine[trackId] ?? {}), at, seen: { ...(mine[trackId]?.seen ?? {}), [type]: seen ?? null } };
   if (ok === true || ok === false) cur[type] = ok; else delete cur[type];
+  // Where the answer was given ('file' | 'sources'), for the record only: one
+  // track and type is one verdict wherever it came from, the last answer wins.
+  if (from) {
+    const f = { ...(cur.from ?? {}) };
+    if (ok === true || ok === false) f[type] = from; else delete f[type];
+    if (Object.keys(f).length) cur.from = f; else delete cur.from;
+  }
   mine[trackId] = cur;
   return { ...(all ?? {}), [userId]: mine };
 }
@@ -5713,7 +5720,77 @@ function reviewHTML(vm) {
     <div class="rowbtns"><button class="b sm" id="labelCheckMore">Show other tracks</button></div>
   </div>`;
 }
-return { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, MOOD_TOP, VOICE_CUT, LABELS_UI_KEY, CHECKS_KEY, moodsOf, voiceOf, energyOf, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, seenOf, reviewHTML };
+
+/* ------------------------------------------------------------ asked on File (BUILD-7 U3) */
+//
+// The same check, asked in use: at most once a session, File asks one small
+// question about a track that is playing or was just filed ("Does this sound
+// energetic?"). The answer is stored by withVerdict() exactly as a Sources
+// answer is, so a track answered in both places is still one verdict.
+
+/** Energy is asked about only when it is clearly high or clearly low. */
+const ASK_HIGH = 0.6, ASK_LOW = 0.4;
+const ASK_SESSION_KEY = 'bf_label_ask';
+
+/** The question for one reading, or null when it is not worth asking. */
+function askText(type, v) {
+  if (v == null) return null;
+  if (type === 'energy') return v >= ASK_HIGH ? 'Does this sound energetic?' : v <= ASK_LOW ? 'Does this sound calm, low in energy?' : null;
+  if (type === 'voice') return v === 'vocal' ? 'Does this have vocals?' : 'Is this instrumental, with no vocals?';
+  if (type === 'mood' && Array.isArray(v) && v.length) {
+    const ms = v.map(m => String(m).replace(/[-_]/g, ' '));
+    return `Does this sound ${ms.length > 1 ? `${ms.slice(0, -1).join(', ')} and ${ms[ms.length - 1]}` : ms[0]}?`;
+  }
+  return null;
+}
+
+/**
+ * The one question to ask, or null. `ids` are the candidate tracks, best first
+ * (the one playing, then the one just filed). A type already shown, or already
+ * answered for that track, is not asked; among the rest the type with the
+ * fewest answers so far goes first, so the answers spread across the gate.
+ * @returns {{ id: string, type: string, reading: any, seen: any, text: string }|null}
+ */
+function askFor(ids, records, checks = {}) {
+  const agree = agreement(checks);
+  for (const id of ids ?? []) {
+    if (!id) continue;
+    const r = readingsOf(records?.get?.(id));
+    const open = LABEL_TYPES.filter(t => !agree[t].on && checks?.[id]?.[t] == null && askText(t, r[t]))
+      .sort((a, b) => agree[a].reviewed - agree[b].reviewed || LABEL_TYPES.indexOf(a) - LABEL_TYPES.indexOf(b));
+    if (open.length) { const type = open[0]; return { id, type, reading: r[type], seen: seenOf(type, r[type]), text: askText(type, r[type]) }; }
+  }
+  return null;
+}
+
+/** How far that type is from deciding, in words. */
+function askProgress(type, checks) {
+  const a = agreement(checks)[type];
+  if (!a) return '';
+  return a.reviewed >= REVIEW_MIN ? `${a.reviewed} answers so far.` : `${a.reviewed} of ${REVIEW_MIN} answers needed.`;
+}
+
+/**
+ * The small question under File's card. `ask` is askFor()'s, plus `answered`
+ * (true | false | 'pass') once a button was pressed. '' for none.
+ */
+function askHTML(ask, { title = '', checks = {} } = {}) {
+  if (!ask) return '';
+  const what = TYPE_NAME[ask.type]?.toLowerCase() ?? ask.type;
+  if (ask.answered != null) {
+    return `<div class="lblask lblask-done" id="labelAsk" role="status"><p>${ask.answered === 'pass' ? 'No problem.'
+      : `Thanks. That counts toward showing ${what} labels. ${esc(askProgress(ask.type, checks))}`}</p></div>`;
+  }
+  return `<div class="lblask" id="labelAsk" role="group" aria-labelledby="labelAskQ" data-ask="${esc(ask.id)}" data-lt="${ask.type}">
+    <p id="labelAskQ"><span class="lblask-k">Quick check${title ? ` on <b>${esc(title)}</b>` : ''}:</span> ${esc(ask.text)}</p>
+    <div class="lblask-btns">
+      <button class="b sm" data-act="lblask" data-lok="1">Yes</button>
+      <button class="b sm" data-act="lblask" data-lok="0">No</button>
+      <button class="b sm lblask-pass" data-act="lblask" data-lok="pass">Not sure</button>
+    </div>
+  </div>`;
+}
+return { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, MOOD_TOP, VOICE_CUT, LABELS_UI_KEY, CHECKS_KEY, moodsOf, voiceOf, energyOf, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, seenOf, reviewHTML, ASK_HIGH, ASK_SESSION_KEY, askText, askFor, askProgress, askHTML };
 })();
 /* ---- web/audio/deep-settings.mjs ---- */
 __mod["web/audio/deep-settings.mjs"] = (function () {
@@ -6884,7 +6961,7 @@ const { MEL_VERSION } = __mod["core/audio/mel.mjs"];
 const { HEADS, summariseHeads } = __mod["core/audio/heads.mjs"];
 const { dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY } = __mod["web/audio/dsp-view.mjs"];
 const { measureWindows, needsDsp, DSP_VERSION } = __mod["core/audio/dsp/combine.mjs"];
-const { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf } = __mod["web/audio/labels-view.mjs"];
+const { LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, askFor, askText, askHTML, askProgress, ASK_SESSION_KEY } = __mod["web/audio/labels-view.mjs"];
 const { readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB } = __mod["web/audio/deep-settings.mjs"];
 const { readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION } = __mod["core/audio/clap-search.mjs"];
 const { createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING } = __mod["web/audio/maest-run.mjs"];
@@ -6894,7 +6971,7 @@ const { needsKeyNet, KEYNET_MODEL_FILE, KEYNET_FILL_PER_RUN, KEYNET_VERSION } = 
 const { decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
 // What the page's lazy audio bundle (docs/audio.js) exposes as `BetterfyAudio`.
 // One namespace so the template reaches core/audio through a single name.
-return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, defaultAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, needsKeyNet, KEYNET_MODEL_FILE, KEYNET_FILL_PER_RUN, KEYNET_VERSION, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
+return { openAudioStore, AUDIO_DB, AUDIO_STORE, readAudioSettings, writeAudioSettings, defaultAudioSettings, connectionVerdict, scopeIds, SCOPES, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, createAudioController, createWorkerEar, listenVM, profileVM, styleName, MISS_TEXT, DSP_FILL_PER_RUN, audioQueue, lookup, fetchPreview, decodeTo16k, analyseOne, MISS, validRecord, isCurrent, RECORD_VERSION, MODEL, MEL_VERSION, HEADS, summariseHeads, dspSoundVM, dspShown, bpmShown, keyShown, DSP_UI_DEFAULT, BPM_UI_DEFAULT, KEY_UI_DEFAULT, KEY_MIN_CONF, DSP_UI_KEY, measureWindows, needsDsp, DSP_VERSION, LABEL_TYPES, AGREE_MIN, REVIEW_MIN, REVIEW_SIZE, LABELS_UI_KEY, CHECKS_KEY, readingsOf, checksFor, withVerdict, agreement, labelsShown, labelSoundVM, mergeSoundVM, withProfileEnergy, reviewSample, reviewVM, reviewHTML, seenOf, askFor, askText, askHTML, askProgress, ASK_SESSION_KEY, readDeepSettings, writeDeepSettings, deepListenAllowed, DEEP_SETTINGS_KEY, DEFAULT_DEEP_SETTINGS, DEEP_EARS, DEEP_TEXT, MAEST_MIN_MEMORY_GB, readTable, clapIndex, clapHeard, findPrompt, suggestPrompts, soundsLike, nameGroup, libraryMean, confirmName, confirmedName, CLAP_SEARCH, CLAP_SEARCH_VERSION, createMaestRunner, createWorkerMaest, maestStatusText, chosenEar, scoreArms, maestScoreText, MAEST_PER_RUN, nearInUse, nearScoreText, NEAR_SETTING, MAEST_FILE, MAEST_LABELS_FILE, needsMaest, needsBeatsFlagged, withBeats, BEAT_MODEL_FILE, BEATS_FILL_PER_RUN, needsKeyNet, KEYNET_MODEL_FILE, KEYNET_FILL_PER_RUN, KEYNET_VERSION, decodeTo48k, needsClap, CLAP_MODEL_FILE, CLAP_FILL_PER_RUN };
 })();
 /* ---- core/audio/infer.mjs ---- */
 __mod["core/audio/infer.mjs"] = (function () {

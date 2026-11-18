@@ -13,494 +13,192 @@ Built because Spotify's Web API stopped providing the data this needs.
 | **[Use it in the browser](https://emmachilds98-wq.github.io/Betterfy/)** | Nothing to install. Authorise your own Spotify and work on your own library — there is no server, so nothing leaves your browser. |
 | **Run it locally** | Everything the web version does, plus discovery, spaced shuffle with playback control, an undo log, and full Last.fm/Discogs enrichment. |
 
-### Using the hosted version
+## Where to start reading
 
-Click **Connect Spotify**. If sign-in is refused, that is Spotify's user cap
-on development-mode apps — the page now offers *use your own Spotify app*
-right there when that happens, so nobody has to hand their account email to
-the person running the page just to be added to a list. Registering one takes
-about a minute and needs no secret — authentication uses PKCE — or the owner
-can still add your email under **User Management** in their app's dashboard
-if they'd rather manage it that way. Note that being *signed in* is not the
-same as being *approved*: Spotify lets a non-allowlisted account complete
-sign-in and only refuses the actual API requests after, with a 403 — the app
-now catches that first 403 too and routes it to the same *use your own
-Spotify app* panel, rather than a bare error.
+| If you want | Read |
+|---|---|
+| To use the app | This file, from "What's in the app" down |
+| The current state of the work, and what's next | [`docs/BUILD-7-PLAN.md`](docs/BUILD-7-PLAN.md) §0, with the thread briefs in [`docs/BUILD-7-BRIEFS.md`](docs/BUILD-7-BRIEFS.md) and the design plan in [`docs/DESIGN-PLAN.md`](docs/DESIGN-PLAN.md) |
+| The rules for working on it | [`CLAUDE.md`](CLAUDE.md) |
+| How the page's script and styles are laid out | [`web/README.md`](web/README.md) |
+| The audio contracts and how sound was measured | [`docs/AUDIO-BUILD-PLAN.md`](docs/AUDIO-BUILD-PLAN.md) (frozen contracts), [`docs/AUDIO-ANALYSIS-PLAN.md`](docs/AUDIO-ANALYSIS-PLAN.md), [`docs/BUILD-5-PROGRESS.md`](docs/BUILD-5-PROGRESS.md) (key and tempo measurements) |
+| What may and may not be done with Spotify data | [`docs/SMARTER-GENRES-PLAN.md`](docs/SMARTER-GENRES-PLAN.md) §3 |
+| The engines | [`docs/ENGINE-V3-ARCHITECTURE.md`](docs/ENGINE-V3-ARCHITECTURE.md), [`docs/THINKING-ENGINE-PLAN.md`](docs/THINKING-ENGINE-PLAN.md), [`docs/TUNING.md`](docs/TUNING.md), [`docs/GENRE-RECOGNITION-PLAN.md`](docs/GENRE-RECOGNITION-PLAN.md), [`docs/review/ENGINE-REVIEW.md`](docs/review/ENGINE-REVIEW.md) |
+| New releases | [`docs/RELEASE-RADAR-PLAN.md`](docs/RELEASE-RADAR-PLAN.md) |
+| The screens, reviewed with screenshots | [`docs/review/USER-REVIEW.md`](docs/review/USER-REVIEW.md) |
+| Firebase (shared tags, sync across devices) | [`FIREBASE.md`](FIREBASE.md) |
+| The long-range architecture review | [`V2-PLAN.md`](V2-PLAN.md) |
+| Older plans, now done or replaced | [`docs/archive/`](docs/archive/README.md) |
 
-If whoever built the page has set `CONTACT_EMAIL` (see `.env.example`), that
-same panel also offers **ask to be added** — a plain `mailto:` link,
-pre-addressed and pre-filled with a place to paste the Spotify account email
-that needs allowlisting. Nothing is stored or sent anywhere by the page
-itself; it just opens the visitor's own mail client. Left blank, the option
-does not exist at all — no fork of this repo ships a stranger's inbox by
-default.
+## What's in the app
 
-**Sharing it with a couple of friends.** Send them the page, but send them
-[`?setup`](https://emmachilds98-wq.github.io/Betterfy/?setup) with it — that
-opens the *Use a different Spotify app* panel, which is also linked from the
-landing page's fineprint. Two things make their own app worth the minute it
-takes rather than a fallback for when something breaks:
+Four tabs, plus a Settings sheet. On a phone they sit in a bar along the
+bottom; swipe left or right to move between them, or use the arrow keys.
 
-- **The user cap is per app**, and small: as of the February 2026 developer
-  access update, a development-mode app registered from here on only gets
-  **5 users**, down from the 25 it used to be. (An app created before that
-  change keeps whoever it already had.) On the default app, each new friend
-  needs the owner to add their account email first, and the fifth one is the
-  last one who can be added at all without their own app. On their own app
-  they are the only user.
-- **The rate limit is per app too, not per listener** — and, as of the same
-  update, that quota is now pooled **per developer account**, across every
-  client ID that account owns (up to 25 of them from July 2026), not per
-  client ID. So handing friends separate client IDs registered under *your*
-  account buys nothing; each friend's app has to be registered under *their
-  own* Spotify account to get a quota nobody else can spend. A cold library
-  read is several hundred calls, so two people reading their libraries on the
-  same afternoon on the shared default app is exactly the "Spotify is
-  handling too many requests" screen.
-- **Registering an app now requires Spotify Premium on the owner's account.**
-  That's the account that *creates* the app, not every account that signs
-  into it — a Free-tier friend can still use the default app (as one of its
-  five allowlisted users) but cannot register their own.
+- **File** is home. A "today" line at the top says what is waiting (to file,
+  new releases, to tidy, what listening is doing), each part a tap to where it
+  lives. Below it, one card at a time for a liked track that isn't in a genre
+  or mood playlist yet, with the playlists it most likely belongs in marked
+  Sure, Likely or Unsure. Tapping a playlist only selects it: nothing reaches
+  Spotify until you tap **File** or swipe the card right. Swipe left skips,
+  and tapping the artwork plays. Sure cards can be filed in one go, and filing
+  one track offers the same artist's other waiting tracks too.
+- **Tidy**: **Wrong place** (by tags and by sound), **Repeats** (the same track
+  twice in one playlist) and **In two playlists**, with a Sure / Likely /
+  Unsure filter. Every change can be undone from History.
+- **Discover**: music you don't already own, from "fans also like" for the
+  artists you actually play (Deezer and ListenBrainz, plus Last.fm with a
+  key), ranked by how it sounds against your playlists. **New releases** by
+  artists in your library are here too.
+- **Library**: your playlists, each with its axis (genre, mood, event…) and
+  how tidy it is, **Suggested playlists**, and a detail sheet per playlist
+  (fill it, merge, split). **New playlists** (genres you're not covering) and
+  **Shuffle** (spaced, and DJ order by tempo) open from here.
+- **Settings**: **Under the hood** holds *Listening and genre sources*, *How it
+  picks* (the engine's score on your own filing) and *History* (everything
+  written to Spotify, with undo). Then appearance (Nightshift, the dark
+  default, Daylight or System), accent colour, behaviour, **Re-sync library
+  from Spotify**, **Sync across devices** and **Check for updates**.
 
-Nothing else changes: same page, same features, no secret, nothing shared with
-whoever sent the link. Paste the redirect URI the setup panel shows into the
-new app (**Add**, then **Save** — adding without saving looks identical until
-sign-in fails), then paste the client ID back.
+**Listening is on by default.** The page fetches each track's 30-second
+preview (found by the ISRC Spotify already gives) and analyses it in your
+browser, on Wi-Fi only unless you say otherwise. A heard track is filed by
+how it sounds; one not heard yet is filed by its artists' tags, and the card
+says which. Nothing needs a key, an export or an install.
 
-It has to be a **new** app, though. The default client ID is printed in this
-page's own source, so it is the easiest wrong thing to paste into that box —
-and pasting it changes nothing at all while looking exactly like the fix. The
-box now refuses it, refuses anything that is not a 32-character client ID (a
-client secret, or half of one), and the panel says in words which app is
-actually in use, so "I set my own client ID" and "I am still on the shared
-one" stop being indistinguishable.
+On an iPhone, open the page in Safari, then **Share → Add to Home Screen**: it
+runs full-screen and signs itself in the first time (Spotify already has the
+grant). Its storage is separate from Safari's, so the first library read
+happens again there; it is paced, banked as it goes and resumes where it
+stopped.
 
-There is no setting that removes the cap for everyone without Spotify's
-involvement, and as of the same update **Extended Quota Mode is no longer
-something this project could apply for even if it wanted to**: since 15 May
-2025 Spotify only accepts Extended Quota applications from a legally
-registered business, with an already-launched service, 250,000+ monthly
-active users, and an application sent from a company email address. Betterfy
-meets none of those. Bringing your own app sidesteps the cap entirely instead,
-since each person's app has only ever needed to authorise its own creator.
+## Signing in, and your own Spotify app
 
-The prebuilt genre tags shipped with the page cover one person's artists, so
-your suggestions may start thin. The **Playlists** view shows your tag coverage
-and can fill the gaps in your browser. The hosted page ships with a shared,
-read-only Last.fm key (`LASTFM_PUBLIC_KEY` at build time; public by design, as
-read methods need only the API key), so **Analyse my library** on Home works
-with nothing to set up; your own free
-[Last.fm key](https://www.last.fm/api/account/create) is optional and raises
-limits — paste the **API key**
-only; Betterfy only ever reads public tag data, so the shared secret that
-comes with a Last.fm app is not needed anywhere in this project. The
-**Discover** screen works without it: with no key, its candidates come from
-Deezer's and ListenBrainz's "fans also like" for the artists you play (keyless,
-the same lookups the Engine screen's neighbour bridge makes, cached together),
-and a key only adds Last.fm's own similar artists and tags. A free
-[Discogs token](https://www.discogs.com/settings/developers), also on
-Playlists, is optional and only ever fills an artist Last.fm has nothing on
-at all — a real Last.fm tag always wins.
+Click **Connect Spotify**. Authentication is PKCE, so there is no secret
+anywhere. If Spotify refuses the sign-in, or lets it through and then answers
+the first read with a 403, that is its user cap on development-mode apps
+(5 users per app since the February 2026 update), and the page offers **Use
+your own Spotify app** right there. Registering one takes about a minute; the
+setup panel shows the redirect URI to paste (**Add**, then **Save**), then
+you paste the client ID back. Send friends
+[`?setup`](https://emmachilds98-wq.github.io/Betterfy/?setup), which opens that
+panel directly.
 
-### The shared tag table
+Their own app is worth it rather than a fallback, for three reasons:
 
-Tag coverage is the ceiling on every suggestion Betterfy makes, and
-`docs/tags.json` ships **4,866 artists** — one person's library. Everyone
-else's gaps used to get filled by their own Last.fm key, into their own
-browser's IndexedDB, where the answer helped nobody else and died the moment
-they cleared site data. Every listener re-solved the same gaps from scratch.
+- **The user cap is per app.** On the default app each friend needs the
+  owner to add their account email first, and only five fit.
+- **The rate limit is per app and pooled per developer account**, so client
+  IDs registered under one person's account share one quota. A cold library
+  read is several hundred calls; two people reading on the shared app on the
+  same afternoon is the "too many requests" screen.
+- **Registering an app needs Premium** on the account that creates it (not on
+  every account that signs in to it).
 
-Optionally, the browser now offers each freshly-fetched answer to a shared
-Firestore collection, and `npm run tags` folds those back into the file
-everyone downloads.
+The box refuses the default client ID (printed in the page's source, so the
+easiest wrong thing to paste) and anything that isn't a 32-character client
+ID, and the panel says in words which app is in use. Extended Quota Mode is
+not an option: since 15 May 2025 Spotify only accepts it from registered
+businesses with 250,000+ monthly users. If `CONTACT_EMAIL` is set at build
+time (see `.env.example`), the panel also offers **ask to be added**, a plain
+`mailto:`; left blank, the option doesn't exist.
 
-What makes it *mostly* safe to share is the split: **only what a public API
-returned** goes up, and only for an artist the shipped table doesn't already
-cover — Last.fm's tags for an artist are the same answer for everyone,
-re-fetchable by anyone, and an existing entry is never overwritten. That
-doesn't make it unpoisonable, though: the write is unauthenticated, and
-`merge-tags.mjs` checks a contribution's *shape* (a real Spotify artist ID
-format, sane tag names and counts), not whether it's *true*. Someone who looks
-up a real, uncovered artist ID could submit a plausible but false tag for it,
-and nothing here would catch that on its own — see the review-gate bullet
-below for what does. Corrections you make in the tag editor are opinionated
-and stay on your device regardless.
+**When Spotify says wait.** Every call has a deadline; a dropped, hung or 5xx
+call is retried, and a token that stops working mid-read is refreshed once
+before anything is believed. A short throttle is waited out with a countdown
+that retries by itself; a long one, or a read whose pauses never end, shows
+*Try again* with the real wait and **Use your own Spotify app** beside it. A
+429 with `reason: QUOTA_EXCEEDED` skips the countdown, since waiting won't
+change it. The read is paced at 250 ms or slower, remembers the last pace
+Spotify accepted, and banks every piece (including `/me` and the playlist
+index), so a retry costs only the piece in flight. A playlist is recorded as
+empty only when Spotify refused *that playlist*, and then without a snapshot
+id, so the next read asks again.
 
-Four more things keep it cheap, dull, and (mostly) safe:
+**When the browser refuses storage.** Blocked cookies, a locked-down private
+window or an in-app web view can throw on `localStorage` or refuse IndexedDB.
+All storage goes through shims that fall back to memory and never throw, so
+the app still runs and simply re-reads next time. Sign-in checks for
+`crypto.subtle` and that the PKCE verifier persisted before it redirects, and
+every async handler reports its failure in a toast rather than failing
+silently.
 
-- **Nothing reads the database at runtime.** Browsers only write. A scheduled
-  Action merges and commits, so the page's read path is unchanged and no
-  listener pays a per-artist database read — the shipped table just gets better.
-- **Gaps only.** An artist already in `tags.json` is never overwritten, so the
-  worst an unauthenticated write can do is add an artist nobody had. Validation
-  in `merge-tags.mjs` is the shape check; a human is the truth check — see next.
-- **The merge opens a PR, it doesn't push.** `.github/workflows/tags.yml` used
-  to commit straight to `main`, so a bad contribution shipped to every listener
-  the same night. It now opens (or updates) a PR against a rolling
-  `shared-tags-update` branch instead, so the diff — usually a handful of new
-  artists — gets a human's eyes before `docs/tags.json` actually changes.
-- **Entirely optional**, per the rule in `CLAUDE.md`. With no project configured
-  the page makes no request, and however the request fails it is never the
-  reason your own tag fetch went wrong. A fork with no Firebase behaves exactly
-  as Betterfy did before any of this existed.
+## Genre tags, and sharing them
 
-The live project is **`betterfy-1a983`**, and the build already carries it —
-`docs/index.html` has `TAGS_PROJECT` and `TAGS_KEY` baked in, both public (a
-Firebase web key names a project, it does not authorise anything; `firestore.rules`
-does the real work). To point a fork somewhere else:
-`npm run build:web -- --tags-project=<id> --tags-key=<key>`, or put
+Spotify supplies no genre at all (see "Why it uses Last.fm and Discogs"
+below), so the page reads artist tags from four keyless or optional sources,
+in this order for an artist with none:
+
+1. the shared table shipped with the page, `docs/tags.json`;
+2. **Wikidata** genres, automatically every time the page opens;
+3. **Last.fm**, with the shared read-only key the hosted page ships
+   (`LASTFM_PUBLIC_KEY` at build time) or your own free
+   [API key](https://www.last.fm/api/account/create) to raise limits (the API
+   key only; the shared secret is never needed);
+4. **Discogs** release styles, with an optional
+   [token](https://www.discogs.com/settings/developers), for an artist Last.fm
+   has nothing on or fewer than three tags for. Discogs tallies are rescaled
+   to Last.fm's 0–100 so the two can be averaged, and a real Last.fm tag
+   always wins.
+
+All of it is under Settings › Under the hood › *Listening and genre sources*,
+with **Ask again now** to re-run.
+
+**A wrong suggestion is usually a wrong tag.** Last.fm tags are per artist and
+crowd-submitted, so a same-named act or three stray taggers can mistag an
+artist's whole catalogue. Tags show under misfiled and new tracks, and
+**Wrong tags?** beside an artist opens an editor (remove, add, or re-ask
+Last.fm); corrections stay on your device.
+
+**The shared table.** Optionally, the browser offers each freshly fetched
+Last.fm answer, for an artist the shipped table doesn't cover, to a shared
+Firestore collection (`betterfy-1a983`; `TAGS_PROJECT` and `TAGS_KEY` are
+baked into the page and are public by design). A scheduled Action
+(`.github/workflows/tags.yml`, `npm run tags`) folds them into
+`docs/tags.json`. What keeps that cheap and safe:
+
+- **Nothing reads the database at runtime**; browsers only write, and the
+  merge is a build step.
+- **Gaps only**: an artist already in `tags.json` is never overwritten.
+- **A human checks the truth.** `merge-tags.mjs` checks a contribution's shape,
+  not whether it's true, so the merge opens a PR on the rolling
+  `shared-tags-update` branch rather than pushing to `main`.
+- **App Check**, off by default (`APPCHECK_SITE_KEY`, `APPCHECK_APP_ID`):
+  a reCAPTCHA v3 token Firestore can require, so the unauthenticated write
+  can't be scripted. Turn on enforcement only after tokens show up in Monitor
+  mode.
+- **Pruning**, with `FIREBASE_SERVICE_ACCOUNT` as an Actions secret: the merge
+  deletes each contribution once it's accounted for. Without it the
+  collection just grows.
+- **Entirely optional**, per `CLAUDE.md`: with no project configured the page
+  makes no request. Discogs answers are not shared yet, because the browser's
+  query-param auth hasn't been checked against a real response.
+
+The rules are in `firestore.rules` (`npx firebase-tools deploy --only
+firestore:rules`, already live on `betterfy-1a983`). To point a fork
+elsewhere: `npm run build:web -- --tags-project=<id> --tags-key=<key>`, or
 `TAGS_PROJECT` / `TAGS_KEY` in `.env`.
 
-The rules live in `firestore.rules` rather than only in a console tab, so they
-are reviewable in a diff and deployable:
+**Sync across devices** (Settings) uses the same project to share skip and
+reject feedback, hand-corrected tags and playlist types between two of your
+own devices. Each device signs in to Firebase anonymously (nothing to do with
+your Spotify account) and a second device links with a six-digit code.
+Nothing is created until you tap **Link another device**. Design and rules:
+[`FIREBASE.md`](FIREBASE.md).
 
-```
-npx firebase-tools deploy --only firestore:rules
-```
+## Staying on the current version
 
-They're deployed and live on `betterfy-1a983` — a fresh `firebase deploy` is
-only needed if you change them, or point a fork at a different project. Until
-they're deployed, contributions are silently refused (`403 PERMISSION_DENIED`
-from Firestore's own deny-all default), which is harmless — it just means
-nothing is collected yet. Firestore runs on the free Spark plan either way.
+GitHub Pages caches the page for about ten minutes, and an open tab keeps what
+it loaded. Every load checks quietly for a newer build and, if there is one,
+offers **Update now** (never forced, so a reload can't lose your place; your
+sign-in and library survive it). **Check for updates** does the same on demand,
+on the landing screen and under Settings › About, where the running build is
+printed. **Re-sync library from Spotify** (Settings › Your library) is a full
+re-read of every playlist against a per-app quota, so it lives there and
+nowhere else; normal filing keeps the library current by itself.
 
-### App Check — closing the one open door
 
-The write above is unauthenticated by design, which is also its one real
-exposure: anyone can script it, at whatever volume they like, cheaper than the
-review gate above can keep up with. [App
-Check](https://firebase.google.com/docs/app-check) closes that without adding
-a sign-in — a reCAPTCHA v3 solve is exchanged for a token Firestore can be told
-to require on every write, so scripting the endpoint stops working even though
-nobody ever signs in.
-
-Off by default, same pattern as everything else here — set `APPCHECK_SITE_KEY`
-and `APPCHECK_APP_ID` in `.env` (see `.env.example` for what each is and where
-to get it) and rebuild, or the reCAPTCHA script never loads and no token is
-ever requested. Turn on **enforcement** for Cloud Firestore in the App Check
-console only after confirming real tokens are arriving there in **Monitor**
-mode — enforcing first risks rejecting every contribution, your own included.
-
-### Keeping the collection from growing forever
-
-`merge-tags.mjs` reads every contribution on every run but, without more,
-never deletes any of them — a processed one (merged, already covered, or
-rejected) just sits in Firestore forever, costing the next run a bigger read
-for nothing. Set `FIREBASE_SERVICE_ACCOUNT` (a service account JSON key with
-Firestore access, as a GitHub Actions secret) and the merge job deletes each
-contribution once it's accounted for. Left unset, this is a no-op — the merge
-runs exactly as before, and the collection just keeps growing (harmlessly, for
-a long time, on a small group's worth of contributions).
-
-### Syncing skip/reject feedback across your own devices
-
-A different feature again, using the same Firebase project: Settings →
-**Sync across devices** lets two of your own signed-in devices share
-skip/reject feedback (how many times a track's been skipped, and which
-playlists it's been rejected for), the tags you've corrected by hand, and
-which playlists are genre playlists. A decision made on your phone doesn't
-have to be made again on your laptop. For corrections and playlist types the
-newer edit wins, per artist and per playlist. Tags fetched in bulk are not
-synced; each device fetches its own.
-
-It signs each device in to Firebase **anonymously** (no email, no password,
-invisible — this has nothing to do with your Spotify account) so Firestore
-can tell "a device this app trusts" from "anyone on the internet," and links
-a second device with a short-lived six-digit code rather than making anyone
-type a UUID. Hidden entirely unless `TAGS_PROJECT`/`TAGS_KEY` are configured,
-same as sharing itself, and inert even then until you actually tap **Link
-another device** — opening the page never creates an identity or writes
-anything on its own. Full design, the Firestore rules, and how the merge
-works in `FIREBASE.md`.
-
-Discogs was a total-gap fallback only — filling an artist Last.fm returned
-nothing on at all, never touching one Last.fm had already tagged. It now also
-blends into a *thin* answer (fewer than three Last.fm tags): Discogs styles
-the artist doesn't already have are added alongside what Last.fm said, never
-reordering or displacing it, so a barely-tagged artist gets more evidence
-rather than staying thin forever waiting for Last.fm alone to catch up. Three
-tags is also the line the rest of the model now uses to call an answer
-"thin" — see `mergeTagSources()` in `tagstore.mjs`.
-
-Discogs results are deliberately **not** shared yet. `discogsTags()` now
-normalises its tally to the same 0–100 Last.fm uses — the commonest style is
-100 and the rest are relative to it — so the two sources are at least on one
-scale. (Until that landed they were not, and the mismatch was not only a
-sharing problem: Discogs counts releases, so a style seen on six of an
-artist's records arrived as `6` against a Last.fm tag's `90`, and since
-`trackVec()` divides every count by 100, a Discogs-filled artist was an order
-of magnitude quieter in the model than a Last.fm one — inaudible in the
-playlist centroids they belong to, and drowned out entirely by a
-Last.fm-tagged collaborator on the same track.) What is still unverified is
-the browser build's query-param auth against a real Discogs response, which is
-the reason to keep these out of a file everyone downloads for now. The
-`source` field is there so it can be added once that is confirmed.
-
-**A wrong suggestion is usually a wrong tag, not a wrong model.** Last.fm's
-tags are per *artist*, not per track, and crowd-submitted — a same-named act,
-a stray scrobble, or a niche artist with three taggers is enough to mistag
-everything they've made. If Tidy keeps suggesting somewhere a track plainly
-doesn't belong, open it there: tags now show under every misfiled and
-newly-added track, and **Wrong tags?** next to an artist's name opens an
-editor — remove the bad one, add the right one, or re-ask Last.fm, and it's
-remembered on this device from then on. The **Playlists** view also now flags
-which playlists it had no real signal for and silently defaulted to genre —
-worth a pass, since that default is exactly what turns a mood or context
-playlist into noisy Tidy suggestions.
-
-### On a phone
-
-The hosted page is built for an iPhone first. Open it in Safari, then
-**Share → Add to Home Screen**: it runs full-screen with its own icon, and the
-layout keeps clear of the notch, the Dynamic Island and the home indicator
-rather than sliding under them.
-
-- **Bottom tab bar** — Home, File, Tidy, Discover, Shuffle, and **More** for
-  New playlists, Playlists and History. Counts ride the icons. Duplicates,
-  Misfiles and Cross-filed were three screens asking the same question, so
-  they are one screen, **Tidy**, with a section each.
-- **Swipe left or right** anywhere on a screen to move to the next or previous
-  one; the dots under the header show where you are. Arrow keys do the same
-  thing on a keyboard.
-- **File into one playlist or several.** Tapping a suggested playlist (or
-  adding one from the dropdown) only selects it — nothing reaches Spotify
-  until you tap **File** or swipe the card right, so a misclick is a non-event
-  rather than something to undo. Swipe right confirms whatever's selected, or
-  falls back to the best guess if you haven't picked anything; **left** still
-  skips, and tapping the artwork still plays.
-- **Re-syncing lives in Settings**, and only there. It used to be a ⟳ button
-  sitting next to ⬇ Check for updates, plus a pull-down gesture and two footer
-  buttons. Next to the update button it read as "get the latest Betterfy",
-  which it is not: it re-reads every playlist, hundreds of calls against a
-  quota that belongs to the Spotify *app* rather than to you — so pressing it
-  by mistake is how a working app becomes a rate-limited one. A stray downward
-  swipe at the top of a list did the same thing. Now it is one button, named
-  for what it does, where you go on purpose. Normal filing keeps the library up
-  to date on its own; re-sync is only for changes made *outside* Betterfy.
-- Settings and More open as sheets from the bottom edge; flick the handle down
-  to dismiss.
-
-Each of the five screens owns one of the five colours in the Betterfy mark, so
-the card on Home, the tab you tap and the screen you land on are all the same
-colour — and it is the same colour every time, not whatever the accent happened
-to spin off. The accent itself still colours the buttons, the highlights and
-the hues on the screens behind More, with a readability correction, since a
-yellow and a blue at the same lightness are nowhere near as legible as each
-other.
-
-Betterfy opens in **Nightshift**, its dark theme. Daylight and System are both
-in Settings; System follows the phone, including its sunset schedule.
-
-The local app (`npm start`) is still laid out for a desktop browser.
-
-**The home-screen app signs itself in.** The first time you open it it goes to
-Spotify on its own and comes straight back, because Spotify already has the
-grant — nothing to tap. It only tries that once per sign-in: if it is refused
-it lands on the normal landing screen and stays there rather than bouncing.
-Disconnecting, or Spotify itself revoking the sign-in, resets that — the next
-open tries the same silent round trip again rather than leaving you with a
-button to tap forever. There is no way to hand a sign-in across from Safari,
-because iOS keeps the two sets of data apart, but there is no need to type
-anything either.
-
-**The first read on a new device takes a while.** iOS gives a home-screen app
-its own storage, separate from Safari's — so adding Betterfy to your Home
-Screen means signing in again and reading the whole library again, several
-hundred calls for a large one. That read is paced to stay under Spotify's
-limit, and it is banked as it goes: a rate limit, a locked screen or iOS
-reclaiming the page behind you costs only the piece in flight, and opening the
-app again picks up where it stopped rather than starting over. Playlists are
-matched on the snapshot id Spotify stamps them with, so every read after the
-first only fetches what has actually changed.
-
-**If Connect Spotify does nothing at all.** This was its own bug, separate from
-every rate limit below, and it looked like nothing: the landing page came up
-perfectly (it is static HTML) and the button was wired to nothing.
-
-Two causes, both now handled. First, the button ran an `async` function through
-`onclick = () => beginAuth()`, so anything that failed inside it became an
-unhandled rejection — no message, no toast, no screen. Second, and the usual
-thing that failed inside it: a browser that refuses storage. Safari with
-**Block All Cookies**, a locked-down private window, or a page opened inside
-another app's web view will *throw* on `localStorage` rather than return null,
-and the page had around fifty unguarded calls to it — any one of which could
-kill the boot script partway through, leaving the handlers below it unattached.
-
-All storage now goes through one shim that falls back to memory and never
-throws, so a browser that keeps nothing still runs. Sign-in also checks up
-front that `crypto.subtle` exists (PKCE needs SHA-256, and it is absent over
-plain http and in some in-app browsers) and that the PKCE verifier actually
-persisted — both before the redirect, so the message is one clear sentence
-about this browser rather than a "lost security code" one redirect too late.
-The verifier is written to `sessionStorage` as well as `localStorage`, since a
-restricted browser rarely takes both.
-
-A browser that keeps nothing can still complete a sign-in — the verifier only
-has to survive one redirect. What it cannot do is keep you signed in, so the
-landing page now says that on the way in rather than letting every open look
-like a first open.
-
-**And the same silence, everywhere else.** Connect was the visible case; the
-rest of the app had it too. Every delegated handler (`click`, `change`,
-`keydown`) is `async`, and most branches inside them had no `catch` of their
-own — so filing a track, undoing, moving a misfile, running Discovery,
-building a shuffle or saving a tag correction could all reject and leave
-nothing on screen. Swipe-to-file and Enter-to-file were worse: they called
-`fileCurrent()` without awaiting it at all. That mattered more once a dropped
-request started throwing rather than being mistaken for an answer — "the
-network went" has to reach the screen, not vanish.
-
-All of them now go through one wrapper that puts the reason in a toast, and
-turns a bare Spotify status into a sentence.
-
-**And one store, for everything.** The library cache, the action log, your
-skips and rejections, your tag corrections and the banked pieces of an
-interrupted read all live in IndexedDB — so a browser that will not hand it
-over did not cost one feature, it cost all of them at once: `open()` rejected
-and every `await` above it rejected with it. A private window, blocked site
-data, a partitioned origin, a device out of space are all real, and none of
-them is a reason for the app to stop working. It now falls back to memory,
-which is a poor cache and a perfectly good one for a single session — the
-difference between "this does not work here" and "this re-reads next time". A
-store that refuses once is not asked again on every call.
-
-**If sign-in says "too many requests".** Spotify rate-limits its accounts
-service per app rather than per listener, so a busy few minutes can refuse
-anyone's sign-in with a 429. Betterfy now waits it out rather than making it
-worse: a rate-limited refresh leaves you signed in and offers *Try again*
-instead of dropping you back at the sign-in screen, and reopening the
-home-screen app never re-sends an authorization code it has already used.
-Whenever Spotify says how long the wait actually is, that screen now counts
-it down and retries itself when it reaches zero — the same fix the "asked
-for a pause" screen below already had, brought to every sign-in path that
-can hit this 429 (a stale refresh, an interrupted code exchange, the
-home-screen app's own silent first attempt), so a wait that's genuinely
-being handled never again looks like the app has simply stopped.
-
-**If it keeps happening.** A short, silent pause is Spotify's shared,
-per-app quota having a busy moment — the countdown above absorbs plenty of
-that on its own, with nothing to look at until it's done. Reaching the
-fallback screen at all means that silent budget is already spent, which is
-a different problem: this page's *default* client ID is shared by everyone
-who has it open, so no amount of local waiting fixes it while that shared
-quota stays busy. So the fallback screen says so immediately and offers the
-actual fix — **Use your own Spotify app** — which takes about a minute to
-set up and gives you a quota nobody else can spend; *Try again* right above
-it still works too, for whenever waiting it out is good enough. The same
-escape hatch already existed for the user cap (`access_denied`); this
-is it surfacing for a persistent rate limit too, rather than only when Spotify has
-flatly refused the account. It also now surfaces on a 403 discovered *after*
-sign-in succeeded — Spotify lets a non-allowlisted account complete the OAuth
-round trip and only refuses the API calls that follow, so a fresh sign-in
-that hits a 403 on its first read gets routed here too, instead of a bare
-error with nothing to do about it.
-
-**When the pause never ends.** The per-call budget above never trips in the
-case that actually bit: a quota that is simply gone answers the *first* call of
-a read with a 429, then the next, then the next — each pause short enough to
-absorb quietly, each one restarting its countdown, none of them ever reaching a
-per-call limit. From the outside that is a progress bar stuck at 2% and
-"Spotify asked for a pause — carrying on in 4s" re-arming forever. So the read
-as a whole now has a budget too, and past it the pause is surfaced rather than
-absorbed. The countdown screen also carries **Use your own Spotify app**, since
-that screen is where the wait was actually being spent and it previously
-offered nothing to do but watch.
-
-That last point is the important one: waiting does not fix this. The quota
-belongs to the *app*, not to the listener, so it is being spent by everyone
-else who has the page open on the same client ID.
-
-Spotify's 429 response now carries a `reason` field, and `QUOTA_EXCEEDED` is
-the honest version of that last point: it means the app's whole budget for
-the period is gone, so no amount of waiting — quiet or counted down — is
-going to change the answer. Betterfy reads it and skips straight to that
-message and **Use your own Spotify app**, rather than counting down to a
-retry that was never going to succeed. An ordinary rate limit, with no such
-reason, still gets the countdown as before.
-
-**If it says "Spotify asked for a pause".** A short throttle while reading a
-large library is waited out on its own, counting down on screen. A longer one
-used to be sat through silently too — up to ten minutes at a time, several
-times over, which looked exactly like the app being stuck. Now anything
-longer than a few seconds shows a *Try again* screen with the real wait
-instead, and that screen retries itself the moment the wait is up — there is
-nothing to tap, and nothing lost either way: the parts of the read already
-finished are banked, so it carries on rather than starting over.
-
-**A dropped request is not a lost sign-in.** A phone changes cell mid-request,
-hands over to Wi-Fi, and now and then leaves a request hanging with nobody
-coming back to it — and `fetch()` has no deadline of its own. Both cases used
-to end the same way, because a dropped request throws a `TypeError` ("Load
-failed", in Safari) with nothing on it to say it was transient. So one blip in
-the middle of a several-hundred-call read was taken as a *permanent* answer,
-and there were only two of those available: bank the playlist in flight as
-empty — losing every track in it until somebody happened to edit that playlist
-— or decide the sign-in was dead and offer **Start over**, which cleared the
-token, which sent you to the accounts service, which is rate-limited per app,
-which answered `429`. That is where "stuck at too many requests, then it times
-out and can't get the playlists" came from: one dropped request that should
-simply have been asked again.
-
-Now every call has a deadline and a dropped, hung or `5xx` one is retried;
-if it still will not go through, that is reported as something to come back
-to, not as a sign-out. A read is only ever recorded as an empty playlist when
-Spotify has actually refused *that playlist* (`403`/`404`) — and even then it
-is stored without a snapshot id, so the next read asks again instead of
-trusting the empty answer forever. A token that stops working mid-read is
-refreshed once before anyone believes it. And the wall you land on when
-something genuinely unexpected happens leads with **Try again**, which keeps
-the sign-in and resumes from the banked pieces; signing out is still there,
-one line below, for whoever actually wants it.
-
-**The pace was the other half of it.** The read used to be floored at 70ms
-between calls — fourteen a second, several times what a Spotify app without
-Extended Quota is allowed — and it recovered a tenth of its back-off on every
-success, so it walked back down to that floor within thirty calls and straight
-into the next `429`. It is 250ms now, backing off hard and recovering slowly,
-with a ceiling high enough to be a real pause. The pace Spotify last agreed to
-is also written down, because iOS discards the page behind you and every reopen
-used to start at full speed again — including the reopen straight after a
-rate limit.
-
-**And a retry costs less.** `/me` and the playlist index are banked with the
-rest of the read, so a retry goes straight back to the playlist it stopped on
-instead of re-spending those calls first — which, on a busy shared quota, was
-sometimes the whole budget, leaving the retry to fail in the same place having
-read nothing new.
-
-### Staying on the current version
-
-GitHub Pages caches the page for about ten minutes, and a tab you left open
-keeps whatever it loaded — so an old Betterfy can sit in front of you looking
-perfectly normal. Two things fix that, both reachable **before you connect
-anything**:
-
-- **Check for updates**, next to *Connect Spotify* on the very first screen
-  (and the ⬇ button in the top-right corner, from any screen). It fetches the
-  published page over the network and compares its build stamp with the one
-  you're running, then tells you either that you're current or that a newer
-  build exists.
-- Every load runs that check quietly in the background. If a newer build is
-  published, a bar appears offering **Update now** — never forced, because a
-  reload halfway through filing would lose your place. Updating clears the
-  caches and reloads; your Spotify sign-in and synced library survive it.
-
-The build you're running is printed under the buttons on the landing screen and
-in the **More** sheet once you're in.
-
-The corner buttons, in order: **⬇ Check for updates** and **⚙ Settings** —
-appearance (Nightshift/Daylight/System), an accent colour
-(twelve presets, each a matched pair so the same choice reads correctly on
-both themes), an app-icon preview, compact rows, remembered filters, and
-**Re-sync library from Spotify** under *Your library*, which is now the only
-way to trigger a full re-read.
-Hue/depth/brightness sliders and the per-region toggles are still there under
-**Custom colour** — one fewer than before, since the stat tiles the "Stat
-tiles" toggle governed have been replaced by the coloured cards on Home.
-Settings is reachable from the landing screen too, though re-sync only appears
-once there is a library to re-read.
-
-### What ships, and what must never
+## What ships, and what must never
 
 Three values are baked into `docs/index.html` on purpose, and it is worth being
 able to tell them apart from the ones that would be a real leak:
@@ -551,72 +249,6 @@ outranks a real Last.fm tag. `MUSICBRAINZ_CONTACT` is still in
 `.env.example` for a planned identity-resolution pass — nothing reads it yet,
 so leave it blank until that lands.
 
-## Setup
-
-Requires Node 22+ (uses built-in `fetch`; no dependencies).
-
-1. **Spotify app** — https://developer.spotify.com/dashboard → Create app.
-   Add redirect URI `http://127.0.0.1:8888/callback` exactly; `localhost` is
-   rejected. Tick Web API. Copy the client ID and secret.
-2. **Last.fm key** — https://www.last.fm/api/account/create
-   Optionally connect Spotify scrobbling at
-   https://www.last.fm/settings/applications — Spotify's API only returns your
-   last 50 plays and keeps no history, Last.fm keeps everything from that day on.
-3. **Discogs token** (optional) — https://www.discogs.com/settings/developers
-   → Generate token. Fills a total Last.fm gap and blends into a thin answer;
-   leave it blank and `npm run setup` skips that step rather than failing on it.
-4. **MusicBrainz contact** (optional, no signup) — any string identifying you
-   or this install, e.g. an email address. Lets `npm run enrich` resolve each
-   artist's exact MusicBrainz id ahead of the Last.fm fetch, so a same-named
-   artist can't get autocorrected onto by mistake. Leave it blank and every
-   artist is looked up by name exactly as before this existed.
-5. Copy `.env.example` to `.env` and fill it in.
-
-```bash
-npm run setup     # authorise, snapshot the library, fetch tags, classify playlists
-```
-
-`npm run setup` opens a browser once for Spotify authorisation. The Last.fm
-fetch takes roughly 20 minutes for ~5,600 artists and is resumable — rerun it
-if interrupted and it continues from where it stopped. The Discogs pass that
-follows only touches artists still empty after that, so it's a much shorter
-run — or an instant no-op with no `DISCOGS_TOKEN` set.
-
-## Use
-
-```bash
-npm run dupes        # duplicates, split into within-playlist vs cross-filed
-npm run misfile      # possible misfiles + where the unfiled backlog should go
-npm run discover -- --like "Jungle & Breaks"   # new music, excluding all you own
-npm run shuffle -- "Techno" --play             # spaced shuffle, played on your device
-npm run consolidate  # maintain one playlist holding every unique track
-npm run rekordbox -- "collection.xml" --write  # import tempo/key from Rekordbox
-```
-
-Everything is **dry-run by default**. Commands that change your Spotify library
-print what they would do and stop; add `--apply` to commit.
-
-### The local app (`npm start`)
-
-**Refresh** sits at the top right of Overview — the first page you land on —
-and again in the rail. Both re-fetch the current data from the server, which
-takes seconds. A full Spotify re-read is the separate *Re-read from Spotify*
-section further down Overview, and takes minutes.
-
-Next to Refresh in the rail, **Settings** opens a panel with:
-
-- **Appearance** — System / Light / Dark.
-- **Accent colour** — 24 preset swatches, plus hue, depth (saturation) and
-  brightness (lightness) sliders for fine control.
-- **Apply colour to** — toggle the accent on or off per region (navigation
-  highlight, primary buttons, stat tiles, progress bar, tags & chips,
-  hover/focus), so you can, say, keep a loud accent on buttons but keep the
-  nav neutral.
-- **Compact rows**, for denser lists, and **remember last filters**, to
-  keep the Cross-filed/Misfiles thresholds you last picked across reloads.
-
-All of it is stored in the browser's `localStorage`, per device.
-
 ## How the filing model works
 
 Spotify supplies no genre, so a track's signal is the union of its artists'
@@ -643,14 +275,14 @@ guess, and everything downstream reads the file, not the rules.
 
 ### Sound first, once a track has been heard
 
-With **Listen to my music** on (the default since 2026-11-15; Sources switches it off), the File
+With **Listen to my music** on (the default since 2026-11-15; Settings › Under the hood › *Listening and genre sources* switches it off), the File
 screen files a heard track by **how it sounds**, not by who made it. Its picks
 come from the account-native engine with sound leading: each genre playlist's
 sound prototype (the average of your own heard tracks in it, nudged toward a
 track you file there and away from one you turn down), the playlist it sounds
 nearest, and only then the artist graph. In the app the learner is prototypes
 only: no model is fitted to your playlist membership
-(`docs/BUILD-5-PLAN.md` §2 item 3). The logistic-regression variant in
+([`docs/archive/BUILD-5-PLAN.md`](docs/archive/BUILD-5-PLAN.md) §2 item 3). The logistic-regression variant in
 `core/intrinsic/audio-learn.mjs` is kept for offline measurement only. That graph now learns from **genre playlists
 only**, so a mood playlist or a one-night event playlist can't teach that a
 jungle artist and a house artist "go together". The tag engine's best pick
@@ -658,7 +290,7 @@ stays on the card as the third choice. A track not heard yet (or with no
 preview) gets the tag picks, exactly as before, and the card says why.
 
 This is the owner's call, made ahead of the audio gate in
-`docs/AUDIO-BUILD-PLAN.md`: the Engine screen's Score run still measures it on
+`docs/AUDIO-BUILD-PLAN.md`: the Score run under Settings › Under the hood › *How it picks* still measures it on
 your own filing ("Adding how it sounds"), so it can be checked rather than
 assumed. Nothing about it needs a key, an export or an install: every account
 has previews, found by the ISRC Spotify already gives.
@@ -946,7 +578,7 @@ membership, and nothing is shared.
 | `actions.mjs` | every library mutation, with the undo log |
 | `legacy/server.mjs` + `ui/` | the local app |
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
-| `core/` | the v3 evidence engine — ontology, identity, evidence, providers, track classifier, playlist intelligence, recommendations, benchmarks. Not wired into the app; see `docs/ENGINE-V3-ARCHITECTURE.md` |
+| `core/` | the engines the page runs (audio, account-native placement, review queue, playlists, new releases, measurement) and the v3 evidence classifier, measured beside v1; see below |
 | `enrich-lastfm-tracks.mjs` | track-level Last.fm tags, prioritised by what you play and what the engine is least sure about — optional, resumable |
 | `legacy/analyse-v3.mjs` | runs the v3 engine over your `library.json` and existing caches: bands, playlist types, relationships, and the review queue |
 | `make-icons.mjs` | renders the logo to the PNG sizes browsers and phones ask for |
@@ -955,216 +587,93 @@ membership, and nothing is shared.
 so the browser and local builds score identically and cannot drift apart. It
 refuses to build if a secret appears in the output.
 
-### The v3 engine (`core/`), built beside v1, not instead of it
+### The v3 evidence engine (`core/`)
 
-`core/` holds an evidence-based classification engine: a versioned genre
-ontology, a common evidence record every provider maps into, and a
-deterministic classifier that reconciles up and down the genre hierarchy and
-is allowed to answer "not enough evidence". Nothing in it is wired into the
-app — `profile.mjs` still produces every suggestion, misfile flag and playlist
-axis you see. It runs beside v1 so the two can be measured against each other
-on the same data:
+`core/` started as an evidence-based classifier built beside v1 rather than
+instead of it: a versioned genre ontology, one evidence record every provider
+maps into, and a deterministic classifier that reconciles up and down the
+genre tree and is allowed to answer "not enough evidence". Its v3 classifier
+(`core/engine.mjs`) is still measured beside v1 rather than driving the File
+card. Most of the rest of `core/` is in the page: the audio code
+(`core/audio/`), the account-native engine below, the review queue
+(`core/review/`), playlists, new releases (`core/release/`), measurement, and
+the suggestion layer (`core/recommend/`, which only ever suggests: a test
+enforces that it produces no move or removal).
 
-```sh
-npm run benchmark           # accuracy and false-positive rate, per confidence band
-npm run benchmark:compare   # v1 against v3 on the same fixtures
-npm run enrich:tracks       # optional: track-level Last.fm tags, prioritised
-```
-
-The one thing v3 asks for that v1 never did is **track-level** Last.fm tags
-(`npm run enrich:tracks`, same key, no new configuration). That is what fixes
-the defect neither engine could reach around otherwise: a diverse artist
-currently hands the same tag cloud to every record they ever made. Without it
-v3 still works — it reads the artist caches v1 already keeps and reports lower
-confidence, which is the honest answer.
-
-It also reads playlists: what each one actually is (genre, mood, occasion,
-event, era, artist, DJ set, mixed), how confident that is, and how they relate
-to each other — which ones are duplicates, which are views of one collection
-("Tech House" / "Tech House — Favourites"), and which are event-specific
-copies of a bigger bucket rather than genre playlists in their own right.
-Notably with **no venue list**: an event is recognised by shape (a date, plus
-a word the ontology has never heard of, which is exactly the venue you cannot
-enumerate) and by the vocabulary-free signal of a playlist built in one
-sitting and never touched again. `axes.mjs`'s hand-written table of one
-person's playlist names has no equivalent here.
+- It reads track-level Last.fm tags when it has them (`npm run enrich:tracks`),
+  which is what fixes a diverse artist handing one tag cloud to everything
+  they made; without them it reports lower confidence.
+- It reads playlists too: what each one is (genre, mood, occasion, event, era,
+  artist, DJ set, mixed) and which ones are duplicates, views of one
+  collection, or event copies of a bigger bucket, recognising events by shape
+  (a date plus a word the ontology doesn't know) with no venue list.
+- Your corrections live in an append-only layer (`core/personal/`) that never
+  touches provider evidence, so an engine change never loses them.
+- `core/ai/` is a constraint layer with no model wired to it: if one ever is,
+  it can only choose between candidates the evidence already produced, capped
+  at "likely". None of the accuracy numbers involve a model.
 
 ```sh
-npm run benchmark:playlists # playlist type + relationship accuracy
+npm run benchmark             # accuracy and false-positive rate, per confidence band
+npm run benchmark:compare     # v1 against v3 on the same fixtures
+npm run benchmark:playlists   # playlist type and relationship accuracy
+npm run benchmark:fit         # which of the engine's thresholds the benchmark actually pins down
+npm run analyse:v3 -- --queue # your library: bands, playlist types, and the questions worth asking
 ```
 
-There is an AI reconciliation layer (`core/ai/`), but read what it is before
-assuming: it is a constraint layer, and no model is wired to it. When one is,
-it will only ever be asked about tracks the evidence genuinely could not
-settle, it can only choose between candidates the deterministic engine already
-produced from real evidence, its answer is capped at "likely" and labelled as
-not-evidence, and it can never add to or replace what a provider said. None of
-the accuracy numbers above involve a model.
-
-Your corrections live in their own append-only layer (`core/personal/`) that
-never touches provider evidence and is never touched by it — so the library
-can be reclassified after an engine change without losing a year of your
-corrections, and your own filing habits never get learned as facts about
-music. v1's existing skip/reject store is imported, not discarded.
-
-On top of that sits a review queue (`core/review/`) that works out what is
-actually worth asking you: conflicting evidence first, then low confidence,
-then tracks you play a lot or that are filed in several places. It collapses
-questions — eight tracks by one artist with the same evidence are one
-question, not eight — and it surfaces the tags nothing could place, so
-answering one ("schranz is a kind of hard techno") fixes every track carrying
-it, for your library only.
-
-It also suggests — and only suggests (`core/recommend/`): more like this
-track, what a bucket is missing, music you liked and then filed nowhere, and
-genres you are actually playing but have barely filed. Nothing in that layer
-produces a move or a removal; a test enforces it. Telling you a track is in
-the *wrong* place reads the same similarity numbers with far more authority,
-and that stays on v1 until the weights below are earned.
-
-Two things it does that v1's ranking cannot. It declines: a track the engine
-cannot classify gets no recommendations rather than a weak list that looks
-like a strong one. And it will not pass off a tag cloud as a resemblance —
-two tracks by one artist, neither with evidence of its own, have identical
-profiles *because they were computed from the same records*, so a plain
-cosine puts the seed artist's own catalogue at the top of every "more like
-this" at a similarity of 1.0. Those matches are marked for what they are and
-dropped by default.
-
-To point all of it at your own library — no network, no new configuration,
-nothing written back to your caches:
-
-```sh
-npm run analyse:v3              # confidence bands, playlist types and relationships
-npm run analyse:v3 -- --queue   # plus the questions worth answering, written out
-npm run analyse:v3 -- --suggest # plus what each bucket is missing
-npm run benchmark:fit           # which of the engine's numbers are actually validated
-```
-
-That last one is worth being blunt about: `benchmark:fit` sweeps every
-threshold in the engine and reports which ones the benchmark constrains. Four
-of fifteen are currently *unconstrained* — uncontradicted rather than
-validated. None are set to a value that scores worse, and a test fails the
-build if that changes, but the numbers are priors until the benchmark is real.
-That is why none of this is wired into the app yet. The recommendation layer's
-own thresholds are not in that sweep at all — there is no recommendation
-benchmark to sweep them against, and the synthetic fixtures cannot be one,
-since every track in them inherits its artist's cloud and so has no ground
-truth for "was that a sensible suggestion".
-
-`benchmark:fit` now also names, for each flat parameter, the *kind of case*
-that would constrain it. A flat number is a gap in the shape of the fixture
-set rather than a shortage of rows — 500 more tracks of a shape already
-covered would move none of them — so the reviewing can be aimed rather than
-ground out.
-
-Full write-up, including the measured v1-vs-v3 baseline and what is
-deliberately not built yet: **`docs/ENGINE-V3-ARCHITECTURE.md`**.
+`benchmark:fit` is worth being blunt about: some thresholds are uncontradicted
+rather than validated, and it names the kind of case that would constrain
+each one. Full write-up: [`docs/ENGINE-V3-ARCHITECTURE.md`](docs/ENGINE-V3-ARCHITECTURE.md).
 
 ### The account-native engine (`core/intrinsic/`), which needs no key at all
 
-Both engines above lean on Last.fm. `CLAUDE.md` says external enrichment must be
-"silently absent and zero-cost for anyone who doesn't have it, never something
-the core filing model leans on", and the core model leans on it completely — so
-this is the part that fixes that.
-
-The reframe is the whole idea. "What genre is this track?" needs an outside
-vocabulary. **"Which of this account's playlists does this track belong with?"
-needs none**, because a playlist is already a labelled training set: 200 tracks
-in a bucket are 200 hand-labelled examples of what *you* mean by it, and that
-label cannot be wrong because it is definitionally what you meant. Two accounts
-with a playlist called "House" get different learned definitions, correctly,
-because they are learned from different members.
-
-Six signals, five of them already sitting in `library.json` after a snapshot:
+`CLAUDE.md` says external enrichment must never be something the core filing
+model leans on, and a tag engine leans on Last.fm completely. This engine
+fixes that with a reframe: "what genre is this track?" needs an outside
+vocabulary, but **"which of this account's playlists does it belong with?"
+needs none**, because a playlist is already a labelled training set of what
+*you* mean by it.
 
 | Signal | Where it comes from |
 |---|---|
-| Artist co-occurrence, as PPMI over **your own** playlists | playlist membership |
-| Label family, from the **ISRC registrant** | `isrc`, until now used only as an identity key |
+| How it sounds: each playlist's prototype, the average of your own heard tracks in it | 30-second previews, analysed in the browser |
+| Artist co-occurrence, as PPMI over **your own genre playlists** | playlist membership |
+| Neighbours of an artist you've never filed: of their Deezer and ListenBrainz neighbours you *have* filed, where did they go? | keyless lookups; the sources never name a genre |
+| Label family, from the **ISRC registrant** (weighted by how many playlists it spans, so an aggregator weights itself to zero) | `isrc` |
 | Add-session cohesion | `added_at` |
-| Format shape — a seven-minute cut on a two-track release is a club record, a three-minute cut at track four of twelve is an album song | duration, album type, track counts |
+| Format shape (a seven-minute cut on a two-track release is a club record) | duration, album type, track counts |
 | Era | release date |
-| Tempo and key | your Rekordbox import, and **only** if you have one |
+| Tempo and key | heard tracks; your Rekordbox import wins where present |
 
-The ISRC trick is worth a sentence: `CC-XXX-YY-NNNNN` identifies the registrant,
-which is effectively the label. Plenty of independent releases carry a
-distributor's code instead, which would link unrelated records — so registrants
-are weighted by how many playlists they span, and an aggregator that appears
-everywhere weights itself to zero without anybody maintaining a list of who the
-aggregators are.
+**Your filing is the answer key.** Hide a track, ask where it goes, compare:
+held-out placement accuracy runs per account in seconds, with a leakage canary
+in the harness. *How it picks* in Settings runs it on your own library and
+scores both engines on the same folds; Score + Tune also runs by itself. It
+also says which **rung** your account is on ("not enough filed yet" is a
+different sentence from "low confidence"), and the playlists it can't tell
+apart.
 
-**Held-out placement accuracy is the thing that makes this testable at all.**
-Your filing *is* the answer key: hide a track, ask where it goes, compare. That
-replaces the ~500 manually reviewed rows §26 asks for, for anything about
-placement, and runs per account in seconds. Leakage is therefore the one thing
-that could quietly make it a lie, so the harness carries a canary — score with
-held-out tracks left in, assert it beats the honest path, and treat convergence
-as proof the folds have stopped excluding anything.
-
-It also says which **rung** your account is on rather than only a confidence,
-because "low confidence" and "not enough of your library filed yet" are
-different sentences and only the second tells you what would fix it. With
-nothing filed it stops trying to place things — there is nowhere to place them —
-and proposes groups for you to name instead.
-
-There is an **Engine** screen for it, behind More, and it files nothing — it
-shows what the engine *would* do so you can judge it first. The rung it is on and
-why, the next 40 tracks waiting to be filed with today's suggestion beside this
-engine's, each row opening onto its reasons, and which of your playlists it
-cannot tell apart. The engine is a separate ~145 KB file fetched the first time
-you open that screen, so it costs nothing to anyone who never does.
-
-The screen also runs the comparison itself, which is the part that matters:
-
-```sh
-npm run validate:placement              # the intrinsic engine against v1, on YOUR library
-npm run validate:placement -- --reports # which of your buckets are the same thing twice
-npm run validate:placement -- --sweep   # which weights your library actually pins down
-```
-
-That first command is a gate that is allowed to fail — and it used to be the only
-way to get the number, which meant a `library.json` export and a Node checkout for
-a figure every account needs about itself. The browser already has your library,
-so **Is it actually any better?** on the Engine screen scores both engines on your
-own filing, same held-out folds, same tracks, and tells you which won. If this
-engine loses on your library it should not take over, and that is what the test is
-for.
+**How sure it may sound is fitted, not guessed** (`core/intrinsic/calibrate.mjs`):
+a placement is *Sure* only if suggestions at that level were right 90% of the
+time (with a lower confidence bound) and the sources agree, a short list is
+built to hold the right playlist about nine times in ten (split conformal
+prediction), and otherwise it says it isn't sure. Thresholds are fitted on
+half the tracks and checked on the other half.
 
 It measures agreement with *your* habits, not musical truth: a systematically
-misfiled library will be reproduced faithfully, and the engine cannot tell you so.
+misfiled library is reproduced faithfully.
 
-Plan, execution log and the measured numbers: **`docs/THINKING-ENGINE-PLAN.md`**.
+```sh
+npm run validate:placement              # the intrinsic engine against v1, on YOUR library.json
+npm run validate:placement -- --reports # which of your buckets are the same thing twice
+npm run validate:placement -- --sweep   # which weights your library actually pins down
+npm run validate:placement -- --bridge  # with and without the neighbour bridge
+```
 
-**The neighbour bridge** (`core/intrinsic/bridge.mjs`, phase 0 of
-`docs/SMARTER-GENRES-PLAN.md`) is aimed at this engine's weakest case: a track
-by an artist you've never filed, which it can only place on shape. It asks
-Deezer and ListenBrainz who sits near that artist, then asks only your
-question of the answer: *of those neighbours you have filed, which of your
-playlists did they go into?* The outside sources never name a genre or define
-a playlist, so the engine stays account-native. For now it only **measures**.
-**Score both engines** scores every track twice on the same folds, with and
-without it, overall and on tracks by artists not yet in a genre playlist, and
-reports against the plan's bar (+5 points on those, nothing lost overall).
-Answers are kept on the device for two months, and a switch on the card turns
-it off. From a checkout, `npm run validate:placement -- --bridge` does the same
-from `library.json` and keeps its answers in `bridge.json`.
+Plan, execution log and measured numbers:
+[`docs/THINKING-ENGINE-PLAN.md`](docs/THINKING-ENGINE-PLAN.md) and
+[`docs/SMARTER-GENRES-PLAN.md`](docs/SMARTER-GENRES-PLAN.md).
 
-**How sure it may sound** is fitted on the same run
-(`core/intrinsic/calibrate.mjs`, phase 2). A raw "42% fit" means nothing, so
-each held-out placement becomes one of three answers whose meaning is checked
-on your own tracks:
-
-- **confident**: one playlist, and only if suggestions at that level were right
-  90% of the time, with a lower confidence bound, not just an average
-- **a short list**: at most three playlists, built to hold the right one about
-  nine times in ten (split conformal prediction)
-- **not sure**
-
-The thresholds are fitted on half the tracks and checked on the other half, so
-the accuracy the screen shows comes from tracks they never saw. Once a score
-run has calibrated it, the comparison of waiting tracks shows "confident",
-"probably", "pick one" or "not sure" instead of a percentage.
 
 ### Filing the rest of an artist at once
 
@@ -1176,7 +685,7 @@ back.
 
 ### New playlists: genres you're not covering
 
-**More → New playlists** (`core/recommend/gaps.mjs`, phase 3 of
+**Library › New playlists** (`core/recommend/gaps.mjs`, phase 3 of
 `docs/SMARTER-GENRES-PLAN.md`) proposes three things, and creates nothing
 without a tap:
 
@@ -1197,12 +706,70 @@ Genres come from your artists' tags (the shared table, plus Last.fm or Discogs
 if you've set them up), read through the same vocabulary as everything else.
 Artists with no genre in their tags are counted and said, not guessed at.
 
+## From a checkout (developers)
+
+The Node side predates the hosted page. It works on a `library.json` snapshot
+and is how the engines are measured; the hosted page is the app.
+
+### Setup
+
+Requires Node 22+ (uses built-in `fetch`; no dependencies).
+
+1. **Spotify app** — https://developer.spotify.com/dashboard → Create app.
+   Add redirect URI `http://127.0.0.1:8888/callback` exactly; `localhost` is
+   rejected. Tick Web API. Copy the client ID and secret.
+2. **Last.fm key** — https://www.last.fm/api/account/create
+   Optionally connect Spotify scrobbling at
+   https://www.last.fm/settings/applications — Spotify's API only returns your
+   last 50 plays and keeps no history, Last.fm keeps everything from that day on.
+3. **Discogs token** (optional) — https://www.discogs.com/settings/developers
+   → Generate token. Fills a total Last.fm gap and blends into a thin answer;
+   leave it blank and `npm run setup` skips that step rather than failing on it.
+4. **MusicBrainz contact** (optional, no signup) — any string identifying you
+   or this install, e.g. an email address. Lets `npm run enrich` resolve each
+   artist's exact MusicBrainz id ahead of the Last.fm fetch, so a same-named
+   artist can't get autocorrected onto by mistake. Leave it blank and every
+   artist is looked up by name exactly as before this existed.
+5. Copy `.env.example` to `.env` and fill it in.
+
+```bash
+npm run setup     # authorise, snapshot the library, fetch tags, classify playlists
+```
+
+`npm run setup` opens a browser once for Spotify authorisation. The Last.fm
+fetch takes roughly 20 minutes for ~5,600 artists and is resumable — rerun it
+if interrupted and it continues from where it stopped. The Discogs pass that
+follows only touches artists still empty after that, so it's a much shorter
+run — or an instant no-op with no `DISCOGS_TOKEN` set.
+
+### Commands
+
+```bash
+npm run dupes        # duplicates, split into within-playlist vs cross-filed
+npm run misfile      # possible misfiles + where the unfiled backlog should go
+npm run discover -- --like "Jungle & Breaks"   # new music, excluding all you own
+npm run shuffle -- "Techno" --play             # spaced shuffle, played on your device
+npm run consolidate  # maintain one playlist holding every unique track
+npm run rekordbox -- "collection.xml" --write  # import tempo/key from Rekordbox
+```
+
+Everything is **dry-run by default**. Commands that change your Spotify library
+print what they would do and stop; add `--apply` to commit.
+
+### The local app (`npm start`)
+
+`legacy/server.mjs` and `ui/` are the older desktop-browser app: an Overview
+page with **Refresh** (re-fetch from the local server, seconds) and a separate
+*Re-read from Spotify* (minutes), and a Settings panel for appearance and
+accent colour stored in `localStorage`. The hosted page has replaced it for
+everyday use.
+
 ## Data sources, and what they're worth
 
 | Source | Verdict |
 |---|---|
 | **Last.fm** artist tags | The genre backbone. Good coverage, sends `access-control-allow-origin: *` so it works from the browser too. |
-| **Discogs** release styles | Wired as a fallback: only queried for an artist Last.fm returned nothing for at all *and actually answered about* (a dropped request is not an empty answer), tallying `style` across that artist's releases (Breakbeat / Techno / Electro — finer than Last.fm's one flat tag per artist) and rescaling the tally to Last.fm's 0–100 so the two can be averaged at all. Needs a token in the `Authorization` header from Node, so this side is verified; the browser build sends it as a query param instead to avoid a custom header, which has **not** been checked against a real response — confirm it under Playlists once you have a token. |
+| **Discogs** release styles | Wired as a fallback: only queried for an artist Last.fm returned nothing for at all *and actually answered about* (a dropped request is not an empty answer), tallying `style` across that artist's releases (Breakbeat / Techno / Electro — finer than Last.fm's one flat tag per artist) and rescaling the tally to Last.fm's 0–100 so the two can be averaged at all. Needs a token in the `Authorization` header from Node, so this side is verified; the browser build sends it as a query param instead to avoid a custom header, which has **not** been checked against a real response — confirm it under Settings › Under the hood › *Listening and genre sources* once you have a token. |
 | **MusicBrainz** | Identity glue, wired into `npm run enrich` (`musicbrainz.mjs`): resolves a Spotify artist to an exact MusicBrainz id from the Spotify URL on its artist page, so the Last.fm fetch that follows can ask by id instead of a name autocorrect might match onto a same-named artist. No key, but wants a contact string in the User-Agent (`MUSICBRAINZ_CONTACT`) — off with none set. Node-only: the custom header a browser `fetch` cannot set is exactly what this needs, so the hosted page is unaffected either way. The response shape it parses is written from MusicBrainz's documented ws/2 JSON, unconfirmed against a live response from every environment — see `musicbrainz.mjs`. |
 | **GetSongBPM** | Tempo, key and Camelot notation — but only **20% coverage** measured over a 40-track sample of a current UK electronic library. Superseded by the Rekordbox import below; nothing calls it. |
 | **Deezer** | Its public BPM field was empty for 4 of 5 tested tracks, so it isn't used for tempo. Its **related artists** are used, by the neighbour bridge below: keyless, reached by the ISRC Spotify already gives (ISRC → recording → credited artist, so no name matching), and read through a sandboxed frame because Deezer sends no CORS header. Measured on the owner's library: 81% of the scene artists Wikidata doesn't know have a related list. |

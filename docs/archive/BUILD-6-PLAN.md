@@ -1,5 +1,7 @@
 # Build 6 — where build 5 left things, and the plan for the next upgrade (2026-11-16)
 
+> **Archived 2026-11-18, superseded by [`HANDOFF-2026-11-16.md`](HANDOFF-2026-11-16.md) and then [`NEXT-WORKPLAN.md`](NEXT-WORKPLAN.md).** Kept for history: paths, section numbers and "start here" lines below are as they were when it was written. For the current state start at [`BUILD-7-PLAN.md`](../BUILD-7-PLAN.md) §0.
+
 **Start here for build 6.** It follows `docs/BUILD-5-PLAN.md` (whose waves 0–4
 are done, see `docs/BUILD-5-PROGRESS.md`) and supersedes that file's §8 wave
 table. `docs/HANDOFF.md` is still the file-by-file reference for the sound

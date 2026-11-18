@@ -90,6 +90,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_audio_deep', name:'Deep listen settings', group:'Listening', why:'Deep listen settings.' },
   { where:'local', key:'bf_audio_wifi_ok', name:'OK to listen off Wi-Fi', group:'Listening', why:'That you said yes to listening on a metered connection.' },
   { where:'local', key:'bf_sound_nudge', name:'Listen suggestion dismissed', group:'Listening', why:'That you dismissed the "listen to my music" suggestion on File.' },
+  { where:'local', key:'bf_label_ask', name:'Sound-label question asked', group:'Listening', why:'Held in sessionStorage for this tab only: File has asked its one sound-label question this session, so it does not ask again until the tab is closed.' },
   { where:'local', key:'bf_audio_labels', name:'Show mood labels (testing)', readOnly:true, group:'Listening', why:'Whether mood, voice and energy labels are shown (read only; set by hand for testing).' },
   { where:'local', key:'bf_audio_dsp', name:'Show tempo and key (testing)', readOnly:true, group:'Listening', why:'Whether tempo and key readings are shown (read only; set by hand for testing).' },
 

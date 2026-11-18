@@ -24,6 +24,8 @@ document.addEventListener('keydown', guard(async e => {
 
 document.addEventListener('keydown', e => {
   if (view !== 'inbox' || e.target.matches('input,select,textarea')) return;
+  // Enter or Space on the sound-label question answers it, never files the card (U3).
+  if (e.target.closest?.('#labelAsk')) return;
   const t = FILE_GLUE.track(); if (!t) return;
   if (['1','2','3'].includes(e.key)) { const s = filePicks(t)[+e.key-1]; if (s) FILE_GLUE.toggle(s.id); }
   if (e.key === 'Enter' && (S.fileSel.size || filePicks(t)[0])) fire(fileCurrent(S.fileSel.size ? [...S.fileSel] : filePicks(t)[0].id));

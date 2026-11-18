@@ -1,5 +1,7 @@
 # Sound everywhere — making the app use what it hears (2026-11-14)
 
+> **Archived 2026-11-18, superseded by [`BUILD-5-PLAN.md`](BUILD-5-PLAN.md) (S1 to S4 merged; the key work S5 is measured in [`BUILD-5-PROGRESS.md`](../BUILD-5-PROGRESS.md)).** Kept for history: paths, section numbers and "start here" lines below are as they were when it was written. For the current state start at [`BUILD-7-PLAN.md`](../BUILD-7-PLAN.md) §0.
+
 Plan B is merged and #88 put sound in front of filing: heard tracks are filed
 by sound and the File card names genre › sub-genre › BPM. Every other screen
 still ignores it. This plan spreads the same signal (records, `identify`,

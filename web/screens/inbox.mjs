@@ -466,10 +466,21 @@ export function view(ctx) {
         </details>
       </div>
     </div>
+    ${labelAskSlot(ctx)}
     <div class="prog fileprog"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
     ${keptHTML(ctx)}
     ${touch ? '' : `<div class="swipehint" role="note"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span>
       <span><b>1–3</b> pick · <b>Enter</b> file · <b>S</b> skip · <b>U</b> twice remove from Liked</span></div>`}`;
+}
+
+/* ---------- one sound-label question (BUILD-7 U3) ----------
+ * Under the card, never inside it: at most once a session, about the track
+ * that is playing or the one just filed (web/app/audio.js labelAskHTML). */
+export function labelAskSlot(ctx) {
+  const { S } = ctx;
+  if (typeof ctx.labelAskHTML !== 'function') return '';
+  const cands = [S.labelPlaying, S.labelFiled].filter(c => c?.id);
+  return cands.length ? ctx.labelAskHTML(cands) : '';
 }
 
 /** Toggle one playlist in or out of the pending selection for the track on screen. */
@@ -551,6 +562,7 @@ export async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
     return;
   }
   S.filing = false;
+  S.labelFiled = { id: t.id, title: t.title };   // the sound-label question may ask about it
   keptStale(S);
   // Picking something other than the first pick is the correction worth showing.
   if (picks[0]?.id && !ids.includes(picks[0].id)) noteLearned(S, t, 'picked', names[0]);
@@ -569,7 +581,11 @@ export async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
 export async function inboxAct(ctx, a) {
   const { S, R, recordSkip, libraryCall, logAction, getLog, undoAction, playTrack, toast, render } = ctx;
   const at = inboxIndex(ctx), t = R.backlog[at]; if (!t) return;
-  if (a === 'play') { try { toast('Playing on ' + await playTrack(t.id)); } catch(e){ toast(e.message); } return; }
+  if (a === 'play') {
+    try { toast('Playing on ' + await playTrack(t.id)); S.labelPlaying = { id: t.id, title: t.title }; render(); }
+    catch(e){ toast(e.message); }
+    return;
+  }
   if (a === 'skip') {
     await recordSkip(t.id);
     try { await logAction({ op:'skip', trackIds:[t.id], reason:'skipped from inbox', queuePos:at, deck:R.backlog.length }); } catch { /* the measure only */ }
@@ -604,6 +620,7 @@ export const actions = {
   anyPl: (ctx, el) => { if (el.value) toggleFileSel(ctx, el.value); },
   filesure: (ctx) => fileSureOnes(ctx),
   teach: (ctx, el) => ctx.teachAct?.(el),
+  lblask: (ctx, el) => { ctx.labelAskAct?.(el); ctx.render(); },
   digestMore(ctx) {
     const D = ctx.S.digest; if (!D) return;
     if (!D.expandedOnce) { D.expandedOnce = true; bumpMeasure(ctx, 'expanded'); }

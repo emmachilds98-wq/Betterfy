@@ -1,5 +1,7 @@
 # Handoff — where the audio and genre work stands (2026-11-14)
 
+> **Archived 2026-11-18, superseded by [`BUILD-5-PLAN.md`](BUILD-5-PLAN.md) for what to build; the sound features' file map now lives in the [README](../../README.md) and [`AUDIO-BUILD-PLAN.md`](../AUDIO-BUILD-PLAN.md).** Kept for history: paths, section numbers and "start here" lines below are as they were when it was written. For the current state start at [`BUILD-7-PLAN.md`](../BUILD-7-PLAN.md) §0.
+
 **Build 5 starts from `docs/BUILD-5-PLAN.md`**, which supersedes §6 below.
 The rest of this file is still the reference for the sound features.
 
