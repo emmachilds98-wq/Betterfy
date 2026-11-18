@@ -74,6 +74,26 @@ written (#158), what is still open, and where to start:
 Usage is low (emma, 2026-11-15): run few threads at once, and start no new
 wave without asking her.
 
+**Update, 2026-11-18 afternoon.** DESIGN-PLAN L0 to L8 and its §7.7 calls
+are all merged (#170 to #184), and AUDIO-BUILD-PLAN is complete apart from the
+owner's in-page Score run for the gates. M1 was mostly shipped by #159 (run
+history, `scoreDiff`, Engine › Past runs); "Send to the team" stays copy-only
+while D1 is unanswered. Wave 1 is now running:
+
+- **R1 done** (this PR): the account check runs by itself once per account
+  per build (IndexedDB `radar:probe`), on the first Discover visit or just
+  before the automatic start; a refused or reshaped artist-albums route holds
+  the sync and shows one line with Check again; Settings' row is "New releases
+  (Radar)" with the check's date and result. It also fixes a false refusal:
+  an artist with no singles had no album to read, which counted as refused.
+  Live confirmation still comes from the first real account that loads it:
+  the owner glances at that Settings row once.
+- **M1's last piece** (the Settings row naming the last run's build and
+  top-1) is its own PR after R1.
+- **Q1 and U1** touch disjoint files and can run as parallel threads.
+- **New package P1, from Q1:** see wave 1 below ("P1. First card fast on a
+  large library").
+
 ## 1. Standing rules
 
 These come from emma (the owner) in this project's threads and from
@@ -513,6 +533,34 @@ PR (revert the generated files the shots run rebuilds).
 
 **Depends on.** Nothing. **Parallel with.** M1, Q1, R1.
 
+#### P1. First card fast on a large library (lane P, M; found by Q1)
+
+**Goal.** On a large account the first File card shows within ~10 s of load,
+not ~42 s.
+
+**Why.** Q1 measured a `large` account (5,000 liked, 60 playlists): every
+Spotify call is paced at 250 ms (`web/app/auth.js` `MIN_GAP`), and File waits
+for the whole library read (~168 calls) with `#app` hidden.
+
+**What.** Draw the first card from the first pages of liked songs while the
+rest of the read carries on: `web/app/boot.js` shows the app once Liked Songs'
+first pages and the playlist list are in, with File's status line saying the
+read is still going; `syncLibrary` (`web/app/feedback.js`) reports a usable
+partial `LIB`, and every screen that counts (Tidy, Library, the home header's
+badges) treats it as partial and repaints when the read finishes. Don't lower
+`MIN_GAP` (the quota rules hold). Nothing writes to Spotify from a partial
+read without a tap, and Tidy's checks wait for the full read.
+
+**Acceptance.** e2e on `makeAccount('large')`: time to first card under a
+budget set from the measured before number, no console errors, counts correct
+after the read ends; existing boot/resume specs pass.
+
+**Owns.** `web/app/boot.js`, `web/app/feedback.js` (library read only),
+`web/app/auth.js` (read only, unless pacing needs a hook). Must not touch
+U1's File files (`inbox.mjs`, `inbox-actions.js`): a status-line word for
+"still reading" goes through U1's thread or waits for U1 to merge. Disjoint
+from R1 (`radar.js`, `helpers.*`, `radar.mjs`). Can run as its own thread now.
+
 ### Wave 2: decide better and learn live (lane E, one at a time)
 
 Start only when the owner says go and, ideally, after one fresh Score paste
@@ -778,10 +826,11 @@ keeps project memory in step.
 
 | Id | Package | Wave | Lane | State | PR | Numbers / notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M1 | Score history, Send to the team | 1 | M | Not started | | D1 pending |
+| M1 | Score history, Send to the team | 1 | M | Done but the Settings row | #159 | D1 pending: copy only |
 | Q1 | Second-account check | 1 | Q | Not started | | |
-| R1 | Radar confirms itself | 1 | R | Half done | #168 | starts by itself; still to do: per-account answer, refused-route line, Settings row |
+| R1 | Radar confirms itself | 1 | R | Done | #168, R1 PR | check once per account per build, refused route holds the sync, Settings row; live check on the first real account |
 | U1 | File you can trust at a glance | 1 | U | Not started | | |
+| P1 | First card fast on a large library | 1 | P | Not started | | from Q1: ~42 s to first card on `large` |
 | E1 | Learn from every tap | 2 | E | Not started | | after wave 1 go |
 | E2 | Weights per source and situation | 2 | E | Not started | | after E1 |
 | E3 | Tempo range per playlist | 2 | E | Not started | | after E2 |
@@ -792,8 +841,8 @@ keeps project memory in step.
 | H3 | Branch and dead-code sweep | 3 | H | Not started | | |
 | E4 | Key from more audio | 4 | E | Not started | | D3, optional |
 
-| L0 | Second ear stuck at 1/1 (DESIGN-PLAN) | first | audio | Not started | | bug |
-| L8 | Full UI optimisation + home page (DESIGN-PLAN) | after L0 | U | Not started | | inventory first |
+| L0 | Second ear stuck at 1/1 (DESIGN-PLAN) | first | audio | Done | #171 | owner to watch one real Deep listen run |
+| L8 | Full UI optimisation + home page (DESIGN-PLAN) | after L0 | U | Done | #170, #172 to #184 | every §7.7 call merged |
 
 **Suggested calendar at low usage:** wave 1 in one sitting (three threads,
 then U1); a Score paste; wave 2 one package at a time with H1/H3 beside it;

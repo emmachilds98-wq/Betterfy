@@ -6,4 +6,4 @@
 export { syncRadar, loadReleases, rescore, allReleaseKeys } from './sync.mjs';
 export { artistSet } from './artists.mjs';
 export { planTasks, estimate, isDue, KEY, SHAPE } from './plan.mjs';
-export { probeEndpoints, probeVerdict, probeTable } from './probe.mjs';
+export { probeEndpoints, probeVerdict, probeTable, probeRecord, probeDue, probeBlocks, PROBE_KEY } from './probe.mjs';

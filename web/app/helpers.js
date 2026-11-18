@@ -40,7 +40,10 @@ function helpersState() {
       return { off: typeof radarAutoOff === 'function' && radarAutoOff() && !RADAR.running, running: !!RADAR.running,
         done: p?.artistsDone ?? 0, total: p?.artistsTotal ?? 0, err: RADAR.err || null,
         at: ix?.at ?? null, artists: ix?.artists ?? 0,
-        ago: ix?.at && typeof agoWords === 'function' ? agoWords(Date.now() - ix.at) : null };
+        ago: ix?.at && typeof agoWords === 'function' ? agoWords(Date.now() - ix.at) : null,
+        // The account check's kept answer (BUILD-7 R1), when it is this account's.
+        check: RADAR.check && RADAR.check.account === (LIB?.user?.id ?? null) ? { ok: RADAR.check.ok !== false, missing: RADAR.check.missing ?? [],
+          ago: RADAR.check.at && typeof agoWords === 'function' ? agoWords(Date.now() - RADAR.check.at) : null } : null };
     } catch { return null; } })(),
   };
 }

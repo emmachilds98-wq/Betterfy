@@ -21,6 +21,8 @@ const RADAR_DISMISSED = 'radar:dismissed';
 const RADAR_PREFIX = 'radar:release:';
 const RADAR_ARTIST = 'radar:artist:';
 const RADAR_INDEX = 'radar:index';
+/** The account check's last answer (BUILD-7 R1): { account, build, at, ok, missing, rows }. */
+const RADAR_PROBE = 'radar:probe';
 
 /** Read the stored radar once per session (and again after a sync), with no request. */
 function radarLoad(force = false) {
@@ -29,6 +31,7 @@ function radarLoad(force = false) {
     try {
       RADAR.index = (await idb.get(RADAR_INDEX)) ?? null;
       RADAR.dismissed = new Set((await idb.get(RADAR_DISMISSED)) ?? []);
+      RADAR.check = (await idb.get(RADAR_PROBE)) ?? null;
       const keys = ((await idb.keys()) ?? []).filter(k => typeof k === 'string' && k.startsWith(RADAR_PREFIX));
       for (const k of keys) {
         const r = await idb.get(k);
@@ -133,6 +136,12 @@ const radarAutoOff = () => { try { return LS.getItem(RADAR_OFF_KEY) === 'off'; }
 async function radarGo({ byHand = false } = {}) {
   if (RADAR.running || !LIB) return false;
   if (byHand) { try { LS.removeItem(RADAR_OFF_KEY); } catch { /* private mode */ } }
+  // A refused route holds the sync (R1). By hand, check again first: Spotify may answer now.
+  if (radarHeld()) {
+    if (!byHand) return false;
+    await radarProbe();
+    if (radarHeld()) return false;
+  }
   await radarStart();
   return true;
 }
@@ -143,15 +152,49 @@ async function radarAuto({ delay = RADAR_AUTO_DELAY_MS } = {}) {
   if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
   if (delay) await new Promise(r => setTimeout(r, delay));
   if (radarAutoOff() || RADAR.running) return false;
+  // The account check first, once per account per build; a refused route stops here.
+  await radarProbeAuto();
   return radarGo();
+}
+
+/* ---------- the account check runs by itself (BUILD-7 R1) ----------
+ * Once per account per build, without a button: on the first Discover visit, or
+ * just before the automatic start if Discover is never opened. Seven paced reads
+ * through sp(), only while the page is visible, never on Data Saver. The answer
+ * is kept in IndexedDB radar:probe and shown in Settings. */
+const radarAccount = () => LIB?.user?.id ?? null;
+/** True when this account's kept answer says a read the radar needs is refused. */
+const radarHeld = () => !!RADAR.check && RADAR.check.ok === false && !!radarAccount() && RADAR.check.account === radarAccount();
+
+let radarProbeAutoRun = null;
+function radarProbeAuto() {
+  return radarProbeAutoRun ??= (async () => {
+    try {
+      if (!LIB || (typeof navigator !== 'undefined' && navigator.connection?.saveData)) return;
+      await radarLoad();
+      await engineLoad();
+      const BR = globalThis.BetterfyRadar;
+      if (!BR?.probeDue?.(RADAR.check, { account: radarAccount(), build: BUILD })) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        await new Promise(r => document.addEventListener('visibilitychange', function f() {
+          if (document.visibilityState !== 'hidden') { document.removeEventListener('visibilitychange', f); r(); }
+        }));
+      }
+      if (RADAR.probe?.running) return;
+      await radarProbe({ quiet: true });
+    } catch { /* the radar runs as before; the hand check stays */ }
+    finally { radarProbeAutoRun = null; }
+  })();
 }
 
 /** "Check it works on this account": the Phase 0 probe (core/release/probe.mjs) from the page,
  *  with this account's own sign-in, so nobody needs `node radar.mjs --probe`. Seven reads, one
  *  artist, nothing stored but the answer for this session. */
-async function radarProbe() {
+async function radarProbe({ quiet = false } = {}) {
   if (RADAR.probe?.running || !LIB) return;
-  RADAR.probe = { running: true, rows: null, verdict: null, err: null, artist: null };
+  // By itself, a good answer only goes into Settings; the radar section shows a refusal.
+  const shown = RADAR.probe;
+  RADAR.probe = { running: true, rows: null, verdict: null, err: null, artist: null, quiet };
   radarPaint(true);
   try {
     await engineLoad();
@@ -161,10 +204,13 @@ async function radarProbe() {
     if (!artist) throw new Error('your library names no artist yet');
     const rows = await BR.probeEndpoints(path => sp(path), artist.id);
     Object.assign(RADAR.probe, { rows, verdict: BR.probeVerdict(rows), table: BR.probeTable(rows), artist: artist.name });
+    RADAR.check = BR.probeRecord(rows, { account: radarAccount(), build: BUILD, at: Date.now(), artist: artist.name });
+    try { await idb.set(RADAR_PROBE, RADAR.check); } catch { /* kept for this session */ }
   } catch (e) {
     RADAR.probe.err = e?.message ?? String(e);
   } finally {
     RADAR.probe.running = false;
+    if (quiet && (RADAR.probe.err || RADAR.probe.verdict?.ok)) RADAR.probe = shown ?? null;
     radarPaint(true);
   }
 }
@@ -224,7 +270,10 @@ function radarCtx() {
   return {
     R: RADAR,
     now: () => Date.now(),
-    load: () => { if (!RADAR.loaded) radarLoad(); },
+    // The first Discover visit also runs the account check, when it is due.
+    load: () => { if (!RADAR.loaded) radarLoad(); fire(radarProbeAuto()); },
+    // This account's kept check said a read is refused: one line instead of a feed (R1).
+    held: () => radarHeld(),
     // Start by hand turns the automatic start back on; "older" reads go straight in.
     start: o => fire(o?.deep ? radarStart(o) : radarGo({ byHand: true })),
     stop: () => radarStop(),

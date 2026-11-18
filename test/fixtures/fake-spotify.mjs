@@ -17,6 +17,8 @@
 //   sw.failAfterWrites=k   after k playlist writes have landed, every further write answers 403
 //   sw.expireAfterWrites=k after k playlist writes, the next call with the old token answers 401 once
 //   sw.loseResponse  next N playlist adds are applied, then the connection is cut before the answer
+//   sw.refuseArtistAlbums  every GET /artists/{id}/albums answers 403 (the radar's route refused)
+//   sw.albumsNoDates       GET /artists/{id}/albums answers with items missing release_date (reshaped)
 //
 // Optional on the account (test/backup.test.mjs): `catalog`, more tracks Spotify
 // knows that are in no playlist; `strictIds`, a playlist add holding an id the
@@ -157,6 +159,7 @@ export async function startFakeSpotify(account) {
     // `tracks`, as the spec wants them). Shaped as after February 2026: no
     // album_group, `limit` at most 10, one include_groups value answered at a time.
     if (m === 'GET' && (mm = p.match(/^\/artists\/([^/]+)\/albums$/))) {
+      if (sw.refuseArtistAlbums) return json(res, 403, { error: { status: 403, message: 'Forbidden (test switch)' } });
       const limit = +(q.get('limit') ?? 5);
       if (limit > 10) return json(res, 400, { error: { status: 400, message: 'Invalid limit' } });
       const groups = (q.get('include_groups') ?? 'album,single').split(',');
@@ -165,7 +168,9 @@ export async function startFakeSpotify(account) {
         const on = a.tracks.some(t => (t.artists ?? []).some(x => x.id === mm[1]));
         return (own && groups.includes(a.album_type === 'single' ? 'single' : 'album')) || (!own && on && groups.includes('appears_on'));
       }).sort((x, y) => String(y.release_date).localeCompare(String(x.release_date)));
-      return json(res, 200, page(items.map(albumOut), q, p));
+      const out = page(items.map(albumOut), q, p);
+      if (sw.albumsNoDates) out.items = out.items.map(({ release_date, release_date_precision, ...a }) => a);
+      return json(res, 200, out);
     }
     if (m === 'GET' && (mm = p.match(/^\/albums\/([^/]+)(\/tracks)?$/))) {
       const a = catalogue().get(mm[1]);
