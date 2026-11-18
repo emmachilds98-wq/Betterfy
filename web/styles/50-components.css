@@ -52,8 +52,6 @@
   .engrow>summary{cursor:pointer; list-style:none; display:block}
   .engrow>summary::-webkit-details-marker{display:none}
   .engrow>summary:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:12px}
-  .axmix{font-size:11.5px; color:var(--ink-3); margin-left:9px}
-  .axmix::before{content:"· "}
   .picks{display:flex; flex-direction:column; gap:9px; margin-top:24px}
   .pick{display:flex; align-items:center; gap:14px; border:1px solid var(--line); border-radius:18px; background:var(--surface-2);
         padding:16px 18px; cursor:pointer; font:inherit; font-size:15px; color:var(--ink); text-align:left; width:100%;

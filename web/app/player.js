@@ -7,22 +7,34 @@
  */
 const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>';
 const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h3.4v14H7zm6.6 0H17v14h-3.4z"/></svg>';
-const PLAYER = { id:null, pos:0, dur:0, playing:false, device:'', scrub:false,
+const PLAYER = { id:null, name:'', pos:0, dur:0, playing:false, device:'', scrub:false,
                  timer:null, lastPoll:0, busy:false };
 
+/**
+ * The bar belongs to the track on the card. After Next the card shows a new
+ * track while the device carries on with the old one, so the bar shows that
+ * card's track not started (▶, 0:00, its length) and one quiet line says what
+ * is still playing. Then ▶ plays the card, and the line clears.
+ */
 function playerPaint() {
   const seek = $('#seek'); if (!seek) return;
-  const dur = PLAYER.dur || 0;
+  const card = typeof discAt === 'function' ? discAt() : null;
+  const mine = !card || !PLAYER.id || PLAYER.id === card.id;
+  const playing = mine && PLAYER.playing;
+  const dur = (mine ? PLAYER.dur : 0) || card?.dur || 0;
+  const pos = mine ? PLAYER.pos : 0;
   seek.max = String(dur);
-  seek.disabled = !PLAYER.id;
-  if (!PLAYER.scrub) seek.value = String(Math.min(PLAYER.pos, dur));
+  seek.disabled = !PLAYER.id || !mine;
+  if (!PLAYER.scrub || !mine) seek.value = String(Math.min(pos, dur));
   seek.style.setProperty('--p', (dur ? Math.min(100, +seek.value / dur * 100) : 0).toFixed(2) + '%');
-  $('#pTime').textContent = mmss(PLAYER.pos);
+  $('#pTime').textContent = mmss(pos);
   $('#pDur').textContent = mmss(dur || null);
   const btn = $('#pToggle');
-  btn.innerHTML = PLAYER.playing ? ICON_PAUSE : ICON_PLAY;
-  btn.setAttribute('aria-label', PLAYER.playing ? 'Pause' : 'Play');
-  $('#pDev').textContent = PLAYER.device ? (PLAYER.playing ? 'playing on ' : 'paused on ') + PLAYER.device : '';
+  btn.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
+  btn.setAttribute('aria-label', playing ? 'Pause' : mine ? 'Play' : 'Play this track');
+  $('#pDev').textContent = !PLAYER.device ? ''
+    : mine ? (PLAYER.playing ? 'playing on ' : 'paused on ') + PLAYER.device
+    : PLAYER.playing ? `still playing ${PLAYER.name || 'the last track'} on ${PLAYER.device} · ▶ plays this one` : '';
 }
 
 async function playerPoll() {
@@ -33,6 +45,7 @@ async function playerPoll() {
     const p = await sp('/me/player');
     if (p?.item) {
       PLAYER.id = p.item.id;
+      PLAYER.name = p.item.name ?? '';
       PLAYER.dur = p.item.duration_ms ?? 0;
       if (!PLAYER.scrub) PLAYER.pos = p.progress_ms ?? 0;
       PLAYER.playing = !!p.is_playing;
@@ -91,7 +104,9 @@ async function playerSeek(ms) {
 async function playFrom(id, dur = 0) {
   try {
     const device = await playTrack(id);
-    Object.assign(PLAYER, { id, device, dur, pos:0, playing:true, lastPoll:Date.now() });
+    const card = typeof discAt === 'function' ? discAt() : null;
+    const name = card?.id === id ? card.track ?? '' : '';
+    Object.assign(PLAYER, { id, name, device, dur, pos:0, playing:true, lastPoll:Date.now() });
     if ($('#seek')) {
       playerPaint();
       playerRun();

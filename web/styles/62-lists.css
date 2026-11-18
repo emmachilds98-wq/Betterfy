@@ -1,38 +1,9 @@
 /* Playlists (axes table) and Sources — UI-3, docs/UI-BUILD-PLAN.md §6. */
   [data-v="sources"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
 
-  /* ---- Playlists: coverage line and the axes table ---- */
+  /* ---- Playlists: coverage line ---- */
   .axcov{display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--ink-2); font-size:14px; margin:0 0 22px}
   .axcov .mono{color:var(--ink); font-weight:600}
-  .axtable{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); overflow:hidden; margin-bottom:26px}
-  .axtbl{width:100%; border-collapse:collapse; font-size:14px}
-  .axtbl thead th{text-align:left; font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
-    color:var(--ink-3); padding:12px 14px; border-bottom:1px solid var(--line); white-space:nowrap}
-  .axtbl td, .axtbl tbody th{padding:10px 14px; border-bottom:1px solid var(--line); vertical-align:middle; text-align:left; font-weight:400}
-  .axtbl tbody tr:last-child > *{border-bottom:0}
-  .axtbl tbody tr.axrow:hover{background:var(--surface-2)}
-  .axtbl .axn{text-align:right; color:var(--ink-2); width:1%; white-space:nowrap}
-  .axname{min-width:0}
-  .axname .ttl{font-weight:600; color:var(--ink)}
-  .axwhy{display:block; font-size:12px; color:var(--ink-3); margin-top:2px}
-  .axwhy.mine{color:var(--ok)}
-  .axtbl .axmix{font-size:12.5px; color:var(--ink-3); margin:0}
-  .axtbl .axmix::before, .axtbl .axmix span::before{content:none}
-  .axsel{width:1%; white-space:nowrap}
-  .axsel select{min-width:110px}
-  .axtg{width:1%; white-space:nowrap}
-  .axtg label{display:flex; align-items:center; gap:8px; cursor:pointer}
-  /* The column header already says it; the words stay for screen readers. */
-  .axtglbl{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
-
-  /* The sound-profile expander, only present when there is a profile. */
-  .axexp{appearance:none; border:0; background:none; cursor:pointer; width:22px; height:22px; margin:0 6px 0 -4px;
-    border-radius:6px; color:var(--ink-3); vertical-align:-5px; position:relative}
-  .axexp::before{content:""; position:absolute; left:8px; top:6px; border:5px solid transparent; border-left:6px solid currentColor;
-    transition:transform var(--dur-1)}
-  .axexp[aria-expanded="true"]::before{transform:rotate(90deg) translate(1px, 1px)}
-  .axexp:hover{background:var(--surface-3); color:var(--ink)}
-  .axprof > td{background:var(--surface-2); padding:12px 14px 14px 44px}
 
   /* ---- Sources ---- */
   .srccov{color:var(--ink-2); font-size:14px; margin:0 0 20px}
@@ -53,15 +24,4 @@
 
   @media (max-width: 760px){
     .srcgrid{grid-template-columns:1fr}
-    /* Each table row folds into a two-line card: name and count, then controls. */
-    .axtbl thead{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
-    .axtbl, .axtbl tbody{display:block}
-    .axtbl tr.axrow{display:grid; grid-template-columns:1fr auto; grid-template-areas:"name n" "mix mix" "sel tg";
-      gap:4px 10px; padding:12px 14px; border-bottom:1px solid var(--line); align-items:center}
-    .axtbl tbody tr:last-child{border-bottom:0}
-    .axtbl tr.axrow > *{padding:0; border:0}
-    .axtbl .axname{grid-area:name} .axtbl .axn{grid-area:n} .axtbl .axmix{grid-area:mix}
-    .axtbl .axsel{grid-area:sel; width:auto} .axtbl .axtg{grid-area:tg; width:auto}
-    .axtglbl{position:static; width:auto; height:auto; clip:auto; font-size:12.5px; color:var(--ink-2)}
-    .axtbl tr.axprof{display:block} .axprof > td{display:block; padding:10px 14px}
   }

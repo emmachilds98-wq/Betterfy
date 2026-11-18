@@ -1,44 +1,3 @@
-  /* ---------- home: hero and the four things to do ---------- */
-  .hero{position:relative; overflow:hidden; border-radius:var(--r-4); background:var(--surface);
-        border:1px solid var(--line); padding:38px 36px 34px; margin-bottom:26px}
-  /* A single soft bloom of the accent behind the greeting, clipped by the
-     card. Wider than the card and blurred, so it never reads as a shape. */
-  .hero::before{content:""; position:absolute; right:-80px; top:-100px; width:340px; height:340px; border-radius:50%;
-        background:radial-gradient(circle, color-mix(in srgb, var(--accent) 30%, transparent), transparent 68%);
-        filter:blur(30px); pointer-events:none}
-  .hero .in{position:relative; display:flex; gap:32px; align-items:center; flex-wrap:wrap}
-  .hero .txt{flex:1; min-width:280px}
-  .hero .when{font-family:var(--mono); font-size:11.5px; letter-spacing:.14em; text-transform:uppercase;
-        color:var(--accent); margin-bottom:12px}
-  .hero h1{font-size:clamp(30px,4.2vw,46px); line-height:1.05; margin:0 0 12px; max-width:20ch;
-        overflow-wrap:anywhere}
-  .hero h1::before{display:none}
-  .hero p{font-size:17px; line-height:1.55; color:var(--ink-2); margin:0; max-width:54ch}
-  .hero .tile{flex:none; width:168px; height:168px; border-radius:30px; background:var(--surface-2);
-        border:1px solid var(--line); display:grid; place-items:center; box-shadow:var(--shadow-2)}
-  .hero .tile svg{width:104px; height:104px}
-  @media (max-width:640px){ .hero .tile{display:none} }
-
-  .acts4{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; margin-bottom:26px}
-  /* A fifth card ("Heard") once listening has run: five across on a wide
-     screen; below that the auto-fit columns take over again. */
-  .acts4.five{grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px}
-  @media (max-width:1080px){ .acts4.five{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))} }
-  .acts4.five .act{padding:22px 20px 20px}
-  .act{text-align:left; cursor:pointer; border-radius:var(--r-3); padding:24px 24px 22px; color:var(--ink);
-       font:inherit; display:flex; flex-direction:column; gap:6px;
-       background:color-mix(in srgb, var(--ac) 15%, var(--surface));
-       border:1px solid color-mix(in srgb, var(--ac) 32%, transparent);
-       transition:transform var(--dur-1) ease, box-shadow var(--dur-1) ease}
-  .act:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
-  .act:active{transform:scale(.99)}
-  .act .ic{width:40px; height:40px; border-radius:14px; background:var(--ac); color:var(--ac-ink);
-       display:grid; place-items:center; margin-bottom:10px}
-  .act .ic svg{width:21px; height:21px}
-  .act .n{font-family:var(--display); font-weight:800; font-size:38px; line-height:1; letter-spacing:-.03em; color:var(--ac)}
-  .act .l{font-size:15.5px; font-weight:600}
-  .act .d{font-size:14px; color:var(--ink-2); line-height:1.45}
-
   /* Where the library sits: one bar, four segments, a legend under it. */
   .split{display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:16px; margin-bottom:26px; align-items:start}
   @media (max-width:760px){ .split{grid-template-columns:1fr} }
@@ -80,13 +39,6 @@
   .seehead .more{appearance:none; border:0; background:none; color:var(--accent); font:inherit;
         font-size:13.5px; font-weight:600; cursor:pointer}
 
-  /* The card animation, kept: the action cards on Home use it. */
-  .acts4 .act{transition:opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out)}
-  @starting-style{ .acts4 .act{opacity:0; transform:translateY(9px)} }
-  .acts4 .act:nth-child(2){animation-delay:.04s}
-  .acts4 .act:nth-child(3){animation-delay:.08s}
-  .acts4 .act:nth-child(4){animation-delay:.12s}
-  .acts4 .act:nth-child(5){animation-delay:.16s}
 
 /* One-tap analysis: the button and its single progress strip. */
 .analyse { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; }
