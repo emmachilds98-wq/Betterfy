@@ -17,7 +17,7 @@
  * No Background Sync: iOS Safari and Firefox have none, so decisions made
  * offline are replayed by the page itself when it is next open and online
  * (web/app/offline.js). */
-const BUILD = '2026-11-18-0409';
+const BUILD = '2026-11-18-0451';
 const PREFIX = 'betterfy-shell-';
 const CACHE = PREFIX + BUILD;
 
