@@ -39,6 +39,22 @@ test('a Score + Tune run starts and finishes by itself, and the Engine screen sa
   assert.ok(await page.locator('[data-act="copy"]').count(), 'the results are there to copy');
   assert.match(await page.locator('.card').filter({ hasText: 'Playlists it understands least' }).first().innerText(),
                /by the engine that files|None: every genre playlist/);
+  // Past runs (BUILD-7 M1): the run is kept with its full report, and still there after a reload.
+  const hist = await until(() => page.evaluate(() => {
+    const l = JSON.parse(localStorage.getItem('bf_run_history') || '[]').filter(r => r.kind === 'score');
+    return l.length && l[0].tuned ? l : null; }), 'the run to be kept with its Tune block', 20000);
+  assert.equal(hist[0].why, 'first');
+  assert.match(hist[0].text, /This engine: top-1 \d+%/);
+  assert.match(hist[0].text, /Tune|tune/i);
+  await page.reload();
+  await ready(page);
+  await page.evaluate(() => go('engine'));
+  await page.waitForSelector('#pastRuns [data-act="histCopy"]', { timeout: 60000 });
+  assert.match(await page.locator('#pastRuns').innerText(), /Score · .*\n.*top-1 \d+%/);
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.locator('#pastRuns [data-act="histCopy"]').first().click();
+  const copied = await until(() => page.evaluate(() => navigator.clipboard.readText().catch(() => '')), 'the copy', 5000);
+  assert.equal(copied, hist[0].text);
   assert.deepEqual(app.errors, []);
 });
 
@@ -46,4 +62,32 @@ test('a phone keeps the narrow listening scope by default', { skip }, async () =
   app = await openApp(browser, { kind: 'small' });
   await ready(app.page);
   assert.equal(await app.page.evaluate(() => audioSettings().scope), 'playing+unfiled');
+});
+
+test('a run from before Past runs existed shows as one rebuilt entry, ready to copy', { skip, timeout: 120000 }, async () => {
+  app = await openApp(browser, { kind: 'typical', phone: false });
+  const { page, ctx } = app;
+  await ready(page);
+  await ctx.addInitScript(() => {
+    if (window !== window.top || localStorage.getItem('bf_run_history')) return;
+    localStorage.setItem('bf_engscore', JSON.stringify({ top1: 0.61, top3: 0.8, scored: 600, at: Date.now() - 864e5 }));
+    localStorage.setItem('bf_autoscore', JSON.stringify({ at: Date.now() - 864e5, heard: 420, why: 'listened', ok: true }));
+  });
+  await page.reload();
+  await ready(page);
+  await until(() => page.evaluate(() => localStorage.getItem('bf_run_history')), 'the rebuilt entry to be kept', 20000);
+  await page.evaluate(() => go('engine'));
+  await page.waitForSelector('#pastRuns');
+  assert.match(await page.locator('#pastRuns').innerText(), /top-1 61% · top-3 80% · headline only/);
+  const text = await page.evaluate(() => runHistoryView()[0].text);
+  assert.match(text, /rebuilt from what this device kept/);
+  assert.match(text, /listening had heard 420 tracks then/);
+  // The end of a listening run is written down once, from the controller's own view model.
+  await page.evaluate(() => { runHistoryWatch('listen', { state: 'running', done: 0, total: 3 });
+                              runHistoryWatch('listen', { state: 'done', done: 3, total: 3, heard: 3, missed: {} });
+                              runHistoryWatch('listen', { state: 'done', done: 3, total: 3, heard: 3, missed: {} }); });
+  const listens = await page.evaluate(() => runHistoryView().filter(r => r.kind === 'listen'));
+  assert.equal(listens.length, 1);
+  assert.match(listens[0].text, /This run: 3 of 3 tracks/);
+  assert.deepEqual(app.errors, []);
 });
