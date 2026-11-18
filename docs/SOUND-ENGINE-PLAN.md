@@ -22,6 +22,15 @@ electronic music and every place a BPM could come from, and four new
 packages (T5-T8) bring the number of unknowns down with more evidence rather
 than a lower bar.
 
+**Expanded 2026-11-18 (round 2), owner: *"improve and expand on the upgrade
+plan"*.** §2.7 adds three probes run for this round (ListenBrainz genre tags
+on scene artists, Deezer album genres, the Essentia heads and similarity ears
+that fit the shipped ear). §4b adds fourteen packages across all five stages,
+and it folds in build 8's leftovers where sound can help: never-filed
+artists (N1), small playlists (S2), drum & bass naming (D1), big mixed
+playlists (B1) and artist genre coverage (W1, Wikidata at 4%). §4c maps every
+metric to the packages that move it.
+
 Every number here is one of three kinds, and says which:
 
 - **Her Score run** (PC, 2026-11-18, the numbers in BUILD-8 §1);
@@ -36,6 +45,8 @@ Contents:
 2. Measurements run for this plan
 3. Findings, stage by stage
 4. Work packages: quick wins, then full upgrades
+4b. Round 2: deeper and broader
+4c. Which package moves which number
 5. What cannot be fixed, and what to do instead
 6. Order, lanes and owner decisions
 7. Progress table
@@ -114,7 +125,21 @@ Contents:
    lookup the page makes, and the page drops it. Where both exist it agrees
    with the measured tempo 76% of the time (84% when the measure is sure). A
    free second opinion (T4); almost absent for scene music (5%).
-10. **What cannot be fixed:** tracks Deezer has no preview for, songs whose
+10. **Round 2: the biggest untried levers are cheap.** (a) The shipped ear
+   has 25 more ready-made heads in the same model family (instruments,
+   acoustic/electronic, five binary moods, bright/dark), each a few hundred
+   KB on the embedding already computed (H1). (b) Rhythm, which the ear
+   barely sees, separates the scene pairs it confuses most (UK garage 7 of
+   25, bassline 15 of 25), from onset envelopes the tempo code already makes
+   (H2). (c) **Artist genres for scene producers exist where nobody has
+   looked**: ListenBrainz serves MusicBrainz's genre tags keyless and
+   CORS-open, and had tags for **17 of 22** scene artists with an MBID
+   ("bassline", "uk garage", "jungle"; §2.7), against Wikidata's 4% (G3).
+   (d) An artist with three heard tracks can be named by its own sound when
+   no source knows it (G2). (e) Hearing order can serve the leftovers
+   directly: every member of a small playlist and three tracks of each
+   never-filed artist heard first (F2).
+11. **What cannot be fixed:** tracks Deezer has no preview for, songs whose
    character is outside the 30 s preview, and key on every track from 20 s of
    audio. §5 says what to do instead of each.
 
@@ -288,7 +313,7 @@ non-electronic sets). T5 and T7 measure it there first.
 | iTunes Search | a preview, no BPM | For hearing misses only (U3), not a BPM source |
 | MusicBrainz, Last.fm, Discogs | no BPM field | Nothing to use |
 | AcousticBrainz | BPM per recording | Shut down by MetaBrainz (stopped in 2022; dumps only, no live API), and a dump is far too large for a hosted page. Rejected |
-| GetSongBPM API | BPM by artist and title | Not probed from here. As its public pages describe it: one app key (which a public page would expose) and a required backlink; where its numbers come from is not stated. Matching is by name (wrong 1 in 19 here). Not planned; a bonus probe only after T4-T7, and only if its terms allow a public page |
+| GetSongBPM API | BPM by artist and title | Already measured (README "Data sources"): **20% coverage** on a 40-track sample of a UK electronic library, and nothing calls it. It also needs one app key that a public page would expose, plus a backlink, and it matches by name (wrong 1 in 19 here). Rejected |
 | Rekordbox, Beatport, Tunebat | DJ-checked BPM | Need an export or scraping. The owner has no Rekordbox library; not for every account (CLAUDE.md) |
 
 So the plan uses what every account already has (the preview, Deezer's
@@ -296,6 +321,49 @@ lookup, its own playlists, a self-hosted model) and adds nothing that needs a
 key, an export or an app.
 
 ---
+
+### 2.7 Round 2 probes (2026-11-18)
+
+**ListenBrainz genre tags on scene artists.** 30 UK scene artists (DnB,
+jungle, bassline, UK garage, dubstep). The MusicBrainz id came from a
+MusicBrainz name search, for this measurement only. 22 resolved; 8 hit
+MusicBrainz's rate limit (503) and were not retried. Then
+`api.listenbrainz.org/1/metadata/artist/?artist_mbids=…&inc=tag`, batched:
+
+- It answers with `access-control-allow-origin: *` and needs no key, so the
+  hosted page can call it.
+- **17 of 22 had artist tags**, and the tags are scene-level: Hamdi
+  "bass house, bassline, uk garage"; Coco Bryce "uk garage, bass music,
+  jungle"; Nia Archives "jungle"; Burial "future garage, dubstep"; Sammy
+  Virji "uk garage, bassline". The 5 without tags were newer or smaller
+  names (Kahn, Hedex, Pa Salieu, Silva Bumpa, T2).
+- 1 of 22 was a namesake ("Dimension" resolved to a jazz-fusion artist). So
+  name matching is not safe here either: the id has to come from an exact
+  source.
+- `metadata/lookup` (MBID by artist and track name) answers **401 without a
+  user token**, so it can't be used.
+
+Compare Wikidata's genres: 4% of her artists (BUILD-8 §1.3) and 35% of 600
+in the README's live sample, weakest on scene producers.
+
+**Deezer album genre and label.** `api.deezer.com/album/{id}` (the track
+lookup the page already makes carries `album.id`) returns `genres` (here
+"Electro") and `label`. The genres are Deezer's top-level list (about 20:
+Electro, Dance, Rap/Hip Hop, R&B, Reggae, Jazz, Latin...), so they are
+family-level only. That is exactly what family first (BUILD-8 I1) and the
+non-electronic families (G1) need. Coverage on her library is unmeasured.
+
+**Essentia heads and ears for the shipped model.** The Essentia models page
+(the same source and the same CC BY-NC-SA 4.0 licence as the shipped files,
+`docs/models/LICENSE`) lists **28 heads on the Discogs-EffNet embedding**;
+the page ships 3 of them (mood-theme, voice, danceability). Among the rest:
+`mtg_jamendo_instrument`, `mtg_jamendo_genre`, `mood_{aggressive, happy,
+party, relaxed, sad, acoustic, electronic}`, `nsynth_{acoustic_electronic,
+bright_dark}`, `timbre`, `tonal_atonal`, `approachability`, `engagement`,
+`mtt`. The page also lists **contrastive similarity ears** trained to place
+tracks of the same artist (`discogs_artist_embeddings-effnet`) or the same
+label (`discogs_label_embeddings-effnet`) close together, which is what
+placing is.
 
 ## 3. Findings, stage by stage
 
@@ -787,6 +855,319 @@ sound. **Bar: +3 points on those tracks, no loss elsewhere.** **Effort** M.
 
 ---
 
+## 4b. Round 2: deeper and broader (2026-11-18)
+
+The same format and rules as §4: every bar is read in the page, a package
+that misses ships display-only, nothing is pooled across accounts, no
+Spotify content goes into a model. Ranked within each stage by expected gain
+per effort.
+
+### Listen
+
+#### F1. A second lookup on Deezer itself when the ISRC misses (lane K, S-M)
+
+**Goal.** Hear tracks whose Spotify ISRC is not the one Deezer files the
+same recording under (re-releases, compilations, label re-uploads).
+
+**Why.** `NOT_ON_DEEZER` is often "not under this ISRC": the same master is
+issued under several ISRCs. L4's funnel will count it; U3 goes to another
+service, while this stays on Deezer.
+
+**What.** For an `ISRC` miss only, `search?q=artist:"…" track:"…"` through
+the same JSONP path. Accept only if the artist name is identical after
+normalising, the title matches after removing "(Original Mix)" and similar
+suffixes, and **the duration is within ±1 s** (tighter than `IDENTITY`'s
+±3 s, because there is no ISRC). Store `source.kind: 'deezer-name'`. The
+record is used for sound but never on the ISRC-strict paths (R2's
+cross-release evidence, the shared table).
+
+**Measure and bar.** Before switching on, in the page: take 200 heard tracks
+(ISRC found), pretend each missed, and run the name lookup. It must find
+the same Deezer track id on **≥ 97%**, with the wrong-track rate
+**≤ 1%** (against name-only's 1 in 19). Then L4's funnel: **≥ 25% of ISRC
+misses heard**. **Effort** S-M.
+
+#### F2. Hear the leftovers first (lane M, S; serves BUILD-8 S2, N1, D1)
+
+**Goal.** The tracks that build 8's weakest packages need are heard before
+the rest of the library.
+
+**Why.** S2's small playlists have 7 or 8 heard members, N1's artist
+pooling needs several heard tracks per artist, and D1 names DnB against her
+own sub-genre playlists. All three run short of *heard* tracks before they
+run short of method.
+
+**What.** `core/audio/queue.mjs`, two tiers placed after "unfiled liked
+songs": (1) **every member of a playlist with under 12 heard members**;
+(2) **up to three tracks of each never-filed artist** in the inbox, chosen
+from the artist's most-played tracks (CLAUDE.md: rank by `/me/top/artists`
+and recently played, which is Spotify-native and universal). Order inside
+each tier: most-listened artists first, as today.
+
+**Measure and bar.** In the page, printed by L4: heard share of members of
+under-12 playlists (**bar 100%** once the queue reaches the tier),
+never-filed artists with ≥ 3 heard tracks (**bar ≥ 60%** of those with
+three tracks in the library), and the time to the first File card
+unchanged (BUILD-8 §4.2). **Effort** S. **Depends on** nothing; best before
+N1 and S2 are scored.
+
+### Analyse
+
+#### H1. More heads on the same embedding (lane E, S-M)
+
+**Goal.** More labels per heard track and a richer profile, at almost no
+listening cost.
+
+**Why.** M2's mood chips earn 1 of 8, mostly because of "only N of 12 heard"
+and low precision on the 56-class mood-theme head. Binary heads
+(`mood_party`, `mood_relaxed`, `mood_aggressive`) are trained for exactly
+one question each. For non-electronic playlists, instruments and
+acoustic/electronic separate what styles don't (§2.2: hip-hop against rnb,
+soul against pop).
+
+**What.** Ship the heads as files under `docs/models/` (each a few hundred
+KB; same licence; credited where the others are), run them in `heads.mjs` on
+the embedding already computed, and store a small `labels2` block on the
+record (no `MODEL` bump, R1). Use them in two ways: (a) as mood and
+instrument chips through M2's existing earn-your-place gate; (b) as a
+16-number profile appended to the placement vector **with a weight fitted
+per account on Score's held-out folds** (zero when it doesn't help, as E2
+does).
+
+**Measure and bar.** (a) M2: **chips earned 1 → ≥ 3 of 8** at M2's
+precision bar. (b) On §2.2's broad set first, then her Score: **≥ +1 top-1
+overall, ≥ +3 on hip-hop/rnb/soul/pop**, no loss on scene genres. If (b)
+misses, (a) still ships. **Effort** S-M. Cost check: L1's model time per
+track rises **≤ 5%**.
+
+#### H2. A rhythm fingerprint (lane E, M)
+
+**Goal.** Tell apart the scene genres that sound alike to the ear but are
+played differently: UK garage's 2-step, bassline's four-to-the-floor at 135,
+jungle's chopped breaks against a rollers' steady 2-step, dancehall's
+riddim against afrobeats.
+
+**Why.** The ear's weakest scene genres are rhythm genres (§2.1: UK garage 7
+of 25, bassline 15 of 25; §2.2: dancehall 17, hip-hop 15). Discogs-EffNet
+looks at about 2 s of spectrogram at a time, which is shorter than one
+bar, so the pattern across a bar is barely in the embedding.
+
+**What.** `core/audio/dsp/rhythm.mjs`: from the four band onset envelopes
+that `tempo.mjs` already computes (kick, body, snare, hats), fold each onto
+one bar of 16 steps at the measured tempo. Align to the downbeat where Beat
+This gave one (T5), else make it shift-invariant by taking the magnitude of
+the 16-step DFT. That gives 4 × 16 numbers per track, normalised and
+stored as `dsp.rhythm`, appended to the placement vector with a per-account
+fitted weight (as H1(b)). It is computed in the worker from audio already
+decoded; no new model.
+
+**Measure and bar.** §2.1's scene set and §2.2's broad set (scripts exist):
+**≥ +3 top-1 on the scene set**, ≥ +5 on UK garage, bassline and jungle
+together, no loss on the broad set. Then her Score: no loss overall, and
+D2's DnB sub-genre line rises. A miss closes it (as P1/P2). **Effort** M.
+
+#### H3. A similarity ear (lane E + M, M; after BUILD-8 A3)
+
+**Goal.** An ear trained to put tracks of the same artist or label close
+together, which is closer to "goes in the same playlist" than style
+labels are.
+
+**Why.** The ear's geometry is where scene genres sit at 68% (§2.1). MAEST,
+a bigger *style* model, did not beat it (61 against 60), so a bigger model
+of the same kind is not the lever. A model trained on *similarity* is a
+different bet.
+
+**What.** Measure first: `discogs_artist_embeddings-effnet` and
+`discogs_label_embeddings-effnet` on §2.1 and §2.2 with `eval.mjs`
+(leave-one-out centroid, the same windows). Only the winner goes on, as a
+second ear in `EARS` (R1), filled by a top-up through L3's single download,
+and used per account only when the Score gate picks it (`gate.mjs`
+`earChoice`, as for MAEST). About 18 MB, the same as the first ear.
+
+**Measure and bar.** Public sets: **≥ +3 top-1 on the scene set, no loss on
+the broad set**, or it stops there. Her Score: **≥ +1 overall and no loss
+on never-filed**. **Effort** M. **Depends on** A3 (BUILD-8 §4.1: no model
+package before the learning curve), R1, L3.
+
+#### K1. "Key unknown", and the whole preview for unsure keys (lanes U + E, S)
+
+**Goal.** Key follows the same rule as tempo, and more keys are sure.
+
+**Why.** Key shows at ≥ 0.65 or not at all, so a blank means unsure (the
+same problem T3 fixes for BPM). Key was found to need "more audio than two
+10 s windows" (BUILD-5-PROGRESS key v3 conclusion), and T5 downloads the
+third window for unsure tempos anyway.
+
+**What.** `tempoShown`'s twin `keyShown` (sure / unknown with a reason), used
+by the same five view models; the reason on tap is "Not sure from the 30 s
+preview". When T5 fetches the third window, also re-run key v4 on all three
+for records whose key is unsure (`keepKeyNet` keeps the rest).
+
+**Measure and bar.** Beatport half B, held out: **sure keys on 85% → ≥ 90%
+of tracks** at the same right-rate (62.5% exact, 71.3% MIREX on sure
+keys), or the third-window part ships off. **Effort** S. **Depends on** T3,
+T5.
+
+### Suggest a genre
+
+#### G3. MusicBrainz genres through ListenBrainz (lane K, S; supplements BUILD-8 W1)
+
+**Goal.** Scene artists that Last.fm and Wikidata don't know get
+fine-grained genres, with no key and no MusicBrainz call from the browser.
+
+**Why.** Wikidata knows 4% of her artists (BUILD-8 §1.3). ListenBrainz had
+tags for 17 of 22 scene artists with an MBID, at scene level (§2.7). W1's
+MusicBrainz step is blocked on a browser probe; this needs none.
+
+**What.** `core/sources/listenbrainz.mjs` (it already holds the
+similar-artist call): `artistTags(mbids)` batched through
+`/1/metadata/artist/?inc=tag`, through the same spaced queue as Wikidata
+(`keyless.js`), obeying the `X-RateLimit-*` headers it exposes, and
+visible-tab only. **MBIDs only from exact sources**: Wikidata's Spotify id
+→ MBID (already fetched), or MusicBrainz's Spotify URL relation if W1's
+probe passes. Never by name (1 of 22 namesakes in §2.7). Tags map through
+the same vocabulary as Last.fm's (`genre_mbid` marks MusicBrainz's curated
+genres, which are preferred), fill artists with no tags only, never go to
+the shared table, and show as "MusicBrainz" in Settings' sources (the
+owner's rule that every source that helps is on and shown, 2026-11-16).
+
+**Measure and bar.** W1's coverage line: **share of never-filed artists with
+at least one genre source, +10 points**, and top-1 no loss. Also print
+"MusicBrainz tags for N of M artists with an MBID". **Effort** S.
+
+#### G2. An artist's genre from its own sound (lane E, S-M; with BUILD-8 N1, W1)
+
+**Goal.** An artist no source knows, but with three or more heard tracks,
+gets a genre anyway.
+
+**Why.** After G3 and W1, the artists left are the newest scene producers:
+exactly the ones in her inbox. Naming by sound is 72% right on genre and 92%
+on sub-genre when it names one (BUILD-8 §1.1), and pooling three tracks is
+steadier than one (N1's premise).
+
+**What.** N1's pooled artist vector → `identify()` → the artist's genre, with
+`source: 'sound'` at a weight below every tag source. Used only where the
+artist has no tags; never shared; shown as "by its sound" and replaced as
+soon as a tag source answers. An artist whose heard tracks name different
+families gets none (a mixed artist is left to the per-track path).
+
+**Measure and bar.** Before switching on, on her artists that **do** have
+tags (held out): the sound-named family agrees with the tags' family on
+**≥ 85%**, and the sub-genre on ≥ 70% where both name one. Then the
+coverage line **+15 points** on never-filed artists, and N1's never-filed
+top-1 no loss. **Effort** S-M. **Depends on** N1 (the pooled vector), F2
+(three heard tracks).
+
+#### G4. Deezer album genre and label (lane K, S)
+
+**Goal.** Every heard track gets a family-level genre and a record label
+from the service already used to hear it.
+
+**Why.** Family first (I1) needs family evidence, and G1's non-electronic
+families need a name from somewhere for artists outside Last.fm. BUILD-8
+L1 fits label identity and needs labels.
+
+**What.** `fetch.mjs`: after a successful track lookup, the album id is
+known; fetch `/album/{id}` once per album (cached per album, 90 days, inside
+the 50-per-5-s budget, behind the track lookups in priority). Store
+`source.deezerGenres` (ids) and `source.label`. Map Deezer's ~20 genres to
+ontology families in `audio-vocab.mjs`. Used as a family vote at a low
+weight in `identify()` and as I1's family evidence; never at sub-genre
+level.
+
+**Measure and bar.** In the page: share of heard tracks with a Deezer
+genre (printed), family top-1 on never-filed artists **+2 points**, or the
+share of tracks with any family evidence **+15 points**, with no loss
+overall. Label: handed to BUILD-8 L1 as data, no bar here. **Effort** S.
+
+#### D2. Drum & bass sub-genres by sound (lane E, M; the sound half of BUILD-8 D1)
+
+**Goal.** Rollers, jungle, liquid, neuro and jump-up named from the
+account's own sub-genre playlists, not from the ear's labels, which have
+none of them except Jungle.
+
+**What.** T1 (the tempo penalty) plus: H2's rhythm fingerprint (jungle's
+breaks against rollers' 2-step is a rhythm difference); prototypes from
+her own DnB sub-genre playlists, with S2's borrowed family prior for the
+small ones (Jungle Alarms 1 of 8); G3's tags ("jungle", "liquid funk" are
+MusicBrainz genres) as the artist vote. All three already exist as sources
+in `identify()` or will after their packages; D2 is their weights, fitted
+on her Score.
+
+**Measure and bar.** D1's bar: **DnB named 77/199 → ≥ 110/199 at ≥ 90%
+sub-genre precision**. **Effort** M. **Depends on** T1, H2, S2.
+
+### Suggest a playlist
+
+#### B2. Big mixed playlists, the sound side (lane E, M; extends BUILD-8 B1)
+
+**Goal.** B1's diagnosis says *why* Alt/Indie (19% of 54) and Chill
+Rap/HipHop (25% of 51) are weak; B2 adds the sound evidence for each
+answer.
+
+**What.** For each playlist B1 flags: (1) **spread by stage**: compute B1's
+cluster count separately on the embedding, H1's labels and H2's rhythm. A
+playlist that is one cluster in mood but three in style is a *mood*
+playlist, and it should be matched on mood, by S1's per-situation weights;
+(2) **per-window scoring reopened only here** (P2 measured ±0.1 globally,
+but a two-sound playlist is its one possible use); (3) the Library row says
+which it is ("Chill Rap/HipHop is held together by mood, not sound").
+
+**Measure and bar.** B1's: **+5 recall where medoids or mood-matching
+apply**, no loss elsewhere; else the Library sentence is the deliverable.
+**Effort** M. **Depends on** B1, H1.
+
+#### P3. Listening sessions as a weak vote (lane K, S; probe first)
+
+**Goal.** Use what the listener plays around a track as evidence of where
+it goes.
+
+**What.** `/me/player/recently-played` (50 items, with each item's
+`context`) is read when the page opens and appended per account, locally.
+A liked, unfiled track that is played repeatedly between members of
+playlist X gets a small vote for X. It is Spotify-native, universal, and
+needs no file.
+
+**Measure and bar.** After two weeks of normal use, the share of unfiled
+inbox tracks with ≥ 2 session neighbours in one playlist. **If under 10%,
+close it.** Otherwise a Score arm: **+1 top-1** on those tracks. **Effort**
+S. Honest risk: 50 items per read is small, and most listening may be
+playlist-context plays of tracks already filed.
+
+### Rejected or deferred in round 2
+
+| Idea | Why not now | What would reopen it |
+| --- | --- | --- |
+| A large self-supervised music model (MERT and similar) | 90M+ parameters, several times MAEST; non-commercial weights; MAEST (bigger than the first ear) gained 1 point | H3 wins, and A3 says the ear, not coverage, is the limit |
+| Lyrics or vocal language (Whisper-class model in the page) | 40 MB and up, slow on a phone, only vocal tracks, 30 s of lyrics | A listener with language-split playlists (Latin, K-pop) on Score |
+| YouTube, SoundCloud, Bandcamp audio | No public CORS preview API, or the terms bar it | Never on the core path |
+| Audius (open API, full tracks) | Small catalogue, name matching only | After U3, as a bonus probe, if L4 shows scene misses are large |
+| ListenBrainz `metadata/lookup` by name | Needs a user token (401, §2.7) and is name matching | Never on the strict path |
+| Spotify artist `genres` | Absent for every artist (README) | Spotify restoring it |
+| GetSongBPM | 20% coverage, a public key, name matching (§2.6) | Never |
+
+## 4c. Which package moves which number
+
+Every number is printed by the page (Score, the Listening line or Engine), so
+progress is read where the owner reads it.
+
+| Number (today) | Packages that move it | Bar |
+| --- | --- | --- |
+| Blend top-1 overall (66 / 89) | S1 (built), H1, H2, H3, G4, B2 | each no loss; H1 ≥ +1, H3 ≥ +1 |
+| Never-filed artists (58 blend, 63 sound) | F2, U4, G2, G3, BUILD-8 N1 | N1 +3, U4 +3, G2 no loss |
+| Small playlists (Dancehall 0/7...) | F2, BUILD-8 S2, D2 | S2 +10 recall on the under-12 group |
+| Big mixed playlists (19% / 25%) | B2, BUILD-8 B1 | +5 recall where it applies |
+| DnB named (77/199) | T1, H2, D2, G3 | ≥ 95 (T1), ≥ 110 at ≥ 90% (D2) |
+| Tempo fits (51% of 213) | T1, T2 | ≥ 70% |
+| Artist genre coverage (Wikidata 4%) | G3, G2, G4, BUILD-8 W1 | G3 +10, G2 +15, W1 +10 points |
+| BPM known on N% of heard (new line) | T4, T5, T6, T7, T8 | shown BPMs ≥ 90% right; each step ≥ 15% of unknowns |
+| Sure keys (85% of tracks) | K1 | ≥ 90% at the same right-rate |
+| Heard share (572 of 600) | F1, U3, L4 | F1 ≥ 25% of ISRC misses; U3 ≥ 30% |
+| Mood chips earned (1 of 8) | H1, F2, BUILD-8 M2 | ≥ 3 of 8 |
+| Seconds per track (unmeasured) | L1, L2, L3, U1, U2 | L2 1.4×, U1 2.5×, U2 3× |
+
+---
+
 ## 5. What cannot be fixed, and what to do instead
 
 | Limit | Why it can't be fixed | What to do instead |
@@ -814,8 +1195,10 @@ lane E thread (BUILD-7 §2.2). Start no wave without asking.
 | S0 | **T1** (lane E, with or as D1's first step), **L1** + **L4** (lane M), **R1** (rule + test) | Wave 0 is lane M too; L1/L4 share `autoscore.mjs` with A1-A7, so one thread does them together |
 | S1 | **T2**, **T3**, **T4** (lanes E + U), **L2**, **L3** (lane M) | After T1; L2/L3 own `worker.js`/`controller.mjs`. T3 goes first in the wave: it sets the "unknown" rule the rest measure against |
 | S1b | **T5**, **T6** (lanes E + M), **T8** (lane U) | After T3 and L3; T5's top-up lives in `controller.mjs` (lane M), so it follows L2/L3 in the same thread or after them |
-| S2 | **G1**, **T7** (lane E, one after the other) | G1 after BUILD-8 wave 1 (I1, I2); T7 after T5/T6 |
-| S3 | **U1**, then **U2** (lane M); **U3** (lane K); **U4** (lane E, after N1) | Last; each needs L1's before |
+| S1c | **F2** (lane M), **G3**, **G4** (lane K), **K1** (lanes U + E) | F2 any time after L1; G3 and G4 are small and share the keyless queue, so one thread; K1 after T3/T5 |
+| S2 | **G1**, **T7** (lane E, one after the other); **H1**, **H2** (lane E) | G1 after BUILD-8 wave 1 (I1, I2); T7 after T5/T6; H1 then H2, since H2 reuses H1's fitted-weight slot |
+| S2b | **G2**, **D2** (lane E), **F1** (lane K) | G2 after N1 and F2; D2 after T1, H2 and S2 (it is build 8's D1, so the build 8 thread owns it or hands it over) |
+| S3 | **U1**, then **U2** (lane M); **U3** (lane K); **U4** (lane E, after N1); **H3** (lane E + M, after A3); **B2** (lane E, after B1); **P3** (lane K, probe) | Last; each needs L1's before |
 
 **File ownership added.** Lane M (measure and listening speed):
 `core/audio/worker.js`, `web/audio/controller.mjs`, `docs/audio-worker.js`'s
@@ -824,6 +1207,13 @@ source in `build-web.mjs`. Lane E adds `core/ontology/tempo.mjs`,
 `web/audio/dsp-view.mjs`, `web/ui/sound.mjs`. T3's `tempoShown` and T2's
 `displayTempo` live together in `core/audio/match.mjs` (lane E); T6's table
 in a new `core/audio/dsp/tempo-calib.mjs` (lane E).
+Round 2: lane K adds `core/sources/listenbrainz.mjs` `artistTags` (G3) and
+the album fetch in `core/audio/fetch.mjs` (G4, F1; shared with lane M, so
+G4/F1 go after L2/L3 or in the same thread); lane E adds
+`core/audio/dsp/rhythm.mjs` (H2) and the head list in `core/audio/heads.mjs`
+(H1); lane M owns the queue tiers in `core/audio/queue.mjs` (F2). The keyless
+queue in `web/app/keyless.js` belongs to BUILD-8 W1's thread: G3 goes there,
+or after it.
 
 **Owner decisions.**
 
@@ -833,6 +1223,8 @@ in a new `core/audio/dsp/tempo-calib.mjs` (lane E).
 | SD2 | Show "~174" for unsure tempos (T3) instead of nothing? | **Answered 2026-11-18: no.** Unsure shows "BPM unknown", and the engine is improved so fewer are unsure (T5-T8) |
 | SD3 | Try a second preview source (U3, iTunes Search, name + length match, bonus only)? | Yes to the probe; decide on the rest from its result |
 | SD4 | Use more of a computer's cores and its GPU while listening (U1, U2)? | Yes on a computer; phones unchanged |
+| SD5 | May an artist nobody has tagged be given a genre from its own sound (G2), shown as "by its sound"? | Yes: it is local to the account, replaced by any real tag, and only switched on past its 85% bar |
+| SD6 | May the page read recently played and keep it locally, to learn from listening sessions (P3)? | Yes to the two-week probe; it reads only what Spotify already shows her |
 
 ## 7. Progress table
 
@@ -857,3 +1249,15 @@ in a new `core/audio/dsp/tempo-calib.mjs` (lane E).
 | U2 | WebGPU | S3 | M | Not started | | ≥ 3× model step |
 | U3 | Second preview source | S3 | K | Not started | | ≥ 30% of misses heard |
 | U4 | Unheard tracks by artist sound | S3 | E | Not started | | +3 on those tracks |
+| F1 | Deezer name lookup for ISRC misses | S2b | K | Not started | | ≥ 97% same track; ≥ 25% of misses heard |
+| F2 | Hear the leftovers first | S1c | M | Not started | | 100% of under-12 members; ≥ 60% never-filed artists at 3 heard |
+| H1 | More heads on the same embedding | S2 | E | Not started | | chips 1 → 3 of 8; +1 top-1 |
+| H2 | Rhythm fingerprint | S2 | E | Not started | | +3 top-1 on the scene set |
+| H3 | Similarity ear | S3 | E, M | Not started | | +3 scene set; +1 on Score |
+| K1 | "Key unknown"; whole preview for unsure keys | S1c | U, E | Not started | | sure keys 85% → 90% |
+| G2 | Artist genre from its own sound | S2b | E | Not started | | ≥ 85% family agreement; +15 coverage |
+| G3 | MusicBrainz genres via ListenBrainz | S1c | K | Not started | | +10 coverage |
+| G4 | Deezer album genre and label | S1c | K | Not started | | +2 family top-1 or +15 coverage |
+| D2 | DnB sub-genres by sound | S2b | E | Not started | | 110/199 at ≥ 90% |
+| B2 | Mixed playlists, sound side | S3 | E | Not started | | +5 recall where it applies |
+| P3 | Listening sessions | S3 | K | Not started | | probe: close under 10% |
