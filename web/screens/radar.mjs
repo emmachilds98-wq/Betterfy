@@ -179,12 +179,13 @@ export function probeHTML(R, esc) {
   if (P.err) return `<div class="rr-probe"><p class="why">The check couldn’t run: ${esc(P.err)}</p>${btn}</div>`;
   const v = P.verdict ?? { ok: false, missing: [] };
   const line = v.ok ? '<b>Works.</b> Spotify answers everything the radar needs on this account.'
-    : '<b>Spotify isn’t sharing new releases with this account.</b>';
-  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p>${line}</p>
+    : '<b>Spotify isn’t sharing new releases with this account right now.</b>';
+  // Refused: Check again sits by the line, since it is the way back (BUILD-7 R1 holds the sync).
+  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p>${line}</p>${v.ok ? '' : `<div class="rowbtns">${btn}</div>`}
     <details class="rr-pdet"><summary>Details</summary>
     ${v.ok ? '' : `<p class="why">Refused: ${v.missing.map(esc).join(', ')}.</p>`}
     <table class="rr-ptab"><tbody>${(P.rows ?? []).map(r => `<tr class="${r.ok ? 'ok' : 'no'}"><td>${esc(r.label)}</td><td class="mono">${esc(r.status)}</td><td>${esc(r.note)}</td></tr>`).join('')}</tbody></table>
-    <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></details></div>`;
+    <div class="rowbtns">${v.ok ? btn : ''}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></details></div>`;
 }
 
 /** Releases new enough to count on Discover's "New releases" side: the same rule as File's header
@@ -206,6 +207,13 @@ export function radarView(ctx) {
   const head = `<section class="rr" id="radar" aria-labelledby="rrTitle">
     <h2 id="rrTitle">Release radar${ib('radar', 'Release radar', `<p>New releases by every artist in your playlists, liked songs and listening, newest first, two years back.</p>
       <p>Reissues of records you already own are kept out of the main list (find them under Reissues), and guest spots and remixes sit under Features. Spotify reads one artist at a time, so the first read takes a while; after that only the artists due a check are read again.</p>`)}</h2>`;
+
+  // This account's check found a read the radar needs refused (BUILD-7 R1): the sync is held,
+  // and the section says so in one line, with what was refused behind Details.
+  const held = !R.running && !!rad.held?.();
+  const heldR = held && !(R.probe && (R.probe.running || R.probe.verdict))
+    ? { probe: { rows: R.check?.rows ?? [], verdict: { ok: false, missing: R.check?.missing ?? [] } } } : R;
+  if (held && !(R.rows ?? []).length) return head + probeHTML(heldR, esc) + '</section>';
 
   // Never synced: an explainer, one button, an honest estimate.
   if (!R.index && !R.running && !(R.rows ?? []).length) {
@@ -264,7 +272,7 @@ export function radarView(ctx) {
   // The features lane is the Features chip only (C5): the fold under All showed the same rows.
   const partial = !st.complete && rows.length ? `<p class="rr-partial">Not the whole radar yet: ${R.running ? 'still reading' : 'some artists are still to be read'}.</p>` : '';
   const count = `<p class="rr-count vh" aria-live="polite">${rows.length.toLocaleString('en-GB')} release${rows.length === 1 ? '' : 's'}</p>`;
-  return head + status + (R.probe || (R.err && !R.running) ? probeHTML(R, esc) : '') + chips + search + count + partial + feed + '</section>';
+  return head + status + (held || R.probe || (R.err && !R.running) ? probeHTML(heldR, esc) : '') + chips + search + count + partial + feed + '</section>';
 }
 
 export const radarActions = {

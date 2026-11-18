@@ -61,6 +61,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_radar', name:'Radar stopped', group:'Release radar', why:'"off" once you pressed Stop on the radar, so it does not start by itself again on this device until you press Start.' },
   { where:'idb', key:'radar:index', name:'Radar: how far it got', group:'Release radar', why:'How far the radar\'s last read got, so a stopped read picks up where it stopped.' },
   { where:'idb', key:'radar:dismissed', name:'Radar: dismissed releases', group:'Release radar', why:'Releases you dismissed or filed from the radar, so they stay out of it.' },
+  { where:'idb', key:'radar:probe', name:'Radar: account check', group:'Release radar', why:'The answer to the radar\'s own check of what Spotify shares with this account (which reads answered, for which account and build, and when), so it runs once per account per update and Settings can show it.' },
 
   // --- genre data ---
   { where:'idb', key:'tags_extra', name:'Fetched genre tags', group:'Genre data', why:'Genre tags fetched for artists in your library that the shipped table does not cover (Last.fm, Wikidata, Discogs).' },
