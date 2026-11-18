@@ -80,17 +80,17 @@ export function view(ctx) {
   S.shufOrderMode = mix && !mix.pending ? S.shufMode : null;
   return `<h1>Shuffle</h1>
     <p class="lede">Spotify's shuffle clusters artists; this spaces them out.${ctx.infoBtn?.('shuffle', 'Shuffle', `<p>This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>`) ?? ''}</p>
-    <p class="lede" style="margin-top:-8px">${allSongs
+    <p class="lede shufsrc">${allSongs
       ? `Shuffling from <b>${esc(allSongs.name)}</b> by default — everything in your library, kept in one place.`
       : `To shuffle everything you own, first gather it into one playlist.`}
-      <button class="b sm" data-act="syncAllSongs" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Make it'}</button></p>
-    <div class="rowbtns" style="margin-bottom:22px">
+      <button class="b sm" data-act="syncAllSongs" id="syncAllSongs">${allSongs ? 'Refresh it' : 'Make it'}</button></p>
+    <div class="rowbtns shufacts">
       <select id="shufPl" data-act="shufPl" aria-label="Playlist to shuffle">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
       <button class="b p" id="shufApply" ${S.shufOrder.length?'':'disabled'} data-act="shufApply">Create shuffled playlist</button>
       <button class="b" data-act="shufPlay" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
       <button class="b sm" data-act="shufAgain" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
     </div>
-    ${order.length ? `<div class="rowbtns" style="margin:-12px 0 18px">${canFlow ? `
+    ${order.length ? `<div class="rowbtns shufopts">${canFlow ? `
       <label class="pls-f"><input type="checkbox" data-act="shufFlow" ${flow ? 'checked' : ''}> Keep neighbours alike</label>` : ''}
       <label class="pls-f"><input type="checkbox" data-act="shufRedisc" ${S.shufRedisc ? 'checked' : ''}> Rediscover: what you have not been playing first</label></div>` : ''}
     ${mix ? mixHTML(mix, tracks, p, ctx) : good ? `<div class="vs">
@@ -99,7 +99,7 @@ export function view(ctx) {
       <div class="good"><div class="l">Betterfy</div><div class="n">${good.minGap}</div>
         <div class="d">${good.minGap === 1 ? 'slot' : 'slots'} minimum, ${good.within3 ? `${good.within3} ${good.within3 === 1 ? 'pair' : 'pairs'} within three` : 'nothing within three'}, average gap ${good.avgGap}</div></div>
     </div>
-    <p class="lede" style="margin:-10px 0 20px; font-size:14px">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
+    <p class="lede shufstat">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
     <details class="how orderprev"><summary>Preview the order</summary>
     <div class="order">${order.slice(0,40).map((t,i) => `<div data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>

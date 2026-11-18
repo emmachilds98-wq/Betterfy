@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-0658">
+<meta name="bf-build" content="2026-11-18-1117">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -95,6 +95,11 @@
     /* Type scale. Four sizes for running text, named so a screen's lede, its
        body and its small print agree with every other screen's. */
     --fs-lede:15px; --fs-body:14px; --fs-small:12.5px; --fs-micro:11px;
+    /* Headings (DESIGN-PLAN L7): every h2 takes one of these, so a screen's
+       title and a sheet's title agree without anyone matching pixels.
+       title = the File card's question; label = the small mono caps heads. */
+    --fs-title:26px; --fs-h2-lg:19px; --fs-h2:18px; --fs-h2-md:17px; --fs-h2-sm:16px;
+    --fs-h3:15px; --fs-label:11.5px;
     /* Controls: one height, so a select, a text box and a button on the same
        row line up without anyone nudging padding. */
     --ctl-h:40px; --ctl-h-sm:32px;
@@ -215,7 +220,7 @@ main:focus{outline:none}
   .logo .mark{margin-right:15px; width:48px; height:48px; filter:drop-shadow(0 3px 10px rgba(0,0,0,.16))}
   .brand .mark{width:24px; height:24px; margin-right:11px}
   .tagline{font-size:18px; color:var(--ink-2); margin:12px 0 26px; max-width:52ch; text-wrap:balance}
-  .land h2{font-family:var(--display); font-weight:700; font-size:15px; letter-spacing:.02em; margin:34px 0 10px}
+  .land h2{font-family:var(--display); font-weight:700; font-size:var(--fs-h3); letter-spacing:.02em; margin:34px 0 10px}
   .cta{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
   .fineprint{color:var(--ink-3); font-size:12.5px; margin:14px 0 0; display:flex; gap:10px; flex-wrap:wrap; align-items:center}
   .fineprint .dot{color:var(--line-2)}
@@ -333,7 +338,7 @@ main:focus{outline:none}
   h1{font-family:var(--display); font-weight:800; font-size:clamp(28px,3.6vw,36px); letter-spacing:-.03em; margin:0 0 8px; text-wrap:balance}
   /* A short bar in the screen's own hue above every title. */
   h1::before{content:""; display:block; width:34px; height:4px; border-radius:3px; background:var(--view); margin:0 0 12px}
-  h2{font-family:var(--display); font-weight:700; font-size:18px; letter-spacing:-.015em; margin:34px 0 12px}
+  h2{font-family:var(--display); font-weight:700; font-size:var(--fs-h2); letter-spacing:-.015em; margin:34px 0 12px}
   .lede{color:var(--ink-2); font-size:16px; margin:0 0 24px; max-width:62ch}
 
   /* Where the library sits: one bar, four segments, a legend under it. */
@@ -341,7 +346,7 @@ main:focus{outline:none}
   @media (max-width:760px){ .split{grid-template-columns:1fr} }
   .panel{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); padding:26px 28px}
   .panel .ph{display:flex; align-items:baseline; justify-content:space-between; gap:14px; margin-bottom:18px}
-  .panel .ph h2{margin:0; font-size:19px}
+  .panel .ph h2{margin:0; font-size:var(--fs-h2-lg)}
   .panel .ph .mono{font-size:12px; color:var(--ink-3)}
   .bar{display:flex; height:22px; border-radius:11px; overflow:hidden; background:var(--surface-3)}
   .bar i{display:block; transition:width var(--dur-4) var(--ease-out)}
@@ -372,6 +377,7 @@ main:focus{outline:none}
   .upnext .u .t{font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .upnext .u .a{font-size:13.5px; color:var(--ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .upnext .u .h{margin-top:10px; font-size:12px; font-family:var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .upnext .u .h{color:var(--accent)} .upnext .u .h.sure{color:var(--ok)}
   .seehead{display:flex; align-items:baseline; justify-content:space-between; gap:14px; margin-bottom:14px}
   .seehead h2{margin:0}
   .seehead .more{appearance:none; border:0; background:none; color:var(--accent); font:inherit;
@@ -442,7 +448,7 @@ main:focus{outline:none}
   .uh.open .chev{transform:rotate(-135deg)}
   .uhbody{padding:2px 14px 16px; overflow-x:auto}
   /* The modules were written as whole screens: keep them inside a 390px sheet. */
-  .uhbody h2{font-size:15px; margin-top:18px}
+  .uhbody h2{font-size:var(--fs-h3); margin-top:18px}
   .uhbody .card,.uhbody .panel{padding:14px; border-radius:var(--r-2)}
   .uhbody table{max-width:100%}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-4); padding:26px 28px 28px; box-shadow:var(--shadow-2)}
@@ -738,7 +744,7 @@ main:focus{outline:none}
   dialog.infosheet{max-width:min(440px, calc(100vw - 32px)); background:var(--surface); color:var(--ink);
        border:1px solid var(--line); border-radius:var(--r); padding:18px 20px; box-shadow:var(--shadow-2)}
   dialog.infosheet::backdrop{background:rgba(0,0,0,.5)}
-  dialog.infosheet h2{margin:0 0 10px; font-size:18px}
+  dialog.infosheet h2{margin:0 0 10px; font-size:var(--fs-h2)}
   .infobody{font-size:var(--fs-small); color:var(--ink-2); line-height:1.6; margin-bottom:14px}
   .infobody p{margin:0 0 8px}
   /* ---------- "How this works" (UI-1) ----------
@@ -776,6 +782,12 @@ main:focus{outline:none}
   .es-phone .empty-state b{font-size:15px; margin-bottom:2px}
   .es-phone .empty-state p{margin:0; max-width:none; font-size:var(--fs-small)}
 }
+
+  /* The count beside a section's h2 (Tidy, Hidden), and the rows under a New
+     section's note: moved out of inline styles (DESIGN-PLAN L7). */
+  h2 .mono.h2n{color:var(--ink-3); font-size:14px}
+  .rows.newrows{margin-top:10px}
+  .why.untagnote{margin-top:8px}
   /* ---------- inbox: the swipeable card ---------- */
   .deck{position:relative; margin-top:4px}
   /* A sliver of the next track behind the top card, so the deck reads as a
@@ -947,6 +959,28 @@ main:focus{outline:none}
 .already p { margin: 0 0 10px; color: var(--ink-2); }
 .already .rowbtns { margin: 0; }
 .already .b.warn, .cardmore .b.warn { color: var(--warn); border-color: var(--warn); }
+
+/* ---- File's card and its helpers, moved out of inline styles (DESIGN-PLAN L7).
+   Ids and doubled classes keep them as strong as the inline styles they replace,
+   so a later partial's media query doesn't win where it lost before. ---- */
+#rollCard{margin:0 0 16px}
+#rollCard > p{margin:0 0 8px}
+#rollCard .rows{max-height:220px; overflow:auto}
+#rollCard .rowbtns{margin-top:10px}
+.card.surebatch.surebatch{margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap}
+.counter.filecount{margin:0 0 16px}
+.filecount .likedwhen{font-family:var(--mono); font-size:var(--fs-label); letter-spacing:.12em; text-transform:uppercase; color:var(--accent)}
+#swipeCard h2.cardq{margin:0 0 20px; font-size:var(--fs-title); font-weight:800; letter-spacing:-.025em}
+#swipeCard .pick[data-sel]{border-color:var(--accent); background:var(--surface-2)}
+#swipeCard .why.nopick{margin-top:22px}
+#swipeCard .rowbtns.extrasel{margin-top:10px}
+#swipeCard .rowbtns.fileacts{margin-top:22px}
+.prog.fileprog{margin-top:16px}
+.empty.done svg rect:nth-child(1){fill:var(--m0)}
+.empty.done svg rect:nth-child(2){fill:var(--m1)}
+.empty.done svg rect:nth-child(3){fill:var(--m2)}
+.empty.done svg rect:nth-child(4){fill:var(--m3)}
+.empty.done svg rect:nth-child(5){fill:var(--m4)}
 /* Library (UI-E, docs/BUILD-5-PLAN.md §4.1): compact playlist rows, the Suggested
    section, the detail sheet, and the way back on New playlists / Shuffle. */
   .libnav{background:none; padding:0; border-radius:0; width:auto; display:flex; align-items:center; gap:10px; overflow:visible}
@@ -978,7 +1012,7 @@ main:focus{outline:none}
 
   /* The detail sheet. */
   .plsheet .pls-head{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px 10px; flex:none}
-  .plsheet .pls-head h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0;
+  .plsheet .pls-head h2{font-family:var(--display); font-size:var(--fs-h2-lg); font-weight:800; letter-spacing:-.02em; margin:0;
           overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .pls-body{padding:0 18px calc(24px + var(--sab, 0px)); overflow-y:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:18px; min-height:0}
   .pls-sec h3{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:600; margin:0 0 6px}
@@ -1029,7 +1063,7 @@ main:focus{outline:none}
   .srcgrid{display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; align-items:start}
   .srccard{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); padding:18px 20px 20px; min-width:0}
   .srchead{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px}
-  .srchead h2{margin:0; font-size:17px}
+  .srchead h2{margin:0; font-size:var(--fs-h2-md)}
   .srcline{color:var(--ink-2); font-size:13.5px; margin:0 0 14px}
   .srccard .rowbtns{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px}
   .srccard input:not([type]), .srccard input[type="text"]{flex:1 1 180px; min-width:0; width:auto}
@@ -1070,7 +1104,7 @@ main:focus{outline:none}
 
   /* New playlists: section headings (were inline styles) and the proposal
      card's sample tracks. The card's left-edge strip is 65-proposals.css. */
-  h2.newsec{margin:22px 0 6px; font-size:18px}
+  h2.newsec{margin:22px 0 6px; font-size:var(--fs-h2)}
   .rows ~ .empty-state.compact{margin-top:22px}
   .row.prop{padding-left:20px}
   .prop-eg{list-style:none; counter-reset:eg; margin:8px 0 0; padding:0; display:grid; gap:3px; font-size:var(--fs-small, 13px)}
@@ -1106,6 +1140,12 @@ main:focus{outline:none}
   /* §7.7 M3: a Wrong place row found by listening, not by tags. */
   .bysound{display:inline-block; margin-right:6px; padding:1px 7px; border-radius:999px;
     font-size:var(--fs-small, 12px); font-weight:600; color:var(--accent); border:1px solid currentColor; vertical-align:1px}
+  /* Moved out of tidy.mjs's inline styles (DESIGN-PLAN L7). */
+  .row .acts.xacts{margin-top:8px}
+  .swap > .mono{color:var(--ink-3)}
+  .row .sub.hot{color:var(--accent)}
+  .row .tagrow{flex-basis:100%; margin-top:6px}
+  .row .tagrow > .rowbtns{margin-top:6px}
   /* New playlists: proposals by sound (docs/AUDIO-BUILD-PLAN.md WP-H2,
      UI-BUILD-PLAN §2.8). One row shape for all three, told apart by a strip
      down the left edge: a hybrid blends two hues, "new genre?" is broken, a
@@ -1137,10 +1177,10 @@ main:focus{outline:none}
      Doubled classes so these win over `.settings-body h3` and `.uhbody h2`,
      the sheet's own heading rules, as the inline styles did. In the sheet the
      headings step down a size so a 390 px sheet doesn't read as a full page. */
-  h2.eng-h2.eng-h2{margin:0 0 12px; font-size:19px}
+  h2.eng-h2.eng-h2{margin:0 0 12px; font-size:var(--fs-h2-lg)}
   h2.eng-h2.eng-h2-tight{margin-bottom:6px}
   h3.eng-h3.eng-h3{margin:18px 0 6px; font-size:16px}
-  .uhbody h2.eng-h2.eng-h2{font-size:17px}
+  .uhbody h2.eng-h2.eng-h2{font-size:var(--fs-h2-md)}
   .uhbody h3.eng-h3.eng-h3{font-size:15px}
   /* The rung tag keeps its words together and drops under the heading when
      there's no room beside it, instead of wrapping as "a few / buckets". */
@@ -1227,7 +1267,7 @@ main:focus{outline:none}
             transition:transform var(--dur-2) ease}
   .settings.open{transform:translateX(0); visibility:visible}
   .settings-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); flex:none}
-  .settings-head h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0}
+  .settings-head h2{font-family:var(--display); font-size:var(--fs-h2-lg); font-weight:800; letter-spacing:-.02em; margin:0}
   .settings-body{padding:22px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
                  display:flex; flex-direction:column; gap:28px}
   .grabber{display:none; width:38px; height:4px; border-radius:3px; background:var(--line-2); margin:9px auto 0; flex:none}
@@ -1361,6 +1401,13 @@ main:focus{outline:none}
     .mx-order > div{flex-wrap:wrap; gap:4px 10px}
     .mx-order .t{flex:1 1 60%; min-width:0; overflow-wrap:anywhere}
   }
+
+/* Shuffle's own spacing, moved out of shuffle.mjs's inline styles (DESIGN-PLAN L7). */
+.lede.shufsrc{margin-top:-8px}
+#syncAllSongs{margin-left:6px}
+.rowbtns.shufacts{margin-bottom:22px}
+.rowbtns.shufopts{margin:-12px 0 18px}
+.lede.shufstat.shufstat{margin:-10px 0 20px; font-size:var(--fs-body)}
   /* ---------- Discover by sound (core/audio/discover.mjs) ----------
      Drawn only once a pick has been heard with listening on; without that the
      Discover card is laid out exactly as before. */
@@ -1412,7 +1459,7 @@ main:focus{outline:none}
      A quiet summary card above the deck. It only exists when there is something to say. */
   .digest{margin:0 0 16px; padding:14px 16px}
   .digest .dg-top{display:flex; align-items:center; justify-content:space-between; gap:12px}
-  .digest h2{margin:0; font-family:var(--mono); font-size:11.5px; font-weight:600; letter-spacing:.12em;
+  .digest h2{margin:0; font-family:var(--mono); font-size:var(--fs-label); font-weight:600; letter-spacing:.12em;
              text-transform:uppercase; color:var(--accent)}
   .digest .dg-x{flex:none; display:inline-flex; align-items:center; justify-content:center; min-width:32px; min-height:32px;
                 border:0; border-radius:var(--r); background:none; color:var(--ink-3); cursor:pointer; font-size:14px}
@@ -1591,12 +1638,12 @@ main:focus{outline:none}
     /* The header already names the screen here (#mtitle), so the page's own
        title would only say it again, 90px further down. Kept for screen readers. */
     #main > h1{position:absolute; width:1px; height:1px; margin:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap}
-    h2{font-size:16px; margin-top:24px}
+    h2{font-size:var(--fs-h2-sm); margin-top:24px}
     .lede{font-size:14px}
     .card{padding:18px 18px 20px; border-radius:var(--r-3)}
     .split{gap:10px; margin-bottom:18px}
     .panel{padding:18px 19px; border-radius:var(--r-3)}
-    .panel .ph h2{font-size:17px}
+    .panel .ph h2{font-size:var(--fs-h2-md)}
     .key{gap:8px 14px; font-size:13px}
     .upnext{grid-template-columns:1fr 1fr; gap:10px}
     .upnext .u .cov{font-size:38px}
@@ -1774,7 +1821,7 @@ main:focus{outline:none}
      A card above the deck, only on an account whose Score run measured that answers help. */
   .teach{margin:0 0 16px; padding:14px 16px}
   .teach .teach-h{display:flex; align-items:center; justify-content:space-between; gap:12px}
-  .teach h2{margin:0; font-family:var(--mono); font-size:11.5px; font-weight:600; letter-spacing:.12em;
+  .teach h2{margin:0; font-family:var(--mono); font-size:var(--fs-label); font-weight:600; letter-spacing:.12em;
             text-transform:uppercase; color:var(--accent)}
   .teach .teach-x{flex:none; display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px;
                   border:0; border-radius:var(--r); background:none; color:var(--ink-3); cursor:pointer; font-size:14px}
@@ -1930,7 +1977,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-0658</span>
+    <span class="mono">build 2026-11-18-1117</span>
   </p>
 
   <div class="feat">
@@ -2023,7 +2070,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0658</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1117</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2133,7 +2180,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-0658. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-1117. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5297,7 +5344,7 @@ function upNextHTML({ S, R, esc, hueOf, filePicks, pickBacked }) {
   const at = Math.min(S.inboxAt ?? 0, R.backlog.length - 1);
   const upNext = R.backlog.map((t, i) => [t, i]).slice(at + 1, at + 9);
   if (!upNext.length) return '';
-  return `<div class="seehead"><h2 style="margin:0">Up next</h2></div>
+  return `<div class="seehead"><h2>Up next</h2></div>
     <div class="upnext strip">${upNext.map(([t, i]) => {
       const best = (filePicks ? filePicks(t) : t.suggest ?? [])[0];
       // Green and "Sure" only for a pick sound or filing history backs (USER-REVIEW item 2).
@@ -5309,7 +5356,7 @@ function upNextHTML({ S, R, esc, hueOf, filePicks, pickBacked }) {
       return `<button class="u" data-act="goinbox" data-goinbox="${i}" title="${esc(t.title)} — ${esc(t.artist)}">${cover}<span class="bd">
         <span class="t">${esc(t.title)}</span>
         <span class="a">${esc(t.artist)}</span>
-        <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
+        <span class="h${strong ? ' sure' : ''}">${best
           ? `→ ${esc(best.name)} · ${strong ? 'Sure' : best.score >= 0.45 ? 'Likely' : 'Unsure'}` : '→ no confident pick'}</span>
       </span></button>`;
     }).join('')}</div>`;
@@ -5800,13 +5847,13 @@ function rollForwardHTML({ S, esc }) {
   const head = alike ? `<b>${rf.rows.length} more</b> waiting, by ${esc(rf.artist)} or sounding or released alike`
     : `<b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed`;
   const note = r => r.how === 'sound' ? ' <span class="sub">sounds alike</span>' : r.how === 'label' ? ' <span class="sub">same label</span>' : '';
-  return `<div class="card" id="rollCard" style="margin:0 0 16px">
-    <p style="margin:0 0 8px">${head}. Put ${
+  return `<div class="card" id="rollCard">
+    <p>${head}. Put ${
       rf.rows.length === 1 ? 'it' : 'them'} in ${where} too?</p>
-    <div class="rows" style="max-height:220px; overflow:auto">${rf.rows.map(r => `
+    <div class="rows">${rf.rows.map(r => `
       <label class="check-row"><input type="checkbox" data-act="rollpick" data-rollpick="${esc(r.id)}" ${rf.off.has(r.id) ? '' : 'checked'}>
         ${esc(r.title)}${note(r)}</label>`).join('')}</div>
-    <div class="rowbtns" style="margin-top:10px">
+    <div class="rowbtns">
       <button class="b sm p" data-act="roll" data-roll="go" ${on ? '' : 'disabled'}>File ${on} into ${where}</button>
       <button class="b sm" data-act="roll" data-roll="no">Not now</button>
     </div>
@@ -5942,7 +5989,7 @@ function sureBatchHTML(ctx) {
   // E1: a batch that stopped partway is offered again by its toast ("Retry the
   // rest"); the card below carries on the same History group (DESIGN-PLAN C1).
   if (n < 2) return '';
-  return `<div class="card surebatch" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
+  return `<div class="card surebatch">
     <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
     <button class="b sm p" data-act="filesure">File the ${esc(String(n))} sure ones</button>
   </div>`;
@@ -6064,11 +6111,11 @@ function view(ctx) {
   if (!rows.length) return `<h1>File</h1>${digestHTML(ctx)}
     <div class="empty done">
       <svg viewBox="0 0 32 32" aria-hidden="true">
-        <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
-        <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" style="fill:var(--m1)"/>
-        <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7" style="fill:var(--m2)"/>
-        <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/>
-        <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
+        <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="19" width="12" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7"/>
       </svg>
       <b>That's the lot.</b>Every liked song has been filed. Nothing left to file.</div>`;
 
@@ -6108,8 +6155,8 @@ function view(ctx) {
     : '';
 
   // The teach questions (BUILD-6 SG, app/teach.js): '' unless this account's Score run said they help.
-  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
-      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">liked ${esc(t.added)}${t.inPl?.length ? ` · already in ${t.inPl.slice(0, 2).map(p => esc(p.name)).join(', ')}${t.inPl.length > 2 ? ` +${t.inPl.length - 2}` : ''}` : ''}</span>
+  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter filecount">
+      <span class="likedwhen">liked ${esc(t.added)}${t.inPl?.length ? ` · already in ${t.inPl.slice(0, 2).map(p => esc(p.name)).join(', ')}${t.inPl.length > 2 ? ` +${t.inPl.length - 2}` : ''}` : ''}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
     <div class="deck">
@@ -6119,7 +6166,7 @@ function view(ctx) {
           <span class="verdict file">${S.fileSel.size ? `${S.fileSel.size} playlist${S.fileSel.size>1?'s':''}` : best ? esc(best.name) : 'No pick'}</span>
           <span class="verdict skip">Skip</span>
         </div>
-        <h2 style="margin:0 0 20px; font-size:26px; font-weight:800; letter-spacing:-.025em">Where does this one go?</h2>
+        <h2 class="cardq">Where does this one go?</h2>
         <div class="now">
           <div class="artwrap">
             ${artHTML(t)}
@@ -6134,7 +6181,7 @@ function view(ctx) {
         ${fam ? `<p class="famline" data-family="${esc(fam.family)}"><b>${esc(famName)}</b> for sure. Which one?</p>` : ''}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
           <div class="pickw"><button class="pick ${fam ? (famIds.has(sg.id) ? 'twoway' : '') : n === 0 ? (pickBacked(sg) ? 'best' : 'lead') : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
-            ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
+            ${S.fileSel.has(sg.id) ? 'data-sel="1"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
               ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
@@ -6146,15 +6193,15 @@ function view(ctx) {
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
           </button><button class="nope" type="button" data-act="reject" data-reject="${esc(sg.id)}"
             title="Never suggest ${esc(sg.name)} for this track" aria-label="Never suggest ${esc(sg.name)} for this track"><span aria-hidden="true">✕</span></button></div>`).join('')}</div>`
-        : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
+        : `<p class="why nopick">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
         ${moods.length ? `<div class="alsofits" role="group" aria-label="Also fits">${moods.map(m =>
           `<button class="chip mood${S.fileSel.has(m.id) ? ' on' : ''}" data-act="selfile" data-selfile="${esc(m.id)}" aria-pressed="${S.fileSel.has(m.id)}">${S.fileSel.has(m.id) ? '✓ ' : ''}Also fits ${esc(m.name)}</button>`).join('')}</div>` : ''}
-        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
+        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).length ? `<div class="rowbtns extrasel">
           ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).map(id =>
             `<button class="chip" data-act="selfile" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
         </div>` : ''}
         ${alreadyHTML(ctx, t)}
-        <div class="rowbtns" style="margin-top:22px">
+        <div class="rowbtns fileacts">
           <button class="b big go grow" data-act="filesel" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
           <button class="b big" data-act="skip">Skip</button>
         </div>
@@ -6166,7 +6213,7 @@ function view(ctx) {
         </details>
       </div>
     </div>
-    <div class="prog" style="margin-top:16px"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
+    <div class="prog fileprog"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
     ${touch ? '' : `<div class="swipehint" role="note"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span>
       <span><b>1–3</b> pick · <b>Enter</b> file · <b>S</b> skip · <b>U</b> twice remove from Liked</span></div>`}`;
 }
@@ -6686,7 +6733,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-0658`,
+    `Betterfy engine score — build 2026-11-18-1117`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7777,13 +7824,13 @@ function hiddenView(c) {
   const gRow = r => `<div class="row" data-key="${esc('hg:' + r.id)}">${c.thumbHTML({ id: r.id, title: r.track.name, art: r.track.art })}<div class="main">
       <div class="ttl">${esc(r.track.name)} <span class="sub">— ${esc(artistLine(r.track))}</span></div>${where(c, r)}</div></div>`;
   return `${lede}${findBlock(c)}
-    <h2>Shown as another version <span class="mono" style="color:var(--ink-3);font-size:14px">${vers.length}</span></h2>
+    <h2>Shown as another version <span class="mono h2n">${vers.length}</span></h2>
     <p class="sub hd-status" role="status">${status}</p>
     <div class="rowbtns">${run}</div>
     <div class="rows">${vers.slice(0, c.shownOf('hidden-v')).map(vRow).join('')
       || (prog.checked ? c.emptyState('Nothing hidden so far', 'Every song checked shows up in search as the copy you have.', { compact: true }) : '')}</div>
     ${c.moreButton('hidden-v', vers.length)}
-    ${gone.length ? `<h2>Search can’t find these <span class="mono" style="color:var(--ink-3);font-size:14px">${gone.length}</span></h2>
+    ${gone.length ? `<h2>Search can’t find these <span class="mono h2n">${gone.length}</span></h2>
       <p class="sub">Not in Spotify’s search under any version: usually pulled, or not available in your country. Open the playlist to play them while they last.</p>
       <div class="rows">${gone.slice(0, c.shownOf('hidden-g')).map(gRow).join('')}</div>${c.moreButton('hidden-g', gone.length)}` : ''}`;
 }
@@ -8001,7 +8048,7 @@ function secDupes(c) {
   const within = onlyPl(c, R.within, x => x.playlistId);
   const exact = within.filter(x => x.verdict === 'same-recording');
   const clash = within.filter(x => x.verdict !== 'same-recording');
-  const sec = (title, list, note, key) => `<h2>${esc(title)} <span class="mono" style="color:var(--ink-3);font-size:14px">${list.length}</span></h2>
+  const sec = (title, list, note, key) => `<h2>${esc(title)} <span class="mono h2n">${list.length}</span></h2>
     <p class="lede">${note}</p>
     <div class="rows">${list.slice(0, shownOf(key)).map(c => `<div class="row" data-flip data-key="${esc(`dup:${c.playlistId}:${c.options.map(o => o.id).join(',')}`)}">${thumbHTML(c)}<div class="main">
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
@@ -8034,7 +8081,7 @@ function secCross(c) {
       <div class="ttl">${esc(c.title)} <span class="sub">— ${esc(c.artist ?? '')}</span></div>
       ${c.mixedRecordings ? '<div class="why">Different recordings across these playlists.</div>' : c.mixedReleases ? '<div class="why">Same song, different pressings.</div>' : ''}
       ${crossNote(c)}
-      <div class="acts" style="margin-top:8px">${c.placements.map(p =>
+      <div class="acts xacts">${c.placements.map(p =>
         `<button class="chip${p.playlistId === c.keeper ? ' keeper' : ''}" data-act="xpl" data-xpl="${esc(p.playlistId)}" data-xtr="${esc(p.trackId)}" title="${esc(p.axis)}${p.playlistId === c.keeper ? ' — the best fit' : ''}">${p.playlistId === c.keeper ? '★ ' : ''}${esc(p.playlist)}</button>`).join('')}
         ${c.keeper && c.suspicion >= 2 ? `<button class="b sm" data-act="xkeep" data-xkeeper="${esc(c.keeper)}" data-xtr="${esc(c.placements[0].trackId)}" data-xall="${esc(c.placements.map(p => p.playlistId).join(','))}">Keep only in ${esc(c.placements.find(p => p.playlistId === c.keeper)?.playlist ?? '')}</button>` : ''}</div>
     </div></div>`).join('')
@@ -8099,7 +8146,7 @@ function soundRow(c, x) {
         <div class="ttl">${esc(t.title)} <span class="sub">— ${esc(t.artist)}</span></div>
         <div class="tssound"><span class="bysound">by sound</span> ${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
         <div class="swap"><span class="from">${esc(x.fromName)}</span><span class="arw">→</span><span class="to">${esc(x.toName)}</span>
-          <span class="mono" style="color:var(--ink-3)">${x.near.from} → ${x.near.to} of ${x.near.k} sound-alikes</span></div>
+          <span class="mono">${x.near.from} → ${x.near.to} of ${x.near.k} sound-alikes</span></div>
         <div class="why">${esc(x.why.join('; '))}.</div>
       </div><div class="acts">
         <button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-mvtier="${esc(x.band)}" data-act="move" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.from)}" data-mvto="${esc(x.to)}">${done ? 'Moved' : 'Move'}</button>
@@ -8152,18 +8199,18 @@ function secMisfile(c) {
       return `<div class="row ${done ? 'done' : ''}" data-flip data-key="${esc(`mf:${x.id}:${x.currentPlaylistId}`)}">${thumbHTML(x)}<div class="main">
         <div class="ttl">${esc(x.title)} <span class="sub">— ${esc(x.artist ?? '')}</span></div>
         ${to ? `<div class="swap"><span class="from">${esc(x.current)}</span><span class="arw">→</span><span class="to">${esc(to.name)}</span>
-          <span class="mono" style="color:var(--ink-3)">${esc(mfFitWord(x.currentScore))} → ${esc(mfFitWord(to.score))} fit</span></div>`
+          <span class="mono">${esc(mfFitWord(x.currentScore))} → ${esc(mfFitWord(to.score))} fit</span></div>`
         : `<div class="sub">in <b>${esc(x.current)}</b> <span class="mono">${esc(mfFitWord(x.currentScore))} fit</span></div>`}
-        ${playedALot ? `<div class="sub" style="color:var(--accent)">You play this a lot right now — might be deliberate.</div>` : ''}
+        ${playedALot ? `<div class="sub hot">You play this a lot right now — might be deliberate.</div>` : ''}
       </div><div class="acts">
         ${to ? `<button class="b sm ${done ? '' : 'go'}" ${done ? 'disabled' : ''} data-act="move" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(to.id)}" data-mvtier="${MF_TIER[S.mfBand] ?? ""}">${done ? 'Moved' : 'Move'}</button>` : ''}
         ${x.suggest.filter(sg => sg.id).slice(1, 2).map(sg =>
           `<button class="b sm" data-act="move" data-mvtr="${esc(x.id)}" data-mvfrom="${esc(x.currentPlaylistId)}" data-mvto="${esc(sg.id)}" data-mvtier="${MF_TIER[S.mfBand] ?? ""}">→ ${esc(sg.name)}</button>`).join('')}
         ${done ? '' : `<button class="b sm" data-act="mfkeep" data-mfkeep="${esc(x.id)}" data-mffrom="${esc(x.currentPlaylistId)}" data-mfaway="${esc(x.suggest.filter(sg => sg.id).slice(0, 2).map(sg => sg.id).join(','))}">Keep here</button>`}
         <button class="b sm" data-dplay="${esc(x.id)}" data-ddur="${x.dur ?? 0}">Play</button></div>
-      ${x.tags?.length ? `<div style="flex-basis:100%; margin-top:6px">
+      ${x.tags?.length ? `<div class="tagrow">
         ${tagChips(x.tags, x.thinData)}
-        <div class="rowbtns" style="margin-top:6px">${(x.artists ?? []).map(a =>
+        <div class="rowbtns">${(x.artists ?? []).map(a =>
           `<button class="b sm" data-editartist="${esc(a.id)}">${S.editingArtist === a.id ? 'Close' : 'Wrong tags?'} ${esc(a.name)}</button>`).join('')}</div>
         ${!editorDrawn && S.editingArtist && x.artists?.some(a => a.id === S.editingArtist)
           ? (editorDrawn = true, tagEditorHTML(S.editingArtist, x.artists.find(a => a.id === S.editingArtist).name)) : ''}
@@ -9847,17 +9894,17 @@ function view(ctx) {
   S.shufOrderMode = mix && !mix.pending ? S.shufMode : null;
   return `<h1>Shuffle</h1>
     <p class="lede">Spotify's shuffle clusters artists; this spaces them out.${ctx.infoBtn?.('shuffle', 'Shuffle', `<p>This maximises the distance between tracks by the same artist and the same album, then writes the result as a playlist you play with Spotify's own shuffle <b>off</b>.</p>`) ?? ''}</p>
-    <p class="lede" style="margin-top:-8px">${allSongs
+    <p class="lede shufsrc">${allSongs
       ? `Shuffling from <b>${esc(allSongs.name)}</b> by default — everything in your library, kept in one place.`
       : `To shuffle everything you own, first gather it into one playlist.`}
-      <button class="b sm" data-act="syncAllSongs" id="syncAllSongs" style="margin-left:6px">${allSongs ? 'Refresh it' : 'Make it'}</button></p>
-    <div class="rowbtns" style="margin-bottom:22px">
+      <button class="b sm" data-act="syncAllSongs" id="syncAllSongs">${allSongs ? 'Refresh it' : 'Make it'}</button></p>
+    <div class="rowbtns shufacts">
       <select id="shufPl" data-act="shufPl" aria-label="Playlist to shuffle">${pls.map(x => `<option value="${esc(x.id)}" ${x.id===sel?'selected':''}>${esc(x.name)} (${x.tracks.length})</option>`).join('')}</select>
       <button class="b p" id="shufApply" ${S.shufOrder.length?'':'disabled'} data-act="shufApply">Create shuffled playlist</button>
       <button class="b" data-act="shufPlay" id="shufPlay" ${S.shufOrder.length?'':'disabled'}>Create and play</button>
       <button class="b sm" data-act="shufAgain" id="shufAgain" ${order.length?'':'disabled'}>Shuffle again</button>${mixPick}
     </div>
-    ${order.length ? `<div class="rowbtns" style="margin:-12px 0 18px">${canFlow ? `
+    ${order.length ? `<div class="rowbtns shufopts">${canFlow ? `
       <label class="pls-f"><input type="checkbox" data-act="shufFlow" ${flow ? 'checked' : ''}> Keep neighbours alike</label>` : ''}
       <label class="pls-f"><input type="checkbox" data-act="shufRedisc" ${S.shufRedisc ? 'checked' : ''}> Rediscover: what you have not been playing first</label></div>` : ''}
     ${mix ? mixHTML(mix, tracks, p, ctx) : good ? `<div class="vs">
@@ -9866,7 +9913,7 @@ function view(ctx) {
       <div class="good"><div class="l">Betterfy</div><div class="n">${good.minGap}</div>
         <div class="d">${good.minGap === 1 ? 'slot' : 'slots'} minimum, ${good.within3 ? `${good.within3} ${good.within3 === 1 ? 'pair' : 'pairs'} within three` : 'nothing within three'}, average gap ${good.avgGap}</div></div>
     </div>
-    <p class="lede" style="margin:-10px 0 20px; font-size:14px">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
+    <p class="lede shufstat">${order.length} tracks · ${new Set(tracks.map(artistOf)).size} artists${tracks.length!==p.tracks.length?` · ${p.tracks.length-tracks.length} near-duplicates dropped`:''}</p>
     <details class="how orderprev"><summary>Preview the order</summary>
     <div class="order">${order.slice(0,40).map((t,i) => `<div data-flip data-key="${esc(`o:${t.id}`)}">
       <span class="i">${String(i+1).padStart(3,'0')}</span>
@@ -10229,7 +10276,7 @@ function gapsSoundSection(c) {
   if (!S && !eng) return '';
   if (!S) return `<h2 class="newsec">By sound</h2>
     <p class="why">Groups the Engine found among your unfiled tracks. Only suggestions: nothing is made until you tap.</p>
-    <div class="rows" style="margin-top:10px">${eng}</div>`;
+    <div class="rows newrows">${eng}</div>`;
   const made = name => GAPS.made.has(String(name).toLowerCase());
   const hybrids = S.hybrids.map((h, i) => proposalCard(c, { ...h, kind: 'hybrid', i, done: made(h.name) })).join('');
   const orphans = S.orphans.map((o, i) => proposalCard(c, { ...o, kind: 'new', i, done: GAPS.filed.has('o' + i) })).join('');
@@ -10238,7 +10285,7 @@ function gapsSoundSection(c) {
   return `<h2 class="newsec">By sound</h2>
     <p class="why">From listening to your unfiled tracks and comparing them with your own genre playlists. Only
       suggestions: nothing is made or added until you tap.</p>
-    <div class="rows" style="margin-top:10px">${hybrids}${orphans}${eng}${picks}</div>`;
+    <div class="rows newrows">${hybrids}${orphans}${eng}${picks}</div>`;
 }
 
 /**
@@ -10272,7 +10319,7 @@ function gapsSections(c) {
         ${esc(s.name)} stays as it is.</div>
     </div><div class="acts"><button class="b sm p" data-act="wizgap" data-wizgap="${i}">Split into playlists…</button> ${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
       : `<button class="b sm" data-act="split" data-split="${i}:${k}">Make “${esc(x.label)}” (${n(x.size)})</button>`).join(' ')}</div></div>`).join('');
-  const untagged = GAPS.untagged ? `<p class="why" style="margin-top:8px">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
+  const untagged = GAPS.untagged ? `<p class="why untagnote">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
       outside your genre playlists have no genre in their artists' tags, so they can't be placed in one here.
       The groups at the bottom are where those turn up.</p>` : '';
   return { card: '', untagged, sections: [
@@ -10365,7 +10412,7 @@ function view(c) {
     none: 'no unfiled tracks sit together outside your playlists' }];
   const sec = x => `<h2 class="newsec">${esc(x.title)}</h2>
     <p class="why">${x.why}</p>
-    <div class="rows" style="margin-top:10px">${x.rows}</div>`;
+    <div class="rows newrows">${x.rows}</div>`;
   const full = sections.filter(x => x.rows), empty = sections.filter(x => !x.rows);
   const sound = gapsSoundSection(c);
   // Every section empty is one answer. Some empty is one line under the rest,
@@ -10879,7 +10926,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-0658';
+const BUILD = '2026-11-18-1117';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11217,7 +11264,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-0658', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1117', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12002,7 +12049,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-0658');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1117');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15647,7 +15694,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-0658';
+    s.src = 'engine.js?v=2026-11-18-1117';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15669,7 +15716,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-0658');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1117');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16380,7 +16427,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-0658';
+    s.src = 'audio.js?v=2026-11-18-1117';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16434,7 +16481,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0658', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1117', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17594,7 +17641,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0658', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1117', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;

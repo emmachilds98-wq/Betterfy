@@ -189,13 +189,13 @@ export function hiddenView(c) {
   const gRow = r => `<div class="row" data-key="${esc('hg:' + r.id)}">${c.thumbHTML({ id: r.id, title: r.track.name, art: r.track.art })}<div class="main">
       <div class="ttl">${esc(r.track.name)} <span class="sub">— ${esc(artistLine(r.track))}</span></div>${where(c, r)}</div></div>`;
   return `${lede}${findBlock(c)}
-    <h2>Shown as another version <span class="mono" style="color:var(--ink-3);font-size:14px">${vers.length}</span></h2>
+    <h2>Shown as another version <span class="mono h2n">${vers.length}</span></h2>
     <p class="sub hd-status" role="status">${status}</p>
     <div class="rowbtns">${run}</div>
     <div class="rows">${vers.slice(0, c.shownOf('hidden-v')).map(vRow).join('')
       || (prog.checked ? c.emptyState('Nothing hidden so far', 'Every song checked shows up in search as the copy you have.', { compact: true }) : '')}</div>
     ${c.moreButton('hidden-v', vers.length)}
-    ${gone.length ? `<h2>Search can’t find these <span class="mono" style="color:var(--ink-3);font-size:14px">${gone.length}</span></h2>
+    ${gone.length ? `<h2>Search can’t find these <span class="mono h2n">${gone.length}</span></h2>
       <p class="sub">Not in Spotify’s search under any version: usually pulled, or not available in your country. Open the playlist to play them while they last.</p>
       <div class="rows">${gone.slice(0, c.shownOf('hidden-g')).map(gRow).join('')}</div>${c.moreButton('hidden-g', gone.length)}` : ''}`;
 }

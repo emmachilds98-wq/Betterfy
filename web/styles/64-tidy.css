@@ -14,7 +14,7 @@
 
   /* New playlists: section headings (were inline styles) and the proposal
      card's sample tracks. The card's left-edge strip is 65-proposals.css. */
-  h2.newsec{margin:22px 0 6px; font-size:18px}
+  h2.newsec{margin:22px 0 6px; font-size:var(--fs-h2)}
   .rows ~ .empty-state.compact{margin-top:22px}
   .row.prop{padding-left:20px}
   .prop-eg{list-style:none; counter-reset:eg; margin:8px 0 0; padding:0; display:grid; gap:3px; font-size:var(--fs-small, 13px)}
@@ -50,3 +50,9 @@
   /* §7.7 M3: a Wrong place row found by listening, not by tags. */
   .bysound{display:inline-block; margin-right:6px; padding:1px 7px; border-radius:999px;
     font-size:var(--fs-small, 12px); font-weight:600; color:var(--accent); border:1px solid currentColor; vertical-align:1px}
+  /* Moved out of tidy.mjs's inline styles (DESIGN-PLAN L7). */
+  .row .acts.xacts{margin-top:8px}
+  .swap > .mono{color:var(--ink-3)}
+  .row .sub.hot{color:var(--accent)}
+  .row .tagrow{flex-basis:100%; margin-top:6px}
+  .row .tagrow > .rowbtns{margin-top:6px}

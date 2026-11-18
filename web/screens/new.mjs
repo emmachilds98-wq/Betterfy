@@ -29,7 +29,7 @@ function gapsSoundSection(c) {
   if (!S && !eng) return '';
   if (!S) return `<h2 class="newsec">By sound</h2>
     <p class="why">Groups the Engine found among your unfiled tracks. Only suggestions: nothing is made until you tap.</p>
-    <div class="rows" style="margin-top:10px">${eng}</div>`;
+    <div class="rows newrows">${eng}</div>`;
   const made = name => GAPS.made.has(String(name).toLowerCase());
   const hybrids = S.hybrids.map((h, i) => proposalCard(c, { ...h, kind: 'hybrid', i, done: made(h.name) })).join('');
   const orphans = S.orphans.map((o, i) => proposalCard(c, { ...o, kind: 'new', i, done: GAPS.filed.has('o' + i) })).join('');
@@ -38,7 +38,7 @@ function gapsSoundSection(c) {
   return `<h2 class="newsec">By sound</h2>
     <p class="why">From listening to your unfiled tracks and comparing them with your own genre playlists. Only
       suggestions: nothing is made or added until you tap.</p>
-    <div class="rows" style="margin-top:10px">${hybrids}${orphans}${eng}${picks}</div>`;
+    <div class="rows newrows">${hybrids}${orphans}${eng}${picks}</div>`;
 }
 
 /**
@@ -72,7 +72,7 @@ function gapsSections(c) {
         ${esc(s.name)} stays as it is.</div>
     </div><div class="acts"><button class="b sm p" data-act="wizgap" data-wizgap="${i}">Split into playlists…</button> ${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
       : `<button class="b sm" data-act="split" data-split="${i}:${k}">Make “${esc(x.label)}” (${n(x.size)})</button>`).join(' ')}</div></div>`).join('');
-  const untagged = GAPS.untagged ? `<p class="why" style="margin-top:8px">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
+  const untagged = GAPS.untagged ? `<p class="why untagnote">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
       outside your genre playlists have no genre in their artists' tags, so they can't be placed in one here.
       The groups at the bottom are where those turn up.</p>` : '';
   return { card: '', untagged, sections: [
@@ -165,7 +165,7 @@ export function view(c) {
     none: 'no unfiled tracks sit together outside your playlists' }];
   const sec = x => `<h2 class="newsec">${esc(x.title)}</h2>
     <p class="why">${x.why}</p>
-    <div class="rows" style="margin-top:10px">${x.rows}</div>`;
+    <div class="rows newrows">${x.rows}</div>`;
   const full = sections.filter(x => x.rows), empty = sections.filter(x => !x.rows);
   const sound = gapsSoundSection(c);
   // Every section empty is one answer. Some empty is one line under the rest,

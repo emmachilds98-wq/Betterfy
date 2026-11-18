@@ -52,6 +52,11 @@
     /* Type scale. Four sizes for running text, named so a screen's lede, its
        body and its small print agree with every other screen's. */
     --fs-lede:15px; --fs-body:14px; --fs-small:12.5px; --fs-micro:11px;
+    /* Headings (DESIGN-PLAN L7): every h2 takes one of these, so a screen's
+       title and a sheet's title agree without anyone matching pixels.
+       title = the File card's question; label = the small mono caps heads. */
+    --fs-title:26px; --fs-h2-lg:19px; --fs-h2:18px; --fs-h2-md:17px; --fs-h2-sm:16px;
+    --fs-h3:15px; --fs-label:11.5px;
     /* Controls: one height, so a select, a text box and a button on the same
        row line up without anyone nudging padding. */
     --ctl-h:40px; --ctl-h-sm:32px;

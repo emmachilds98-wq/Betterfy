@@ -291,7 +291,7 @@
   dialog.infosheet{max-width:min(440px, calc(100vw - 32px)); background:var(--surface); color:var(--ink);
        border:1px solid var(--line); border-radius:var(--r); padding:18px 20px; box-shadow:var(--shadow-2)}
   dialog.infosheet::backdrop{background:rgba(0,0,0,.5)}
-  dialog.infosheet h2{margin:0 0 10px; font-size:18px}
+  dialog.infosheet h2{margin:0 0 10px; font-size:var(--fs-h2)}
   .infobody{font-size:var(--fs-small); color:var(--ink-2); line-height:1.6; margin-bottom:14px}
   .infobody p{margin:0 0 8px}
   /* ---------- "How this works" (UI-1) ----------
@@ -329,3 +329,9 @@
   .es-phone .empty-state b{font-size:15px; margin-bottom:2px}
   .es-phone .empty-state p{margin:0; max-width:none; font-size:var(--fs-small)}
 }
+
+  /* The count beside a section's h2 (Tidy, Hidden), and the rows under a New
+     section's note: moved out of inline styles (DESIGN-PLAN L7). */
+  h2 .mono.h2n{color:var(--ink-3); font-size:14px}
+  .rows.newrows{margin-top:10px}
+  .why.untagnote{margin-top:8px}

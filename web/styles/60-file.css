@@ -169,3 +169,25 @@
 .already p { margin: 0 0 10px; color: var(--ink-2); }
 .already .rowbtns { margin: 0; }
 .already .b.warn, .cardmore .b.warn { color: var(--warn); border-color: var(--warn); }
+
+/* ---- File's card and its helpers, moved out of inline styles (DESIGN-PLAN L7).
+   Ids and doubled classes keep them as strong as the inline styles they replace,
+   so a later partial's media query doesn't win where it lost before. ---- */
+#rollCard{margin:0 0 16px}
+#rollCard > p{margin:0 0 8px}
+#rollCard .rows{max-height:220px; overflow:auto}
+#rollCard .rowbtns{margin-top:10px}
+.card.surebatch.surebatch{margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap}
+.counter.filecount{margin:0 0 16px}
+.filecount .likedwhen{font-family:var(--mono); font-size:var(--fs-label); letter-spacing:.12em; text-transform:uppercase; color:var(--accent)}
+#swipeCard h2.cardq{margin:0 0 20px; font-size:var(--fs-title); font-weight:800; letter-spacing:-.025em}
+#swipeCard .pick[data-sel]{border-color:var(--accent); background:var(--surface-2)}
+#swipeCard .why.nopick{margin-top:22px}
+#swipeCard .rowbtns.extrasel{margin-top:10px}
+#swipeCard .rowbtns.fileacts{margin-top:22px}
+.prog.fileprog{margin-top:16px}
+.empty.done svg rect:nth-child(1){fill:var(--m0)}
+.empty.done svg rect:nth-child(2){fill:var(--m1)}
+.empty.done svg rect:nth-child(3){fill:var(--m2)}
+.empty.done svg rect:nth-child(4){fill:var(--m3)}
+.empty.done svg rect:nth-child(5){fill:var(--m4)}

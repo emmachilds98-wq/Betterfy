@@ -17,3 +17,10 @@
     .mx-order > div{flex-wrap:wrap; gap:4px 10px}
     .mx-order .t{flex:1 1 60%; min-width:0; overflow-wrap:anywhere}
   }
+
+/* Shuffle's own spacing, moved out of shuffle.mjs's inline styles (DESIGN-PLAN L7). */
+.lede.shufsrc{margin-top:-8px}
+#syncAllSongs{margin-left:6px}
+.rowbtns.shufacts{margin-bottom:22px}
+.rowbtns.shufopts{margin:-12px 0 18px}
+.lede.shufstat.shufstat{margin:-10px 0 20px; font-size:var(--fs-body)}

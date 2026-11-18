@@ -61,12 +61,12 @@
     /* The header already names the screen here (#mtitle), so the page's own
        title would only say it again, 90px further down. Kept for screen readers. */
     #main > h1{position:absolute; width:1px; height:1px; margin:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap}
-    h2{font-size:16px; margin-top:24px}
+    h2{font-size:var(--fs-h2-sm); margin-top:24px}
     .lede{font-size:14px}
     .card{padding:18px 18px 20px; border-radius:var(--r-3)}
     .split{gap:10px; margin-bottom:18px}
     .panel{padding:18px 19px; border-radius:var(--r-3)}
-    .panel .ph h2{font-size:17px}
+    .panel .ph h2{font-size:var(--fs-h2-md)}
     .key{gap:8px 14px; font-size:13px}
     .upnext{grid-template-columns:1fr 1fr; gap:10px}
     .upnext .u .cov{font-size:38px}

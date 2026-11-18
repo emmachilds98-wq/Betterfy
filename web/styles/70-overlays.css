@@ -29,7 +29,7 @@
             transition:transform var(--dur-2) ease}
   .settings.open{transform:translateX(0); visibility:visible}
   .settings-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line); flex:none}
-  .settings-head h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0}
+  .settings-head h2{font-family:var(--display); font-size:var(--fs-h2-lg); font-weight:800; letter-spacing:-.02em; margin:0}
   .settings-body{padding:22px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
                  display:flex; flex-direction:column; gap:28px}
   .grabber{display:none; width:38px; height:4px; border-radius:3px; background:var(--line-2); margin:9px auto 0; flex:none}

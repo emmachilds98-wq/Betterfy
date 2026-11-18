@@ -51,13 +51,13 @@ export function rollForwardHTML({ S, esc }) {
   const head = alike ? `<b>${rf.rows.length} more</b> waiting, by ${esc(rf.artist)} or sounding or released alike`
     : `<b>${rf.rows.length} more by ${esc(rf.artist)}</b> waiting to be filed`;
   const note = r => r.how === 'sound' ? ' <span class="sub">sounds alike</span>' : r.how === 'label' ? ' <span class="sub">same label</span>' : '';
-  return `<div class="card" id="rollCard" style="margin:0 0 16px">
-    <p style="margin:0 0 8px">${head}. Put ${
+  return `<div class="card" id="rollCard">
+    <p>${head}. Put ${
       rf.rows.length === 1 ? 'it' : 'them'} in ${where} too?</p>
-    <div class="rows" style="max-height:220px; overflow:auto">${rf.rows.map(r => `
+    <div class="rows">${rf.rows.map(r => `
       <label class="check-row"><input type="checkbox" data-act="rollpick" data-rollpick="${esc(r.id)}" ${rf.off.has(r.id) ? '' : 'checked'}>
         ${esc(r.title)}${note(r)}</label>`).join('')}</div>
-    <div class="rowbtns" style="margin-top:10px">
+    <div class="rowbtns">
       <button class="b sm p" data-act="roll" data-roll="go" ${on ? '' : 'disabled'}>File ${on} into ${where}</button>
       <button class="b sm" data-act="roll" data-roll="no">Not now</button>
     </div>
@@ -193,7 +193,7 @@ export function sureBatchHTML(ctx) {
   // E1: a batch that stopped partway is offered again by its toast ("Retry the
   // rest"); the card below carries on the same History group (DESIGN-PLAN C1).
   if (n < 2) return '';
-  return `<div class="card surebatch" style="margin:0 0 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap">
+  return `<div class="card surebatch">
     <span><b>${n} are sure.</b> <span class="sub">The engine's checked answer for each is a single playlist.</span></span>
     <button class="b sm p" data-act="filesure">File the ${esc(String(n))} sure ones</button>
   </div>`;
@@ -315,11 +315,11 @@ export function view(ctx) {
   if (!rows.length) return `<h1>File</h1>${digestHTML(ctx)}
     <div class="empty done">
       <svg viewBox="0 0 32 32" aria-hidden="true">
-        <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
-        <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7" style="fill:var(--m1)"/>
-        <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7" style="fill:var(--m2)"/>
-        <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/>
-        <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
+        <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="9.6" width="12" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="14.3" width="16.5" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="19" width="12" height="3.4" rx="1.7"/>
+        <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7"/>
       </svg>
       <b>That's the lot.</b>Every liked song has been filed. Nothing left to file.</div>`;
 
@@ -359,8 +359,8 @@ export function view(ctx) {
     : '';
 
   // The teach questions (BUILD-6 SG, app/teach.js): '' unless this account's Score run said they help.
-  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
-      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">liked ${esc(t.added)}${t.inPl?.length ? ` · already in ${t.inPl.slice(0, 2).map(p => esc(p.name)).join(', ')}${t.inPl.length > 2 ? ` +${t.inPl.length - 2}` : ''}` : ''}</span>
+  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter filecount">
+      <span class="likedwhen">liked ${esc(t.added)}${t.inPl?.length ? ` · already in ${t.inPl.slice(0, 2).map(p => esc(p.name)).join(', ')}${t.inPl.length > 2 ? ` +${t.inPl.length - 2}` : ''}` : ''}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
     <div class="deck">
@@ -370,7 +370,7 @@ export function view(ctx) {
           <span class="verdict file">${S.fileSel.size ? `${S.fileSel.size} playlist${S.fileSel.size>1?'s':''}` : best ? esc(best.name) : 'No pick'}</span>
           <span class="verdict skip">Skip</span>
         </div>
-        <h2 style="margin:0 0 20px; font-size:26px; font-weight:800; letter-spacing:-.025em">Where does this one go?</h2>
+        <h2 class="cardq">Where does this one go?</h2>
         <div class="now">
           <div class="artwrap">
             ${artHTML(t)}
@@ -385,7 +385,7 @@ export function view(ctx) {
         ${fam ? `<p class="famline" data-family="${esc(fam.family)}"><b>${esc(famName)}</b> for sure. Which one?</p>` : ''}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
           <div class="pickw"><button class="pick ${fam ? (famIds.has(sg.id) ? 'twoway' : '') : n === 0 ? (pickBacked(sg) ? 'best' : 'lead') : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
-            ${S.fileSel.has(sg.id) ? 'style="border-color:var(--accent); background:var(--surface-2)"' : ''}>
+            ${S.fileSel.has(sg.id) ? 'data-sel="1"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
             <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
               ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
@@ -397,15 +397,15 @@ export function view(ctx) {
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
           </button><button class="nope" type="button" data-act="reject" data-reject="${esc(sg.id)}"
             title="Never suggest ${esc(sg.name)} for this track" aria-label="Never suggest ${esc(sg.name)} for this track"><span aria-hidden="true">✕</span></button></div>`).join('')}</div>`
-        : `<p class="why" style="margin-top:22px">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
+        : `<p class="why nopick">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>`}
         ${moods.length ? `<div class="alsofits" role="group" aria-label="Also fits">${moods.map(m =>
           `<button class="chip mood${S.fileSel.has(m.id) ? ' on' : ''}" data-act="selfile" data-selfile="${esc(m.id)}" aria-pressed="${S.fileSel.has(m.id)}">${S.fileSel.has(m.id) ? '✓ ' : ''}Also fits ${esc(m.name)}</button>`).join('')}</div>` : ''}
-        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).length ? `<div class="rowbtns" style="margin-top:10px">
+        ${soundNote(t, picks)}${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).length ? `<div class="rowbtns extrasel">
           ${[...S.fileSel].filter(id => !picks.some(sg => sg.id === id) && !moods.some(m => m.id === id)).map(id =>
             `<button class="chip" data-act="selfile" data-selfile="${esc(id)}" title="Remove">${esc(nameOf(id))} ✕</button>`).join('')}
         </div>` : ''}
         ${alreadyHTML(ctx, t)}
-        <div class="rowbtns" style="margin-top:22px">
+        <div class="rowbtns fileacts">
           <button class="b big go grow" data-act="filesel" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
           <button class="b big" data-act="skip">Skip</button>
         </div>
@@ -417,7 +417,7 @@ export function view(ctx) {
         </details>
       </div>
     </div>
-    <div class="prog" style="margin-top:16px"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
+    <div class="prog fileprog"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
     ${touch ? '' : `<div class="swipehint" role="note"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span>
       <span><b>1–3</b> pick · <b>Enter</b> file · <b>S</b> skip · <b>U</b> twice remove from Liked</span></div>`}`;
 }
