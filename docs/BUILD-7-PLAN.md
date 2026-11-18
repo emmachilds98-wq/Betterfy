@@ -74,6 +74,24 @@ written (#158), what is still open, and where to start:
 Usage is low (emma, 2026-11-15): run few threads at once, and start no new
 wave without asking her.
 
+**Update, 2026-11-18 afternoon.** DESIGN-PLAN L0 to L8 and its §7.7 calls
+are all merged (#170 to #184), and AUDIO-BUILD-PLAN is complete apart from the
+owner's in-page Score run for the gates. M1 was mostly shipped by #159 (run
+history, `scoreDiff`, Engine › Past runs); "Send to the team" stays copy-only
+while D1 is unanswered. Wave 1 is now running:
+
+- **R1 done** (this PR): the account check runs by itself once per account
+  per build (IndexedDB `radar:probe`), on the first Discover visit or just
+  before the automatic start; a refused or reshaped artist-albums route holds
+  the sync and shows one line with Check again; Settings' row is "New releases
+  (Radar)" with the check's date and result. It also fixes a false refusal:
+  an artist with no singles had no album to read, which counted as refused.
+  Live confirmation still comes from the first real account that loads it:
+  the owner glances at that Settings row once.
+- **M1's last piece** (the Settings row naming the last run's build and
+  top-1) is its own PR after R1.
+- **Q1 and U1** touch disjoint files and can run as parallel threads.
+
 ## 1. Standing rules
 
 These come from emma (the owner) in this project's threads and from
@@ -778,9 +796,9 @@ keeps project memory in step.
 
 | Id | Package | Wave | Lane | State | PR | Numbers / notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M1 | Score history, Send to the team | 1 | M | Not started | | D1 pending |
+| M1 | Score history, Send to the team | 1 | M | Done but the Settings row | #159 | D1 pending: copy only |
 | Q1 | Second-account check | 1 | Q | Not started | | |
-| R1 | Radar confirms itself | 1 | R | Half done | #168 | starts by itself; still to do: per-account answer, refused-route line, Settings row |
+| R1 | Radar confirms itself | 1 | R | Done | #168, R1 PR | check once per account per build, refused route holds the sync, Settings row; live check on the first real account |
 | U1 | File you can trust at a glance | 1 | U | Not started | | |
 | E1 | Learn from every tap | 2 | E | Not started | | after wave 1 go |
 | E2 | Weights per source and situation | 2 | E | Not started | | after E1 |
@@ -792,8 +810,8 @@ keeps project memory in step.
 | H3 | Branch and dead-code sweep | 3 | H | Not started | | |
 | E4 | Key from more audio | 4 | E | Not started | | D3, optional |
 
-| L0 | Second ear stuck at 1/1 (DESIGN-PLAN) | first | audio | Not started | | bug |
-| L8 | Full UI optimisation + home page (DESIGN-PLAN) | after L0 | U | Not started | | inventory first |
+| L0 | Second ear stuck at 1/1 (DESIGN-PLAN) | first | audio | Done | #171 | owner to watch one real Deep listen run |
+| L8 | Full UI optimisation + home page (DESIGN-PLAN) | after L0 | U | Done | #170, #172 to #184 | every §7.7 call merged |
 
 **Suggested calendar at low usage:** wave 1 in one sitting (three threads,
 then U1); a Score paste; wave 2 one package at a time with H1/H3 beside it;
