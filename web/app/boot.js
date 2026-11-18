@@ -321,6 +321,9 @@ async function start(force) {
       // time, so the Engine screen opens on results, not "Learn my library". Before the
       // similar artists, which place their picks in it.
       await engineAutoLearn().catch(() => false);
+      // Release Radar starts by itself too, a little later (radar.js radarAuto), unless Stop was
+      // pressed on this device. Not awaited: it reads Spotify, the similar artists below read others.
+      if (typeof radarAuto === 'function') radarAuto().catch(() => false);
       // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
       // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
       // don't compete with the tag lookups; resumes where the last load stopped.

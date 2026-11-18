@@ -201,11 +201,15 @@ export function radarView(ctx) {
   if (!R.index && !R.running && !(R.rows ?? []).length) {
     const est = coldEstimate(artistsOf(ctx.LIB), now);
     if (!est.artists) return head + empty('No artists yet', 'Once your library has songs in it, the radar can follow their artists.', { compact: true }) + '</section>';
+    // It starts by itself (owner, 2026-11-18): one button to start sooner. The account check is
+    // only offered after a read went wrong, or once it has been run, to say what Spotify refused.
+    const auto = rad.auto?.() ?? true;
+    const when = auto ? 'It starts by itself a minute or two after Betterfy opens. ' : 'Off on this device since you pressed Stop. ';
     return head + `<p class="lede">New releases from the ${est.artists.toLocaleString('en-GB')} artists in your library, newest first.</p>
       <div class="rr-start">
-        <p>The first read asks Spotify about each artist in turn: about <b>${est.minutes} minute${est.minutes === 1 ? '' : 's'}</b> (${est.requests.toLocaleString('en-GB')} requests). You can keep using the app, and what has been read shows as it arrives.</p>
-        <div class="rowbtns"><button class="b p" type="button" data-act="rrStart" id="rrStart">Start the radar</button></div>
-        ${probeHTML(R, esc)}
+        <p>${when}The first read asks Spotify about each artist in turn: about <b>${est.minutes} minute${est.minutes === 1 ? '' : 's'}</b> (${est.requests.toLocaleString('en-GB')} requests). You can keep using the app, and what has been read shows as it arrives.</p>
+        <div class="rowbtns"><button class="b${auto ? '' : ' p'}" type="button" data-act="rrStart" id="rrStart">${auto ? 'Start now' : 'Start the radar'}</button></div>
+        ${R.err || R.probe ? probeHTML(R, esc) : ''}
       </div></section>`;
   }
 
@@ -255,7 +259,7 @@ export function radarView(ctx) {
     </details>` : '';
   const partial = !st.complete && rows.length ? `<p class="rr-partial">Not the whole radar yet: ${R.running ? 'still reading' : 'some artists are still to be read'}.</p>` : '';
   const count = `<p class="rr-count vh" aria-live="polite">${rows.length.toLocaleString('en-GB')} release${rows.length === 1 ? '' : 's'}</p>`;
-  return head + status + (R.probe ? probeHTML(R, esc) : '') + chips + search + count + partial + strip + feed + '</section>';
+  return head + status + (R.probe || (R.err && !R.running) ? probeHTML(R, esc) : '') + chips + search + count + partial + strip + feed + '</section>';
 }
 
 export const radarActions = {

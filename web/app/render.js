@@ -3,11 +3,11 @@
 // playlists and Shuffle open from it and carry a way back (libBack, app/shell.js).
 /** The screen last drawn into #main, or null when the next draw must replace it whole. */
 let paintedView = null;
+// Engine is a section of the Settings sheet (app/shell.js), not a screen here.
 const VIEWS = { inbox:screenView('home'), tidy:screenView('tidy'), discover:screenView('discover'),
                 lists:screenView('lists'),
                 new:() => libBack('new') + screenView('new')(),
-                shuffle:() => libBack('shuffle') + screenView('shuffle')(),
-                engine:() => libBack('engine') + screenView('engine')() };
+                shuffle:() => libBack('shuffle') + screenView('shuffle')() };
 /**
  * Re-draw the current screen. `dir` is only passed when the screen changed:
  * +1 came from a swipe or tap moving forwards, -1 backwards, and the new

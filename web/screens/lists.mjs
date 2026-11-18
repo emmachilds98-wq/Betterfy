@@ -670,10 +670,9 @@ export function view(c) {
           <span class="plmeta"><span class="mono">${s.n}</span> tracks · ${esc(s.why)}</span></span></button>`).join('')}</div>
     </section>` : '';
   const eng = c.engineSummary?.() ?? null;
-  const knowsHTML = rows.some(p => p.target) ? `<section class="plknows" aria-labelledby="plknows-h">
-      <div class="plknows-head"><h2 id="plknows-h">How well it knows you</h2>
-        <button class="b sm" data-go="engine">${eng?.running ? 'Scoring…' : Number.isFinite(eng?.top1) ? 'Details' : 'Check it'}</button></div>
-      <p class="hint">${esc(knowsYouLine(eng))}</p></section>` : '';
+  // One line of the Engine's score (owner, 2026-11-18): the Engine itself lives in Settings.
+  const knowsHTML = rows.some(p => p.target) ? `<p class="axcov plknows">${esc(eng?.running ? 'Checking how well it knows you…' : knowsYouLine(eng))}
+      <button class="b sm" data-go="engine">Engine</button></p>` : '';
   return `<h1>Library</h1>
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
     ${ticksHTML}${coldHTML}${newgHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}

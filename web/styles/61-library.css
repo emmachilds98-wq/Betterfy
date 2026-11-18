@@ -49,9 +49,6 @@
   .plscore .mono{font-size:17px; font-weight:600}
   .plscore span{font-size:11px; color:var(--ink-3)}
   .plscore.plh-ok .mono{color:var(--ok)} .plscore.plh-low .mono{color:var(--warn)}
-  .plknows{background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--m2);
-           border-radius:var(--r-3); padding:12px 14px; margin:0 0 22px}
-  .plknows .hint{margin:0}
+  /* The Engine's score, one line under the rows (the Engine itself is in Settings). */
+  .plknows{margin:18px 0 8px}
   @media (max-width:520px){ .plrow .plspark{display:none} }
-  .plknows-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px}
-  .plknows-head h2{margin:0}

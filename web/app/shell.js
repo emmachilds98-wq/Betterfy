@@ -1,8 +1,8 @@
 /* ---------- the shell: four tabs and the Settings sheet (docs/BUILD-5-PLAN.md §4.1, UI-D) ----------
  * File, Tidy, Discover and Library are the tabs. Everything that used to be a
  * screen of its own and is not one of those lives in the Settings sheet under
- * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs)
- * and History. (Engine moved to Library in Wave F.) Their modules are
+ * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs),
+ * Engine and History. Their modules are
  * unchanged: this file paints each one's view into the sheet, one section open
  * at a time, and dispatchAct() (screens.js) finds their actions through the
  * [data-uh] wrapper. Anything still asking for the old screens by name is sent
@@ -15,6 +15,12 @@ const UH_SECTIONS = [
     try { on = !!audioSettings().on; } catch { /* before the audio glue loads */ }
     try { key = !!lfmKey(); own = !!LS.getItem('bf_lfm'); } catch { /* no key */ }
     return `Listening ${on ? 'on' : 'off'} · Last.fm ${key ? (own ? 'on, your key' : 'on, built-in key') : 'off'} · Wikidata on · Deezer on · ListenBrainz on`;
+  }],
+  ['engine', 'Engine', () => {
+    // The closed section's one line: the last score, when there is one.
+    try { const s = engineSummary(); if (Number.isFinite(s?.top1)) return `Right first time on ${Math.round(s.top1 * 100)}% of what you filed`; }
+    catch { /* no score yet */ }
+    return 'How picks are scored, and how well';
   }],
   ['history', 'History', () => 'Everything Betterfy wrote to Spotify, with undo'],
 ];

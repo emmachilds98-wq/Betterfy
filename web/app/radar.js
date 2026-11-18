@@ -111,7 +111,40 @@ async function radarStart({ deep = null } = {}) {
   }
 }
 
-function radarStop() { RADAR.ctl?.abort(); }
+/** Stop. A Stop the listener presses also turns the automatic start off on this device,
+ *  until they press Start again (bf_radar, like listening's offChosen). */
+function radarStop({ byHand = true } = {}) {
+  if (byHand) { try { LS.setItem(RADAR_OFF_KEY, 'off'); } catch { /* private mode */ } }
+  RADAR.ctl?.abort();
+}
+
+/* ---------- the radar starts by itself (owner, 2026-11-18) ----------
+ * Like every other source: on by default, started a while after the page opens
+ * (after the tag lookups and the Engine's map, so the library's own reads come
+ * first), never on Data Saver, and not again once the listener pressed Stop. The
+ * first read is the account check: the separate "Check it works" button is only
+ * offered once a read has failed, to say exactly what Spotify refused. After the
+ * first read a start only asks about artists due a check, so it is cheap. */
+const RADAR_OFF_KEY = 'bf_radar';
+const RADAR_AUTO_DELAY_MS = 90_000;
+const radarAutoOff = () => { try { return LS.getItem(RADAR_OFF_KEY) === 'off'; } catch { return false; } };
+
+/** Start it. By hand, it also turns the automatic start back on. Resolves true once a read ran. */
+async function radarGo({ byHand = false } = {}) {
+  if (RADAR.running || !LIB) return false;
+  if (byHand) { try { LS.removeItem(RADAR_OFF_KEY); } catch { /* private mode */ } }
+  await radarStart();
+  return true;
+}
+
+/** Called once by boot after the background lookups: waits, then starts unless turned off. */
+async function radarAuto({ delay = RADAR_AUTO_DELAY_MS } = {}) {
+  if (radarAutoOff()) return false;
+  if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
+  if (delay) await new Promise(r => setTimeout(r, delay));
+  if (radarAutoOff() || RADAR.running) return false;
+  return radarGo();
+}
 
 /** "Check it works on this account": the Phase 0 probe (core/release/probe.mjs) from the page,
  *  with this account's own sign-in, so nobody needs `node radar.mjs --probe`. Seven reads, one
@@ -192,8 +225,10 @@ function radarCtx() {
     R: RADAR,
     now: () => Date.now(),
     load: () => { if (!RADAR.loaded) radarLoad(); },
-    start: o => fire(radarStart(o)),
-    stop: radarStop,
+    // Start by hand turns the automatic start back on; "older" reads go straight in.
+    start: o => fire(o?.deep ? radarStart(o) : radarGo({ byHand: true })),
+    stop: () => radarStop(),
+    auto: () => !radarAutoOff(),
     probe: () => fire(radarProbe()),
     probeCopy: () => fire(radarProbeCopy()),
     dismiss: k => fire(radarDismiss(k)),
