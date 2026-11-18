@@ -235,6 +235,43 @@ test('hearing picks re-ranks the cards after this one and gives heard picks soun
   assert.deepEqual(p.S.discover.find(o => o.id === 'cy').tagSuggest, [tagPick]);
 });
 
+test('a pick that sounds at home in the seed playlist is offered that playlist first (emma, 2026-11-18)', async () => {
+  const { lib, index } = world();
+  const recs = new Map([['cy', soundRecord('cy', { mix: { y: 2 } })], ['cx', soundRecord('cx', { mix: { x: 2 } })]]);
+  const p = page();
+  p.S.discover = [{ id: 'now', isrc: 'I0' }, { id: 'cx', isrc: 'I3', suggest: [] }, { id: 'cy', isrc: 'I1', suggest: [] }];
+  p.S.discAt = 0;
+  p.S.discSound = { state: 'listening', heard: 0, total: 3, name: 'emma on road' };
+  // A mood playlist's radio: not a genre target, so the filed tracks never vote for it.
+  const road = { id: 'pRoad', name: 'emma on road', axis: null };
+  Object.assign(vm.runInContext('DISC', p), { store: { getAll: async () => recs }, seed: D.seedSound(lib.playlists[0].tracks, index),
+                          seedPl: road, index, memb: genreMembership(lib) });
+  await p.discApply();
+  const cx = p.S.discover.find(o => o.id === 'cx'), cy = p.S.discover.find(o => o.id === 'cy');
+  assert.match(p.discFitHTML(cx), /Sounds right at home in emma on road/);
+  assert.equal(cx.suggest[0].id, 'pRoad', 'the File button says what the fit line says');
+  assert.equal(cx.suggest[0].via, 'seed');
+  assert.equal(cx.suggest[1].id, 'pX', 'the sound pick is still one tap away');
+  assert.ok(cx.suggest.length <= 3);
+  assert.ok(cy.fit.fit < D.SEED_FIT.offer, 'cy does not sound like the seed');
+  assert.ok(!cy.suggest.some(sg => sg.id === 'pRoad'), 'so it is not offered the seed');
+});
+
+test('seedPicks: leads when at home, second when close, untouched otherwise', () => {
+  const seed = { id: 's', name: 'Road', axis: null };
+  const picks = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  assert.deepEqual(D.seedPicks(picks, { fit: 0.8 }, seed).map(p => p.id), ['s', 'a', 'b']);
+  assert.deepEqual(D.seedPicks(picks, { fit: 0.5 }, seed).map(p => p.id), ['a', 's', 'b']);
+  assert.deepEqual(D.seedPicks(picks, { fit: 0.3 }, seed).map(p => p.id), ['a', 'b', 'c']);
+  assert.deepEqual(D.seedPicks(picks, null, seed).map(p => p.id), ['a', 'b', 'c'], 'not heard: as it was');
+  assert.deepEqual(D.seedPicks(picks, { fit: 0.9 }, null).map(p => p.id), ['a', 'b', 'c'], 'Everything I listen to: no seed playlist');
+  assert.deepEqual(D.seedPicks([{ id: 'a' }, { id: 's', via: 'sound' }], { fit: 0.9 }, seed).map(p => p.id), ['s', 'a'], 'never twice');
+  assert.deepEqual(D.seedPicks([], { fit: 0.5 }, seed).map(p => p.id), ['s'], 'close and nothing else: still offered');
+  const s0 = D.seedPicks(picks, { fit: 0.8 }, seed)[0];
+  assert.deepEqual({ name: s0.name, score: s0.score, via: s0.via, sound: s0.evidence.sound }, { name: 'Road', score: 0.8, via: 'seed', sound: 0.8 });
+  assert.deepEqual(picks.map(p => p.id), ['a', 'b', 'c'], 'input untouched');
+});
+
 test('without a key, candidates come from the cached neighbour lookups and Spotify search', async () => {
   const calls = { bridge: null, saved: null, search: [] };
   const p = page({
