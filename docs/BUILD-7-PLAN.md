@@ -100,7 +100,15 @@ while D1 is unanswered. Wave 1 is now running:
   top-1 is never below static (shaped seeds 32.9→35.0, 36.1→36.4, 35.8→36.4;
   large 10.9→11.7). The teach gate still opens on 1 of 3 shaped seeds, so teach
   questions stay behind their per-account gate; favouring close calls cost
-  tracks and ships off. Next in lane E: E2.
+  tracks and ships off.
+- **E2 measured, shipped display-only:** a weight per source in each situation
+  (artist already filed / never filed) for the engine (`weights.mjs`
+  `fitSituations`) and the tags blend (`blend.mjs` `bySituation`), nested
+  like the one fit. Shaped seeds 52.7→51.1, 57.5→57.0, 58.2→58.6; large
+  13.0→12.8, with never-filed lower on two. That misses the +2 bar, so the
+  Score run reports it ("Weights per situation") and nothing applies it; her
+  own run decides. Heard/unheard is not a third situation yet (part rows carry
+  no sound). Next in lane E: E3, which uses the multiplicative fallback.
 - **New package P1, from Q1:** see wave 1 below ("P1. First card fast on a
   large library").
 
@@ -842,7 +850,7 @@ keeps project memory in step.
 | U1 | File you can trust at a glance | 1 | U | Done | #188 | |
 | P1 | First card fast on a large library | 1 | P | Done | #189 | 41 s → 16 s on `large` |
 | E1 | Learn from every tap | 2 | E | Done | E1 PR | online ≥ static on all seeds; teach gate 1 of 3, stays per-account |
-| E2 | Weights per source and situation | 2 | E | Not started | | after E1 |
+| E2 | Weights per source and situation | 2 | E | Display-only | E2 PR | −1.5 to +0.4 on the seeds; bar +2 missed; reported in Score |
 | E3 | Tempo range per playlist | 2 | E | Not started | | after E2 |
 | U2 | Desktop width, calmer File | 3 | U | Replaced | | by DESIGN-PLAN L1 |
 | U3 | Sound labels in use | 3 | U | Not started | | after U1 |

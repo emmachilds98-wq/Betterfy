@@ -5931,7 +5931,7 @@ function fitCalibration(rows, opts = {}) {
 
   const out = { version: CALIBRATE_VERSION, n, T, tau: tau == null ? null : +tau.toFixed(5),
                 pmin: +(1 - qhat).toFixed(5), target, alpha, confidentN, confidentRight };
-  // Package 4 (docs/NEXT-WORKPLAN.md): rows that carry an agreement level
+  // Package 4 (docs/archive/NEXT-WORKPLAN.md): rows that carry an agreement level
   // (core/intrinsic/agree.mjs) get a "confident" threshold of their own per
   // level, fitted the same way on only that level's rows. A card where sound,
   // filing history and tags all rank the same playlist first is right far
@@ -5955,7 +5955,7 @@ const AGREE_LEVELS = Object.freeze(['agree', 'single']);
 /**
  * What agreement-earned "Sure" must do on held-out rows before it is used:
  * right at least `minPrecision` of the time over at least `minN` cards.
- * Set before any owner run (docs/NEXT-WORKPLAN.md package 4 gate).
+ * Set before any owner run (docs/archive/NEXT-WORKPLAN.md package 4 gate).
  */
 const AGREE_GATE = Object.freeze({ minPrecision: 0.95, minN: 20, coverage: 0.25 });
 
@@ -7747,6 +7747,48 @@ function fitVariant(partRows, { withBridge = false, grid = MULTIPLIERS, graphN =
   return out;
 }
 
+/* ---------- E2: weights per situation (docs/BUILD-7-PLAN.md) ----------
+ * The same nested fit, run separately for tracks whose artist the account has
+ * already filed and for never-filed ones, so each situation can lean on the
+ * sources that are right for it (filing history for the first, the record's
+ * shape and similar artists for the second). A situation with fewer than
+ * SITUATION_MIN rows keeps the one fit.
+ *
+ * Measured on the shaped seeds (11, 5, 3) and the large fixture, held out:
+ * 52.7 -> 51.1, 57.5 -> 57.0, 58.2 -> 58.6, 12.96 -> 12.83 top-1 against the
+ * one fit, and never-filed down on two of them. That misses the plan's bar
+ * (+2 overall, no never-filed loss), so it is reported by the Score run and
+ * applied to nothing: the account's own run is the deciding measurement. */
+
+/** A situation needs this many rows for a fit of its own. */
+const SITUATION_MIN = 30;
+
+/**
+ * { scored, one: {top1}, fitted: {top1}, filed: {...}, neverFiled: {...}, beats }
+ * `beats`: the per-situation fit's held-out top-1 is a point ahead of the one fit's
+ * and never-filed is not lower. Null without rows.
+ */
+function fitSituations(partRows, { one = null, grid = MULTIPLIERS, graphN = GRAPH_N_SEARCHED } = {}) {
+  if (!partRows?.length) return null;
+  one ??= fitVariant(partRows, { grid, graphN });
+  if (!one?.fitted?.top1 && one?.fitted?.top1 !== 0) return null;
+  const n = one.scored, nNf = one.neverFiled.scored;
+  const oneNf = one.neverFiled.fitted.top1 ?? 0;
+  const oneFiled = n - nNf > 0 ? (one.fitted.top1 * n - oneNf * nNf) / (n - nNf) : null;
+  const part = (fresh, fallback) => {
+    const sub = partRows.filter(r => !!r.fresh === fresh);
+    const v = sub.length >= SITUATION_MIN ? fitVariant(sub, { grid, graphN }) : null;
+    return { scored: sub.length, own: !!v, top1: v ? v.fitted.top1 : fallback == null ? null : +fallback.toFixed(4),
+             one: fallback == null ? null : +fallback.toFixed(4), multipliers: v?.multipliers ?? one.multipliers };
+  };
+  const filed = part(false, oneFiled), neverFiled = part(true, oneNf);
+  const tot = (filed.top1 ?? 0) * filed.scored + (neverFiled.top1 ?? 0) * neverFiled.scored;
+  const fitted = n ? +(tot / n).toFixed(4) : null;
+  return { scored: n, one: { top1: one.fitted.top1 }, fitted: { top1: fitted }, filed, neverFiled,
+           beats: fitted != null && fitted >= one.fitted.top1 + FIT_MARGIN - 1e-9
+             && (neverFiled.top1 ?? 0) >= (neverFiled.one ?? 0) - 1e-9 };
+}
+
 /**
  * The whole step, as the Score run calls it: the headline engine, and the
  * engine with similar artists when the run had them, each fitted from the
@@ -7759,7 +7801,9 @@ function weightsFromRun(mine, { grid = MULTIPLIERS, graphN = GRAPH_N_SEARCHED } 
   if (!partRows?.length) return null;
   const plain = fitVariant(partRows, { withBridge: false, grid, graphN });
   const bridge = mine.withBridge ? fitVariant(partRows, { withBridge: true, grid, graphN }) : null;
-  return { plain, bridge, folds: Object.keys(plain?.foldMultipliers ?? {}).length || DEFAULT_FOLDS,
+  let situations = null;
+  try { situations = fitSituations(partRows, { one: plain, grid, graphN }); } catch { situations = null; }
+  return { plain, bridge, situations, folds: Object.keys(plain?.foldMultipliers ?? {}).length || DEFAULT_FOLDS,
            version: WEIGHT_FIT_VERSION };
 }
 
@@ -7778,7 +7822,7 @@ function fitSummary(fit) {
   };
   return { ...fit, plain: strip(fit.plain), bridge: strip(fit.bridge) };
 }
-return { WEIGHT_FIT_VERSION, FIT_MARGIN, GROUPS, MULTIPLIERS, DEFAULT_MULT, GRAPH_N_SEARCHED, baseWeights, weightsFor, compileRows, accuracyAt, fitMultipliers, fitVariant, weightsFromRun, fitSummary };
+return { WEIGHT_FIT_VERSION, FIT_MARGIN, GROUPS, MULTIPLIERS, DEFAULT_MULT, GRAPH_N_SEARCHED, baseWeights, weightsFor, compileRows, accuracyAt, fitMultipliers, fitVariant, SITUATION_MIN, fitSituations, weightsFromRun, fitSummary };
 })();
 /* ---- core/validate/blend.mjs ---- */
 __mod["core/validate/blend.mjs"] = (function () {
@@ -7872,7 +7916,8 @@ function neverFiledIds(lib, ids, { folds = DEFAULT_FOLDS, targets = null, isMirr
  *          null when there is nothing to join.
  */
 function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid = BLEND_GRID,
-                                                     neverFiled = null, nativeByFold = null, nativeAll = null } = {}) {
+                                                     neverFiled = null, nativeByFold = null, nativeAll = null,
+                                                     situations = false } = {}) {
   if (!tagRows?.length || !nativeRows?.length) return null;
   const tagById = new Map(tagRows.map(r => [r.id, r]));
   // One entry per track both engines were asked about, with each engine's
@@ -7952,8 +7997,14 @@ function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid = BLEN
   const beatsTags = head.top1 != null && head.tags.top1 != null
     && head.top1 >= head.tags.top1 + BEAT_MARGIN - 1e-9
     && head.top3 >= head.tags.top3 - BEAT_MARGIN - 1e-9;
+  // E2 (docs/BUILD-7-PLAN.md): one weight per situation instead of one for all
+  // (tracks by artists already filed / never filed), reported as `bySituation`,
+  // nested the same way; a situation with fewer than SITUATION_MIN training
+  // rows falls back to the one weight.
+  const bySituation = situations && neverFiled ? situationFit(rows, rowsFor, foldIds, best, grid, out, head) : null;
   return {
     ...head,
+    ...(bySituation ? { bySituation } : {}),
     weight: grid[best(nested && nativeAll ? join(nativeAll) : rows)],
     foldWeights,
     neverFiled: neverFiled ? out(nf) : null,
@@ -7963,6 +8014,42 @@ function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid = BLEN
     version: BLEND_ACCURACY_VERSION,
     ...(nested ? { nested: true } : {}),
   };
+}
+
+/** A situation needs this many training rows to get a weight of its own. */
+const SITUATION_MIN = 30;
+
+function situationFit(rows, rowsFor, foldIds, best, grid, out, head) {
+  const acc = { n: 0, b1: 0, b3: 0, t1: 0, t3: 0, n1: 0, n3: 0 };
+  const accNf = { n: 0, b1: 0, b3: 0, t1: 0, t3: 0, n1: 0, n3: 0 };
+  const foldWeights = {};
+  for (const f of foldIds) {
+    const these = rowsFor(f);
+    const train = these.filter(r => r.fold !== f), test = these.filter(r => r.fold === f);
+    const one = best(train.length ? train : test);
+    const pick = {};
+    for (const fresh of [false, true]) {
+      const t = train.filter(r => r.fresh === fresh);
+      pick[fresh] = t.length >= SITUATION_MIN ? best(t) : one;
+    }
+    foldWeights[f] = { filed: grid[pick[false]], neverFiled: grid[pick[true]] };
+    for (const r of test) {
+      const i = pick[r.fresh];
+      for (const a of r.fresh ? [acc, accNf] : [acc]) {
+        a.n++; if (r.hits[i][0]) a.b1++; if (r.hits[i][1]) a.b3++;
+        if (r.tag[0]) a.t1++; if (r.tag[1]) a.t3++; if (r.nat[0]) a.n1++; if (r.nat[1]) a.n3++;
+      }
+    }
+  }
+  const all = rows;
+  const w = {};
+  for (const fresh of [false, true]) {
+    const t = all.filter(r => r.fresh === fresh);
+    w[fresh ? 'neverFiled' : 'filed'] = grid[t.length >= SITUATION_MIN ? best(t) : best(all)];
+  }
+  const o = out(acc);
+  return { ...o, neverFiled: out(accNf), weights: w, foldWeights,
+           beatsOne: o.top1 != null && head.top1 != null && o.top1 >= head.top1 + BEAT_MARGIN - 1e-9 };
 }
 
 /**
@@ -7983,10 +8070,11 @@ function blendFromRun(lib, { base, mine, folds = DEFAULT_FOLDS, targets = null, 
   const fit = withBridge ? nativeFit?.bridge : nativeFit?.plain;
   const nested = fit?.use && fit.byFold && fit.all
     ? { nativeByFold: fit.byFold, nativeAll: fit.all } : {};
-  const r = blendAccuracy(base.rows, nativeRows, { folds, neverFiled: nf, ...nested });
+  // E2: the per-situation weight is measured beside the one weight, and used by nothing yet.
+  const r = blendAccuracy(base.rows, nativeRows, { folds, neverFiled: nf, situations: true, ...nested });
   return r ? { ...r, withBridge, ...(nested.nativeAll ? { nativeFitted: true } : {}) } : null;
 }
-return { BLEND_ACCURACY_VERSION, BEAT_MARGIN, neverFiledIds, blendAccuracy, blendFromRun };
+return { BLEND_ACCURACY_VERSION, BEAT_MARGIN, neverFiledIds, blendAccuracy, SITUATION_MIN, blendFromRun };
 })();
 /* ---- core/sources/audio-vocab.mjs ---- */
 __mod["core/sources/audio-vocab.mjs"] = (function () {
