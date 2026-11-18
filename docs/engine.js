@@ -9611,9 +9611,41 @@ function familyAccuracy(rows, families, opts = {}) {
 /** Bars set before the owner's numbers: family top-1 at least this, else the card stays flat. */
 const FAMILY_GATE = Object.freeze({ minFamily: 0.85 });
 
+/**
+ * Build 8 I1 (docs/BUILD-8-PLAN.md): the second bar, on the family calls the
+ * engine is confident about, checked on held-out rows (`familyAccuracy`'s
+ * `sure`, a calibrationReport). The same shape as AGREE_GATE: right at least
+ * `minPrecision` of the time, on at least `minN` tracks, covering at least
+ * `coverage` of them. decideCard already abstains when the family is not
+ * confident, so this judges the population the card actually speaks for,
+ * where the top-1 bar judged every track. Set before the owner's run.
+ */
+const FAMILY_CONFIDENT_GATE = Object.freeze({ minPrecision: 0.95, minN: 20, coverage: 0.25 });
+
+/**
+ * Which bar family-first clears on one Score run, and why not when neither:
+ *   { use, by: 'top1' | 'confident' | null, why }
+ * `why` is plain words for the Score line, null when in use.
+ */
+function familyGate(acc, bar = FAMILY_GATE, conf = FAMILY_CONFIDENT_GATE) {
+  if (!acc || acc.family == null) return { use: false, by: null, why: 'not measured' };
+  if (!(acc.families >= 2)) return { use: false, by: null, why: 'fewer than two families' };
+  if (acc.family >= bar.minFamily) return { use: true, by: 'top1', why: null };
+  const c = acc.sure?.checked ?? acc.sure ?? null;
+  const n = c?.confidentN ?? 0, right = c?.confidentRight ?? null, share = c?.confidentShare ?? null;
+  const pc = x => `${Math.round(x * 100)}%`;
+  if (n >= conf.minN && right != null && right >= conf.minPrecision && share != null && share >= conf.coverage)
+    return { use: true, by: 'confident', why: null };
+  const why = !n ? `family top-1 under ${pc(bar.minFamily)} and no confident family calls yet`
+    : n < conf.minN ? `family top-1 under ${pc(bar.minFamily)}; only ${n} confident family calls, ${conf.minN} needed`
+    : right == null || right < conf.minPrecision ? `confident family calls right ${pc(right ?? 0)}, ${pc(conf.minPrecision)} needed`
+    : `confident on ${pc(share ?? 0)} of tracks, ${pc(conf.coverage)} needed`;
+  return { use: false, by: null, why };
+}
+
 /** May File commit to a family and ask only the last step? Read from one Score run. */
-function familyInUse(acc, bar = FAMILY_GATE) {
-  return !!acc && acc.family != null && acc.family >= bar.minFamily && acc.families >= 2;
+function familyInUse(acc, bar = FAMILY_GATE, conf = FAMILY_CONFIDENT_GATE) {
+  return familyGate(acc, bar, conf).use;
 }
 
 /**
@@ -9670,7 +9702,7 @@ function narrowToFamily(ids, family, families) {
   const kept = ids.filter(id => famOf(families, id) === family);
   return kept.length ? kept : ids;
 }
-return { FAMILY_VERSION, playlistFamilies, conceptsIn, familyRow, familyAccuracy, FAMILY_GATE, familyInUse, fitFamilyCalibration, decideCard, familyConfident, narrowToFamily };
+return { FAMILY_VERSION, playlistFamilies, conceptsIn, familyRow, familyAccuracy, FAMILY_GATE, FAMILY_CONFIDENT_GATE, familyGate, familyInUse, fitFamilyCalibration, decideCard, familyConfident, narrowToFamily };
 })();
 /* ---- core/validate/blend.mjs ---- */
 __mod["core/validate/blend.mjs"] = (function () {

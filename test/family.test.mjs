@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { playlistFamilies, conceptsIn, familyRow, familyAccuracy, familyInUse, fitFamilyCalibration,
-         decideCard, FAMILY_GATE } from '../core/intrinsic/family.mjs';
+         decideCard, FAMILY_GATE, FAMILY_CONFIDENT_GATE, familyGate } from '../core/intrinsic/family.mjs';
 import { fitCalibration, calibrationReport } from '../core/intrinsic/calibrate.mjs';
 import { familyLine } from '../web/screens/engine.mjs';
 
@@ -53,7 +53,10 @@ test('familyAccuracy: family right far more often than the flat pick, and family
   assert.ok(acc.sure.checked.confidentN > 0, 'family-level confident is checked on held-out rows');
   assert.ok(acc.sure.checked.confidentRight >= 0.9);
   assert.equal(familyInUse(acc), true);
-  assert.equal(familyInUse({ ...acc, family: FAMILY_GATE.minFamily - 0.01 }), false);
+  // Under the top-1 bar it still passes on its confident part (build 8 I1), and fails without it.
+  assert.equal(familyInUse({ ...acc, family: FAMILY_GATE.minFamily - 0.01 }), acc.sure.checked.confidentRight >= 0.95
+    && acc.sure.checked.confidentN >= 20 && acc.sure.checked.confidentShare >= 0.25);
+  assert.equal(familyInUse({ ...acc, family: FAMILY_GATE.minFamily - 0.01, sure: null }), false);
   assert.equal(familyInUse(null), false);
   assert.equal(familyAccuracy([], FAM), null);
 });
@@ -91,4 +94,32 @@ test('File shows a settled family as one line and its picks as equals', () => {
   const src = readFileSync(new URL('../web/screens/inbox.mjs', import.meta.url), 'utf8');
   assert.match(src, /for sure\. Which one\?/);
   assert.match(src, /' twoway'/);
+});
+
+test('I1: family first passes on its confident part when top-1 misses its bar', () => {
+  const base = { n: 600, family: 0.74, within: 0.7, flat: 0.6, families: 12 };
+  const sure = (n, right, share) => ({ checked: { confidentN: n, confidentRight: right, confidentShare: share } });
+  // The owner's shape: top-1 74%, confident on 38% at 97%.
+  assert.deepEqual(familyGate({ ...base, sure: sure(228, 0.97, 0.38) }), { use: true, by: 'confident', why: null });
+  assert.equal(familyInUse({ ...base, sure: sure(228, 0.97, 0.38) }), true);
+  // Top-1 bar alone, as before.
+  assert.equal(familyGate({ ...base, family: 0.9, sure: null }).by, 'top1');
+  // Each part of the confident bar can fail, and says which.
+  assert.match(familyGate({ ...base, sure: sure(228, 0.93, 0.38) }).why, /right 93%, 95% needed/);
+  assert.match(familyGate({ ...base, sure: sure(10, 0.99, 0.38) }).why, /only 10 confident family calls, 20 needed/);
+  assert.match(familyGate({ ...base, sure: sure(100, 0.99, 0.2) }).why, /confident on 20% of tracks, 25% needed/);
+  assert.match(familyGate({ ...base, sure: null }).why, /no confident family calls yet/);
+  // The checked block itself (as engine.js keeps it) reads the same.
+  assert.equal(familyGate({ ...base, sure: sure(228, 0.97, 0.38).checked }).use, true);
+  assert.equal(familyGate({ ...base, families: 1, sure: sure(228, 0.97, 0.38) }).use, false);
+  assert.equal(familyGate(null).use, false);
+  assert.deepEqual({ ...FAMILY_CONFIDENT_GATE }, { minPrecision: 0.95, minN: 20, coverage: 0.25 });
+});
+
+test('I1: the Score line says which bar it cleared, or why not', () => {
+  const pc = x => (x == null ? '—' : `${Math.round(x * 100)}%`);
+  const f = { n: 600, family: 0.74, within: 0.7, flat: 0.6, families: 12,
+              sure: { confidentN: 228, confidentShare: 0.38, confidentRight: 0.97 } };
+  assert.match(familyLine({ ...f, use: true, by: 'confident' }, pc), /confident on 38% of tracks, right 97% — used where it is confident/);
+  assert.match(familyLine({ ...f, use: false, why: 'confident family calls right 93%, 95% needed' }, pc), /not used \(confident family calls right 93%, 95% needed\)/);
 });
