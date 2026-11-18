@@ -84,9 +84,14 @@ Contents:
    to four, reggae has no roots, rocksteady or ska (checked:
    `core/sources/audio-vocab.mjs` against `core/ontology/genres.mjs`). For a
    listener whose playlists are "Reggaeton", "Bossa" or "Roots", the ear's
-   own vote can say only "Latin" or "Reggae" (G1). §2.2 measures how well the
-   ear separates these genres at all.
-8. **What cannot be fixed:** tracks Deezer has no preview for, songs whose
+   own vote can say only "Latin" or "Reggae" (G1). The ear itself is fine
+   there: 81% top-1 by sound on 18 mostly non-electronic genres, against 68%
+   on scene genres (§2.2).
+8. **Deezer already sends a BPM** for about half of mainstream tracks, in the
+   lookup the page makes, and the page drops it. Where both exist it agrees
+   with the measured tempo 76% of the time (84% when the measure is sure). A
+   free second opinion (T4); almost absent for scene music (5%).
+9. **What cannot be fixed:** tracks Deezer has no preview for, songs whose
    character is outside the 30 s preview, and key on every track from 20 s of
    audio. §5 says what to do instead of each.
 
@@ -143,7 +148,31 @@ leave-one-out nearest centroid, by sound alone.
 
 ### 2.2 Outside electronic music (`eval.mjs --set broad`)
 
-BROAD_RESULTS
+449 tracks from public Deezer playlists, 18 genres mostly outside
+electronic music (25 per genre, one track per artist), same method as §2.1.
+
+| Variant | top-1 | top-2 | 9 per genre (20 draws) |
+| --- | --- | --- | --- |
+| Joined windows, centroid (**today**) | **80.8%** | 93.3% | 78.7% |
+| Joined, centred | 80.8% | 92.7% | 78.7% |
+| Each window on its own | 81.7% | 93.3% | 79.2% |
+| Middle window only | 79.7% | 91.5% | 76.9% |
+
+Per genre, today (of 25): classical 25, house 25, punk 23, jazz 23, reggae 23,
+drum and bass 22, rnb 21, metal 21, trap 20, country 20, folk 20, indie rock
+19 of 24, latin 19, afrobeats 18, dancehall 17, pop 17, **hip-hop 15, soul
+15**.
+
+- **The ear separates broad genres well** (81% top-1, 79% from nine
+  examples), better than scene genres (68%). So for a listener with
+  non-electronic playlists, placing by sound already works; what is coarse is
+  the *naming* (§0 point 7, G1), not the hearing.
+- The weakest are the genres that overlap in sound: hip-hop against trap and
+  rnb, soul against rnb and pop, dancehall against reggae and afrobeats.
+  Those are where tags and the bridge must carry more of the blend, which S1's
+  per-situation weights already allow.
+- Per-window scoring is +0.9 here (±0 on scene genres): under the +1 bar that
+  closed three windows. Still closed; noted in case a Score arm wants it.
 
 ### 2.3 Tempo per genre (`genre-tempo.mjs`, Beatport EDM Key Dataset)
 
@@ -186,10 +215,20 @@ What it says:
 
 ### 2.4 Tempo against Deezer's own BPM
 
-Deezer's track endpoint has a `bpm` field. It was read for every track in
-§2.1's set: **Deezer states a BPM for 18 of 374 tracks (5%)**, and on those
-the DSP agreed on 12 and read half on 5 (grime). Too sparse to be a ground
-truth or a source: closed. Tempo stays measured from the preview.
+Deezer's track object has a `bpm` field, and the `track/isrc:` lookup the
+page already makes returns it (`core/audio/fetch.mjs` reads the same JSON
+and drops it). Read for every track in §2.1 and §2.2:
+
+- **Scene genres: Deezer states a BPM for 18 of 374 tracks (5%).**
+- **Broad genres: 235 of 449 (52%).**
+- Where both exist (222 broad tracks), the DSP agrees with Deezer on 169
+  (76%); reads half on 19, double on 9, 3:2 on 9, something else on 16 (7
+  of those metal). At DSP confidence ≥ 0.3 they agree on 92 of 109 (84%).
+
+Deezer's number is not a ground truth (it is unverified, and absent for
+almost all scene music), so this is agreement, not accuracy. But it is a free
+second opinion on mainstream music, exactly where the Beatport check says
+nothing, at no extra request. T4 uses it.
 
 ---
 
@@ -279,7 +318,7 @@ truth or a source: closed. Tempo stays measured from the preview.
   track is one vector, the mean over both windows joined, compared by raw
   cosine to playlist centroids. Two cheap per-account changes were measured
   for this plan (§2.1): centring on the account's own mean embedding, and
-  scoring each window separately. P1 and P2 in §4 carry the results.
+  scoring each window separately. Both were measured and closed (P1, P2).
 
 ### 3.5 Show BPM and key
 
@@ -372,6 +411,25 @@ when T2 settled them** against a playlist range or the genre table. Below
 ×2 is 84% (59/70); after T2 the shown octave must be right on ≥ 80% of that
 band in the DJ convention. In the page: share of heard tracks with a BPM
 shown, before/after. **Effort** S.
+
+#### T4. Deezer's own BPM as a free second opinion (lane E, S)
+
+**Goal.** More tempos settled and shown on mainstream music, at no extra
+cost.
+
+**What.** `core/audio/fetch.mjs` `lookup()` keeps `json.bpm` when it is above
+0 (it is in the response the page already gets); `record.mjs` stores it as
+`source.deezerBpm` (optional field, no version bump). Use: (1) when the DSP
+flagged half/double unsure and Deezer's number equals one of the two
+candidates, take that one; (2) when DSP and Deezer agree within 2 BPM, raise
+the shown confidence to at least 0.3. Never use Deezer's number alone.
+
+**Measure and bar.** In the page: a Score line "Deezer and the measured tempo
+agree on N of M". Before switching (2) on, on §2.2's set, the share of tracks
+with a BPM shown rises **≥ 10 points**, and on GTZAN (annotated beats, looked
+up on Deezer by artist and title, measurement only) the agreed readings are
+right ±2 BPM on **≥ 90%**. Records heard before T4 get the field at their
+next top-up. **Effort** S.
 
 #### L1. Time every stage of listening, in the page (lane M, S)
 
@@ -507,15 +565,16 @@ silent and costless where it fails.
 level.
 
 **What.** `core/ontology/genres.mjs`: add children where the ear can already
-tell them apart (§2.2 says which): Latin (reggaeton, salsa, bossa nova,
+tell them apart (§2.2: the ear separates broad genres at 81%): Latin (reggaeton, salsa, bossa nova,
 cumbia, bachata), jazz (bebop, swing, fusion, smooth), reggae (roots,
 rocksteady, ska, lovers rock), folk/world (afrobeat, highlife, celtic,
 flamenco), soul/funk (gospel), plus their tempo rows. Map the Discogs styles
 in `audio-vocab.mjs` `STYLE_MAP` to them. No new data source; nothing
 learned. The playlist-name parser picks them up through the same ontology.
 
-**Measure and bar.** (a) Public: §2.2's set, the share of tracks the ear's
-own top style maps to the right genre node, before/after. (b) In the page,
+**Measure and bar.** (a) Public: §2.2's set (extended with sub-genre
+playlists), the share of tracks whose `identify()` path reaches the right
+sub-genre node, before/after. (b) In the page,
 for any account with such playlists: `identifyAccuracy` genre-right on
 non-electronic playlists, no loss on electronic ones. **Bar: ≥ +10 points
 on (a) for the genres added, and no loss overall on her Score.** **Effort** M.
@@ -557,7 +616,7 @@ lane E thread (BUILD-7 §2.2). Start no wave without asking.
 | Wave | Packages | Fits beside build 8 |
 | --- | --- | --- |
 | S0 | **T1** (lane E, with or as D1's first step), **L1** + **L4** (lane M), **R1** (rule + test) | Wave 0 is lane M too; L1/L4 share `autoscore.mjs` with A1-A7, so one thread does them together |
-| S1 | **T2**, **T3** (lanes E + U), **L2**, **L3** (lane M) | After T1; L2/L3 own `worker.js`/`controller.mjs` |
+| S1 | **T2**, **T3**, **T4** (lanes E + U), **L2**, **L3** (lane M) | After T1; L2/L3 own `worker.js`/`controller.mjs` |
 | S2 | **G1** (lane E) | After BUILD-8 wave 1 (I1, I2) |
 | S3 | **U1**, then **U2** (lane M); **U3** (lane K); **U4** (lane E, after N1) | Last; each needs L1's before |
 
@@ -586,6 +645,7 @@ source in `build-web.mjs`. Lane E adds `core/ontology/tempo.mjs`,
 | R1 | A new ear never switches sound off | S0 | E | Not started | | guard test |
 | T2 | One BPM everywhere | S1 | E, U | Not started | | +15 in range; ≤ 1% moved on house/techno |
 | T3 | "About" tempos | S1 | U | Not started | | ≥ 80% right in the 0.15-0.3 band |
+| T4 | Deezer BPM as a second opinion | S1 | E | Not started | | +10 shown; ≥ 90% right on GTZAN |
 | L2 | Prefetch the next track | S1 | M | Not started | | ≥ 1.4× tracks/min |
 | L3 | One download per top-up | S1 | M | Not started | | ≤ 1.1 downloads/record |
 | P1, P2 | Centred space, per-window scoring | – | E | Closed (measured, §2.1) | | −2.7 / ±0.1 top-1 |
