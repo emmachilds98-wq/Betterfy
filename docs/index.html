@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-0308">
+<meta name="bf-build" content="2026-11-18-0409">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -931,6 +931,11 @@ main:focus{outline:none}
   @media (hover:none) and (pointer:coarse){
     .counter > span:nth-child(2):not(.how-touch){display:none}
   }
+
+/* File's one-line count: liked · already in playlists · to file (inbox.mjs likedLineHTML). */
+.liked-line { margin: 0 0 14px; font-size: 13px; color: var(--ink-2); }
+.liked-line summary { cursor: pointer; font-family: var(--mono); font-size: 11.5px; letter-spacing: .06em; }
+.liked-line p { margin: 8px 0 0; line-height: 1.5; }
 /* Library (UI-E, docs/BUILD-5-PLAN.md §4.1): compact playlist rows, the Suggested
    section, the detail sheet, and the way back on New playlists / Shuffle. */
   .libnav{background:none; padding:0; border-radius:0; width:auto; display:flex; align-items:center; gap:10px; overflow:visible}
@@ -1794,7 +1799,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-0308</span>
+    <span class="mono">build 2026-11-18-0409</span>
   </p>
 
   <div class="feat">
@@ -1887,7 +1892,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0308</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-0409</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2004,7 +2009,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-0308. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-0409. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -4941,26 +4946,34 @@ function rollForwardHTML({ S, esc }) {
   </div>`;
 }
 
+/** This queue row already sits in that playlist (as any release of it): filing it there writes nothing. */
+const alreadyIn = (R, id, pid) => !!R.backlog.find(b => b.id === id)?.inPl?.some(p => p.id === pid);
+
 /** File the ticked ones, one History entry per playlist, one undo for the lot. */
 async function rollForwardGo(ctx) {
-  const { S, R, CFG, addTracks, logAction, getLog, undoAction, toast, render } = ctx;
+  const { S, R, CFG, addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, toast, render } = ctx;
   const rf = S.roll;
   if (!rf) return;
   const ids = rf.rows.map(r => r.id).filter(id => !rf.off.has(id));
   if (!ids.length) { S.roll = null; return render(); }
   const ats = [];
   for (const pid of rf.playlistIds) {
-    await addTracks(pid, ids);
-    await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
+    const add = ids.filter(id => !alreadyIn(R, id, pid));
+    if (!add.length) continue;
+    await addTracks(pid, add);
+    await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:add,
                       reason:`filed with the rest of ${rf.artist}` });
     ats.push((await getLog())[0]?.at);
   }
+  // Recorded as filed, so they stay out of File after the next sync (Liked Songs is the inbox).
+  for (const id of ids) await recordAccept?.(id, rf.playlistIds);
   // In place, and keeping whichever track is on screen on screen.
   const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(ids);
   for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
   S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
   S.roll = null;
-  const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
+  const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
+                                for (const id of ids) await forgetAccept?.(id, rf.playlistIds); };
   toast(`Filed ${ids.length} more by ${rf.artist}.`, undoAll);
   render();
 }
@@ -5098,11 +5111,13 @@ async function fileSureOnes(ctx) {
     ats.push((await getLog())[0]?.at);
     done.push([pid, ids]);
   };
-  const logged = new Set();
+  const logged = new Set(), already = [];   // [playlistId, trackId] already there: nothing to write
   let failure = null;
   try {
     for (const [pid, rows] of byPl) {
-      const ids = rows.map(r => r.id);
+      for (const r of rows) if (alreadyIn(R, r.id, pid)) already.push([pid, r.id]);
+      const ids = rows.map(r => r.id).filter(id => !alreadyIn(R, id, pid));
+      if (!ids.length) continue;
       await addTracks(pid, ids);
       await logAdd(pid, ids, rows, 'filed the sure ones');
       logged.add(pid);
@@ -5132,9 +5147,10 @@ async function fileSureOnes(ctx) {
     return render();
   }
   for (const [pid, ids] of done.slice(before)) for (const id of ids) await recordAccept(id, [pid]);
+  for (const [pid, id] of already) await recordAccept(id, [pid]);
   S.partial = null;
   S.filing = false;
-  const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(done.flatMap(([, ids]) => ids));
+  const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set([...done.flatMap(([, ids]) => ids), ...already.map(([, id]) => id)]);
   for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
   S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
   S.roll = null; S.fileSel = new Set();
@@ -5144,6 +5160,18 @@ async function fileSureOnes(ctx) {
     for (const [pid, ids] of done) for (const id of ids) await forgetAccept(id, [pid]);
   });
   render();
+}
+
+/** One line under the title: liked, filed here, left to file. It opens to where the ones left already sit. */
+function likedLineHTML({ R, esc }) {
+  const b = R?.likedIn;
+  if (!b?.liked) return '';
+  const f = n => Number(n).toLocaleString();
+  const short = b.total != null && b.total > b.liked ? ` Spotify says you have ${f(b.total)}, so sync again to read the rest.` : '';
+  return `<details class="liked-line"><summary>${f(b.liked)} liked · ${f(b.filed)} filed here · ${f(b.toFile)} to file</summary>
+    <p>Every liked song waits here until you file it, even one that is already in a playlist.${short}</p>
+    ${b.placed ? `<p>${f(b.placed)} of the ${f(b.toFile)} are already in a playlist: ${b.top.map(x => `${esc(x.name)} (${f(x.n)})`).join(', ')}${b.playlists > b.top.length ? `, and ${f(b.playlists - b.top.length)} more` : ''}. Filing one where it already is adds no second copy.</p>` : ''}
+  </details>`;
 }
 
 function view(ctx) {
@@ -5159,7 +5187,7 @@ function view(ctx) {
       <p>${hasPl ? 'File sorts your liked songs into your playlists. Like a few songs in Spotify and they will show up here.'
         : 'Like some songs in Spotify, or make a playlist, then reopen Betterfy. It files your liked songs into your playlists.'}</p></div></div>`;
   }
-  if (!rows.length) return `<h1>File</h1>${digestHTML(ctx)}
+  if (!rows.length) return `<h1>File</h1>${likedLineHTML(ctx)}${digestHTML(ctx)}
     <div class="empty done">
       <svg viewBox="0 0 32 32" aria-hidden="true">
         <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
@@ -5168,7 +5196,7 @@ function view(ctx) {
         <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/>
         <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
       </svg>
-      <b>That's the lot.</b>Every liked song sits in at least one playlist. Nothing left to file.</div>`;
+      <b>That's the lot.</b>Every liked song has been filed. Nothing left to file.</div>`;
 
   const i = Math.min(S.inboxAt, rows.length - 1), t = rows[i];
   // A tap only ever builds a selection now — it never writes to Spotify by
@@ -5206,8 +5234,8 @@ function view(ctx) {
     : '';
 
   // The teach questions (BUILD-6 SG, app/teach.js): '' unless this account's Score run said they help.
-  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
-      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
+  return `${likedLineHTML(ctx)}${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}${t.inPl?.length ? ` · already in ${t.inPl.slice(0, 2).map(p => esc(p.name)).join(', ')}${t.inPl.length > 2 ? ` +${t.inPl.length - 2}` : ''}` : ''}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
     <div class="deck">
@@ -5323,7 +5351,10 @@ async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
   // the toast just chains all of them for the common "undo the lot" case.
   const ats = [];
   try {
+    // Already there (as this or any release of it): nothing to write, only the answer to keep.
+    const there = new Set((t.inPl ?? []).map(p => p.id));
     for (const id of ids) {
+      if (there.has(id)) continue;
       await addTracks(id, [t.id]);
       await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, deck:deckLen, band:bandOf(id), ...(via ? { via } : {}) });
       ats.push((await getLog())[0]?.at);
@@ -5453,7 +5484,7 @@ function mount(ctx) {
   const id = inboxTrack(ctx)?.id ?? null;
   if (id !== menuFor) { menuFor = id; document.querySelector("#swipeCard details.cardmore")?.removeAttribute("open"); }
 }
-return { rollForwardFor, rollForwardHTML, rollForwardGo, DIGEST_SEEN, DIGEST_MEASURE, digestMeasure, digestNow, digestHTML, digestLoad, digestMount, sureBatchHTML, fileSureOnes, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions, mount };
+return { rollForwardFor, rollForwardHTML, rollForwardGo, DIGEST_SEEN, DIGEST_MEASURE, digestMeasure, digestNow, digestHTML, digestLoad, digestMount, sureBatchHTML, fileSureOnes, likedLineHTML, view, toggleFileSel, inboxIndex, inboxTrack, fileCurrent, inboxAct, actions, mount };
 })();
 /* ---- core/review/weakwords.mjs ---- */
 __mod["core/review/weakwords.mjs"] = (function () {
@@ -5764,7 +5795,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-0308`,
+    `Betterfy engine score — build 2026-11-18-0409`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -10499,7 +10530,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-0308';
+const BUILD = '2026-11-18-0409';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -10837,7 +10868,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-0308', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-0409', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -11426,19 +11457,25 @@ function buildReports(lib, cfg, tags) {
     // not offered as wrong there again.
     .filter(m => !keptHere(m.id, m.currentPlaylistId));
 
-  // Filed means filed as any release of it: a liked single whose album copy
-  // (same ISRC, or the same trackKey — artist, title and version) already sits
-  // in a playlist is not waiting to be filed, whatever its Spotify id.
-  // An inflow is not a home either: a liked song whose only playlist is "My
-  // Shazam Tracks", a saved Discover Weekly, "On Repeat" or "To sort" (axis
-  // inbox, core/playlists/axes.mjs) is still waiting to be filed. Counting
-  // those as filed hid most of a library's unfiled likes from the File queue.
-  const filed = new Set(), filedIsrc = new Set(), filedKey = new Set();
-  for (const p of lib.playlists) { if (isMirrorPlaylist(p) || cfg?.[p.id]?.axis === 'inbox') continue;
-    for (const t of p.tracks) { if (!t) continue; filed.add(t.id);
-      if (t.isrc) filedIsrc.add(t.isrc); if (t.name) filedKey.add(trackKey(t)); } }
-  const isFiled = t => filed.has(t.id) || (!!t.isrc && filedIsrc.has(t.isrc)) || (!!t.name && filedKey.has(trackKey(t)));
-  const unfiled = lib.liked.filter(t => t?.id && !isFiled(t));
+  // Liked Songs is the inbox: every liked song waits in File until you file it
+  // there, whatever playlists it already sits in (emma, 2026-11-18). It
+  // leaves the queue once File records where it went (FB.accepted), not
+  // because some playlist happens to hold it. Where it already is, as any
+  // release of it (same id, ISRC or trackKey; never the All Songs mirror),
+  // rides along on the card as `inPl`, so filing it where it already is adds
+  // no second copy.
+  const plOf = new Map();
+  const keysOf = t => [t.id, t.isrc ? 'i:' + t.isrc : null, t.name ? 'k:' + trackKey(t) : null].filter(Boolean);
+  for (const p of lib.playlists) { if (isMirrorPlaylist(p)) continue;
+    for (const t of p.tracks ?? []) { if (!t) continue;
+      for (const k of keysOf(t)) { let m = plOf.get(k); if (!m) plOf.set(k, m = new Map()); m.set(p.id, p.name); } } }
+  const placedIn = t => { const out = new Map();
+    for (const k of keysOf(t)) for (const [id, name] of plOf.get(k) ?? []) out.set(id, name);
+    return [...out].map(([id, name]) => ({ id, name })); };
+  const filedHere = t => !!FB[t.id]?.accepted?.length;
+  const unfiled = lib.liked.filter(t => t?.id && !filedHere(t));
+  const inPlOf = new Map(unfiled.map(t => [t.id, placedIn(t)]));
+  const likedIn = likedBreakdown(lib, unfiled, inPlOf);
   // Rejections by artist, read once for the whole queue (backlogSuggest).
   const rejected = artistRejectMemory(FB, lib);
   // Everything a card's picks and tags are made from is the track's artists
@@ -11468,6 +11505,7 @@ function buildReports(lib, cfg, tags) {
       thinData: s.thin,
       artists: (t.artists ?? []).filter(a => a.id).map(a => ({ id:a.id, name:a.name })),
       skips: fb?.skips ?? 0,
+      inPl: inPlOf.get(t.id) ?? [],
       suggest: s.suggest.map(x => ({ ...x })) };
   })
     // Newest first, but anything already skipped sinks below everything you
@@ -11509,7 +11547,23 @@ function buildReports(lib, cfg, tags) {
   // profiles/idf come out too: Discover ranks tracks that are not in the
   // library at all, and must score them against the same centroids the inbox
   // uses rather than a second, subtly different model.
-  return { within, across, misfiled, backlog, clusters, drift, profiles, idf };
+  return { within, across, misfiled, backlog, clusters, drift, profiles, idf, likedIn };
+}
+
+/**
+ * The count line on File: how many songs you have liked, how many File has
+ * filed, how many are left, and how many of those left already sit in some
+ * playlist (with the playlists holding the most of them).
+ */
+function likedBreakdown(lib, unfiled, inPlOf) {
+  const liked = (lib.liked ?? []).filter(t => t?.id).length;
+  const tally = new Map();
+  let placed = 0;
+  for (const t of unfiled) { const pl = inPlOf.get(t.id) ?? []; if (pl.length) placed++;
+    for (const p of pl) { const x = tally.get(p.id) ?? { id: p.id, name: p.name, n: 0 }; x.n++; tally.set(p.id, x); } }
+  const top = [...tally.values()].sort((a, b) => b.n - a.n || String(a.name).localeCompare(String(b.name)));
+  return { liked, total: lib.liked_total ?? null, filed: liked - unfiled.length, toFile: unfiled.length,
+           placed, playlists: top.length, top: top.slice(0, 8) };
 }
 
 /* ---------- File's queue order (BUILD-5-PLAN §5.2) ----------
@@ -11599,7 +11653,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-0308');
+    const w = new Worker('reports-worker.js?v=2026-11-18-0409');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15119,7 +15173,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-0308';
+    s.src = 'engine.js?v=2026-11-18-0409';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15141,7 +15195,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-0308');
+    const w = new Worker('engine-worker.js?v=2026-11-18-0409');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -15852,7 +15906,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-0308';
+    s.src = 'audio.js?v=2026-11-18-0409';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -15906,7 +15960,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0308', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-0409', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17053,7 +17107,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0308', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-0409', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -17344,7 +17398,10 @@ function onbCount() {
   if (ONB.busy || LS.getItem('bf_onb_done')) return;
   ONB.busy = true;
   Promise.resolve(getLog()).then(log => {
-    const n = log.filter(e => e.op === 'add' && e.reason === 'filed from inbox' && !e.undone).length;
+    // Filed songs, not writes: a liked song filed where it already was writes nothing but still counts.
+    const ids = new Set(log.filter(e => e.op === 'add' && e.reason === 'filed from inbox' && !e.undone).flatMap(e => e.trackIds ?? []));
+    for (const id in FB) if (FB[id]?.accepted?.length) ids.add(id);
+    const n = ids.size;
     const changed = n !== ONB.n; ONB.n = n;
     if (n >= ONB_GOAL) LS.setItem('bf_onb_done', '1');
     if (changed && view === 'inbox') render();

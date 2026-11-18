@@ -59,22 +59,30 @@ function library() {
 
 const backlogIds = (lib, cfg, fb) => own(page(fb).buildReports(lib, cfg, TAGS).backlog.map(b => b.id));
 
-/* ---- B4 ---- */
+/* ---- B4, under "Liked Songs is the inbox" (2026-11-18) ----
+ * Every liked song is in File until filed there; another release of a filed
+ * recording now shows as "already in" that playlist rather than leaving the queue. */
+const inPlOf = (lib, cfg, id, fb) => own(page(fb).buildReports(lib, cfg, TAGS).backlog.find(b => b.id === id)?.inPl.map(p => p.id));
 
-test('a liked release whose ISRC is already filed under another release is filed, not in the queue', () => {
+test('a liked release whose ISRC is filed under another release shows as already in that playlist', () => {
   const { lib, cfg } = library();
-  assert.deepEqual(backlogIds(lib, cfg), ['t5'], 'the fixture has one unfiled liked track');
-  // The single: a different Spotify id and a different title spelling, but the
-  // same recording (ISRC) as the album track filed in Jungle.
+  assert.deepEqual(backlogIds(lib, cfg), ['t5'], 'the fixture has one liked track');
   lib.liked.push(track('s1', 'Tim Reaper', 'Rinse It (Single)', { isrc: 'ISRCt1', album: 'Rinse It — Single' }));
-  assert.deepEqual(backlogIds(lib, cfg), ['t5'], 'same ISRC as a filed track: already filed');
+  assert.deepEqual(backlogIds(lib, cfg).sort(), ['s1', 't5'], 'still in File: every liked song waits there');
+  assert.deepEqual(inPlOf(lib, cfg, 's1'), ['p1'], 'same ISRC as a track in Jungle');
 });
 
-test('a liked release with the same trackKey as a filed track is filed, even with no ISRC', () => {
+test('a liked release with the same trackKey as a filed track shows as already in it, even with no ISRC', () => {
   const { lib, cfg } = library();
-  // A remaster, no ISRC: the same artist, title and (no) version as t3.
   lib.liked.push(track('r1', 'Blawan', 'Why They Hide - 2020 Remaster', { isrc: undefined }));
-  assert.deepEqual(backlogIds(lib, cfg), ['t5']);
+  assert.deepEqual(inPlOf(lib, cfg, 'r1'), ['p2']);
+});
+
+test('a liked song leaves File once File has filed it (FB.accepted), not because a playlist holds it', () => {
+  const { lib, cfg } = library();
+  lib.liked.push(track('t1', 'Tim Reaper', 'Rinse It'));
+  assert.deepEqual(backlogIds(lib, cfg).sort(), ['t1', 't5']);
+  assert.deepEqual(backlogIds(lib, cfg, { t1: { accepted: ['p1'] } }), ['t5']);
 });
 
 test('a different version of a filed track is still unfiled: remixes are different records', () => {
@@ -90,6 +98,7 @@ test('a copy that is only in the mirror playlist does not count as filed', () =>
   lib.playlists.push({ id: 'as1', name: 'All Songs — Betterfy', tracks: [track('s2', 'Nobody', 'Lonely', { isrc: 'ISRC-LONELY' })] });
   cfg.as1 = { name: 'All Songs — Betterfy', axis: 'context', target: false };
   assert.deepEqual(backlogIds(lib, cfg).sort(), ['s1', 't5']);
+  assert.deepEqual(inPlOf(lib, cfg, 's1'), [], 'the mirror is not a playlist it is already in');
 });
 
 test('tracks with no title or ISRC never match each other by an empty key', () => {
@@ -97,6 +106,7 @@ test('tracks with no title or ISRC never match each other by an empty key', () =
   lib.playlists[0].tracks.push({ id: 'stub1' });
   lib.liked.push({ id: 'stub2', artists: [] });
   assert.deepEqual(backlogIds(lib, cfg).sort(), ['stub2', 't5']);
+  assert.deepEqual(inPlOf(lib, cfg, 'stub2'), []);
 });
 
 /* ---- B5 ---- */
@@ -143,14 +153,11 @@ test('the reject handler re-ranks through backlogSuggest, not bare rank()', () =
   assert.doesNotMatch(body, /rank\(raw/);
 });
 
-test('a liked song whose only playlist is an inflow (Shazam, To sort) is still waiting to be filed', () => {
+test('the liked breakdown counts liked, filed here, to file, and where the ones left already are', () => {
   const { lib, cfg } = library();
-  const shazamed = track('z1', 'Dwarde', 'Bassline Pressure');
-  lib.liked.push(shazamed);
-  lib.playlists.push({ id: 'in1', name: 'My Shazam Tracks', tracks: [shazamed, track('t3', 'Blawan', 'Why They Hide')] });
-  cfg.in1 = { name: 'My Shazam Tracks', axis: 'inbox', target: false };
-  assert.deepEqual(backlogIds(lib, cfg).sort(), ['t5', 'z1'], 'only in an inbox playlist: unfiled');
-  // A mood or context playlist is a real place it was put, so it still counts.
-  cfg.in1.axis = 'context';
-  assert.deepEqual(backlogIds(lib, cfg), ['t5']);
+  lib.liked.push(track('t1', 'Tim Reaper', 'Rinse It'), track('t2', 'Dwarde', 'Dread'), track('t3', 'Blawan', 'Why They Hide'));
+  lib.liked_total = 4;
+  const b = own(page({ t3: { accepted: ['p2'] } }).buildReports(lib, cfg, TAGS).likedIn);
+  assert.equal(b.liked, 4); assert.equal(b.filed, 1); assert.equal(b.toFile, 3); assert.equal(b.placed, 2);
+  assert.deepEqual(b.top.map(x => [x.name, x.n]), [['Jungle', 2]]);
 });

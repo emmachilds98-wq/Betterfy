@@ -64,26 +64,34 @@ export function rollForwardHTML({ S, esc }) {
   </div>`;
 }
 
+/** This queue row already sits in that playlist (as any release of it): filing it there writes nothing. */
+const alreadyIn = (R, id, pid) => !!R.backlog.find(b => b.id === id)?.inPl?.some(p => p.id === pid);
+
 /** File the ticked ones, one History entry per playlist, one undo for the lot. */
 export async function rollForwardGo(ctx) {
-  const { S, R, CFG, addTracks, logAction, getLog, undoAction, toast, render } = ctx;
+  const { S, R, CFG, addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, toast, render } = ctx;
   const rf = S.roll;
   if (!rf) return;
   const ids = rf.rows.map(r => r.id).filter(id => !rf.off.has(id));
   if (!ids.length) { S.roll = null; return render(); }
   const ats = [];
   for (const pid of rf.playlistIds) {
-    await addTracks(pid, ids);
-    await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:ids,
+    const add = ids.filter(id => !alreadyIn(R, id, pid));
+    if (!add.length) continue;
+    await addTracks(pid, add);
+    await logAction({ op:'add', playlistId:pid, playlistName:CFG[pid]?.name ?? pid, trackIds:add,
                       reason:`filed with the rest of ${rf.artist}` });
     ats.push((await getLog())[0]?.at);
   }
+  // Recorded as filed, so they stay out of File after the next sync (Liked Songs is the inbox).
+  for (const id of ids) await recordAccept?.(id, rf.playlistIds);
   // In place, and keeping whichever track is on screen on screen.
   const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(ids);
   for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
   S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
   S.roll = null;
-  const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at); };
+  const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
+                                for (const id of ids) await forgetAccept?.(id, rf.playlistIds); };
   toast(`Filed ${ids.length} more by ${rf.artist}.`, undoAll);
   render();
 }
@@ -221,11 +229,13 @@ export async function fileSureOnes(ctx) {
     ats.push((await getLog())[0]?.at);
     done.push([pid, ids]);
   };
-  const logged = new Set();
+  const logged = new Set(), already = [];   // [playlistId, trackId] already there: nothing to write
   let failure = null;
   try {
     for (const [pid, rows] of byPl) {
-      const ids = rows.map(r => r.id);
+      for (const r of rows) if (alreadyIn(R, r.id, pid)) already.push([pid, r.id]);
+      const ids = rows.map(r => r.id).filter(id => !alreadyIn(R, id, pid));
+      if (!ids.length) continue;
       await addTracks(pid, ids);
       await logAdd(pid, ids, rows, 'filed the sure ones');
       logged.add(pid);
@@ -255,9 +265,10 @@ export async function fileSureOnes(ctx) {
     return render();
   }
   for (const [pid, ids] of done.slice(before)) for (const id of ids) await recordAccept(id, [pid]);
+  for (const [pid, id] of already) await recordAccept(id, [pid]);
   S.partial = null;
   S.filing = false;
-  const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set(done.flatMap(([, ids]) => ids));
+  const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set([...done.flatMap(([, ids]) => ids), ...already.map(([, id]) => id)]);
   for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
   S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
   S.roll = null; S.fileSel = new Set();
@@ -267,6 +278,18 @@ export async function fileSureOnes(ctx) {
     for (const [pid, ids] of done) for (const id of ids) await forgetAccept(id, [pid]);
   });
   render();
+}
+
+/** One line under the title: liked, filed here, left to file. It opens to where the ones left already sit. */
+export function likedLineHTML({ R, esc }) {
+  const b = R?.likedIn;
+  if (!b?.liked) return '';
+  const f = n => Number(n).toLocaleString();
+  const short = b.total != null && b.total > b.liked ? ` Spotify says you have ${f(b.total)}, so sync again to read the rest.` : '';
+  return `<details class="liked-line"><summary>${f(b.liked)} liked · ${f(b.filed)} filed here · ${f(b.toFile)} to file</summary>
+    <p>Every liked song waits here until you file it, even one that is already in a playlist.${short}</p>
+    ${b.placed ? `<p>${f(b.placed)} of the ${f(b.toFile)} are already in a playlist: ${b.top.map(x => `${esc(x.name)} (${f(x.n)})`).join(', ')}${b.playlists > b.top.length ? `, and ${f(b.playlists - b.top.length)} more` : ''}. Filing one where it already is adds no second copy.</p>` : ''}
+  </details>`;
 }
 
 export function view(ctx) {
@@ -282,7 +305,7 @@ export function view(ctx) {
       <p>${hasPl ? 'File sorts your liked songs into your playlists. Like a few songs in Spotify and they will show up here.'
         : 'Like some songs in Spotify, or make a playlist, then reopen Betterfy. It files your liked songs into your playlists.'}</p></div></div>`;
   }
-  if (!rows.length) return `<h1>File</h1>${digestHTML(ctx)}
+  if (!rows.length) return `<h1>File</h1>${likedLineHTML(ctx)}${digestHTML(ctx)}
     <div class="empty done">
       <svg viewBox="0 0 32 32" aria-hidden="true">
         <rect x="7.75" y="4.9" width="7" height="3.4" rx="1.7" style="fill:var(--m0)"/>
@@ -291,7 +314,7 @@ export function view(ctx) {
         <rect x="7.75" y="19" width="12" height="3.4" rx="1.7" style="fill:var(--m3)"/>
         <rect x="7.75" y="23.7" width="7" height="3.4" rx="1.7" style="fill:var(--m4)"/>
       </svg>
-      <b>That's the lot.</b>Every liked song sits in at least one playlist. Nothing left to file.</div>`;
+      <b>That's the lot.</b>Every liked song has been filed. Nothing left to file.</div>`;
 
   const i = Math.min(S.inboxAt, rows.length - 1), t = rows[i];
   // A tap only ever builds a selection now — it never writes to Spotify by
@@ -329,8 +352,8 @@ export function view(ctx) {
     : '';
 
   // The teach questions (BUILD-6 SG, app/teach.js): '' unless this account's Score run said they help.
-  return `${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
-      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}</span>
+  return `${likedLineHTML(ctx)}${digestHTML(ctx)}${sureBatchHTML(ctx)}${ctx.teachHTML?.() ?? ''}${rollForwardHTML(ctx)}<div class="counter" style="margin:0 0 16px">
+      <span style="font-family:var(--mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent)">${i + 1} of ${rows.length.toLocaleString()} · liked ${esc(t.added)}${t.inPl?.length ? ` · already in ${t.inPl.slice(0, 2).map(p => esc(p.name)).join(', ')}${t.inPl.length > 2 ? ` +${t.inPl.length - 2}` : ''}` : ''}</span>
       <span${touch ? ' class="how-touch"' : ''}>${how}</span>
     </div>
     <div class="deck">
@@ -446,7 +469,10 @@ export async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
   // the toast just chains all of them for the common "undo the lot" case.
   const ats = [];
   try {
+    // Already there (as this or any release of it): nothing to write, only the answer to keep.
+    const there = new Set((t.inPl ?? []).map(p => p.id));
     for (const id of ids) {
+      if (there.has(id)) continue;
       await addTracks(id, [t.id]);
       await logAction({ op:'add', playlistId:id, playlistName:CFG[id]?.name ?? id, trackIds:[t.id], reason:'filed from inbox', queuePos:at, deck:deckLen, band:bandOf(id), ...(via ? { via } : {}) });
       ats.push((await getLog())[0]?.at);
