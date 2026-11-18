@@ -466,7 +466,7 @@ preview coverage (572 of 600 heard). For another account:
 | D1 | "Send to the team" opens a pre-filled GitHub issue? (from build 7) | Yes |
 | D2 | Pages built by Actions instead of committed `docs/`? (from build 7) | Yes: ends the rebuild-on-every-merge conflicts that this plan's parallel lanes will hit |
 | D3 | Key research thread? | No |
-| D4 | May Sure be offered on a card where the family is confident but the playlist is not (I1)? It is a larger target than today's one-playlist Sure | Yes: it is shown as "Drum & bass: Rollers or Jungle?", and the tap decides. This is what family first already does |
+| D4 (answered yes, 2026-11-18) | May Sure be offered on a card where the family is confident but the playlist is not (I1)? It is a larger target than today's one-playlist Sure | Yes: it is shown as "Drum & bass: Rollers or Jungle?", and the tap decides. This is what family first already does |
 | D5 | If B1 finds Alt/Indie is three sounds, is a split offer in Library welcome? | Yes: the split is her tap, with one undo |
 
 Nothing here waits on an in-page click except her next Score run, which runs
@@ -551,7 +551,7 @@ and B1 (add-only until the lane's package merges).
 | Id | Package | Wave | Lane | State | PR | Numbers / notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | A1 to A7 | Further analysis lines | 0 | M | Not started | | |
-| I1 | Family first on its confident part | 1 | E | Not started | | bar: confident ≥ 95% at ≥ 25% |
+| I1 | Family first on its confident part | 1 | E | Built, switches itself on at the next Score run | | bar: confident ≥ 95% at ≥ 25% on ≥ 20 tracks; D4 = yes (family-level Sure offered) |
 | I2 | Sure earned in pockets | 1 | E | Not started | | bar: Sure ≥ 95% at ≥ 25% of tracks |
 | N1 | Never-filed artists | 2 | E | Not started | | bar: +3 top-1 on 205 tracks |
 | S2 | Small playlists | 2 | E, U | Not started | | bar: +10 recall on the under-12 group |

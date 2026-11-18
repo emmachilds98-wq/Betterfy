@@ -51,8 +51,11 @@ function calibLine(label, rep, pc) {
 export function familyLine(f, pc) {
   const sure = f.sure?.confidentN ? `family confident on ${pc(f.sure.confidentShare)} of tracks, right ${pc(f.sure.confidentRight)}`
     : 'family confident: none earned yet';
+  // Build 8 I1: say which bar it cleared; the reason in words when neither.
+  const verdict = f.use ? (f.by === 'confident' ? 'used where it is confident' : 'used')
+    : `not used (${f.why ?? 'family top-1 under 85%'})`;
   return `Family first (${f.families} families): family top-1 ${pc(f.family)}, right playlist inside the right family ${pc(f.within)} `
-    + `(flat top-1 ${pc(f.flat)}, ${f.n} tracks); ${sure} — ${f.use ? 'used' : 'not used (family top-1 under 85%)'}`;
+    + `(flat top-1 ${pc(f.flat)}, ${f.n} tracks); ${sure} — ${verdict}`;
 }
 
 /** Package 4: "Sure when sources agree", from a calibration report's `agree`
