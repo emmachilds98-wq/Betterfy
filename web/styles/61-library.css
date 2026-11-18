@@ -29,7 +29,7 @@
 
   /* The detail sheet. */
   .plsheet .pls-head{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px 10px; flex:none}
-  .plsheet .pls-head h2{font-family:var(--display); font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0;
+  .plsheet .pls-head h2{font-family:var(--display); font-size:var(--fs-h2-lg); font-weight:800; letter-spacing:-.02em; margin:0;
           overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .pls-body{padding:0 18px calc(24px + var(--sab, 0px)); overflow-y:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:18px; min-height:0}
   .pls-sec h3{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:600; margin:0 0 6px}

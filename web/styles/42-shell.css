@@ -50,6 +50,6 @@
   .uh.open .chev{transform:rotate(-135deg)}
   .uhbody{padding:2px 14px 16px; overflow-x:auto}
   /* The modules were written as whole screens: keep them inside a 390px sheet. */
-  .uhbody h2{font-size:15px; margin-top:18px}
+  .uhbody h2{font-size:var(--fs-h3); margin-top:18px}
   .uhbody .card,.uhbody .panel{padding:14px; border-radius:var(--r-2)}
   .uhbody table{max-width:100%}

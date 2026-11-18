@@ -84,6 +84,6 @@
   h1{font-family:var(--display); font-weight:800; font-size:clamp(28px,3.6vw,36px); letter-spacing:-.03em; margin:0 0 8px; text-wrap:balance}
   /* A short bar in the screen's own hue above every title. */
   h1::before{content:""; display:block; width:34px; height:4px; border-radius:3px; background:var(--view); margin:0 0 12px}
-  h2{font-family:var(--display); font-weight:700; font-size:18px; letter-spacing:-.015em; margin:34px 0 12px}
+  h2{font-family:var(--display); font-weight:700; font-size:var(--fs-h2); letter-spacing:-.015em; margin:34px 0 12px}
   .lede{color:var(--ink-2); font-size:16px; margin:0 0 24px; max-width:62ch}
 

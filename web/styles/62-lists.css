@@ -11,7 +11,7 @@
   .srcgrid{display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; align-items:start}
   .srccard{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); padding:18px 20px 20px; min-width:0}
   .srchead{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px}
-  .srchead h2{margin:0; font-size:17px}
+  .srchead h2{margin:0; font-size:var(--fs-h2-md)}
   .srcline{color:var(--ink-2); font-size:13.5px; margin:0 0 14px}
   .srccard .rowbtns{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px}
   .srccard input:not([type]), .srccard input[type="text"]{flex:1 1 180px; min-width:0; width:auto}

@@ -115,7 +115,7 @@ export function upNextHTML({ S, R, esc, hueOf, filePicks, pickBacked }) {
   const at = Math.min(S.inboxAt ?? 0, R.backlog.length - 1);
   const upNext = R.backlog.map((t, i) => [t, i]).slice(at + 1, at + 9);
   if (!upNext.length) return '';
-  return `<div class="seehead"><h2 style="margin:0">Up next</h2></div>
+  return `<div class="seehead"><h2>Up next</h2></div>
     <div class="upnext strip">${upNext.map(([t, i]) => {
       const best = (filePicks ? filePicks(t) : t.suggest ?? [])[0];
       // Green and "Sure" only for a pick sound or filing history backs (USER-REVIEW item 2).
@@ -127,7 +127,7 @@ export function upNextHTML({ S, R, esc, hueOf, filePicks, pickBacked }) {
       return `<button class="u" data-act="goinbox" data-goinbox="${i}" title="${esc(t.title)} — ${esc(t.artist)}">${cover}<span class="bd">
         <span class="t">${esc(t.title)}</span>
         <span class="a">${esc(t.artist)}</span>
-        <span class="h" style="color:var(--${strong ? 'ok' : 'accent'})">${best
+        <span class="h${strong ? ' sure' : ''}">${best
           ? `→ ${esc(best.name)} · ${strong ? 'Sure' : best.score >= 0.45 ? 'Likely' : 'Unsure'}` : '→ no confident pick'}</span>
       </span></button>`;
     }).join('')}</div>`;
