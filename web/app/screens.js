@@ -139,6 +139,9 @@ Object.assign(SCREEN_CTX, {
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand, pickBacked,
                   addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
                   fileBand, fileSure, fileOrderKick, teachHTML, teachAct,
+                  // The sound-label question under the card (U3, web/app/audio.js).
+                  labelAskHTML: ids => (typeof labelAskHTML === 'function' ? labelAskHTML(ids) : ''),
+                  labelAskAct: el => (typeof labelAskAct === 'function' ? labelAskAct(el) : undefined),
                   fileDecision: t => (typeof engineDecisionOf === 'function' ? engineDecisionOf(t?.id) : null),
                   moodChips: t => (typeof moodChipsFor === 'function' ? moodChipsFor(t) : []),
                   rollSound: fileRollSound, rollRegistrant: t => registrantOfIsrc(likedIsrc(t.id)),
