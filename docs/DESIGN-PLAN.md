@@ -140,6 +140,16 @@ real run with Deep listen on.
 
 ### L1: Desktop uses its width (≥1100 px)
 
+**Done (2026-11-18), provisional:** from 1100px, File and Discover widen to
+1180px. File's Up next is a sticky right rail of compact rows; Discover's card
+has All picks beside it (the rail scrolls on its own); Library's rows and
+Tidy's rows run in two columns (a Tidy row with a table, or one on its own,
+keeps the full width). The radar is read as **each month's releases in two
+columns** rather than months side by side, so it still reads newest first.
+Wrappers (`.wide2`, `.w-main`, `.w-rail`) are `display:contents` below
+1100px, so phone layouts are unchanged. `npm run shots` adds a 1440px pass
+(`wide-dark-*`).
+
 - **Goal:** a desktop screen shows two things side by side wherever it has
   two.
   - **File:** card on the left, Up next as a right rail. Coordinate with
