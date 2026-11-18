@@ -102,6 +102,9 @@ async function audioInit() {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadEar: audioEars,
+    // L1: the last few per-stage timings, kept on this device (numbers only).
+    timingSeed: audioTimingRead(),
+    onTiming: snap => audioTimingWrite(snap),
     // CLAP (WP-C2): only while "Search by description" is ticked and Wi-Fi allows it.
     // Its encoder (~77 MB) loads in the same Worker on the first such run.
     clapOn: () => deepAllowed('clap') === 'ok',

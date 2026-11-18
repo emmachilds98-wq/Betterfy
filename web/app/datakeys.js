@@ -88,6 +88,7 @@ const DATA_KEYS = [
   { where:'idb', key:'cluster_names', name:'Names for sound groups', group:'Listening', why:'Names you gave to groups of tracks that sound alike.' },
   { where:'idb', key:'labelchecks', name:'Your label checks', group:'Listening', why:'Your answers when checking mood, voice and energy labels.' },
   { where:'local', key:'bf_audio', name:'Listening settings', group:'Listening', why:'Listening settings: on or off, and which tracks to listen to.' },
+  { where:'local', key:'bf_listen_timing', name:'Listening speed', group:'Listening', why:'How long the last few tracks took to hear on this device, per step (looking up, downloading, decoding, listening), so Settings can say how fast listening is here. Numbers only, never sent.' },
   { where:'local', key:'bf_audio_deep', name:'Deep listen settings', group:'Listening', why:'Deep listen settings.' },
   { where:'local', key:'bf_audio_wifi_ok', name:'OK to listen off Wi-Fi', group:'Listening', why:'That you said yes to listening on a metered connection.' },
   { where:'local', key:'bf_sound_nudge', name:'Listen suggestion dismissed', group:'Listening', why:'That you dismissed the "listen to my music" suggestion on File.' },

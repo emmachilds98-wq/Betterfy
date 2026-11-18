@@ -12,6 +12,52 @@ function audioRedraw() {
   });
 }
 
+/* ---------- L1 timing and L4 funnel: display only (docs/SOUND-ENGINE-PLAN.md) ---------- */
+const TIMING_KEY = 'bf_listen_timing';
+function audioTimingRead() {
+  try { const j = JSON.parse(LS.getItem(TIMING_KEY) || 'null'); return j && typeof j === 'object' ? j : null; } catch { return null; }
+}
+function audioTimingWrite(snap) {
+  try {
+    const A = globalThis.BetterfyAudio, n = navigator;
+    const device = A?.deviceClass ? A.deviceClass({ hardwareConcurrency: n.hardwareConcurrency, deviceMemory: n.deviceMemory,
+      mobile: n.userAgentData?.mobile ?? /Mobi|Android|iPhone|iPad/i.test(n.userAgent || '') }) : '';
+    LS.setItem(TIMING_KEY, JSON.stringify({ ...snap, device }));
+  } catch { /* storage off: the numbers just aren't kept */ }
+}
+/** Every track in the library, each once, with the ISRC Spotify gave. */
+function funnelTracks() {
+  const out = [], seen = new Set();
+  const add = t => { if (t?.id && !seen.has(t.id)) { seen.add(t.id); out.push({ id: t.id, isrc: t.isrc ?? null }); } };
+  for (const t of LIB?.liked ?? []) add(t);
+  for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) add(t);
+  return out;
+}
+function hearingFunnelNow() {
+  const A = globalThis.BetterfyAudio;
+  return A?.hearingFunnel ? A.hearingFunnel(funnelTracks(), AUDIO.records ?? new Map()) : null;
+}
+function hearingFunnelHTML() {
+  const A = globalThis.BetterfyAudio, f = hearingFunnelNow();
+  if (!f || !f.total) return '';
+  const stages = A.funnelStages(f).map(([k, c]) => `<li><b>${c.toLocaleString()}</b> ${esc(k)}</li>`).join('');
+  const why = Object.entries(f.misses).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1])
+    .map(([k, c]) => `<li><b>${c.toLocaleString()}</b> ${esc(A.FUNNEL_INSTEAD[k] ?? k)}</li>`).join('');
+  const timing = A.timingLine ? A.timingLine((AUDIO.ctrl?.timing?.() ?? audioTimingRead() ?? {}).track) : '';
+  return `<div id="hearingFunnel" class="sub lp-note"><p id="hearingFunnelText">${esc(A.funnelText(f))}</p>
+    <details><summary>How much of your library can be heard</summary><ul>${stages}</ul>${why ? `<p>What happens to the rest:</p><ul>${why}</ul>` : ''}</details>
+    ${timing ? `<p id="audioTiming">On this device: ${esc(timing)}.</p>` : ''}</div>`;
+}
+/** Score report lines: how much is heard, and how fast listening is on this device. */
+function hearingReportLines() {
+  const A = globalThis.BetterfyAudio;
+  if (!A?.hearingFunnel) return ['Hearing: nothing heard yet.'];
+  const lines = A.funnelLines(hearingFunnelNow());
+  const t = audioTimingRead();
+  if (t && A.timingReportLines) lines.push(...A.timingReportLines(t, t.device || ''));
+  return lines;
+}
+
 /** What the queue should hear next, in order, cut to the chosen scope. */
 async function audioTracks() {
   const A = BetterfyAudio, set = audioSettings();
@@ -168,6 +214,7 @@ function audioPanelHTML() {
     ${set.on && vm.reason === 'ask' ? `<p class="sub lp-note">This browser doesn’t say whether it is on Wi-Fi.
       <button class="b sm" id="audioWifiYes">I’m on Wi-Fi, go ahead</button></p>` : ''}
     <p class="sub lp-note" id="audioStatus">${status}</p>${bar}
+    ${hearingFunnelHTML()}
     ${listenPill(vm)}
     ${missedList(vm) || (nMissed ? `<details class="sub lp-note"><summary>${nMissed.toLocaleString()} track${nMissed === 1 ? '' : 's'} couldn’t be heard</summary>
       <ul>${missed.map(([k, n]) => `<li><b>${n.toLocaleString()}</b> ${esc(missText[k] ?? k)}</li>`).join('')}</ul></details>` : '')}

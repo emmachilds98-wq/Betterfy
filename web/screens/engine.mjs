@@ -249,7 +249,7 @@ export function weakBuckets(v, LIB, n = 5) {
  * names of the user's own weakest playlists — so pasting it somewhere shares
  * how the engine did, not what the library holds beyond that.
  */
-export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, log) {
+export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock, hearingLines }, log) {
   const v = ENG.val, r = ENG.rung;
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
@@ -287,6 +287,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     situationLine(v, pc),
     tempoRangeLine(v.tempoRange, pc),
     ...(log && measureLines ? measureLines(log) : []),
+    ...(hearingLines ? hearingLines() : []),
     `Took ${(v.ms / 1000).toFixed(1)}s ${v.where === 'worker' ? 'in the background' : 'on the page'}`,
   ];
   if (TUNE?.res && tuneBlock) lines.push('', tuneBlock(TUNE.res));
