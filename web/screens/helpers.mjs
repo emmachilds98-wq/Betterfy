@@ -15,7 +15,7 @@ const n = x => (Number.isFinite(x) ? x.toLocaleString('en-GB') : '0');
  * part may be missing): { lib: { playlists, liked }, listening: { artists },
  * cov: { pct, have, total }, lfm: { key, own, asked }, bridge: { on, deezerAsked,
  * deezerPct, wikidataAsked, wikidataPct, warm: { asked, total, running, quota, gate } }, audio: { on, state, heard, reason },
- * deep: { maest, clap }, discogs, engine: { status }, auto, radar: { off, running, done, total, err, at, ago, artists } }.
+ * deep: { maest, clap }, discogs, engine: { status, targets }, auto: { at, ok, ago, running, filed, minFiled }, radar: { off, running, done, total, err, at, ago, artists } }.
  * Each row: { id, name, on, kind: 'ok'|'idle'|'warn'|'off', status, did, optional? }.
  */
 export function helperRows(s = {}) {
@@ -60,15 +60,24 @@ export function helperRows(s = {}) {
   rows.push({ id: 'deep', name: 'Deep listen', on: !!deepOn, kind: !deepOn ? 'off' : d.blocked ? 'idle' : 'ok',
     status: !deepOn ? 'Off' : d.blocked ? `On · ${d.blocked}` : 'On',
     did: `A second, finer ear for genre${d.clap ? ' and “sounds like” search' : ''}. Big one-off download, on Wi-Fi.` });
-  rows.push({ id: 'engine', name: 'Learning from your playlists', on: true, kind: s.engine?.status === 'error' ? 'warn' : 'ok',
-    status: s.engine?.status === 'ready' ? 'On · learnt' : s.engine?.status === 'error' ? 'Problem' : 'On',
-    did: 'Who you file together and where, plus every File and Skip tap, so picks follow your own filing.' });
+  // No genre playlist means nothing to learn yet (BUILD-7 Q1): say so rather than a bare "On".
+  const noTargets = s.engine?.targets === 0;
+  rows.push({ id: 'engine', name: 'Learning from your playlists', on: true, kind: s.engine?.status === 'error' ? 'warn' : noTargets ? 'idle' : 'ok',
+    status: s.engine?.status === 'ready' ? 'On · learnt' : s.engine?.status === 'error' ? 'Problem' : noTargets ? 'On · waiting' : 'On',
+    did: noTargets ? 'Waits for a genre playlist to learn from: mark one in Library and it starts by itself.'
+      : 'Who you file together and where, plus every File and Skip tap, so picks follow your own filing.' });
   // Score + Tune by itself (NEXT-WORKPLAN package 1): the gates and fitted weights decide themselves.
   const au = s.auto ?? {};
-  rows.push({ id: 'autoscore', name: 'Checks itself weekly', on: true, kind: au.at && !au.ok ? 'idle' : 'ok',
-    status: au.running ? 'On · scoring now' : !au.at ? 'On · first run soon' : !au.ok ? 'On · retrying' : `On · ran ${au.ago ?? 'recently'}`,
-    did: `Scores itself on your own filing after listening finishes and every week, and switches on the parts that measure better for you${
-      au.at && au.ago ? `; last run ${au.ago}` : ''}. No button to press.` });
+  // A run needs genre playlists and enough filed in them (BUILD-7 Q1): until then, say what it waits for, with the count.
+  const auMin = au.minFiled ?? 60;
+  const auWait = !au.at && !au.running && (s.engine?.targets === 0 ? 'none' : Number.isFinite(au.filed) && au.filed < auMin ? 'few' : null);
+  rows.push({ id: 'autoscore', name: 'Checks itself weekly', on: true, kind: auWait || (au.at && !au.ok) ? 'idle' : 'ok',
+    status: au.running ? 'On · scoring now' : auWait ? 'On · waiting' : !au.at ? 'On · first run soon' : !au.ok ? 'On · retrying' : `On · ran ${au.ago ?? 'recently'}`,
+    did: auWait === 'none' ? 'Scores itself on your own filing once you have a genre playlist (mark one in Library), then every week. No button to press.'
+      : auWait === 'few' ? `Scores itself on your own filing once ${n(auMin)} tracks are filed in your genre playlists (${n(au.filed)} so far), then every week. No button to press.`
+      : `Scores itself on your own filing after listening finishes and every week, and switches on the parts that measure better for you${
+      au.at && au.ago ? `; last run ${au.ago}` : ''}${Number.isFinite(au.top1) ? `, first pick right for ${Math.round(au.top1 * 100)}% of your filed songs` : ''}${
+      au.build ? ` (build ${au.build})` : ''}. No button to press.` });
   // Release radar (DESIGN-PLAN L5): starts by itself like every other source; only a Stop turns it off.
   const rr = s.radar;
   if (rr) {

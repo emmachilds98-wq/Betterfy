@@ -114,3 +114,29 @@ test('the panel folds to its header plus any row that asks for a look, and opens
   // Discogs off is an optional extra: never asks for a look.
   assert.ok(!helperAttention(helperRows(DEFAULTS)).some(r => r.id === 'discogs'));
 });
+
+// BUILD-7 Q1: accounts that cannot be scored yet are told why, with the number, never "first run soon".
+test('the weekly check and learning rows say what they wait for on a library that cannot score yet', () => {
+  const at = s => helperRows({ ...DEFAULTS, ...s });
+  const none = at({ engine: { status: 'idle', targets: 0 }, auto: { at: null, filed: 0 } });
+  const a0 = none.find(r => r.id === 'autoscore'), e0 = none.find(r => r.id === 'engine');
+  assert.equal(a0.status, 'On · waiting');
+  assert.equal(a0.kind, 'idle');
+  assert.match(a0.did, /genre playlist/);
+  assert.equal(e0.status, 'On · waiting');
+  assert.match(e0.did, /mark one in Library/);
+  const few = at({ engine: { status: 'ready', targets: 3 }, auto: { at: null, filed: 24, minFiled: 60 } }).find(r => r.id === 'autoscore');
+  assert.equal(few.status, 'On · waiting');
+  assert.match(few.did, /once 60 tracks are filed in your genre playlists \(24 so far\)/);
+  // Enough filed, or a run already made: unchanged.
+  assert.equal(at({ engine: { status: 'ready', targets: 3 }, auto: { at: null, filed: 600 } }).find(r => r.id === 'autoscore').status, 'On · first run soon');
+  assert.equal(at({ engine: { status: 'ready', targets: 3 }, auto: { at: 1, ok: true, ago: '2 h ago', filed: 10 } }).find(r => r.id === 'autoscore').status, 'On · ran 2 h ago');
+  assert.equal(at({ auto: { running: true, filed: 0 }, engine: { targets: 0 } }).find(r => r.id === 'autoscore').status, 'On · scoring now');
+});
+
+test('the weekly check names its last run’s build and top-1 (BUILD-7 M1)', () => {
+  const row = st => helperRows({ ...DEFAULTS, auto: st }).find(r => r.id === 'autoscore');
+  const r = row({ at: 1, ok: true, ago: '3 days ago', build: '2026-11-18-0140', top1: 0.664 });
+  assert.match(r.did, /last run 3 days ago, first pick right for 66% of your filed songs \(build 2026-11-18-0140\)\. No button/);
+  assert.ok(!/build|first pick right/.test(row({ at: 1, ok: true, ago: 'just now' }).did), 'no run kept yet: nothing claimed');
+});

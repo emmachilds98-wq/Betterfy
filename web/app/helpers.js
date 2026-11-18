@@ -28,9 +28,16 @@ function helpersState() {
               ...(typeof bridgeWarmState === 'function' ? { warm: bridgeWarmState() } : {}) },
     audio, deep,
     discogs: !!LS.getItem('bf_discogs'),
-    engine: { status: typeof ENG !== 'undefined' ? ENG.status : null },
-    auto: (() => { try { const l = autoScoreLast(); return { at: l?.at ?? null, ok: l?.ok !== false,
-      ago: l?.at && typeof agoWords === 'function' ? agoWords(Date.now() - l.at) : null, running: AUTOSCORE_RUN.running }; }
+    engine: { status: typeof ENG !== 'undefined' ? ENG.status : null,
+      targets: (() => { try { return LIB ? engineTargets().length : null; } catch { return null; } })() },
+    auto: (() => { try { const l = autoScoreLast();
+      // The newest kept Score run (BUILD-7 M1): its build and top-1, for the row's words.
+      const last = typeof runHistoryList === 'function' ? runHistoryList().find(r => r.kind === 'score' && !r.recovered) : null;
+      return { at: l?.at ?? null, ok: l?.ok !== false,
+      ago: l?.at && typeof agoWords === 'function' ? agoWords(Date.now() - l.at) : null, running: AUTOSCORE_RUN.running,
+      build: last?.build || null, top1: Number.isFinite(last?.top1) ? last.top1 : null,
+      // Q1: what a first run waits for, so the row never promises one that cannot come.
+      filed: LIB ? autoScoreFiled() : null, minFiled: typeof AUTOSCORE !== 'undefined' ? AUTOSCORE.minFiled : 60 }; }
       catch { return {}; } })(),
     radar: (() => { try {
       if (typeof RADAR === 'undefined') return null;

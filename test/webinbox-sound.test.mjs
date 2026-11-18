@@ -39,14 +39,14 @@ test('sound chip sits after the meta line, the strip under the artwork row', () 
   const t = { ...INBOX.tags, sound: { bpm: 174, sections: [['jungle'], ['drum and bass']] } };
   const html = renderInbox(t, { renderers: fake });
   assert.match(html, /<span>4:14<\/span><\/div><div class="sndchip"><span class="SC">174<\/span><\/div>/);
-  assert.match(html, /<\/div><div class="sndstrip"><span class="SS">2<\/span><\/div>\s*<div class="picks">/);
+  assert.match(html, /<\/div><div class="sndstrip"><span class="SS">2<\/span><\/div>\s*(<p class="famline wayline">[^<]*<\/p>\s*)?<div class="picks">/);
 });
 
 test('picks lead with the band chip and carry evidence; history picks keep their wording', () => {
   const t = { ...INBOX.history, suggest: INBOX.history.suggest.map((sg, i) =>
     ({ ...sg, band: i ? 'LIKELY' : 'HIGH', evidence: i ? { tags: 0.4 } : { history: 0.8 } })) };
   const html = renderInbox(t, { renderers: fake });
-  assert.match(html, /4 of 5 other tracks by this artist are already here<\/span><span class="EB">history<\/span>/);
+  assert.match(html, /4 of 5 other tracks by this artist are already here · not heard yet<\/span><span class="EB">history<\/span>/);
   assert.match(html, /<span class="rt"><span class="BC">HIGH<\/span><span class="sc">no tags yet<\/span>/);
   assert.match(html, /<span class="rt"><span class="BC">LIKELY<\/span><span class="sc">40%<\/span>/);
 });

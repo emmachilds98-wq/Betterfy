@@ -1,5 +1,7 @@
 // @bundle screens inbox 20
 import { buildDigest, digestLines, digestBaseline, parseBaseline, playlistMap } from '../../core/measure/digest.mjs';
+import { cardStateOf, pickBacked as backedPick, keptRate, keptLine, learnedNote, learnedFor } from '../../core/review/filequeue.mjs';
+import { evidenceLine } from '../ui/sound.mjs';
 /* ---------- artist roll-forward: docs/SMARTER-GENRES-PLAN.md, phase 4 ----------
  * File one track by an artist and the same artist's other unfiled tracks usually
  * belong in the same place. So the File screen offers them, as a list you can see
@@ -90,8 +92,9 @@ export async function rollForwardGo(ctx) {
   for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
   S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
   S.roll = null;
+  keptStale(S);
   const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
-                                for (const id of ids) await forgetAccept?.(id, rf.playlistIds); };
+                                for (const id of ids) await forgetAccept?.(id, rf.playlistIds); keptStale(S); };
   toast(`Filed ${ids.length} more by ${rf.artist}.`, undoAll);
   render();
 }
@@ -265,6 +268,7 @@ export async function fileSureOnes(ctx) {
   for (const [pid, id] of already) await recordAccept(id, [pid]);
   S.partial = null;
   S.filing = false;
+  keptStale(S);
   const keep = R.backlog[inboxIndex(ctx)]?.id, gone = new Set([...done.flatMap(([, ids]) => ids), ...already.map(([, id]) => id)]);
   for (let k = R.backlog.length - 1; k >= 0; k--) if (gone.has(R.backlog[k].id)) R.backlog.splice(k, 1);
   S.inboxAt = Math.max(0, R.backlog.findIndex(b => b.id === keep));
@@ -299,10 +303,46 @@ export function unlikeButtonHTML(S, t) {
   return `<button class="b sm${ask ? ' warn' : ''}" data-act="unlikeask" aria-live="polite">${ask ? 'Tap again to remove from Liked' : 'Remove from Liked'}</button>`;
 }
 
+/** The top pick's reason, as the words evidenceLine (web/ui/sound.mjs) draws. */
+export function whyOf(sg, t) {
+  const ev = sg?.evidence ?? {};
+  return { playlist: sg?.name, via: sg?.via ?? 'tags', count: sg?.count, total: sg?.total,
+           tags: t?.tags ?? [], tagsAgree: !!sg?.tagsAgree, similar: !!sg?.similar, untagged: !!sg?.untagged,
+           sound: sg?.via === 'sound' || (Number(ev.sound) || 0) > 0, learned: (Number(ev.learned) || 0) > 0 };
+}
+
+/* ---------- the 30-day kept rate (BUILD-7 U1) ----------
+ * Read from History once, again after anything this screen files or undoes,
+ * and at most once a minute otherwise (an undo made in History counts too). */
+const KEPT_TTL = 60e3;
+export function keptHTML({ S, esc }) {
+  const line = S.kept?.status === 'ready' ? keptLine(S.kept.k) : '';
+  return line ? `<p class="keptline" title="${esc(`${S.kept.k.kept} of ${S.kept.k.n} filings in the last ${S.kept.k.days} days were not undone or moved`)}">${esc(line)}</p>` : '';
+}
+export async function keptLoad(ctx) {
+  const { S, getLog, render } = ctx;
+  if (typeof getLog !== 'function') return;
+  const was = keptLine(S.kept?.k);
+  S.kept = { ...(S.kept ?? {}), status: S.kept?.k ? 'ready' : 'loading', loading: true, stale: false };
+  try {
+    const k = keptRate((await getLog({ all: true })) ?? [], Date.now());
+    // A filing made while this read was in flight asks for the next one.
+    S.kept = { status: 'ready', k, at: Date.now(), stale: !!S.kept?.stale };
+    if (keptLine(k) !== was) render();
+  } catch { S.kept = { status: 'error', at: Date.now() }; }
+}
+const keptStale = S => { if (S.kept) S.kept.stale = true; };
+
+/** Remember what the next card by this artist should say (learnedNote). */
+function noteLearned(S, t, kind, playlist = null) {
+  const a = t?.artists?.[0];
+  S.learned = a?.id ? { kind, artistId: a.id, artist: a.name ?? t.artist, playlist, trackId: t.id } : null;
+}
+
 export function view(ctx) {
   const { S, R, CFG, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip, tagChips, trackStrip,
           soundIdHTML, soundNote, pickEvidence, pickBand, matchMedia } = ctx;
-  const pickBacked = ctx.pickBacked ?? (() => true);
+  const pickBacked = ctx.pickBacked ?? backedPick;
   const rows = R.backlog;
   // A new account has nothing to file yet: say what to do, not "that's the lot".
   if (!rows.length && !ctx.LIB?.liked?.length) {
@@ -348,6 +388,12 @@ export function view(ctx) {
   const famIds = new Set(fam?.playlists?.map(p => p.id ?? p) ?? []);
   const famName = fam ? String(fam.family).replace(/-/g, ' ').replace(/^./, c => c.toUpperCase()) : '';
   ctx.fileOrderKick?.();
+  // One of three states (core/review/filequeue.mjs cardState): only Sure lights
+  // a pick and fills the File button; two-way and your call show them as equals.
+  const state = cardStateOf(t, picks, { band: topBand, decision: dec });
+  const sure = state === 'sure';
+  const evenIds = state === 'twoWay' ? (fam ? famIds : new Set(picks.slice(0, 2).map(p => p.id))) : new Set();
+  const learned = learnedFor(S.learned, t) ? learnedNote(S.learned) : '';
   const canFile = S.fileSel.size > 0 || !!best;
   const fileLabel = S.fileSel.size > 1 ? `File into ${S.fileSel.size} playlists`
     : S.fileSel.size === 1 ? `File in ${esc(nameOf([...S.fileSel][0]))}`
@@ -365,7 +411,7 @@ export function view(ctx) {
     </div>
     <div class="deck">
       ${rows[i + 1] ? '<div class="peek" aria-hidden="true"></div>' : ''}
-      <div class="card swipecard${promote ? ' promote' : ''}" id="swipeCard" ${canFile ? `data-best="${esc(best?.id ?? '')}"` : ''}>
+      <div class="card swipecard${promote ? ' promote' : ''}" id="swipeCard" data-state="${state}" ${canFile ? `data-best="${esc(best?.id ?? '')}"` : ''}>
         <div class="verdicts" aria-hidden="true">
           <span class="verdict file">${S.fileSel.size ? `${S.fileSel.size} playlist${S.fileSel.size>1?'s':''}` : best ? esc(best.name) : 'No pick'}</span>
           <span class="verdict skip">Skip</span>
@@ -382,18 +428,21 @@ export function view(ctx) {
             ${t.tags.length ? tagChips(t.tags, t.thinData) : ''}
           </div>
         </div>${trackStrip(t)}${soundIdHTML(t)}
-        ${fam ? `<p class="famline" data-family="${esc(fam.family)}"><b>${esc(famName)}</b> for sure. Which one?</p>` : ''}
+        ${learned ? `<p class="learnline" role="status">${esc(learned)}</p>` : ''}
+        ${fam ? `<p class="famline" data-family="${esc(fam.family)}"><b>${esc(famName)}</b> for sure. Which one?</p>`
+          : state === 'twoWay' && picks.length > 1 ? `<p class="famline wayline"><b>${esc(picks[0].name)}</b> or <b>${esc(picks[1].name)}</b>?</p>`
+          : state === 'yourCall' && picks.length ? `<p class="famline wayline">Your call: none of these is a sure fit.</p>` : ''}
         ${picks.length ? `<div class="picks">${picks.slice(0, 3).map((sg, n) => `
-          <div class="pickw"><button class="pick ${fam ? (famIds.has(sg.id) ? 'twoway' : '') : n === 0 ? (pickBacked(sg) ? 'best' : 'lead') : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
+          <div class="pickw"><button class="pick${evenIds.has(sg.id) ? ' twoway' : n === 0 && sure ? ' best' : ''}" data-act="selfile" data-selfile="${esc(sg.id)}"
             ${S.fileSel.has(sg.id) ? 'data-sel="1"' : ''}>
             <span class="k">${S.fileSel.has(sg.id) ? '✓' : n + 1}</span>
-            <span class="mid"><span class="nm">${esc(sg.name)}</span><span class="ax">${sg.via === 'history'
+            <span class="mid"><span class="nm">${esc(sg.name)}</span>${n === 0 ? evidenceLine(whyOf(sg, t)) : `<span class="ax">${sg.via === 'history'
               ? `${sg.count} of ${sg.total} other tracks by this artist are already here`
               : sg.via === 'sound' ? `sounds like this playlist${sg.tagsAgree ? ' · tags agree' : ''}`
               : sg.via === 'blend' ? (sg.untagged ? 'where you file this artist and ones like them'
                 : sg.similar ? 'tags, and where you file artists like this' : 'tags, and where you file this kind of record')
-              : 'its tags fit here'}</span>${pickEvidence(sg)}</span>
-            <span class="rt">${pickBand(n === 0 && topBand ? { ...sg, band: topBand } : sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
+              : 'its tags fit here'}</span>`}${pickEvidence(sg)}</span>
+            <span class="rt">${!sure ? '' : pickBand(n === 0 && topBand ? { ...sg, band: topBand } : sg)}<span class="sc">${sg.via === 'history' ? 'no tags yet' : (sg.score * 100).toFixed(0) + '%'}</span>
               <span class="bar"><i style="width:${(sg.score * 100).toFixed(0)}%"></i></span></span>
           </button><button class="nope" type="button" data-act="reject" data-reject="${esc(sg.id)}"
             title="Never suggest ${esc(sg.name)} for this track" aria-label="Never suggest ${esc(sg.name)} for this track"><span aria-hidden="true">✕</span></button></div>`).join('')}</div>`
@@ -406,7 +455,7 @@ export function view(ctx) {
         </div>` : ''}
         ${alreadyHTML(ctx, t)}
         <div class="rowbtns fileacts">
-          <button class="b big go grow" data-act="filesel" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
+          <button class="b big${sure || S.fileSel.size ? ' go' : ''} grow" data-act="filesel" data-filesel="1" ${canFile ? '' : 'disabled'}>${fileLabel}</button>
           <button class="b big" data-act="skip">Skip</button>
         </div>
         <details class="cardmore"${S.unlikeAsk === t.id && !t.inPl?.length ? ' open' : ''}><summary aria-label="More: remove from Liked, or add another playlist" title="More">\u22EF</summary>
@@ -418,6 +467,7 @@ export function view(ctx) {
       </div>
     </div>
     <div class="prog fileprog"><i style="width:${(i / rows.length * 100).toFixed(2)}%"></i></div>
+    ${keptHTML(ctx)}
     ${touch ? '' : `<div class="swipehint" role="note"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span>
       <span><b>1–3</b> pick · <b>Enter</b> file · <b>S</b> skip · <b>U</b> twice remove from Liked</span></div>`}`;
 }
@@ -501,8 +551,13 @@ export async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
     return;
   }
   S.filing = false;
+  keptStale(S);
+  // Picking something other than the first pick is the correction worth showing.
+  if (picks[0]?.id && !ids.includes(picks[0].id)) noteLearned(S, t, 'picked', names[0]);
+  else if (S.learned?.artistId && S.learned.artistId === t.artists?.[0]?.id) S.learned = null;
   const undoAll = async () => { for (const at of [...ats].reverse()) if (at) await undoAction(at);
-                                await forgetAccept(t.id, ids); };
+                                await forgetAccept(t.id, ids);
+                                keptStale(S); noteLearned(S, t, 'undo', names[0]); render(); };
   const keptOnly = ids.every(id => (t.inPl ?? []).some(p => p.id === id));
   toast(keptOnly ? `Kept “${t.title}” where it is. It is filed now.`
     : names.length > 1 ? `Filed “${t.title}” into ${names.length} playlists.` : `Filed “${t.title}” into ${names[0]}.`, undoAll);
@@ -521,6 +576,7 @@ export async function inboxAct(ctx, a) {
     // Move it to the back rather than stepping past it, so the rest of the
     // queue advances now and the skip still holds after a reload.
     t.skips = (t.skips ?? 0) + 1;
+    noteLearned(S, t, 'skip');
     R.backlog.splice(at, 1);
     R.backlog.push(t);
     // The skipped card is now the last row, so staying on the last index would
@@ -621,6 +677,8 @@ export const actions = {
 let menuFor = null;
 export function mount(ctx) {
   digestMount(ctx);
+  const K = ctx.S.kept;
+  if (!K?.loading && (!K || K.stale || Date.now() - (K.at ?? 0) > KEPT_TTL)) keptLoad(ctx);
   const id = inboxTrack(ctx)?.id ?? null;
   if (id !== menuFor) { menuFor = id; document.querySelector("#swipeCard details.cardmore")?.removeAttribute("open"); }
 }
