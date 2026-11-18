@@ -695,12 +695,6 @@ export const actions = {
   /** The sheet's DJ order: the same, in the first DJ-order mode. */
   pldj(c, el) { return plShuffle(c, el.dataset.pl, Object.keys(c.MIX_MODES)[0]); },
 
-  /** "Two genres by sound": make the playlist for the half that sounds apart. */
-  async lsplit(c, el) {
-    el.disabled = true;
-    try { await c.listsSplitMake(el.dataset.lsplit); } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
-  },
-
   /** Merge and split (F4): open the wizard on twins, or on a playlist's split. */
   wizmerge(c, el) { return wizardOpen(c, { kind: 'merge', a: el.dataset.a, b: el.dataset.b }); },
   wizsplit(c, el) { return wizardOpen(c, { kind: 'split', id: el.dataset.pl, src: el.dataset.src }); },
