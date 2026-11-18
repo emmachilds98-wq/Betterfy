@@ -172,3 +172,23 @@ test('Engine screen: the reasons on the engine that places, else the engine-alon
   const old = weakCard({ mine: { playlists: [{ id: 'P', n: 7, inTop3: 0 }] } }, LIB, p, esc);
   assert.match(old, /Low here means the engine has no real idea/);
 });
+
+test('A2: precision kept beside recall, and said in the paste line', () => {
+  // P is named first 4 times: right twice. Q's two tracks were named P.
+  const rows = [
+    { id: 'a', truth: ['P'], scores: [['P', 3], ['Q', 1]] },
+    { id: 'b', truth: ['P'], scores: [['P', 3], ['Q', 1]] },
+    { id: 'c', truth: ['Q'], scores: [['P', 3], ['Q', 1]] },
+    { id: 'd', truth: ['Q'], scores: [['P', 3], ['Q', 1]] },
+  ];
+  const st = playlistStats(rows);
+  assert.deepEqual([st.get('P').calls, st.get('P').callsRight, st.get('Q').calls], [4, 2, 0]);
+  const w = weakPlaylists(rows, { gate: { minN: 2, below: 0.5 } });
+  assert.equal(w.length, 0, 'Q is in the top 3 every time, so not weak');
+  const d = { id: 'P', n: 10, top1: 0.2, inTop3: 0.4, calls: 13, precision: 0.62, cause: 'scattered', partner: null };
+  assert.match(weakLine([d], id => id), /P 40% of 10 in its top 3; calls right 62% of 13; finds 20% of its own \(scattered/);
+  assert.match(weakLine([{ ...d, calls: 0, precision: null }], id => id), /never named first; finds 20%/);
+  // A row saved before precision was kept reads as before.
+  assert.doesNotMatch(weakLine([{ ...d, calls: undefined }], id => id), /calls right/);
+  assert.equal(weakSummary([d]).rows[0].precision, 0.62);
+});

@@ -101,7 +101,8 @@ export function measureHistory(rawLog) {
 
 /** The summary lines. `pc` formats a 0..1 share. */
 export function measureLines(m, pc = x => Math.round(x * 100) + '%') {
-  const few = (label, n, min) => `${label}: not enough data yet (${n} of ${min})`;
+  // Build 8 A5: a count that fills, so the line says how close it is.
+  const few = (label, n, min) => `${label}: not enough data yet (${n} of ${min}, ${min - n} more to measure this)`;
   const out = [];
   const q = m.queue;
   out.push(q.n >= MIN_N.queue && q.head.n >= MIN_SIDE && q.tail.n >= MIN_SIDE

@@ -306,6 +306,12 @@ async function engineCalibrate(v) {
   const placeRows = soundRows ?? bridgeRows ?? baseRows;
   let weak = null;
   try { weak = engineWeakList(placeRows); } catch { weak = null; }
+  // Build 8 A1: where the misses go, by playlist and by family. Display only.
+  try {
+    const targets = new Set(engineTargets());
+    const conf = BetterfyFamily.familyConfusion(placeRows, engineFamiliesMemo(), { inScope: id => targets.has(id) });
+    v.confusionLine = BetterfyFamily.confusionLine(conf, id => CFG[id]?.name ?? id);
+  } catch { /* the line is left out */ }
   let pairs = null;
   try { pairs = enginePairsFit(soundRows ?? baseRows, weak ? BetterfyWeak.weakPairs(weak) : []); } catch { pairs = null; }
   if (pairs) v.pairsLine = BetterfyPairs.pairsLine(pairs, id => CFG[id]?.name ?? id);

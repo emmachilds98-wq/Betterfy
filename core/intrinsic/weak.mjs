@@ -44,14 +44,20 @@ const rate = (a, b) => (b > 0 ? +(a / b).toFixed(4) : null);
 export function playlistStats(rows, { inScope = null } = {}) {
   const ok = id => !!id && (!inScope || inScope(id));
   const out = new Map();
+  const blank = pid => ({ id: pid, n: 0, top1: 0, inTop3: 0, misses: 0, missTo: new Map(), calls: 0, callsRight: 0 });
   for (const r of rows ?? []) {
     const ranked = (r?.scores ?? []).filter(x => ok(x?.[0]));
     const truth = new Set((r?.truth ?? []).filter(ok));
     if (!ranked.length || !truth.size) continue;
     const first = ranked[0][0], top3 = ranked.slice(0, 3).map(x => x[0]);
     const miss = !truth.has(first);
+    // Build 8 A2: precision, the other half of reliability. Of the tracks this
+    // playlist was named first for, how many were really its own.
+    const c = out.get(first) ?? blank(first);
+    c.calls++; if (!miss) c.callsRight++;
+    out.set(first, c);
     for (const pid of truth) {
-      const s = out.get(pid) ?? { id: pid, n: 0, top1: 0, inTop3: 0, misses: 0, missTo: new Map() };
+      const s = out.get(pid) ?? blank(pid);
       s.n++;
       if (first === pid) s.top1++;
       if (top3.includes(pid)) s.inTop3++;
@@ -80,7 +86,7 @@ export function weakPlaylists(rows, { inScope = null, gate = WEAK } = {}) {
   return [...playlistStats(rows, { inScope }).values()]
     .filter(s => s.n >= g.minN && s.inTop3 / s.n < g.below)
     .map(s => ({ id: s.id, n: s.n, top1: rate(s.top1, s.n), inTop3: rate(s.inTop3, s.n), misses: s.misses,
-                 partner: partnerOf(s, g) }))
+                 calls: s.calls, precision: rate(s.callsRight, s.calls), partner: partnerOf(s, g) }))
     .sort((a, b) => a.inTop3 - b.inTop3 || b.n - a.n || (a.id < b.id ? -1 : 1))
     .slice(0, g.max);
 }
@@ -144,7 +150,7 @@ export function diagnoseWeak(weak, { lib, index = null, pairs = null, families =
       const as = (t.artists ?? []).filter(a => a?.id);
       if (as.length && as.every(a => (f.artists.get(a.id) ?? 0) <= 1 && (homes.get(a.id) ?? 0) <= 1)) lonely++;
     }
-    const out = { id: w.id, n: w.n, top1: w.top1, inTop3: w.inTop3, size: f.size, heard: index ? f.heard : null,
+    const out = { id: w.id, n: w.n, top1: w.top1, inTop3: w.inTop3, calls: w.calls ?? null, precision: w.precision ?? null, size: f.size, heard: index ? f.heard : null,
                   partner: w.partner, loners: rate(lonely, f.size), sharedArtists: null, sharedTracks: null,
                   sameFamily: null, pair: null, cause: null, fix: null, add: 0 };
     const q = w.partner ? facts(byId.get(w.partner.id), null) : null;
@@ -175,19 +181,26 @@ export function diagnoseWeak(weak, { lib, index = null, pairs = null, families =
 
 const pc = x => (x == null ? '—' : `${Math.round(x * 100)}%`);
 
+/** Build 8 A2: "calls right 62% of 13; finds 20% of its own", or '' before precision was kept. */
+export function reliability(d) {
+  if (d?.top1 == null || d.calls == null) return '';
+  const calls = d.calls ? `calls right ${pc(d.precision)} of ${d.calls}` : 'never named first';
+  return `; ${calls}; finds ${pc(d.top1)} of its own`;
+}
+
 /** The Score paste line. Counts and the user's own playlist names only. */
 export function weakLine(diag, nameOf = id => id) {
   if (!diag?.length) return '';
   return `Weakest, as File places: ${diag.map(d => {
     const w = weakWords(d, nameOf);
-    return `${nameOf(d.id)} ${pc(d.inTop3)} of ${d.n} in its top 3 (${d.cause}${d.partner ? ` vs ${nameOf(d.partner.id)}` : ''}: ${w.fix})`;
+    return `${nameOf(d.id)} ${pc(d.inTop3)} of ${d.n} in its top 3${reliability(d)} (${d.cause}${d.partner ? ` vs ${nameOf(d.partner.id)}` : ''}: ${w.fix})`;
   }).join('; ')}`;
 }
 
 /** What Library keeps: small, one row per weak playlist. */
 export function weakSummary(diag, at = Date.now()) {
   return { v: WEAK_VERSION, at, rows: (diag ?? []).map(d => ({
-    id: d.id, n: d.n, top1: d.top1, inTop3: d.inTop3, size: d.size, heard: d.heard, cause: d.cause, fix: d.fix, add: d.add,
+    id: d.id, n: d.n, top1: d.top1, inTop3: d.inTop3, calls: d.calls ?? null, precision: d.precision ?? null, size: d.size, heard: d.heard, cause: d.cause, fix: d.fix, add: d.add,
     partner: d.partner?.id ?? null, sharedArtists: d.sharedArtists, sharedTracks: d.sharedTracks, loners: d.loners,
     pair: d.pair ? { use: d.pair.use, swaps: d.pair.swaps, accuracy: d.pair.accuracy, n: d.pair.n } : null })) };
 }

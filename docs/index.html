@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1901">
+<meta name="bf-build" content="2026-11-18-1915">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -2064,7 +2064,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1901</span>
+    <span class="mono">build 2026-11-18-1915</span>
   </p>
 
   <div class="feat">
@@ -2157,7 +2157,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1901</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1915</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2235,7 +2235,7 @@ main:focus{outline:none}
         <button class="uhhead" type="button" id="uh-about-h" data-uhtoggle="about" aria-expanded="false" aria-controls="uh-about-b">
           <span class="uht"><b>About &amp; updates</b><span class="uhs"></span></span><span class="chev" aria-hidden="true"></span></button>
         <div class="uhbody" id="uh-about-b" role="region" aria-labelledby="uh-about-h" hidden>
-          <p class="hint">Betterfy, build 2026-11-18-1901. <span id="sheetWho" class="mono"></span></p>
+          <p class="hint">Betterfy, build 2026-11-18-1915. <span id="sheetWho" class="mono"></span></p>
           <div class="rowbtns"><button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button></div>
           <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, which read as "get the latest
                Betterfy". It is not: it re-reads every playlist from Spotify, hundreds of calls against a
@@ -3772,7 +3772,8 @@ function measureHistory(rawLog) {
 
 /** The summary lines. `pc` formats a 0..1 share. */
 function measureLines(m, pc = x => Math.round(x * 100) + '%') {
-  const few = (label, n, min) => `${label}: not enough data yet (${n} of ${min})`;
+  // Build 8 A5: a count that fills, so the line says how close it is.
+  const few = (label, n, min) => `${label}: not enough data yet (${n} of ${min}, ${min - n} more to measure this)`;
   const out = [];
   const q = m.queue;
   out.push(q.n >= MIN_N.queue && q.head.n >= MIN_SIDE && q.tail.n >= MIN_SIDE
@@ -7097,7 +7098,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1901`,
+    `Betterfy engine score — build 2026-11-18-1915`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7120,6 +7121,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
     calibLine('How sure, with similar artists', ENG.calib?.bridge, pc),
     calibLine('How sure, with sound', ENG.calib?.audio, pc),
     ...(v.family ? [familyLine(v.family, pc)] : []),
+    v.confusionLine || null,
     ...(v.moodLine ? [v.moodLine] : []),
     ...(v.agreeLine ? [v.agreeLine] : []),
     ...(v.pairsLine ? [v.pairsLine] : []),
@@ -9908,7 +9910,8 @@ function weakSheetHTML(c, id) {
   const merge = d.fix === 'merge' && d.partner
     ? `<div class="rowbtns"><button class="b sm p" data-act="wizmerge" data-a="${esc(id)}" data-b="${esc(d.partner)}">Merge with ${esc(weakName(c, d.partner))}…</button></div>` : '';
   return `<section class="pls-sec" id="plweak"><h3>Help it learn this one</h3>
-    <p class="hint">Offered in its top three for ${pc(d.inTop3)} of the ${d.n} tracks it was checked on${esc(weakWhen(c.weakSaved?.()?.at))}. ${esc(w.why)}</p>
+    <p class="hint">Offered in its top three for ${pc(d.inTop3)} of the ${d.n} tracks it was checked on${esc(weakWhen(c.weakSaved?.()?.at))}.${d.calls != null && d.top1 != null
+      ? esc(` ${d.calls ? `When Betterfy names it first, it is right ${pc(d.precision)} of ${d.calls} times` : 'Betterfy never named it first'}; it finds ${pc(d.top1)} of its own tracks.`) : ''} ${esc(w.why)}</p>
     <p class="hint"><b>${esc(w.fix)}</b></p>${merge}</section>`;
 }
 function weakListHTML(c) {
@@ -11501,7 +11504,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1901';
+const BUILD = '2026-11-18-1915';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11839,7 +11842,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1901', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1915', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12660,7 +12663,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1901');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1915');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16441,7 +16444,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1901';
+    s.src = 'engine.js?v=2026-11-18-1915';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -16463,7 +16466,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1901');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1915');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16727,6 +16730,12 @@ async function engineCalibrate(v) {
   const placeRows = soundRows ?? bridgeRows ?? baseRows;
   let weak = null;
   try { weak = engineWeakList(placeRows); } catch { weak = null; }
+  // Build 8 A1: where the misses go, by playlist and by family. Display only.
+  try {
+    const targets = new Set(engineTargets());
+    const conf = BetterfyFamily.familyConfusion(placeRows, engineFamiliesMemo(), { inScope: id => targets.has(id) });
+    v.confusionLine = BetterfyFamily.confusionLine(conf, id => CFG[id]?.name ?? id);
+  } catch { /* the line is left out */ }
   let pairs = null;
   try { pairs = enginePairsFit(soundRows ?? baseRows, weak ? BetterfyWeak.weakPairs(weak) : []); } catch { pairs = null; }
   if (pairs) v.pairsLine = BetterfyPairs.pairsLine(pairs, id => CFG[id]?.name ?? id);
@@ -17212,7 +17221,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1901';
+    s.src = 'audio.js?v=2026-11-18-1915';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -17266,7 +17275,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1901', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1915', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -18615,7 +18624,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1901', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1915', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
