@@ -285,6 +285,48 @@ export function fitVariant(partRows, { withBridge = false, grid = MULTIPLIERS, g
   return out;
 }
 
+/* ---------- E2: weights per situation (docs/BUILD-7-PLAN.md) ----------
+ * The same nested fit, run separately for tracks whose artist the account has
+ * already filed and for never-filed ones, so each situation can lean on the
+ * sources that are right for it (filing history for the first, the record's
+ * shape and similar artists for the second). A situation with fewer than
+ * SITUATION_MIN rows keeps the one fit.
+ *
+ * Measured on the shaped seeds (11, 5, 3) and the large fixture, held out:
+ * 52.7 -> 51.1, 57.5 -> 57.0, 58.2 -> 58.6, 12.96 -> 12.83 top-1 against the
+ * one fit, and never-filed down on two of them. That misses the plan's bar
+ * (+2 overall, no never-filed loss), so it is reported by the Score run and
+ * applied to nothing: the account's own run is the deciding measurement. */
+
+/** A situation needs this many rows for a fit of its own. */
+export const SITUATION_MIN = 30;
+
+/**
+ * { scored, one: {top1}, fitted: {top1}, filed: {...}, neverFiled: {...}, beats }
+ * `beats`: the per-situation fit's held-out top-1 is a point ahead of the one fit's
+ * and never-filed is not lower. Null without rows.
+ */
+export function fitSituations(partRows, { one = null, grid = MULTIPLIERS, graphN = GRAPH_N_SEARCHED } = {}) {
+  if (!partRows?.length) return null;
+  one ??= fitVariant(partRows, { grid, graphN });
+  if (!one?.fitted?.top1 && one?.fitted?.top1 !== 0) return null;
+  const n = one.scored, nNf = one.neverFiled.scored;
+  const oneNf = one.neverFiled.fitted.top1 ?? 0;
+  const oneFiled = n - nNf > 0 ? (one.fitted.top1 * n - oneNf * nNf) / (n - nNf) : null;
+  const part = (fresh, fallback) => {
+    const sub = partRows.filter(r => !!r.fresh === fresh);
+    const v = sub.length >= SITUATION_MIN ? fitVariant(sub, { grid, graphN }) : null;
+    return { scored: sub.length, own: !!v, top1: v ? v.fitted.top1 : fallback == null ? null : +fallback.toFixed(4),
+             one: fallback == null ? null : +fallback.toFixed(4), multipliers: v?.multipliers ?? one.multipliers };
+  };
+  const filed = part(false, oneFiled), neverFiled = part(true, oneNf);
+  const tot = (filed.top1 ?? 0) * filed.scored + (neverFiled.top1 ?? 0) * neverFiled.scored;
+  const fitted = n ? +(tot / n).toFixed(4) : null;
+  return { scored: n, one: { top1: one.fitted.top1 }, fitted: { top1: fitted }, filed, neverFiled,
+           beats: fitted != null && fitted >= one.fitted.top1 + FIT_MARGIN - 1e-9
+             && (neverFiled.top1 ?? 0) >= (neverFiled.one ?? 0) - 1e-9 };
+}
+
 /**
  * The whole step, as the Score run calls it: the headline engine, and the
  * engine with similar artists when the run had them, each fitted from the
@@ -297,7 +339,9 @@ export function weightsFromRun(mine, { grid = MULTIPLIERS, graphN = GRAPH_N_SEAR
   if (!partRows?.length) return null;
   const plain = fitVariant(partRows, { withBridge: false, grid, graphN });
   const bridge = mine.withBridge ? fitVariant(partRows, { withBridge: true, grid, graphN }) : null;
-  return { plain, bridge, folds: Object.keys(plain?.foldMultipliers ?? {}).length || DEFAULT_FOLDS,
+  let situations = null;
+  try { situations = fitSituations(partRows, { one: plain, grid, graphN }); } catch { situations = null; }
+  return { plain, bridge, situations, folds: Object.keys(plain?.foldMultipliers ?? {}).length || DEFAULT_FOLDS,
            version: WEIGHT_FIT_VERSION };
 }
 

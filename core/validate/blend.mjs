@@ -86,7 +86,8 @@ export function neverFiledIds(lib, ids, { folds = DEFAULT_FOLDS, targets = null,
  *          null when there is nothing to join.
  */
 export function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid = BLEND_GRID,
-                                                     neverFiled = null, nativeByFold = null, nativeAll = null } = {}) {
+                                                     neverFiled = null, nativeByFold = null, nativeAll = null,
+                                                     situations = false } = {}) {
   if (!tagRows?.length || !nativeRows?.length) return null;
   const tagById = new Map(tagRows.map(r => [r.id, r]));
   // One entry per track both engines were asked about, with each engine's
@@ -166,8 +167,14 @@ export function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid
   const beatsTags = head.top1 != null && head.tags.top1 != null
     && head.top1 >= head.tags.top1 + BEAT_MARGIN - 1e-9
     && head.top3 >= head.tags.top3 - BEAT_MARGIN - 1e-9;
+  // E2 (docs/BUILD-7-PLAN.md): one weight per situation instead of one for all
+  // (tracks by artists already filed / never filed), reported as `bySituation`,
+  // nested the same way; a situation with fewer than SITUATION_MIN training
+  // rows falls back to the one weight.
+  const bySituation = situations && neverFiled ? situationFit(rows, rowsFor, foldIds, best, grid, out, head) : null;
   return {
     ...head,
+    ...(bySituation ? { bySituation } : {}),
     weight: grid[best(nested && nativeAll ? join(nativeAll) : rows)],
     foldWeights,
     neverFiled: neverFiled ? out(nf) : null,
@@ -177,6 +184,42 @@ export function blendAccuracy(tagRows, nativeRows, { folds = DEFAULT_FOLDS, grid
     version: BLEND_ACCURACY_VERSION,
     ...(nested ? { nested: true } : {}),
   };
+}
+
+/** A situation needs this many training rows to get a weight of its own. */
+export const SITUATION_MIN = 30;
+
+function situationFit(rows, rowsFor, foldIds, best, grid, out, head) {
+  const acc = { n: 0, b1: 0, b3: 0, t1: 0, t3: 0, n1: 0, n3: 0 };
+  const accNf = { n: 0, b1: 0, b3: 0, t1: 0, t3: 0, n1: 0, n3: 0 };
+  const foldWeights = {};
+  for (const f of foldIds) {
+    const these = rowsFor(f);
+    const train = these.filter(r => r.fold !== f), test = these.filter(r => r.fold === f);
+    const one = best(train.length ? train : test);
+    const pick = {};
+    for (const fresh of [false, true]) {
+      const t = train.filter(r => r.fresh === fresh);
+      pick[fresh] = t.length >= SITUATION_MIN ? best(t) : one;
+    }
+    foldWeights[f] = { filed: grid[pick[false]], neverFiled: grid[pick[true]] };
+    for (const r of test) {
+      const i = pick[r.fresh];
+      for (const a of r.fresh ? [acc, accNf] : [acc]) {
+        a.n++; if (r.hits[i][0]) a.b1++; if (r.hits[i][1]) a.b3++;
+        if (r.tag[0]) a.t1++; if (r.tag[1]) a.t3++; if (r.nat[0]) a.n1++; if (r.nat[1]) a.n3++;
+      }
+    }
+  }
+  const all = rows;
+  const w = {};
+  for (const fresh of [false, true]) {
+    const t = all.filter(r => r.fresh === fresh);
+    w[fresh ? 'neverFiled' : 'filed'] = grid[t.length >= SITUATION_MIN ? best(t) : best(all)];
+  }
+  const o = out(acc);
+  return { ...o, neverFiled: out(accNf), weights: w, foldWeights,
+           beatsOne: o.top1 != null && head.top1 != null && o.top1 >= head.top1 + BEAT_MARGIN - 1e-9 };
 }
 
 /**
@@ -197,6 +240,7 @@ export function blendFromRun(lib, { base, mine, folds = DEFAULT_FOLDS, targets =
   const fit = withBridge ? nativeFit?.bridge : nativeFit?.plain;
   const nested = fit?.use && fit.byFold && fit.all
     ? { nativeByFold: fit.byFold, nativeAll: fit.all } : {};
-  const r = blendAccuracy(base.rows, nativeRows, { folds, neverFiled: nf, ...nested });
+  // E2: the per-situation weight is measured beside the one weight, and used by nothing yet.
+  const r = blendAccuracy(base.rows, nativeRows, { folds, neverFiled: nf, situations: true, ...nested });
   return r ? { ...r, withBridge, ...(nested.nativeAll ? { nativeFitted: true } : {}) } : null;
 }
