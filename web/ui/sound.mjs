@@ -17,7 +17,8 @@ export const SOUND_UI_VERSION = 1;
 /**
  * @typedef {object} SoundVM   one track
  * @property {number} [bpm]
- * @property {number} [bpmAlt]   set when half/double time is unsure: "87/174"
+ * @property {number} [bpmAlt]   checking view only (bf_audio_dsp=1): half/double time is unsure, "87/174"
+ * @property {string} [bpmUnknown] why the BPM is not shown: no-audio | no-beat | octave | unsure ("BPM unknown")
  * @property {number} [bpmConf]  0–1
  * @property {string} [key]
  * @property {string} [camelot]
@@ -63,6 +64,12 @@ export function soundChip(vm) {
     const title = [alt != null ? `${bpm} BPM, but it could be ${lo} or ${hi}` : `${bpm} BPM`,
                    num(vm.bpmConf) ? `confidence ${pct(vm.bpmConf)}` : null].filter(Boolean).join(' · ');
     parts.push(item('bpm', `${alt != null ? `${lo}/${hi}` : bpm} <span class="snd-unit">BPM</span>`, title, vm.bpmConf));
+  }
+  else if (typeof vm.bpmUnknown === 'string' && vm.bpmUnknown) {
+    const why = { 'no-audio': 'Not heard yet: no preview on Deezer', 'no-beat': 'The beat wasn\u2019t clear in the 30 s preview',
+                  octave: 'Could be half or double: file it to a playlist and it will settle',
+                  unsure: 'A pulse, but the reading isn\u2019t reliable enough to show' }[vm.bpmUnknown] ?? 'The tempo isn\u2019t sure enough to show';
+    parts.push(`<span class="snd-bpm-unknown" title="${esc(why)}">BPM unknown</span>`);
   }
   if ((typeof vm.camelot === 'string' && vm.camelot) || (typeof vm.key === 'string' && vm.key)) {
     const cam = typeof vm.camelot === 'string' && vm.camelot ? vm.camelot : null;

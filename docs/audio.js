@@ -5496,8 +5496,983 @@ function moodHints(heads, { min = 0 } = {}) {
 const round = x => +x.toFixed(4);
 return { HEADS_VERSION, MAX_BATCH, TOP_MOODS, MOOD_LABELS, HEADS, MOOD_MAP, createHeads, summariseHeads, moodHints };
 })();
+/* ---- core/ontology/genres.mjs ---- */
+__mod["core/ontology/genres.mjs"] = (function () {
+// The genre hierarchy, declared once and indexed at load.
+//
+// Why a declared tree and not a flat tag list: §4.4 of the v3 plan. A flat
+// list cannot answer "is Tech House a kind of House" — which is the question
+// every reconciliation step in the classifier actually asks. Without it, a
+// track with evidence split three ways between tech-house, deep-house and
+// house looks *ambiguous*, when in fact all three agree on House and only
+// disagree about which room of it.
+//
+// The shape is deliberately minimal. Each genre declares its parent and its
+// aliases; children, depth, ancestry and the alias index are all derived in
+// index.mjs, because a hand-maintained `children` array is a hand-maintained
+// chance to disagree with `parent`.
+//
+//   parent      the one broader genre this sits inside, or null at the root.
+//               Single-parent on purpose: a DAG reads better on paper and is
+//               far worse to reason about when scoring, and the handful of
+//               genuinely two-parented genres (electro, trip hop) are served
+//               better by `related`.
+//   aliases     what providers actually call it. Last.fm crowd tags and
+//               Discogs styles, not what a genre history would call it.
+//   related     neighbouring genres — evidence for one is weak evidence for
+//               the other. Symmetric by construction (index.mjs closes it).
+//   contradicts genres that being this one argues *against*. Rare and
+//               deliberate: used only where two genres are routinely confused
+//               by tag clouds but never actually co-occur in one record.
+//
+// Coverage is electronic-heavy because that is where subgenre resolution
+// actually matters for filing; the rest of popular music is present at one or
+// two levels, which is enough for the hierarchy to do its job. An unmapped
+// concept is never discarded (see normalise.mjs) — it is carried as an
+// unknown candidate, so a gap here costs recall, never data.
+
+/** Bumped whenever a genre is added, removed, re-parented or re-aliased. */
+const GENRE_ONTOLOGY_VERSION = '3.1.0';
+
+/** @typedef {{parent: string|null, aliases?: string[], related?: string[], contradicts?: string[]}} GenreNode */
+
+/** @type {Record<string, GenreNode>} */
+const GENRES = {
+  /* ---------- electronic ---------- */
+  'electronic': { parent: null, aliases: ['electronica', 'electronic music', 'edm', 'dance', 'dance music', 'electro dance'] },
+
+  'house': { parent: 'electronic', aliases: ['house music', 'classic house'] },
+  'deep-house': { parent: 'house', aliases: ['deephouse'] },
+  'tech-house': { parent: 'house', aliases: ['techhouse'], related: ['techno', 'minimal-techno'] },
+  'progressive-house': { parent: 'house', aliases: ['prog house'], related: ['trance'] },
+  'acid-house': { parent: 'house', aliases: ['acid'], related: ['acid-techno'] },
+  'disco-house': { parent: 'house', aliases: ['nu disco', 'nu-disco', 'french house', 'filter house'], related: ['disco'] },
+  'electro-house': { parent: 'house', aliases: ['big room', 'big room house'] },
+  'afro-house': { parent: 'house', aliases: ['afrohouse', 'afro tech'] },
+  'melodic-house': { parent: 'house', aliases: ['melodic house and techno', 'melodic house & techno', 'organic house'] },
+  'garage-house': { parent: 'house', aliases: ['soulful house', 'vocal house', 'new jersey sound'] },
+  'minimal-house': { parent: 'house', aliases: ['micro house', 'microhouse'], related: ['minimal-techno'] },
+  'bass-house': { parent: 'house', aliases: ['basshouse'], related: ['uk-bass'] },
+  // 3.1.0: the UK hard-dance family. Before this, "scouse house", "bouncy
+  // house" and "donk house" all fell through to plain House, so a donk playlist
+  // and a deep-house playlist looked like neighbours. Donk sits under hard house
+  // because that is where it came from and where its records are pressed.
+  'hard-house': { parent: 'house', aliases: ['hardhouse', 'uk hard house', 'nrg', 'hard nrg', 'pumping house'],
+                  related: ['hard-trance', 'hardstyle'] },
+  'donk': { parent: 'hard-house', aliases: ['donk house', 'scouse house', 'bouncy house', 'uk bounce', 'bounce house',
+                                            'scouse bounce', 'hard bounce', 'donk music'],
+            related: ['hardcore', 'makina'] },
+
+  'techno': { parent: 'electronic', aliases: ['techno music'] },
+  'minimal-techno': { parent: 'techno', aliases: ['minimal', 'minimal tech'] },
+  'acid-techno': { parent: 'techno', aliases: [] },
+  'detroit-techno': { parent: 'techno', aliases: ['detroit'] },
+  'hard-techno': { parent: 'techno', aliases: ['hardtechno', 'industrial techno'], related: ['hardcore'] },
+  'dub-techno': { parent: 'techno', aliases: ['dubtechno'], related: ['dub', 'ambient'] },
+
+  'trance': { parent: 'electronic', aliases: ['trance music'] },
+  'progressive-trance': { parent: 'trance', aliases: [], related: ['progressive-house'] },
+  'psytrance': { parent: 'trance', aliases: ['psychedelic trance', 'goa', 'goa trance', 'psy trance'] },
+  'uplifting-trance': { parent: 'trance', aliases: ['epic trance'] },
+  'hard-trance': { parent: 'trance', aliases: [], related: ['hardstyle'] },
+
+  'breakbeat': { parent: 'electronic', aliases: ['breaks', 'break beat'] },
+  'big-beat': { parent: 'breakbeat', aliases: ['bigbeat'] },
+  'uk-breaks': { parent: 'breakbeat', aliases: ['nu skool breaks', 'nu-skool breaks', 'progressive breaks'] },
+  'breakcore': { parent: 'breakbeat', aliases: [], related: ['jungle', 'hardcore'] },
+
+  'drum-and-bass': { parent: 'electronic', aliases: ['drum n bass', 'drum & bass', 'drum and bass', 'dnb', 'd&b', 'dandb', 'drumandbass', 'drum bass',
+                                                    "drum'n'bass", 'drum n\' bass', 'rollers', 'dnb rollers', 'deep dnb', 'dancefloor drum and bass'] },
+  'jungle': { parent: 'drum-and-bass', aliases: ['ragga jungle', 'jungle techno'] },
+  'liquid-dnb': { parent: 'drum-and-bass', aliases: ['liquid', 'liquid funk', 'liquid drum and bass', 'liquid dnb'] },
+  'neurofunk': { parent: 'drum-and-bass', aliases: ['neuro', 'techstep'] },
+  'jump-up': { parent: 'drum-and-bass', aliases: ['jumpup'] },
+  'halftime': { parent: 'drum-and-bass', aliases: [] },
+
+  'uk-garage': { parent: 'electronic', aliases: ['garage', 'ukg', '2 step', '2-step', 'two step', 'speed garage'] },
+  'bassline': { parent: 'uk-garage', aliases: ['niche', 'bassline house'] },
+  'future-garage': { parent: 'uk-garage', aliases: ['futuregarage'], related: ['dubstep'] },
+  'grime': { parent: 'uk-garage', aliases: [], related: ['hip-hop', 'uk-bass'] },
+  'uk-funky': { parent: 'uk-garage', aliases: ['uk funky house'], related: ['afro-house'] },
+
+  'dubstep': { parent: 'electronic', aliases: ['dub step'] },
+  'brostep': { parent: 'dubstep', aliases: ['riddim'] },
+  'uk-bass': { parent: 'electronic', aliases: ['bass music', 'bass', 'future bass', 'wonky'] },
+
+  'hardcore': { parent: 'electronic', aliases: ['hardcore techno', 'happy hardcore', 'rave', 'oldskool', 'old skool rave'] },
+  'gabber': { parent: 'hardcore', aliases: ['gabba'] },
+  'hardstyle': { parent: 'hardcore', aliases: ['hardjump', 'rawstyle'] },
+  'jumpstyle': { parent: 'hardstyle', aliases: [] },
+  'makina': { parent: 'hardcore', aliases: [], related: ['hard-trance', 'donk'] },
+
+  // 3.1.0: club styles with no home before, so a playlist named for them was
+  // read as a word the engine did not know rather than as a genre.
+  'jersey-club': { parent: 'electronic', aliases: ['jerseyclub', 'baltimore club', 'bmore club'], related: ['footwork'] },
+  'footwork': { parent: 'electronic', aliases: ['juke', 'chicago juke', 'footwork juke'], related: ['jungle'] },
+  'gqom': { parent: 'electronic', aliases: [], related: ['afro-house'] },
+
+  'ambient': { parent: 'electronic', aliases: ['ambient music', 'drone', 'dark ambient'] },
+  // 'chillout' deliberately absent: profile.mjs reads it as a mood, and it
+  // genuinely is one more often than it is this genre. validateOntology()
+  // flags any alias the two vocabularies disagree about.
+  'downtempo': { parent: 'electronic', aliases: ['trip hop', 'trip-hop', 'triphop', 'lounge'], related: ['ambient', 'hip-hop'] },
+  'idm': { parent: 'electronic', aliases: ['intelligent dance music', 'braindance', 'glitch'] },
+  'electro': { parent: 'electronic', aliases: ['electro funk', 'electrofunk', 'miami bass'], related: ['hip-hop', 'electro-house'] },
+  'synthwave': { parent: 'electronic', aliases: ['retrowave', 'outrun', 'darksynth'] },
+  'synth-pop': { parent: 'electronic', aliases: ['synthpop', 'new wave', 'electropop', 'electro pop'], related: ['pop'] },
+  'eurodance': { parent: 'electronic', aliases: ['euro dance', 'euro house', 'hands up'] },
+
+  /* ---------- hip hop, r&b, soul ---------- */
+  'hip-hop': { parent: null, aliases: ['hip hop', 'hiphop', 'rap', 'rap music', 'old school hip hop', 'old school rap'] },
+  'uk-hip-hop': { parent: 'hip-hop', aliases: ['uk rap', 'british hip hop'] },
+  'drill': { parent: 'hip-hop', aliases: ['uk drill'] },
+  'trap': { parent: 'hip-hop', aliases: ['trap music'] },
+  'phonk': { parent: 'hip-hop', aliases: ['drift phonk', 'brazilian phonk', 'memphis phonk', 'cloud phonk', 'chill phonk',
+                                          'phonk house', 'real phonk'], related: ['trap'] },
+  'boom-bap': { parent: 'hip-hop', aliases: ['boombap', 'golden age hip hop', 'east coast hip hop'] },
+  'conscious-hip-hop': { parent: 'hip-hop', aliases: ['alternative hip hop', 'underground hip hop', 'jazz rap'] },
+  'g-funk': { parent: 'hip-hop', aliases: ['west coast hip hop', 'gangsta rap'] },
+  'lo-fi-hip-hop': { parent: 'hip-hop', aliases: ['lofi hip hop', 'lo fi hip hop', 'lofi'], related: ['downtempo'] },
+
+  'rnb': { parent: null, aliases: ['r&b', 'r and b', 'rhythm and blues', 'randb', 'contemporary r&b'] },
+  'neo-soul': { parent: 'rnb', aliases: ['neosoul'], related: ['soul'] },
+  'soul': { parent: null, aliases: ['soul music', 'northern soul'] },
+  'motown': { parent: 'soul', aliases: [] },
+  'funk': { parent: null, aliases: ['funk music', 'p funk', 'p-funk'] },
+  'disco': { parent: 'funk', aliases: ['italo disco', 'italo-disco', 'boogie'], related: ['disco-house'] },
+
+  /* ---------- rock and its neighbours ---------- */
+  'rock': { parent: null, aliases: ['rock music', 'classic rock'] },
+  'indie-rock': { parent: 'rock', aliases: ['indie', 'indie music'] },
+  'alternative-rock': { parent: 'rock', aliases: ['alternative', 'alt rock', 'alternative music'] },
+  'punk': { parent: 'rock', aliases: ['punk rock'] },
+  'pop-punk': { parent: 'punk', aliases: ['poppunk'] },
+  'hardcore-punk': { parent: 'punk', aliases: ['post hardcore', 'post-hardcore'], contradicts: ['hardcore'] },
+  'metal': { parent: 'rock', aliases: ['heavy metal'] },
+  'metalcore': { parent: 'metal', aliases: [] },
+  'death-metal': { parent: 'metal', aliases: [] },
+  'black-metal': { parent: 'metal', aliases: [] },
+  'psychedelic-rock': { parent: 'rock', aliases: ['psych rock', 'psychedelic'] },
+  'shoegaze': { parent: 'rock', aliases: ['dream pop', 'dreampop'] },
+  'post-rock': { parent: 'rock', aliases: ['postrock', 'math rock'] },
+  'britpop': { parent: 'rock', aliases: ['brit pop'], related: ['indie-rock'] },
+  'grunge': { parent: 'rock', aliases: [] },
+  'garage-rock': { parent: 'rock', aliases: ['garage punk'], contradicts: ['uk-garage'] },
+
+  /* ---------- pop and the rest ---------- */
+  'pop': { parent: null, aliases: ['pop music', 'mainstream pop'] },
+  'dance-pop': { parent: 'pop', aliases: ['dancepop'], related: ['electronic'] },
+  'indie-pop': { parent: 'pop', aliases: ['indiepop'], related: ['indie-rock'] },
+  'hyperpop': { parent: 'pop', aliases: [], related: ['uk-bass'] },
+  'k-pop': { parent: 'pop', aliases: ['kpop'] },
+
+  'jazz': { parent: null, aliases: ['jazz music'] },
+  'jazz-funk': { parent: 'jazz', aliases: ['jazz fusion', 'fusion'], related: ['funk'] },
+  'nu-jazz': { parent: 'jazz', aliases: ['broken beat', 'acid jazz'], related: ['downtempo'] },
+
+  'reggae': { parent: null, aliases: ['roots reggae'] },
+  'dub': { parent: 'reggae', aliases: ['dub music'] },
+  'dancehall': { parent: 'reggae', aliases: ['ragga'] },
+  'afrobeats': { parent: null, aliases: ['afrobeat', 'afro beats', 'amapiano'] },
+  'latin': { parent: null, aliases: ['latin music', 'reggaeton', 'salsa', 'bossa nova'] },
+
+  'folk': { parent: null, aliases: ['folk music', 'singer songwriter', 'singer-songwriter'] },
+  'country': { parent: null, aliases: ['country music', 'americana'] },
+  'blues': { parent: null, aliases: ['blues music'] },
+  'classical': { parent: null, aliases: ['classical music', 'orchestral', 'contemporary classical', 'neoclassical'] },
+  'soundtrack': { parent: null, aliases: ['score', 'film score', 'ost', 'video game music'] },
+};
+return { GENRE_ONTOLOGY_VERSION, GENRES };
+})();
+/* ---- core/ontology/facets.mjs ---- */
+__mod["core/ontology/facets.mjs"] = (function () {
+const { tagFacet } = __mod["profile.mjs"];
+// The non-genre dimensions: mood, context, era.
+//
+// §4.3 of the v3 plan: "summer" must not be treated like "House". v1 already
+// makes that split — tagFacet() in profile.mjs sorts a Last.fm cloud into
+// genre / mood / occasion / era / descriptor — and this module deliberately
+// *reuses* that classifier rather than restating its vocabulary, so the two
+// engines cannot drift into different opinions about what kind of thing
+// "chill" is. profile.mjs stays import-free (it is bundled verbatim into the
+// browser build); the dependency only ever points this way.
+//
+// What v3 adds on top is the second half of the question. v1 answers "which
+// facet is this tag?"; a profile also needs "which *concept* in that facet?",
+// so that `melancholy`, `sad` and `wistful` collapse to one mood the way
+// `dnb` and `drum & bass` collapse to one genre. Hence a concept table per
+// facet, same shape as GENRES but flat — moods and contexts have no useful
+// hierarchy, and inventing one would only add places to disagree.
+
+
+const FACET_ONTOLOGY_VERSION = '3.0.0';
+
+/** The facets a concept can belong to. 'genre' lives in genres.mjs. */
+const FACETS = ['genre', 'mood', 'context', 'era', 'descriptor'];
+
+/* ---------- mood ----------
+ * The ten from §10, plus the few extra poles a real tag cloud keeps
+ * producing. Moods are not mutually exclusive: a track can be dark AND
+ * hypnotic, and nothing here says otherwise. */
+const MOODS = {
+  'energetic':   { aliases: ['energetic', 'high energy', 'hi energy', 'hype', 'hyped', 'intense', 'upbeat', 'banger', 'powerful', 'motivational', 'empowering'] },
+  'aggressive':  { aliases: ['aggressive', 'angry', 'heavy', 'brutal', 'menacing'] },
+  'euphoric':    { aliases: ['euphoric', 'euphoria', 'blissful', 'anthemic', 'epic'] },
+  'uplifting':   { aliases: ['uplifting', 'hopeful', 'happy', 'happiness', 'joyful', 'feel good', 'feelgood', 'sunny', 'fun', 'playful', 'confident'] },
+  'melancholic': { aliases: ['melancholic', 'melancholy', 'sad', 'sadness', 'bittersweet', 'wistful', 'longing', 'lonely', 'depressing', 'emotional', 'emotive', 'cathartic'] },
+  'dark':        { aliases: ['dark', 'darkness', 'moody', 'gloomy', 'haunting', 'eerie', 'sombre', 'somber', 'sinister'] },
+  'relaxed':     { aliases: ['relaxed', 'relaxing', 'relax', 'chill', 'chilled', 'chillout', 'chill out', 'mellow', 'laid back', 'laidback', 'calm', 'calming', 'soothing', 'peaceful', 'serene', 'soft', 'gentle', 'smooth', 'sleepy', 'cosy', 'cozy'] },
+  'dreamy':      { aliases: ['dreamy', 'ethereal', 'atmospheric', 'meditative', 'floaty', 'spacey'] },
+  // 'driving' is a DJ's word for a mood and profile.mjs's word for a car
+  // journey. v1 owns it (context); one word, one meaning, decided once.
+  'hypnotic':    { aliases: ['hypnotic', 'trippy', 'rolling', 'groovy', 'repetitive'] },
+  // 'nostalgia' is an era word in v1's lexicon, so it stays one.
+  'nostalgic':   { aliases: ['nostalgic'] },
+  'romantic':    { aliases: ['romantic', 'sexy', 'sensual', 'seductive', 'warm'] },
+  'dramatic':    { aliases: ['dramatic', 'cinematic', 'tense'] },
+};
+
+/* ---------- context ----------
+ * When you would play it. §10 calls this "context" and reserves "occasion"
+ * for the same idea; v1's tagFacet() calls the facet 'occasion' and axes.mjs
+ * calls the playlist axis 'context'. One name from here on — context — with
+ * OCCASION_FACET below as the bridge to v1's word for it. */
+const CONTEXTS = {
+  'club':       { aliases: ['club', 'clubbing', 'night out', 'nightlife', 'dancefloor', 'rave'] },
+  'festival':   { aliases: ['festival', 'festivals', 'carnival', 'boiler room'] },
+  'party':      { aliases: ['party', 'partying', 'house party', 'pregame', 'pre drinks', 'afters', 'after party', 'friday night', 'saturday night', 'weekend'] },
+  'late-night': { aliases: ['late night', 'after hours', 'afterhours', '3am'] },
+  'driving':    { aliases: ['driving', 'road trip', 'roadtrip', 'commute', 'travel'] },
+  'workout':    { aliases: ['workout', 'work out', 'gym', 'running', 'jogging', 'exercise', 'fitness', 'yoga', 'training'] },
+  'study':      { aliases: ['study', 'studying', 'focus', 'concentration', 'revision', 'work'] },
+  'background': { aliases: ['background', 'background music', 'ambient listening', 'dinner', 'cooking'] },
+  // Named 'downtime' rather than 'chill': profile.mjs reads the bare word
+  // "chill" as a mood, and two tables cannot both own it.
+  'downtime':   { aliases: ['chilling', 'lounging', 'sunday morning', 'hangover'] },
+  'sleep':      { aliases: ['sleep', 'sleeping', 'bedtime', 'insomnia'] },
+// Place names deliberately absent. A location is exactly the kind of word
+  // that signals an EVENT playlist when it turns up beside a date, and
+  // claiming it as a context here is what would stop that being seen.
+  'summer':     { aliases: ['summer', 'beach', 'poolside', 'bbq', 'barbecue', 'holiday', 'holidays'] },
+  'winter':     { aliases: ['winter', 'rainy day', 'christmas', 'xmas', 'halloween'] },
+  'celebration':{ aliases: ['wedding', 'birthday', 'new year', 'nye', 'graduation'] },
+  'gaming':     { aliases: ['gaming', 'video games'] },
+};
+
+/* ---------- era ----------
+ * Two ways in: a bare decade tag ("90s", "1994") and the words people use
+ * instead ("old school", "throwback"). Only the first is precise enough to
+ * become an era concept on its own; the rest resolve to 'retro', which says
+ * "older than now" and nothing more — which is all they actually mean. */
+const ERAS = {
+  '1960s': { aliases: ['60s', '1960s'], from: 1960, to: 1969 },
+  '1970s': { aliases: ['70s', '1970s'], from: 1970, to: 1979 },
+  '1980s': { aliases: ['80s', '1980s'], from: 1980, to: 1989 },
+  '1990s': { aliases: ['90s', '1990s'], from: 1990, to: 1999 },
+  '2000s': { aliases: ['00s', '2000s', 'noughties'], from: 2000, to: 2009 },
+  '2010s': { aliases: ['10s', '2010s'], from: 2010, to: 2019 },
+  '2020s': { aliases: ['20s', '2020s'], from: 2020, to: 2029 },
+  'retro': { aliases: ['retro', 'old school', 'oldschool', 'oldies', 'throwback', 'vintage', 'nostalgia', 'classic', 'classics', 'old'] },
+};
+
+/** The era a four-digit release year falls in, or null outside the table. */
+function eraOfYear(year) {
+  const y = Number(year);
+  if (!Number.isFinite(y)) return null;
+  for (const [id, e] of Object.entries(ERAS))
+    if (e.from != null && y >= e.from && y <= e.to) return id;
+  return null;
+}
+
+// v1's tagFacet() says 'occasion' where v3 says 'context'. One translation,
+// in one place, rather than either engine changing its vocabulary.
+const V1_FACET = { occasion: 'context' };
+
+/**
+ * Which facet a raw tag belongs to, in v3's vocabulary. Delegates to v1's
+ * tagFacet() so there is exactly one lexicon to maintain — a tag demoted from
+ * genre there is demoted here, automatically and in the same release.
+ */
+const facetOf = tag => V1_FACET[tagFacet(tag)] ?? tagFacet(tag);
+return { FACET_ONTOLOGY_VERSION, FACETS, MOODS, CONTEXTS, ERAS, eraOfYear, facetOf };
+})();
+/* ---- core/ontology/index.mjs ---- */
+__mod["core/ontology/index.mjs"] = (function () {
+const { GENRES, GENRE_ONTOLOGY_VERSION } = __mod["core/ontology/genres.mjs"];
+const { MOODS, CONTEXTS, ERAS, FACET_ONTOLOGY_VERSION, facetOf, eraOfYear, FACETS } = __mod["core/ontology/facets.mjs"];
+// The ontology as the rest of the engine sees it: one resolve() that turns a
+// provider's raw string into a canonical concept, plus the derived structure
+// (children, ancestry, related closure) the classifier reconciles against.
+//
+// Everything here is derived from the declarations in genres.mjs and
+// facets.mjs at module load. Nothing is hand-maintained twice, and
+// validateOntology() — run by the test suite, not at runtime — is what stops
+// a typo in a parent name from silently producing an orphan genre nobody can
+// ever reach.
+
+
+
+
+
+
+/** One version string for the whole ontology — stamped onto every profile. */
+const ONTOLOGY_VERSION = `genres@${GENRE_ONTOLOGY_VERSION}+facets@${FACET_ONTOLOGY_VERSION}`;
+
+/**
+ * The lookup key for a raw provider string.
+ *
+ * Whitespace and punctuation are removed entirely rather than collapsed,
+ * because providers disagree about them constantly and meaninglessly:
+ * "tech house", "tech-house" and "techhouse" are one concept, and no pair of
+ * genuinely different genres is separated only by a space. "&" becomes "and"
+ * first so "drum & bass" and "drum and bass" land together.
+ */
+const normKey = s => String(s ?? '').toLowerCase()
+  .replace(/&/g, ' and ')
+  .replace(/[^a-z0-9]+/g, '');
+
+/* ---------- derived genre structure ---------- */
+
+function buildGenreIndex() {
+  const index = new Map();
+  for (const [slug, node] of Object.entries(GENRES))
+    index.set(slug, { slug, parent: node.parent ?? null, children: [], ancestors: [], depth: 0,
+                      related: new Set(node.related ?? []), contradicts: new Set(node.contradicts ?? []) });
+
+  for (const g of index.values())
+    if (g.parent && index.has(g.parent)) index.get(g.parent).children.push(g.slug);
+
+  // Ancestry, walked once per genre with a depth cap so a declaration cycle
+  // (which validateOntology() reports) cannot hang a caller at runtime.
+  for (const g of index.values()) {
+    const seen = new Set();
+    let cur = g.parent;
+    while (cur && index.has(cur) && !seen.has(cur) && g.ancestors.length < 16) {
+      seen.add(cur);
+      g.ancestors.push(cur);
+      cur = index.get(cur).parent;
+    }
+    g.depth = g.ancestors.length;
+  }
+
+  // `related` is symmetric whether or not both sides declared it. Declaring
+  // it once is the point; a one-way relation is always a typo.
+  for (const g of index.values())
+    for (const r of g.related) if (index.has(r)) index.get(r).related.add(g.slug);
+  for (const g of index.values())
+    for (const c of g.contradicts) if (index.has(c)) index.get(c).contradicts.add(g.slug);
+
+  return index;
+}
+
+/** slug -> { slug, parent, children, ancestors, depth, related, contradicts } */
+const GENRE_INDEX = buildGenreIndex();
+
+function buildAliasIndex() {
+  const byKey = new Map();
+  const collisions = [];
+  const put = (raw, slug) => {
+    const k = normKey(raw);
+    if (!k) return;
+    const prev = byKey.get(k);
+    if (prev && prev !== slug) { collisions.push({ key: k, between: [prev, slug] }); return; }
+    byKey.set(k, slug);
+  };
+  for (const [slug, node] of Object.entries(GENRES)) {
+    put(slug, slug);
+    put(slug.replace(/-/g, ' '), slug);
+    for (const a of node.aliases ?? []) put(a, slug);
+  }
+  return { byKey, collisions };
+}
+
+const GENRE_ALIASES = buildAliasIndex();
+/** normKey(raw) -> genre slug */
+const GENRE_ALIAS_INDEX = GENRE_ALIASES.byKey;
+
+function buildFacetAliases(table) {
+  const byKey = new Map();
+  const collisions = [];
+  for (const [id, node] of Object.entries(table)) {
+    for (const raw of [id, id.replace(/-/g, ' '), ...(node.aliases ?? [])]) {
+      const k = normKey(raw);
+      if (!k) continue;
+      const prev = byKey.get(k);
+      if (prev && prev !== id) { collisions.push({ key: k, between: [prev, id] }); continue; }
+      byKey.set(k, id);
+    }
+  }
+  return { byKey, collisions };
+}
+
+const MOOD_ALIASES = buildFacetAliases(MOODS);
+const CONTEXT_ALIASES = buildFacetAliases(CONTEXTS);
+const ERA_ALIASES = buildFacetAliases(ERAS);
+
+/* ---------- resolution ---------- */
+
+// A compound tag whose last word names a genre is nearly always a shade of
+// that genre: "dark techno", "melodic dubstep", "deep dnb". Resolving it to
+// the parent keeps real signal that would otherwise be thrown away as an
+// unknown concept — but it is a weaker claim than an exact alias, so it is
+// labelled `suffix` and the classifier discounts it (see weights.mjs).
+// Bounded to the longest suffix that resolves, and never applied to a
+// single-word tag, which would just be the exact match again.
+function suffixGenre(raw) {
+  const words = String(raw ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (words.length < 2) return null;
+  for (let i = 1; i < words.length; i++) {
+    const slug = GENRE_ALIAS_INDEX.get(normKey(words.slice(i).join(' ')));
+    if (slug) return slug;
+  }
+  return null;
+}
+
+/** @typedef {{facet: string, concept: string|null, via: string, raw: string}} Concept */
+
+/**
+ * Resolve one raw provider string to a canonical concept.
+ *
+ * Never returns null and never throws: an unrecognised string comes back with
+ * `concept: null` and its `raw` value intact, because §8 of the plan is
+ * explicit that unknown tags are retained as candidates rather than silently
+ * discarded. The facet is still filled in — v1's lexicon can usually tell
+ * what *kind* of thing an unmapped tag is even when the ontology has no
+ * concept for it.
+ *
+ * @param {string} raw
+ * @returns {Concept}
+ */
+function resolveConcept(raw) {
+  const key = normKey(raw);
+  const facet = facetOf(raw);
+  if (!key) return { facet, concept: null, via: 'empty', raw: String(raw ?? '') };
+
+  const inFacet = { mood: MOOD_ALIASES, context: CONTEXT_ALIASES, era: ERA_ALIASES }[facet];
+  if (inFacet) {
+    const hit = inFacet.byKey.get(key);
+    if (hit) return { facet, concept: hit, via: 'alias', raw };
+  }
+  if (facet === 'era') {
+    // A bare year that no decade alias covered — "1994" resolves, "1867" does not.
+    const era = /^(19|20)\d{2}$/.test(key) ? eraOfYear(key) : null;
+    if (era) return { facet: 'era', concept: era, via: 'year', raw };
+  }
+  if (facet === 'descriptor') return { facet, concept: null, via: 'descriptor', raw };
+
+  const exact = GENRE_ALIAS_INDEX.get(key);
+  if (exact) return { facet: 'genre', concept: exact, via: 'alias', raw };
+
+  // v1's lexicon calls a tag a genre by *default*, not by recognising it, and
+  // it deliberately leaves ambiguous words that carry sound with them —
+  // "club", "rave", "acoustic" — on the genre side rather than demote real
+  // genre signal. Where such a word turns out not to name a genre at all, the
+  // facet tables get a second look before it is written off as unknown. This
+  // only ever runs after the genre index has declined it, so a word that is
+  // both ("rave", a hardcore alias) still resolves as the genre.
+  for (const [f, table] of [['mood', MOOD_ALIASES], ['context', CONTEXT_ALIASES], ['era', ERA_ALIASES]]) {
+    const hit = table.byKey.get(key);
+    if (hit) return { facet: f, concept: hit, via: 'fallback', raw };
+  }
+
+  const suffix = suffixGenre(raw);
+  if (suffix) return { facet: 'genre', concept: suffix, via: 'suffix', raw };
+
+  return { facet, concept: null, via: 'unknown', raw: String(raw) };
+}
+
+/** The genre slugs above `slug`, nearest first. Empty for a root or unknown. */
+const ancestorsOf = slug => GENRE_INDEX.get(slug)?.ancestors ?? [];
+
+/** `slug` plus everything above it — the set a piece of evidence supports. */
+const lineageOf = slug => (GENRE_INDEX.has(slug) ? [slug, ...ancestorsOf(slug)] : []);
+
+/** True when `a` is `b` or sits underneath it. */
+const isWithin = (a, b) => a === b || ancestorsOf(a).includes(b);
+
+/** The deepest genre that contains both, or null if they share no ancestry. */
+function commonAncestor(a, b) {
+  if (!GENRE_INDEX.has(a) || !GENRE_INDEX.has(b)) return null;
+  const upB = new Set(lineageOf(b));
+  return lineageOf(a).find(g => upB.has(g)) ?? null;
+}
+
+/** True when two genres are declared to argue against each other. */
+const contradicts = (a, b) => !!GENRE_INDEX.get(a)?.contradicts.has(b);
+
+/** True when two genres are declared neighbours. */
+const isRelated = (a, b) => !!GENRE_INDEX.get(a)?.related.has(b);
+
+/* ---------- validation ---------- */
+
+/**
+ * Structural checks over the declarations. Called by the test suite rather
+ * than at import time: a broken ontology should fail the build loudly, not
+ * degrade a user's library quietly at runtime.
+ * @returns {{errors: string[], warnings: string[]}}
+ */
+function validateOntology() {
+  const errors = [], warnings = [];
+
+  for (const [slug, node] of Object.entries(GENRES)) {
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) errors.push(`genre slug is not kebab-case: ${slug}`);
+    if (node.parent && !GENRES[node.parent]) errors.push(`${slug} names a parent that does not exist: ${node.parent}`);
+    for (const r of node.related ?? []) if (!GENRES[r]) errors.push(`${slug} names an unknown related genre: ${r}`);
+    for (const c of node.contradicts ?? []) if (!GENRES[c]) errors.push(`${slug} names an unknown contradicting genre: ${c}`);
+    if ((node.related ?? []).includes(slug)) errors.push(`${slug} is related to itself`);
+    if ((node.contradicts ?? []).includes(slug)) errors.push(`${slug} contradicts itself`);
+  }
+
+  // Cycles: a genre that reaches itself by walking parents.
+  for (const slug of Object.keys(GENRES)) {
+    const seen = new Set([slug]);
+    let cur = GENRES[slug].parent;
+    while (cur && GENRES[cur]) {
+      if (seen.has(cur)) { errors.push(`parent cycle through ${slug} -> ${cur}`); break; }
+      seen.add(cur);
+      cur = GENRES[cur].parent;
+    }
+  }
+
+  for (const c of GENRE_ALIASES.collisions)
+    errors.push(`alias "${c.key}" claimed by both ${c.between[0]} and ${c.between[1]}`);
+  for (const [name, built] of [['mood', MOOD_ALIASES], ['context', CONTEXT_ALIASES], ['era', ERA_ALIASES]])
+    for (const c of built.collisions)
+      errors.push(`${name} alias "${c.key}" claimed by both ${c.between[0]} and ${c.between[1]}`);
+
+  // A genre alias that v1's lexicon reads as a mood/context/era never gets
+  // as far as the genre index — resolveConcept() branches on facet first — so
+  // it is dead weight and, worse, a sign the two vocabularies disagree.
+  for (const [slug, node] of Object.entries(GENRES))
+    for (const a of [slug.replace(/-/g, ' '), ...(node.aliases ?? [])]) {
+      const f = facetOf(a);
+      if (f !== 'genre') warnings.push(`genre alias "${a}" (${slug}) is read as a ${f} tag by profile.mjs and will never resolve`);
+    }
+
+  // The same check the other way: a word claimed by two facet tables resolves
+  // to whichever is consulted first, which is an ordering accident rather
+  // than a decision anybody made.
+  const tables = [['mood', MOOD_ALIASES], ['context', CONTEXT_ALIASES], ['era', ERA_ALIASES]];
+  for (let i = 0; i < tables.length; i++)
+    for (let j = i + 1; j < tables.length; j++)
+      for (const k of tables[i][1].byKey.keys())
+        if (tables[j][1].byKey.has(k))
+          errors.push(`"${k}" is claimed by both the ${tables[i][0]} and ${tables[j][0]} tables`);
+
+  return { errors, warnings };
+}
+return { facetOf, eraOfYear, FACETS, GENRES, ONTOLOGY_VERSION, normKey, GENRE_INDEX, GENRE_ALIAS_INDEX, resolveConcept, ancestorsOf, lineageOf, isWithin, commonAncestor, contradicts, isRelated, validateOntology };
+})();
+/* ---- core/ontology/tempo.mjs ---- */
+__mod["core/ontology/tempo.mjs"] = (function () {
+const { GENRE_INDEX, ancestorsOf } = __mod["core/ontology/index.mjs"];
+// Typical tempo per genre: the ranges DJs and producers work in.
+//
+// Why a table: tempo is the one thing about a track that is both cheap to
+// measure from a preview (core/audio/dsp/tempo.mjs: 86% within ±1 BPM at
+// confidence ≥ 0.3 on the Beatport set) and strongly tied to genre. Drum & bass
+// lives at 170-176, house at 120-128, UK garage at 130-138. So each can check
+// the other:
+//   - a "87 or 174?" reading is settled by which octave fits the genre it
+//     sounds like (`resolveOctave`);
+//   - a genre guess whose range excludes a confidently measured tempo is
+//     marked down (`tempoFit`), which catches the audio model's most common
+//     confusions inside electronic music (it hears "breakbeat" in both jungle
+//     and UK breaks; 170 against 132 tells them apart).
+//
+// These are soft priors, never vetoes: a 160 BPM house edit exists. Ranges are
+// the common working range, deliberately a little generous. `null` means tempo
+// says nothing about the genre (rock, pop, ambient), and a genre with no row
+// inherits its nearest ancestor's (see `tempoRangeOf`).
+//
+// Half-time genres (dubstep, trap, halftime DnB) are listed at the tempo a DJ
+// would set, with `half: true`: a tempo tracker often reports half of it, and
+// that is a match, not a miss.
+
+
+
+const TEMPO_VERSION = '1.0.0';
+
+/** slug → [low, high] BPM, or null for "tempo says nothing". */
+const TEMPO = Object.freeze({
+  'electronic': null,
+  'house': [115, 130], 'deep-house': [112, 126], 'tech-house': [120, 130], 'progressive-house': [118, 130],
+  'acid-house': [116, 130], 'disco-house': [112, 128], 'electro-house': [124, 132], 'afro-house': [115, 126],
+  'melodic-house': [112, 126], 'garage-house': [115, 128], 'minimal-house': [118, 128], 'bass-house': [122, 132],
+  'hard-house': [138, 152], 'donk': [140, 160],
+  'techno': [120, 150], 'minimal-techno': [118, 130], 'acid-techno': [128, 148], 'detroit-techno': [118, 135],
+  'hard-techno': [138, 165], 'dub-techno': [112, 128],
+  'trance': [125, 145], 'progressive-trance': [124, 136], 'psytrance': [136, 150], 'uplifting-trance': [134, 142],
+  'hard-trance': [138, 155],
+  'breakbeat': [120, 140], 'big-beat': [95, 135], 'uk-breaks': [126, 140], 'breakcore': [160, 260],
+  'drum-and-bass': [160, 180], 'jungle': [155, 175], 'liquid-dnb': [168, 178], 'neurofunk': [168, 180],
+  'jump-up': [168, 180], 'halftime': [160, 180],
+  'uk-garage': [128, 140], 'bassline': [132, 144], 'future-garage': [125, 140], 'grime': [136, 144],
+  'uk-funky': [126, 134],
+  'dubstep': [136, 150], 'brostep': [138, 152], 'uk-bass': [126, 145],
+  'hardcore': [160, 200], 'gabber': [160, 220], 'hardstyle': [145, 160], 'jumpstyle': [138, 152], 'makina': [160, 180],
+  'jersey-club': [130, 145], 'footwork': [155, 165], 'gqom': [118, 130],
+  'ambient': null, 'downtempo': [80, 112], 'idm': null, 'electro': [118, 135], 'synthwave': [80, 120],
+  'synth-pop': [100, 132], 'eurodance': [128, 145],
+  'hip-hop': [80, 105], 'uk-hip-hop': [80, 100], 'drill': [136, 148], 'trap': [130, 155], 'phonk': [120, 150],
+  'boom-bap': [84, 98], 'conscious-hip-hop': [80, 100], 'g-funk': [86, 100], 'lo-fi-hip-hop': [65, 95],
+  'rnb': [60, 110], 'neo-soul': [65, 100], 'soul': null, 'motown': null, 'funk': [90, 125], 'disco': [110, 132],
+  'rock': null, 'pop': null, 'dance-pop': [110, 132], 'k-pop': null, 'hyperpop': null,
+  'jazz': null, 'reggae': [60, 95], 'dub': [60, 90], 'dancehall': [88, 110], 'afrobeats': [95, 118],
+  'latin': null, 'folk': null, 'country': null, 'blues': null, 'classical': null, 'soundtrack': null,
+});
+
+/** Played at this tempo but felt (and often tracked) at half of it. */
+const HALF_TIME = Object.freeze(new Set(['dubstep', 'brostep', 'halftime', 'trap', 'drill', 'phonk']));
+
+/**
+ * Genres whose own convention is "87 or 174": Beatport writes 32 of 40 DnB tracks at 85-90.
+ * A reading at half of the DJ range is a full fit for these (and their children), not 0.6.
+ */
+const DOUBLE_OK = Object.freeze(new Set(['drum-and-bass', 'jungle', 'footwork', 'juke', 'breakcore']));
+
+/** How much a half- or double-time reading counts: real, but weaker than a straight one. */
+const OCTAVE_CREDIT = 0.6;
+/** Outside the range, fit falls to zero over this many BPM. */
+const FALLOFF = 12;
+
+/**
+ * The working range for a genre: its own row, else its nearest ancestor's.
+ * Null when tempo says nothing about it (or it isn't a known genre).
+ */
+function tempoRangeOf(slug) {
+  if (!slug) return null;
+  if (Object.hasOwn(TEMPO, slug)) return TEMPO[slug];
+  if (!GENRE_INDEX.has(slug)) return null;
+  for (const a of ancestorsOf(slug)) if (Object.hasOwn(TEMPO, a)) return TEMPO[a];
+  return null;
+}
+
+const straight = (bpm, [lo, hi]) =>
+  bpm >= lo && bpm <= hi ? 1 : Math.max(0, 1 - (bpm < lo ? lo - bpm : bpm - hi) / FALLOFF);
+
+/**
+ * How well a tempo fits a genre, 0–1, or null when tempo says nothing about it.
+ * Half or double the tempo counts at OCTAVE_CREDIT (full credit for half-time
+ * genres read at half), so a tracker's octave slip never zeroes a right genre.
+ * @returns {{ fit: number, bpm: number } | null}  `bpm`: the octave that fitted best
+ */
+function tempoFit(bpm, slug) {
+  const range = tempoRangeOf(slug);
+  if (!range || !Number.isFinite(bpm) || bpm <= 0) return null;
+  const half = HALF_TIME.has(slug) || ancestorsOf(slug).some(a => HALF_TIME.has(a));
+  const dbl = DOUBLE_OK.has(slug) || ancestorsOf(slug).some(a => DOUBLE_OK.has(a));
+  let best = { fit: straight(bpm, range), bpm };
+  for (const [k, credit] of [[2, half || dbl ? 1 : OCTAVE_CREDIT], [0.5, OCTAVE_CREDIT]]) {
+    const f = straight(bpm * k, range) * credit;
+    if (f > best.fit) best = { fit: f, bpm: bpm * k };
+  }
+  return { fit: +best.fit.toFixed(4), bpm: +best.bpm.toFixed(1) };
+}
+
+/**
+ * Settle a "87 or 174?" reading with what the track sounds like.
+ * `candidates` are [slug, weight] pairs (any order); the reading whose straight
+ * fit, weighted by them, is higher wins. Ties and no information keep the
+ * tracker's own first reading.
+ * @returns {{ bpm: number, from: 'tracker'|'genre' }}
+ */
+function resolveOctave(bpm, alt, candidates = []) {
+  if (!Number.isFinite(alt) || alt <= 0 || !Number.isFinite(bpm)) return { bpm, from: 'tracker' };
+  let a = 0, b = 0;
+  for (const [slug, w] of candidates) {
+    const range = tempoRangeOf(slug);
+    if (!range || !(w > 0)) continue;
+    a += w * straight(bpm, range);
+    b += w * straight(alt, range);
+  }
+  return b > a + 1e-9 ? { bpm: alt, from: 'genre' } : { bpm, from: 'tracker' };
+}
+
+/** Every slug in the table is a real genre (checked by the test). */
+const tempoSlugs = () => Object.keys(TEMPO);
+return { TEMPO_VERSION, TEMPO, HALF_TIME, DOUBLE_OK, OCTAVE_CREDIT, FALLOFF, tempoRangeOf, tempoFit, resolveOctave, tempoSlugs };
+})();
+/* ---- core/audio/match.mjs ---- */
+__mod["core/audio/match.mjs"] = (function () {
+const { resolveConcept } = __mod["core/ontology/index.mjs"];
+const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
+const { tempoRangeOf } = __mod["core/ontology/tempo.mjs"];
+// Matching by sound: tracks that sound alike, tracks that mix together, and
+// which of your genre playlists the sound-alikes sit in.
+//
+// Everything here is a nearest-neighbour lookup or a count over the account's
+// own heard tracks (SMARTER-GENRES-PLAN.md §3, R3): nothing is trained,
+// nothing leaves the device, nothing is pooled across accounts. The vectors
+// are the audio model's embeddings of Deezer previews (audio.mjs `audioIndex`
+// rows: unit-normalised, so a dot product is the cosine).
+
+
+
+
+
+const MATCH_VERSION = '1.0.0';
+
+/** Beatmatching range: within 6% a DJ can pitch one onto the other. */
+const MIX_TOLERANCE = 0.06;
+/** A tempo reading below this confidence is not used for mixing. */
+const MIX_MIN_CONF = 0.3;
+/**
+ * A key reading is used (shown, or counted for mixing) only at or above this
+ * confidence. Measured on the Beatport EDM Key Dataset, held-out half: 62.4%
+ * exact / 72.0% MIREX on the 53% of tracks at or above it, against 55.3% / 64.6%
+ * on all of them (BUILD-5-PROGRESS.md). Key v4 readings (keynet.mjs, `keyNetV`)
+ * map their own sure bar onto this number: 62.5% / 71.3% on 85% of tracks.
+ * web/audio/dsp-view.mjs has the same
+ * number for the chip; test/keygate.test.mjs keeps the two equal.
+ */
+const KEY_MIN_CONF = 0.65;
+/** How much a harmonic fit moves a "mixes with" ranking, in cosine-similarity units. */
+const KEY_RANK_BONUS = 0.03;
+
+const CAMELOT_RE = /^(1[0-2]|[1-9])([AB])$/;
+/** A record's Camelot key when it is sure enough to mix on, else null. */
+function keyOfRecord(record) {
+  const d = record && !record.miss ? record.dsp : null;
+  if (!d || typeof d.camelot !== 'string' || !(d.keyConf >= KEY_MIN_CONF)) return null;
+  const c = d.camelot.toUpperCase();
+  return CAMELOT_RE.test(c) ? c : null;
+}
+/**
+ * Do two Camelot keys mix? 'same', 'adjacent' (a step round the wheel, same
+ * letter) or 'relative' (same number, other letter) are harmonic; 'clash' is
+ * not; null when either key is unknown (then nothing is claimed either way).
+ */
+function keyFit(a, b) {
+  const ma = CAMELOT_RE.exec(a ?? ''), mb = CAMELOT_RE.exec(b ?? '');
+  if (!ma || !mb) return null;
+  const x = Number(ma[1]), y = Number(mb[1]);
+  if (x === y) return ma[2] === mb[2] ? 'same' : 'relative';
+  const step = Math.min(Math.abs(x - y), 12 - Math.abs(x - y));
+  return step === 1 && ma[2] === mb[2] ? 'adjacent' : 'clash';
+}
+
+function dot(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
+}
+
+/**
+ * The k heard tracks that sound most like `emb`, highest cosine first.
+ * @param {Float32Array} emb  unit-normalised
+ * @param {Map<string, {emb: Float32Array}>} index  from `audioIndex`
+ * @param {{ k?: number, exclude?: Set<string>|null, filter?: (id: string) => boolean }} [o]
+ * @returns {Array<{ id: string, sim: number }>}
+ */
+function nearest(emb, index, { k = 12, exclude = null, filter = null } = {}) {
+  if (!emb || !index?.size) return [];
+  const top = [];
+  for (const [id, row] of index) {
+    if (exclude?.has(id) || (filter && !filter(id)) || !row?.emb || row.emb.length !== emb.length) continue;
+    const sim = dot(emb, row.emb);
+    if (top.length < k) { top.push({ id, sim }); top.sort((a, b) => b.sim - a.sim); }
+    else if (sim > top[k - 1].sim) { top[k - 1] = { id, sim }; top.sort((a, b) => b.sim - a.sim); }
+  }
+  return top.map(r => ({ id: r.id, sim: +r.sim.toFixed(4) }));
+}
+
+/**
+ * The genres a playlist's name says it is, as ontology slugs.
+ * "Drum & Bass" is one genre; "Jungle & Breaks" is two; "Sunday" is none.
+ * A name is read whole first, so an alias with "&" in it is not split.
+ */
+function playlistConcepts(name) {
+  const whole = resolveConcept(String(name ?? ''));
+  if (whole.facet === 'genre' && whole.concept && whole.via === 'alias') return [whole.concept];
+  const parts = String(name ?? '').split(/\s*(?:&|\+|\/|,|\||\band\b|\bx\b)\s*/i).map(s => s.trim()).filter(Boolean);
+  const out = [];
+  if (parts.length > 1) {
+    for (const p of parts) {
+      const r = resolveConcept(p);
+      if (r.facet === 'genre' && r.concept && !out.includes(r.concept)) out.push(r.concept);
+    }
+  }
+  if (!out.length && whole.facet === 'genre' && whole.concept) out.push(whole.concept);
+  return out;
+}
+
+/**
+ * Which genre playlists each track is in, and what each playlist's name says.
+ * Only `targets` (the genre playlists) count; mirrors are left out.
+ * @returns {{ playlists: Map<string, {name: string, concepts: string[]}>, of: Map<string, string[]> }}
+ */
+function genreMembership(lib, { targets = null, isMirror = null } = {}) {
+  const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
+  const allowed = targets ? new Set(targets) : null;
+  const playlists = new Map(), of = new Map();
+  for (const p of lib?.playlists ?? []) {
+    if (!p?.id || mirror(p) || (allowed && !allowed.has(p.id))) continue;
+    playlists.set(p.id, { name: p.name ?? p.id, concepts: playlistConcepts(p.name) });
+    for (const t of p.tracks ?? []) {
+      if (!t?.id) continue;
+      const list = of.get(t.id) ?? [];
+      if (!list.includes(p.id)) list.push(p.id);
+      of.set(t.id, list);
+    }
+  }
+  return { playlists, of };
+}
+
+/**
+ * The sound-alikes of one track that are filed in a genre playlist, each with
+ * the playlists it is in and what their names say. What `identify` reads as
+ * "your library's view", and what the File card lists.
+ */
+function filedNeighbours(trackId, index, membership, { k = 12, exclude = null } = {}) {
+  const row = index?.get(trackId);
+  if (!row || !membership?.of) return [];
+  const skip = new Set(exclude ?? []);
+  skip.add(trackId);
+  return nearest(row.emb, index, { k, exclude: skip, filter: id => membership.of.has(id) }).map(n => {
+    const pids = membership.of.get(n.id) ?? [];
+    const concepts = [...new Set(pids.flatMap(pid => membership.playlists.get(pid)?.concepts ?? []))];
+    return { ...n, playlists: pids, concepts };
+  });
+}
+
+/** A record's usable tempo: { bpm, alt, conf } or null. */
+function tempoOf(record) {
+  const d = record && !record.miss ? record.dsp : null;
+  if (!d || !Number.isFinite(d.bpm) || d.bpm <= 0) return null;
+  return { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
+           conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+}
+
+/**
+ * How two tempos line up for a mix: 'same' within MIX_TOLERANCE, 'double' or
+ * 'half' when one is twice the other within it, else null. `diff` is the
+ * pitch change needed, as a fraction.
+ */
+function tempoRelation(a, b, tolerance = MIX_TOLERANCE) {
+  if (!(a > 0) || !(b > 0)) return null;
+  let best = null;
+  for (const [rel, k] of [['same', 1], ['double', 2], ['half', 0.5]]) {
+    const diff = Math.abs(b * k - a) / a;
+    if (diff <= tolerance && (!best || diff < best.diff)) best = { rel, diff: +diff.toFixed(4) };
+  }
+  return best;
+}
+
+/**
+ * Heard tracks that mix with this one: a tempo you can beatmatch (straight,
+ * or half/double time), ranked by how alike they sound, then by how little
+ * pitching they need. A track's own tempo can be passed in (`bpm`) when it
+ * has been settled elsewhere (identify's octave check); otherwise its record's.
+ * @returns {Array<{ id: string, sim: number, bpm: number, rel: string, diff: number }>}
+ */
+function mixesWith(trackId, index, { k = 8, bpm = null, tolerance = MIX_TOLERANCE, pool = 200 } = {}) {
+  const row = index?.get(trackId);
+  const own = bpm ?? tempoOf(row?.rec)?.bpm ?? null;
+  if (!row || !(own > 0)) return [];
+  const out = [];
+  const ownKey = keyOfRecord(row.rec);
+  for (const n of nearest(row.emb, index, { k: pool, exclude: new Set([trackId]) })) {
+    const t = tempoOf(index.get(n.id)?.rec);
+    if (!t || t.conf < MIX_MIN_CONF) continue;
+    const r = tempoRelation(own, t.bpm, tolerance) ?? (t.alt ? tempoRelation(own, t.alt, tolerance) : null);
+    if (!r) continue;
+    const hit = { id: n.id, sim: n.sim, bpm: +t.bpm.toFixed(1), rel: r.rel, diff: r.diff };
+    // Key only when both keys are sure; otherwise the entry is exactly what it always was.
+    const theirs = keyOfRecord(index.get(n.id)?.rec), fit = keyFit(ownKey, theirs);
+    if (fit) { hit.key = theirs; hit.keyFit = fit; }
+    out.push(hit);
+    if (!ownKey && out.length >= k) break;
+  }
+  if (ownKey) {
+    // A harmonic fit lifts a mix a little, a clash lowers it; ties keep the similarity order.
+    const rank = h => h.sim + (h.keyFit ? (h.keyFit === 'clash' ? -KEY_RANK_BONUS : KEY_RANK_BONUS) : 0);
+    out.sort((a, b) => rank(b) - rank(a));
+  }
+  return out.slice(0, k);
+}
+
+/** Shown only at or above this confidence (86% within +-1 BPM there); equal to MIX_MIN_CONF and dsp-view's BPM_MIN_CONF. */
+const BPM_MIN_CONF = MIX_MIN_CONF;
+/** Below this the preview had no steady pulse to speak of. */
+const BPM_NO_BEAT_CONF = 0.15;
+
+const within = (b, [lo, hi]) => b >= lo && b <= hi;
+
+/**
+ * One BPM everywhere (SOUND-ENGINE-PLAN T2): settle a reading into a range by
+ * x2 or x1/2 only. Returns the reading itself when it is already in range, the
+ * fold that lands in it, or null when neither does (nothing is forced).
+ * @param {number} bpm
+ * @param {[number, number]} range
+ * @returns {number|null}
+ */
+function foldIntoRange(bpm, range) {
+  if (!(bpm > 0) || !range) return null;
+  if (within(bpm, range)) return bpm;
+  for (const k of [2, 0.5]) if (within(bpm * k, range)) return bpm * k;
+  return null;
+}
+
+/**
+ * The BPM a listener sees for a track, in the convention they play it in.
+ * Order: the range of a playlist the track is in or suggested for (padded by
+ * the mixing tolerance), then the working range of the genre it sounds like;
+ * at each, the reading as measured (or its flagged alternative) if it sits in
+ * range, else x2 or x1/2 if that lands in it; else the reading as measured.
+ * `settled` is false only for a reading flagged "87 or 174" that nothing settled.
+ * @param {object} record  a stored AudioRecord
+ * @param {{ playlistRange?: {lo: number, hi: number}|[number, number]|null, genres?: Array<string|[string, number]> }} [ctx]
+ *        genres: ontology slugs, most specific first
+ * @returns {{ bpm: number, from: 'measured'|'playlist'|'genre', conf: number, settled: boolean, alt: number|null } | null}
+ */
+function displayTempo(record, { playlistRange = null, genres = [] } = {}) {
+  const t = tempoOf(record);
+  if (!t) return null;
+  const cands = t.alt ? [t.bpm, t.alt] : [t.bpm];
+  const stages = [];
+  const pr = Array.isArray(playlistRange) ? playlistRange : playlistRange ? [playlistRange.lo, playlistRange.hi] : null;
+  if (pr && pr[0] > 0 && pr[1] >= pr[0]) stages.push(['playlist', [[pr[0] * (1 - MIX_TOLERANCE), pr[1] * (1 + MIX_TOLERANCE)]]]);
+  const gr = [];
+  for (const g of genres ?? []) { const r = tempoRangeOf(Array.isArray(g) ? g[0] : g); if (r) gr.push(r); }
+  if (gr.length) stages.push(['genre', gr]);
+  const out = (bpm, from, settled) => ({ bpm: +bpm.toFixed(1), from, conf: t.conf, settled, alt: settled ? null : t.alt });
+  for (const [from, ranges] of stages) {
+    for (const c of cands) if (ranges.some(r => within(c, r))) return out(c, c === t.bpm ? 'measured' : from, true);
+    for (const c of cands) for (const r of ranges) { const f = foldIntoRange(c, r); if (f) return out(f, from, true); }
+  }
+  return out(t.bpm, 'measured', !t.alt);
+}
+
+/**
+ * SOUND-ENGINE-PLAN T3: one sure BPM, or "BPM unknown" with the reason.
+ * Sure means confidence at or above BPM_MIN_CONF and the octave settled.
+ * `why`: 'no-audio' (never heard), 'no-beat' (no steady pulse in the preview),
+ * 'octave' (87 or 174, nothing settled it), 'unsure' (a pulse, not reliable).
+ * @returns {{ state: 'sure', bpm: number, from: string, conf: number } | { state: 'unknown', why: string }}
+ */
+function tempoShown(record, ctx = {}) {
+  if (!record || record.miss) return { state: 'unknown', why: 'no-audio' };
+  const t = tempoOf(record);
+  if (!t || t.conf < BPM_NO_BEAT_CONF) return { state: 'unknown', why: 'no-beat' };
+  if (t.conf < BPM_MIN_CONF) return { state: 'unknown', why: 'unsure' };
+  const d = displayTempo(record, ctx);
+  if (!d.settled) return { state: 'unknown', why: 'octave' };
+  return { state: 'sure', bpm: d.bpm, from: d.from, conf: d.conf };
+}
+
+/** The words behind each "BPM unknown" (shown on tap or hover). */
+const TEMPO_UNKNOWN_TEXT = Object.freeze({
+  'no-audio': 'Not heard yet: no preview on Deezer',
+  'no-beat': 'The beat wasn\u2019t clear in the 30 s preview',
+  'octave': 'Could be half or double: file it to a playlist and it will settle',
+  'unsure': 'A pulse, but the reading isn\u2019t reliable enough to show',
+});
+return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith, BPM_MIN_CONF, BPM_NO_BEAT_CONF, foldIntoRange, displayTempo, tempoShown, TEMPO_UNKNOWN_TEXT };
+})();
 /* ---- web/audio/dsp-view.mjs ---- */
 __mod["web/audio/dsp-view.mjs"] = (function () {
+const { tempoShown } = __mod["core/audio/match.mjs"];
 // AudioRecord.dsp → the BPM/key part of web/ui/sound.mjs's SoundVM (WP-D4).
 //
 // Measured 2026-11-14 on 400 tracks of the Beatport EDM Key Dataset
@@ -5524,6 +6499,8 @@ const BPM_UI_DEFAULT = true;        // tempo alone — on, measured above
 /** Tempo shown by default only at or above this confidence (86% within ±1 BPM there). */
 const BPM_MIN_CONF = 0.3;
 const DSP_UI_KEY = 'bf_audio_dsp';
+
+
 
 /** The default key display: only readings at or above KEY_MIN_CONF. Off only when the override says '0'. */
 const KEY_UI_DEFAULT = true;
@@ -5563,17 +6540,25 @@ function keyShown(ls = globalThis.localStorage) {
  * @param {{ show?: boolean, bpm?: boolean, key?: boolean }} [o]  show: everything (default dspShown());
  *        bpm: tempo alone at BPM_MIN_CONF (default bpmShown());
  *        key: the key alone, only at KEY_MIN_CONF (default keyShown())
- * @returns {{ bpm?: number, bpmAlt?: number, bpmConf?: number, key?: string, camelot?: string, keyConf?: number } | null}
+ *        ctx: { playlistRange?, genres? } the track sits in (match.mjs displayTempo), so the BPM is the one
+ *        every other surface shows (SOUND-ENGINE-PLAN T2/T3); without it, the reading folded by nothing
+ * @returns {{ bpm?: number, bpmUnknown?: string, bpmConf?: number, key?: string, camelot?: string, keyConf?: number } | null}
  */
-function dspSoundVM(record, { show = dspShown(), bpm = bpmShown(), key = keyShown() } = {}) {
+function dspSoundVM(record, { show = dspShown(), bpm = bpmShown(), key = keyShown(), ctx = null } = {}) {
   if (!show && !bpm && !key) return null;
   const d = record && !record.miss ? record.dsp : null;
   if (!d || typeof d !== 'object') return null;
   const vm = {};
-  if ((show || bpm) && Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= (show ? MIN_SHOW_CONF : BPM_MIN_CONF)) {
+  if (show && Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= MIN_SHOW_CONF) {
+    // The checking view: every reading, as measured.
     vm.bpm = Math.round(d.bpm);
     vm.bpmConf = d.bpmConf;
     if (d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0) vm.bpmAlt = Math.round(d.bpmAlt);
+  } else if (bpm && !show) {
+    // One sure BPM, or "BPM unknown" with the reason (T3); never a raw reading or a pair.
+    const t = tempoShown(record, ctx ?? {});
+    if (t.state === 'sure') { vm.bpm = Math.round(t.bpm); vm.bpmConf = t.conf; }
+    else vm.bpmUnknown = t.why;
   }
   if ((show || key) && typeof d.key === 'string' && d.key && (d.keyConf ?? 0) >= (show ? MIN_SHOW_CONF : KEY_MIN_CONF)) {
     vm.key = d.key;

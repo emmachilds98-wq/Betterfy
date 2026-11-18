@@ -114,7 +114,7 @@ export function soundMisfits({ index, membership, tags = null, skip = null, opts
     const inTo = neighbours.filter(n => n.playlists.includes(v.to)).length;
     const inFrom = neighbours.filter(n => n.playlists.includes(v.from)).length;
     const sound = id?.genre ? (id.sub?.name ?? id.genre.name) : null;
-    const bpm = id?.bpm && id.bpm.conf >= 0.3 ? Math.round(id.bpm.value) : null;
+    const bpm = id?.bpm && id.bpm.conf >= 0.3 && id.bpm.settled !== false ? Math.round(id.bpm.shown ?? id.bpm.value) : null;
     const why = [`${inTo} of the ${neighbours.length} tracks it sounds most like are in ${nameOf(v.to)}, ${inFrom} in ${nameOf(v.from)}`];
     if (sound) why.push(v.idBacks ? `it sounds like ${sound}, which fits ${nameOf(v.to)}` : `it sounds like ${sound}`);
     out.push({ id: tid, ...v, fromName: nameOf(v.from), toName: nameOf(v.to), sound, bpm,

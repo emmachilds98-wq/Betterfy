@@ -10,9 +10,13 @@ const soundSlot = (cls, html) => html ? `<div class="${cls}">${html}</div>` : ''
 // the mood/voice/energy labels once checked). Both stay null until their flags
 // are on. No records or no adapter means no sound.
 const soundOf = t => t?.sound ?? (t?.id && typeof AUDIO !== 'undefined' && AUDIO.records
-  && globalThis.BetterfyAudio?.dspSoundVM ? audioSoundVM(AUDIO.records.get(t.id)) : null);
-const audioSoundVM = r => {
-  const A = BetterfyAudio, d = A.dspSoundVM(r) ?? null;
+  && globalThis.BetterfyAudio?.dspSoundVM ? audioSoundVM(AUDIO.records.get(t.id), t) : null);
+const audioSoundVM = (r, t) => {
+  // T2: the card's BPM is folded into the DJ range of the genre it sounds like, as "Sounds like" shows it.
+  let ctx = null;
+  try { const id = t && typeof soundIdOf === 'function' ? soundIdOf(t)?.id : null;
+    if (id?.path?.length) ctx = { genres: [...id.path].reverse().map(p => p.slug) }; } catch { /* no genre yet */ }
+  const A = BetterfyAudio, d = A.dspSoundVM(r, ctx ? { ctx } : {}) ?? null;
   return A.mergeSoundVM && typeof labelsShownNow === 'function' ? A.mergeSoundVM(d, A.labelSoundVM(r, labelsShownNow())) : d;
 };
 const trackChip = t => { const vm = soundOf(t); return vm ? soundSlot('sndchip', soundChip(vm)) : ''; };
@@ -100,7 +104,11 @@ function soundIdHTML(t) {
   if (!id || (!id.genre && !id.bpm)) return '';
   const band = id.genre ? (id.genre.conf >= 0.7 ? 'HIGH' : id.genre.conf >= 0.45 ? 'LIKELY' : 'AMBIGUOUS') : null;
   const path = id.genre ? id.path.map(p => esc(p.name)).join('<span class="sep">›</span>') : 'No clear genre';
-  const bpm = id.bpm ? `<span class="bpm" title="${id.bpm.from === 'genre' ? 'Tempo read the way its genre is felt' : 'Measured from the preview'}">${Math.round(id.bpm.value)} BPM</span>` : '';
+  // T2/T3: the same BPM as every other surface: folded into the genre's DJ range, or "BPM unknown".
+  const bpmSure = id.bpm && id.bpm.conf >= 0.3 && id.bpm.settled !== false;
+  const bpm = id.bpm ? (bpmSure
+    ? `<span class="bpm" title="${id.bpm.shown != null && id.bpm.shownFrom !== 'measured' ? 'Tempo read the way its genre is felt' : 'Measured from the preview'}">${Math.round(id.bpm.shown ?? id.bpm.value)} BPM</span>`
+    : `<span class="bpm bpm-unknown" title="${esc(BetterfyMatch.TEMPO_UNKNOWN_TEXT[id.bpm.settled === false ? 'octave' : id.bpm.conf < 0.15 ? 'no-beat' : 'unsure'])}">BPM unknown</span>`) : '';
   const blend = id.blend ? `<span class="tag" title="Sounds like a mix of two genres">${esc(id.blend[0])} + ${esc(id.blend[1])}</span>` : '';
   const who = n => { const x = soundTrackName(n.id); return `${esc(x.title)}<span class="sub"> — ${esc(x.artist)}</span>`; };
   const where = n => (n.playlists ?? []).map(p => CFG[p]?.name ?? p).slice(0, 2).map(esc).join(', ');

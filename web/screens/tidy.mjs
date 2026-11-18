@@ -127,7 +127,7 @@ function soundRow(c, x) {
   const t = tidySoundTrack(c.LIB, x.id), done = S.moved.has(x.id);
   return `<div class="row tsrow ${done ? 'done' : ''}" data-flip data-key="${esc(`ts:${x.id}`)}">${thumbHTML(t)}<div class="main">
         <div class="ttl">${esc(t.title)} <span class="sub">— ${esc(t.artist)}</span></div>
-        <div class="tssound"><span class="bysound">by sound</span> ${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ''}, sits in <b>${esc(x.fromName)}</b></div>
+        <div class="tssound"><span class="bysound">by sound</span> ${x.sound ? `Sounds like <b>${esc(x.sound)}</b>` : 'Sounds like'}${x.bpm ? ` <span class="mono">${x.bpm} BPM</span>` : ' <span class="mono muted">BPM unknown</span>'}, sits in <b>${esc(x.fromName)}</b></div>
         <div class="swap"><span class="from">${esc(x.fromName)}</span><span class="arw">→</span><span class="to">${esc(x.toName)}</span>
           <span class="mono">${x.near.from} → ${x.near.to} of ${x.near.k} sound-alikes</span></div>
         <div class="why">${esc(x.why.join('; '))}.</div>

@@ -251,3 +251,18 @@ test('Playlists without records: no sound at all; before the engine is loaded: t
   assert.ok(!loading.vSheet('house').includes('Two genres'));
   assert.match(loading.vSheet('house'), /<div class="prof">\|<\/div>/, 'the profile as it was, nothing added');
 });
+
+test('Library range (T2): a Jungle playlist read at half time shows its genre octave, a House one is untouched', () => {
+  const recs = new Map();
+  const tr = (prefix, kind, bpm) => Array.from({ length: 12 }, (_, i) => {
+    const id = prefix + i; recs.set(id, rec(id, { ...kind, bpm: bpm + (i % 3) })); return { id, name: id, artists: [{ id: 'a-' + id }] };
+  });
+  const lib = { playlists: [
+    { id: 'jungle', name: 'Jungle', tracks: tr('jj', JUNGLE, 86) },
+    { id: 'house', name: 'House', tracks: tr('hh', HOUSE, 124) },
+  ] };
+  const p = playlistProfiles(lib, recs, { targets: ['jungle', 'house'] });
+  assert.ok(p.get('jungle').bpm[0] >= 160, 'jungle shows ' + p.get('jungle').bpm);
+  assert.ok(p.get('jungle').tempo[0] >= 160, 'jungle tight range shows ' + p.get('jungle').tempo);
+  assert.deepEqual(p.get('house').bpm, [124, 126]);
+});

@@ -27,9 +27,9 @@
 
 import { styleHints } from '../sources/audio-vocab.mjs';
 import { GENRE_INDEX, lineageOf } from '../ontology/index.mjs';
-import { tempoFit, resolveOctave } from '../ontology/tempo.mjs';
+import { tempoFit, resolveOctave, tempoRangeOf } from '../ontology/tempo.mjs';
 import { hybridOf } from './sections.mjs';
-import { tempoOf, filedNeighbours, genreMembership } from './match.mjs';
+import { tempoOf, filedNeighbours, genreMembership, displayTempo } from './match.mjs';
 import { audioIndex } from '../intrinsic/audio.mjs';
 import { conceptLabel } from '../recommend/gaps.mjs';
 
@@ -93,7 +93,8 @@ function votesOf(record, { neighbours, tags }) {
  *   genre: { slug: string, name: string, conf: number },
  *   path: Array<{ slug: string, name: string, share: number }>,
  *   sub: { slug: string, name: string, share: number } | null,
- *   bpm: { value: number, conf: number, from: 'tracker'|'genre', fit: number|null } | null,
+ *   bpm: { value: number, conf: number, from: 'tracker'|'genre', fit: number|null,
+ *          shown?: number, settled?: boolean, shownFrom?: string } | null,  (shown: the BPM to display, T2)
  *   blend: [string, string] | null,
  *   support: { model: number, library: number, tags: number },
  *   why: string[], version: string }}
@@ -128,10 +129,19 @@ export function identify(record, { neighbours = [], tags = [], playlistName = nu
     }
   }
 
+  // T2: the BPM a listener sees, in the DJ range of the genre it sounds like.
+  const flatTop = [...flat].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c]) => c);
+  const showTempo = slugs => {
+    if (!bpm) return;
+    const d = displayTempo(record, { genres: slugs });
+    if (d) { bpm.shown = d.bpm; bpm.settled = d.settled; bpm.shownFrom = d.from; }
+  };
+
   // Up the hierarchy: a vote for a sub-genre is a vote for everything above it.
   const tree = new Map();
   let total = 0;
   for (const [c, v] of flat) { total += v; for (const a of lineageOf(c)) add(tree, a, v); }
+  if (!(total > 0)) showTempo(flatTop);
   if (!(total > 0)) return bpm ? { genre: null, path: [], sub: null, bpm, blend: null,
                                    support: { model: 0, library: 0, tags: 0 }, why: [], version: IDENTIFY_VERSION } : null;
 
@@ -141,6 +151,7 @@ export function identify(record, { neighbours = [], tags = [], playlistName = nu
   const [gSlug, gMass] = [...level].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
   const conf = gMass / total;
   if (conf < minGenre) {
+    showTempo(flatTop);
     return { genre: null, path: [], sub: null, bpm, blend: null,
              support: { model: 0, library: 0, tags: 0 }, why: ['The sources disagree too much to name a genre.'],
              version: IDENTIFY_VERSION };
@@ -157,6 +168,7 @@ export function identify(record, { neighbours = [], tags = [], playlistName = nu
     path.push({ slug: k, name: nameOf(k), share: +share.toFixed(3) });
     at = k;
   }
+  showTempo([...path].reverse().map(p => p.slug).concat(flatTop));
   if (bpm && t.conf >= TEMPO_CONF) bpm.fit = tempoFit(bpm.value, path[path.length - 1].slug)?.fit ?? null;
 
   // How much each source backs the genre chosen.
@@ -210,7 +222,8 @@ export function identifyAccuracy({ index, membership, k = 12, limit = 600, weigh
     const pids = membership?.of?.get(id) ?? [];
     return pids.some(p => membership.playlists.get(p)?.concepts?.length);
   }).sort().slice(0, limit);
-  const tally = { scored: 0, genre: 0, specific: 0, model: { genre: 0, specific: 0 }, tempo: 0, tempoJudged: 0 };
+  const tally = { scored: 0, genre: 0, specific: 0, model: { genre: 0, specific: 0 }, tempo: 0, tempoJudged: 0,
+                  bpmHeard: 0, bpmKnown: 0, bpmWhy: {}, bpmJudged: 0, bpmInRawRange: 0, bpmInShownRange: 0, bpmMoved: 0 };
   const byGenre = new Map();
   const judge = (res, truth) => {
     if (!res?.genre) return { genre: false, specific: false };
@@ -233,6 +246,23 @@ export function identifyAccuracy({ index, membership, k = 12, limit = 600, weigh
       const fits = truth.map(c => tempoFit(res.bpm.value, c)?.fit).filter(f => f != null);
       if (fits.length) { tally.tempoJudged++; if (Math.max(...fits) >= 0.8) tally.tempo++; }
     }
+    // T2/T3: how many tracks show a sure BPM, why the rest do not, and how many readings the fold moved into range.
+    tally.bpmHeard++;
+    const sure = res?.bpm && res.bpm.conf >= TEMPO_CONF && res.bpm.settled !== false;
+    if (sure) {
+      tally.bpmKnown++;
+      const raw = tempoOf(row.rec)?.bpm, shown = res.bpm.shown ?? res.bpm.value;
+      const ranges = truth.map(c => tempoRangeOf(c)).filter(Boolean);
+      if (ranges.length) {
+        tally.bpmJudged++;
+        if (ranges.some(r => raw >= r[0] && raw <= r[1])) tally.bpmInRawRange++;
+        if (ranges.some(r => shown >= r[0] && shown <= r[1])) tally.bpmInShownRange++;
+        if (Math.abs(shown - raw) > 0.5) tally.bpmMoved++;
+      }
+    } else {
+      const why = !res?.bpm ? 'no-beat' : res.bpm.settled === false && res.bpm.conf >= TEMPO_CONF ? 'octave' : res.bpm.conf < 0.15 ? 'no-beat' : 'unsure';
+      tally.bpmWhy[why] = (tally.bpmWhy[why] ?? 0) + 1;
+    }
     const g = genreLevel(truth[0]);
     const b = byGenre.get(g) ?? { slug: g, name: nameOf(g), n: 0, right: 0 };
     b.n++; if (full.genre) b.right++;
@@ -244,6 +274,8 @@ export function identifyAccuracy({ index, membership, k = 12, limit = 600, weigh
     genre: rate(tally.genre, tally.scored), specific: rate(tally.specific, tally.scored),
     modelOnly: { genre: rate(tally.model.genre, tally.scored), specific: rate(tally.model.specific, tally.scored) },
     tempo: rate(tally.tempo, tally.tempoJudged), tempoJudged: tally.tempoJudged,
+    bpm: { heard: tally.bpmHeard, known: rate(tally.bpmKnown, tally.bpmHeard), why: tally.bpmWhy, judged: tally.bpmJudged,
+           inRangeRaw: rate(tally.bpmInRawRange, tally.bpmJudged), inRangeShown: rate(tally.bpmInShownRange, tally.bpmJudged), moved: tally.bpmMoved },
     byGenre: [...byGenre.values()].sort((a, b) => b.n - a.n).slice(0, 8),
     version: IDENTIFY_VERSION,
   };

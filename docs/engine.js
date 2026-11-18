@@ -4101,10 +4101,141 @@ function learningCurve(set, { sizes = [5, 10, 20, 40], ...opts } = {}) {
 }
 return { AUDIO_LEARN_VERSION, LEARN_DEFAULTS, trainingSet, subset, holdoutSplit, trainPrototypes, trainLogistic, predictProba, fitSet, capPerClass, learnAudio, learnedScores, trainLearner, calibrationScores, crossValidate, learningCurve };
 })();
+/* ---- core/ontology/tempo.mjs ---- */
+__mod["core/ontology/tempo.mjs"] = (function () {
+const { GENRE_INDEX, ancestorsOf } = __mod["core/ontology/index.mjs"];
+// Typical tempo per genre: the ranges DJs and producers work in.
+//
+// Why a table: tempo is the one thing about a track that is both cheap to
+// measure from a preview (core/audio/dsp/tempo.mjs: 86% within ±1 BPM at
+// confidence ≥ 0.3 on the Beatport set) and strongly tied to genre. Drum & bass
+// lives at 170-176, house at 120-128, UK garage at 130-138. So each can check
+// the other:
+//   - a "87 or 174?" reading is settled by which octave fits the genre it
+//     sounds like (`resolveOctave`);
+//   - a genre guess whose range excludes a confidently measured tempo is
+//     marked down (`tempoFit`), which catches the audio model's most common
+//     confusions inside electronic music (it hears "breakbeat" in both jungle
+//     and UK breaks; 170 against 132 tells them apart).
+//
+// These are soft priors, never vetoes: a 160 BPM house edit exists. Ranges are
+// the common working range, deliberately a little generous. `null` means tempo
+// says nothing about the genre (rock, pop, ambient), and a genre with no row
+// inherits its nearest ancestor's (see `tempoRangeOf`).
+//
+// Half-time genres (dubstep, trap, halftime DnB) are listed at the tempo a DJ
+// would set, with `half: true`: a tempo tracker often reports half of it, and
+// that is a match, not a miss.
+
+
+
+const TEMPO_VERSION = '1.0.0';
+
+/** slug → [low, high] BPM, or null for "tempo says nothing". */
+const TEMPO = Object.freeze({
+  'electronic': null,
+  'house': [115, 130], 'deep-house': [112, 126], 'tech-house': [120, 130], 'progressive-house': [118, 130],
+  'acid-house': [116, 130], 'disco-house': [112, 128], 'electro-house': [124, 132], 'afro-house': [115, 126],
+  'melodic-house': [112, 126], 'garage-house': [115, 128], 'minimal-house': [118, 128], 'bass-house': [122, 132],
+  'hard-house': [138, 152], 'donk': [140, 160],
+  'techno': [120, 150], 'minimal-techno': [118, 130], 'acid-techno': [128, 148], 'detroit-techno': [118, 135],
+  'hard-techno': [138, 165], 'dub-techno': [112, 128],
+  'trance': [125, 145], 'progressive-trance': [124, 136], 'psytrance': [136, 150], 'uplifting-trance': [134, 142],
+  'hard-trance': [138, 155],
+  'breakbeat': [120, 140], 'big-beat': [95, 135], 'uk-breaks': [126, 140], 'breakcore': [160, 260],
+  'drum-and-bass': [160, 180], 'jungle': [155, 175], 'liquid-dnb': [168, 178], 'neurofunk': [168, 180],
+  'jump-up': [168, 180], 'halftime': [160, 180],
+  'uk-garage': [128, 140], 'bassline': [132, 144], 'future-garage': [125, 140], 'grime': [136, 144],
+  'uk-funky': [126, 134],
+  'dubstep': [136, 150], 'brostep': [138, 152], 'uk-bass': [126, 145],
+  'hardcore': [160, 200], 'gabber': [160, 220], 'hardstyle': [145, 160], 'jumpstyle': [138, 152], 'makina': [160, 180],
+  'jersey-club': [130, 145], 'footwork': [155, 165], 'gqom': [118, 130],
+  'ambient': null, 'downtempo': [80, 112], 'idm': null, 'electro': [118, 135], 'synthwave': [80, 120],
+  'synth-pop': [100, 132], 'eurodance': [128, 145],
+  'hip-hop': [80, 105], 'uk-hip-hop': [80, 100], 'drill': [136, 148], 'trap': [130, 155], 'phonk': [120, 150],
+  'boom-bap': [84, 98], 'conscious-hip-hop': [80, 100], 'g-funk': [86, 100], 'lo-fi-hip-hop': [65, 95],
+  'rnb': [60, 110], 'neo-soul': [65, 100], 'soul': null, 'motown': null, 'funk': [90, 125], 'disco': [110, 132],
+  'rock': null, 'pop': null, 'dance-pop': [110, 132], 'k-pop': null, 'hyperpop': null,
+  'jazz': null, 'reggae': [60, 95], 'dub': [60, 90], 'dancehall': [88, 110], 'afrobeats': [95, 118],
+  'latin': null, 'folk': null, 'country': null, 'blues': null, 'classical': null, 'soundtrack': null,
+});
+
+/** Played at this tempo but felt (and often tracked) at half of it. */
+const HALF_TIME = Object.freeze(new Set(['dubstep', 'brostep', 'halftime', 'trap', 'drill', 'phonk']));
+
+/**
+ * Genres whose own convention is "87 or 174": Beatport writes 32 of 40 DnB tracks at 85-90.
+ * A reading at half of the DJ range is a full fit for these (and their children), not 0.6.
+ */
+const DOUBLE_OK = Object.freeze(new Set(['drum-and-bass', 'jungle', 'footwork', 'juke', 'breakcore']));
+
+/** How much a half- or double-time reading counts: real, but weaker than a straight one. */
+const OCTAVE_CREDIT = 0.6;
+/** Outside the range, fit falls to zero over this many BPM. */
+const FALLOFF = 12;
+
+/**
+ * The working range for a genre: its own row, else its nearest ancestor's.
+ * Null when tempo says nothing about it (or it isn't a known genre).
+ */
+function tempoRangeOf(slug) {
+  if (!slug) return null;
+  if (Object.hasOwn(TEMPO, slug)) return TEMPO[slug];
+  if (!GENRE_INDEX.has(slug)) return null;
+  for (const a of ancestorsOf(slug)) if (Object.hasOwn(TEMPO, a)) return TEMPO[a];
+  return null;
+}
+
+const straight = (bpm, [lo, hi]) =>
+  bpm >= lo && bpm <= hi ? 1 : Math.max(0, 1 - (bpm < lo ? lo - bpm : bpm - hi) / FALLOFF);
+
+/**
+ * How well a tempo fits a genre, 0–1, or null when tempo says nothing about it.
+ * Half or double the tempo counts at OCTAVE_CREDIT (full credit for half-time
+ * genres read at half), so a tracker's octave slip never zeroes a right genre.
+ * @returns {{ fit: number, bpm: number } | null}  `bpm`: the octave that fitted best
+ */
+function tempoFit(bpm, slug) {
+  const range = tempoRangeOf(slug);
+  if (!range || !Number.isFinite(bpm) || bpm <= 0) return null;
+  const half = HALF_TIME.has(slug) || ancestorsOf(slug).some(a => HALF_TIME.has(a));
+  const dbl = DOUBLE_OK.has(slug) || ancestorsOf(slug).some(a => DOUBLE_OK.has(a));
+  let best = { fit: straight(bpm, range), bpm };
+  for (const [k, credit] of [[2, half || dbl ? 1 : OCTAVE_CREDIT], [0.5, OCTAVE_CREDIT]]) {
+    const f = straight(bpm * k, range) * credit;
+    if (f > best.fit) best = { fit: f, bpm: bpm * k };
+  }
+  return { fit: +best.fit.toFixed(4), bpm: +best.bpm.toFixed(1) };
+}
+
+/**
+ * Settle a "87 or 174?" reading with what the track sounds like.
+ * `candidates` are [slug, weight] pairs (any order); the reading whose straight
+ * fit, weighted by them, is higher wins. Ties and no information keep the
+ * tracker's own first reading.
+ * @returns {{ bpm: number, from: 'tracker'|'genre' }}
+ */
+function resolveOctave(bpm, alt, candidates = []) {
+  if (!Number.isFinite(alt) || alt <= 0 || !Number.isFinite(bpm)) return { bpm, from: 'tracker' };
+  let a = 0, b = 0;
+  for (const [slug, w] of candidates) {
+    const range = tempoRangeOf(slug);
+    if (!range || !(w > 0)) continue;
+    a += w * straight(bpm, range);
+    b += w * straight(alt, range);
+  }
+  return b > a + 1e-9 ? { bpm: alt, from: 'genre' } : { bpm, from: 'tracker' };
+}
+
+/** Every slug in the table is a real genre (checked by the test). */
+const tempoSlugs = () => Object.keys(TEMPO);
+return { TEMPO_VERSION, TEMPO, HALF_TIME, DOUBLE_OK, OCTAVE_CREDIT, FALLOFF, tempoRangeOf, tempoFit, resolveOctave, tempoSlugs };
+})();
 /* ---- core/audio/match.mjs ---- */
 __mod["core/audio/match.mjs"] = (function () {
 const { resolveConcept } = __mod["core/ontology/index.mjs"];
 const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
+const { tempoRangeOf } = __mod["core/ontology/tempo.mjs"];
 // Matching by sound: tracks that sound alike, tracks that mix together, and
 // which of your genre playlists the sound-alikes sit in.
 //
@@ -4113,6 +4244,7 @@ const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 // nothing leaves the device, nothing is pooled across accounts. The vectors
 // are the audio model's embeddings of Deezer previews (audio.mjs `audioIndex`
 // rows: unit-normalised, so a dot product is the cosine).
+
 
 
 
@@ -4297,7 +4429,84 @@ function mixesWith(trackId, index, { k = 8, bpm = null, tolerance = MIX_TOLERANC
   }
   return out.slice(0, k);
 }
-return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith };
+
+/** Shown only at or above this confidence (86% within +-1 BPM there); equal to MIX_MIN_CONF and dsp-view's BPM_MIN_CONF. */
+const BPM_MIN_CONF = MIX_MIN_CONF;
+/** Below this the preview had no steady pulse to speak of. */
+const BPM_NO_BEAT_CONF = 0.15;
+
+const within = (b, [lo, hi]) => b >= lo && b <= hi;
+
+/**
+ * One BPM everywhere (SOUND-ENGINE-PLAN T2): settle a reading into a range by
+ * x2 or x1/2 only. Returns the reading itself when it is already in range, the
+ * fold that lands in it, or null when neither does (nothing is forced).
+ * @param {number} bpm
+ * @param {[number, number]} range
+ * @returns {number|null}
+ */
+function foldIntoRange(bpm, range) {
+  if (!(bpm > 0) || !range) return null;
+  if (within(bpm, range)) return bpm;
+  for (const k of [2, 0.5]) if (within(bpm * k, range)) return bpm * k;
+  return null;
+}
+
+/**
+ * The BPM a listener sees for a track, in the convention they play it in.
+ * Order: the range of a playlist the track is in or suggested for (padded by
+ * the mixing tolerance), then the working range of the genre it sounds like;
+ * at each, the reading as measured (or its flagged alternative) if it sits in
+ * range, else x2 or x1/2 if that lands in it; else the reading as measured.
+ * `settled` is false only for a reading flagged "87 or 174" that nothing settled.
+ * @param {object} record  a stored AudioRecord
+ * @param {{ playlistRange?: {lo: number, hi: number}|[number, number]|null, genres?: Array<string|[string, number]> }} [ctx]
+ *        genres: ontology slugs, most specific first
+ * @returns {{ bpm: number, from: 'measured'|'playlist'|'genre', conf: number, settled: boolean, alt: number|null } | null}
+ */
+function displayTempo(record, { playlistRange = null, genres = [] } = {}) {
+  const t = tempoOf(record);
+  if (!t) return null;
+  const cands = t.alt ? [t.bpm, t.alt] : [t.bpm];
+  const stages = [];
+  const pr = Array.isArray(playlistRange) ? playlistRange : playlistRange ? [playlistRange.lo, playlistRange.hi] : null;
+  if (pr && pr[0] > 0 && pr[1] >= pr[0]) stages.push(['playlist', [[pr[0] * (1 - MIX_TOLERANCE), pr[1] * (1 + MIX_TOLERANCE)]]]);
+  const gr = [];
+  for (const g of genres ?? []) { const r = tempoRangeOf(Array.isArray(g) ? g[0] : g); if (r) gr.push(r); }
+  if (gr.length) stages.push(['genre', gr]);
+  const out = (bpm, from, settled) => ({ bpm: +bpm.toFixed(1), from, conf: t.conf, settled, alt: settled ? null : t.alt });
+  for (const [from, ranges] of stages) {
+    for (const c of cands) if (ranges.some(r => within(c, r))) return out(c, c === t.bpm ? 'measured' : from, true);
+    for (const c of cands) for (const r of ranges) { const f = foldIntoRange(c, r); if (f) return out(f, from, true); }
+  }
+  return out(t.bpm, 'measured', !t.alt);
+}
+
+/**
+ * SOUND-ENGINE-PLAN T3: one sure BPM, or "BPM unknown" with the reason.
+ * Sure means confidence at or above BPM_MIN_CONF and the octave settled.
+ * `why`: 'no-audio' (never heard), 'no-beat' (no steady pulse in the preview),
+ * 'octave' (87 or 174, nothing settled it), 'unsure' (a pulse, not reliable).
+ * @returns {{ state: 'sure', bpm: number, from: string, conf: number } | { state: 'unknown', why: string }}
+ */
+function tempoShown(record, ctx = {}) {
+  if (!record || record.miss) return { state: 'unknown', why: 'no-audio' };
+  const t = tempoOf(record);
+  if (!t || t.conf < BPM_NO_BEAT_CONF) return { state: 'unknown', why: 'no-beat' };
+  if (t.conf < BPM_MIN_CONF) return { state: 'unknown', why: 'unsure' };
+  const d = displayTempo(record, ctx);
+  if (!d.settled) return { state: 'unknown', why: 'octave' };
+  return { state: 'sure', bpm: d.bpm, from: d.from, conf: d.conf };
+}
+
+/** The words behind each "BPM unknown" (shown on tap or hover). */
+const TEMPO_UNKNOWN_TEXT = Object.freeze({
+  'no-audio': 'Not heard yet: no preview on Deezer',
+  'no-beat': 'The beat wasn\u2019t clear in the 30 s preview',
+  'octave': 'Could be half or double: file it to a playlist and it will settle',
+  'unsure': 'A pulse, but the reading isn\u2019t reliable enough to show',
+});
+return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith, BPM_MIN_CONF, BPM_NO_BEAT_CONF, foldIntoRange, displayTempo, tempoShown, TEMPO_UNKNOWN_TEXT };
 })();
 /* ---- core/intrinsic/tempo.mjs ---- */
 __mod["core/intrinsic/tempo.mjs"] = (function () {
@@ -8526,136 +8735,6 @@ function styleHints(styles = []) {
 }
 return { AUDIO_VOCAB_VERSION, FALLBACK_RELIABILITY, STYLE_MAP, PARENT_MAP, STYLE_LABELS, styleName, styleConcept, styleHints };
 })();
-/* ---- core/ontology/tempo.mjs ---- */
-__mod["core/ontology/tempo.mjs"] = (function () {
-const { GENRE_INDEX, ancestorsOf } = __mod["core/ontology/index.mjs"];
-// Typical tempo per genre: the ranges DJs and producers work in.
-//
-// Why a table: tempo is the one thing about a track that is both cheap to
-// measure from a preview (core/audio/dsp/tempo.mjs: 86% within ±1 BPM at
-// confidence ≥ 0.3 on the Beatport set) and strongly tied to genre. Drum & bass
-// lives at 170-176, house at 120-128, UK garage at 130-138. So each can check
-// the other:
-//   - a "87 or 174?" reading is settled by which octave fits the genre it
-//     sounds like (`resolveOctave`);
-//   - a genre guess whose range excludes a confidently measured tempo is
-//     marked down (`tempoFit`), which catches the audio model's most common
-//     confusions inside electronic music (it hears "breakbeat" in both jungle
-//     and UK breaks; 170 against 132 tells them apart).
-//
-// These are soft priors, never vetoes: a 160 BPM house edit exists. Ranges are
-// the common working range, deliberately a little generous. `null` means tempo
-// says nothing about the genre (rock, pop, ambient), and a genre with no row
-// inherits its nearest ancestor's (see `tempoRangeOf`).
-//
-// Half-time genres (dubstep, trap, halftime DnB) are listed at the tempo a DJ
-// would set, with `half: true`: a tempo tracker often reports half of it, and
-// that is a match, not a miss.
-
-
-
-const TEMPO_VERSION = '1.0.0';
-
-/** slug → [low, high] BPM, or null for "tempo says nothing". */
-const TEMPO = Object.freeze({
-  'electronic': null,
-  'house': [115, 130], 'deep-house': [112, 126], 'tech-house': [120, 130], 'progressive-house': [118, 130],
-  'acid-house': [116, 130], 'disco-house': [112, 128], 'electro-house': [124, 132], 'afro-house': [115, 126],
-  'melodic-house': [112, 126], 'garage-house': [115, 128], 'minimal-house': [118, 128], 'bass-house': [122, 132],
-  'hard-house': [138, 152], 'donk': [140, 160],
-  'techno': [120, 150], 'minimal-techno': [118, 130], 'acid-techno': [128, 148], 'detroit-techno': [118, 135],
-  'hard-techno': [138, 165], 'dub-techno': [112, 128],
-  'trance': [125, 145], 'progressive-trance': [124, 136], 'psytrance': [136, 150], 'uplifting-trance': [134, 142],
-  'hard-trance': [138, 155],
-  'breakbeat': [120, 140], 'big-beat': [95, 135], 'uk-breaks': [126, 140], 'breakcore': [160, 260],
-  'drum-and-bass': [160, 180], 'jungle': [155, 175], 'liquid-dnb': [168, 178], 'neurofunk': [168, 180],
-  'jump-up': [168, 180], 'halftime': [160, 180],
-  'uk-garage': [128, 140], 'bassline': [132, 144], 'future-garage': [125, 140], 'grime': [136, 144],
-  'uk-funky': [126, 134],
-  'dubstep': [136, 150], 'brostep': [138, 152], 'uk-bass': [126, 145],
-  'hardcore': [160, 200], 'gabber': [160, 220], 'hardstyle': [145, 160], 'jumpstyle': [138, 152], 'makina': [160, 180],
-  'jersey-club': [130, 145], 'footwork': [155, 165], 'gqom': [118, 130],
-  'ambient': null, 'downtempo': [80, 112], 'idm': null, 'electro': [118, 135], 'synthwave': [80, 120],
-  'synth-pop': [100, 132], 'eurodance': [128, 145],
-  'hip-hop': [80, 105], 'uk-hip-hop': [80, 100], 'drill': [136, 148], 'trap': [130, 155], 'phonk': [120, 150],
-  'boom-bap': [84, 98], 'conscious-hip-hop': [80, 100], 'g-funk': [86, 100], 'lo-fi-hip-hop': [65, 95],
-  'rnb': [60, 110], 'neo-soul': [65, 100], 'soul': null, 'motown': null, 'funk': [90, 125], 'disco': [110, 132],
-  'rock': null, 'pop': null, 'dance-pop': [110, 132], 'k-pop': null, 'hyperpop': null,
-  'jazz': null, 'reggae': [60, 95], 'dub': [60, 90], 'dancehall': [88, 110], 'afrobeats': [95, 118],
-  'latin': null, 'folk': null, 'country': null, 'blues': null, 'classical': null, 'soundtrack': null,
-});
-
-/** Played at this tempo but felt (and often tracked) at half of it. */
-const HALF_TIME = Object.freeze(new Set(['dubstep', 'brostep', 'halftime', 'trap', 'drill', 'phonk']));
-
-/**
- * Genres whose own convention is "87 or 174": Beatport writes 32 of 40 DnB tracks at 85-90.
- * A reading at half of the DJ range is a full fit for these (and their children), not 0.6.
- */
-const DOUBLE_OK = Object.freeze(new Set(['drum-and-bass', 'jungle', 'footwork', 'juke', 'breakcore']));
-
-/** How much a half- or double-time reading counts: real, but weaker than a straight one. */
-const OCTAVE_CREDIT = 0.6;
-/** Outside the range, fit falls to zero over this many BPM. */
-const FALLOFF = 12;
-
-/**
- * The working range for a genre: its own row, else its nearest ancestor's.
- * Null when tempo says nothing about it (or it isn't a known genre).
- */
-function tempoRangeOf(slug) {
-  if (!slug) return null;
-  if (Object.hasOwn(TEMPO, slug)) return TEMPO[slug];
-  if (!GENRE_INDEX.has(slug)) return null;
-  for (const a of ancestorsOf(slug)) if (Object.hasOwn(TEMPO, a)) return TEMPO[a];
-  return null;
-}
-
-const straight = (bpm, [lo, hi]) =>
-  bpm >= lo && bpm <= hi ? 1 : Math.max(0, 1 - (bpm < lo ? lo - bpm : bpm - hi) / FALLOFF);
-
-/**
- * How well a tempo fits a genre, 0–1, or null when tempo says nothing about it.
- * Half or double the tempo counts at OCTAVE_CREDIT (full credit for half-time
- * genres read at half), so a tracker's octave slip never zeroes a right genre.
- * @returns {{ fit: number, bpm: number } | null}  `bpm`: the octave that fitted best
- */
-function tempoFit(bpm, slug) {
-  const range = tempoRangeOf(slug);
-  if (!range || !Number.isFinite(bpm) || bpm <= 0) return null;
-  const half = HALF_TIME.has(slug) || ancestorsOf(slug).some(a => HALF_TIME.has(a));
-  const dbl = DOUBLE_OK.has(slug) || ancestorsOf(slug).some(a => DOUBLE_OK.has(a));
-  let best = { fit: straight(bpm, range), bpm };
-  for (const [k, credit] of [[2, half || dbl ? 1 : OCTAVE_CREDIT], [0.5, OCTAVE_CREDIT]]) {
-    const f = straight(bpm * k, range) * credit;
-    if (f > best.fit) best = { fit: f, bpm: bpm * k };
-  }
-  return { fit: +best.fit.toFixed(4), bpm: +best.bpm.toFixed(1) };
-}
-
-/**
- * Settle a "87 or 174?" reading with what the track sounds like.
- * `candidates` are [slug, weight] pairs (any order); the reading whose straight
- * fit, weighted by them, is higher wins. Ties and no information keep the
- * tracker's own first reading.
- * @returns {{ bpm: number, from: 'tracker'|'genre' }}
- */
-function resolveOctave(bpm, alt, candidates = []) {
-  if (!Number.isFinite(alt) || alt <= 0 || !Number.isFinite(bpm)) return { bpm, from: 'tracker' };
-  let a = 0, b = 0;
-  for (const [slug, w] of candidates) {
-    const range = tempoRangeOf(slug);
-    if (!range || !(w > 0)) continue;
-    a += w * straight(bpm, range);
-    b += w * straight(alt, range);
-  }
-  return b > a + 1e-9 ? { bpm: alt, from: 'genre' } : { bpm, from: 'tracker' };
-}
-
-/** Every slug in the table is a real genre (checked by the test). */
-const tempoSlugs = () => Object.keys(TEMPO);
-return { TEMPO_VERSION, TEMPO, HALF_TIME, DOUBLE_OK, OCTAVE_CREDIT, FALLOFF, tempoRangeOf, tempoFit, resolveOctave, tempoSlugs };
-})();
 /* ---- core/audio/sections.mjs ---- */
 __mod["core/audio/sections.mjs"] = (function () {
 // Sections and hybrids: what changes inside one clip (WP-H1).
@@ -9222,9 +9301,9 @@ return { GAPS_VERSION, MIN_GAP, SPLIT, conceptLabel, artistGenre, genreLookup, t
 __mod["core/audio/identify.mjs"] = (function () {
 const { styleHints } = __mod["core/sources/audio-vocab.mjs"];
 const { GENRE_INDEX, lineageOf } = __mod["core/ontology/index.mjs"];
-const { tempoFit, resolveOctave } = __mod["core/ontology/tempo.mjs"];
+const { tempoFit, resolveOctave, tempoRangeOf } = __mod["core/ontology/tempo.mjs"];
 const { hybridOf } = __mod["core/audio/sections.mjs"];
-const { tempoOf, filedNeighbours, genreMembership } = __mod["core/audio/match.mjs"];
+const { tempoOf, filedNeighbours, genreMembership, displayTempo } = __mod["core/audio/match.mjs"];
 const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
 const { conceptLabel } = __mod["core/recommend/gaps.mjs"];
 // What a heard track is: genre, sub-genre and tempo, with how sure, and why.
@@ -9321,7 +9400,8 @@ function votesOf(record, { neighbours, tags }) {
  *   genre: { slug: string, name: string, conf: number },
  *   path: Array<{ slug: string, name: string, share: number }>,
  *   sub: { slug: string, name: string, share: number } | null,
- *   bpm: { value: number, conf: number, from: 'tracker'|'genre', fit: number|null } | null,
+ *   bpm: { value: number, conf: number, from: 'tracker'|'genre', fit: number|null,
+ *          shown?: number, settled?: boolean, shownFrom?: string } | null,  (shown: the BPM to display, T2)
  *   blend: [string, string] | null,
  *   support: { model: number, library: number, tags: number },
  *   why: string[], version: string }}
@@ -9356,10 +9436,19 @@ function identify(record, { neighbours = [], tags = [], playlistName = null, wei
     }
   }
 
+  // T2: the BPM a listener sees, in the DJ range of the genre it sounds like.
+  const flatTop = [...flat].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c]) => c);
+  const showTempo = slugs => {
+    if (!bpm) return;
+    const d = displayTempo(record, { genres: slugs });
+    if (d) { bpm.shown = d.bpm; bpm.settled = d.settled; bpm.shownFrom = d.from; }
+  };
+
   // Up the hierarchy: a vote for a sub-genre is a vote for everything above it.
   const tree = new Map();
   let total = 0;
   for (const [c, v] of flat) { total += v; for (const a of lineageOf(c)) add(tree, a, v); }
+  if (!(total > 0)) showTempo(flatTop);
   if (!(total > 0)) return bpm ? { genre: null, path: [], sub: null, bpm, blend: null,
                                    support: { model: 0, library: 0, tags: 0 }, why: [], version: IDENTIFY_VERSION } : null;
 
@@ -9369,6 +9458,7 @@ function identify(record, { neighbours = [], tags = [], playlistName = null, wei
   const [gSlug, gMass] = [...level].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
   const conf = gMass / total;
   if (conf < minGenre) {
+    showTempo(flatTop);
     return { genre: null, path: [], sub: null, bpm, blend: null,
              support: { model: 0, library: 0, tags: 0 }, why: ['The sources disagree too much to name a genre.'],
              version: IDENTIFY_VERSION };
@@ -9385,6 +9475,7 @@ function identify(record, { neighbours = [], tags = [], playlistName = null, wei
     path.push({ slug: k, name: nameOf(k), share: +share.toFixed(3) });
     at = k;
   }
+  showTempo([...path].reverse().map(p => p.slug).concat(flatTop));
   if (bpm && t.conf >= TEMPO_CONF) bpm.fit = tempoFit(bpm.value, path[path.length - 1].slug)?.fit ?? null;
 
   // How much each source backs the genre chosen.
@@ -9438,7 +9529,8 @@ function identifyAccuracy({ index, membership, k = 12, limit = 600, weights = SO
     const pids = membership?.of?.get(id) ?? [];
     return pids.some(p => membership.playlists.get(p)?.concepts?.length);
   }).sort().slice(0, limit);
-  const tally = { scored: 0, genre: 0, specific: 0, model: { genre: 0, specific: 0 }, tempo: 0, tempoJudged: 0 };
+  const tally = { scored: 0, genre: 0, specific: 0, model: { genre: 0, specific: 0 }, tempo: 0, tempoJudged: 0,
+                  bpmHeard: 0, bpmKnown: 0, bpmWhy: {}, bpmJudged: 0, bpmInRawRange: 0, bpmInShownRange: 0, bpmMoved: 0 };
   const byGenre = new Map();
   const judge = (res, truth) => {
     if (!res?.genre) return { genre: false, specific: false };
@@ -9461,6 +9553,23 @@ function identifyAccuracy({ index, membership, k = 12, limit = 600, weights = SO
       const fits = truth.map(c => tempoFit(res.bpm.value, c)?.fit).filter(f => f != null);
       if (fits.length) { tally.tempoJudged++; if (Math.max(...fits) >= 0.8) tally.tempo++; }
     }
+    // T2/T3: how many tracks show a sure BPM, why the rest do not, and how many readings the fold moved into range.
+    tally.bpmHeard++;
+    const sure = res?.bpm && res.bpm.conf >= TEMPO_CONF && res.bpm.settled !== false;
+    if (sure) {
+      tally.bpmKnown++;
+      const raw = tempoOf(row.rec)?.bpm, shown = res.bpm.shown ?? res.bpm.value;
+      const ranges = truth.map(c => tempoRangeOf(c)).filter(Boolean);
+      if (ranges.length) {
+        tally.bpmJudged++;
+        if (ranges.some(r => raw >= r[0] && raw <= r[1])) tally.bpmInRawRange++;
+        if (ranges.some(r => shown >= r[0] && shown <= r[1])) tally.bpmInShownRange++;
+        if (Math.abs(shown - raw) > 0.5) tally.bpmMoved++;
+      }
+    } else {
+      const why = !res?.bpm ? 'no-beat' : res.bpm.settled === false && res.bpm.conf >= TEMPO_CONF ? 'octave' : res.bpm.conf < 0.15 ? 'no-beat' : 'unsure';
+      tally.bpmWhy[why] = (tally.bpmWhy[why] ?? 0) + 1;
+    }
     const g = genreLevel(truth[0]);
     const b = byGenre.get(g) ?? { slug: g, name: nameOf(g), n: 0, right: 0 };
     b.n++; if (full.genre) b.right++;
@@ -9472,6 +9581,8 @@ function identifyAccuracy({ index, membership, k = 12, limit = 600, weights = SO
     genre: rate(tally.genre, tally.scored), specific: rate(tally.specific, tally.scored),
     modelOnly: { genre: rate(tally.model.genre, tally.scored), specific: rate(tally.model.specific, tally.scored) },
     tempo: rate(tally.tempo, tally.tempoJudged), tempoJudged: tally.tempoJudged,
+    bpm: { heard: tally.bpmHeard, known: rate(tally.bpmKnown, tally.bpmHeard), why: tally.bpmWhy, judged: tally.bpmJudged,
+           inRangeRaw: rate(tally.bpmInRawRange, tally.bpmJudged), inRangeShown: rate(tally.bpmInShownRange, tally.bpmJudged), moved: tally.bpmMoved },
     byGenre: [...byGenre.values()].sort((a, b) => b.n - a.n).slice(0, 8),
     version: IDENTIFY_VERSION,
   };
@@ -11650,7 +11761,7 @@ function soundMisfits({ index, membership, tags = null, skip = null, opts = MISF
     const inTo = neighbours.filter(n => n.playlists.includes(v.to)).length;
     const inFrom = neighbours.filter(n => n.playlists.includes(v.from)).length;
     const sound = id?.genre ? (id.sub?.name ?? id.genre.name) : null;
-    const bpm = id?.bpm && id.bpm.conf >= 0.3 ? Math.round(id.bpm.value) : null;
+    const bpm = id?.bpm && id.bpm.conf >= 0.3 && id.bpm.settled !== false ? Math.round(id.bpm.shown ?? id.bpm.value) : null;
     const why = [`${inTo} of the ${neighbours.length} tracks it sounds most like are in ${nameOf(v.to)}, ${inFrom} in ${nameOf(v.from)}`];
     if (sound) why.push(v.idBacks ? `it sounds like ${sound}, which fits ${nameOf(v.to)}` : `it sounds like ${sound}`);
     out.push({ id: tid, ...v, fromName: nameOf(v.from), toName: nameOf(v.to), sound, bpm,
@@ -11733,6 +11844,7 @@ return { MISFIT_VERSION, MISFIT, heardPerPlaylist, neighbourShares, judge, sound
 __mod["core/audio/plprofile.mjs"] = (function () {
 const { identify, genreLevel, TEMPO_CONF } = __mod["core/audio/identify.mjs"];
 const { nearest, genreMembership, playlistConcepts } = __mod["core/audio/match.mjs"];
+const { tempoRangeOf } = __mod["core/ontology/tempo.mjs"];
 const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
 const { tempoRange } = __mod["core/intrinsic/tempo.mjs"];
 const { conceptLabel } = __mod["core/recommend/gaps.mjs"];
@@ -11756,6 +11868,7 @@ const { conceptLabel } = __mod["core/recommend/gaps.mjs"];
 // Nearest-neighbour lookups and counts on the account's own heard tracks only
 // (SMARTER-GENRES-PLAN.md §3, R3): nothing is trained, nothing leaves the
 // device, nothing is pooled across accounts. With no records, nothing at all.
+
 
 
 
@@ -11913,7 +12026,8 @@ function createProfiler(lib, records, { index = null, targets = null, isMirror =
       const key = `${id}|${p.id}`;
       if (!named.has(key)) { pending++; continue; }
       const r = named.get(key);
-      if (r?.bpm && r.bpm.conf >= TEMPO_CONF) bpms.push(r.bpm.value);
+      // T2/T3: the shown BPM (folded into its genre's DJ range); an unsettled octave is unknown, left out.
+      if (r?.bpm && r.bpm.conf >= TEMPO_CONF && r.bpm.settled !== false) bpms.push(r.bpm.shown ?? r.bpm.value);
       if (!r?.genre) continue;
       identified++;
       const g = genres.get(r.genre.slug) ?? { slug: r.genre.slug, name: r.genre.name, n: 0, ids: [] };
@@ -11936,10 +12050,20 @@ function createProfiler(lib, records, { index = null, targets = null, isMirror =
       bpms.sort((a, b) => a - b);
       out.bpm = [Math.round(quantile(bpms, 0.1)), Math.round(quantile(bpms, 0.9))];
     }
+    // T2: at the octave the playlist's own genre is played at, when its name says one.
+    const gRange = playlistConcepts(p.name).map(tempoRangeOf).find(Boolean) ?? null;
+    const settle = r => {
+      if (!r || !gRange) return r;
+      const mid = (r[0] + r[1]) / 2;
+      if (mid >= gRange[0] && mid <= gRange[1]) return r;
+      for (const k of [2, 0.5]) if (mid * k >= gRange[0] && mid * k <= gRange[1]) return r.map(x => Math.round(x * k)).sort((a, b) => a - b);
+      return r;
+    };
+    out.bpm = settle(out.bpm);
     // E3: the tight middle half, octave-aware, only for a playlist with 12+ heard tempos.
     // Display only: its measured effect on ranking missed the bar (test/temporange.test.mjs).
     const tr = tempoRange(bpms);
-    if (tr) out.tempo = [Math.round(tr.lo), Math.round(tr.hi)];
+    if (tr) out.tempo = settle([Math.round(tr.lo), Math.round(tr.hi)]);
     if (!pending) out.split = splitOf(p, heard.length, identified, genres);
     return out;
   }
