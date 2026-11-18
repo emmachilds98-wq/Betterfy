@@ -1,5 +1,7 @@
 # Betterfy — next upgrades, in order
 
+> **Archived 2026-11-18, superseded by [`HANDOFF.md`](HANDOFF.md) (2026-11-14), which replaced its order of work.** Kept for history: paths, section numbers and "start here" lines below are as they were when it was written. For the current state start at [`BUILD-7-PLAN.md`](../BUILD-7-PLAN.md) §0.
+
 Written 2026-10-31 from a review of `main`, the three open draft PRs and
 every plan in `docs/`. Facts marked *checked* were verified in this review,
 not copied from an earlier doc. **Updated the same day:** #43 and #44 are

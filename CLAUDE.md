@@ -29,53 +29,30 @@ over anything that needs a file most users won't have.
 
 ## Where the fuller context lives
 
+`README.md` § "Where to start reading" is the front door for people; this list
+is the same map for an agent.
+
 - **Handoff (2026-11-18): start at `docs/BUILD-7-PLAN.md` §0.** It covers what
-  #158 to #168 shipped, tonight's owner decisions, and the first two packages
-  (DESIGN-PLAN L0, the second-ear bug, and L8, full UI optimisation with a home
-  page). There are no open PRs.
+  #158 to #168 shipped, the owner's decisions, and the packages since. The rest
+  of the plan (2026-11-17, after #157): state of main, a verdict on every
+  leftover, what waits on the owner (in-page clicks only), the ranked build 7
+  packages in waves and lanes, and a runbook for running it as a Claude
+  project (coordinator + parallel threads, file ownership, merge order, how to
+  report). Paste-ready thread briefs: `docs/BUILD-7-BRIEFS.md`.
 
 - `docs/DESIGN-PLAN.md` — the design and layout plan (2026-11-18, review 2):
   principles, screen-by-screen findings, packages L0–L5, L7 and L8 with gates, and
   thread briefs. Run it alongside build 7.
 
-- `docs/BUILD-7-PLAN.md` — (2026-11-17, after #157; §0 added 2026-11-18): the audio
-  upgrade and every NEXT-WORKPLAN package are done. State of main, a verdict
-  on every leftover, what waits on the owner (in-page clicks only), the
-  ranked build 7 packages in waves and lanes, and a runbook for running it
-  as a Claude project (coordinator + parallel threads, file ownership, merge
-  order, how to report). Paste-ready thread briefs: `docs/BUILD-7-BRIEFS.md`.
-
-- `docs/NEXT-WORKPLAN.md` — the previous plan (2026-11-16, after #149), now
-  complete: state
-  of main, the owner's standing rules (on by default and shown as on, hosted
-  checks only, merge when green, tap-only filing), what waits on her (Score +
-  Tune paste, Radar check), and six ranked engine packages with files, gates
-  and how each is measured. Supersedes the HANDOFF below for what to build.
-
-- `docs/review/HANDOFF-2026-11-16.md` — background after build 6: what
-  is merged, what waits on the owner (Radar probe, Score + Tune paste, key,
-  teach queue), auto-file rejected, and the proposed next waves. With
-  `docs/review/USER-REVIEW.md` (screens, design, screenshots) and
-  `docs/review/ENGINE-REVIEW.md` (matching accuracy and the design to raise it).
-
 - `README.md` — what's actually wired, what was tried and rejected and why
   (read "Design decisions worth knowing" and "Data sources, and what
   they're worth" before assuming a new signal is worth adding).
+- `docs/review/USER-REVIEW.md` (screens, design, screenshots) and
+  `docs/review/ENGINE-REVIEW.md` (matching accuracy and the design to raise
+  it), both from 2026-11-16.
 - `V2-PLAN.md` — the longer-range architecture review; still mostly
   aspirational, but the "what v1 actually is" and defects sections are
   accurate and worth reading before a big change.
-- `docs/BUILD-5-PLAN.md` — **start here for build 5** (2026-11-14): the full
-  review of the current build, verified bugs, the open-PR verdicts, the
-  restructure (Phase A), the 4-tab UI and motion system (Phase B), smarter
-  functions (Phase C), audio/knowledge upgrades (Phase D) and the wave order.
-  Supersedes HANDOFF §6 and UI-BUILD-PLAN §2/§6.
-- `docs/HANDOFF.md` — the sound features: the current state (what's merged, what's
-  open on GitHub, what waits on the owner's machine), a file map of the sound
-  features, and the ranked next work. Newer than `UPGRADE-PLAN.md`.
-- `docs/SOUND-EVERYWHERE-PLAN.md` — the round that spread sound to Tidy,
-  Playlists, Shuffle and Discover (S1–S4 merged) and the key work (S5).
-- `docs/UPGRADE-PLAN.md` — the older (2026-10-31) order of work across the open PRs
-  and plans, and what was waiting on the owner then.
 - `docs/GENRE-RECOGNITION-PLAN.md` — why filing went into non-genre
   playlists, what was fixed, and the ranked signals for genres crowd tags
   can't see (donk: 4 artists tagged in the whole shipped table).
@@ -86,24 +63,30 @@ over anything that needs a file most users won't have.
   placing by sound against the account's own playlists works, so the owner
   chose Option B (learn from your playlists), then C. Read its §2 before
   re-checking any of the external facts it lists.
-- `docs/AUDIO-BUILD-PLAN.md` — how B and C get built: work packages for
-  parallel agents, the frozen contracts (`core/audio/mel.mjs`,
-  `core/audio/record.mjs`), file ownership, and the gate. Any audio work
-  starts from its package list.
-- `docs/UI-BUILD-PLAN.md` — the UI refresh for the audio features: the
-  review, the sound-layer view models (`web/ui/sound.mjs`), and who owns which
-  stylesheet partial in `web/styles/`. CSS goes in a partial, never back into
-  `docs/app.template.html`; `npm run shots` screenshots every screen offline.
+- `docs/AUDIO-BUILD-PLAN.md` — how B and C got built: work packages, the
+  frozen contracts (`core/audio/mel.mjs`, `core/audio/record.mjs`), file
+  ownership, and the gate. Any audio work starts from it.
+- `docs/BUILD-5-PROGRESS.md` — the build 5 log and the key and tempo model
+  measurements; check it before re-measuring or re-tuning anything.
 - `web/README.md` — since build 5's A1 the template is markup only: the
   page's script lives in `web/app/*.js` and `web/screens/*.js`, classic
-  scripts joined in the order `web/manifest.mjs` lists. Script changes go
-  there, never back into the template.
-- `docs/SMARTER-GENRES-PLAN.md` — the current genre plan: free
+  scripts joined in the order `web/manifest.mjs` lists, and the stylesheet in
+  `web/styles/` partials. Script and CSS changes go there, never back into
+  `docs/app.template.html`; `npm run shots` screenshots every screen offline.
+- `docs/SMARTER-GENRES-PLAN.md` — the genre plan: free
   similar-artist bridges (Deezer, ListenBrainz via Wikidata, measured on the
   owner's library), calibrated confidence, the Gaps screen for proposing new
   playlists, and §3's reading of Spotify Developer Terms v10 (no Spotify
   content into AI/ML models, no pooling it across accounts). Read §3 before
   proposing any LLM feature or anything shared between users.
+- `docs/RELEASE-RADAR-PLAN.md`, `docs/ENGINE-V3-ARCHITECTURE.md`,
+  `docs/THINKING-ENGINE-PLAN.md`, `docs/TUNING.md` — new releases, the v3
+  evidence engine, the account-native engine, and how to tune the v3 engine's thresholds.
+- `docs/archive/` — superseded plans (UPGRADE-PLAN, HANDOFF, SOUND-EVERYWHERE,
+  UI-BUILD, BUILD-5, BUILD-6, the 2026-11-16 handoff, NEXT-WORKPLAN), each
+  headed with what replaced it; `docs/archive/README.md` lists them. Code
+  comments still cite them as `docs/<NAME>.md`: read that as
+  `docs/archive/<NAME>.md`. Don't plan from them.
 - Tests are the source of truth for behavior, not comments: `npm test`
   (unit tests, ~2.5 min) and `npm run e2e` (browser specs),
   before and after any change to `profile.mjs`, `axes.mjs`, or the browser

@@ -3,7 +3,7 @@
 Written from `main` at `e491a9e` (build 6 waves 1 to 5 merged). Review only:
 no code was changed to write it. Companion: [ENGINE-REVIEW.md](ENGINE-REVIEW.md)
 (the deep review of matching). Current state and next waves:
-[HANDOFF-2026-11-16.md](HANDOFF-2026-11-16.md).
+[HANDOFF-2026-11-16.md](../archive/HANDOFF-2026-11-16.md).
 
 ## Verdict
 
