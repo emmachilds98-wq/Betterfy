@@ -1,5 +1,5 @@
 // @bundle engine BetterfyWeak 110
-// The playlists it understands least, and why (docs/NEXT-WORKPLAN.md, after #154).
+// The playlists it understands least, and why (docs/archive/NEXT-WORKPLAN.md, after #154).
 //
 // The Score card's old "Weakest" list was measured on the account-native
 // engine alone (no tags, no similar artists, no sound), which is not what File

@@ -1,5 +1,5 @@
 /* ===========================================================================
- * "Analyse my library" — one tap (docs/BUILD-5-PLAN.md, owner's ask).
+ * "Analyse my library" — one tap (docs/archive/BUILD-5-PLAN.md, owner's ask).
  *
  * One button runs the two things that make File's suggestions good, in the
  * background and under one status line: the tag gaps are filled (enrichMissing
@@ -159,7 +159,7 @@ function analyseLine() {
   return analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen, stage: ANALYSE.stage });
 }
 
-/* ---------- First run (docs/BUILD-6-PLAN.md O1) ----------
+/* ---------- First run (docs/archive/BUILD-6-PLAN.md O1) ----------
  * A count in the home header for a new account: the first five filed. It counts the
  * filings from the History log (so it needs nothing stored but "done") and disappears for good once
  * five have gone in, or at once for anyone who has already filed that many. */

@@ -1,4 +1,4 @@
-// Score + Tune, run by itself (docs/NEXT-WORKPLAN.md package 1).
+// Score + Tune, run by itself (docs/archive/NEXT-WORKPLAN.md package 1).
 //
 // Every gate that switches a part of the engine on (sound in the blend, the
 // deep ear, nearest members, family first, mood chips, fitted weights, teach,

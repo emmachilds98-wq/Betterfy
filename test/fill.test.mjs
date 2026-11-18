@@ -1,4 +1,4 @@
-// Smart "Fill this playlist" (docs/BUILD-6-PLAN.md F2, M4): the ranking and its
+// Smart "Fill this playlist" (docs/archive/BUILD-6-PLAN.md F2, M4): the ranking and its
 // gate, Fill recall@10. Synthetic, deterministic fixtures only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

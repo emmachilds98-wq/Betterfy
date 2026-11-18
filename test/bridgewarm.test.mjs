@@ -10,7 +10,7 @@ import { bridgeVerdict } from '../web/screens/engine.mjs';
 import { helperRows } from '../web/screens/helpers.mjs';
 
 /*
- * docs/NEXT-WORKPLAN.md package 2, run out of the real built page: similar
+ * docs/archive/NEXT-WORKPLAN.md package 2, run out of the real built page: similar
  * artists are gathered in the background after load, for the whole library,
  * artists waiting to be filed first, and File uses them straight away, with
  * no Score run. A Score run that says they don't help switches File's use off.

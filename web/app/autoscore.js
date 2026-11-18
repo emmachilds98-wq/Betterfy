@@ -1,4 +1,4 @@
-/* ---------- Score + Tune, by itself (docs/NEXT-WORKPLAN.md package 1) ----------
+/* ---------- Score + Tune, by itself (docs/archive/NEXT-WORKPLAN.md package 1) ----------
  * core/review/autoscore.mjs decides whether a run is due; this runs it. A
  * minute after the app opens, then every five minutes while the tab is in
  * front, it asks autoScoreWhy() and, when a run is due, does what the owner's

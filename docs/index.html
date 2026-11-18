@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1603">
+<meta name="bf-build" content="2026-11-18-1613">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -114,7 +114,7 @@
     --ev-tags:var(--m4); --ev-history:var(--m0); --ev-sound:var(--m2); --ev-learned:var(--m3);
     --tabh:60px;                       /* bottom tab bar, excluding the inset */
     --topbar:52px;                     /* mobile header, excluding the inset */
-    /* Motion (docs/BUILD-5-PLAN.md §4.2). Four durations and the curves that
+    /* Motion (docs/archive/BUILD-5-PLAN.md §4.2). Four durations and the curves that
        go with them, so every transition in the app agrees on what "quick"
        and "a screen change" mean. Same in both themes. Springs and the bounce
        are for transform only, never opacity. */
@@ -994,7 +994,7 @@ main:focus{outline:none}
              background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 30%, transparent)}
   /* The honest scoreboard: quiet, under the progress bar, from 20 filings. */
   .keptline{margin:10px 0 0; text-align:center; font-family:var(--mono); font-size:11.5px; color:var(--ink-3)}
-/* Library (UI-E, docs/BUILD-5-PLAN.md §4.1): compact playlist rows, the Suggested
+/* Library (UI-E, docs/archive/BUILD-5-PLAN.md §4.1): compact playlist rows, the Suggested
    section, the detail sheet, and the way back on New playlists / Shuffle. */
   .libnav{background:none; padding:0; border-radius:0; width:auto; display:flex; align-items:center; gap:10px; overflow:visible}
 
@@ -1063,7 +1063,7 @@ main:focus{outline:none}
     .plline{flex-wrap:wrap}
     .placts{padding:0 14px 10px 68px}
   }
-/* Playlists (axes table) and Sources — UI-3, docs/UI-BUILD-PLAN.md §6. */
+/* Playlists (axes table) and Sources — UI-3, docs/archive/UI-BUILD-PLAN.md §6. */
   [data-v="sources"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
 
   /* ---- Playlists: coverage line ---- */
@@ -1432,7 +1432,7 @@ main:focus{outline:none}
   .discfit.out{color:var(--ink-3)}
   .discfit.hi .sub, .discfit.out .sub{font-weight:400}
   .discnokey input{flex:1 1 220px; min-width:0}
-/* ================= motion, part two (UI-G, docs/BUILD-5-PLAN.md §4.2) =================
+/* ================= motion, part two (UI-G, docs/archive/BUILD-5-PLAN.md §4.2) =================
    Entrances via @starting-style, skeletons, the scroll-driven title.
    Reduced motion turns every one of these off at the bottom. */
 
@@ -2001,7 +2001,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1603</span>
+    <span class="mono">build 2026-11-18-1613</span>
   </p>
 
   <div class="feat">
@@ -2079,7 +2079,7 @@ main:focus{outline:none}
       Better<span>fy</span>
     </div>
     <div class="who" id="who"></div>
-    <!-- Four tabs (docs/BUILD-5-PLAN.md §4.1). Sources, Engine and History live
+    <!-- Four tabs (docs/archive/BUILD-5-PLAN.md §4.1). Sources, Engine and History live
          in the Settings sheet ("Under the hood"); New playlists and Shuffle are
          reached from Library. -->
     <div class="navwrap" role="tablist" aria-label="Sections" aria-orientation="horizontal">
@@ -2088,13 +2088,13 @@ main:focus{outline:none}
       <button class="nav" data-v="discover" role="tab" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.8"/><path d="m15.4 8.6-2 4.8-4.8 2 2-4.8z"/></svg></span><span class="lbl">Discover</span></button>
       <button class="nav" data-v="lists" role="tab" aria-selected="false"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h11"/><path d="M4 12h11"/><path d="M4 17.5h7"/><circle cx="18.5" cy="16.5" r="2.6"/><path d="M21.1 16.5V8.2"/></svg></span><span class="lbl">Library</span><span class="c" data-count="new"></span></button>
     </div>
-    <!-- The listening indicator (docs/UI-BUILD-PLAN.md §2.5): on a desktop it
+    <!-- The listening indicator (docs/archive/UI-BUILD-PLAN.md §2.5): on a desktop it
          sits at the end of the bar, so the tabs stay put when it appears (B8); on a
          phone it moves up into the header beside the corner buttons. Empty —
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1603</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1613</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2204,7 +2204,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-1603. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-1613. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -3099,7 +3099,7 @@ const { canonTag, facetMix, gateTags, tagGate } = __mod["profile.mjs"];
 // (build-web.mjs, exposed as globals beside profile.mjs) and wraps it in
 // classify() in web/app/classify.js; the Node CLI `axes.mjs` imports it and
 // wraps it with its own hand overrides. The two used to be separate copies that
-// claimed to mirror each other and had drifted (docs/BUILD-5-PLAN.md B10).
+// claimed to mirror each other and had drifted (docs/archive/BUILD-5-PLAN.md B10).
 //
 // Pure: no DOM, no storage, no file system. Everything that differs between the
 // page and the CLI — which playlist is the All Songs mirror, the genre
@@ -3730,7 +3730,7 @@ return { QUEUE_HEAD, HEAD_GAP, MIN_SIDE, MIN_N, TIERS, isFiling, clean, undoneSe
 __mod["core/review/filequeue.mjs"] = (function () {
 const { relevanceOf, UNCERTAINTY } = __mod["core/personal/relevance.mjs"];
 const { clean, isFiling, undoneSet } = __mod["core/measure/history.mjs"];
-// The File queue's order and its sure batch (docs/BUILD-5-PLAN.md §5.2).
+// The File queue's order and its sure batch (docs/archive/BUILD-5-PLAN.md §5.2).
 //
 // Pure counts over what Spotify already gives every account: the three
 // top-artist windows, recently played and /me/top/tracks. Nothing here is
@@ -4096,7 +4096,7 @@ return { TEACH_VERSION, TEACH, artistKeyOf, artistSpread, choicesOf, teachValue,
 })();
 /* ---- core/review/autoscore.mjs ---- */
 __mod["core/review/autoscore.mjs"] = (function () {
-// Score + Tune, run by itself (docs/NEXT-WORKPLAN.md package 1).
+// Score + Tune, run by itself (docs/archive/NEXT-WORKPLAN.md package 1).
 //
 // Every gate that switches a part of the engine on (sound in the blend, the
 // deep ear, nearest members, family first, mood chips, fitted weights, teach,
@@ -4329,7 +4329,7 @@ return { AUTOSCORE, autoScoreWhy, agoWords, autoScoreLine, autoScoreStatus, RUN_
 })();
 /* ---- web/ui/sound.mjs ---- */
 __mod["web/ui/sound.mjs"] = (function () {
-// The sound layer's renderers — the contract docs/UI-BUILD-PLAN.md §5 freezes.
+// The sound layer's renderers — the contract docs/archive/UI-BUILD-PLAN.md §5 freezes.
 //
 // Every function takes a plain view model and returns an HTML string. None of
 // them knows what an AudioRecord is: the audio packages (docs/AUDIO-BUILD-PLAN.md)
@@ -4727,7 +4727,7 @@ return { SOUND_UI_VERSION, SURE_CONF, soundChip, soundMark, sectionStrip, eviden
 })();
 /* ---- web/app/patch.mjs ---- */
 __mod["web/app/patch.mjs"] = (function () {
-// A5 of docs/BUILD-5-PLAN.md: the keyed patcher.
+// A5 of docs/archive/BUILD-5-PLAN.md: the keyed patcher.
 //
 // patch(el, html) makes el's children match `html` while reusing the nodes it
 // already has, so a re-render after a click no longer throws away the focused
@@ -5554,7 +5554,7 @@ return { PAGE, FILTERS, libraryArtists, searchArtists, coldEstimate, feedRows, g
 __mod["web/screens/home.mjs"] = (function () {
 const { feedRows } = __mod["web/screens/radar.mjs"];
 const { parseDate } = __mod["core/release/dates.mjs"];
-/* File, the home tab (docs/BUILD-5-PLAN.md §4.1, UI-D; docs/DESIGN-PLAN.md L8
+/* File, the home tab (docs/archive/BUILD-5-PLAN.md §4.1, UI-D; docs/DESIGN-PLAN.md L8
  * step 2). The top is a calm "today" header: a greeting, then one line of
  * status ("72 to file · 3 new releases · 1 to tidy · tidying up: keys 5/40"),
  * each part a tap to where it lives. The old status line, the getting-started
@@ -6103,7 +6103,7 @@ async function rollForwardGo(ctx) {
   render();
 }
 
-/* ---------- "Since you last opened": docs/BUILD-6-PLAN.md F5 ----------
+/* ---------- "Since you last opened": docs/archive/BUILD-6-PLAN.md F5 ----------
  * One dismissible card at the top of File, worked out once per session from
  * what the page already holds (core/measure/digest.mjs): no request, never a
  * notification, and nothing at all when there is nothing to say. The baseline
@@ -6188,7 +6188,7 @@ function digestMount(ctx) {
   }
 }
 
-/* ---------- "File the N sure ones": docs/BUILD-5-PLAN.md §5.2 ----------
+/* ---------- "File the N sure ones": docs/archive/BUILD-5-PLAN.md §5.2 ----------
  * The cards whose leading pick is calibrated sure, filed in one go: one History
  * group (a step per playlist), one undo. Only among the first cards of the queue. */
 const sureList = ctx => { try { return ctx.fileSure?.() ?? []; } catch { return []; } };
@@ -6514,7 +6514,7 @@ async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
   const { S, R, CFG, FB, addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, toast, render } = ctx;
   const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
   if (!ids.length) return;
-  // Optimistic (docs/BUILD-5-PLAN.md §4.2): the card leaves now and the writes
+  // Optimistic (docs/archive/BUILD-5-PLAN.md §4.2): the card leaves now and the writes
   // happen behind it. The flight lock is what keeps a double tap, or a swipe
   // that lands on top of a tap, from filing the *next* card by accident,
   // since by the time the second one arrives the queue has already advanced.
@@ -6764,7 +6764,7 @@ return { WEAK, FIX_WORDS, weakWords };
 /* ---- web/screens/engine.mjs ---- */
 __mod["web/screens/engine.mjs"] = (function () {
 const { weakWords, FIX_WORDS } = __mod["core/review/weakwords.mjs"];
-/* The Engine screen (docs/BUILD-5-PLAN.md A4): an ES module, not a page script.
+/* The Engine screen (docs/archive/BUILD-5-PLAN.md A4): an ES module, not a page script.
  * It touches nothing outside `ctx` (see web/README.md, "Screen modules"); the
  * ctx for it is built by SCREEN_CTX.engine in web/app/screens.js. The long
  * jobs (learn, score, the similar-artist lookups) stay in web/app/engine.js,
@@ -7016,7 +7016,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1603`,
+    `Betterfy engine score — build 2026-11-18-1613`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -8306,7 +8306,7 @@ return { HEALTH_VERSION, REPORT_N, HEALTHY, SPRINT_KEEP, tidyCounts, sectionFor,
 __mod["web/screens/tidy.mjs"] = (function () {
 const { hiddenView, hiddenActions, hiddenMount, hiddenCount, hiddenAuto } = __mod["web/screens/hidden.mjs"];
 const { sprintStart, sprintDecide, sprintUndo, sprintStats, sprintSave, sprintTotals } = __mod["core/review/health.mjs"];
-/* The Tidy screen (docs/BUILD-5-PLAN.md A4): an ES module. It touches nothing outside `ctx`
+/* The Tidy screen (docs/archive/BUILD-5-PLAN.md A4): an ES module. It touches nothing outside `ctx`
  * (web/README.md, "Screen modules"); SCREEN_CTX.tidy in app/screens.js builds it. The sound
  * misfit state and jobs, and emptyState, stay classic in app/screenjobs.js. */
 /* The keyboard cleanup sprint (BUILD-6 F9) is at the end of this file; its pure parts are
@@ -9307,7 +9307,7 @@ return { trackKey, mergeName, mergePlan, splitPlan, partsFromSound, partsFromTag
 __mod["web/screens/lists.mjs"] = (function () {
 const { mergePlan, splitPlan, partsFromSound, partsFromTags, moveTrack, renamePart, includePart, writesOf, twinOffers, offerKey, readMeasure, recordOffer } = __mod["core/playlists/mergesplit.mjs"];
 const { weakWords } = __mod["core/review/weakwords.mjs"];
-/* The Library tab (docs/BUILD-5-PLAN.md A4, UI-E): compact playlist rows, a Suggested playlists section, and a detail sheet per playlist. Was the Playlists screen: an ES module. Reaches nothing but `ctx`;
+/* The Library tab (docs/archive/BUILD-5-PLAN.md A4, UI-E): compact playlist rows, a Suggested playlists section, and a detail sheet per playlist. Was the Playlists screen: an ES module. Reaches nothing but `ctx`;
  * SCREEN_CTX.lists in app/screens.js builds it. playlistMixes, tagCoverage, the sound profiles
  * and the split job stay classic in app/screenjobs.js. */
 
@@ -10108,7 +10108,7 @@ return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTi
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
-/* The Shuffle screen (docs/BUILD-5-PLAN.md A4): view and actions only. The spacing, DJ-order and
+/* The Shuffle screen (docs/archive/BUILD-5-PLAN.md A4): view and actions only. The spacing, DJ-order and
  * All Songs mirror code stays classic in web/app/shuffle-engine.js; ctx comes from SCREEN_CTX.shuffle. */
 const mixPct = x => `${Math.round(x * 100)}%`;
 function mixBpmOf(index, id) {
@@ -10281,7 +10281,7 @@ return { mixBpmOf, view, actions };
 /* ---- web/screens/discover.mjs ---- */
 __mod["web/screens/discover.mjs"] = (function () {
 const { radarView, radarActions, radarMount, newReleaseCount } = __mod["web/screens/radar.mjs"];
-/* The Discover screen (docs/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
+/* The Discover screen (docs/archive/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
  * ranking stay classic in web/app/discover-engine.js; ctx comes from SCREEN_CTX.discover. */
 
 
@@ -10541,7 +10541,7 @@ return { fitWord, whyLine, previewBtn, pickRowsHTML, fitHow, anyPlaylistMenu, si
 /* ---- web/screens/new.mjs ---- */
 __mod["web/screens/new.mjs"] = (function () {
 const { newGenreOffers } = __mod["web/screens/lists.mjs"];
-/* The New playlists screen (docs/BUILD-5-PLAN.md A4): an ES module. Reaches nothing but `ctx`;
+/* The New playlists screen (docs/archive/BUILD-5-PLAN.md A4): an ES module. Reaches nothing but `ctx`;
  * SCREEN_CTX.new in app/screens.js builds it. The GAPS state and its jobs stay classic in
  * app/screenjobs.js. */
 
@@ -10870,7 +10870,7 @@ const DEFAULT_LFM_KEY = '1b64bf0f311842b6faa63261734950fa';
 const lfmKey = () => LS.getItem('bf_lfm') || DEFAULT_LFM_KEY || null;
 const mmss = ms => ms == null ? '—' : `${Math.floor(ms/60000)}:${String(Math.round(ms%60000/1000)).padStart(2,'0')}`;
 
-/* The store (docs/BUILD-5-PLAN.md A3). Background jobs (engine, listening,
+/* The store (docs/archive/BUILD-5-PLAN.md A3). Background jobs (engine, listening,
  * sync, tag fills, the Gaps and Tidy-by-sound builds) say WHAT changed by
  * writing a slice, instead of calling render() blind. The slices are named in
  * the plan: lib, reports, eng, sound, audio, gaps, player and ui.<screen>.
@@ -11211,7 +11211,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1603';
+const BUILD = '2026-11-18-1613';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11549,7 +11549,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1603', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1613', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12016,7 +12016,7 @@ async function syncLibrary(force, onProgress, onPartial) {
  * facet fallback and the default target — live in core/playlists/axes.mjs,
  * bundled into the scoring core above and exposed as globals (`classifyAxes`,
  * `MIN_FOR_TARGET`, `NO_SIGNAL`, ...). The Node CLI axes.mjs runs the very same
- * module, so the two cannot drift apart again (docs/BUILD-5-PLAN.md B10). What
+ * module, so the two cannot drift apart again (docs/archive/BUILD-5-PLAN.md B10). What
  * stays here is what only the page has: the genre vocabulary baked in at build
  * time, which playlist is this account's All Songs mirror, and the corrections
  * the listener has saved.
@@ -12358,7 +12358,7 @@ function backlogSuggest(t, lib, cfg, tags, profiles, idf,
 /* ---------- reports, off the main thread (page side) ---------- */
 /* buildReports is the biggest single piece of work the page does: on a 5k-liked,
  * 60-playlist library it holds the main thread for over a second (scripts/perf.mjs,
- * docs/BUILD-6-PLAN.md D4), at every sync, tag fill and correction. The same
+ * docs/archive/BUILD-6-PLAN.md D4), at every sync, tag fill and correction. The same
  * function, byte for byte, runs in docs/reports-worker.js (build-web.mjs cuts
  * this file at the marker above) and the page asks it for the answer. The
  * page-side state it reads — rejections, the pinned mirror, the listening weights,
@@ -12370,7 +12370,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1603');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1613');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12477,7 +12477,7 @@ const LEGACY_VIEWS = {
   history: { section: 'history' },
 };
 /* ---------- ⓘ: "how this works" lives behind a button, not in the page ----------
- * One shared helper (docs/BUILD-5-PLAN.md §4.1, UI-F). A screen puts infoBtn()
+ * One shared helper (docs/archive/BUILD-5-PLAN.md §4.1, UI-F). A screen puts infoBtn()
  * next to its heading with the title and body; tapping it opens the small
  * #infoSheet (web/app/sheet.js). The body is kept by id so the markup stays one
  * short attribute. Screen modules receive it through screenCtx() as ctx.infoBtn. */
@@ -13011,7 +13011,7 @@ async function playTrack(id) {
 }
 
 
-/* ---------- the listening indicator (docs/UI-BUILD-PLAN.md §2.5) ----------
+/* ---------- the listening indicator (docs/archive/UI-BUILD-PLAN.md §2.5) ----------
  * The chrome owns the slot; listenPill() (web/ui/sound.mjs) owns what is in it;
  * the audio build owns the state and hands it over as a plain ListenVM through
  * setListen(). Nothing here reads an AudioRecord or knows how listening works.
@@ -13076,7 +13076,7 @@ function artHTML(t, hook = 'data-act="play"') {
 }
 
 /* ---------- the sound layer's slots on the File and Discover cards ----------
- * docs/UI-BUILD-PLAN.md, UI-4. A track may carry `sound` (a SoundVM) and a
+ * docs/archive/UI-BUILD-PLAN.md, UI-4. A track may carry `sound` (a SoundVM) and a
  * suggestion `band` (a BandVM) and `evidence` (an EvidenceVM); the renderers are
  * web/ui/sound.mjs's. Each slot reads its field and draws nothing at all without
  * it — not an empty wrapper, not a space — so a card with no such data is byte
@@ -13198,7 +13198,7 @@ function soundNote(t, picks) {
 }
 
 /* ---------- Tidy, Playlists and New playlists: the jobs and helpers the screen modules call ----------
- * The screens themselves are web/screens/{tidy,lists,new}.mjs (docs/BUILD-5-PLAN.md A4); what stays
+ * The screens themselves are web/screens/{tidy,lists,new}.mjs (docs/archive/BUILD-5-PLAN.md A4); what stays
  * here is what other files call (emptyState, tagCoverage, playlistMixes) and the long-running
  * state and jobs (sound misfits, playlist profiles, the gaps proposals). Their ctx is SCREEN_CTX in
  * app/screens.js. */
@@ -13291,7 +13291,7 @@ function playlistMixes() {
  * profile(playlistId) → ProfileVM | null: one playlist's sound profile, from
  * WP-B2's adapter once listening has heard something. With no records it is
  * null, and every row renders exactly as it would with no sound layer at all
- * (docs/UI-BUILD-PLAN.md §3 rule 3). The Listening settings themselves live
+ * (docs/archive/UI-BUILD-PLAN.md §3 rule 3). The Listening settings themselves live
  * on Sources, in the card audioPanelHTML() draws. */
 const LISTS_SOUND = {
   profile: id => {
@@ -13437,7 +13437,7 @@ async function gapsCompute() {
   store.touch('gaps');
 }
 
-/* ---------- Library: cold start and new genres (docs/BUILD-5-PLAN.md 5.4) ----------
+/* ---------- Library: cold start and new genres (docs/archive/BUILD-5-PLAN.md 5.4) ----------
  * Both read only what every account has. Cold start (no genre playlist at all) groups the library by
  * artist, era and length with proposeBuckets, plus unnamed sound clusters on the intrinsic space when the
  * engine has run. New genres cluster the tracks the calibration is "unsure" about, most listened-to first.
@@ -15504,7 +15504,7 @@ function tagEditorHTML(id, name) {
   </div>`;
 }
 
-/* Screen-change motion (docs/BUILD-5-PLAN.md §4.2, UI-B).
+/* Screen-change motion (docs/archive/BUILD-5-PLAN.md §4.2, UI-B).
  * swapScreen(dir, update) runs `update` (which redraws the screen) inside a
  * same-document View Transition when the browser has one, with a forward/back
  * type; elsewhere it just runs `update`. Either way <html data-dir> says which
@@ -15532,7 +15532,7 @@ function swapScreen(dir, update) {
   t.finished.finally(() => { delete root.dataset.dir; });
 }
 
-/* ---- FLIP for rows that move or leave (docs/BUILD-5-PLAN.md §4.2, UI-G) ----
+/* ---- FLIP for rows that move or leave (docs/archive/BUILD-5-PLAN.md §4.2, UI-G) ----
  * Rows opt in with data-flip (and a data-key, which the keyed patcher already
  * wants). flipRecord(root) notes where each one is; after the DOM changes,
  * flipPlay(root, before) slides every row that moved from its old place to its
@@ -15850,7 +15850,7 @@ function bindAppGestures() {
 
 /* ---------- sheet dragging ----------
  * The Settings sheet is the only sheet now (the More sheet went with the fifth
- * and later tabs, docs/BUILD-5-PLAN.md UI-D). On a phone it can be dragged down
+ * and later tabs, docs/archive/BUILD-5-PLAN.md UI-D). On a phone it can be dragged down
  * by its handle to dismiss it, the way every other sheet on the phone behaves. */
 function initSheet() {
   const el = $('#settingsPanel'), close = () => $('#closeSettings').click();
@@ -15928,7 +15928,7 @@ document.addEventListener('keydown', e => {
   if (e.key !== '?' || e.target.matches?.('input,select,textarea') || !matchMedia('(hover:hover) and (pointer:fine)').matches) return;
   document.body.classList.toggle('showkeys');
 });
-/* ---------- router (docs/BUILD-5-PLAN.md A6, fixes B9) ----------
+/* ---------- router (docs/archive/BUILD-5-PLAN.md A6, fixes B9) ----------
  * One history entry per screen and per open sheet, so the browser's and
  * Android's back button closes a sheet first and then walks back through the
  * screens instead of leaving the app. The address is a hash (#/tidy,
@@ -16064,7 +16064,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1603';
+    s.src = 'engine.js?v=2026-11-18-1613';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -16086,7 +16086,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1603');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1613');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16237,7 +16237,7 @@ function engineMoodFit() {
   return fit.rows.length ? fit : null;
 }
 
-/* ---------- the playlists it confuses (docs/NEXT-WORKPLAN.md package 5) ----------
+/* ---------- the playlists it confuses (docs/archive/NEXT-WORKPLAN.md package 5) ----------
  * A small sound check per confusable pair inside one family, fitted on half
  * the pair's heard members and checked on the other half (core/intrinsic/pairs.mjs).
  * Used only to order a card's top two picks, never to make a card Sure. */
@@ -16799,7 +16799,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1603';
+    s.src = 'audio.js?v=2026-11-18-1613';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16853,7 +16853,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1603', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1613', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17519,7 +17519,7 @@ async function weightsForget() {
   WFIT.rec = null;
 }
 /* ======================= similar artists, fetched in the background =======================
- * docs/NEXT-WORKPLAN.md package 2. Deezer's "fans also like" and ListenBrainz's
+ * docs/archive/NEXT-WORKPLAN.md package 2. Deezer's "fans also like" and ListenBrainz's
  * listening-session neighbours (the neighbour bridge, core/intrinsic/bridge.mjs)
  * used to be fetched only for the tracks a Score run scored, so File only had
  * them once somebody pressed Score, and only for those artists. Now they are
@@ -18090,7 +18090,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1603', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1613', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -18211,7 +18211,7 @@ function clapStatusHTML(d) {
     done < heard.length ? `, ${BetterfyAudio.CLAP_FILL_PER_RUN} more each time it listens` : ''}. The model is about 77 MB, downloaded once.</p>`;
 }
 /* ===========================================================================
- * "Analyse my library" — one tap (docs/BUILD-5-PLAN.md, owner's ask).
+ * "Analyse my library" — one tap (docs/archive/BUILD-5-PLAN.md, owner's ask).
  *
  * One button runs the two things that make File's suggestions good, in the
  * background and under one status line: the tag gaps are filled (enrichMissing
@@ -18371,7 +18371,7 @@ function analyseLine() {
   return analyseStatus({ tags: ANALYSE.tags, listen: ANALYSE.listen, stage: ANALYSE.stage });
 }
 
-/* ---------- First run (docs/BUILD-6-PLAN.md O1) ----------
+/* ---------- First run (docs/archive/BUILD-6-PLAN.md O1) ----------
  * A count in the home header for a new account: the first five filed. It counts the
  * filings from the History log (so it needs nothing stored but "done") and disappears for good once
  * five have gone in, or at once for anyone who has already filed that many. */
@@ -18411,7 +18411,7 @@ function onbColdOffers() {
   coldKick(true);
   return COLD.status === 'ready' ? BetterfyScreens.lists.coldStartOffers(COLD.found, 3) : [];
 }
-/* ---------- Score + Tune, by itself (docs/NEXT-WORKPLAN.md package 1) ----------
+/* ---------- Score + Tune, by itself (docs/archive/NEXT-WORKPLAN.md package 1) ----------
  * core/review/autoscore.mjs decides whether a run is due; this runs it. A
  * minute after the app opens, then every five minutes while the tab is in
  * front, it asks autoScoreWhy() and, when a run is due, does what the owner's
@@ -18672,7 +18672,7 @@ function runHistoryView() {
     return { ...r, when: runWhen(r.at), diff: prev && typeof scoreDiff === 'function' ? scoreDiff(prev, r) : [] };
   });
 }
-/* ---------- screen modules (docs/BUILD-5-PLAN.md A4) ----------
+/* ---------- screen modules (docs/archive/BUILD-5-PLAN.md A4) ----------
  * A migrated screen is web/screens/<name>.mjs: an ES module that build-web.mjs
  * bundles (its `// @bundle screens <name> <order>` header is the whole
  * registration) and exposes here as BetterfyScreens.<name>. It exports
@@ -19273,7 +19273,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
   e.target.value = '';
   fire(restoreStart(f));
 });
-/* ---------- the shell: four tabs and the Settings sheet (docs/BUILD-5-PLAN.md §4.1, UI-D) ----------
+/* ---------- the shell: four tabs and the Settings sheet (docs/archive/BUILD-5-PLAN.md §4.1, UI-D) ----------
  * File, Tidy, Discover and Library are the tabs. Everything that used to be a
  * screen of its own and is not one of those lives in the Settings sheet under
  * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs),
@@ -20122,7 +20122,7 @@ function afterFirstPaint() {
       .then(ran => ran && SCREEN_MODS.tidy?.background?.(screenCtx('tidy'))).catch(() => false)
       .then(() => typeof discAuto === 'function' && discAuto()).catch(() => false);
     // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
-    // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
+    // them without a Score run (docs/archive/NEXT-WORKPLAN.md package 2). Last, so they
     // don't compete with the tag lookups; resumes where the last load stopped.
     if (typeof bridgeWarm === 'function') await bridgeWarm().catch(() => {});
   })();

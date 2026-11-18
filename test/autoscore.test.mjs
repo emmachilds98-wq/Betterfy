@@ -1,4 +1,4 @@
-// Score + Tune by itself (docs/NEXT-WORKPLAN.md package 1): every branch of the
+// Score + Tune by itself (docs/archive/NEXT-WORKPLAN.md package 1): every branch of the
 // pure scheduler, the Engine screen's line, and that the page wires it up.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

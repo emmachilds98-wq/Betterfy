@@ -1,5 +1,5 @@
 // @bundle engine BetterfyFill 185
-// Smart "Fill this playlist" (docs/BUILD-6-PLAN.md §4.1 row F2, §5.1 M4).
+// Smart "Fill this playlist" (docs/archive/BUILD-6-PLAN.md §4.1 row F2, §5.1 M4).
 //
 // For one playlist, rank the account's liked-but-unfiled tracks by how well
 // they fit it. Nothing new is learned for this: every signal is one the app

@@ -1,5 +1,5 @@
 // @bundle screens new 60
-/* The New playlists screen (docs/BUILD-5-PLAN.md A4): an ES module. Reaches nothing but `ctx`;
+/* The New playlists screen (docs/archive/BUILD-5-PLAN.md A4): an ES module. Reaches nothing but `ctx`;
  * SCREEN_CTX.new in app/screens.js builds it. The GAPS state and its jobs stay classic in
  * app/screenjobs.js. */
 

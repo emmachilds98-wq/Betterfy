@@ -1,4 +1,4 @@
-// F5 "since you last opened" (docs/BUILD-6-PLAN.md §4.1/§4.2): every figure the
+// F5 "since you last opened" (docs/archive/BUILD-6-PLAN.md §4.1/§4.2): every figure the
 // digest prints is a count of one source, and these tests count that source
 // independently and require the two to agree.
 import { test } from 'node:test';

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 /*
- * Build 5, B4 and B5 (docs/BUILD-5-PLAN.md §1.3), run out of the built page.
+ * Build 5, B4 and B5 (docs/archive/BUILD-5-PLAN.md §1.3), run out of the built page.
  *
  * B4: a liked track was "filed" only if that exact Spotify id sat in a
  * playlist. Like the single and file the album copy, and the single stayed in

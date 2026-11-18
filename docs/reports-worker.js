@@ -1253,7 +1253,7 @@ return { QUEUE_HEAD, HEAD_GAP, MIN_SIDE, MIN_N, TIERS, isFiling, clean, undoneSe
 __mod["core/review/filequeue.mjs"] = (function () {
 const { relevanceOf, UNCERTAINTY } = __mod["core/personal/relevance.mjs"];
 const { clean, isFiling, undoneSet } = __mod["core/measure/history.mjs"];
-// The File queue's order and its sure batch (docs/BUILD-5-PLAN.md §5.2).
+// The File queue's order and its sure batch (docs/archive/BUILD-5-PLAN.md §5.2).
 //
 // Pure counts over what Spotify already gives every account: the three
 // top-artist windows, recently played and /me/top/tracks. Nothing here is
@@ -1619,7 +1619,7 @@ return { TEACH_VERSION, TEACH, artistKeyOf, artistSpread, choicesOf, teachValue,
 })();
 /* ---- core/review/autoscore.mjs ---- */
 __mod["core/review/autoscore.mjs"] = (function () {
-// Score + Tune, run by itself (docs/NEXT-WORKPLAN.md package 1).
+// Score + Tune, run by itself (docs/archive/NEXT-WORKPLAN.md package 1).
 //
 // Every gate that switches a part of the engine on (sound in the blend, the
 // deep ear, nearest members, family first, mood chips, fitted weights, teach,

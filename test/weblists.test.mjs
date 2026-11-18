@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import * as SOURCES from '../web/screens/sources.mjs';
 import * as LISTS from '../web/screens/lists.mjs';
 
-// UI-3 (docs/UI-BUILD-PLAN.md §6): Playlists is the axes table, the data
+// UI-3 (docs/archive/UI-BUILD-PLAN.md §6): Playlists is the axes table, the data
 // sources live on their own Sources screen, and the sound layer shows up on
 // Playlists only when listening has produced something (§3 rule 3).
 

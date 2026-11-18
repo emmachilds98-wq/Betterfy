@@ -1,7 +1,7 @@
 // Screenshots the component galleries: every HTML fragment in
 // scripts/ui-shots/gallery/*.html, wrapped in the built page's stylesheet,
 // desktop and phone, dark and light. Packages that add components drop a
-// fragment here rather than editing shots.cjs (docs/UI-BUILD-PLAN.md §6).
+// fragment here rather than editing shots.cjs (docs/archive/UI-BUILD-PLAN.md §6).
 //
 //   node scripts/ui-shots/gallery.cjs            all fragments, all four forms
 //   node scripts/ui-shots/gallery.cjs --only=components

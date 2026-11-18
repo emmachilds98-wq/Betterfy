@@ -10,7 +10,7 @@ import { genreWords } from '../core/playlists/genre-words.mjs';
 // same rules that claimed to mirror each other and had drifted: the CLI had
 // its own EVENT/DJSET/MOOD regexes, no genreInName(), no "built in one sitting"
 // event rule, no tag gate, and made mood playlists targets
-// (docs/BUILD-5-PLAN.md B10). Both now run core/playlists/axes.mjs. These tests
+// (docs/archive/BUILD-5-PLAN.md B10). Both now run core/playlists/axes.mjs. These tests
 // hold them together: the page as built (docs/index.html, the way every web
 // test reads it) against axes.mjs as imported, over a broad set of names.
 

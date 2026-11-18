@@ -1,6 +1,6 @@
 # Build 7 plan: keep improving after the audio upgrade (2026-11-17, after #157)
 
-**Start here.** This replaces `docs/NEXT-WORKPLAN.md` §4 to §6 for what to
+**Start here.** This replaces `docs/archive/NEXT-WORKPLAN.md` §4 to §6 for what to
 build next. Every package in NEXT-WORKPLAN is built or measured and closed, and
 the audio upgrade (`docs/AUDIO-BUILD-PLAN.md`) is complete. This plan covers
 what is on `main`, the leftovers and what to do with each, and the next

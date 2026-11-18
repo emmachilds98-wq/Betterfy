@@ -1,5 +1,5 @@
 // Shared by webinbox-sound.test.mjs and webdiscover-sound.test.mjs (UI-4 of
-// docs/UI-BUILD-PLAN.md): runs the shipped vInbox and vDiscover against fixed
+// docs/archive/UI-BUILD-PLAN.md): runs the shipped vInbox and vDiscover against fixed
 // fixtures, so the File and Discover cards can be compared byte for byte with
 // what they rendered before the sound slots existed.
 import assert from 'node:assert/strict';

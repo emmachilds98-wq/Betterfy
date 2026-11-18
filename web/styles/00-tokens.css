@@ -71,7 +71,7 @@
     --ev-tags:var(--m4); --ev-history:var(--m0); --ev-sound:var(--m2); --ev-learned:var(--m3);
     --tabh:60px;                       /* bottom tab bar, excluding the inset */
     --topbar:52px;                     /* mobile header, excluding the inset */
-    /* Motion (docs/BUILD-5-PLAN.md §4.2). Four durations and the curves that
+    /* Motion (docs/archive/BUILD-5-PLAN.md §4.2). Four durations and the curves that
        go with them, so every transition in the app agrees on what "quick"
        and "a screen change" mean. Same in both themes. Springs and the bounce
        are for transform only, never opacity. */

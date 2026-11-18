@@ -4,7 +4,7 @@ import * as TIDY from '../web/screens/tidy.mjs';
 import * as LISTS from '../web/screens/lists.mjs';
 import * as NEW from '../web/screens/new.mjs';
 
-// Tidy, Playlists and New playlists as screen modules (docs/BUILD-5-PLAN.md A4):
+// Tidy, Playlists and New playlists as screen modules (docs/archive/BUILD-5-PLAN.md A4):
 // their actions, on fixture ctxs.
 
 test('Tidy: choosing a section and a band repaint, and the band is remembered only on request', () => {

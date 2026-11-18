@@ -1,4 +1,4 @@
-// F6 (docs/BUILD-6-PLAN.md): what the service worker answers, and what it must
+// F6 (docs/archive/BUILD-6-PLAN.md): what the service worker answers, and what it must
 // leave to the browser. Run against the built docs/sw.js in a bare sandbox.
 import test from 'node:test';
 import assert from 'node:assert/strict';
