@@ -1489,7 +1489,119 @@ function autoScoreStatus(last, now) {
   if (last.ok === false) return 'On · retrying';
   return `On · scored ${agoWords(now - last.at)}`;
 }
-return { AUTOSCORE, autoScoreWhy, agoWords, autoScoreLine, autoScoreStatus };
+
+/* ---------- every run, kept (docs/BUILD-7-PLAN.md M1) ----------
+ * A Score run's report, and the end of each listening run (first ear, second
+ * ear), used to live only in the page's memory: close the tab without pressing
+ * Copy results and it was gone. The page now keeps them in localStorage
+ * `bf_run_history`, newest first, and the Engine screen lists them, each with
+ * its own Copy. These are the pure parts. */
+
+const RUN_KEEP = Object.freeze({ score: 12, listen: 12, deep: 8 });
+const RUN_KINDS = Object.keys(RUN_KEEP);
+
+/** A stored entry, or null for anything that is not one (a corrupt row is dropped, not fatal). */
+function cleanRun(r) {
+  if (!r || typeof r !== 'object' || !RUN_KINDS.includes(r.kind) || !Number.isFinite(r.at)) return null;
+  return r;
+}
+
+/** Read the stored list: newest first, corrupt rows dropped. Never throws. */
+function runHistoryParse(raw) {
+  let list = raw;
+  if (typeof raw === 'string') { try { list = JSON.parse(raw); } catch { list = null; } }
+  if (!Array.isArray(list)) return [];
+  return list.map(cleanRun).filter(Boolean).sort((a, b) => b.at - a.at);
+}
+
+/**
+ * Add one run, newest first, keeping at most `keep[kind]` of each kind.
+ * An entry with the same kind and `at` replaces the old one (a Score run
+ * whose Tune sweep finished afterwards is written twice).
+ * @param {object[]} prev
+ * @param {object} run  { kind: 'score'|'listen'|'deep', at, ... }
+ */
+function runHistoryAdd(prev, run, { keep = RUN_KEEP } = {}) {
+  const list = runHistoryParse(prev);
+  if (!cleanRun(run)) return list;
+  const out = [run, ...list.filter(r => !(r.kind === run.kind && r.at === run.at))].sort((a, b) => b.at - a.at);
+  const seen = {};
+  return out.filter(r => (seen[r.kind] = (seen[r.kind] ?? 0) + 1) <= (keep[r.kind] ?? 12));
+}
+
+/** Kept for the plan's name: the Score runs only, newest first. */
+function scoreHistory(prev, run, o) {
+  return runHistoryAdd(prev, { kind: 'score', ...run }, o).filter(r => r.kind === 'score');
+}
+
+const GATE_WORDS = {
+  audio: 'Sound in the blend', ear: 'Second ear', near: 'Nearest members', family: 'Family first',
+  agree: 'Agreement check', pairs: 'Pair check', bridge: 'Similar artists', mood: 'Mood chips',
+  teach: 'Teach questions', fill: 'Fill this playlist', weights: 'Fitted weights',
+};
+const pct = x => `${Math.round(x * 100)}%`;
+
+/**
+ * What changed between two Score runs, in words, `b` the newer:
+ * "Top-1 61% → 66% (+5)", "Family first: switched on". Empty when nothing did.
+ */
+function scoreDiff(a, b) {
+  if (!a || !b) return [];
+  const out = [];
+  const num = (label, x, y) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const d = Math.round(y * 100) - Math.round(x * 100);
+    if (Math.abs(d) >= 1) out.push(`${label} ${pct(x)} → ${pct(y)} (${d > 0 ? '+' : '−'}${Math.abs(d)})`);
+  };
+  num('Top-1', a.top1, b.top1);
+  num('Top-3', a.top3, b.top3);
+  num('Sure', a.sure, b.sure);
+  num('Never-filed artists top-1', a.neverFiled, b.neverFiled);
+  const ga = a.gates ?? {}, gb = b.gates ?? {};
+  for (const k of Object.keys(GATE_WORDS)) {
+    const x = ga[k], y = gb[k];
+    if (typeof x !== 'boolean' || typeof y !== 'boolean' || x === y) continue;
+    out.push(`${GATE_WORDS[k]}: switched ${y ? 'on' : 'off'}`);
+  }
+  return out;
+}
+
+/** "18 Nov, 01:40" in the listener's own time. */
+function runWhen(at) {
+  try {
+    return new Date(at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch { return new Date(at).toISOString().slice(0, 16).replace('T', ' '); }
+}
+
+const LISTEN_MISS = { noIsrc: 'no ISRC', noPreview: 'no preview', fetch: 'download failed', decode: "couldn't decode" };
+
+/**
+ * A listening run that just ended, as a history entry with its own text.
+ * `vm` is the controller's view model ({ done, total, heard, missed, reason, state }).
+ * Null when it heard nothing (a run that only checked there was nothing to do).
+ * @param {'listen'|'deep'} kind
+ */
+function listenRunEntry(kind, vm, { at, startedAt = null, build = '', extra = [], missText = LISTEN_MISS } = {}) {
+  if (!vm || !Number.isFinite(at)) return null;
+  const done = Number(vm.done) || 0;
+  if (done <= 0) return null;
+  const n = x => Number(x || 0).toLocaleString('en-GB');
+  const missed = Object.entries(vm.missed ?? {}).filter(([, v]) => v > 0);
+  const label = kind === 'deep' ? 'Deep listen (second ear)' : 'Listening (first ear)';
+  const how = vm.state === 'done' ? 'finished' : `stopped${vm.reason && vm.reason !== 'stopped' ? `: ${vm.reason}` : ''}`;
+  const mins = Number.isFinite(startedAt) && at > startedAt ? Math.round((at - startedAt) / 60e3) : null;
+  const lines = [
+    `Betterfy ${label} — build ${build}`,
+    `Ended ${runWhen(at)}, ${how}${mins != null ? `, after ${mins} min` : ''}`,
+    `This run: ${n(done)} of ${n(vm.total ?? done)} tracks`,
+    Number.isFinite(vm.heard) ? `Heard in all: ${n(vm.heard)} tracks` : null,
+    missed.length ? `Couldn't hear: ${missed.map(([k, v]) => `${n(v)} ${missText[k] ?? k}`).join(', ')}` : null,
+    ...extra.filter(Boolean),
+  ].filter(Boolean);
+  return { kind, at, build, done, total: Number(vm.total) || done, heard: Number(vm.heard) || null,
+           state: vm.state ?? null, text: lines.join('\n') };
+}
+return { AUTOSCORE, autoScoreWhy, agoWords, autoScoreLine, autoScoreStatus, RUN_KEEP, runHistoryParse, runHistoryAdd, scoreHistory, scoreDiff, runWhen, listenRunEntry };
 })();
 Object.assign(globalThis, __mod["norm.mjs"]);
 Object.assign(globalThis, __mod["credits.mjs"]);

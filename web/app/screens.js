@@ -21,6 +21,7 @@ const SCREEN_CTX = {
                    engineTargets, engineInBackground, bridgeOn, bridgeProgressText,
                    engineAnalyse, engineValidate, BLEND_KEY, weightsForget,
                    TUNE, engineScoreTune, engineTune, tuneApply, tuneForget, autoScoreText,
+                   runHistoryView: () => (typeof runHistoryView === 'function' ? runHistoryView() : []),
                    tuneBlock: r => (globalThis.BetterfyTune ? BetterfyTune.tuneBlock(r) : ''),
                    blendForget: () => { if (typeof blendForget === 'function') blendForget(); },
                    maestScoreText: (...a) => globalThis.BetterfyAudio?.maestScoreText?.(...a) ?? null,

@@ -73,6 +73,7 @@ const DATA_KEYS = [
   { where:'idb', key:'engine-weights', group:'Engine', why:'The engine weights fitted to your library by a Score run.' },
   { where:'idb', key:'engine-tune', group:'Engine', why:'Tuning you saved from Engine › Tune.' },
   { where:'local', key:'bf_weak', group:'Engine', why:'Which of your genre playlists your last Score run found it understands least, why, and what would help, for Library\'s advice and so listening hears those first.' },
+  { where:'local', key:'bf_run_history', group:'Engine', why:'Your last Score runs (each one\'s full report, the text Copy results gives) and how each listening run ended, first ear and Deep listen, so the Engine screen\'s Past runs can copy any of them later.' },
   { where:'local', key:'bf_autoscore', group:'Engine', why:'When Score + Tune last ran (by itself or by hand), how many tracks listening had heard then, and whether it finished, so it runs again by itself after listening or in a week.' },
 
   // --- listening to your music ---
