@@ -1,4 +1,4 @@
-// The page's own script, in the order it runs (docs/BUILD-5-PLAN.md A1).
+// The page's own script, in the order it runs (docs/archive/BUILD-5-PLAN.md A1).
 //
 // These are classic scripts, not modules: they share one top-level scope, as
 // the single inline script they were cut from did, so the order below is load

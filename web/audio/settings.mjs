@@ -26,7 +26,7 @@ export const SCOPES = Object.freeze({
 // "it should listen by default".
 export const DEFAULT_AUDIO_SETTINGS = Object.freeze({ on: true, wifiOnly: true, scope: 'playing+unfiled' });
 
-// On a computer the default scope is the whole library (docs/NEXT-WORKPLAN.md
+// On a computer the default scope is the whole library (docs/archive/NEXT-WORKPLAN.md
 // package 6): sound placement and mood chips get better with every heard member
 // of a playlist, and a laptop on Wi-Fi can afford it. A phone keeps the narrow
 // scope. `computer` is the page's own test (a fine pointer and no touch screen,

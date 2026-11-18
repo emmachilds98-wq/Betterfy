@@ -1,5 +1,5 @@
 /* ======================= similar artists, fetched in the background =======================
- * docs/NEXT-WORKPLAN.md package 2. Deezer's "fans also like" and ListenBrainz's
+ * docs/archive/NEXT-WORKPLAN.md package 2. Deezer's "fans also like" and ListenBrainz's
  * listening-session neighbours (the neighbour bridge, core/intrinsic/bridge.mjs)
  * used to be fetched only for the tracks a Score run scored, so File only had
  * them once somebody pressed Score, and only for those artists. Now they are

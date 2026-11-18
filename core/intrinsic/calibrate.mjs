@@ -181,7 +181,7 @@ export function fitCalibration(rows, opts = {}) {
 
   const out = { version: CALIBRATE_VERSION, n, T, tau: tau == null ? null : +tau.toFixed(5),
                 pmin: +(1 - qhat).toFixed(5), target, alpha, confidentN, confidentRight };
-  // Package 4 (docs/NEXT-WORKPLAN.md): rows that carry an agreement level
+  // Package 4 (docs/archive/NEXT-WORKPLAN.md): rows that carry an agreement level
   // (core/intrinsic/agree.mjs) get a "confident" threshold of their own per
   // level, fitted the same way on only that level's rows. A card where sound,
   // filing history and tags all rank the same playlist first is right far
@@ -205,7 +205,7 @@ export const AGREE_LEVELS = Object.freeze(['agree', 'single']);
 /**
  * What agreement-earned "Sure" must do on held-out rows before it is used:
  * right at least `minPrecision` of the time over at least `minN` cards.
- * Set before any owner run (docs/NEXT-WORKPLAN.md package 4 gate).
+ * Set before any owner run (docs/archive/NEXT-WORKPLAN.md package 4 gate).
  */
 export const AGREE_GATE = Object.freeze({ minPrecision: 0.95, minN: 20, coverage: 0.25 });
 

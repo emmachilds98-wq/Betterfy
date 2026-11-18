@@ -8,7 +8,7 @@ import { withInbox } from './screenctx.mjs';
 import { feedbackExamples } from '../core/intrinsic/audio-feedback.mjs';
 
 /*
- * Build 5, B6 and B7 (docs/BUILD-5-PLAN.md §1.3, §5.1), run out of the built page.
+ * Build 5, B6 and B7 (docs/archive/BUILD-5-PLAN.md §1.3, §5.1), run out of the built page.
  *
  * B7: filing from the File screen never wrote anything to feedback, so the
  * sound learner (audio-feedback.mjs reads FB.accepted and FB.rejected) learned

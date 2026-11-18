@@ -1,4 +1,4 @@
-/* ---------- router (docs/BUILD-5-PLAN.md A6, fixes B9) ----------
+/* ---------- router (docs/archive/BUILD-5-PLAN.md A6, fixes B9) ----------
  * One history entry per screen and per open sheet, so the browser's and
  * Android's back button closes a sheet first and then walks back through the
  * screens instead of leaving the app. The address is a hash (#/tidy,

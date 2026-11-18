@@ -6044,7 +6044,7 @@ function fitCalibration(rows, opts = {}) {
 
   const out = { version: CALIBRATE_VERSION, n, T, tau: tau == null ? null : +tau.toFixed(5),
                 pmin: +(1 - qhat).toFixed(5), target, alpha, confidentN, confidentRight };
-  // Package 4 (docs/NEXT-WORKPLAN.md): rows that carry an agreement level
+  // Package 4 (docs/archive/NEXT-WORKPLAN.md): rows that carry an agreement level
   // (core/intrinsic/agree.mjs) get a "confident" threshold of their own per
   // level, fitted the same way on only that level's rows. A card where sound,
   // filing history and tags all rank the same playlist first is right far
@@ -6068,7 +6068,7 @@ const AGREE_LEVELS = Object.freeze(['agree', 'single']);
 /**
  * What agreement-earned "Sure" must do on held-out rows before it is used:
  * right at least `minPrecision` of the time over at least `minN` cards.
- * Set before any owner run (docs/NEXT-WORKPLAN.md package 4 gate).
+ * Set before any owner run (docs/archive/NEXT-WORKPLAN.md package 4 gate).
  */
 const AGREE_GATE = Object.freeze({ minPrecision: 0.95, minN: 20, coverage: 0.25 });
 
@@ -6200,7 +6200,7 @@ return { CALIBRATE_VERSION, DEFAULTS, BIN, scoresOf, softmax, TEMPERATURES, fitT
 })();
 /* ---- core/intrinsic/agree.mjs ---- */
 __mod["core/intrinsic/agree.mjs"] = (function () {
-// "Sure" only when the sources agree (docs/NEXT-WORKPLAN.md package 4).
+// "Sure" only when the sources agree (docs/archive/NEXT-WORKPLAN.md package 4).
 //
 // A placement is a mix of sources that make different mistakes:
 //
@@ -9967,7 +9967,7 @@ return { MOOD_VERSION, MOOD_GATE, nearScore, fitMoods, moodInUse, moodChips, moo
 /* ---- core/intrinsic/pairs.mjs ---- */
 __mod["core/intrinsic/pairs.mjs"] = (function () {
 const { nearScore } = __mod["core/intrinsic/mood.mjs"];
-// The playlists it confuses (docs/NEXT-WORKPLAN.md package 5).
+// The playlists it confuses (docs/archive/NEXT-WORKPLAN.md package 5).
 //
 // Family first (#145) already settles "it's drum & bass" and asks only which
 // playlist inside the family. What is left is telling two neighbours apart:
@@ -10297,7 +10297,7 @@ return { WEAK, FIX_WORDS, weakWords };
 __mod["core/intrinsic/weak.mjs"] = (function () {
 const { pairKey } = __mod["core/intrinsic/pairs.mjs"];
 const { WEAK, weakWords } = __mod["core/review/weakwords.mjs"];
-// The playlists it understands least, and why (docs/NEXT-WORKPLAN.md, after #154).
+// The playlists it understands least, and why (docs/archive/NEXT-WORKPLAN.md, after #154).
 //
 // The Score card's old "Weakest" list was measured on the account-native
 // engine alone (no tags, no similar artists, no sound), which is not what File
@@ -11535,7 +11535,7 @@ const { nearest } = __mod["core/audio/match.mjs"];
 const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
 const { sourceArtists } = __mod["core/intrinsic/bridge.mjs"];
 const { normName } = __mod["core/sources/deezer.mjs"];
-// Discover by sound (docs/SOUND-EVERYWHERE-PLAN.md, S4).
+// Discover by sound (docs/archive/SOUND-EVERYWHERE-PLAN.md, S4).
 //
 // Two things Discover could not do before:
 //
@@ -11556,7 +11556,7 @@ const { normName } = __mod["core/sources/deezer.mjs"];
 //     screen's neighbour bridge (core/intrinsic/bridge-fetch.mjs) — and keeps
 //     the neighbours that are *not* in your library.
 //
-// Rules (docs/HANDOFF.md §4, SMARTER-GENRES-PLAN §3): everything here is a
+// Rules (docs/archive/HANDOFF.md §4, SMARTER-GENRES-PLAN §3): everything here is a
 // nearest-neighbour lookup or a count over this account's own heard tracks.
 // Nothing is trained, nothing is pooled across accounts, and no Spotify
 // content goes into a model: the audio is Deezer's preview, as for every other
@@ -11902,7 +11902,7 @@ const { buildProfiles, trackVec, applyIdf, cosine: tagCosine, tagGate, gateTags 
 const { seedSound, soundFit, DISCOVER_SOUND } = __mod["core/audio/discover.mjs"];
 const { foldOf, DEFAULT_FOLDS } = __mod["core/validate/loo.mjs"];
 const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
-// Smart "Fill this playlist" (docs/BUILD-6-PLAN.md §4.1 row F2, §5.1 M4).
+// Smart "Fill this playlist" (docs/archive/BUILD-6-PLAN.md §4.1 row F2, §5.1 M4).
 //
 // For one playlist, rank the account's liked-but-unfiled tracks by how well
 // they fit it. Nothing new is learned for this: every signal is one the app
@@ -13853,7 +13853,7 @@ return { RELEVANCE_VERSION, UNCERTAINTY, uncertaintyOf, relevanceOf, playlistRea
 __mod["core/review/filequeue.mjs"] = (function () {
 const { relevanceOf, UNCERTAINTY } = __mod["core/personal/relevance.mjs"];
 const { clean, isFiling, undoneSet } = __mod["core/measure/history.mjs"];
-// The File queue's order and its sure batch (docs/BUILD-5-PLAN.md §5.2).
+// The File queue's order and its sure batch (docs/archive/BUILD-5-PLAN.md §5.2).
 //
 // Pure counts over what Spotify already gives every account: the three
 // top-artist windows, recently played and /me/top/tracks. Nothing here is

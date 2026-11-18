@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-// A6 of docs/BUILD-5-PLAN.md (bug B9): back closes a sheet, then returns to the
+// A6 of docs/archive/BUILD-5-PLAN.md (bug B9): back closes a sheet, then returns to the
 // previous screen, and the URL says where you are. Runs the real router.js
 // against a fake History that behaves like the browser's.
 

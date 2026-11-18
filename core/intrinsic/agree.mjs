@@ -1,5 +1,5 @@
 // @bundle engine BetterfyAgree 101
-// "Sure" only when the sources agree (docs/NEXT-WORKPLAN.md package 4).
+// "Sure" only when the sources agree (docs/archive/NEXT-WORKPLAN.md package 4).
 //
 // A placement is a mix of sources that make different mistakes:
 //

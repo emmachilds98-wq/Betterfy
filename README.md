@@ -576,11 +576,11 @@ membership, and nothing is shared.
 | `listening.mjs` | real listening behaviour (top artists, recent plays) as a weight per artist — best-effort, works with no Spotify auth available too |
 | `snapshot.mjs` | dumps the whole library to `library.json` |
 | `actions.mjs` | every library mutation, with the undo log |
-| `legacy/server.mjs` + `ui/` | the local app |
+| `legacy/server.mjs` + `ui/` | the older local app (developer-only; see "From a checkout") |
 | `build-web.mjs` + `docs/` | the browser build for GitHub Pages |
 | `core/` | the engines the page runs (audio, account-native placement, review queue, playlists, new releases, measurement) and the v3 evidence classifier, measured beside v1; see below |
 | `enrich-lastfm-tracks.mjs` | track-level Last.fm tags, prioritised by what you play and what the engine is least sure about — optional, resumable |
-| `legacy/analyse-v3.mjs` | runs the v3 engine over your `library.json` and existing caches: bands, playlist types, relationships, and the review queue |
+| `legacy/analyse-v3.mjs` | developer-only: runs the v3 engine over your `library.json` and existing caches: bands, playlist types, relationships, and the review queue |
 | `make-icons.mjs` | renders the logo to the PNG sizes browsers and phones ask for |
 
 `build-web.mjs` bundles `norm`, `credits` and `profile` verbatim into the page,
@@ -708,8 +708,12 @@ Artists with no genre in their tags are counted and said, not guessed at.
 
 ## From a checkout (developers)
 
-The Node side predates the hosted page. It works on a `library.json` snapshot
-and is how the engines are measured; the hosted page is the app.
+**Developer-only.** Nothing in this section is needed to use Betterfy: every
+account gets the whole app from the hosted page, with no checkout, export or
+install. The Node side predates the hosted page. It works on a `library.json`
+snapshot and is how the engines are measured; the hosted page is the app.
+The Node CLIs below and everything under `legacy/` are kept for measurement
+and comparison only, and new features don't go there.
 
 ### Setup
 
@@ -756,9 +760,10 @@ npm run rekordbox -- "collection.xml" --write  # import tempo/key from Rekordbox
 Everything is **dry-run by default**. Commands that change your Spotify library
 print what they would do and stop; add `--apply` to commit.
 
-### The local app (`npm start`)
+### The local app (`npm start`, developer-only)
 
-`legacy/server.mjs` and `ui/` are the older desktop-browser app: an Overview
+Developer-only, and not maintained as a product. `legacy/server.mjs` and
+`ui/` are the older desktop-browser app: an Overview
 page with **Refresh** (re-fetch from the local server, seconds) and a separate
 *Re-read from Spotify* (minutes), and a Settings panel for appearance and
 accent colour stored in `localStorage`. The hosted page has replaced it for

@@ -193,7 +193,7 @@ function engineMoodFit() {
   return fit.rows.length ? fit : null;
 }
 
-/* ---------- the playlists it confuses (docs/NEXT-WORKPLAN.md package 5) ----------
+/* ---------- the playlists it confuses (docs/archive/NEXT-WORKPLAN.md package 5) ----------
  * A small sound check per confusable pair inside one family, fitted on half
  * the pair's heard members and checked on the other half (core/intrinsic/pairs.mjs).
  * Used only to order a card's top two picks, never to make a card Sure. */

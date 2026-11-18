@@ -15,7 +15,7 @@ function slice(from, to, what) {
   return PAGE.slice(i, j);
 }
 const ENGINE_IN = slice('const engineAudioBase = audio =>', '/* ====', 'engineAudioIn');
-const DEEP = slice('function deepPanelHTML()', '/* ---------- screen modules (docs/BUILD-5-PLAN.md A4)', 'the Deep listen block');
+const DEEP = slice('function deepPanelHTML()', '/* ---------- screen modules (docs/archive/BUILD-5-PLAN.md A4)', 'the Deep listen block');
 
 const rec = (id, maest) => {
   const r = makeRecord({ id, isrc: 'X', activations: new Float32Array(N_STYLES).fill(0.1), embeddings: new Float32Array(EMB_DIM).fill(0.2), patches: 1,

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as INBOX from '../web/screens/inbox.mjs';
 
-// Optimistic filing (docs/BUILD-5-PLAN.md §4.2, UI-C): the card leaves and the
+// Optimistic filing (docs/archive/BUILD-5-PLAN.md §4.2, UI-C): the card leaves and the
 // deck redraws before Spotify answers; a failed write puts the card back.
 
 const T = id => ({ id, title: 'T' + id, artist: 'A', artists: [{ id: 'a' + id, name: 'A' }], suggest: [] });

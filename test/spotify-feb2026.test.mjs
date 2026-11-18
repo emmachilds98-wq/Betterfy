@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { loadPage, slice, own, BUNDLE } from './fixtures/page-spotify.mjs';
 
 // What Spotify's February 2026 Web API changes quietly broke, and the fixes
-// (docs/BUILD-5-PLAN.md §6.6, B12–B14):
+// (docs/archive/BUILD-5-PLAN.md §6.6, B12–B14):
 //
 //   B12  DELETE /playlists/{id}/items is documented as `{ items: [{ uri }] }`,
 //        max 100 per call. The page and actions.mjs sent `{ tracks }`, unchunked.

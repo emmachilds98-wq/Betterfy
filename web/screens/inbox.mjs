@@ -99,7 +99,7 @@ export async function rollForwardGo(ctx) {
   render();
 }
 
-/* ---------- "Since you last opened": docs/BUILD-6-PLAN.md F5 ----------
+/* ---------- "Since you last opened": docs/archive/BUILD-6-PLAN.md F5 ----------
  * One dismissible card at the top of File, worked out once per session from
  * what the page already holds (core/measure/digest.mjs): no request, never a
  * notification, and nothing at all when there is nothing to say. The baseline
@@ -184,7 +184,7 @@ export function digestMount(ctx) {
   }
 }
 
-/* ---------- "File the N sure ones": docs/BUILD-5-PLAN.md §5.2 ----------
+/* ---------- "File the N sure ones": docs/archive/BUILD-5-PLAN.md §5.2 ----------
  * The cards whose leading pick is calibrated sure, filed in one go: one History
  * group (a step per playlist), one undo. Only among the first cards of the queue. */
 const sureList = ctx => { try { return ctx.fileSure?.() ?? []; } catch { return []; } };
@@ -510,7 +510,7 @@ export async function fileCurrent(ctx, playlistIds, { via = null } = {}) {
   const { S, R, CFG, FB, addTracks, logAction, getLog, undoAction, recordAccept, forgetAccept, toast, render } = ctx;
   const ids = (Array.isArray(playlistIds) ? playlistIds : [playlistIds]).filter(Boolean);
   if (!ids.length) return;
-  // Optimistic (docs/BUILD-5-PLAN.md §4.2): the card leaves now and the writes
+  // Optimistic (docs/archive/BUILD-5-PLAN.md §4.2): the card leaves now and the writes
   // happen behind it. The flight lock is what keeps a double tap, or a swipe
   // that lands on top of a tap, from filing the *next* card by accident,
   // since by the time the second one arrives the queue has already advanced.

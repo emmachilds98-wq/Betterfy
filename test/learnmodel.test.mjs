@@ -1,4 +1,4 @@
-// The hosted app's sound learner is prototypes only (docs/BUILD-5-PLAN.md §2
+// The hosted app's sound learner is prototypes only (docs/archive/BUILD-5-PLAN.md §2
 // item 3, option b): each playlist's sound is the average of the account's own
 // heard tracks in it, and no regression is fitted to playlist membership in
 // the page or its worker. Logistic regression stays in audio-learn.mjs for

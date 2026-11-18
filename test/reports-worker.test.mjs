@@ -1,5 +1,5 @@
 // buildReports runs in docs/reports-worker.js when the page has workers
-// (docs/BUILD-6-PLAN.md D4). The worker is the page's own reports.js, so the
+// (docs/archive/BUILD-6-PLAN.md D4). The worker is the page's own reports.js, so the
 // answer must be the page's answer: same function, same output, from a request
 // that carries the page state (rejections, pinned mirror, listening, verdicts).
 import test from 'node:test';

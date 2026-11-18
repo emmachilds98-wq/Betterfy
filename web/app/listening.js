@@ -1,4 +1,4 @@
-/* ---------- the listening indicator (docs/UI-BUILD-PLAN.md §2.5) ----------
+/* ---------- the listening indicator (docs/archive/UI-BUILD-PLAN.md §2.5) ----------
  * The chrome owns the slot; listenPill() (web/ui/sound.mjs) owns what is in it;
  * the audio build owns the state and hands it over as a plain ListenVM through
  * setListen(). Nothing here reads an AudioRecord or knows how listening works.

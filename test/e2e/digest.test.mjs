@@ -1,4 +1,4 @@
-// F5 "since you last opened" (docs/BUILD-6-PLAN.md): a first visit shows no
+// F5 "since you last opened" (docs/archive/BUILD-6-PLAN.md): a first visit shows no
 // digest; file a card, open the app again, and File leads with what was filed;
 // Details opens it up and the ✕ puts it away, both counted in this browser only.
 import test from 'node:test';

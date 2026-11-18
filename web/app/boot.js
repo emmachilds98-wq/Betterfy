@@ -363,7 +363,7 @@ function afterFirstPaint() {
       .then(ran => ran && SCREEN_MODS.tidy?.background?.(screenCtx('tidy'))).catch(() => false)
       .then(() => typeof discAuto === 'function' && discAuto()).catch(() => false);
     // Then similar artists (Deezer, ListenBrainz), for every artist, so File uses
-    // them without a Score run (docs/NEXT-WORKPLAN.md package 2). Last, so they
+    // them without a Score run (docs/archive/NEXT-WORKPLAN.md package 2). Last, so they
     // don't compete with the tag lookups; resumes where the last load stopped.
     if (typeof bridgeWarm === 'function') await bridgeWarm().catch(() => {});
   })();

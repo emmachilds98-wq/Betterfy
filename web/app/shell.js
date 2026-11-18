@@ -1,4 +1,4 @@
-/* ---------- the shell: four tabs and the Settings sheet (docs/BUILD-5-PLAN.md §4.1, UI-D) ----------
+/* ---------- the shell: four tabs and the Settings sheet (docs/archive/BUILD-5-PLAN.md §4.1, UI-D) ----------
  * File, Tidy, Discover and Library are the tabs. Everything that used to be a
  * screen of its own and is not one of those lives in the Settings sheet under
  * "Under the hood": Sources (Listening first, then Last.fm, Wikidata, Discogs),

@@ -6,7 +6,7 @@ import { installTidy } from './tidyctx.mjs';
 import { installNew } from './newctx.mjs';
 import * as ENGINE from '../web/screens/engine.mjs';
 
-// UI-6 (docs/UI-BUILD-PLAN.md): Tidy's band filter in Sure/Likely/Unsure, real
+// UI-6 (docs/archive/UI-BUILD-PLAN.md): Tidy's band filter in Sure/Likely/Unsure, real
 // empty states, New playlists' one proposal card, and the Engine's paired
 // with/without bars with the gate drawn as a line. Run out of the built page.
 

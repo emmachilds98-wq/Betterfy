@@ -1,4 +1,4 @@
-// The sound layer's renderers — the contract docs/UI-BUILD-PLAN.md §5 freezes.
+// The sound layer's renderers — the contract docs/archive/UI-BUILD-PLAN.md §5 freezes.
 //
 // Every function takes a plain view model and returns an HTML string. None of
 // them knows what an AudioRecord is: the audio packages (docs/AUDIO-BUILD-PLAN.md)

@@ -1,6 +1,6 @@
 /* ---------- sheet dragging ----------
  * The Settings sheet is the only sheet now (the More sheet went with the fifth
- * and later tabs, docs/BUILD-5-PLAN.md UI-D). On a phone it can be dragged down
+ * and later tabs, docs/archive/BUILD-5-PLAN.md UI-D). On a phone it can be dragged down
  * by its handle to dismiss it, the way every other sheet on the phone behaves. */
 function initSheet() {
   const el = $('#settingsPanel'), close = () => $('#closeSettings').click();

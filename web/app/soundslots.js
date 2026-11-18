@@ -1,5 +1,5 @@
 /* ---------- the sound layer's slots on the File and Discover cards ----------
- * docs/UI-BUILD-PLAN.md, UI-4. A track may carry `sound` (a SoundVM) and a
+ * docs/archive/UI-BUILD-PLAN.md, UI-4. A track may carry `sound` (a SoundVM) and a
  * suggestion `band` (a BandVM) and `evidence` (an EvidenceVM); the renderers are
  * web/ui/sound.mjs's. Each slot reads its field and draws nothing at all without
  * it — not an empty wrapper, not a space — so a card with no such data is byte

@@ -1,5 +1,5 @@
 // @bundle engine BetterfyDiscover 180
-// Discover by sound (docs/SOUND-EVERYWHERE-PLAN.md, S4).
+// Discover by sound (docs/archive/SOUND-EVERYWHERE-PLAN.md, S4).
 //
 // Two things Discover could not do before:
 //
@@ -20,7 +20,7 @@
 //     screen's neighbour bridge (core/intrinsic/bridge-fetch.mjs) — and keeps
 //     the neighbours that are *not* in your library.
 //
-// Rules (docs/HANDOFF.md §4, SMARTER-GENRES-PLAN §3): everything here is a
+// Rules (docs/archive/HANDOFF.md §4, SMARTER-GENRES-PLAN §3): everything here is a
 // nearest-neighbour lookup or a count over this account's own heard tracks.
 // Nothing is trained, nothing is pooled across accounts, and no Spotify
 // content goes into a model: the audio is Deezer's preview, as for every other

@@ -1,5 +1,5 @@
 /* ---------- Tidy, Playlists and New playlists: the jobs and helpers the screen modules call ----------
- * The screens themselves are web/screens/{tidy,lists,new}.mjs (docs/BUILD-5-PLAN.md A4); what stays
+ * The screens themselves are web/screens/{tidy,lists,new}.mjs (docs/archive/BUILD-5-PLAN.md A4); what stays
  * here is what other files call (emptyState, tagCoverage, playlistMixes) and the long-running
  * state and jobs (sound misfits, playlist profiles, the gaps proposals). Their ctx is SCREEN_CTX in
  * app/screens.js. */
@@ -92,7 +92,7 @@ function playlistMixes() {
  * profile(playlistId) → ProfileVM | null: one playlist's sound profile, from
  * WP-B2's adapter once listening has heard something. With no records it is
  * null, and every row renders exactly as it would with no sound layer at all
- * (docs/UI-BUILD-PLAN.md §3 rule 3). The Listening settings themselves live
+ * (docs/archive/UI-BUILD-PLAN.md §3 rule 3). The Listening settings themselves live
  * on Sources, in the card audioPanelHTML() draws. */
 const LISTS_SOUND = {
   profile: id => {
@@ -238,7 +238,7 @@ async function gapsCompute() {
   store.touch('gaps');
 }
 
-/* ---------- Library: cold start and new genres (docs/BUILD-5-PLAN.md 5.4) ----------
+/* ---------- Library: cold start and new genres (docs/archive/BUILD-5-PLAN.md 5.4) ----------
  * Both read only what every account has. Cold start (no genre playlist at all) groups the library by
  * artist, era and length with proposeBuckets, plus unnamed sound clusters on the intrinsic space when the
  * engine has run. New genres cluster the tracks the calibration is "unsure" about, most listened-to first.

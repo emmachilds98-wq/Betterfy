@@ -1,5 +1,5 @@
 // @bundle screens discover 60
-/* The Discover screen (docs/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
+/* The Discover screen (docs/archive/BUILD-5-PLAN.md A4): view and actions only. Seeds, runs and the by-sound
  * ranking stay classic in web/app/discover-engine.js; ctx comes from SCREEN_CTX.discover. */
 import { radarView, radarActions, radarMount, newReleaseCount } from './radar.mjs';
 

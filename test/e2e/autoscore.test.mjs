@@ -1,4 +1,4 @@
-// Score + Tune by itself (docs/NEXT-WORKPLAN.md package 1) and whole-library
+// Score + Tune by itself (docs/archive/NEXT-WORKPLAN.md package 1) and whole-library
 // listening on a computer (package 6), in a real browser on a fake account.
 // The first check's one-minute wait is shortened for the test
 // (BF_AUTOSCORE_MS); nothing is pressed.
