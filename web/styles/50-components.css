@@ -334,4 +334,3 @@
      section's note: moved out of inline styles (DESIGN-PLAN L7). */
   h2 .mono.h2n{color:var(--ink-3); font-size:14px}
   .rows.newrows{margin-top:10px}
-  .why.untagnote{margin-top:8px}

@@ -70,12 +70,11 @@ function gapsSections(c) {
       <div class="ttl">${esc(s.name)} <span class="tag">${n(s.total)} tracks</span></div>
       <div class="sub">${s.parts.map(x => `${x.rest ? 'the rest of ' : ''}${esc(x.label)} ${n(x.size)} (${Math.round(x.share * 100)}%)`).join(' · ')}.
         ${esc(s.name)} stays as it is.</div>
-    </div><div class="acts"><button class="b sm p" data-act="wizgap" data-wizgap="${i}">Split into playlists…</button> ${s.parts.map((x, k) => made(x.label) ? `<span class="tag ok">${esc(x.label)} created</span>`
-      : `<button class="b sm" data-act="split" data-split="${i}:${k}">Make “${esc(x.label)}” (${n(x.size)})</button>`).join(' ')}</div></div>`).join('');
-  const untagged = GAPS.untagged ? `<p class="why untagnote">${n(GAPS.untagged)} of the ${n(GAPS.homeless)} tracks
-      outside your genre playlists have no genre in their artists' tags, so they can't be placed in one here.
-      The groups at the bottom are where those turn up.</p>` : '';
-  return { card: '', untagged, sections: [
+    </div><div class="acts"><button class="b sm p" data-act="wizgap" data-wizgap="${i}">Split into playlists…</button>${
+      /* One way in (§7.7 C6, provisional): the per-part "Make X" went; Split… previews every part. */
+      s.parts.filter(x => made(x.label)).map(x => ` <span class="tag ok">${esc(x.label)} created</span>`).join('')}</div></div>`).join('');
+  // The untagged note went (§7.7 C6, provisional): the backlog groups at the bottom are where those tracks show.
+  return { card: '', sections: [
     { title: 'Genres with no playlist', rows: gapRows,
       why: `Music you've liked or filed somewhere else, in a genre none of your genre playlists is for.
       Genres nothing covers come first, then ones a broader playlist could take; what you're playing at the
@@ -175,8 +174,8 @@ export function view(c) {
     ? `<div class="es-phone">${emptyState('Nothing to propose yet', 'No genre without a playlist, no playlist that is really two genres, and no group in your backlog yet: ideas show up here as your library grows.')}</div>`
     : emptyState('Nothing else to propose', empty.map(x => `<strong>${esc(x.title)}:</strong> ${esc(x.none)}.`).join(' '), { compact: true });
   return `${head}
-    ${g.card}${full.map(x => sec(x) + (x === g.sections[0] ? g.untagged ?? '' : '')).join('')}
-    ${g.sections[0]?.rows ? '' : g.untagged ?? ''}${sound}${none}`;
+    ${g.card}${full.map(sec).join('')}
+    ${sound}${none}`;
 }
 
 
@@ -195,15 +194,6 @@ export const actions = {
   wizgap(c, el) {
     const s = c.GAPS.splits?.[+el.dataset.wizgap];
     if (s) c.mergeSplitOpen({ kind: 'split', id: s.playlistId, src: 'tags' });
-  },
-
-  /** Make one half of a playlist that is two genres. */
-  async split(c, el) {
-    const [i, k] = el.dataset.split.split(':').map(Number);
-    const part = c.GAPS.splits?.[i]?.parts?.[k];
-    if (!part) return;
-    el.disabled = true;
-    try { await c.gapsCreate(part.label, part.ids); } catch (err) { el.disabled = false; c.toast('Failed: ' + err.message); }
   },
 
   /** By sound: a hybrid playlist. */
