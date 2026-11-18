@@ -52,6 +52,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_teach', name:'"Help it learn" check', group:'Your library', why:'This account\'s own teach-queue measurement from the last Score run (the engine\'s score on your filed tracks before and after 20 simulated answers), which decides whether File shows the teach questions.' },
   { where:'local', key:'bf_tidy_sprint', name:'Tidy sprints', group:'Your library', why:'Your last 20 Tidy sprints: how many tracks you decided, how fast, and how many moves you kept. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_hidden_auto', name:'Hard to find\'s background check', group:'Your library', why:'When Tidy last checked a batch of your songs against Spotify search by itself, so it does that at most once a day.' },
+  { where:'local', key:'bf_name_skip', name:'Name suggestions set aside', group:'Your library', why:'Playlists whose "Names that could say more" suggestion you tapped Not now on, with the name they had then, so it is not offered again until that name changes. Kept here and never sent.' },
   { where:'local', key:'bf_mergesplit', name:'Merge and split offers', group:'Your library', why:'Which merge and split offers (twin playlists, playlists that are two genres) were shown, dismissed or made, and when. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_onb_done', name:'First steps done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 

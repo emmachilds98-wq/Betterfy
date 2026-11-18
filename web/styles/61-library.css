@@ -75,3 +75,10 @@
 .scorecard h2{margin:0 0 2px; font-size:1rem}
 .scorecard .plmeta{margin:0}
 .scorecard-b{display:flex; gap:8px; flex-wrap:wrap}
+
+/* Names that say what a playlist holds (core/playlists/describe.mjs): suggestion chips over the rename field. */
+  .plnamechips{flex-wrap:wrap; gap:8px; margin:0 0 8px}
+  .plnamechips .chip{max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .plname-f input{flex:1; min-width:0}
+  .plname-why:empty{display:none}
+  .plname-to{color:var(--ink); font-weight:600}

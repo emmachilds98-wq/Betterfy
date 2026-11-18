@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1846">
+<meta name="bf-build" content="2026-11-18-1911">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1071,6 +1071,13 @@ main:focus{outline:none}
 .scorecard h2{margin:0 0 2px; font-size:1rem}
 .scorecard .plmeta{margin:0}
 .scorecard-b{display:flex; gap:8px; flex-wrap:wrap}
+
+/* Names that say what a playlist holds (core/playlists/describe.mjs): suggestion chips over the rename field. */
+  .plnamechips{flex-wrap:wrap; gap:8px; margin:0 0 8px}
+  .plnamechips .chip{max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .plname-f input{flex:1; min-width:0}
+  .plname-why:empty{display:none}
+  .plname-to{color:var(--ink); font-weight:600}
 /* Playlists (axes table) and Sources — UI-3, docs/archive/UI-BUILD-PLAN.md §6. */
   [data-v="sources"]{--vc:var(--m1); --vc-ink:var(--m1-ink)}
 
@@ -2064,7 +2071,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1846</span>
+    <span class="mono">build 2026-11-18-1911</span>
   </p>
 
   <div class="feat">
@@ -2157,7 +2164,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1846</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1911</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2235,7 +2242,7 @@ main:focus{outline:none}
         <button class="uhhead" type="button" id="uh-about-h" data-uhtoggle="about" aria-expanded="false" aria-controls="uh-about-b">
           <span class="uht"><b>About &amp; updates</b><span class="uhs"></span></span><span class="chev" aria-hidden="true"></span></button>
         <div class="uhbody" id="uh-about-b" role="region" aria-labelledby="uh-about-h" hidden>
-          <p class="hint">Betterfy, build 2026-11-18-1846. <span id="sheetWho" class="mono"></span></p>
+          <p class="hint">Betterfy, build 2026-11-18-1911. <span id="sheetWho" class="mono"></span></p>
           <div class="rowbtns"><button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button></div>
           <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, which read as "get the latest
                Betterfy". It is not: it re-reads every playlist from Spotify, hundreds of calls against a
@@ -5849,9 +5856,10 @@ function view({ S, esc, isUndone, emptyState, infoBtn }) {
   }
   const undone = `<span class="sub">Undone</span>`;
   const one = x => `<div class="row" data-flip data-key="${esc(`h:${x.at}:${x.op}:${x.playlistId ?? ''}`)}"><div class="main">
-      <div class="ttl">${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span></div>
-      <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))} · ${(x.trackIds??[]).length} track(s)${x.reason?' · '+esc(x.reason):''}</div>
-    </div><div class="acts">${['remove','add','unlike','like'].includes(x.op) ? (isUndone(x, h) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(x.at)}">Undo</button>`) : ''}</div></div>`;
+      <div class="ttl">${x.op === 'rename' ? `Renamed <span class="sub">${esc(x.from ?? '')} → ${esc(x.to ?? x.playlistName ?? '')}</span>`
+        : `${esc(x.op)} <span class="sub">${esc(x.playlistName ?? '')}</span>`}</div>
+      <div class="sub mono">${esc(x.at.replace('T',' ').slice(0,19))}${x.op === 'rename' ? '' : ` · ${(x.trackIds??[]).length} track(s)`}${x.reason && x.op !== 'rename' ?' · '+esc(x.reason):''}</div>
+    </div><div class="acts">${['remove','add','unlike','like','rename'].includes(x.op) ? (isUndone(x, h) ? undone : `<button class="b sm" data-act="undo" data-undo="${esc(x.at)}">Undo</button>`) : ''}</div></div>`;
   const grouped = g => {
     const newest = g[0], oldest = g[g.length - 1];
     const mv = g.find(x => x.move)?.move;
@@ -7094,7 +7102,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1846`,
+    `Betterfy engine score — build 2026-11-18-1911`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -9787,6 +9795,96 @@ function scoreCardHTML(c, now = Date.now()) {
     </section>`;
 }
 
+/* ---------- Names that say what is in a playlist (core/playlists/describe.mjs) ----------
+ * The suggestions are worked out in the lazy engine bundle (it carries the genre
+ * ontology); until it is here nothing is suggested and the sheet still renames by
+ * hand. What each playlist holds is read once per library, tag table and set of
+ * names, and kept; the style is learned from this account's own playlist names. */
+const NAMES = { stamp: null, facts: new Map(), memo: new Map(), style: null, loading: false };
+const NAME_SKIP = 'bf_name_skip';
+
+function nameKit(c) {
+  const D = c.BetterfyDescribe;
+  if (!D) {
+    if (!NAMES.loading && typeof c.engineLoad === 'function') {
+      NAMES.loading = true;
+      Promise.resolve(c.engineLoad()).then(() => c.store?.touch?.('ui.lists'), () => {});
+    }
+    return null;
+  }
+  const pls = (c.LIB?.playlists ?? []).filter(p => p?.id && !c.isMirrorPlaylist?.(p));
+  const tagN = c.TAGS ? Object.keys(c.TAGS).length : 0;
+  const stamp = `${c.LIB?.captured_at}|${tagN}|${pls.map(p => p.id + '\u0001' + p.name).join('\u0002')}`;
+  if (NAMES.stamp !== stamp) {
+    Object.assign(NAMES, { stamp, facts: new Map(), memo: new Map(), style: D.nameStyle(pls.map(p => p.name)) });
+  }
+  const factsOf = p => {
+    if (!NAMES.facts.has(p.id)) NAMES.facts.set(p.id, D.describeTracks(p, id => c.TAGS?.[id]?.tags, { memo: NAMES.memo }));
+    return NAMES.facts.get(p.id);
+  };
+  return { D, style: NAMES.style, factsOf, pls };
+}
+
+function nameSkips(c) { try { return JSON.parse(c.LS?.getItem?.(NAME_SKIP) || '{}') ?? {}; } catch { return {}; } }
+
+/** Library's "Names that could say more": vague names and names that say another genre, three at most. */
+function namesListHTML(c) {
+  const kit = nameKit(c);
+  if (!kit) return '';
+  const { esc } = c;
+  const skip = nameSkips(c);
+  const rows = kit.D.namesToImprove(kit.pls, kit.factsOf, { soundOf: p => c.LISTS_SOUND?.profile?.(p.id) ?? null,
+    style: kit.style, skip: p => skip[p.id] === p.name });
+  if (!rows.length) return '';
+  return `<section class="plsugg plnames" aria-labelledby="plname-h">
+      <div class="plsugg-head"><h2 id="plname-h">Names that could say more</h2></div>
+      <p class="hint">Suggested from the music in each, written the way you name playlists. Tap one for other names; undo from History.</p>
+      <div class="plrows">${rows.slice(0, 3).map(r => `<div class="plline"><button class="plrow" type="button" data-act="plopen" data-pl="${esc(r.id)}" aria-haspopup="dialog">
+        <span class="plmain"><span class="ttl">${esc(r.name)}</span>
+          <span class="plmeta"><span class="plname-to">→ ${esc(r.best.name)}</span>${r.vague ? '' : ` · ${esc(r.why)}`}</span></span></button>
+        <span class="placts"><button class="b sm p" type="button" data-act="lrename" data-pl="${esc(r.id)}" data-name="${esc(r.best.name)}"
+          aria-label="${esc(`Rename ${r.name} to ${r.best.name}`)}">Rename</button>
+        <button class="b sm" type="button" data-act="lnameskip" data-pl="${esc(r.id)}">Not now</button></span></div>`).join('')}</div>
+    </section>`;
+}
+
+/** The sheet's Name section: suggestions as chips, and a field to rename it by hand. */
+function nameSheetHTML(c, id, pl) {
+  const { esc } = c;
+  if (c.isMirrorPlaylist?.(pl)) return '';
+  const kit = nameKit(c);
+  const s = kit ? kit.D.suggestNames(pl.name, kit.factsOf(pl), c.LISTS_SOUND?.profile?.(id) ?? null, kit.style) : null;
+  const said = !s ? '' : s.misleading ? `${s.misleading}.`
+    : s.vague && s.names.length ? 'Its name doesn’t say what’s in it yet.'
+    : s.fits ? 'Its name already says what’s in it; these add a little more.'
+    : s.names.length ? 'Your name stays first; these add what’s in it.' : '';
+  const chips = s?.names?.length ? `<div class="rowbtns plnamechips">${s.names.map(n =>
+    `<button class="chip" type="button" data-act="lnamepick" data-name="${esc(n.name)}" data-why="${esc(n.why)}" title="${esc(n.why)}">${esc(n.name)}</button>`).join('')}</div>` : '';
+  return `<section class="pls-sec plnamesec"><h3>Name</h3>
+      ${said ? `<p class="hint">${esc(said)}</p>` : ''}${chips}
+      <p class="hint plname-why" id="plname-why" aria-live="polite"></p>
+      <label class="pls-f plname-f"><input id="plname-in" value="${esc(pl.name)}" maxlength="100" aria-label="New name for ${esc(pl.name)}"></label>
+      <div class="rowbtns"><button class="b sm p" type="button" data-act="lrename" data-pl="${esc(id)}" data-from="input">Rename</button></div>
+      <p class="hint">${s?.names?.length ? 'Suggested from its artists’ tags, release years and, once heard, how it sounds. ' : ''}Renames it in Spotify too; undo from History.</p></section>`;
+}
+
+/** Rename, then say so with an Undo. */
+async function renameNow(c, id, name, el) {
+  const to = String(name ?? '').trim();
+  const from = c.LIB?.playlists?.find(x => x.id === id)?.name ?? c.CFG?.[id]?.name ?? '';
+  if (!to) return c.toast('A playlist needs a name.');
+  if (to === from) return c.toast('That is its name already.');
+  if (el) el.disabled = true;
+  try {
+    const at = await c.renamePlaylist(id, to);
+    c.render();
+    c.toast(`Renamed “${from}” to “${to}”.`, at ? async () => { await c.undoAction(at); c.render(); } : null);
+  } catch (err) {
+    if (el) el.disabled = false;
+    c.toast('Rename failed: ' + (err?.message ?? err));
+  }
+}
+
 /** Everything the rows and the sheet need to know about one playlist, in one place. */
 function plInfo(c, p, splitIds, undecidedIds, waiting = null) {
   const { R, LISTS_SOUND } = c;
@@ -9856,6 +9954,7 @@ function sheetHTML(c, id) {
       <label class="pls-f"><input type="checkbox" data-act="target" data-tg="${esc(id)}" ${p.target ? 'checked' : ''} ${few ? 'disabled title="too few tracks to learn from"' : ''}>
         Suggest new tracks for it</label></section>
     ${prof ? `<section class="pls-sec"><h3>Sound</h3>${prof}</section>` : ''}
+    ${nameSheetHTML(c, id, pl)}
     ${twoGenresHTML(c, id, split, tagSplit, !!(split ? made || ms.made[splitKey] : ms.made[splitKey]), notNow(splitKey))}
     ${weakSheetHTML(c, id)}
     ${fillHTML(c, id, pl)}
@@ -10264,7 +10363,7 @@ function view(c) {
       <button class="b sm" data-act="lshufall">Shuffle everything</button></span></p>`;
   return `<h1>Library</h1>
     <p class="lede">${needN ? `${needN} playlist${needN === 1 ? '' : 's'} could use a look, listed first. ` : ''}Tap a playlist for its health, sound and shuffle.</p>
-    ${scoreCardHTML(c)}${ticksHTML}${twinsHTML}${weakListHTML(c)}${suggHTML}
+    ${scoreCardHTML(c)}${ticksHTML}${twinsHTML}${weakListHTML(c)}${namesListHTML(c)}${suggHTML}
     <div class="plrows">${rows.map(p => plRowHTML(c, p, infos.get(p.id), undecidedIds.has(p.id))).join('')}</div>
     ${c.soundSearchHTML?.() ?? ''}${footHTML}`;
 }
@@ -10342,6 +10441,26 @@ const actions = {
   fillcheck(c) { return fillCheck(c); },
   fillretry(c, el) { FILL.delete(el.dataset.pl); c.render(); },
 
+  /** Rename: a "Names that could say more" row's suggestion, or the sheet's field. */
+  lrename(c, el) {
+    const name = el.dataset.from === 'input' ? c.$?.('#plname-in')?.value : el.dataset.name;
+    return renameNow(c, el.dataset.pl, name, el);
+  },
+  /** A suggested name tapped in the sheet: into the field, with why, to edit or keep. */
+  lnamepick(c, el) {
+    const box = c.$?.('#plname-in');
+    if (box) { box.value = el.dataset.name; box.focus?.(); }
+    const why = c.$?.('#plname-why');
+    if (why) why.textContent = el.dataset.why ? `Why: ${el.dataset.why}.` : '';
+  },
+  /** "Not now" on a name row: not offered again until the playlist's name changes. */
+  lnameskip(c, el) {
+    const skip = nameSkips(c), id = el.dataset.pl;
+    skip[id] = c.LIB?.playlists?.find(x => x.id === id)?.name ?? '';
+    try { c.LS.setItem(NAME_SKIP, JSON.stringify(skip)); } catch { /* private mode: this session only */ }
+    c.render();
+  },
+
   /** Axis edit: per-viewer, persisted on this device. */
   axis(c, el) { return setAxis(c, el.dataset.ax, el, null); },
   /** Receives-suggestions tick. */
@@ -10383,7 +10502,7 @@ function plShuffle(c, id, mode) {
   c.closePlSheet();
   c.go('shuffle');
 }
-return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, waitingCounts, rowFacts, attentionOrder, ROW_SCORE_BELOW, tidyFor, fileFirst, knowsYouLine, scoreCardHTML, sheetHTML, twoGenresHTML, weakRows, weakSheetHTML, weakListHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
+return { suggestionsOf, repeatCount, staleDays, twinsOf, playlistHealth, genreTickSuggestions, coldStartOffers, newGenreOffers, sparkHTML, waitingCounts, rowFacts, attentionOrder, ROW_SCORE_BELOW, tidyFor, fileFirst, knowsYouLine, scoreCardHTML, namesListHTML, nameSheetHTML, sheetHTML, twoGenresHTML, weakRows, weakSheetHTML, weakListHTML, FILL_BAR, FILL_SHOW, fillGateOf, fillHTML, wizardOpen, view, actions };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -11498,7 +11617,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1846';
+const BUILD = '2026-11-18-1911';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11836,7 +11955,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1846', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1911', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12204,7 +12323,9 @@ async function syncLibrary(force, onProgress, onPartial) {
   for (const [i, p] of owned.entries()) {
     onProgress?.(p.name, i / (owned.length + 1));
     const kept = banked[PART(p.id)]?.playlist ?? held[p.id];
-    if (kept?.snapshot_id === p.snapshot_id) { playlists.push(kept); continue; }
+    // A rename leaves the tracks (and so, it may be, the snapshot) as they were:
+    // the name is always Spotify's own, never the one banked with the tracks.
+    if (kept?.snapshot_id === p.snapshot_id) { playlists.push(kept.name === p.name ? kept : { ...kept, name: p.name }); continue; }
     let items = null;
     try {
       items = await paged(`/playlists/${p.id}/items?limit=100&fields=${encodeURIComponent(FIELDS)}`);
@@ -12657,7 +12778,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1846');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1911');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -12869,7 +12990,33 @@ async function undoStep(e) {
     await libraryCall('PUT', e.trackIds);
   } else if (e.op === 'like') {
     await libraryCall('DELETE', e.trackIds);
+  } else if (e.op === 'rename') {
+    await setPlaylistName(e.playlistId, e.from);
   } else throw new Error(`Cannot undo "${e.op}"`);
+}
+
+/**
+ * Rename one of your playlists (Library's "Name" section): on Spotify, in the
+ * library this page holds, and in History, where Undo puts the old name back.
+ * Returns the History entry's `at`, or null when the name did not change.
+ */
+async function renamePlaylist(id, name, { reason = 'renamed' } = {}) {
+  const to = String(name ?? '').trim().slice(0, 100);
+  const p = LIB?.playlists?.find(x => x.id === id);
+  if (!p) throw new Error('Not one of your playlists');
+  if (!to) throw new Error('A playlist needs a name');
+  const from = p.name;
+  if (to === from) return null;
+  await setPlaylistName(id, to);
+  return logAction({ op:'rename', playlistId:id, playlistName:to, from, to, trackIds:[], reason });
+}
+/** PUT /playlists/{id} with a new name, then the same name here: the held library and the playlist's settings. */
+async function setPlaylistName(id, name) {
+  await sp(`/playlists/${id}`, { method:'PUT', body:JSON.stringify({ name }) });
+  const p = LIB?.playlists?.find(x => x.id === id);
+  if (p) p.name = name;
+  if (typeof CFG !== 'undefined' && CFG?.[id]) CFG[id].name = name;
+  try { if (LIB) await idb.set('library', LIB); } catch { /* kept for this session; the next read has it */ }
 }
 
 /**
@@ -16438,7 +16585,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1846';
+    s.src = 'engine.js?v=2026-11-18-1911';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -16460,7 +16607,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1846');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1911');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -17206,7 +17353,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1846';
+    s.src = 'audio.js?v=2026-11-18-1911';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -17260,7 +17407,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1846', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1911', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -18609,7 +18756,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1846', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1911', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -19314,6 +19461,9 @@ SCREEN_CTX.lists = () => ({
   TAGS, addTracks, logAction, undoAction, newGroup, engineLoad,
   engineAudio: () => (typeof engineAudio === 'function' ? engineAudio() : null),
   get BetterfyFill() { return globalThis.BetterfyFill; },
+  // Names that say what a playlist holds (core/playlists/describe.mjs, in the lazy engine), and the rename itself.
+  get BetterfyDescribe() { return globalThis.BetterfyDescribe; },
+  renamePlaylist: (id, name, o) => renamePlaylist(id, name, o),
   // A3: the same measure the background tick takes (app/autoscore.js), and whether it is running now.
   fillMeasure: typeof fillMeasureNow === 'function' ? fillMeasureNow : undefined,
   fillAutoRunning: () => typeof AUTOFILL !== 'undefined' && AUTOFILL.running,
@@ -19442,6 +19592,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_teach', name:'"Help it learn" check', group:'Your library', why:'This account\'s own teach-queue measurement from the last Score run (the engine\'s score on your filed tracks before and after 20 simulated answers), which decides whether File shows the teach questions.' },
   { where:'local', key:'bf_tidy_sprint', name:'Tidy sprints', group:'Your library', why:'Your last 20 Tidy sprints: how many tracks you decided, how fast, and how many moves you kept. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_hidden_auto', name:'Hard to find\'s background check', group:'Your library', why:'When Tidy last checked a batch of your songs against Spotify search by itself, so it does that at most once a day.' },
+  { where:'local', key:'bf_name_skip', name:'Name suggestions set aside', group:'Your library', why:'Playlists whose "Names that could say more" suggestion you tapped Not now on, with the name they had then, so it is not offered again until that name changes. Kept here and never sent.' },
   { where:'local', key:'bf_mergesplit', name:'Merge and split offers', group:'Your library', why:'Which merge and split offers (twin playlists, playlists that are two genres) were shown, dismissed or made, and when. Counts only, kept here and never sent.' },
   { where:'local', key:'bf_onb_done', name:'First steps done', group:'Your library', why:'That you have finished the first-run steps on File.' },
 

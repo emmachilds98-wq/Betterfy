@@ -79,7 +79,33 @@ async function undoStep(e) {
     await libraryCall('PUT', e.trackIds);
   } else if (e.op === 'like') {
     await libraryCall('DELETE', e.trackIds);
+  } else if (e.op === 'rename') {
+    await setPlaylistName(e.playlistId, e.from);
   } else throw new Error(`Cannot undo "${e.op}"`);
+}
+
+/**
+ * Rename one of your playlists (Library's "Name" section): on Spotify, in the
+ * library this page holds, and in History, where Undo puts the old name back.
+ * Returns the History entry's `at`, or null when the name did not change.
+ */
+async function renamePlaylist(id, name, { reason = 'renamed' } = {}) {
+  const to = String(name ?? '').trim().slice(0, 100);
+  const p = LIB?.playlists?.find(x => x.id === id);
+  if (!p) throw new Error('Not one of your playlists');
+  if (!to) throw new Error('A playlist needs a name');
+  const from = p.name;
+  if (to === from) return null;
+  await setPlaylistName(id, to);
+  return logAction({ op:'rename', playlistId:id, playlistName:to, from, to, trackIds:[], reason });
+}
+/** PUT /playlists/{id} with a new name, then the same name here: the held library and the playlist's settings. */
+async function setPlaylistName(id, name) {
+  await sp(`/playlists/${id}`, { method:'PUT', body:JSON.stringify({ name }) });
+  const p = LIB?.playlists?.find(x => x.id === id);
+  if (p) p.name = name;
+  if (typeof CFG !== 'undefined' && CFG?.[id]) CFG[id].name = name;
+  try { if (LIB) await idb.set('library', LIB); } catch { /* kept for this session; the next read has it */ }
 }
 
 /**
