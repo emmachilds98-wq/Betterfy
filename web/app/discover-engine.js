@@ -142,18 +142,59 @@ function discBoostLiked(weights, liked) {
 const DISC_AUTO_KEY = 'bf_disc_auto';
 const DISC_PICKS_KEY = 'disc:picks';
 const DISC_DAY_MS = 24 * 3600 * 1000;
-let DISC_QUIET = false, DISC_BUSY = false, DISC_RESTORED = null;
+let DISC_QUIET = false, DISC_BUSY = false, DISC_RESTORED = null, DISC_SAVED_AT = 0, DISC_TOPUP_AT = 0;
+const DISC_LOW = 3, DISC_STALE_MS = 12 * 3600 * 1000, DISC_TOPUP_GAP_MS = 30 * 60 * 1000;
 const discStage = (msg, pct) => { if (!DISC_QUIET) stage(msg, pct); };
 const discBusy = () => DISC_BUSY;
 
-/** Picks still worth showing: not a track you now own, not by an artist you passed on. */
-function discStillNew(picks) {
-  const have = new Set();
-  for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) if (t?.id) have.add(t.id);
-  for (const t of LIB?.liked ?? []) if (t?.id) have.add(t.id);
-  const pass = new Set(discMemory().pass);
-  return (picks ?? []).filter(o => o?.id && !have.has(o.id) && !pass.has(norm(o.artist ?? '')));
+/* Track ids this account added through any History entry (Discover, File, Tidy, undo-able runs): a
+ * song added yesterday must not come back as a "new" pick even when the library in memory is a
+ * cached copy from before the add, or holds it under a relinked id. Undone entries do not count. */
+let DISC_LOGGED = new Set();
+async function discLoadLogged() {
+  try {
+    if (typeof getLog !== 'function') return DISC_LOGGED;
+    const log = (await getLog({ all: true })) ?? [];
+    const ids = new Set();
+    for (const x of log) {
+      if (x?.op !== 'add' && x?.op !== 'add-liked') continue;
+      if (x.undoneAt || log.some(u => u.op === 'undo' && u.of === x.at)) continue;
+      for (const id of x.trackIds ?? []) ids.add(id);
+    }
+    DISC_LOGGED = ids;
+  } catch { /* keep what we had */ }
+  return DISC_LOGGED;
 }
+/** The same artist|title key discRun's ownedTrack uses. */
+const discKey = (artist, title) => norm(artist ?? '') + '|' + norm(title ?? '');
+
+/** Picks still worth showing: not owned (by id or by artist|title), not added through History, not by an artist you passed on. */
+function discStillNew(picks, logged = DISC_LOGGED) {
+  const have = new Set(logged), keys = new Set();
+  const own = t => { if (t?.id) have.add(t.id);
+    if (t?.name) keys.add(discKey(t.artists?.[0]?.name, t.name)); };
+  for (const p of LIB?.playlists ?? []) for (const t of p.tracks ?? []) own(t);
+  for (const t of LIB?.liked ?? []) own(t);
+  const pass = new Set(discMemory().pass);
+  return (picks ?? []).filter(o => o?.id && !have.has(o.id) && !keys.has(discKey(o.artist ?? o.artists?.[0]?.name, o.track))
+    && !pass.has(norm(o.artist ?? '')));
+}
+
+/** Drop what is no longer new from the deck on screen, keeping the card you are looking at where it is. */
+async function discRefilter() {
+  if (!(S.discover ?? []).length) return false;
+  await discLoadLogged();
+  const d = S.discover ?? [], curId = d[Math.min(S.discAt ?? 0, d.length - 1)]?.id;
+  const next = discStillNew(d);
+  if (next.length === d.length) return false;
+  const at = next.findIndex(o => o.id === curId);
+  S.discover = next;
+  S.discAt = at >= 0 ? at : Math.max(0, Math.min(S.discAt ?? 0, next.length - 1));
+  discSave(); store.touch('ui.discover');
+  return true;
+}
+// A finished library read (the incremental sync, a refresh) can show that a pick is already yours.
+if (typeof store !== 'undefined' && typeof store.on === 'function') store.on('lib', () => { discRefilter(); });
 
 /** Once per page: the last picks, back on Discover when nothing newer is there. */
 function discRestore() {
@@ -161,7 +202,10 @@ function discRestore() {
     try {
       const saved = await idb.get(DISC_PICKS_KEY);
       if (!saved?.picks?.length || (S.discover ?? []).length || DISC_BUSY) return false;
+      await discLoadLogged();
+      if ((S.discover ?? []).length || DISC_BUSY) return false;
       const picks = discStillNew(saved.picks);
+      DISC_SAVED_AT = +saved.at || 0;
       if (!picks.length) return false;
       S.discover = picks; S.discAt = 0; S.discoverFrom = saved.from ?? 'everything you listen to';
       store.touch('ui.discover');
@@ -172,6 +216,7 @@ function discRestore() {
 
 /** Keep the picks on this device (Settings › Your data lists the key). */
 function discSave() {
+  DISC_SAVED_AT = Date.now();
   try { fire(idb.set(DISC_PICKS_KEY, { at: Date.now(), from: S.discoverFrom, picks: S.discover ?? [] })); } catch { /* no storage */ }
 }
 
@@ -182,20 +227,40 @@ async function discAuto({ now = Date.now() } = {}) {
   if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
   let last = 0;
   try { last = +LS.getItem(DISC_AUTO_KEY) || 0; } catch { /* private mode */ }
-  if (now - last < DISC_DAY_MS) return false;
+  if (now - last < DISC_DAY_MS) {
+    // Between the daily runs: top up a deck that is nearly out, or whose picks are half a day old.
+    const d = S.discover ?? [];
+    if (d.length <= DISC_LOW || (d.length && DISC_SAVED_AT && now - DISC_SAVED_AT > DISC_STALE_MS)) return discTopUp({ now });
+    return false;
+  }
   try { LS.setItem(DISC_AUTO_KEY, String(now)); } catch { /* private mode */ }
   return runDiscovery(null, { quiet: true });
 }
 
-async function runDiscovery(seedPlaylistId, { quiet = false } = {}) {
+/** A quiet run whose picks go on the end of the deck: never moves the card you are on, never repeats one. */
+async function discTopUp({ now = Date.now() } = {}) {
+  if (!LIB || DISC_BUSY) return false;
+  if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
+  if (now - DISC_TOPUP_AT < DISC_TOPUP_GAP_MS) return false;
+  DISC_TOPUP_AT = now;
+  return runDiscovery(null, { quiet: true, append: true });
+}
+
+/** After a pick leaves the deck (added or passed): keep it on this device, and refill when it runs low. */
+function discAfterChange() {
+  discSave();
+  if ((S.discover ?? []).length <= DISC_LOW) discTopUp();
+}
+
+async function runDiscovery(seedPlaylistId, { quiet = false, append = false } = {}) {
   if (DISC_BUSY) return false;
   DISC_BUSY = true; DISC_QUIET = quiet;
   if (quiet) store.touch('ui.discover');
-  try { return await discRun(seedPlaylistId, quiet); }
+  try { return await discRun(seedPlaylistId, quiet, append); }
   finally { DISC_BUSY = false; DISC_QUIET = false; store.touch('ui.discover'); }
 }
 
-async function discRun(seedPlaylistId, quiet) {
+async function discRun(seedPlaylistId, quiet, append = false) {
   // No key is not a dead end any more (CLAUDE.md: every account, Spotify
   // library alone): without one, the candidates come from Deezer's and
   // ListenBrainz's "fans also like" for the artists you play.
@@ -206,6 +271,10 @@ async function discRun(seedPlaylistId, quiet) {
                      if (t?.name) ownedTrack.add(norm(t.artists?.[0]?.name ?? '') + '|' + norm(t.name)); };
   for (const p of LIB.playlists) p.tracks.forEach(own);
   LIB.liked.forEach(own);
+
+  // A top-up also skips what the deck already shows, by artist and by song.
+  if (append) for (const o of S.discover ?? []) { ownedArtist.add(norm(o.artist ?? '')); ownedTrack.add(discKey(o.artist, o.track)); }
+  await discLoadLogged();
 
   // Artists you passed on are treated as owned: the same hard filter, so nothing downstream offers them.
   const mem = discMemory();
@@ -257,7 +326,14 @@ async function discRun(seedPlaylistId, quiet) {
     o.tags = topTags(o, discTags, R.idf);
     o.thinData = isThinSignal(o, discTags);
   }
-  S.discover = out.filter(o => o.id);
+  if (append) {
+    const d = S.discover ?? [], seen = new Set(d.map(o => o.id));
+    const add = discStillNew(out.filter(o => o.id && !seen.has(o.id)));
+    S.discover = [...d, ...add];     // on the end: the card you are on and its index stay put
+    discSave();
+    return add.length > 0;
+  }
+  S.discover = discStillNew(out.filter(o => o.id));
   S.discAt = 0;
   S.discoverFrom = src?.name ?? 'everything you listen to';
   S.discSound = null;
