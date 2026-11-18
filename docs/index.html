@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-1155">
+<meta name="bf-build" content="2026-11-18-1414">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1977,7 +1977,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-1155</span>
+    <span class="mono">build 2026-11-18-1414</span>
   </p>
 
   <div class="feat">
@@ -2070,7 +2070,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1155</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-1414</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2180,7 +2180,7 @@ main:focus{outline:none}
     </section>
     <section id="aboutSection">
       <h3>About</h3>
-      <p class="hint">Betterfy, build 2026-11-18-1155. <span id="sheetWho" class="mono"></span><br>
+      <p class="hint">Betterfy, build 2026-11-18-1414. <span id="sheetWho" class="mono"></span><br>
         <a href="https://developer.spotify.com/documentation/web-api" target="_blank" rel="noopener">Spotify</a> for your library ·
         genre tags from <a href="https://www.last.fm/api" target="_blank" rel="noopener">Last.fm</a> (and what Listening hears) ·
         <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a> ·
@@ -5096,12 +5096,13 @@ function probeHTML(R, esc) {
   if (P.err) return `<div class="rr-probe"><p class="why">The check couldn’t run: ${esc(P.err)}</p>${btn}</div>`;
   const v = P.verdict ?? { ok: false, missing: [] };
   const line = v.ok ? '<b>Works.</b> Spotify answers everything the radar needs on this account.'
-    : '<b>Spotify isn’t sharing new releases with this account.</b>';
-  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p>${line}</p>
+    : '<b>Spotify isn’t sharing new releases with this account right now.</b>';
+  // Refused: Check again sits by the line, since it is the way back (BUILD-7 R1 holds the sync).
+  return `<div class="rr-probe${v.ok ? ' ok' : ' warn'}" role="status"><p>${line}</p>${v.ok ? '' : `<div class="rowbtns">${btn}</div>`}
     <details class="rr-pdet"><summary>Details</summary>
     ${v.ok ? '' : `<p class="why">Refused: ${v.missing.map(esc).join(', ')}.</p>`}
     <table class="rr-ptab"><tbody>${(P.rows ?? []).map(r => `<tr class="${r.ok ? 'ok' : 'no'}"><td>${esc(r.label)}</td><td class="mono">${esc(r.status)}</td><td>${esc(r.note)}</td></tr>`).join('')}</tbody></table>
-    <div class="rowbtns">${btn}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></details></div>`;
+    <div class="rowbtns">${v.ok ? btn : ''}<button class="b sm" type="button" data-act="rrProbeCopy">Copy the table</button></div></details></div>`;
 }
 
 /** Releases new enough to count on Discover's "New releases" side: the same rule as File's header
@@ -5123,6 +5124,13 @@ function radarView(ctx) {
   const head = `<section class="rr" id="radar" aria-labelledby="rrTitle">
     <h2 id="rrTitle">Release radar${ib('radar', 'Release radar', `<p>New releases by every artist in your playlists, liked songs and listening, newest first, two years back.</p>
       <p>Reissues of records you already own are kept out of the main list (find them under Reissues), and guest spots and remixes sit under Features. Spotify reads one artist at a time, so the first read takes a while; after that only the artists due a check are read again.</p>`)}</h2>`;
+
+  // This account's check found a read the radar needs refused (BUILD-7 R1): the sync is held,
+  // and the section says so in one line, with what was refused behind Details.
+  const held = !R.running && !!rad.held?.();
+  const heldR = held && !(R.probe && (R.probe.running || R.probe.verdict))
+    ? { probe: { rows: R.check?.rows ?? [], verdict: { ok: false, missing: R.check?.missing ?? [] } } } : R;
+  if (held && !(R.rows ?? []).length) return head + probeHTML(heldR, esc) + '</section>';
 
   // Never synced: an explainer, one button, an honest estimate.
   if (!R.index && !R.running && !(R.rows ?? []).length) {
@@ -5181,7 +5189,7 @@ function radarView(ctx) {
   // The features lane is the Features chip only (C5): the fold under All showed the same rows.
   const partial = !st.complete && rows.length ? `<p class="rr-partial">Not the whole radar yet: ${R.running ? 'still reading' : 'some artists are still to be read'}.</p>` : '';
   const count = `<p class="rr-count vh" aria-live="polite">${rows.length.toLocaleString('en-GB')} release${rows.length === 1 ? '' : 's'}</p>`;
-  return head + status + (R.probe || (R.err && !R.running) ? probeHTML(R, esc) : '') + chips + search + count + partial + feed + '</section>';
+  return head + status + (held || R.probe || (R.err && !R.running) ? probeHTML(heldR, esc) : '') + chips + search + count + partial + feed + '</section>';
 }
 
 const radarActions = {
@@ -6733,7 +6741,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock }, lo
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-1155`,
+    `Betterfy engine score — build 2026-11-18-1414`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -8712,13 +8720,18 @@ function helperRows(s = {}) {
   const rr = s.radar;
   if (rr) {
     const rOff = !!rr.off, rErr = !rOff && !rr.running && rr.err;
-    rows.push({ id: 'radar', name: 'Release radar', on: !rOff, kind: rOff ? 'off' : rErr ? 'warn' : rr.at || rr.running ? 'ok' : 'idle',
+    // The account check (BUILD-7 R1) runs by itself once per account per build; its answer shows here.
+    const ck = rr.check, refused = !!ck && !ck.ok;
+    const ckWords = !ck ? ' Spotify’s answer is checked by itself the first time it runs.'
+      : ck.ok ? ` Checked on this account${ck.ago ? ` ${ck.ago}` : ''}: Spotify answers everything it needs.`
+      : ` Checked on this account${ck.ago ? ` ${ck.ago}` : ''}: Spotify refused ${(ck.missing ?? []).join(', ') || 'a read it needs'}, so it waits and checks again with the next update.`;
+    rows.push({ id: 'radar', name: 'New releases (Radar)', on: !rOff, kind: rOff ? 'off' : refused || rErr ? 'warn' : rr.at || rr.running ? 'ok' : 'idle',
       status: rOff ? 'Off since Stop' : rr.running ? (rr.total ? `On · reading ${n(rr.done)} of ${n(rr.total)}` : 'On · starting')
-        : rErr ? 'On · stopped' : rr.at ? 'On' : 'On · starts soon',
-      did: rOff ? 'New releases from your artists. Off since you pressed Stop; Start on the radar turns it back on.'
-        : rErr ? `Stopped: ${String(rr.err).replace(/https?:\/\/\S+/g, '').slice(0, 80).trim()}. It tries again next time Betterfy opens.`
+        : refused ? 'On · Spotify isn’t sharing' : rErr ? 'On · stopped' : rr.at ? 'On' : 'On · starts soon',
+      did: (rOff ? 'New releases from your artists. Off since you pressed Stop; Start on the radar turns it back on.'
+        : rErr && !refused ? `Stopped: ${String(rr.err).replace(/https?:\/\/\S+/g, '').slice(0, 80).trim()}. It tries again next time Betterfy opens.`
         : `New releases from the artists in your library, read by itself a while after Betterfy opens${
-            rr.artists ? `; ${n(rr.artists)} artists checked${rr.ago ? `, last ${rr.ago}` : ''}` : ''}.` });
+            rr.artists ? `; ${n(rr.artists)} artists checked${rr.ago ? `, last ${rr.ago}` : ''}` : ''}.`) + ckWords });
   }
   rows.push({ id: 'discogs', name: 'Discogs', on: !!s.discogs, kind: s.discogs ? 'ok' : 'idle', status: s.discogs ? 'On · your token' : 'Optional', optional: true,
     did: 'Release styles for artists nothing else knows. Needs a personal token, so it stays an extra.' });
@@ -10907,7 +10920,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-1155';
+const BUILD = '2026-11-18-1414';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -11245,7 +11258,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-1155', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-18-1414', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -12030,7 +12043,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-1155');
+    const w = new Worker('reports-worker.js?v=2026-11-18-1414');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14145,6 +14158,8 @@ const RADAR_DISMISSED = 'radar:dismissed';
 const RADAR_PREFIX = 'radar:release:';
 const RADAR_ARTIST = 'radar:artist:';
 const RADAR_INDEX = 'radar:index';
+/** The account check's last answer (BUILD-7 R1): { account, build, at, ok, missing, rows }. */
+const RADAR_PROBE = 'radar:probe';
 
 /** Read the stored radar once per session (and again after a sync), with no request. */
 function radarLoad(force = false) {
@@ -14153,6 +14168,7 @@ function radarLoad(force = false) {
     try {
       RADAR.index = (await idb.get(RADAR_INDEX)) ?? null;
       RADAR.dismissed = new Set((await idb.get(RADAR_DISMISSED)) ?? []);
+      RADAR.check = (await idb.get(RADAR_PROBE)) ?? null;
       const keys = ((await idb.keys()) ?? []).filter(k => typeof k === 'string' && k.startsWith(RADAR_PREFIX));
       for (const k of keys) {
         const r = await idb.get(k);
@@ -14257,6 +14273,12 @@ const radarAutoOff = () => { try { return LS.getItem(RADAR_OFF_KEY) === 'off'; }
 async function radarGo({ byHand = false } = {}) {
   if (RADAR.running || !LIB) return false;
   if (byHand) { try { LS.removeItem(RADAR_OFF_KEY); } catch { /* private mode */ } }
+  // A refused route holds the sync (R1). By hand, check again first: Spotify may answer now.
+  if (radarHeld()) {
+    if (!byHand) return false;
+    await radarProbe();
+    if (radarHeld()) return false;
+  }
   await radarStart();
   return true;
 }
@@ -14267,15 +14289,49 @@ async function radarAuto({ delay = RADAR_AUTO_DELAY_MS } = {}) {
   if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
   if (delay) await new Promise(r => setTimeout(r, delay));
   if (radarAutoOff() || RADAR.running) return false;
+  // The account check first, once per account per build; a refused route stops here.
+  await radarProbeAuto();
   return radarGo();
+}
+
+/* ---------- the account check runs by itself (BUILD-7 R1) ----------
+ * Once per account per build, without a button: on the first Discover visit, or
+ * just before the automatic start if Discover is never opened. Seven paced reads
+ * through sp(), only while the page is visible, never on Data Saver. The answer
+ * is kept in IndexedDB radar:probe and shown in Settings. */
+const radarAccount = () => LIB?.user?.id ?? null;
+/** True when this account's kept answer says a read the radar needs is refused. */
+const radarHeld = () => !!RADAR.check && RADAR.check.ok === false && !!radarAccount() && RADAR.check.account === radarAccount();
+
+let radarProbeAutoRun = null;
+function radarProbeAuto() {
+  return radarProbeAutoRun ??= (async () => {
+    try {
+      if (!LIB || (typeof navigator !== 'undefined' && navigator.connection?.saveData)) return;
+      await radarLoad();
+      await engineLoad();
+      const BR = globalThis.BetterfyRadar;
+      if (!BR?.probeDue?.(RADAR.check, { account: radarAccount(), build: BUILD })) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        await new Promise(r => document.addEventListener('visibilitychange', function f() {
+          if (document.visibilityState !== 'hidden') { document.removeEventListener('visibilitychange', f); r(); }
+        }));
+      }
+      if (RADAR.probe?.running) return;
+      await radarProbe({ quiet: true });
+    } catch { /* the radar runs as before; the hand check stays */ }
+    finally { radarProbeAutoRun = null; }
+  })();
 }
 
 /** "Check it works on this account": the Phase 0 probe (core/release/probe.mjs) from the page,
  *  with this account's own sign-in, so nobody needs `node radar.mjs --probe`. Seven reads, one
  *  artist, nothing stored but the answer for this session. */
-async function radarProbe() {
+async function radarProbe({ quiet = false } = {}) {
   if (RADAR.probe?.running || !LIB) return;
-  RADAR.probe = { running: true, rows: null, verdict: null, err: null, artist: null };
+  // By itself, a good answer only goes into Settings; the radar section shows a refusal.
+  const shown = RADAR.probe;
+  RADAR.probe = { running: true, rows: null, verdict: null, err: null, artist: null, quiet };
   radarPaint(true);
   try {
     await engineLoad();
@@ -14285,10 +14341,13 @@ async function radarProbe() {
     if (!artist) throw new Error('your library names no artist yet');
     const rows = await BR.probeEndpoints(path => sp(path), artist.id);
     Object.assign(RADAR.probe, { rows, verdict: BR.probeVerdict(rows), table: BR.probeTable(rows), artist: artist.name });
+    RADAR.check = BR.probeRecord(rows, { account: radarAccount(), build: BUILD, at: Date.now(), artist: artist.name });
+    try { await idb.set(RADAR_PROBE, RADAR.check); } catch { /* kept for this session */ }
   } catch (e) {
     RADAR.probe.err = e?.message ?? String(e);
   } finally {
     RADAR.probe.running = false;
+    if (quiet && (RADAR.probe.err || RADAR.probe.verdict?.ok)) RADAR.probe = shown ?? null;
     radarPaint(true);
   }
 }
@@ -14348,7 +14407,10 @@ function radarCtx() {
   return {
     R: RADAR,
     now: () => Date.now(),
-    load: () => { if (!RADAR.loaded) radarLoad(); },
+    // The first Discover visit also runs the account check, when it is due.
+    load: () => { if (!RADAR.loaded) radarLoad(); fire(radarProbeAuto()); },
+    // This account's kept check said a read is refused: one line instead of a feed (R1).
+    held: () => radarHeld(),
     // Start by hand turns the automatic start back on; "older" reads go straight in.
     start: o => fire(o?.deep ? radarStart(o) : radarGo({ byHand: true })),
     stop: () => radarStop(),
@@ -15675,7 +15737,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-1155';
+    s.src = 'engine.js?v=2026-11-18-1414';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -15697,7 +15759,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-1155');
+    const w = new Worker('engine-worker.js?v=2026-11-18-1414');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -16408,7 +16470,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-1155';
+    s.src = 'audio.js?v=2026-11-18-1414';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -16462,7 +16524,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1155', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-1414', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -17622,7 +17684,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1155', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-1414', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -18437,6 +18499,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_radar', name:'Radar stopped', group:'Release radar', why:'"off" once you pressed Stop on the radar, so it does not start by itself again on this device until you press Start.' },
   { where:'idb', key:'radar:index', name:'Radar: how far it got', group:'Release radar', why:'How far the radar\'s last read got, so a stopped read picks up where it stopped.' },
   { where:'idb', key:'radar:dismissed', name:'Radar: dismissed releases', group:'Release radar', why:'Releases you dismissed or filed from the radar, so they stay out of it.' },
+  { where:'idb', key:'radar:probe', name:'Radar: account check', group:'Release radar', why:'The answer to the radar\'s own check of what Spotify shares with this account (which reads answered, for which account and build, and when), so it runs once per account per update and Settings can show it.' },
 
   // --- genre data ---
   { where:'idb', key:'tags_extra', name:'Fetched genre tags', group:'Genre data', why:'Genre tags fetched for artists in your library that the shipped table does not cover (Last.fm, Wikidata, Discogs).' },
@@ -18987,7 +19050,10 @@ function helpersState() {
       return { off: typeof radarAutoOff === 'function' && radarAutoOff() && !RADAR.running, running: !!RADAR.running,
         done: p?.artistsDone ?? 0, total: p?.artistsTotal ?? 0, err: RADAR.err || null,
         at: ix?.at ?? null, artists: ix?.artists ?? 0,
-        ago: ix?.at && typeof agoWords === 'function' ? agoWords(Date.now() - ix.at) : null };
+        ago: ix?.at && typeof agoWords === 'function' ? agoWords(Date.now() - ix.at) : null,
+        // The account check's kept answer (BUILD-7 R1), when it is this account's.
+        check: RADAR.check && RADAR.check.account === (LIB?.user?.id ?? null) ? { ok: RADAR.check.ok !== false, missing: RADAR.check.missing ?? [],
+          ago: RADAR.check.at && typeof agoWords === 'function' ? agoWords(Date.now() - RADAR.check.at) : null } : null };
     } catch { return null; } })(),
   };
 }
