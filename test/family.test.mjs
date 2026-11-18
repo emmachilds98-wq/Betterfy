@@ -90,5 +90,5 @@ test('the Score line says what was measured and whether it is used', () => {
 test('File shows a settled family as one line and its picks as equals', () => {
   const src = readFileSync(new URL('../web/screens/inbox.mjs', import.meta.url), 'utf8');
   assert.match(src, /for sure\. Which one\?/);
-  assert.match(src, /'twoway'/);
+  assert.match(src, /' twoway'/);
 });

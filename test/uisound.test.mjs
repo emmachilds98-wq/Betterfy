@@ -7,7 +7,7 @@ import * as S from '../web/ui/sound.mjs';
 import { SOUND, EVIDENCE, PROFILE, LISTEN, galleryHTML } from './fixtures/uisound.mjs';
 import { profileVM, listenVM, MISS_TEXT } from '../web/audio/controller.mjs';
 
-const MINE = ['sectionStrip', 'evidenceBadges', 'bandChip', 'profileRow', 'listenTidyText', 'listenPill', 'listenCard', 'missedList'];
+const MINE = ['sectionStrip', 'evidenceBadges', 'evidenceLine', 'bandChip', 'profileRow', 'listenTidyText', 'listenPill', 'listenCard', 'missedList'];
 
 test('no data, no markup: every renderer returns "" for null, undefined and empty input', () => {
   const empties = [null, undefined, {}, [], '', 0, false];
@@ -176,6 +176,6 @@ test('the shots gallery is up to date with the renderers', () => {
 });
 
 test('only renderers and soundMark become page globals', () => {
-  const ok = new Set(['SOUND_UI_VERSION', 'soundMark', 'soundChip', ...MINE, 'SURE_CONF']);
+  const ok = new Set(['SOUND_UI_VERSION', 'soundMark', 'soundChip', ...MINE, 'SURE_CONF', 'evidenceWords']);
   for (const k of Object.keys(S)) assert.ok(ok.has(k), `unexpected export ${k}`);
 });

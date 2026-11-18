@@ -4,7 +4,7 @@
     </div>
     <div class="deck">
       <div class="peek" aria-hidden="true"></div>
-      <div class="card swipecard" id="swipeCard" >
+      <div class="card swipecard" id="swipeCard" data-state="yourCall" >
         <div class="verdicts" aria-hidden="true">
           <span class="verdict file">No pick</span>
           <span class="verdict skip">Skip</span>
@@ -22,12 +22,13 @@
           </div>
         </div>
         
+        
         <p class="why nopick">No confident suggestion — no tags for this artist, it fits nothing you have, and none of their other tracks are filed anywhere yet either. Pick a playlist below.</p>
         
         
         
         <div class="rowbtns fileacts">
-          <button class="b big go grow" data-act="filesel" data-filesel="1" disabled>Pick a playlist below</button>
+          <button class="b big grow" data-act="filesel" data-filesel="1" disabled>Pick a playlist below</button>
           <button class="b big" data-act="skip">Skip</button>
         </div>
         <details class="cardmore"><summary aria-label="More: remove from Liked, or add another playlist" title="More">⋯</summary>
@@ -39,5 +40,6 @@
       </div>
     </div>
     <div class="prog fileprog"><i style="width:0.00%"></i></div>
+    
     <div class="swipehint" role="note"><span>← <b>Skip</b></span><span>tap art to <b>play</b></span><span><b>File</b> →</span>
       <span><b>1–3</b> pick · <b>Enter</b> file · <b>S</b> skip · <b>U</b> twice remove from Liked</span></div>

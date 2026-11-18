@@ -191,3 +191,17 @@
 .empty.done svg rect:nth-child(3){fill:var(--m2)}
 .empty.done svg rect:nth-child(4){fill:var(--m3)}
 .empty.done svg rect:nth-child(5){fill:var(--m4)}
+  /* ---- File you can trust at a glance (BUILD-7 U1) ----
+     The card's state says itself: only a Sure card lights its top pick and
+     fills File green; two-way and your-call cards ask, with the picks as
+     equals. The evidence line is the top pick's reason in words. */
+  .swipecard:not([data-state="sure"]) .pick.twoway{background:var(--surface-2)}
+  .wayline b{color:var(--ink)}
+  .swipecard[data-state="yourCall"] .wayline{color:var(--ink-3)}
+  .pick .ax.evline{color:var(--ink-2); line-height:1.35; white-space:normal}
+  .pick.best .ax.evline{color:color-mix(in srgb, var(--ok) 60%, var(--ink-2))}
+  /* What the last correction taught it, on the next card by that artist. */
+  .learnline{margin:16px 0 -8px; padding:7px 12px; border-radius:var(--r); font-size:13px; color:var(--ink-2);
+             background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 30%, transparent)}
+  /* The honest scoreboard: quiet, under the progress bar, from 20 filings. */
+  .keptline{margin:10px 0 0; text-align:center; font-family:var(--mono); font-size:11.5px; color:var(--ink-3)}
