@@ -40,11 +40,14 @@ export async function fetchTrack(deps, track) {
   const id = track?.id;
   if (!id) throw new Error('analyseOne needs a track id');
   const isrc = track.isrc || null;
-  const miss = reason => ({ result: { miss: makeMiss({ id, isrc, reason, at: now() }) } });
+  // `nameTried` (side field): an ISRC miss that also had the name search (F1), so the page can re-ask older ones once.
+  const miss = reason => ({ result: { miss: { ...makeMiss({ id, isrc, reason, at: now() }), ...(reason === MISS.NOT_ON_DEEZER && track.title && track.artists?.length ? { nameTried: true } : {}) } } });
   const failed = (stage, detail) => ({ result: { failed: { id, stage, detail: String(detail ?? '') } } });
   if (!isrc) return miss(MISS.NO_ISRC);
   let found;
-  try { found = await deps.lookup(isrc, { spotifyDurationMs: track.durationMs }); }
+  // F1: title and artists let an ISRC miss try Deezer's own search (strictly matched, fetch.mjs).
+  const byName = track.title && track.artists?.length ? { title: track.title, artists: track.artists } : {};
+  try { found = await deps.lookup(isrc, { spotifyDurationMs: track.durationMs, ...byName }); }
   catch (e) { return failed('lookup', e?.message ?? e); }
   if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? miss(found.miss) : failed('lookup', found.detail ?? found.miss);
   const got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
@@ -101,7 +104,7 @@ export async function analyseOne(deps, track, fetched = undefined) {
   const { windows, sliced } = got;
   got = null; // drop the compressed audio
 
-  const res = await analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, ...(found.deezerBpm > 0 ? { deezerBpm: found.deezerBpm } : {}), windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+  const res = await analyseSamples(deps, { id, isrc, samples, parts, source: { kind: found.by === 'name' ? 'deezer-name' : 'deezer-isrc', deezerId: found.deezerId, ...(found.by === 'name' ? { match: found.match } : {}), ...(found.deezerBpm > 0 ? { deezerBpm: found.deezerBpm } : {}), windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
   if (res.record && clap48) res.record = await addClap(deps.clap, res.record, clap48);
   return res;
 }

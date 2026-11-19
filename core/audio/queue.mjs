@@ -27,6 +27,8 @@
 //      Tracks already heard or queued above count toward a playlist's cap.
 //   5. Everything else.
 //
+// F2 adds a tier after the unfiled songs: members of small playlists.
+//
 // Inside every tier, most-listened artists first (profile.mjs byListening,
 // stable), so the weighting is the same one the tag-gap fetch uses.
 //
@@ -43,6 +45,9 @@ import { mirrorPredicate } from '../playlists/mirror.mjs';
 
 /** Tracks per weak playlist heard ahead of the rest (tier 2b): all of a small one. */
 export const FOCUS_MAX = 60;
+
+/** F2: a playlist with fewer heard members than this has all its members heard next. */
+export const SMALL_HEARD = 12;
 
 /** listeningWeights() gives the library floor at most this much per artist. */
 const LIBRARY_FLOOR_MAX = 1;
@@ -63,12 +68,14 @@ const LIBRARY_FLOOR_MAX = 1;
  * @param {(p: object) => boolean} [o.isMirror]  extra playlists the caller knows are mirrors
  * @param {Iterable<string>} [o.focus]       playlist ids whose members are heard next after the
  *        unfiled liked songs: the Score run's weakest playlists (weak.mjs), up to FOCUS_MAX tracks each
+ * @param {boolean} [o.leftovers]  F2: after the unfiled songs, hear every member of a playlist with under
+ *        SMALL_HEARD heard members (off by default so existing callers keep their order; the page turns it on)
  * @param {number} [o.now]                   for isCurrent()'s miss TTL
  * @returns {string[]} Spotify track ids, most urgent first
  */
 export function audioQueue(lib, { listening = null, filedIds = null, untaggedArtistIds = null, store = null,
                                   budget = Infinity, exemplarsPerPlaylist = 20, mel, targets = null,
-                                  isMirror = null, focus = null, now = Date.now() } = {}) {
+                                  isMirror = null, focus = null, leftovers = false, now = Date.now() } = {}) {
   const limit = Number.isFinite(budget) ? Math.max(0, Math.floor(budget)) : Infinity;
   if (limit === 0) return [];
 
@@ -127,6 +134,19 @@ export function audioQueue(lib, { listening = null, filedIds = null, untaggedArt
     }
     if (take(mine)) return out;
   }
+
+  // 2c. F2, hear the leftovers first: every member of a playlist with under
+  // SMALL_HEARD heard members (small playlists have too few heard tracks to
+  // learn a sound from). The plan's second F2 tier, tracks of never-filed
+  // artists, is tier 2 itself: an artist with nothing filed has only unfiled
+  // liked songs, and all of those are already queued first.
+  const small = [];
+  if (leftovers) for (const p of playlists) {
+    const own = [];
+    for (const t of p.tracks ?? []) { const x = tracks.get(t?.id); if (x && !own.includes(x)) own.push(x); }
+    if (own.length && own.filter(t => heard(t.id)).length < SMALL_HEARD) small.push(...own);
+  }
+  if (take(ordered(small))) return out;
 
   // 3. Untagged artists.
   const untagged = new Set(untaggedArtistIds ?? []);

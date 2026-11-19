@@ -2447,7 +2447,7 @@ const relatedUrl = (id, limit = RELATED_LIMIT) => `${API}/artist/${encodeURIComp
 
 /** Only these URLs may be fetched through the page's JSONP frame. A script tag
  *  runs whatever it is given, so the host is pinned rather than trusted. */
-const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_-]*)?$/i.test(String(url));
+const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_%-]*)?$/i.test(String(url));
 
 /**
  * What a Deezer error body means for the cache.
@@ -2835,7 +2835,7 @@ function unpackEmbedding({ s, q }) {
  * @param {Float32Array} a.activations
  * @param {Float32Array} a.embeddings
  * @param {number} a.patches
- * @param {object} a.source        { kind: 'deezer-isrc', deezerId, windows: [[startByte, bytes]...], seconds }
+ * @param {object} a.source        { kind: 'deezer-isrc' | 'deezer-name' (F1; then also `match`), deezerId, windows: [[startByte, bytes]...], seconds }
  * @param {string} a.mel           MEL_VERSION used
  * @param {object} [a.heads]       optional head outputs, see HEADS in docs/AUDIO-BUILD-PLAN.md
  * @param {object} [a.dsp]         optional { bpm, bpmConf, key, keyConf, loudness, energy }

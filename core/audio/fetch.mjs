@@ -18,6 +18,7 @@
 //    top-1 82% of the time, embedding cosine median 0.988).
 import { MISS } from './record.mjs';
 import { isrcUrl, errorKind } from '../sources/deezer.mjs';
+import { pickByName, searchUrl } from './namematch.mjs';
 
 export const FETCH_VERSION = '1.0.0';
 /** One window: ~10 s of a 128 kbps preview. */
@@ -30,17 +31,19 @@ const normIsrc = s => String(s ?? '').replace(/-/g, '').toUpperCase();
 /**
  * Look a track up on Deezer by ISRC.
  * @param {string} isrc
- * @param {{ jsonp: (url: string) => Promise<object>, spotifyDurationMs?: number }} deps
+ * @param {{ jsonp: (url: string) => Promise<object>, spotifyDurationMs?: number, title?: string, artists?: string[] }} deps
+ *   `title` and `artists` (F1) switch on the second try: only when the ISRC is not on Deezer, search by name and
+ *   accept a strictly matched hit (core/audio/namematch.mjs); the answer then says `by: 'name'`.
  * @returns {Promise<{ deezerId: number, previewUrl: string, durationMs: number, readable: boolean }
  *                  | { miss: string, detail?: string }>}
  */
-export async function lookup(isrc, { jsonp, spotifyDurationMs } = {}) {
+export async function lookup(isrc, { jsonp, spotifyDurationMs, title, artists } = {}) {
   if (!isrc) return { miss: MISS.NO_ISRC };
   let json;
   try { json = await jsonp(isrcUrl(isrc)); }
   catch (e) { return { miss: MISS.FAILED, detail: String(e?.message ?? e) }; }
   const err = errorKind(json);
-  if (err === 'none') return { miss: MISS.NOT_ON_DEEZER };
+  if (err === 'none') return title && artists?.length ? lookupByName({ title, artists, durationMs: spotifyDurationMs }, { jsonp }) : { miss: MISS.NOT_ON_DEEZER };
   if (err) return { miss: MISS.FAILED, detail: err };          // quota or error: ask again later
   if (!json || typeof json !== 'object' || !json.id) return { miss: MISS.FAILED, detail: 'malformed' };
   if (json.isrc && normIsrc(json.isrc) !== normIsrc(isrc)) return { miss: MISS.IDENTITY, detail: 'isrc' };
@@ -51,6 +54,29 @@ export async function lookup(isrc, { jsonp, spotifyDurationMs } = {}) {
   // T4: Deezer's own BPM, when it states one (0 means none); a second opinion only.
   const bpm = Number(json.bpm);
   return { deezerId: json.id, previewUrl: json.preview, durationMs, readable, ...(bpm > 0 && bpm < 400 ? { deezerBpm: +bpm.toFixed(1) } : {}) };
+}
+
+/**
+ * F1: the same lookup by artist and title, for an ISRC Deezer does not know.
+ * No accepted match is the same NOT_ON_DEEZER an ISRC miss gives (cached the
+ * same way); a failed search is FAILED, so it is asked again later.
+ * @returns {Promise<{ deezerId, previewUrl, durationMs, readable, by: 'name', match: { title, artist, deltaMs } } | { miss: string, detail?: string }>}
+ */
+export async function lookupByName({ title, artists, durationMs }, { jsonp }) {
+  const none = { miss: MISS.NOT_ON_DEEZER };
+  if (!title || !artists?.length || !Number.isFinite(durationMs)) return none;
+  let json;
+  try { json = await jsonp(searchUrl(artists[0], title)); }
+  catch (e) { return { miss: MISS.FAILED, detail: String(e?.message ?? e) }; }
+  const err = errorKind(json);
+  if (err === 'none') return none;
+  if (err) return { miss: MISS.FAILED, detail: err };
+  if (!json || !Array.isArray(json.data)) return { miss: MISS.FAILED, detail: 'malformed' };
+  const r = pickByName({ title, artists, durationMs }, json.data);
+  if (r.none) return none;
+  const h = r.hit;
+  return { deezerId: h.id, previewUrl: h.preview, durationMs: Number(h.duration) * 1000, readable: true, by: 'name',
+           match: { title: String(h.title), artist: String(h.artist?.name ?? ''), deltaMs: r.deltaMs } };
 }
 
 /** Deezer reports whole seconds, so ±3 s is the tolerance (§4.1). */
