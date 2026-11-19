@@ -366,6 +366,8 @@ function afterFirstPaint() {
     // them without a Score run (docs/archive/NEXT-WORKPLAN.md package 2). Last, so they
     // don't compete with the tag lookups; resumes where the last load stopped.
     if (typeof bridgeWarm === 'function') await bridgeWarm().catch(() => {});
+    // Bonus, last: MusicBrainz genres for artists that now have an MBID and still no tags.
+    await fillFromMusicBrainz().catch(() => 0);
   })();
   // Listening resumes by itself where it left off, if it was switched on — after the first
   // paint. (On a first run the analysis above starts it.)

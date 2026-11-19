@@ -272,6 +272,8 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     v.weakLine || null,
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
     v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
+    v.wikidataKnows ? `Wikidata knows ${v.wikidataKnows.pct}%${Number.isFinite(v.wikidataKnows.was) ? ` (was ${v.wikidataKnows.was}%)` : ''} of your artists`
+      + (v.wikidataKnows.musicbrainz ? `; MusicBrainz genres for ${v.wikidataKnows.musicbrainz}` : '') : null,
     ...bridgeLines(v, pc),
     ...blendLines(v, pc),
     ...audioLines(v, pc, maestScoreText),

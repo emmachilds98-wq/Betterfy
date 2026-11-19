@@ -30,11 +30,12 @@ export function artistCoverage({ ids = [], shipped = {}, extra = {}, bridge = {}
   const all = [...new Set(ids)];
   const n = all.length;
   const tagsOf = e => (Array.isArray(e) ? e : e?.tags) ?? [];
-  let shared = 0, deezer = 0, deezerAsked = 0, wikidata = 0, wikidataAsked = 0;
+  let shared = 0, deezer = 0, deezerAsked = 0, wikidata = 0, wikidataAsked = 0, musicbrainz = 0;
   for (const id of all) {
     if (tagsOf(shipped?.[id]).length) shared++;
     const b = bridge?.[id], x = extra?.[id];
     if (Number.isFinite(b?.deezerAt)) { deezerAsked++; if (b.deezerId) deezer++; }
+    if (x?.source === 'musicbrainz' && tagsOf(x).length) musicbrainz++;
     const wdGenres = x?.source === 'wikidata';
     if (Number.isFinite(b?.mbidAt) || wdGenres) {
       wikidataAsked++;
@@ -42,7 +43,7 @@ export function artistCoverage({ ids = [], shipped = {}, extra = {}, bridge = {}
     }
   }
   const pct = k => (n ? Math.round(100 * k / n) : 0);
-  return { total: n, shared, deezer, wikidata, deezerAsked, wikidataAsked,
+  return { total: n, shared, deezer, wikidata, musicbrainz, deezerAsked, wikidataAsked,
            sharedPct: pct(shared), deezerPct: pct(deezer), wikidataPct: pct(wikidata) };
 }
 

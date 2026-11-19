@@ -68,6 +68,7 @@ const DATA_KEYS = [
   { where:'idb', key:'tags_extra', name:'Fetched genre tags', group:'Genre data', why:'Genre tags fetched for artists in your library that the shipped table does not cover (Last.fm, Wikidata, Discogs).' },
   { where:'idb', key:'tag_corrections', name:'Your tag corrections', group:'Genre data', why:'Tags you corrected by hand for an artist.' },
   { where:'idb', key:'bridge-raw', name:'Similar artists', group:'Genre data', why:'Similar-artist lists fetched from Deezer, ListenBrainz and Wikidata for the artists in your library.' },
+  { where:'local', key:'bf_wd_base', name:'Wikidata coverage before', group:'Genre data', why:'How many of your artists Wikidata knew the first time Betterfy asked, so Settings can show how much the later lookups added.' },
   { where:'local', key:'bf_lfm', name:'Your Last.fm key', group:'Genre data', why:'Your own Last.fm API key, if you added one.' },
   { where:'local', key:'bf_discogs', name:'Your Discogs token', group:'Genre data', why:'Your Discogs personal access token, if you added one.' },
   { where:'local', key:'bf_bridge_off', name:'Similar artists off', group:'Genre data', why:'Set when you turn similar-artist bridges off in How it picks.' },
