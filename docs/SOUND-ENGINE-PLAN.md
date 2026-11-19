@@ -1256,7 +1256,7 @@ or after it.
 | H3 | Similarity ear | S3 | E, M | Not started | | +3 scene set; +1 on Score |
 | K1 | "Key unknown"; whole preview for unsure keys | S1c | U, E | Not started | | sure keys 85% → 90% |
 | G2 | Artist genre from its own sound | S2b | E | Not started | | ≥ 85% family agreement; +15 coverage |
-| G3 | MusicBrainz genres via ListenBrainz | S1c | K | Not started | | +10 coverage |
+| G3 | MusicBrainz genres via ListenBrainz | S1c | K | Built with BUILD-8 W1 (one thread, one queue in keyless.js), awaiting a run on the owner's account | | +10 coverage; core/sources/listenbrainz.mjs tagsFrom/tagsUrl, 25 MBIDs per GET, curated genres preferred, MBIDs from Wikidata only |
 | G4 | Deezer album genre and label | S1c | K | Not started | | +2 family top-1 or +15 coverage |
 | D2 | DnB sub-genres by sound | S2b | E | Not started | | 110/199 at ≥ 90% |
 | B2 | Mixed playlists, sound side | S3 | E | Not started | | +5 recall where it applies |

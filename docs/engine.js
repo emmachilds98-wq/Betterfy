@@ -7433,7 +7433,39 @@ function similarFrom(json, { limit = SIMILAR_LIMIT } = {}) {
     .slice(0, limit);
   return { answered: true, similar };
 }
-return { LISTENBRAINZ, ENDPOINT, ALGORITHM, SIMILAR_LIMIT, isMbid, similarUrl, similarFrom };
+
+/* ---------- artist tags: MusicBrainz's genres, through ListenBrainz (SOUND-ENGINE G3) ----------
+ * `/1/metadata/artist/?inc=tag` answers many MBIDs in one GET, CORS-open, with
+ * X-RateLimit-* headers exposed (probed 2026-11-19: limit 30, reset in ~5 s). No
+ * MusicBrainz call from the page, so no User-Agent it cannot set. */
+const TAGS_ENDPOINT = 'https://api.listenbrainz.org/1/metadata/artist/';
+/** MBIDs per request. */
+const TAGS_BATCH = 25;
+const tagsUrl = mbids =>
+  `${TAGS_ENDPOINT}?${new URLSearchParams({ artist_mbids: [...new Set(mbids)].filter(isMbid).join(','), inc: 'tag' })}`;
+
+/**
+ * mbid -> [[tag, 0-100]], strongest first. MusicBrainz's curated genres
+ * (`genre_mbid` set) are used when an artist has any; free tags only otherwise.
+ * An MBID the answer does not mention is absent (unknown, not empty).
+ * @returns {Map<string, Array<[string, number]>>|null} null when the answer is not the expected shape
+ */
+function tagsFrom(json, { max = 6 } = {}) {
+  if (!Array.isArray(json)) return null;
+  const out = new Map();
+  for (const a of json) {
+    const mbid = String(a?.artist_mbid ?? a?.mbid ?? '').toLowerCase();
+    if (!isMbid(mbid)) continue;
+    const all = (a?.tag?.artist ?? []).filter(t => t?.tag && Number(t.count) > 0);
+    const curated = all.filter(t => t.genre_mbid);
+    const use = (curated.length ? curated : all).map(t => [String(t.tag).trim().toLowerCase(), Number(t.count)])
+      .sort((x, y) => y[1] - x[1]).slice(0, max);
+    const top = use[0]?.[1] || 1;
+    out.set(mbid, use.map(([n, c]) => [n, Math.max(40, Math.round(100 * c / top))]));
+  }
+  return out;
+}
+return { LISTENBRAINZ, ENDPOINT, ALGORITHM, SIMILAR_LIMIT, isMbid, similarUrl, similarFrom, TAGS_ENDPOINT, TAGS_BATCH, tagsUrl, tagsFrom };
 })();
 /* ---- core/sources/wikidata.mjs ---- */
 __mod["core/sources/wikidata.mjs"] = (function () {
@@ -7572,7 +7604,78 @@ function genreTags(labels, { max = 6 } = {}) {
   }
   return out;
 }
-return { WIKIDATA, ENDPOINT, BATCH, isSpotifyId, mbidQuery, mbidRequest, mbidsFrom, genreQuery, genreRequest, genresFrom, genreTags };
+
+/* ---------- what to ask, and what to ask again (BUILD-8 W1) ---------- */
+
+/** An empty Wikidata answer is a verdict for this long, not forever: items gain
+ *  genres and Spotify links over time. A batch that was never answered (429) is
+ *  never written down at all, so it is simply asked again on the next run. */
+const STALE_EMPTY_MS = 45 * 24 * 60 * 60 * 1000;
+
+/**
+ * Which of these artist ids to ask Wikidata about now: never asked, or asked
+ * and empty long enough ago to be worth another look. An artist with genres
+ * already from Wikidata is left alone; entries from other sources are not
+ * Wikidata's to redo. `cached` is tags_extra: id -> { source, tags, checkedAt }.
+ */
+function wikidataTodo(ids, cached = {}, now = Date.now()) {
+  return [...new Set(ids)].filter(id => {
+    const e = cached?.[id];
+    if (!e || e.source !== 'wikidata') return true;
+    return !(e.tags?.length) && now - (e.checkedAt ?? 0) > STALE_EMPTY_MS;
+  });
+}
+
+/* ---------- artists with no Spotify link: exact name, with proof ---------- */
+
+/** Names per query; each is a label lookup, so smaller than the id batches. */
+const NAME_BATCH = 100;
+
+const cleanName = n => String(n ?? '').trim().replace(/\s+/g, ' ');
+const nameOk = n => n.length >= 2 && n.length <= 80 && !/["\\{}]/.test(n);
+const nameKey = n => cleanName(n).toLowerCase();
+
+/** The query for one batch of names. Only items that carry a MusicBrainz artist
+ *  id (so a musical artist, not a film or a town of the same name) and at least
+ *  one genre come back. Names with quotes or braces are dropped, not escaped. */
+function nameQuery(names) {
+  const vals = [...new Set(names.map(cleanName).filter(nameOk))].map(n => `"${n}"@en`).join(' ');
+  return `SELECT ?n ?a ?gl WHERE { VALUES ?n { ${vals} } ?a rdfs:label ?n . ?a wdt:P434 ?mbid . `
+    + `?a wdt:P136 ?g . ?g rdfs:label ?gl FILTER(lang(?gl) = "en") }`;
+}
+
+const nameRequest = names => ({
+  url: ENDPOINT,
+  init: {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/sparql-results+json' },
+    body: new URLSearchParams({ query: nameQuery(names), format: 'json' }).toString(),
+  },
+});
+
+/**
+ * name (lower-cased) -> genre labels, only for names that matched exactly ONE
+ * item. Two musicians who share a name are not told apart, so neither gets
+ * genres: a wrong genre is worse than none, and the name is only a way to find
+ * the item.
+ * @returns {{answered: true, genres: Map<string, string[]>}|{answered: false}}
+ */
+function genresByName(json) {
+  const rows = json?.results?.bindings;
+  if (!Array.isArray(rows)) return { answered: false };
+  const items = new Map(), genres = new Map();
+  for (const b of rows) {
+    const n = nameKey(b?.n?.value), a = b?.a?.value, g = String(b?.gl?.value ?? '').trim();
+    if (!n || !a || !g) continue;
+    if (!items.has(n)) items.set(n, new Set());
+    items.get(n).add(a);
+    if (!genres.has(n)) genres.set(n, []);
+    if (!genres.get(n).includes(g)) genres.get(n).push(g);
+  }
+  for (const [n, set] of items) if (set.size !== 1) genres.delete(n);
+  return { answered: true, genres };
+}
+return { WIKIDATA, ENDPOINT, BATCH, isSpotifyId, mbidQuery, mbidRequest, mbidsFrom, genreQuery, genreRequest, genresFrom, genreTags, STALE_EMPTY_MS, wikidataTodo, NAME_BATCH, nameKey, nameQuery, nameRequest, genresByName };
 })();
 /* ---- core/intrinsic/bridge-fetch.mjs ---- */
 __mod["core/intrinsic/bridge-fetch.mjs"] = (function () {
@@ -11680,6 +11783,40 @@ function soundProposals({ lib, targets, records = null, index = null, learned = 
 }
 return { AUDIO_GAPS_VERSION, SOUND, soundPlaylists, tightGroups, soundProposals };
 })();
+/* ---- core/sources/mb-web.mjs ---- */
+__mod["core/sources/mb-web.mjs"] = (function () {
+const { isMbid, tagsUrl, tagsFrom, TAGS_BATCH } = __mod["core/sources/listenbrainz.mjs"];
+// MusicBrainz's artist genres, asked from the page (BUILD-8 W1, SOUND-ENGINE G3). A
+// bonus source: the listener's own artists that already hold an MBID (Wikidata's
+// exact Spotify-id link) and no tags at all. Probe, 2026-11-19: musicbrainz.org/ws/2
+// answers a browser GET (access-control-allow-origin: *) but wants a User-Agent a page
+// cannot set and allows 1 request/s, so the page asks ListenBrainz instead, which
+// serves the same MusicBrainz tags, many MBIDs per GET, CORS-open, rate-limit headers
+// exposed. Never by name. Pure here: what to ask. The queue and storage are web/app/keyless.js.
+
+
+const MB_SPACING_MS = 1500;
+const MB_REST_MS = 10 * 60 * 1000;
+/** Per visit, so a big library fills over several opens instead of one long one. */
+const MB_PER_RUN = 150;
+const STALE_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** MBIDs worth asking: have one, no tags yet, not asked (or asked empty long ago).
+ *  `order` ids come most-listened first; the cap keeps a run short. */
+function mbTodo(order, { mbidOf, hasTags, cached = {}, now = Date.now(), cap = MB_PER_RUN } = {}) {
+  const out = [];
+  for (const id of order) {
+    if (out.length >= cap) break;
+    const mbid = mbidOf(id);
+    if (!isMbid(mbid) || hasTags(id)) continue;
+    const e = cached[id];
+    if (e?.source === 'musicbrainz' && (e.tags?.length || now - (e.checkedAt ?? 0) < STALE_MS)) continue;
+    out.push([id, mbid]);
+  }
+  return out;
+}
+return { MB_SPACING_MS, MB_REST_MS, MB_PER_RUN, STALE_MS, mbTodo, isMbid, tagsUrl, tagsFrom, TAGS_BATCH };
+})();
 /* ---- core/audio/misfit.mjs ---- */
 __mod["core/audio/misfit.mjs"] = (function () {
 const { filedNeighbours, genreMembership } = __mod["core/audio/match.mjs"];
@@ -15475,6 +15612,7 @@ globalThis["BetterfyGaps"] = __mod["core/recommend/gaps.mjs"];
 globalThis["BetterfyDescribe"] = __mod["core/playlists/describe.mjs"];
 globalThis["BetterfyAudioGaps"] = __mod["core/recommend/audio-gaps.mjs"];
 globalThis["BetterfyWikidata"] = __mod["core/sources/wikidata.mjs"];
+globalThis["BetterfyMbWeb"] = __mod["core/sources/mb-web.mjs"];
 globalThis["BetterfyMatch"] = __mod["core/audio/match.mjs"];
 globalThis["BetterfyIdentify"] = __mod["core/audio/identify.mjs"];
 globalThis["BetterfyMisfit"] = __mod["core/audio/misfit.mjs"];
