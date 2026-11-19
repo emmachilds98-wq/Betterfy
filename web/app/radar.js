@@ -55,21 +55,31 @@ function radarPaint(now = false) {
 
 /** Top artists (three windows) and recently played, with ids: the listening half of the artist set. */
 async function radarListening() {
+  // The same four reads Discover's listening seeds make, so they come from the
+  // same kept answer (discover-engine.js fetchListeningRaw, a 4-hour TTL)
+  // rather than being asked again. Only an answer kept before ids were kept
+  // falls back to asking.
+  let raw = null;
+  try { raw = await fetchListeningRaw(); } catch { raw = null; }
   const top = {};
   for (const range of ['short_term', 'medium_term', 'long_term']) {
+    const w = raw?.topWindows?.find(x => x.range === range);
+    if (w?.ids) { top[range] = w.ids; continue; }
     try { top[range] = ((await sp(`/me/top/artists?limit=50&time_range=${range}`))?.items ?? []).map(a => ({ id: a.id, name: a.name })); }
     catch { top[range] = []; }
   }
-  let recent = [];
-  try { recent = ((await sp('/me/player/recently-played?limit=50'))?.items ?? []).map(p => ({ artists: p.track?.artists ?? [] })); }
-  catch { /* the library alone still makes a radar */ }
+  let recent = raw?.recentWho ?? null;
+  if (!recent) {
+    try { recent = ((await sp('/me/player/recently-played?limit=50'))?.items ?? []).map(p => ({ artists: p.track?.artists ?? [] })); }
+    catch { recent = []; /* the library alone still makes a radar */ }
+  }
   let weights;
   try { weights = (await getListening())?.weights; } catch { weights = undefined; }
   return { top, recent, weights };
 }
 
 /** Run a sync now. `deep`: `{ ids, years }` reads those artists further back ("older on demand"). */
-async function radarStart({ deep = null } = {}) {
+async function radarStart({ deep = null, byHand = !!deep } = {}) {
   if (RADAR.running || !LIB) return;
   RADAR.running = true; RADAR.stopped = null; RADAR.err = null; RADAR.progress = null;
   RADAR.ctl = new AbortController();
@@ -100,6 +110,7 @@ async function radarStart({ deep = null } = {}) {
     // reissue on what is stored (no request) before reading anything new.
     try { await BR.rescore(kv, LIB); } catch { /* the sync re-judges what it touches anyway */ }
     const r = await BR.syncRadar({ lib: LIB, artists, store: kv, get: path => sp(path), signal: RADAR.ctl.signal, deep,
+      maxRequests: byHand ? RADAR_HAND : Math.max(20, RADAR_DAY - radarSpentToday()),
       onProgress: p => { RADAR.progress = p; radarPaint(); } });
     RADAR.stopped = r.stopped;
     if (r.stopped && r.stopped.why !== 'aborted' && r.stopped.why !== 'budget') RADAR.err = r.stopped.message || null;
@@ -130,6 +141,16 @@ function radarStop({ byHand = true } = {}) {
  * first read a start only asks about artists due a check, so it is cheap. */
 const RADAR_OFF_KEY = 'bf_radar';
 const RADAR_AUTO_DELAY_MS = 90_000;
+const RADAR_PROBE_EVERY = 30 * 864e5;
+/* A request budget. The radar is by far the page's biggest spender (three
+ * requests per artist per group, a thousand artists on a big library), and it
+ * used to start by itself on every visit with no ceiling, all of it from the
+ * app's one shared quota. Now a start by itself spends at most what is left of
+ * RADAR_DAY today (counted by auth.js's meter, so reloads cannot reset it), and
+ * one by hand at most RADAR_HAND; a stop for budget is a pause, and the next
+ * start carries on with the artists still due, most listened first. */
+const RADAR_DAY = 300, RADAR_HAND = 900;
+const radarSpentToday = () => { const k = spStats().kinds; return (k['artists/albums'] ?? 0) + (k['albums/tracks'] ?? 0); };
 const radarAutoOff = () => { try { return LS.getItem(RADAR_OFF_KEY) === 'off'; } catch { return false; } };
 
 /** Start it. By hand, it also turns the automatic start back on. Resolves true once a read ran. */
@@ -142,7 +163,7 @@ async function radarGo({ byHand = false } = {}) {
     await radarProbe();
     if (radarHeld()) return false;
   }
-  await radarStart();
+  await radarStart({ byHand });
   return true;
 }
 
@@ -152,6 +173,7 @@ async function radarAuto({ delay = RADAR_AUTO_DELAY_MS } = {}) {
   if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
   if (delay) await new Promise(r => setTimeout(r, delay));
   if (radarAutoOff() || RADAR.running) return false;
+  if (radarSpentToday() >= RADAR_DAY) return false;
   // The account check first, once per account per build; a refused route stops here.
   await radarProbeAuto();
   return radarGo();
@@ -174,7 +196,13 @@ function radarProbeAuto() {
       await radarLoad();
       await engineLoad();
       const BR = globalThis.BetterfyRadar;
-      if (!BR?.probeDue?.(RADAR.check, { account: radarAccount(), build: BUILD })) return;
+      // Once per account, then once a month: it used to run again on every new
+      // build, and builds ship most days, so it was seven reads a day for an
+      // answer that only changes when Spotify changes the API.
+      if (!BR?.probeDue) return;
+      const kept = RADAR.check;
+      const monthOld = !Number.isFinite(kept?.at) || Date.now() - kept.at > RADAR_PROBE_EVERY;
+      if (!BR.probeDue(kept, { account: radarAccount(), build: kept?.build ?? '' }) && !monthOld) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
         await new Promise(r => document.addEventListener('visibilitychange', function f() {
           if (document.visibilityState !== 'hidden') { document.removeEventListener('visibilitychange', f); r(); }

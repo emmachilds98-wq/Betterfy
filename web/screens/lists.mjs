@@ -210,6 +210,9 @@ export function scoreCardHTML(c, now = Date.now()) {
   if (!info) return '';
   const { esc } = c, pc = x => `${Math.round(x * 100)}%`, sum = info.score;
   const has = Number.isFinite(sum?.top1);
+  // Before the first run there is nothing to show, and the run starts by itself:
+  // Settings › Your score says so. Library leads with the playlists instead.
+  if (!has && !info.running) return '';
   const days = has && Number.isFinite(sum.at) ? Math.floor((now - sum.at) / 864e5) : null;
   const when = days == null ? '' : days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
   const head = info.running ? 'Scoring…'
@@ -272,7 +275,7 @@ export function namesListHTML(c) {
   if (!rows.length) return '';
   return `<section class="plsugg plnames" aria-labelledby="plname-h">
       <div class="plsugg-head"><h2 id="plname-h">Names that could say more</h2></div>
-      <p class="hint">Suggested from the music in each, written the way you name playlists. Tap a name to change it before saving; undo from History.</p>
+      <p class="hint">From the music in each, in your naming style. Tap to edit first.</p>
       <div class="plrows">${rows.slice(0, 3).map(r => `<div class="plline"><button class="plrow" type="button" data-act="lnameedit" data-pl="${esc(r.id)}" data-name="${esc(r.best.name)}" data-why="${esc(r.best.why)}" aria-haspopup="dialog" aria-label="${esc(`Edit the name for ${r.name}, starting from ${r.best.name}`)}">
         <span class="plmain"><span class="ttl">${esc(r.name)}</span>
           <span class="plmeta"><span class="plname-to">→ ${esc(r.best.name)}</span>${r.vague ? '' : ` · ${esc(r.why)}`}</span></span></button>
@@ -765,7 +768,7 @@ export function view(c) {
   const ticks = genreTickSuggestions(rows.map(p => ({ ...p, mirror: c.isMirrorPlaylist?.({ id: p.id, name: p.name }) })), mixes, id => c.LISTS_SOUND.profile(id));
   const ticksHTML = ticks.length ? `<section class="plsugg" aria-labelledby="pltick-h">
       <div class="plsugg-head"><h2 id="pltick-h">These look like genre playlists</h2>
-        <button class="b sm p" data-act="ltickall">Mark all ${ticks.length} as genre</button></div>
+        <button class="b sm p" data-act="ltickall" aria-label="Mark all ${ticks.length} as genre">Mark all ${ticks.length}</button></div>
       <div class="plrows">${ticks.slice(0, 5).map(t => `<div class="plrow"><span class="plmain"><span class="ttl">${esc(t.name)}</span>
         <span class="plmeta">${esc(t.why)}</span></span><button class="b sm" data-act="ltick" data-pl="${esc(t.id)}">Genre</button></div>`).join('')}</div>
     </section>` : '';
@@ -780,7 +783,7 @@ export function view(c) {
   for (const o of twins.slice(0, 3)) noteShown(c, o.key);
   const twinsHTML = twins.length ? `<section class="plsugg" aria-labelledby="pltwin-h">
       <div class="plsugg-head"><h2 id="pltwin-h">Playlists that sound the same</h2></div>
-      <p class="hint">The engine can’t tell these apart by the music in them. Merging makes one new playlist; both stay as they are.</p>
+      <p class="hint">Hard to tell apart by sound. Merging makes a new playlist and keeps both.</p>
       <div class="plrows">${twins.slice(0, 3).map(o => `<div class="plrow"><span class="plmain"><span class="ttl">${esc(o.a.name)}</span>
         <span class="plmeta">and ${esc(o.b.name)}</span></span>
         <button class="b sm p" data-act="wizmerge" data-a="${esc(o.a.id)}" data-b="${esc(o.b.id)}">Merge…</button>

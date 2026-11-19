@@ -63,7 +63,8 @@ export function statusParts(ctx) {
   // count is inside it); otherwise listening speaks for itself, and nothing at
   // all is said about it until it has run.
   // The first analysis waits for the whole read, so it has nothing to say until then.
-  const analysing = reading ? '' : ctx.analyseLine?.() ?? '';
+  // "Starting…" says nothing a listener can use: the part waits until there is a count.
+  const analysing = reading ? '' : (l => (l === 'Starting…' ? '' : l))(ctx.analyseLine?.() ?? '');
   const listen = typeof listenStatus === 'function' ? listenStatus() : '';
   if (analysing) parts.push({ key: 'analyse', text: analysing });
   else if (listen) parts.push({ key: 'listen', text: listen, act: 'openlisten' });

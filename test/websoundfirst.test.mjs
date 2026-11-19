@@ -122,7 +122,8 @@ test('an unheard track keeps the tag engine’s picks and says why', async () =>
   await settle(s);
   const html = vm.runInContext('vInbox()', s);
   assert.deepEqual(picksOf(html), ['p-tech', 'p-deep']);
-  assert.match(html, /Not heard yet\. Picks are from tags until it is\./);
+  // The top pick's own line says "not heard yet"; the card no longer repeats it.
+  assert.doesNotMatch(html, /Not heard yet\. Picks are from tags until it is\./);
 });
 
 test('a track heard after the space was built is placed by sound without a rebuild', async () => {

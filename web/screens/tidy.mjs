@@ -45,8 +45,8 @@ export function secDupes(c) {
   if (!exact.length && !clash.length) return `${lede}
     ${emptyState('No repeats', 'None of your playlists has the same track in it twice, as the same recording or as a different cut.')}`;
   return `${lede}
-    ${exact.length ? sec('The same recording, twice', exact, 'Both copies are the same recording, on two releases. Removing one loses nothing.', 'dupes-exact') : ''}
-    ${clash.length ? sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash') : ''}`;
+    ${exact.length ? sec('The same recording, twice', exact, 'Same recording on two releases. Removing one loses nothing.', 'dupes-exact') : ''}
+    ${clash.length ? sec('Version clashes', clash, 'Different cuts. What differs is marked.', 'dupes-clash') : ''}`;
 }
 
 /** Why a cross-filed row is ranked where it is: the reading behind its suspicion. */

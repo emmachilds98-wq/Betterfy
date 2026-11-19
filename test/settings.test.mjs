@@ -9,7 +9,7 @@ import { SECTIONS, OPEN_BY_DEFAULT, sectionSummaries, sectionHTML, listeningSumm
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 test('the sections run in one fixed order, Listening is the one open by default, Disconnect is last', () => {
-  assert.deepEqual(SECTIONS.map(s => s.id), ['engine', 'sources', 'helpers', 'data', 'history', 'appearance', 'about']);
+  assert.deepEqual(SECTIONS.map(s => s.id), ['engine', 'sources', 'helpers', 'data', 'requests', 'history', 'appearance', 'about']);
   assert.deepEqual(OPEN_BY_DEFAULT, ['sources']);
   assert.equal(SECTIONS[0].title, 'Your score & how it picks');
   // The routes #/sources, #/engine and #/history land on a section of the same name.
@@ -48,7 +48,7 @@ test('the other closed lines', () => {
 test('sectionSummaries gives every section a line, and never an internal name', () => {
   const sums = sectionSummaries({ score: { top1: 0.5 }, listening: { on: true, heard: 3, library: 9 }, helpers: '13 of 13 on · all answering',
     data: { playlists: 4 }, history: {}, appearance: { mode: 'light', accent: 'Sage' }, about: { build: 'x1' } });
-  assert.deepEqual(Object.keys(sums), ['engine', 'sources', 'helpers', 'data', 'history', 'appearance', 'about']);
+  assert.deepEqual(Object.keys(sums), ['engine', 'sources', 'helpers', 'data', 'requests', 'history', 'appearance', 'about']);
   for (const [id, line] of Object.entries(sums)) {
     assert.ok(line.length > 0, `${id} has a line`);
     assert.doesNotMatch(line, /ARMS_|UNDECIDED|undefined|NaN|bf_/, `${id} is plain words`);
@@ -73,4 +73,14 @@ test('a closed section is a button with aria-expanded and no body; an open one h
   assert.match(open, /class="uh open"/);
   assert.match(open, /aria-expanded="true"/);
   assert.match(open, /id="uh-data-b" role="region" aria-labelledby="uh-data-h" data-uh="sources"><p>x<\/p>/);
+});
+
+test('Spotify requests: the closed line and the body name what was sent and saved', async () => {
+  const { requestsSummary, requestsHTML } = await import('../web/screens/settings.mjs');
+  assert.equal(requestsSummary({}), 'None today');
+  assert.equal(requestsSummary({ n: 1234, saved: 40 }), '1,234 today · 40 saved');
+  assert.match(requestsSummary({ n: 5, limited: 2 }), /slowed 2×/);
+  const html = requestsHTML({ n: 30, saved: 3, kinds: { 'artists/albums': 20, 'me/tracks': 10 } });
+  assert.match(html, /Release radar<\/span><b>20/);
+  assert.ok(html.indexOf('Release radar') < html.indexOf('Liked songs'), 'biggest first');
 });

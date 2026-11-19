@@ -42,6 +42,10 @@ async function listeningSeeds() {
 // IndexedDB with a TTL for exactly that reason. /me/top/tracks (three windows)
 // rides on the same cache; an entry cached before it existed simply has none.
 const LISTENING_TTL = 4 * 60 * 60 * 1000;
+/* Searches Discover makes to find a pick on Spotify: a track's search answer
+ * hardly moves in a fortnight, and a second Discover run on the same seeds used
+ * to spend the same thirty to sixty searches again (auth.js spCached). */
+const SEARCH_TTL = 14 * 864e5;
 async function fetchListeningRaw() {
   const cached = await idb.get('listening_raw');
   if (cached && Date.now() - cached.at < LISTENING_TTL) return cached.data;
@@ -51,7 +55,8 @@ async function fetchListeningRaw() {
   for (const [range, weight] of [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]]) {
     try {
       const r = await sp(`/me/top/artists?limit=50&time_range=${range}`);
-      topWindows.push({ range, weight, items: (r?.items ?? []).map(a => a.name) });
+      topWindows.push({ range, weight, items: (r?.items ?? []).map(a => a.name),
+                        ids: (r?.items ?? []).map(a => ({ id: a.id, name: a.name })) });
     } catch { anyFailure = true; }
   }
   // Same windows and weights as the artists. Its own failure is not fatal and
@@ -63,14 +68,15 @@ async function fetchListeningRaw() {
       topTracks.push({ range, weight, items: (r?.items ?? []).map(t => t.id).filter(Boolean) });
     } catch { anyFailure = true; }
   }
-  let recentArtists = [], recentTracks = [];
+  let recentArtists = [], recentTracks = [], recentWho = [];
   try {
     const r = await sp('/me/player/recently-played?limit=50');
     recentArtists = (r?.items ?? []).flatMap(p => (p.track?.artists ?? []).map(a => a.name));
+    recentWho = (r?.items ?? []).map(p => ({ artists: (p.track?.artists ?? []).map(a => ({ id: a.id, name: a.name })) }));
     recentTracks = (r?.items ?? []).map(p => p.track?.id).filter(Boolean);
   } catch { anyFailure = true; }
 
-  const data = { topWindows, recentArtists, topTracks, recentTracks };
+  const data = { topWindows, recentArtists, topTracks, recentTracks, recentWho };
   // A genuine failure keeps no cache, so the next call asks Spotify again
   // rather than freezing a partial or empty answer for the whole TTL — the
   // same principle syncLibrary already applies to a playlist Spotify refused.
@@ -303,7 +309,7 @@ async function discRun(seedPlaylistId, quiet, append = false) {
   for (const o of out) {
     try {
       // The keyless path found its track on Spotify already.
-      const hit = o.hit ?? (await sp(`/search?q=${encodeURIComponent(`artist:${o.artist} track:${o.track}`)}&type=track&limit=1`)).tracks?.items?.[0];
+      const hit = o.hit ?? (await spCached(`/search?q=${encodeURIComponent(`artist:${o.artist} track:${o.track}`)}&type=track&limit=1`, { ttl: SEARCH_TTL, slim: slimTracks })).tracks?.items?.[0];
       delete o.hit;
       if (hit) {
         o.id = hit.id; o.album = hit.album?.name; o.released = hit.album?.release_date;
@@ -428,7 +434,7 @@ async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
     if (out.length >= 30) break;
     discStage(`Finding ${c.name} on Spotify…`, 0.7 + out.length / 120);
     let r;
-    try { r = await sp(`/search?q=${encodeURIComponent(`artist:${c.name}`)}&type=track&limit=10`); } catch { continue; }
+    try { r = await spCached(`/search?q=${encodeURIComponent(`artist:${c.name}`)}&type=track&limit=10`, { ttl: SEARCH_TTL, slim: slimTracks }); } catch { continue; }
     const hit = D.pickTrack(r?.tracks?.items ?? [], c.name,
       { isOwnedTrack: h => ownedTrack.has(norm(h.artists?.[0]?.name ?? '') + '|' + norm(h.name)) });
     if (hit) out.push({ artist: c.name, track: hit.name, via: c.via, hit });

@@ -312,14 +312,100 @@ function expireToken() {
 
 const NET_LOST = 'Lost the connection to Spotify. Nothing read so far is lost — this picks up where it stopped.';
 
+/* ---------- the request meter, and asking once ----------
+ * Spotify's quota belongs to the app, not the listener, so every request any
+ * account makes is spent from one budget. Two cheap rules keep that budget for
+ * the work that needs it: the same GET in flight twice is one request (a screen
+ * and a background job asking for the same page at once), and the page keeps a
+ * count of what it actually sent today, by kind, shown in Settings › Spotify
+ * requests, so a screen that suddenly costs a lot is visible rather than guessed. */
+const CALLS_KEY = 'bf_calls';
+const today = () => new Date().toISOString().slice(0, 10);
+let CALLS = (() => {
+  try { const c = JSON.parse(LS.getItem(CALLS_KEY) || 'null'); if (c?.day === today()) return c; } catch {}
+  return { day: today(), n: 0, kinds: {}, saved: 0, limited: 0 };
+})();
+let callsSaveTimer = null;
+function callsSave() {
+  if (callsSaveTimer) return;
+  callsSaveTimer = setTimeout(() => { callsSaveTimer = null; try { LS.setItem(CALLS_KEY, JSON.stringify(CALLS)); } catch {} }, 2000);
+}
+/** What a path is, for the meter: `/me/top/artists?…` -> `me/top`, `/playlists/x/items` -> `playlists/items`. */
+function callKind(url) {
+  const p = url.replace(/^https:\/\/api\.spotify\.com\/v1\//, '').split('?')[0].split('/');
+  if (p[0] === 'me') return 'me' + (p[1] ? '/' + p[1] : '');
+  return p[0] + (p[2] ? '/' + p[2] : '');
+}
+function callCount(url, field = 'n') {
+  if (CALLS.day !== today()) CALLS = { day: today(), n: 0, kinds: {}, saved: 0, limited: 0 };
+  if (field === 'n') { const k = callKind(url); CALLS.kinds[k] = (CALLS.kinds[k] ?? 0) + 1; }
+  CALLS[field] = (CALLS[field] ?? 0) + 1;
+  callsSave();
+}
+/** Today's count, for Settings: `{ day, n, kinds, saved, limited }`. */
+function spStats() { return CALLS.day === today() ? CALLS : { day: today(), n: 0, kinds: {}, saved: 0, limited: 0 }; }
+
+const inflight = new Map();   // GET url -> its pending promise
+
 async function sp(path, opts = {}) {
   const url = path.startsWith('http') ? path : 'https://api.spotify.com/v1' + path;
+  if (opts.method && opts.method !== 'GET') return spSend(url, opts);
+  const was = inflight.get(url);
+  if (was) { callCount(url, 'saved'); return was; }
+  const p = spSend(url, opts).finally(() => inflight.delete(url));
+  inflight.set(url, p);
+  return p;
+}
+
+/* A kept answer, for reads whose answer barely moves (a search for an artist's
+ * tracks, an album's track list): kept in IndexedDB under `spc:` for `ttl` ms,
+ * slimmed by `slim` first so only what the caller uses is stored. A failure is
+ * never kept, so the next call simply asks again. The family is capped: past
+ * SPC_MAX entries the oldest go. */
+const SPC_MAX = 400;
+let spcIndex = null;    // { [path]: at } — loaded once
+async function spcLoad() {
+  if (spcIndex) return spcIndex;
+  try { spcIndex = (await idb.get('spc_index')) ?? {}; } catch { spcIndex = {}; }
+  return spcIndex;
+}
+async function spCached(path, { ttl = 7 * 864e5, slim = x => x } = {}) {
+  const idx = await spcLoad();
+  const at = idx[path];
+  if (at && Date.now() - at < ttl) {
+    try { const v = await idb.get('spc:' + path); if (v !== undefined && v !== null) { callCount(path, 'saved'); return v; } } catch {}
+  }
+  const v = slim(await sp(path));
+  try {
+    await idb.set('spc:' + path, v);
+    idx[path] = Date.now();
+    const keys = Object.keys(idx);
+    if (keys.length > SPC_MAX) {
+      keys.sort((a, b) => idx[a] - idx[b]);
+      for (const k of keys.slice(0, keys.length - SPC_MAX)) { delete idx[k]; await idb.del('spc:' + k); }
+    }
+    await idb.set('spc_index', idx);
+  } catch { /* not kept: asked again next time */ }
+  return v;
+}
+
+/** A search's tracks, cut down to what Discover and the swap checks read. */
+const slimTracks = r => ({ tracks: { items: (r?.tracks?.items ?? []).map(t => ({
+  id: t.id, name: t.name, duration_ms: t.duration_ms, uri: t.uri, popularity: t.popularity,
+  external_ids: t.external_ids?.isrc ? { isrc: t.external_ids.isrc } : undefined,
+  artists: (t.artists ?? []).map(a => ({ id: a.id, name: a.name })),
+  album: t.album && { id: t.album.id, name: t.album.name, release_date: t.album.release_date,
+    album_type: t.album.album_type, images: (t.album.images ?? []).slice(-2) },
+})) } });
+
+async function spSend(url, opts = {}) {
   let held = 0;      // ms of 429 already sat through quietly, this call
   let soft = 0;      // dropped / hung / 5xx attempts, this call
   let back = 1000;   // and how long to wait before the next of those
   let reauthed = false;
   for (let i = 0; ; i++) {
     await pace();
+    callCount(url);
     let res;
     try {
       res = await fetchDeadline(url, { ...opts, headers:{ authorization:'Bearer ' + await token(),
@@ -335,6 +421,7 @@ async function sp(path, opts = {}) {
       setGap(gap * 2); await sleep(back); back *= 2; continue;
     }
     if (res.status === 429) {
+      callCount(url, 'limited');
       const after = (+res.headers.get('retry-after') || 0) * 1000;
       // A quota-exceeded 429 carries a reason Spotify only added recently: the
       // app's whole request budget for the period is gone, not a busy moment,

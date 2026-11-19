@@ -68,7 +68,10 @@ function playerRun() {
     }
     // Four seconds while something is moving; a slow heartbeat when it is not,
     // so a card left open on screen does not quietly spend the rate budget.
-    if (Date.now() - PLAYER.lastPoll > (PLAYER.playing ? 4000 : 15000)) playerPoll();
+    // Never while the page is in the background: nobody is watching the bar,
+    // and a phone with the app left open used to poll all afternoon.
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (Date.now() - PLAYER.lastPoll > (PLAYER.playing ? 5000 : 20000)) playerPoll();
   }, 250);
   if (Date.now() - PLAYER.lastPoll > 4000) playerPoll(); else playerPaint();
 }
@@ -115,11 +118,29 @@ async function playFrom(id, dur = 0) {
   } catch (e) { toast(e.message); }
 }
 
-async function playTrack(id) {
+/* The device a track was last sent to, for two minutes: playing card after card
+ * used to ask for the device list before every one. A device that has gone
+ * since answers the play with a 404, and only then is the list asked again. */
+let lastDevice = null;
+const DEVICE_KEEP = 120000;
+async function pickDevice(fresh = false) {
+  if (!fresh && lastDevice && Date.now() - lastDevice.at < DEVICE_KEEP) return lastDevice.dev;
   const d = await sp('/me/player/devices');
-  const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
-  if (!dev) throw new Error('No open Spotify device — open Spotify and try again.');
-  await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body:JSON.stringify({ uris:['spotify:track:'+id] }) });
+  const dev = (d?.devices??[]).find(x=>x.is_active) ?? (d?.devices??[])[0];
+  if (!dev) { lastDevice = null; throw new Error('No open Spotify device — open Spotify and try again.'); }
+  lastDevice = { dev, at: Date.now() };
+  return dev;
+}
+async function playTrack(id) {
+  const body = JSON.stringify({ uris:['spotify:track:'+id] });
+  let dev = await pickDevice();
+  try { await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body }); }
+  catch (e) {
+    if (e?.status !== 404 || !lastDevice) throw e;
+    dev = await pickDevice(true);
+    await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body });
+  }
+  lastDevice = { dev, at: Date.now() };
   return dev.name;
 }
 

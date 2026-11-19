@@ -146,7 +146,7 @@ const BUNDLE = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf
 
 test('the page asks for /me/top/tracks in three windows, cached with the rest', () => {
   assert.match(BUNDLE, /\/me\/top\/tracks\?limit=50&time_range=\$\{range\}/);
-  assert.match(BUNDLE, /const data = \{ topWindows, recentArtists, topTracks, recentTracks \}/);
+  assert.match(BUNDLE, /const data = \{ topWindows, recentArtists, topTracks, recentTracks, recentWho \}/);
   assert.match(BUNDLE, /tracks: trackWeights\(\{ topTracks, recentTracks \}\)/);
 });
 
