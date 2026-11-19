@@ -30,6 +30,29 @@ import { withTimeout } from './timeout.mjs';
 export const WORKER_VERSION = '1.1.0';
 
 /**
+ * The network half of analyseOne (lookup, then both preview windows), on its
+ * own so runQueue can start it for the next track while this one is heard
+ * (SOUND-ENGINE-PLAN L2). Never rejects. Returns `{ found, got }` to hear, or
+ * `{ result }` when the answer is already known (a miss, or a failure).
+ */
+export async function fetchTrack(deps, track) {
+  const now = deps.now ?? Date.now;
+  const id = track?.id;
+  if (!id) throw new Error('analyseOne needs a track id');
+  const isrc = track.isrc || null;
+  const miss = reason => ({ result: { miss: makeMiss({ id, isrc, reason, at: now() }) } });
+  const failed = (stage, detail) => ({ result: { failed: { id, stage, detail: String(detail ?? '') } } });
+  if (!isrc) return miss(MISS.NO_ISRC);
+  let found;
+  try { found = await deps.lookup(isrc, { spotifyDurationMs: track.durationMs }); }
+  catch (e) { return failed('lookup', e?.message ?? e); }
+  if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? miss(found.miss) : failed('lookup', found.detail ?? found.miss);
+  const got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
+  if (got?.miss) return failed('download', got.detail ?? got.miss);
+  return { found, got };
+}
+
+/**
  * Analyse one track end to end.
  *
  * @param {object} deps
@@ -45,26 +68,22 @@ export const WORKER_VERSION = '1.1.0';
  *        optional CLAP (WP-C2): 48 kHz decode and core/audio/clap.mjs clapEmbed, bound to its ear
  * @param {() => number} [deps.now]
  * @param {{ id: string, isrc?: string, durationMs?: number }} track
+ * @param {Promise<object>|object} [fetched]  fetchTrack()'s answer, when the caller already started it
  * @returns {Promise<{ record: object } | { miss: object } | { failed: { id: string, stage: string, detail: string } }>}
  *   `record` and `miss` are storable; `failed` is not and must not be stored.
  */
-export async function analyseOne(deps, track) {
+export async function analyseOne(deps, track, fetched = undefined) {
   const now = deps.now ?? Date.now;
   const id = track?.id;
   if (!id) throw new Error('analyseOne needs a track id');
+
+  // `fetched` is a prefetch (L2, runQueue): the same lookup + download, done earlier.
+  const pre = fetched === undefined ? await fetchTrack(deps, track) : await fetched;
+  if (pre.result) return pre.result;
+  const { found } = pre;
+  let got = pre.got;
   const isrc = track.isrc || null;
-  const miss = reason => ({ miss: makeMiss({ id, isrc, reason, at: now() }) });
   const failed = (stage, detail) => ({ failed: { id, stage, detail: String(detail ?? '') } });
-
-  if (!isrc) return miss(MISS.NO_ISRC);
-
-  let found;
-  try { found = await deps.lookup(isrc, { spotifyDurationMs: track.durationMs }); }
-  catch (e) { return failed('lookup', e?.message ?? e); }
-  if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? miss(found.miss) : failed('lookup', found.detail ?? found.miss);
-
-  let got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
-  if (got?.miss) return failed('download', got.detail ?? got.miss);
 
   // CLAP (WP-C2), only when the page passes deps.clap: the same windows at
   // 48 kHz, decoded first because decoding detaches the buffer it is given.
@@ -179,13 +198,24 @@ export async function analyseSamples(deps, { id, isrc, samples, parts = null, so
  * `onResult` gets each result as it lands — the caller stores records and misses.
  * @returns {Promise<{ done: number, stopped: boolean }>}
  */
-export async function runQueue(deps, tracks, { signal, onResult = () => {}, timeoutMs = 0 } = {}) {
+export async function runQueue(deps, tracks, { signal, onResult = () => {}, timeoutMs = 0, prefetch = true } = {}) {
   let done = 0;
-  for (const t of tracks) {
+  // L2: one ahead. While track i is decoded and heard, track i+1's lookup and
+  // download run (the signed URL is used at once, never kept). fetchTrack
+  // never rejects, and a prefetch still in flight when the queue stops is
+  // simply dropped.
+  const ahead = t => withTimeout(() => fetchTrack(deps, t), timeoutMs, 'fetching one track')
+    .catch(e => ({ result: { failed: { id: t?.id, stage: 'unknown', detail: String(e?.message ?? e) } } }));
+  let next = null;
+  for (let i = 0; i < tracks.length; i++) {
+    const t = tracks[i];
     if (signal?.aborted) return { done, stopped: true };
+    const pre = next ?? (prefetch ? ahead(t) : undefined);
+    next = null;
+    if (prefetch && i + 1 < tracks.length) next = ahead(tracks[i + 1]);
     let r;
     // timeoutMs (DESIGN-PLAN L0): a track that never settles counts as failed, and the queue moves on.
-    try { r = await withTimeout(() => analyseOne(deps, t), timeoutMs, 'hearing one track'); }
+    try { r = await withTimeout(() => analyseOne(deps, t, pre), timeoutMs, 'hearing one track'); }
     catch (e) { r = { failed: { id: t?.id, stage: 'unknown', detail: String(e?.message ?? e) } }; }
     await onResult(r, t);
     done++;

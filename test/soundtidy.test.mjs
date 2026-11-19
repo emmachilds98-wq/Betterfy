@@ -132,3 +132,13 @@ test('nothing to measure with fewer than two judgeable playlists', () => {
                                membership: genreMembership(lib, { targets }) });
   assert.equal(acc, null);
 });
+
+test('Tidy shows the BPM in its genre convention (T2), and nothing when the octave is unsettled (T3)', () => {
+  const { lib, records } = library([['stray', 'jungle', 'House']]);
+  const stray = records.find(r => r.id === 'stray');
+  const index = () => audioIndex(records), membership = genreMembership(lib, { targets });
+  stray.dsp = { ...stray.dsp, bpm: 86, bpmConf: 0.8 };
+  assert.equal(soundMisfits({ index: index(), membership }).find(x => x.id === 'stray').bpm, 172, 'read at half, shown at the genre\'s 172');
+  stray.dsp = { ...stray.dsp, bpm: 86, bpmConf: 0.2 };
+  assert.equal(soundMisfits({ index: index(), membership }).find(x => x.id === 'stray').bpm, null, 'below the bar: unknown');
+});

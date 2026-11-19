@@ -285,7 +285,7 @@ test('a run stops mid-queue after the track in flight, and a second run resumes 
   const second = await ctrl.start(rest);
   assert.deepEqual(second, { done: 4, stopped: false });
   assert.equal(ctrl.vm().state, 'done');
-  assert.deepEqual(p.calls.lookup, ['Ia', 'Ib', 'Ic', 'Id', 'NONE', 'If'], 'every track looked up exactly once');
+  assert.deepEqual(p.calls.lookup, ['Ia', 'Ib', 'Ic', 'Ic', 'Id', 'NONE', 'If'], 'every track looked up once, except c: it was fetched ahead (L2) when the run stopped, so that fetch was dropped and redone');
 
   const all = await ctrl.refresh();
   assert.equal(all.size, 6);
@@ -310,7 +310,8 @@ test('L1: the controller times each stage per track, hands the samples to onTimi
   assert.deepEqual(a.all, b.all, 'timing changes nothing that is stored');
   assert.equal(a.snaps.length, 1);
   assert.equal(a.snaps[0].track.length, 3, 'one sample per track');
-  assert.ok(a.snaps[0].track.every(s => s.lookup > 0 && s.download > 0 && s.decode > 0 && s.model > 0));
+  // L2: the next track's lookup and download land in the sample of the track being heard, so the last has none.
+  assert.ok(a.snaps[0].track.slice(0, 2).every(s => s.lookup > 0 && s.download > 0 && s.decode > 0 && s.model > 0));
   assert.equal(a.ctrl.timing().track.length, 3);
 });
 

@@ -1181,6 +1181,29 @@ const { withTimeout } = __mod["core/audio/timeout.mjs"];
 const WORKER_VERSION = '1.1.0';
 
 /**
+ * The network half of analyseOne (lookup, then both preview windows), on its
+ * own so runQueue can start it for the next track while this one is heard
+ * (SOUND-ENGINE-PLAN L2). Never rejects. Returns `{ found, got }` to hear, or
+ * `{ result }` when the answer is already known (a miss, or a failure).
+ */
+async function fetchTrack(deps, track) {
+  const now = deps.now ?? Date.now;
+  const id = track?.id;
+  if (!id) throw new Error('analyseOne needs a track id');
+  const isrc = track.isrc || null;
+  const miss = reason => ({ result: { miss: makeMiss({ id, isrc, reason, at: now() }) } });
+  const failed = (stage, detail) => ({ result: { failed: { id, stage, detail: String(detail ?? '') } } });
+  if (!isrc) return miss(MISS.NO_ISRC);
+  let found;
+  try { found = await deps.lookup(isrc, { spotifyDurationMs: track.durationMs }); }
+  catch (e) { return failed('lookup', e?.message ?? e); }
+  if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? miss(found.miss) : failed('lookup', found.detail ?? found.miss);
+  const got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
+  if (got?.miss) return failed('download', got.detail ?? got.miss);
+  return { found, got };
+}
+
+/**
  * Analyse one track end to end.
  *
  * @param {object} deps
@@ -1196,26 +1219,22 @@ const WORKER_VERSION = '1.1.0';
  *        optional CLAP (WP-C2): 48 kHz decode and core/audio/clap.mjs clapEmbed, bound to its ear
  * @param {() => number} [deps.now]
  * @param {{ id: string, isrc?: string, durationMs?: number }} track
+ * @param {Promise<object>|object} [fetched]  fetchTrack()'s answer, when the caller already started it
  * @returns {Promise<{ record: object } | { miss: object } | { failed: { id: string, stage: string, detail: string } }>}
  *   `record` and `miss` are storable; `failed` is not and must not be stored.
  */
-async function analyseOne(deps, track) {
+async function analyseOne(deps, track, fetched = undefined) {
   const now = deps.now ?? Date.now;
   const id = track?.id;
   if (!id) throw new Error('analyseOne needs a track id');
+
+  // `fetched` is a prefetch (L2, runQueue): the same lookup + download, done earlier.
+  const pre = fetched === undefined ? await fetchTrack(deps, track) : await fetched;
+  if (pre.result) return pre.result;
+  const { found } = pre;
+  let got = pre.got;
   const isrc = track.isrc || null;
-  const miss = reason => ({ miss: makeMiss({ id, isrc, reason, at: now() }) });
   const failed = (stage, detail) => ({ failed: { id, stage, detail: String(detail ?? '') } });
-
-  if (!isrc) return miss(MISS.NO_ISRC);
-
-  let found;
-  try { found = await deps.lookup(isrc, { spotifyDurationMs: track.durationMs }); }
-  catch (e) { return failed('lookup', e?.message ?? e); }
-  if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? miss(found.miss) : failed('lookup', found.detail ?? found.miss);
-
-  let got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
-  if (got?.miss) return failed('download', got.detail ?? got.miss);
 
   // CLAP (WP-C2), only when the page passes deps.clap: the same windows at
   // 48 kHz, decoded first because decoding detaches the buffer it is given.
@@ -1330,13 +1349,24 @@ async function analyseSamples(deps, { id, isrc, samples, parts = null, source })
  * `onResult` gets each result as it lands — the caller stores records and misses.
  * @returns {Promise<{ done: number, stopped: boolean }>}
  */
-async function runQueue(deps, tracks, { signal, onResult = () => {}, timeoutMs = 0 } = {}) {
+async function runQueue(deps, tracks, { signal, onResult = () => {}, timeoutMs = 0, prefetch = true } = {}) {
   let done = 0;
-  for (const t of tracks) {
+  // L2: one ahead. While track i is decoded and heard, track i+1's lookup and
+  // download run (the signed URL is used at once, never kept). fetchTrack
+  // never rejects, and a prefetch still in flight when the queue stops is
+  // simply dropped.
+  const ahead = t => withTimeout(() => fetchTrack(deps, t), timeoutMs, 'fetching one track')
+    .catch(e => ({ result: { failed: { id: t?.id, stage: 'unknown', detail: String(e?.message ?? e) } } }));
+  let next = null;
+  for (let i = 0; i < tracks.length; i++) {
+    const t = tracks[i];
     if (signal?.aborted) return { done, stopped: true };
+    const pre = next ?? (prefetch ? ahead(t) : undefined);
+    next = null;
+    if (prefetch && i + 1 < tracks.length) next = ahead(tracks[i + 1]);
     let r;
     // timeoutMs (DESIGN-PLAN L0): a track that never settles counts as failed, and the queue moves on.
-    try { r = await withTimeout(() => analyseOne(deps, t), timeoutMs, 'hearing one track'); }
+    try { r = await withTimeout(() => analyseOne(deps, t, pre), timeoutMs, 'hearing one track'); }
     catch (e) { r = { failed: { id: t?.id, stage: 'unknown', detail: String(e?.message ?? e) } }; }
     await onResult(r, t);
     done++;
@@ -1350,7 +1380,7 @@ function concat(parts) {
   let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
   return out;
 }
-return { WORKER_VERSION, analyseOne, fillDsp, analyseSamples, runQueue };
+return { WORKER_VERSION, fetchTrack, analyseOne, fillDsp, analyseSamples, runQueue };
 })();
 /* ---- core/audio/timing.mjs ---- */
 __mod["core/audio/timing.mjs"] = (function () {
@@ -1466,6 +1496,416 @@ function timingReportLines(snapshot, device = '') {
   return lines;
 }
 return { STAGES, TIMING_KEEP, createTimer, timeDeps, summariseTimings, timingLine, deviceClass, timingReportLines };
+})();
+/* ---- core/sources/provider.mjs ---- */
+__mod["core/sources/provider.mjs"] = (function () {
+// The provider interface — §7 and §36 of the v3 plan.
+//
+// Adding a source must mean writing an adapter, a mapper and tests, and
+// nothing else (§36). That only holds if the classifier never has to know a
+// provider exists, which in turn only holds if everything the classifier
+// would otherwise want to special-case is something the provider *declares*:
+// how much it is trusted, what it can answer, whether it is independent of
+// the sources already consulted, and what version of itself produced an
+// answer.
+//
+// Nothing here fetches. An adapter is split into a declaration plus pure
+// mapping functions, and a separate thin fetch function, so the mapping — the
+// part with all the judgement in it — is testable against a recorded fixture
+// with no network at all (§41.6, §41.7).
+
+/** What a provider can be asked for. Mirrors Evidence FIELDS plus 'identity'. */
+const CAPABILITIES = ['identity', 'genre', 'mood', 'context', 'era', 'descriptor',
+                             'bpm', 'key', 'energy', 'valence', 'voice', 'instrumentation', 'similarity'];
+
+/**
+ * @typedef {object} ProviderCapability
+ * @property {string} id                 stable provider id, used as Evidence.source
+ * @property {string} version            bumped when the adapter's mapping changes
+ * @property {string[]} capabilities     subset of CAPABILITIES
+ * @property {string[]} entityTypes      what it can be asked about
+ * @property {number} reliability        0-1, how much this source is trusted at all
+ * @property {string} independenceGroup  sources sharing a group are NOT independent
+ * @property {boolean} optional          true when absent-by-default costs nothing
+ * @property {string} requires           human-readable: what a user must configure
+ */
+
+/**
+ * Declare a provider. `reliability` is the one judgement call here and it is
+ * deliberately shallow — a coarse prior, to be replaced by benchmark-measured
+ * numbers (§9: "actual numerical weights must be validated using the
+ * benchmark dataset"). It is not a ranking the classifier reads directly; it
+ * is one factor among four in evidenceWeight().
+ */
+function defineProvider(spec) {
+  const p = {
+    id: spec.id,
+    version: spec.version ?? '0.0.0',
+    capabilities: spec.capabilities ?? [],
+    entityTypes: spec.entityTypes ?? [],
+    reliability: spec.reliability ?? 0.5,
+    // Default: every provider is its own group. Sharing one is the exception
+    // and has to be stated, because getting it wrong inflates confidence.
+    independenceGroup: spec.independenceGroup ?? spec.id,
+    optional: spec.optional ?? true,
+    requires: spec.requires ?? 'nothing',
+  };
+  for (const c of p.capabilities)
+    if (!CAPABILITIES.includes(c)) throw new Error(`${p.id} declares unknown capability: ${c}`);
+  return Object.freeze(p);
+}
+
+/**
+ * A set of providers the engine may consult, and the two lookups the
+ * weighting layer needs from them. Built per run, so a listener who has
+ * configured no Discogs token simply has a registry without it — there is no
+ * "disabled provider" state to reason about anywhere downstream.
+ */
+class ProviderRegistry {
+  constructor(providers = []) {
+    this.providers = new Map();
+    for (const p of providers) this.register(p);
+  }
+
+  register(p) {
+    if (!p?.id) throw new Error('a provider needs an id');
+    this.providers.set(p.id, p);
+    return this;
+  }
+
+  get(id) { return this.providers.get(id) ?? null; }
+  has(id) { return this.providers.has(id); }
+  get ids() { return [...this.providers.keys()]; }
+
+  /** For evidenceWeight(). Unknown sources are trusted at half. */
+  reliabilityOf = source => this.providers.get(source)?.reliability ?? 0.5;
+
+  /**
+   * For agreementFactor(). An unregistered source is treated as its own
+   * group — the conservative direction is to *under*-count correlation only
+   * when we genuinely know two sources share a crowd.
+   */
+  independenceOf = source => this.providers.get(source)?.independenceGroup ?? source;
+
+  /** Providers that can answer a given capability. */
+  providing(capability) {
+    return [...this.providers.values()].filter(p => p.capabilities.includes(capability));
+  }
+
+  /** The version stamp recorded on every profile this registry produced. */
+  versions() {
+    return Object.fromEntries([...this.providers.values()].map(p => [p.id, p.version]));
+  }
+}
+return { CAPABILITIES, defineProvider, ProviderRegistry };
+})();
+/* ---- core/sources/deezer.mjs ---- */
+__mod["core/sources/deezer.mjs"] = (function () {
+const { defineProvider } = __mod["core/sources/provider.mjs"];
+// Deezer: an exact artist id from an ISRC, and that artist's "fans also like".
+//
+// Why Deezer at all, when Spotify has an artist id already: Spotify's own
+// related-artists endpoint is gone, and Deezer's is keyless. Measured on the
+// owner's library (docs/SMARTER-GENRES-PLAN.md §2.1): of 70 scene-genre artists
+// Wikidata does not know at all, 68 were on Deezer and 57 had a related list —
+// and the lists stayed inside the scene (Coco Bryce → Tim Reaper, LTJ Bukem).
+//
+// Identity is the part with the judgement in it. Searching Deezer by name is
+// the Last.fm-autocorrect mistake again: a same-named artist wins and poisons
+// every answer about the real one. So the artist is reached through a
+// *recording*: the ISRC Spotify already gives identifies one track exactly, and
+// that track's credits name the Deezer artist. The name is then checked against
+// the Spotify credit, so an ISRC that Deezer has filed under a different
+// billing (a remixer as main artist) is caught rather than trusted.
+//
+// Nothing here fetches. The page reaches Deezer through JSONP in a sandboxed
+// frame (Deezer sends no CORS header — checked), Node with plain fetch; both
+// hand the parsed JSON to the functions below.
+
+
+const DEEZER = defineProvider({
+  id: 'deezer-related',
+  version: '1.0.0',
+  capabilities: ['identity', 'similarity'],
+  entityTypes: ['artist'],
+  // A prior. Phase 0 of the plan replaces it with the held-out number.
+  reliability: 0.5,
+  independenceGroup: 'deezer',
+  optional: true,
+  requires: 'nothing — public, keyless',
+});
+
+const API = 'https://api.deezer.com';
+
+/** How many related artists to keep. Deezer returns 20 by default; the tail is
+ *  where the list drifts out of the scene, so more is not better. */
+const RELATED_LIMIT = 25;
+
+const isrcUrl = isrc => `${API}/track/isrc:${encodeURIComponent(String(isrc).replace(/-/g, '').toUpperCase())}`;
+const relatedUrl = (id, limit = RELATED_LIMIT) => `${API}/artist/${encodeURIComponent(id)}/related?limit=${limit}`;
+
+/** Only these URLs may be fetched through the page's JSONP frame. A script tag
+ *  runs whatever it is given, so the host is pinned rather than trusted. */
+const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_-]*)?$/i.test(String(url));
+
+/**
+ * What a Deezer error body means for the cache.
+ *
+ *  - `none`   code 800 "no data": a real answer that there is nothing. Cacheable.
+ *  - `quota`  code 4: slow down and ask again. Never cached.
+ *  - `error`  anything else: not an answer. Never cached — the README's rule that
+ *             a request that failed must not be written down as "nothing here".
+ */
+function errorKind(json) {
+  const e = json?.error;
+  if (!e) return null;
+  const code = Number(e.code);
+  if (code === 800) return 'none';
+  if (code === 4) return 'quota';
+  return 'error';
+}
+
+/** Lower-case, accents and punctuation off, a leading "the" dropped. Enough to
+ *  see that "Ragga Twins" and "The Ragga Twins" are one act, and not so loose
+ *  that two different names collapse into one. */
+function normName(s) {
+  return String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/&/g, 'and').replace(/^the\s+/, '').replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * The Deezer artist behind a Spotify credit, from a `track/isrc:` answer.
+ *
+ * @param {object} json   the parsed response
+ * @param {string} name   the Spotify artist's name, to check the credit against
+ * @returns {{answered: true, artist: {id: number, name: string}|null}
+ *          |{answered: false, retry: boolean}}
+ */
+function artistFromIsrc(json, name) {
+  const kind = errorKind(json);
+  if (kind === 'none') return { answered: true, artist: null };
+  if (kind) return { answered: false, retry: kind === 'quota' };
+  if (!json || typeof json !== 'object' || json.id == null) return { answered: false, retry: false };
+
+  const want = normName(name);
+  const credits = [json.artist, ...(Array.isArray(json.contributors) ? json.contributors : [])]
+    .filter(a => a && a.id != null && a.name);
+  // The main artist first, then any contributor, but only ever one whose name
+  // matches the credit we asked about. No match is an answer — "Deezer has the
+  // recording but not under this artist" — not a reason to take the nearest.
+  const hit = want ? credits.find(a => normName(a.name) === want) : null;
+  return { answered: true, artist: hit ? { id: Number(hit.id), name: String(hit.name) } : null };
+}
+
+/**
+ * An artist's related artists, in Deezer's own order (most related first).
+ *
+ * @returns {{answered: true, related: {id: number, name: string}[]}
+ *          |{answered: false, retry: boolean}}
+ */
+function relatedFrom(json, { limit = RELATED_LIMIT } = {}) {
+  const kind = errorKind(json);
+  if (kind === 'none') return { answered: true, related: [] };
+  if (kind) return { answered: false, retry: kind === 'quota' };
+  if (!json || !Array.isArray(json.data)) return { answered: false, retry: false };
+  const related = json.data
+    .filter(a => a && a.id != null && a.name)
+    .slice(0, limit)
+    .map(a => ({ id: Number(a.id), name: String(a.name) }));
+  return { answered: true, related };
+}
+return { DEEZER, API, RELATED_LIMIT, isrcUrl, relatedUrl, isDeezerApiUrl, errorKind, normName, artistFromIsrc, relatedFrom };
+})();
+/* ---- core/audio/fetch.mjs ---- */
+__mod["core/audio/fetch.mjs"] = (function () {
+const { MISS } = __mod["core/audio/record.mjs"];
+const { isrcUrl, errorKind } = __mod["core/sources/deezer.mjs"];
+// Deezer preview lookup and partial download (WP-A1).
+//
+// Spotify gives the ISRC; Deezer's `track/isrc:` answers with a 30-second
+// preview MP3 for that exact recording. ISRC or nothing: phase 0 saw a name
+// match pick the wrong track 1 time in 19 (docs/AUDIO-ANALYSIS-PLAN.md §0).
+//
+// Nothing here owns a transport. `jsonp` is injected (the page passes its
+// existing deezerJsonp; Deezer's API sends no CORS header) and so is `fetch`
+// (the preview CDN *is* CORS-open). Tests pass fakes; there is no network in
+// CI.
+//
+// Rules this file holds (build plan §0):
+//  - never cache a preview URL: it is signed and expires ~15 minutes after
+//    lookup, so look up and download in the same pass;
+//  - a failed request is FAILED, which record.mjs refuses to cache, never a
+//    catalogue "miss";
+//  - only two ~10 s windows are downloaded (phase 0: 31% less data, same
+//    top-1 82% of the time, embedding cosine median 0.988).
+
+
+
+const FETCH_VERSION = '1.0.0';
+/** One window: ~10 s of a 128 kbps preview. */
+const WINDOW_BYTES = 165000;
+/** Deezer duration vs Spotify duration: more apart than this is another recording. */
+const IDENTITY_TOLERANCE_MS = 3000;
+
+const normIsrc = s => String(s ?? '').replace(/-/g, '').toUpperCase();
+
+/**
+ * Look a track up on Deezer by ISRC.
+ * @param {string} isrc
+ * @param {{ jsonp: (url: string) => Promise<object>, spotifyDurationMs?: number }} deps
+ * @returns {Promise<{ deezerId: number, previewUrl: string, durationMs: number, readable: boolean }
+ *                  | { miss: string, detail?: string }>}
+ */
+async function lookup(isrc, { jsonp, spotifyDurationMs } = {}) {
+  if (!isrc) return { miss: MISS.NO_ISRC };
+  let json;
+  try { json = await jsonp(isrcUrl(isrc)); }
+  catch (e) { return { miss: MISS.FAILED, detail: String(e?.message ?? e) }; }
+  const err = errorKind(json);
+  if (err === 'none') return { miss: MISS.NOT_ON_DEEZER };
+  if (err) return { miss: MISS.FAILED, detail: err };          // quota or error: ask again later
+  if (!json || typeof json !== 'object' || !json.id) return { miss: MISS.FAILED, detail: 'malformed' };
+  if (json.isrc && normIsrc(json.isrc) !== normIsrc(isrc)) return { miss: MISS.IDENTITY, detail: 'isrc' };
+  const durationMs = Number(json.duration) * 1000;
+  if (spotifyDurationMs != null && !identityOk(durationMs, spotifyDurationMs)) return { miss: MISS.IDENTITY, detail: 'duration' };
+  const readable = json.readable !== false;
+  if (!readable || !json.preview) return { miss: MISS.NO_PREVIEW, detail: readable ? 'no preview' : 'not readable' };
+  return { deezerId: json.id, previewUrl: json.preview, durationMs, readable };
+}
+
+/** Deezer reports whole seconds, so ±3 s is the tolerance (§4.1). */
+function identityOk(deezerDurationMs, spotifyDurationMs) {
+  if (!Number.isFinite(deezerDurationMs) || !Number.isFinite(spotifyDurationMs) || deezerDurationMs <= 0) return false;
+  return Math.abs(deezerDurationMs - spotifyDurationMs) <= IDENTITY_TOLERANCE_MS;
+}
+
+/**
+ * The two byte ranges to download: one at the start, one centred.
+ * Returns [[start, length], ...] — the shape AudioRecord's `source.windows` keeps.
+ * A file too small for two separate windows comes back as one range covering it.
+ */
+function windows(byteLength) {
+  const n = Math.max(0, Math.floor(byteLength));
+  if (n <= 2 * WINDOW_BYTES) return n > 0 ? [[0, n]] : [];
+  const mid = Math.floor(n / 2 - WINDOW_BYTES / 2);
+  return [[0, WINDOW_BYTES], [mid, WINDOW_BYTES]];
+}
+
+/**
+ * Download byte ranges of a preview. Expects 206 Partial Content; a server
+ * that ignores Range and answers 200 sends the whole file, which is sliced
+ * here instead (and the result says so, in `.sliced`).
+ *
+ * @param {string} url
+ * @param {Array<[number, number]>} ranges
+ * @param {{ fetch: typeof fetch }} deps
+ * @returns {Promise<ArrayBuffer[] & { sliced: boolean }>}  rejects on a network or HTTP failure
+ */
+async function fetchWindows(url, ranges, { fetch }) {
+  const out = []; let sliced = false, whole = null;
+  for (const [start, len] of ranges) {
+    if (whole) { out.push(whole.slice(start, start + len)); continue; }
+    const r = await fetch(url, { headers: { Range: `bytes=${start}-${start + len - 1}` } });
+    if (r.status === 206) { out.push(await r.arrayBuffer()); continue; }
+    if (r.status === 200) {
+      whole = await r.arrayBuffer(); sliced = true;
+      out.push(whole.slice(start, start + len));
+      continue;
+    }
+    throw new Error(`preview answered ${r.status}`);
+  }
+  return Object.assign(out, { sliced });
+}
+
+/** Total size from a `Content-Range: bytes 0-164999/479827` header, or null. */
+function totalFromContentRange(h) {
+  const m = /\/(\d+)\s*$/.exec(String(h ?? ''));
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Lookup's preview -> the two windows, in one pass (the URL is never kept).
+ * The first request also tells us the file size, which places the centred
+ * window; a server that sends the whole file costs one request.
+ *
+ * @returns {Promise<{ buffers: ArrayBuffer[], windows: Array<[number, number]>, total: number|null, sliced: boolean }
+ *                  | { miss: 'FAILED', detail: string }>}
+ */
+async function fetchPreview(url, { fetch }) {
+  try {
+    const r = await fetch(url, { headers: { Range: `bytes=0-${WINDOW_BYTES - 1}` } });
+    if (r.status === 200) {
+      const whole = await r.arrayBuffer();
+      const w = windows(whole.byteLength);
+      return { buffers: w.map(([s, l]) => whole.slice(s, s + l)), windows: w, total: whole.byteLength, sliced: true };
+    }
+    if (r.status !== 206) return { miss: MISS.FAILED, detail: `preview answered ${r.status}` };
+    const first = await r.arrayBuffer();
+    const total = totalFromContentRange(r.headers?.get?.('content-range'));
+    if (!total || total <= first.byteLength) return { buffers: [first], windows: [[0, first.byteLength]], total: total ?? first.byteLength, sliced: false };
+    const w = windows(total);
+    if (w.length < 2) {
+      const rest = await fetchWindows(url, [[first.byteLength, total - first.byteLength]], { fetch });
+      const all = new Uint8Array(total); all.set(new Uint8Array(first)); all.set(new Uint8Array(rest[0]), first.byteLength);
+      return { buffers: [all.buffer], windows: [[0, total]], total, sliced: rest.sliced };
+    }
+    const second = await fetchWindows(url, [w[1]], { fetch });
+    return { buffers: [first, second[0]], windows: [[0, first.byteLength], w[1]], total, sliced: second.sliced };
+  } catch (e) {
+    return { miss: MISS.FAILED, detail: String(e?.message ?? e) };
+  }
+}
+
+/** Stands in for a preview URL when the answer comes from the cache; never a real, signed URL. */
+const CACHED_PREVIEW = 'preview-cache:';
+
+/**
+ * One download per record for all top-ups (SOUND-ENGINE-PLAN L3). The four
+ * top-ups (tempo/key, CLAP, Beat This, key v4) each looked a record up and
+ * downloaded its preview again; this wraps `lookup` and `fetchPreview` so the
+ * second and later ask for the same ISRC in a run is answered from the raw
+ * (still compressed) windows kept briefly in memory. Only the audio bytes and
+ * Deezer's id are kept, never the signed URL, and callers get fresh copies
+ * because decoding detaches the buffer it is given. `max` records are kept
+ * (oldest out first); `max` 0 passes everything straight through. Make one
+ * per run and `clear()` it when the run ends.
+ *
+ * @param {{ lookup: Function, fetchPreview: Function, max?: number }} deps
+ */
+function createPreviewCache({ lookup, fetchPreview, max = 64 }) {
+  const kept = new Map();   // isrc -> { found (no url), got }
+  const urls = new Map();   // the url of a lookup just answered -> { isrc, found }
+  const stats = { lookups: 0, downloads: 0, hits: 0 };
+  const copy = got => ({ ...got, buffers: got.buffers.map(b => b.slice(0)) });
+  return {
+    stats,
+    clear() { kept.clear(); urls.clear(); },
+    async lookup(isrc, o) {
+      const e = max > 0 ? kept.get(isrc) : null;
+      if (e) { kept.delete(isrc); kept.set(isrc, e); stats.hits++; return { ...e.found, previewUrl: CACHED_PREVIEW + isrc }; }
+      stats.lookups++;
+      const r = await lookup(isrc, o);
+      if (max > 0 && r && !r.miss && r.previewUrl) urls.set(r.previewUrl, { isrc, found: r });
+      return r;
+    },
+    async fetchPreview(url) {
+      if (typeof url === 'string' && url.startsWith(CACHED_PREVIEW)) {
+        const e = kept.get(url.slice(CACHED_PREVIEW.length));
+        return e ? copy(e.got) : { miss: MISS.FAILED, detail: 'cache' };
+      }
+      const got = await fetchPreview(url);
+      stats.downloads++;
+      const k = urls.get(url); urls.delete(url);
+      if (max > 0 && k && got && !got.miss && Array.isArray(got.buffers)) {
+        const { previewUrl, ...found } = k.found;
+        kept.set(k.isrc, { found, got: copy(got) });
+        while (kept.size > max) kept.delete(kept.keys().next().value);
+      }
+      return got;
+    },
+  };
+}
+return { FETCH_VERSION, WINDOW_BYTES, IDENTITY_TOLERANCE_MS, lookup, identityOk, windows, fetchWindows, totalFromContentRange, fetchPreview, CACHED_PREVIEW, createPreviewCache };
 })();
 /* ---- core/audio/dsp/tempo.mjs ---- */
 __mod["core/audio/dsp/tempo.mjs"] = (function () {
@@ -3373,6 +3813,7 @@ __mod["web/audio/controller.mjs"] = (function () {
 const { withTimeout, TRACK_TIMEOUT_MS, MODEL_TIMEOUT_MS } = __mod["core/audio/timeout.mjs"];
 const { runQueue, fillDsp } = __mod["core/audio/worker.js"];
 const { createTimer, timeDeps } = __mod["core/audio/timing.mjs"];
+const { createPreviewCache } = __mod["core/audio/fetch.mjs"];
 const { MISS } = __mod["core/audio/record.mjs"];
 const { measureWindows, needsDsp } = __mod["core/audio/dsp/combine.mjs"];
 const { fillClap, needsClap, CLAP_FILL_PER_RUN } = __mod["core/audio/clap.mjs"];
@@ -3412,6 +3853,7 @@ const { withKeyNet, keyNetFields, keepKeyNet, needsKeyNet, KEYNET_FILL_PER_RUN }
 // per-track step and every model load has a time limit (core/audio/timeout.mjs):
 // a step that never settles counts as failed, is tried again on a later run,
 // and the run carries on to `done`.
+
 
 
 
@@ -3528,6 +3970,9 @@ function createAudioController(deps) {
   // L1: per-stage timing, measurement only. Every call listening makes is wrapped; nothing it returns changes.
   const timer = createTimer({ now: deps.timerNow, seed: deps.timingSeed });
   const timed = d => timeDeps(d, timer);
+  // L3: the top-ups after a run share one download per record (a short-lived cache of the raw windows, made per run).
+  let pc = null, toppedIds = new Set(), downloaded = 0;
+  const topDeps = d => ({ ...d, lookup: pc.lookup, fetchPreview: pc.fetchPreview });
   const trackMs = deps.trackTimeoutMs ?? TRACK_TIMEOUT_MS;
   const modelMs = deps.modelTimeoutMs ?? MODEL_TIMEOUT_MS;
   /** A model load, bounded. */
@@ -3599,14 +4044,16 @@ function createAudioController(deps) {
     emit();
     running = (async () => {
       try {
+        pc = createPreviewCache({ lookup: timer.wrap('lookup', deps.lookup), fetchPreview: timer.wrap('download', deps.fetchPreview), max: deps.previewCacheMax ?? 64 });
+        toppedIds = new Set(); downloaded = 0;
         if (!tracks.length) {
           // Nothing new to hear: still top up dsp (it needs no model), and CLAP when it is on.
           const net = await keyNetNow();
-          if (dsp && fillBudget > 0) await topUpDsp(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode, dsp: keyed(dsp, net) }), signal);
+          if (dsp && fillBudget > 0) await topUpDsp(topDeps(timed({ decode: deps.decode, dsp: keyed(dsp, net) })), signal);
           const clap = signal.aborted ? null : await clapNow();
-          if (clap && clapBudget > 0) await topUpClap(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, clap }), signal);
-          await topUpBeats(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }), signal);
-          await topUpKeyNet(timed({ lookup: deps.lookup, fetchPreview: deps.fetchPreview, decode: deps.decode }), signal);
+          if (clap && clapBudget > 0) await topUpClap(topDeps(timed({ clap })), signal);
+          await topUpBeats(topDeps(timed({ decode: deps.decode })), signal);
+          await topUpKeyNet(topDeps(timed({ decode: deps.decode })), signal);
           st.state = signal.aborted ? 'paused' : 'done'; return { done: 0, stopped: signal.aborted };
         }
         if (!ears) {
@@ -3629,14 +4076,16 @@ function createAudioController(deps) {
           st.done++; st.last = t?.id ?? null;
           emit();
         } });
-        if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(analyse, signal);
-        if (!res.stopped && clap && clapBudget > 0) await topUpClap(analyse, signal);
-        if (!res.stopped) await topUpBeats(analyse, signal);
-        if (!res.stopped) await topUpKeyNet(analyse, signal);
+        const top = topDeps(analyse);
+        if (!res.stopped && dsp && fillBudget > 0) await topUpDsp(top, signal);
+        if (!res.stopped && clap && clapBudget > 0) await topUpClap(top, signal);
+        if (!res.stopped) await topUpBeats(top, signal);
+        if (!res.stopped) await topUpKeyNet(top, signal);
         st.state = res.stopped || signal.aborted ? 'paused' : 'done';
         return res;
       } finally {
         running = null; abort = null; st.tidy = null;
+        if (pc) { downloaded = pc.stats.downloads; pc.clear(); }
         try { deps.onTiming?.(timer.snapshot()); } catch { /* a storage bug must not stop listening */ }
         emit();
       }
@@ -3653,7 +4102,7 @@ function createAudioController(deps) {
     try {
       for (const rec of due) {
         if (signal.aborted) return;
-        const r = await step(() => fillDsp(analyse, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillDsp(analyse, rec)));
         if (r.record) r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
         if (r.record) { await deps.store.put(r.record); st.dspFilled = (st.dspFilled ?? 0) + 1; }
         else if (r.skip) noFill.add(rec.id);
@@ -3672,7 +4121,7 @@ function createAudioController(deps) {
     try {
       for (const rec of due) {
         if (signal.aborted) return;
-        const r = await step(() => fillClap(analyse, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillClap(analyse, rec)));
         if (r.record) { await deps.store.put(r.record); st.clapFilled = (st.clapFilled ?? 0) + 1; }
         else if (r.skip) noClap.add(rec.id);
         // a failed download, or one that timed out, is tried again on a later run
@@ -3696,7 +4145,7 @@ function createAudioController(deps) {
                           dsp: timer.wrap('dsp', keyed(withBeats(dsp, tracker, { onlyAmbiguous: true }), keyNet)) };
       for (const rec of due) {
         if (signal.aborted) return;
-        const r = await step(() => fillDsp(withTempo, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillDsp(withTempo, rec)));
         if (r.record) {
           r.record = { ...r.record, dsp: keepKeyNet(rec.dsp, r.record.dsp) };
           await deps.store.put(r.record);
@@ -3726,7 +4175,7 @@ function createAudioController(deps) {
         if (signal.aborted) return;
         const onlyKey = { lookup: analyse.lookup, fetchPreview: analyse.fetchPreview, decode: analyse.decode,
                           dsp: timer.wrap('dsp', async windows => { const f = await keyNetFields(net, windows, rec.dsp); return f ? { ...rec.dsp, ...f } : null; }) };
-        const r = await step(() => fillDsp(onlyKey, rec));
+        const r = await step(() => (toppedIds.add(rec.id), fillDsp(onlyKey, rec)));
         if (r.record) { await deps.store.put(r.record); st.keyNetFilled = (st.keyNetFilled ?? 0) + 1; }
         else if (r.skip) noKeyNet.add(rec.id);
         tidyTick();
@@ -3746,7 +4195,9 @@ function createAudioController(deps) {
   /** Resolves when no run is going (at once if none is). The second ear waits on this. */
   const whenIdle = () => (running ? running.then(() => undefined, () => undefined) : Promise.resolve());
 
-  return { start, stop, refresh, vm, whenIdle, timing: () => timer.snapshot(), get running() { return !!running; } };
+  return { start, stop, refresh, vm, whenIdle, timing: () => timer.snapshot(),
+    /** L3: preview downloads and distinct records topped up in the last run (bar: downloads <= 1.1 x records). */
+    topupDownloads: () => ({ downloads: pc ? pc.stats.downloads : downloaded, records: toppedIds.size }), get running() { return !!running; } };
 }
 
 /** ListenVM for web/ui/sound.mjs, from the controller's state and the settings. */
@@ -4863,366 +5314,6 @@ function spread(list, n) {
 }
 return { FOCUS_MAX, audioQueue };
 })();
-/* ---- core/sources/provider.mjs ---- */
-__mod["core/sources/provider.mjs"] = (function () {
-// The provider interface — §7 and §36 of the v3 plan.
-//
-// Adding a source must mean writing an adapter, a mapper and tests, and
-// nothing else (§36). That only holds if the classifier never has to know a
-// provider exists, which in turn only holds if everything the classifier
-// would otherwise want to special-case is something the provider *declares*:
-// how much it is trusted, what it can answer, whether it is independent of
-// the sources already consulted, and what version of itself produced an
-// answer.
-//
-// Nothing here fetches. An adapter is split into a declaration plus pure
-// mapping functions, and a separate thin fetch function, so the mapping — the
-// part with all the judgement in it — is testable against a recorded fixture
-// with no network at all (§41.6, §41.7).
-
-/** What a provider can be asked for. Mirrors Evidence FIELDS plus 'identity'. */
-const CAPABILITIES = ['identity', 'genre', 'mood', 'context', 'era', 'descriptor',
-                             'bpm', 'key', 'energy', 'valence', 'voice', 'instrumentation', 'similarity'];
-
-/**
- * @typedef {object} ProviderCapability
- * @property {string} id                 stable provider id, used as Evidence.source
- * @property {string} version            bumped when the adapter's mapping changes
- * @property {string[]} capabilities     subset of CAPABILITIES
- * @property {string[]} entityTypes      what it can be asked about
- * @property {number} reliability        0-1, how much this source is trusted at all
- * @property {string} independenceGroup  sources sharing a group are NOT independent
- * @property {boolean} optional          true when absent-by-default costs nothing
- * @property {string} requires           human-readable: what a user must configure
- */
-
-/**
- * Declare a provider. `reliability` is the one judgement call here and it is
- * deliberately shallow — a coarse prior, to be replaced by benchmark-measured
- * numbers (§9: "actual numerical weights must be validated using the
- * benchmark dataset"). It is not a ranking the classifier reads directly; it
- * is one factor among four in evidenceWeight().
- */
-function defineProvider(spec) {
-  const p = {
-    id: spec.id,
-    version: spec.version ?? '0.0.0',
-    capabilities: spec.capabilities ?? [],
-    entityTypes: spec.entityTypes ?? [],
-    reliability: spec.reliability ?? 0.5,
-    // Default: every provider is its own group. Sharing one is the exception
-    // and has to be stated, because getting it wrong inflates confidence.
-    independenceGroup: spec.independenceGroup ?? spec.id,
-    optional: spec.optional ?? true,
-    requires: spec.requires ?? 'nothing',
-  };
-  for (const c of p.capabilities)
-    if (!CAPABILITIES.includes(c)) throw new Error(`${p.id} declares unknown capability: ${c}`);
-  return Object.freeze(p);
-}
-
-/**
- * A set of providers the engine may consult, and the two lookups the
- * weighting layer needs from them. Built per run, so a listener who has
- * configured no Discogs token simply has a registry without it — there is no
- * "disabled provider" state to reason about anywhere downstream.
- */
-class ProviderRegistry {
-  constructor(providers = []) {
-    this.providers = new Map();
-    for (const p of providers) this.register(p);
-  }
-
-  register(p) {
-    if (!p?.id) throw new Error('a provider needs an id');
-    this.providers.set(p.id, p);
-    return this;
-  }
-
-  get(id) { return this.providers.get(id) ?? null; }
-  has(id) { return this.providers.has(id); }
-  get ids() { return [...this.providers.keys()]; }
-
-  /** For evidenceWeight(). Unknown sources are trusted at half. */
-  reliabilityOf = source => this.providers.get(source)?.reliability ?? 0.5;
-
-  /**
-   * For agreementFactor(). An unregistered source is treated as its own
-   * group — the conservative direction is to *under*-count correlation only
-   * when we genuinely know two sources share a crowd.
-   */
-  independenceOf = source => this.providers.get(source)?.independenceGroup ?? source;
-
-  /** Providers that can answer a given capability. */
-  providing(capability) {
-    return [...this.providers.values()].filter(p => p.capabilities.includes(capability));
-  }
-
-  /** The version stamp recorded on every profile this registry produced. */
-  versions() {
-    return Object.fromEntries([...this.providers.values()].map(p => [p.id, p.version]));
-  }
-}
-return { CAPABILITIES, defineProvider, ProviderRegistry };
-})();
-/* ---- core/sources/deezer.mjs ---- */
-__mod["core/sources/deezer.mjs"] = (function () {
-const { defineProvider } = __mod["core/sources/provider.mjs"];
-// Deezer: an exact artist id from an ISRC, and that artist's "fans also like".
-//
-// Why Deezer at all, when Spotify has an artist id already: Spotify's own
-// related-artists endpoint is gone, and Deezer's is keyless. Measured on the
-// owner's library (docs/SMARTER-GENRES-PLAN.md §2.1): of 70 scene-genre artists
-// Wikidata does not know at all, 68 were on Deezer and 57 had a related list —
-// and the lists stayed inside the scene (Coco Bryce → Tim Reaper, LTJ Bukem).
-//
-// Identity is the part with the judgement in it. Searching Deezer by name is
-// the Last.fm-autocorrect mistake again: a same-named artist wins and poisons
-// every answer about the real one. So the artist is reached through a
-// *recording*: the ISRC Spotify already gives identifies one track exactly, and
-// that track's credits name the Deezer artist. The name is then checked against
-// the Spotify credit, so an ISRC that Deezer has filed under a different
-// billing (a remixer as main artist) is caught rather than trusted.
-//
-// Nothing here fetches. The page reaches Deezer through JSONP in a sandboxed
-// frame (Deezer sends no CORS header — checked), Node with plain fetch; both
-// hand the parsed JSON to the functions below.
-
-
-const DEEZER = defineProvider({
-  id: 'deezer-related',
-  version: '1.0.0',
-  capabilities: ['identity', 'similarity'],
-  entityTypes: ['artist'],
-  // A prior. Phase 0 of the plan replaces it with the held-out number.
-  reliability: 0.5,
-  independenceGroup: 'deezer',
-  optional: true,
-  requires: 'nothing — public, keyless',
-});
-
-const API = 'https://api.deezer.com';
-
-/** How many related artists to keep. Deezer returns 20 by default; the tail is
- *  where the list drifts out of the scene, so more is not better. */
-const RELATED_LIMIT = 25;
-
-const isrcUrl = isrc => `${API}/track/isrc:${encodeURIComponent(String(isrc).replace(/-/g, '').toUpperCase())}`;
-const relatedUrl = (id, limit = RELATED_LIMIT) => `${API}/artist/${encodeURIComponent(id)}/related?limit=${limit}`;
-
-/** Only these URLs may be fetched through the page's JSONP frame. A script tag
- *  runs whatever it is given, so the host is pinned rather than trusted. */
-const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_-]*)?$/i.test(String(url));
-
-/**
- * What a Deezer error body means for the cache.
- *
- *  - `none`   code 800 "no data": a real answer that there is nothing. Cacheable.
- *  - `quota`  code 4: slow down and ask again. Never cached.
- *  - `error`  anything else: not an answer. Never cached — the README's rule that
- *             a request that failed must not be written down as "nothing here".
- */
-function errorKind(json) {
-  const e = json?.error;
-  if (!e) return null;
-  const code = Number(e.code);
-  if (code === 800) return 'none';
-  if (code === 4) return 'quota';
-  return 'error';
-}
-
-/** Lower-case, accents and punctuation off, a leading "the" dropped. Enough to
- *  see that "Ragga Twins" and "The Ragga Twins" are one act, and not so loose
- *  that two different names collapse into one. */
-function normName(s) {
-  return String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
-    .toLowerCase().replace(/&/g, 'and').replace(/^the\s+/, '').replace(/[^a-z0-9]/g, '');
-}
-
-/**
- * The Deezer artist behind a Spotify credit, from a `track/isrc:` answer.
- *
- * @param {object} json   the parsed response
- * @param {string} name   the Spotify artist's name, to check the credit against
- * @returns {{answered: true, artist: {id: number, name: string}|null}
- *          |{answered: false, retry: boolean}}
- */
-function artistFromIsrc(json, name) {
-  const kind = errorKind(json);
-  if (kind === 'none') return { answered: true, artist: null };
-  if (kind) return { answered: false, retry: kind === 'quota' };
-  if (!json || typeof json !== 'object' || json.id == null) return { answered: false, retry: false };
-
-  const want = normName(name);
-  const credits = [json.artist, ...(Array.isArray(json.contributors) ? json.contributors : [])]
-    .filter(a => a && a.id != null && a.name);
-  // The main artist first, then any contributor, but only ever one whose name
-  // matches the credit we asked about. No match is an answer — "Deezer has the
-  // recording but not under this artist" — not a reason to take the nearest.
-  const hit = want ? credits.find(a => normName(a.name) === want) : null;
-  return { answered: true, artist: hit ? { id: Number(hit.id), name: String(hit.name) } : null };
-}
-
-/**
- * An artist's related artists, in Deezer's own order (most related first).
- *
- * @returns {{answered: true, related: {id: number, name: string}[]}
- *          |{answered: false, retry: boolean}}
- */
-function relatedFrom(json, { limit = RELATED_LIMIT } = {}) {
-  const kind = errorKind(json);
-  if (kind === 'none') return { answered: true, related: [] };
-  if (kind) return { answered: false, retry: kind === 'quota' };
-  if (!json || !Array.isArray(json.data)) return { answered: false, retry: false };
-  const related = json.data
-    .filter(a => a && a.id != null && a.name)
-    .slice(0, limit)
-    .map(a => ({ id: Number(a.id), name: String(a.name) }));
-  return { answered: true, related };
-}
-return { DEEZER, API, RELATED_LIMIT, isrcUrl, relatedUrl, isDeezerApiUrl, errorKind, normName, artistFromIsrc, relatedFrom };
-})();
-/* ---- core/audio/fetch.mjs ---- */
-__mod["core/audio/fetch.mjs"] = (function () {
-const { MISS } = __mod["core/audio/record.mjs"];
-const { isrcUrl, errorKind } = __mod["core/sources/deezer.mjs"];
-// Deezer preview lookup and partial download (WP-A1).
-//
-// Spotify gives the ISRC; Deezer's `track/isrc:` answers with a 30-second
-// preview MP3 for that exact recording. ISRC or nothing: phase 0 saw a name
-// match pick the wrong track 1 time in 19 (docs/AUDIO-ANALYSIS-PLAN.md §0).
-//
-// Nothing here owns a transport. `jsonp` is injected (the page passes its
-// existing deezerJsonp; Deezer's API sends no CORS header) and so is `fetch`
-// (the preview CDN *is* CORS-open). Tests pass fakes; there is no network in
-// CI.
-//
-// Rules this file holds (build plan §0):
-//  - never cache a preview URL: it is signed and expires ~15 minutes after
-//    lookup, so look up and download in the same pass;
-//  - a failed request is FAILED, which record.mjs refuses to cache, never a
-//    catalogue "miss";
-//  - only two ~10 s windows are downloaded (phase 0: 31% less data, same
-//    top-1 82% of the time, embedding cosine median 0.988).
-
-
-
-const FETCH_VERSION = '1.0.0';
-/** One window: ~10 s of a 128 kbps preview. */
-const WINDOW_BYTES = 165000;
-/** Deezer duration vs Spotify duration: more apart than this is another recording. */
-const IDENTITY_TOLERANCE_MS = 3000;
-
-const normIsrc = s => String(s ?? '').replace(/-/g, '').toUpperCase();
-
-/**
- * Look a track up on Deezer by ISRC.
- * @param {string} isrc
- * @param {{ jsonp: (url: string) => Promise<object>, spotifyDurationMs?: number }} deps
- * @returns {Promise<{ deezerId: number, previewUrl: string, durationMs: number, readable: boolean }
- *                  | { miss: string, detail?: string }>}
- */
-async function lookup(isrc, { jsonp, spotifyDurationMs } = {}) {
-  if (!isrc) return { miss: MISS.NO_ISRC };
-  let json;
-  try { json = await jsonp(isrcUrl(isrc)); }
-  catch (e) { return { miss: MISS.FAILED, detail: String(e?.message ?? e) }; }
-  const err = errorKind(json);
-  if (err === 'none') return { miss: MISS.NOT_ON_DEEZER };
-  if (err) return { miss: MISS.FAILED, detail: err };          // quota or error: ask again later
-  if (!json || typeof json !== 'object' || !json.id) return { miss: MISS.FAILED, detail: 'malformed' };
-  if (json.isrc && normIsrc(json.isrc) !== normIsrc(isrc)) return { miss: MISS.IDENTITY, detail: 'isrc' };
-  const durationMs = Number(json.duration) * 1000;
-  if (spotifyDurationMs != null && !identityOk(durationMs, spotifyDurationMs)) return { miss: MISS.IDENTITY, detail: 'duration' };
-  const readable = json.readable !== false;
-  if (!readable || !json.preview) return { miss: MISS.NO_PREVIEW, detail: readable ? 'no preview' : 'not readable' };
-  return { deezerId: json.id, previewUrl: json.preview, durationMs, readable };
-}
-
-/** Deezer reports whole seconds, so ±3 s is the tolerance (§4.1). */
-function identityOk(deezerDurationMs, spotifyDurationMs) {
-  if (!Number.isFinite(deezerDurationMs) || !Number.isFinite(spotifyDurationMs) || deezerDurationMs <= 0) return false;
-  return Math.abs(deezerDurationMs - spotifyDurationMs) <= IDENTITY_TOLERANCE_MS;
-}
-
-/**
- * The two byte ranges to download: one at the start, one centred.
- * Returns [[start, length], ...] — the shape AudioRecord's `source.windows` keeps.
- * A file too small for two separate windows comes back as one range covering it.
- */
-function windows(byteLength) {
-  const n = Math.max(0, Math.floor(byteLength));
-  if (n <= 2 * WINDOW_BYTES) return n > 0 ? [[0, n]] : [];
-  const mid = Math.floor(n / 2 - WINDOW_BYTES / 2);
-  return [[0, WINDOW_BYTES], [mid, WINDOW_BYTES]];
-}
-
-/**
- * Download byte ranges of a preview. Expects 206 Partial Content; a server
- * that ignores Range and answers 200 sends the whole file, which is sliced
- * here instead (and the result says so, in `.sliced`).
- *
- * @param {string} url
- * @param {Array<[number, number]>} ranges
- * @param {{ fetch: typeof fetch }} deps
- * @returns {Promise<ArrayBuffer[] & { sliced: boolean }>}  rejects on a network or HTTP failure
- */
-async function fetchWindows(url, ranges, { fetch }) {
-  const out = []; let sliced = false, whole = null;
-  for (const [start, len] of ranges) {
-    if (whole) { out.push(whole.slice(start, start + len)); continue; }
-    const r = await fetch(url, { headers: { Range: `bytes=${start}-${start + len - 1}` } });
-    if (r.status === 206) { out.push(await r.arrayBuffer()); continue; }
-    if (r.status === 200) {
-      whole = await r.arrayBuffer(); sliced = true;
-      out.push(whole.slice(start, start + len));
-      continue;
-    }
-    throw new Error(`preview answered ${r.status}`);
-  }
-  return Object.assign(out, { sliced });
-}
-
-/** Total size from a `Content-Range: bytes 0-164999/479827` header, or null. */
-function totalFromContentRange(h) {
-  const m = /\/(\d+)\s*$/.exec(String(h ?? ''));
-  return m ? Number(m[1]) : null;
-}
-
-/**
- * Lookup's preview -> the two windows, in one pass (the URL is never kept).
- * The first request also tells us the file size, which places the centred
- * window; a server that sends the whole file costs one request.
- *
- * @returns {Promise<{ buffers: ArrayBuffer[], windows: Array<[number, number]>, total: number|null, sliced: boolean }
- *                  | { miss: 'FAILED', detail: string }>}
- */
-async function fetchPreview(url, { fetch }) {
-  try {
-    const r = await fetch(url, { headers: { Range: `bytes=0-${WINDOW_BYTES - 1}` } });
-    if (r.status === 200) {
-      const whole = await r.arrayBuffer();
-      const w = windows(whole.byteLength);
-      return { buffers: w.map(([s, l]) => whole.slice(s, s + l)), windows: w, total: whole.byteLength, sliced: true };
-    }
-    if (r.status !== 206) return { miss: MISS.FAILED, detail: `preview answered ${r.status}` };
-    const first = await r.arrayBuffer();
-    const total = totalFromContentRange(r.headers?.get?.('content-range'));
-    if (!total || total <= first.byteLength) return { buffers: [first], windows: [[0, first.byteLength]], total: total ?? first.byteLength, sliced: false };
-    const w = windows(total);
-    if (w.length < 2) {
-      const rest = await fetchWindows(url, [[first.byteLength, total - first.byteLength]], { fetch });
-      const all = new Uint8Array(total); all.set(new Uint8Array(first)); all.set(new Uint8Array(rest[0]), first.byteLength);
-      return { buffers: [all.buffer], windows: [[0, total]], total, sliced: rest.sliced };
-    }
-    const second = await fetchWindows(url, [w[1]], { fetch });
-    return { buffers: [first, second[0]], windows: [[0, first.byteLength], w[1]], total, sliced: second.sliced };
-  } catch (e) {
-    return { miss: MISS.FAILED, detail: String(e?.message ?? e) };
-  }
-}
-return { FETCH_VERSION, WINDOW_BYTES, IDENTITY_TOLERANCE_MS, lookup, identityOk, windows, fetchWindows, totalFromContentRange, fetchPreview };
-})();
 /* ---- core/audio/heads.mjs ---- */
 __mod["core/audio/heads.mjs"] = (function () {
 const { EMB_DIM } = __mod["core/audio/record.mjs"];
@@ -5496,8 +5587,983 @@ function moodHints(heads, { min = 0 } = {}) {
 const round = x => +x.toFixed(4);
 return { HEADS_VERSION, MAX_BATCH, TOP_MOODS, MOOD_LABELS, HEADS, MOOD_MAP, createHeads, summariseHeads, moodHints };
 })();
+/* ---- core/ontology/genres.mjs ---- */
+__mod["core/ontology/genres.mjs"] = (function () {
+// The genre hierarchy, declared once and indexed at load.
+//
+// Why a declared tree and not a flat tag list: §4.4 of the v3 plan. A flat
+// list cannot answer "is Tech House a kind of House" — which is the question
+// every reconciliation step in the classifier actually asks. Without it, a
+// track with evidence split three ways between tech-house, deep-house and
+// house looks *ambiguous*, when in fact all three agree on House and only
+// disagree about which room of it.
+//
+// The shape is deliberately minimal. Each genre declares its parent and its
+// aliases; children, depth, ancestry and the alias index are all derived in
+// index.mjs, because a hand-maintained `children` array is a hand-maintained
+// chance to disagree with `parent`.
+//
+//   parent      the one broader genre this sits inside, or null at the root.
+//               Single-parent on purpose: a DAG reads better on paper and is
+//               far worse to reason about when scoring, and the handful of
+//               genuinely two-parented genres (electro, trip hop) are served
+//               better by `related`.
+//   aliases     what providers actually call it. Last.fm crowd tags and
+//               Discogs styles, not what a genre history would call it.
+//   related     neighbouring genres — evidence for one is weak evidence for
+//               the other. Symmetric by construction (index.mjs closes it).
+//   contradicts genres that being this one argues *against*. Rare and
+//               deliberate: used only where two genres are routinely confused
+//               by tag clouds but never actually co-occur in one record.
+//
+// Coverage is electronic-heavy because that is where subgenre resolution
+// actually matters for filing; the rest of popular music is present at one or
+// two levels, which is enough for the hierarchy to do its job. An unmapped
+// concept is never discarded (see normalise.mjs) — it is carried as an
+// unknown candidate, so a gap here costs recall, never data.
+
+/** Bumped whenever a genre is added, removed, re-parented or re-aliased. */
+const GENRE_ONTOLOGY_VERSION = '3.1.0';
+
+/** @typedef {{parent: string|null, aliases?: string[], related?: string[], contradicts?: string[]}} GenreNode */
+
+/** @type {Record<string, GenreNode>} */
+const GENRES = {
+  /* ---------- electronic ---------- */
+  'electronic': { parent: null, aliases: ['electronica', 'electronic music', 'edm', 'dance', 'dance music', 'electro dance'] },
+
+  'house': { parent: 'electronic', aliases: ['house music', 'classic house'] },
+  'deep-house': { parent: 'house', aliases: ['deephouse'] },
+  'tech-house': { parent: 'house', aliases: ['techhouse'], related: ['techno', 'minimal-techno'] },
+  'progressive-house': { parent: 'house', aliases: ['prog house'], related: ['trance'] },
+  'acid-house': { parent: 'house', aliases: ['acid'], related: ['acid-techno'] },
+  'disco-house': { parent: 'house', aliases: ['nu disco', 'nu-disco', 'french house', 'filter house'], related: ['disco'] },
+  'electro-house': { parent: 'house', aliases: ['big room', 'big room house'] },
+  'afro-house': { parent: 'house', aliases: ['afrohouse', 'afro tech'] },
+  'melodic-house': { parent: 'house', aliases: ['melodic house and techno', 'melodic house & techno', 'organic house'] },
+  'garage-house': { parent: 'house', aliases: ['soulful house', 'vocal house', 'new jersey sound'] },
+  'minimal-house': { parent: 'house', aliases: ['micro house', 'microhouse'], related: ['minimal-techno'] },
+  'bass-house': { parent: 'house', aliases: ['basshouse'], related: ['uk-bass'] },
+  // 3.1.0: the UK hard-dance family. Before this, "scouse house", "bouncy
+  // house" and "donk house" all fell through to plain House, so a donk playlist
+  // and a deep-house playlist looked like neighbours. Donk sits under hard house
+  // because that is where it came from and where its records are pressed.
+  'hard-house': { parent: 'house', aliases: ['hardhouse', 'uk hard house', 'nrg', 'hard nrg', 'pumping house'],
+                  related: ['hard-trance', 'hardstyle'] },
+  'donk': { parent: 'hard-house', aliases: ['donk house', 'scouse house', 'bouncy house', 'uk bounce', 'bounce house',
+                                            'scouse bounce', 'hard bounce', 'donk music'],
+            related: ['hardcore', 'makina'] },
+
+  'techno': { parent: 'electronic', aliases: ['techno music'] },
+  'minimal-techno': { parent: 'techno', aliases: ['minimal', 'minimal tech'] },
+  'acid-techno': { parent: 'techno', aliases: [] },
+  'detroit-techno': { parent: 'techno', aliases: ['detroit'] },
+  'hard-techno': { parent: 'techno', aliases: ['hardtechno', 'industrial techno'], related: ['hardcore'] },
+  'dub-techno': { parent: 'techno', aliases: ['dubtechno'], related: ['dub', 'ambient'] },
+
+  'trance': { parent: 'electronic', aliases: ['trance music'] },
+  'progressive-trance': { parent: 'trance', aliases: [], related: ['progressive-house'] },
+  'psytrance': { parent: 'trance', aliases: ['psychedelic trance', 'goa', 'goa trance', 'psy trance'] },
+  'uplifting-trance': { parent: 'trance', aliases: ['epic trance'] },
+  'hard-trance': { parent: 'trance', aliases: [], related: ['hardstyle'] },
+
+  'breakbeat': { parent: 'electronic', aliases: ['breaks', 'break beat'] },
+  'big-beat': { parent: 'breakbeat', aliases: ['bigbeat'] },
+  'uk-breaks': { parent: 'breakbeat', aliases: ['nu skool breaks', 'nu-skool breaks', 'progressive breaks'] },
+  'breakcore': { parent: 'breakbeat', aliases: [], related: ['jungle', 'hardcore'] },
+
+  'drum-and-bass': { parent: 'electronic', aliases: ['drum n bass', 'drum & bass', 'drum and bass', 'dnb', 'd&b', 'dandb', 'drumandbass', 'drum bass',
+                                                    "drum'n'bass", 'drum n\' bass', 'rollers', 'dnb rollers', 'deep dnb', 'dancefloor drum and bass'] },
+  'jungle': { parent: 'drum-and-bass', aliases: ['ragga jungle', 'jungle techno'] },
+  'liquid-dnb': { parent: 'drum-and-bass', aliases: ['liquid', 'liquid funk', 'liquid drum and bass', 'liquid dnb'] },
+  'neurofunk': { parent: 'drum-and-bass', aliases: ['neuro', 'techstep'] },
+  'jump-up': { parent: 'drum-and-bass', aliases: ['jumpup'] },
+  'halftime': { parent: 'drum-and-bass', aliases: [] },
+
+  'uk-garage': { parent: 'electronic', aliases: ['garage', 'ukg', '2 step', '2-step', 'two step', 'speed garage'] },
+  'bassline': { parent: 'uk-garage', aliases: ['niche', 'bassline house'] },
+  'future-garage': { parent: 'uk-garage', aliases: ['futuregarage'], related: ['dubstep'] },
+  'grime': { parent: 'uk-garage', aliases: [], related: ['hip-hop', 'uk-bass'] },
+  'uk-funky': { parent: 'uk-garage', aliases: ['uk funky house'], related: ['afro-house'] },
+
+  'dubstep': { parent: 'electronic', aliases: ['dub step'] },
+  'brostep': { parent: 'dubstep', aliases: ['riddim'] },
+  'uk-bass': { parent: 'electronic', aliases: ['bass music', 'bass', 'future bass', 'wonky'] },
+
+  'hardcore': { parent: 'electronic', aliases: ['hardcore techno', 'happy hardcore', 'rave', 'oldskool', 'old skool rave'] },
+  'gabber': { parent: 'hardcore', aliases: ['gabba'] },
+  'hardstyle': { parent: 'hardcore', aliases: ['hardjump', 'rawstyle'] },
+  'jumpstyle': { parent: 'hardstyle', aliases: [] },
+  'makina': { parent: 'hardcore', aliases: [], related: ['hard-trance', 'donk'] },
+
+  // 3.1.0: club styles with no home before, so a playlist named for them was
+  // read as a word the engine did not know rather than as a genre.
+  'jersey-club': { parent: 'electronic', aliases: ['jerseyclub', 'baltimore club', 'bmore club'], related: ['footwork'] },
+  'footwork': { parent: 'electronic', aliases: ['juke', 'chicago juke', 'footwork juke'], related: ['jungle'] },
+  'gqom': { parent: 'electronic', aliases: [], related: ['afro-house'] },
+
+  'ambient': { parent: 'electronic', aliases: ['ambient music', 'drone', 'dark ambient'] },
+  // 'chillout' deliberately absent: profile.mjs reads it as a mood, and it
+  // genuinely is one more often than it is this genre. validateOntology()
+  // flags any alias the two vocabularies disagree about.
+  'downtempo': { parent: 'electronic', aliases: ['trip hop', 'trip-hop', 'triphop', 'lounge'], related: ['ambient', 'hip-hop'] },
+  'idm': { parent: 'electronic', aliases: ['intelligent dance music', 'braindance', 'glitch'] },
+  'electro': { parent: 'electronic', aliases: ['electro funk', 'electrofunk', 'miami bass'], related: ['hip-hop', 'electro-house'] },
+  'synthwave': { parent: 'electronic', aliases: ['retrowave', 'outrun', 'darksynth'] },
+  'synth-pop': { parent: 'electronic', aliases: ['synthpop', 'new wave', 'electropop', 'electro pop'], related: ['pop'] },
+  'eurodance': { parent: 'electronic', aliases: ['euro dance', 'euro house', 'hands up'] },
+
+  /* ---------- hip hop, r&b, soul ---------- */
+  'hip-hop': { parent: null, aliases: ['hip hop', 'hiphop', 'rap', 'rap music', 'old school hip hop', 'old school rap'] },
+  'uk-hip-hop': { parent: 'hip-hop', aliases: ['uk rap', 'british hip hop'] },
+  'drill': { parent: 'hip-hop', aliases: ['uk drill'] },
+  'trap': { parent: 'hip-hop', aliases: ['trap music'] },
+  'phonk': { parent: 'hip-hop', aliases: ['drift phonk', 'brazilian phonk', 'memphis phonk', 'cloud phonk', 'chill phonk',
+                                          'phonk house', 'real phonk'], related: ['trap'] },
+  'boom-bap': { parent: 'hip-hop', aliases: ['boombap', 'golden age hip hop', 'east coast hip hop'] },
+  'conscious-hip-hop': { parent: 'hip-hop', aliases: ['alternative hip hop', 'underground hip hop', 'jazz rap'] },
+  'g-funk': { parent: 'hip-hop', aliases: ['west coast hip hop', 'gangsta rap'] },
+  'lo-fi-hip-hop': { parent: 'hip-hop', aliases: ['lofi hip hop', 'lo fi hip hop', 'lofi'], related: ['downtempo'] },
+
+  'rnb': { parent: null, aliases: ['r&b', 'r and b', 'rhythm and blues', 'randb', 'contemporary r&b'] },
+  'neo-soul': { parent: 'rnb', aliases: ['neosoul'], related: ['soul'] },
+  'soul': { parent: null, aliases: ['soul music', 'northern soul'] },
+  'motown': { parent: 'soul', aliases: [] },
+  'funk': { parent: null, aliases: ['funk music', 'p funk', 'p-funk'] },
+  'disco': { parent: 'funk', aliases: ['italo disco', 'italo-disco', 'boogie'], related: ['disco-house'] },
+
+  /* ---------- rock and its neighbours ---------- */
+  'rock': { parent: null, aliases: ['rock music', 'classic rock'] },
+  'indie-rock': { parent: 'rock', aliases: ['indie', 'indie music'] },
+  'alternative-rock': { parent: 'rock', aliases: ['alternative', 'alt rock', 'alternative music'] },
+  'punk': { parent: 'rock', aliases: ['punk rock'] },
+  'pop-punk': { parent: 'punk', aliases: ['poppunk'] },
+  'hardcore-punk': { parent: 'punk', aliases: ['post hardcore', 'post-hardcore'], contradicts: ['hardcore'] },
+  'metal': { parent: 'rock', aliases: ['heavy metal'] },
+  'metalcore': { parent: 'metal', aliases: [] },
+  'death-metal': { parent: 'metal', aliases: [] },
+  'black-metal': { parent: 'metal', aliases: [] },
+  'psychedelic-rock': { parent: 'rock', aliases: ['psych rock', 'psychedelic'] },
+  'shoegaze': { parent: 'rock', aliases: ['dream pop', 'dreampop'] },
+  'post-rock': { parent: 'rock', aliases: ['postrock', 'math rock'] },
+  'britpop': { parent: 'rock', aliases: ['brit pop'], related: ['indie-rock'] },
+  'grunge': { parent: 'rock', aliases: [] },
+  'garage-rock': { parent: 'rock', aliases: ['garage punk'], contradicts: ['uk-garage'] },
+
+  /* ---------- pop and the rest ---------- */
+  'pop': { parent: null, aliases: ['pop music', 'mainstream pop'] },
+  'dance-pop': { parent: 'pop', aliases: ['dancepop'], related: ['electronic'] },
+  'indie-pop': { parent: 'pop', aliases: ['indiepop'], related: ['indie-rock'] },
+  'hyperpop': { parent: 'pop', aliases: [], related: ['uk-bass'] },
+  'k-pop': { parent: 'pop', aliases: ['kpop'] },
+
+  'jazz': { parent: null, aliases: ['jazz music'] },
+  'jazz-funk': { parent: 'jazz', aliases: ['jazz fusion', 'fusion'], related: ['funk'] },
+  'nu-jazz': { parent: 'jazz', aliases: ['broken beat', 'acid jazz'], related: ['downtempo'] },
+
+  'reggae': { parent: null, aliases: ['roots reggae'] },
+  'dub': { parent: 'reggae', aliases: ['dub music'] },
+  'dancehall': { parent: 'reggae', aliases: ['ragga'] },
+  'afrobeats': { parent: null, aliases: ['afrobeat', 'afro beats', 'amapiano'] },
+  'latin': { parent: null, aliases: ['latin music', 'reggaeton', 'salsa', 'bossa nova'] },
+
+  'folk': { parent: null, aliases: ['folk music', 'singer songwriter', 'singer-songwriter'] },
+  'country': { parent: null, aliases: ['country music', 'americana'] },
+  'blues': { parent: null, aliases: ['blues music'] },
+  'classical': { parent: null, aliases: ['classical music', 'orchestral', 'contemporary classical', 'neoclassical'] },
+  'soundtrack': { parent: null, aliases: ['score', 'film score', 'ost', 'video game music'] },
+};
+return { GENRE_ONTOLOGY_VERSION, GENRES };
+})();
+/* ---- core/ontology/facets.mjs ---- */
+__mod["core/ontology/facets.mjs"] = (function () {
+const { tagFacet } = __mod["profile.mjs"];
+// The non-genre dimensions: mood, context, era.
+//
+// §4.3 of the v3 plan: "summer" must not be treated like "House". v1 already
+// makes that split — tagFacet() in profile.mjs sorts a Last.fm cloud into
+// genre / mood / occasion / era / descriptor — and this module deliberately
+// *reuses* that classifier rather than restating its vocabulary, so the two
+// engines cannot drift into different opinions about what kind of thing
+// "chill" is. profile.mjs stays import-free (it is bundled verbatim into the
+// browser build); the dependency only ever points this way.
+//
+// What v3 adds on top is the second half of the question. v1 answers "which
+// facet is this tag?"; a profile also needs "which *concept* in that facet?",
+// so that `melancholy`, `sad` and `wistful` collapse to one mood the way
+// `dnb` and `drum & bass` collapse to one genre. Hence a concept table per
+// facet, same shape as GENRES but flat — moods and contexts have no useful
+// hierarchy, and inventing one would only add places to disagree.
+
+
+const FACET_ONTOLOGY_VERSION = '3.0.0';
+
+/** The facets a concept can belong to. 'genre' lives in genres.mjs. */
+const FACETS = ['genre', 'mood', 'context', 'era', 'descriptor'];
+
+/* ---------- mood ----------
+ * The ten from §10, plus the few extra poles a real tag cloud keeps
+ * producing. Moods are not mutually exclusive: a track can be dark AND
+ * hypnotic, and nothing here says otherwise. */
+const MOODS = {
+  'energetic':   { aliases: ['energetic', 'high energy', 'hi energy', 'hype', 'hyped', 'intense', 'upbeat', 'banger', 'powerful', 'motivational', 'empowering'] },
+  'aggressive':  { aliases: ['aggressive', 'angry', 'heavy', 'brutal', 'menacing'] },
+  'euphoric':    { aliases: ['euphoric', 'euphoria', 'blissful', 'anthemic', 'epic'] },
+  'uplifting':   { aliases: ['uplifting', 'hopeful', 'happy', 'happiness', 'joyful', 'feel good', 'feelgood', 'sunny', 'fun', 'playful', 'confident'] },
+  'melancholic': { aliases: ['melancholic', 'melancholy', 'sad', 'sadness', 'bittersweet', 'wistful', 'longing', 'lonely', 'depressing', 'emotional', 'emotive', 'cathartic'] },
+  'dark':        { aliases: ['dark', 'darkness', 'moody', 'gloomy', 'haunting', 'eerie', 'sombre', 'somber', 'sinister'] },
+  'relaxed':     { aliases: ['relaxed', 'relaxing', 'relax', 'chill', 'chilled', 'chillout', 'chill out', 'mellow', 'laid back', 'laidback', 'calm', 'calming', 'soothing', 'peaceful', 'serene', 'soft', 'gentle', 'smooth', 'sleepy', 'cosy', 'cozy'] },
+  'dreamy':      { aliases: ['dreamy', 'ethereal', 'atmospheric', 'meditative', 'floaty', 'spacey'] },
+  // 'driving' is a DJ's word for a mood and profile.mjs's word for a car
+  // journey. v1 owns it (context); one word, one meaning, decided once.
+  'hypnotic':    { aliases: ['hypnotic', 'trippy', 'rolling', 'groovy', 'repetitive'] },
+  // 'nostalgia' is an era word in v1's lexicon, so it stays one.
+  'nostalgic':   { aliases: ['nostalgic'] },
+  'romantic':    { aliases: ['romantic', 'sexy', 'sensual', 'seductive', 'warm'] },
+  'dramatic':    { aliases: ['dramatic', 'cinematic', 'tense'] },
+};
+
+/* ---------- context ----------
+ * When you would play it. §10 calls this "context" and reserves "occasion"
+ * for the same idea; v1's tagFacet() calls the facet 'occasion' and axes.mjs
+ * calls the playlist axis 'context'. One name from here on — context — with
+ * OCCASION_FACET below as the bridge to v1's word for it. */
+const CONTEXTS = {
+  'club':       { aliases: ['club', 'clubbing', 'night out', 'nightlife', 'dancefloor', 'rave'] },
+  'festival':   { aliases: ['festival', 'festivals', 'carnival', 'boiler room'] },
+  'party':      { aliases: ['party', 'partying', 'house party', 'pregame', 'pre drinks', 'afters', 'after party', 'friday night', 'saturday night', 'weekend'] },
+  'late-night': { aliases: ['late night', 'after hours', 'afterhours', '3am'] },
+  'driving':    { aliases: ['driving', 'road trip', 'roadtrip', 'commute', 'travel'] },
+  'workout':    { aliases: ['workout', 'work out', 'gym', 'running', 'jogging', 'exercise', 'fitness', 'yoga', 'training'] },
+  'study':      { aliases: ['study', 'studying', 'focus', 'concentration', 'revision', 'work'] },
+  'background': { aliases: ['background', 'background music', 'ambient listening', 'dinner', 'cooking'] },
+  // Named 'downtime' rather than 'chill': profile.mjs reads the bare word
+  // "chill" as a mood, and two tables cannot both own it.
+  'downtime':   { aliases: ['chilling', 'lounging', 'sunday morning', 'hangover'] },
+  'sleep':      { aliases: ['sleep', 'sleeping', 'bedtime', 'insomnia'] },
+// Place names deliberately absent. A location is exactly the kind of word
+  // that signals an EVENT playlist when it turns up beside a date, and
+  // claiming it as a context here is what would stop that being seen.
+  'summer':     { aliases: ['summer', 'beach', 'poolside', 'bbq', 'barbecue', 'holiday', 'holidays'] },
+  'winter':     { aliases: ['winter', 'rainy day', 'christmas', 'xmas', 'halloween'] },
+  'celebration':{ aliases: ['wedding', 'birthday', 'new year', 'nye', 'graduation'] },
+  'gaming':     { aliases: ['gaming', 'video games'] },
+};
+
+/* ---------- era ----------
+ * Two ways in: a bare decade tag ("90s", "1994") and the words people use
+ * instead ("old school", "throwback"). Only the first is precise enough to
+ * become an era concept on its own; the rest resolve to 'retro', which says
+ * "older than now" and nothing more — which is all they actually mean. */
+const ERAS = {
+  '1960s': { aliases: ['60s', '1960s'], from: 1960, to: 1969 },
+  '1970s': { aliases: ['70s', '1970s'], from: 1970, to: 1979 },
+  '1980s': { aliases: ['80s', '1980s'], from: 1980, to: 1989 },
+  '1990s': { aliases: ['90s', '1990s'], from: 1990, to: 1999 },
+  '2000s': { aliases: ['00s', '2000s', 'noughties'], from: 2000, to: 2009 },
+  '2010s': { aliases: ['10s', '2010s'], from: 2010, to: 2019 },
+  '2020s': { aliases: ['20s', '2020s'], from: 2020, to: 2029 },
+  'retro': { aliases: ['retro', 'old school', 'oldschool', 'oldies', 'throwback', 'vintage', 'nostalgia', 'classic', 'classics', 'old'] },
+};
+
+/** The era a four-digit release year falls in, or null outside the table. */
+function eraOfYear(year) {
+  const y = Number(year);
+  if (!Number.isFinite(y)) return null;
+  for (const [id, e] of Object.entries(ERAS))
+    if (e.from != null && y >= e.from && y <= e.to) return id;
+  return null;
+}
+
+// v1's tagFacet() says 'occasion' where v3 says 'context'. One translation,
+// in one place, rather than either engine changing its vocabulary.
+const V1_FACET = { occasion: 'context' };
+
+/**
+ * Which facet a raw tag belongs to, in v3's vocabulary. Delegates to v1's
+ * tagFacet() so there is exactly one lexicon to maintain — a tag demoted from
+ * genre there is demoted here, automatically and in the same release.
+ */
+const facetOf = tag => V1_FACET[tagFacet(tag)] ?? tagFacet(tag);
+return { FACET_ONTOLOGY_VERSION, FACETS, MOODS, CONTEXTS, ERAS, eraOfYear, facetOf };
+})();
+/* ---- core/ontology/index.mjs ---- */
+__mod["core/ontology/index.mjs"] = (function () {
+const { GENRES, GENRE_ONTOLOGY_VERSION } = __mod["core/ontology/genres.mjs"];
+const { MOODS, CONTEXTS, ERAS, FACET_ONTOLOGY_VERSION, facetOf, eraOfYear, FACETS } = __mod["core/ontology/facets.mjs"];
+// The ontology as the rest of the engine sees it: one resolve() that turns a
+// provider's raw string into a canonical concept, plus the derived structure
+// (children, ancestry, related closure) the classifier reconciles against.
+//
+// Everything here is derived from the declarations in genres.mjs and
+// facets.mjs at module load. Nothing is hand-maintained twice, and
+// validateOntology() — run by the test suite, not at runtime — is what stops
+// a typo in a parent name from silently producing an orphan genre nobody can
+// ever reach.
+
+
+
+
+
+
+/** One version string for the whole ontology — stamped onto every profile. */
+const ONTOLOGY_VERSION = `genres@${GENRE_ONTOLOGY_VERSION}+facets@${FACET_ONTOLOGY_VERSION}`;
+
+/**
+ * The lookup key for a raw provider string.
+ *
+ * Whitespace and punctuation are removed entirely rather than collapsed,
+ * because providers disagree about them constantly and meaninglessly:
+ * "tech house", "tech-house" and "techhouse" are one concept, and no pair of
+ * genuinely different genres is separated only by a space. "&" becomes "and"
+ * first so "drum & bass" and "drum and bass" land together.
+ */
+const normKey = s => String(s ?? '').toLowerCase()
+  .replace(/&/g, ' and ')
+  .replace(/[^a-z0-9]+/g, '');
+
+/* ---------- derived genre structure ---------- */
+
+function buildGenreIndex() {
+  const index = new Map();
+  for (const [slug, node] of Object.entries(GENRES))
+    index.set(slug, { slug, parent: node.parent ?? null, children: [], ancestors: [], depth: 0,
+                      related: new Set(node.related ?? []), contradicts: new Set(node.contradicts ?? []) });
+
+  for (const g of index.values())
+    if (g.parent && index.has(g.parent)) index.get(g.parent).children.push(g.slug);
+
+  // Ancestry, walked once per genre with a depth cap so a declaration cycle
+  // (which validateOntology() reports) cannot hang a caller at runtime.
+  for (const g of index.values()) {
+    const seen = new Set();
+    let cur = g.parent;
+    while (cur && index.has(cur) && !seen.has(cur) && g.ancestors.length < 16) {
+      seen.add(cur);
+      g.ancestors.push(cur);
+      cur = index.get(cur).parent;
+    }
+    g.depth = g.ancestors.length;
+  }
+
+  // `related` is symmetric whether or not both sides declared it. Declaring
+  // it once is the point; a one-way relation is always a typo.
+  for (const g of index.values())
+    for (const r of g.related) if (index.has(r)) index.get(r).related.add(g.slug);
+  for (const g of index.values())
+    for (const c of g.contradicts) if (index.has(c)) index.get(c).contradicts.add(g.slug);
+
+  return index;
+}
+
+/** slug -> { slug, parent, children, ancestors, depth, related, contradicts } */
+const GENRE_INDEX = buildGenreIndex();
+
+function buildAliasIndex() {
+  const byKey = new Map();
+  const collisions = [];
+  const put = (raw, slug) => {
+    const k = normKey(raw);
+    if (!k) return;
+    const prev = byKey.get(k);
+    if (prev && prev !== slug) { collisions.push({ key: k, between: [prev, slug] }); return; }
+    byKey.set(k, slug);
+  };
+  for (const [slug, node] of Object.entries(GENRES)) {
+    put(slug, slug);
+    put(slug.replace(/-/g, ' '), slug);
+    for (const a of node.aliases ?? []) put(a, slug);
+  }
+  return { byKey, collisions };
+}
+
+const GENRE_ALIASES = buildAliasIndex();
+/** normKey(raw) -> genre slug */
+const GENRE_ALIAS_INDEX = GENRE_ALIASES.byKey;
+
+function buildFacetAliases(table) {
+  const byKey = new Map();
+  const collisions = [];
+  for (const [id, node] of Object.entries(table)) {
+    for (const raw of [id, id.replace(/-/g, ' '), ...(node.aliases ?? [])]) {
+      const k = normKey(raw);
+      if (!k) continue;
+      const prev = byKey.get(k);
+      if (prev && prev !== id) { collisions.push({ key: k, between: [prev, id] }); continue; }
+      byKey.set(k, id);
+    }
+  }
+  return { byKey, collisions };
+}
+
+const MOOD_ALIASES = buildFacetAliases(MOODS);
+const CONTEXT_ALIASES = buildFacetAliases(CONTEXTS);
+const ERA_ALIASES = buildFacetAliases(ERAS);
+
+/* ---------- resolution ---------- */
+
+// A compound tag whose last word names a genre is nearly always a shade of
+// that genre: "dark techno", "melodic dubstep", "deep dnb". Resolving it to
+// the parent keeps real signal that would otherwise be thrown away as an
+// unknown concept — but it is a weaker claim than an exact alias, so it is
+// labelled `suffix` and the classifier discounts it (see weights.mjs).
+// Bounded to the longest suffix that resolves, and never applied to a
+// single-word tag, which would just be the exact match again.
+function suffixGenre(raw) {
+  const words = String(raw ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (words.length < 2) return null;
+  for (let i = 1; i < words.length; i++) {
+    const slug = GENRE_ALIAS_INDEX.get(normKey(words.slice(i).join(' ')));
+    if (slug) return slug;
+  }
+  return null;
+}
+
+/** @typedef {{facet: string, concept: string|null, via: string, raw: string}} Concept */
+
+/**
+ * Resolve one raw provider string to a canonical concept.
+ *
+ * Never returns null and never throws: an unrecognised string comes back with
+ * `concept: null` and its `raw` value intact, because §8 of the plan is
+ * explicit that unknown tags are retained as candidates rather than silently
+ * discarded. The facet is still filled in — v1's lexicon can usually tell
+ * what *kind* of thing an unmapped tag is even when the ontology has no
+ * concept for it.
+ *
+ * @param {string} raw
+ * @returns {Concept}
+ */
+function resolveConcept(raw) {
+  const key = normKey(raw);
+  const facet = facetOf(raw);
+  if (!key) return { facet, concept: null, via: 'empty', raw: String(raw ?? '') };
+
+  const inFacet = { mood: MOOD_ALIASES, context: CONTEXT_ALIASES, era: ERA_ALIASES }[facet];
+  if (inFacet) {
+    const hit = inFacet.byKey.get(key);
+    if (hit) return { facet, concept: hit, via: 'alias', raw };
+  }
+  if (facet === 'era') {
+    // A bare year that no decade alias covered — "1994" resolves, "1867" does not.
+    const era = /^(19|20)\d{2}$/.test(key) ? eraOfYear(key) : null;
+    if (era) return { facet: 'era', concept: era, via: 'year', raw };
+  }
+  if (facet === 'descriptor') return { facet, concept: null, via: 'descriptor', raw };
+
+  const exact = GENRE_ALIAS_INDEX.get(key);
+  if (exact) return { facet: 'genre', concept: exact, via: 'alias', raw };
+
+  // v1's lexicon calls a tag a genre by *default*, not by recognising it, and
+  // it deliberately leaves ambiguous words that carry sound with them —
+  // "club", "rave", "acoustic" — on the genre side rather than demote real
+  // genre signal. Where such a word turns out not to name a genre at all, the
+  // facet tables get a second look before it is written off as unknown. This
+  // only ever runs after the genre index has declined it, so a word that is
+  // both ("rave", a hardcore alias) still resolves as the genre.
+  for (const [f, table] of [['mood', MOOD_ALIASES], ['context', CONTEXT_ALIASES], ['era', ERA_ALIASES]]) {
+    const hit = table.byKey.get(key);
+    if (hit) return { facet: f, concept: hit, via: 'fallback', raw };
+  }
+
+  const suffix = suffixGenre(raw);
+  if (suffix) return { facet: 'genre', concept: suffix, via: 'suffix', raw };
+
+  return { facet, concept: null, via: 'unknown', raw: String(raw) };
+}
+
+/** The genre slugs above `slug`, nearest first. Empty for a root or unknown. */
+const ancestorsOf = slug => GENRE_INDEX.get(slug)?.ancestors ?? [];
+
+/** `slug` plus everything above it — the set a piece of evidence supports. */
+const lineageOf = slug => (GENRE_INDEX.has(slug) ? [slug, ...ancestorsOf(slug)] : []);
+
+/** True when `a` is `b` or sits underneath it. */
+const isWithin = (a, b) => a === b || ancestorsOf(a).includes(b);
+
+/** The deepest genre that contains both, or null if they share no ancestry. */
+function commonAncestor(a, b) {
+  if (!GENRE_INDEX.has(a) || !GENRE_INDEX.has(b)) return null;
+  const upB = new Set(lineageOf(b));
+  return lineageOf(a).find(g => upB.has(g)) ?? null;
+}
+
+/** True when two genres are declared to argue against each other. */
+const contradicts = (a, b) => !!GENRE_INDEX.get(a)?.contradicts.has(b);
+
+/** True when two genres are declared neighbours. */
+const isRelated = (a, b) => !!GENRE_INDEX.get(a)?.related.has(b);
+
+/* ---------- validation ---------- */
+
+/**
+ * Structural checks over the declarations. Called by the test suite rather
+ * than at import time: a broken ontology should fail the build loudly, not
+ * degrade a user's library quietly at runtime.
+ * @returns {{errors: string[], warnings: string[]}}
+ */
+function validateOntology() {
+  const errors = [], warnings = [];
+
+  for (const [slug, node] of Object.entries(GENRES)) {
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) errors.push(`genre slug is not kebab-case: ${slug}`);
+    if (node.parent && !GENRES[node.parent]) errors.push(`${slug} names a parent that does not exist: ${node.parent}`);
+    for (const r of node.related ?? []) if (!GENRES[r]) errors.push(`${slug} names an unknown related genre: ${r}`);
+    for (const c of node.contradicts ?? []) if (!GENRES[c]) errors.push(`${slug} names an unknown contradicting genre: ${c}`);
+    if ((node.related ?? []).includes(slug)) errors.push(`${slug} is related to itself`);
+    if ((node.contradicts ?? []).includes(slug)) errors.push(`${slug} contradicts itself`);
+  }
+
+  // Cycles: a genre that reaches itself by walking parents.
+  for (const slug of Object.keys(GENRES)) {
+    const seen = new Set([slug]);
+    let cur = GENRES[slug].parent;
+    while (cur && GENRES[cur]) {
+      if (seen.has(cur)) { errors.push(`parent cycle through ${slug} -> ${cur}`); break; }
+      seen.add(cur);
+      cur = GENRES[cur].parent;
+    }
+  }
+
+  for (const c of GENRE_ALIASES.collisions)
+    errors.push(`alias "${c.key}" claimed by both ${c.between[0]} and ${c.between[1]}`);
+  for (const [name, built] of [['mood', MOOD_ALIASES], ['context', CONTEXT_ALIASES], ['era', ERA_ALIASES]])
+    for (const c of built.collisions)
+      errors.push(`${name} alias "${c.key}" claimed by both ${c.between[0]} and ${c.between[1]}`);
+
+  // A genre alias that v1's lexicon reads as a mood/context/era never gets
+  // as far as the genre index — resolveConcept() branches on facet first — so
+  // it is dead weight and, worse, a sign the two vocabularies disagree.
+  for (const [slug, node] of Object.entries(GENRES))
+    for (const a of [slug.replace(/-/g, ' '), ...(node.aliases ?? [])]) {
+      const f = facetOf(a);
+      if (f !== 'genre') warnings.push(`genre alias "${a}" (${slug}) is read as a ${f} tag by profile.mjs and will never resolve`);
+    }
+
+  // The same check the other way: a word claimed by two facet tables resolves
+  // to whichever is consulted first, which is an ordering accident rather
+  // than a decision anybody made.
+  const tables = [['mood', MOOD_ALIASES], ['context', CONTEXT_ALIASES], ['era', ERA_ALIASES]];
+  for (let i = 0; i < tables.length; i++)
+    for (let j = i + 1; j < tables.length; j++)
+      for (const k of tables[i][1].byKey.keys())
+        if (tables[j][1].byKey.has(k))
+          errors.push(`"${k}" is claimed by both the ${tables[i][0]} and ${tables[j][0]} tables`);
+
+  return { errors, warnings };
+}
+return { facetOf, eraOfYear, FACETS, GENRES, ONTOLOGY_VERSION, normKey, GENRE_INDEX, GENRE_ALIAS_INDEX, resolveConcept, ancestorsOf, lineageOf, isWithin, commonAncestor, contradicts, isRelated, validateOntology };
+})();
+/* ---- core/ontology/tempo.mjs ---- */
+__mod["core/ontology/tempo.mjs"] = (function () {
+const { GENRE_INDEX, ancestorsOf } = __mod["core/ontology/index.mjs"];
+// Typical tempo per genre: the ranges DJs and producers work in.
+//
+// Why a table: tempo is the one thing about a track that is both cheap to
+// measure from a preview (core/audio/dsp/tempo.mjs: 86% within ±1 BPM at
+// confidence ≥ 0.3 on the Beatport set) and strongly tied to genre. Drum & bass
+// lives at 170-176, house at 120-128, UK garage at 130-138. So each can check
+// the other:
+//   - a "87 or 174?" reading is settled by which octave fits the genre it
+//     sounds like (`resolveOctave`);
+//   - a genre guess whose range excludes a confidently measured tempo is
+//     marked down (`tempoFit`), which catches the audio model's most common
+//     confusions inside electronic music (it hears "breakbeat" in both jungle
+//     and UK breaks; 170 against 132 tells them apart).
+//
+// These are soft priors, never vetoes: a 160 BPM house edit exists. Ranges are
+// the common working range, deliberately a little generous. `null` means tempo
+// says nothing about the genre (rock, pop, ambient), and a genre with no row
+// inherits its nearest ancestor's (see `tempoRangeOf`).
+//
+// Half-time genres (dubstep, trap, halftime DnB) are listed at the tempo a DJ
+// would set, with `half: true`: a tempo tracker often reports half of it, and
+// that is a match, not a miss.
+
+
+
+const TEMPO_VERSION = '1.0.0';
+
+/** slug → [low, high] BPM, or null for "tempo says nothing". */
+const TEMPO = Object.freeze({
+  'electronic': null,
+  'house': [115, 130], 'deep-house': [112, 126], 'tech-house': [120, 130], 'progressive-house': [118, 130],
+  'acid-house': [116, 130], 'disco-house': [112, 128], 'electro-house': [124, 132], 'afro-house': [115, 126],
+  'melodic-house': [112, 126], 'garage-house': [115, 128], 'minimal-house': [118, 128], 'bass-house': [122, 132],
+  'hard-house': [138, 152], 'donk': [140, 160],
+  'techno': [120, 150], 'minimal-techno': [118, 130], 'acid-techno': [128, 148], 'detroit-techno': [118, 135],
+  'hard-techno': [138, 165], 'dub-techno': [112, 128],
+  'trance': [125, 145], 'progressive-trance': [124, 136], 'psytrance': [136, 150], 'uplifting-trance': [134, 142],
+  'hard-trance': [138, 155],
+  'breakbeat': [120, 140], 'big-beat': [95, 135], 'uk-breaks': [126, 140], 'breakcore': [160, 260],
+  'drum-and-bass': [160, 180], 'jungle': [155, 175], 'liquid-dnb': [168, 178], 'neurofunk': [168, 180],
+  'jump-up': [168, 180], 'halftime': [160, 180],
+  'uk-garage': [128, 140], 'bassline': [132, 144], 'future-garage': [125, 140], 'grime': [136, 144],
+  'uk-funky': [126, 134],
+  'dubstep': [136, 150], 'brostep': [138, 152], 'uk-bass': [126, 145],
+  'hardcore': [160, 200], 'gabber': [160, 220], 'hardstyle': [145, 160], 'jumpstyle': [138, 152], 'makina': [160, 180],
+  'jersey-club': [130, 145], 'footwork': [155, 165], 'gqom': [118, 130],
+  'ambient': null, 'downtempo': [80, 112], 'idm': null, 'electro': [118, 135], 'synthwave': [80, 120],
+  'synth-pop': [100, 132], 'eurodance': [128, 145],
+  'hip-hop': [80, 105], 'uk-hip-hop': [80, 100], 'drill': [136, 148], 'trap': [130, 155], 'phonk': [120, 150],
+  'boom-bap': [84, 98], 'conscious-hip-hop': [80, 100], 'g-funk': [86, 100], 'lo-fi-hip-hop': [65, 95],
+  'rnb': [60, 110], 'neo-soul': [65, 100], 'soul': null, 'motown': null, 'funk': [90, 125], 'disco': [110, 132],
+  'rock': null, 'pop': null, 'dance-pop': [110, 132], 'k-pop': null, 'hyperpop': null,
+  'jazz': null, 'reggae': [60, 95], 'dub': [60, 90], 'dancehall': [88, 110], 'afrobeats': [95, 118],
+  'latin': null, 'folk': null, 'country': null, 'blues': null, 'classical': null, 'soundtrack': null,
+});
+
+/** Played at this tempo but felt (and often tracked) at half of it. */
+const HALF_TIME = Object.freeze(new Set(['dubstep', 'brostep', 'halftime', 'trap', 'drill', 'phonk']));
+
+/**
+ * Genres whose own convention is "87 or 174": Beatport writes 32 of 40 DnB tracks at 85-90.
+ * A reading at half of the DJ range is a full fit for these (and their children), not 0.6.
+ */
+const DOUBLE_OK = Object.freeze(new Set(['drum-and-bass', 'jungle', 'footwork', 'juke', 'breakcore']));
+
+/** How much a half- or double-time reading counts: real, but weaker than a straight one. */
+const OCTAVE_CREDIT = 0.6;
+/** Outside the range, fit falls to zero over this many BPM. */
+const FALLOFF = 12;
+
+/**
+ * The working range for a genre: its own row, else its nearest ancestor's.
+ * Null when tempo says nothing about it (or it isn't a known genre).
+ */
+function tempoRangeOf(slug) {
+  if (!slug) return null;
+  if (Object.hasOwn(TEMPO, slug)) return TEMPO[slug];
+  if (!GENRE_INDEX.has(slug)) return null;
+  for (const a of ancestorsOf(slug)) if (Object.hasOwn(TEMPO, a)) return TEMPO[a];
+  return null;
+}
+
+const straight = (bpm, [lo, hi]) =>
+  bpm >= lo && bpm <= hi ? 1 : Math.max(0, 1 - (bpm < lo ? lo - bpm : bpm - hi) / FALLOFF);
+
+/**
+ * How well a tempo fits a genre, 0–1, or null when tempo says nothing about it.
+ * Half or double the tempo counts at OCTAVE_CREDIT (full credit for half-time
+ * genres read at half), so a tracker's octave slip never zeroes a right genre.
+ * @returns {{ fit: number, bpm: number } | null}  `bpm`: the octave that fitted best
+ */
+function tempoFit(bpm, slug) {
+  const range = tempoRangeOf(slug);
+  if (!range || !Number.isFinite(bpm) || bpm <= 0) return null;
+  const half = HALF_TIME.has(slug) || ancestorsOf(slug).some(a => HALF_TIME.has(a));
+  const dbl = DOUBLE_OK.has(slug) || ancestorsOf(slug).some(a => DOUBLE_OK.has(a));
+  let best = { fit: straight(bpm, range), bpm };
+  for (const [k, credit] of [[2, half || dbl ? 1 : OCTAVE_CREDIT], [0.5, OCTAVE_CREDIT]]) {
+    const f = straight(bpm * k, range) * credit;
+    if (f > best.fit) best = { fit: f, bpm: bpm * k };
+  }
+  return { fit: +best.fit.toFixed(4), bpm: +best.bpm.toFixed(1) };
+}
+
+/**
+ * Settle a "87 or 174?" reading with what the track sounds like.
+ * `candidates` are [slug, weight] pairs (any order); the reading whose straight
+ * fit, weighted by them, is higher wins. Ties and no information keep the
+ * tracker's own first reading.
+ * @returns {{ bpm: number, from: 'tracker'|'genre' }}
+ */
+function resolveOctave(bpm, alt, candidates = []) {
+  if (!Number.isFinite(alt) || alt <= 0 || !Number.isFinite(bpm)) return { bpm, from: 'tracker' };
+  let a = 0, b = 0;
+  for (const [slug, w] of candidates) {
+    const range = tempoRangeOf(slug);
+    if (!range || !(w > 0)) continue;
+    a += w * straight(bpm, range);
+    b += w * straight(alt, range);
+  }
+  return b > a + 1e-9 ? { bpm: alt, from: 'genre' } : { bpm, from: 'tracker' };
+}
+
+/** Every slug in the table is a real genre (checked by the test). */
+const tempoSlugs = () => Object.keys(TEMPO);
+return { TEMPO_VERSION, TEMPO, HALF_TIME, DOUBLE_OK, OCTAVE_CREDIT, FALLOFF, tempoRangeOf, tempoFit, resolveOctave, tempoSlugs };
+})();
+/* ---- core/audio/match.mjs ---- */
+__mod["core/audio/match.mjs"] = (function () {
+const { resolveConcept } = __mod["core/ontology/index.mjs"];
+const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
+const { tempoRangeOf } = __mod["core/ontology/tempo.mjs"];
+// Matching by sound: tracks that sound alike, tracks that mix together, and
+// which of your genre playlists the sound-alikes sit in.
+//
+// Everything here is a nearest-neighbour lookup or a count over the account's
+// own heard tracks (SMARTER-GENRES-PLAN.md §3, R3): nothing is trained,
+// nothing leaves the device, nothing is pooled across accounts. The vectors
+// are the audio model's embeddings of Deezer previews (audio.mjs `audioIndex`
+// rows: unit-normalised, so a dot product is the cosine).
+
+
+
+
+
+const MATCH_VERSION = '1.0.0';
+
+/** Beatmatching range: within 6% a DJ can pitch one onto the other. */
+const MIX_TOLERANCE = 0.06;
+/** A tempo reading below this confidence is not used for mixing. */
+const MIX_MIN_CONF = 0.3;
+/**
+ * A key reading is used (shown, or counted for mixing) only at or above this
+ * confidence. Measured on the Beatport EDM Key Dataset, held-out half: 62.4%
+ * exact / 72.0% MIREX on the 53% of tracks at or above it, against 55.3% / 64.6%
+ * on all of them (BUILD-5-PROGRESS.md). Key v4 readings (keynet.mjs, `keyNetV`)
+ * map their own sure bar onto this number: 62.5% / 71.3% on 85% of tracks.
+ * web/audio/dsp-view.mjs has the same
+ * number for the chip; test/keygate.test.mjs keeps the two equal.
+ */
+const KEY_MIN_CONF = 0.65;
+/** How much a harmonic fit moves a "mixes with" ranking, in cosine-similarity units. */
+const KEY_RANK_BONUS = 0.03;
+
+const CAMELOT_RE = /^(1[0-2]|[1-9])([AB])$/;
+/** A record's Camelot key when it is sure enough to mix on, else null. */
+function keyOfRecord(record) {
+  const d = record && !record.miss ? record.dsp : null;
+  if (!d || typeof d.camelot !== 'string' || !(d.keyConf >= KEY_MIN_CONF)) return null;
+  const c = d.camelot.toUpperCase();
+  return CAMELOT_RE.test(c) ? c : null;
+}
+/**
+ * Do two Camelot keys mix? 'same', 'adjacent' (a step round the wheel, same
+ * letter) or 'relative' (same number, other letter) are harmonic; 'clash' is
+ * not; null when either key is unknown (then nothing is claimed either way).
+ */
+function keyFit(a, b) {
+  const ma = CAMELOT_RE.exec(a ?? ''), mb = CAMELOT_RE.exec(b ?? '');
+  if (!ma || !mb) return null;
+  const x = Number(ma[1]), y = Number(mb[1]);
+  if (x === y) return ma[2] === mb[2] ? 'same' : 'relative';
+  const step = Math.min(Math.abs(x - y), 12 - Math.abs(x - y));
+  return step === 1 && ma[2] === mb[2] ? 'adjacent' : 'clash';
+}
+
+function dot(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
+}
+
+/**
+ * The k heard tracks that sound most like `emb`, highest cosine first.
+ * @param {Float32Array} emb  unit-normalised
+ * @param {Map<string, {emb: Float32Array}>} index  from `audioIndex`
+ * @param {{ k?: number, exclude?: Set<string>|null, filter?: (id: string) => boolean }} [o]
+ * @returns {Array<{ id: string, sim: number }>}
+ */
+function nearest(emb, index, { k = 12, exclude = null, filter = null } = {}) {
+  if (!emb || !index?.size) return [];
+  const top = [];
+  for (const [id, row] of index) {
+    if (exclude?.has(id) || (filter && !filter(id)) || !row?.emb || row.emb.length !== emb.length) continue;
+    const sim = dot(emb, row.emb);
+    if (top.length < k) { top.push({ id, sim }); top.sort((a, b) => b.sim - a.sim); }
+    else if (sim > top[k - 1].sim) { top[k - 1] = { id, sim }; top.sort((a, b) => b.sim - a.sim); }
+  }
+  return top.map(r => ({ id: r.id, sim: +r.sim.toFixed(4) }));
+}
+
+/**
+ * The genres a playlist's name says it is, as ontology slugs.
+ * "Drum & Bass" is one genre; "Jungle & Breaks" is two; "Sunday" is none.
+ * A name is read whole first, so an alias with "&" in it is not split.
+ */
+function playlistConcepts(name) {
+  const whole = resolveConcept(String(name ?? ''));
+  if (whole.facet === 'genre' && whole.concept && whole.via === 'alias') return [whole.concept];
+  const parts = String(name ?? '').split(/\s*(?:&|\+|\/|,|\||\band\b|\bx\b)\s*/i).map(s => s.trim()).filter(Boolean);
+  const out = [];
+  if (parts.length > 1) {
+    for (const p of parts) {
+      const r = resolveConcept(p);
+      if (r.facet === 'genre' && r.concept && !out.includes(r.concept)) out.push(r.concept);
+    }
+  }
+  if (!out.length && whole.facet === 'genre' && whole.concept) out.push(whole.concept);
+  return out;
+}
+
+/**
+ * Which genre playlists each track is in, and what each playlist's name says.
+ * Only `targets` (the genre playlists) count; mirrors are left out.
+ * @returns {{ playlists: Map<string, {name: string, concepts: string[]}>, of: Map<string, string[]> }}
+ */
+function genreMembership(lib, { targets = null, isMirror = null } = {}) {
+  const mirror = mirrorPredicate(lib, { also: isMirror ?? undefined });
+  const allowed = targets ? new Set(targets) : null;
+  const playlists = new Map(), of = new Map();
+  for (const p of lib?.playlists ?? []) {
+    if (!p?.id || mirror(p) || (allowed && !allowed.has(p.id))) continue;
+    playlists.set(p.id, { name: p.name ?? p.id, concepts: playlistConcepts(p.name) });
+    for (const t of p.tracks ?? []) {
+      if (!t?.id) continue;
+      const list = of.get(t.id) ?? [];
+      if (!list.includes(p.id)) list.push(p.id);
+      of.set(t.id, list);
+    }
+  }
+  return { playlists, of };
+}
+
+/**
+ * The sound-alikes of one track that are filed in a genre playlist, each with
+ * the playlists it is in and what their names say. What `identify` reads as
+ * "your library's view", and what the File card lists.
+ */
+function filedNeighbours(trackId, index, membership, { k = 12, exclude = null } = {}) {
+  const row = index?.get(trackId);
+  if (!row || !membership?.of) return [];
+  const skip = new Set(exclude ?? []);
+  skip.add(trackId);
+  return nearest(row.emb, index, { k, exclude: skip, filter: id => membership.of.has(id) }).map(n => {
+    const pids = membership.of.get(n.id) ?? [];
+    const concepts = [...new Set(pids.flatMap(pid => membership.playlists.get(pid)?.concepts ?? []))];
+    return { ...n, playlists: pids, concepts };
+  });
+}
+
+/** A record's usable tempo: { bpm, alt, conf } or null. */
+function tempoOf(record) {
+  const d = record && !record.miss ? record.dsp : null;
+  if (!d || !Number.isFinite(d.bpm) || d.bpm <= 0) return null;
+  return { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
+           conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+}
+
+/**
+ * How two tempos line up for a mix: 'same' within MIX_TOLERANCE, 'double' or
+ * 'half' when one is twice the other within it, else null. `diff` is the
+ * pitch change needed, as a fraction.
+ */
+function tempoRelation(a, b, tolerance = MIX_TOLERANCE) {
+  if (!(a > 0) || !(b > 0)) return null;
+  let best = null;
+  for (const [rel, k] of [['same', 1], ['double', 2], ['half', 0.5]]) {
+    const diff = Math.abs(b * k - a) / a;
+    if (diff <= tolerance && (!best || diff < best.diff)) best = { rel, diff: +diff.toFixed(4) };
+  }
+  return best;
+}
+
+/**
+ * Heard tracks that mix with this one: a tempo you can beatmatch (straight,
+ * or half/double time), ranked by how alike they sound, then by how little
+ * pitching they need. A track's own tempo can be passed in (`bpm`) when it
+ * has been settled elsewhere (identify's octave check); otherwise its record's.
+ * @returns {Array<{ id: string, sim: number, bpm: number, rel: string, diff: number }>}
+ */
+function mixesWith(trackId, index, { k = 8, bpm = null, tolerance = MIX_TOLERANCE, pool = 200 } = {}) {
+  const row = index?.get(trackId);
+  const own = bpm ?? tempoOf(row?.rec)?.bpm ?? null;
+  if (!row || !(own > 0)) return [];
+  const out = [];
+  const ownKey = keyOfRecord(row.rec);
+  for (const n of nearest(row.emb, index, { k: pool, exclude: new Set([trackId]) })) {
+    const t = tempoOf(index.get(n.id)?.rec);
+    if (!t || t.conf < MIX_MIN_CONF) continue;
+    const r = tempoRelation(own, t.bpm, tolerance) ?? (t.alt ? tempoRelation(own, t.alt, tolerance) : null);
+    if (!r) continue;
+    const hit = { id: n.id, sim: n.sim, bpm: +t.bpm.toFixed(1), rel: r.rel, diff: r.diff };
+    // Key only when both keys are sure; otherwise the entry is exactly what it always was.
+    const theirs = keyOfRecord(index.get(n.id)?.rec), fit = keyFit(ownKey, theirs);
+    if (fit) { hit.key = theirs; hit.keyFit = fit; }
+    out.push(hit);
+    if (!ownKey && out.length >= k) break;
+  }
+  if (ownKey) {
+    // A harmonic fit lifts a mix a little, a clash lowers it; ties keep the similarity order.
+    const rank = h => h.sim + (h.keyFit ? (h.keyFit === 'clash' ? -KEY_RANK_BONUS : KEY_RANK_BONUS) : 0);
+    out.sort((a, b) => rank(b) - rank(a));
+  }
+  return out.slice(0, k);
+}
+
+/** Shown only at or above this confidence (86% within +-1 BPM there); equal to MIX_MIN_CONF and dsp-view's BPM_MIN_CONF. */
+const BPM_MIN_CONF = MIX_MIN_CONF;
+/** Below this the preview had no steady pulse to speak of. */
+const BPM_NO_BEAT_CONF = 0.15;
+
+const within = (b, [lo, hi]) => b >= lo && b <= hi;
+
+/**
+ * One BPM everywhere (SOUND-ENGINE-PLAN T2): settle a reading into a range by
+ * x2 or x1/2 only. Returns the reading itself when it is already in range, the
+ * fold that lands in it, or null when neither does (nothing is forced).
+ * @param {number} bpm
+ * @param {[number, number]} range
+ * @returns {number|null}
+ */
+function foldIntoRange(bpm, range) {
+  if (!(bpm > 0) || !range) return null;
+  if (within(bpm, range)) return bpm;
+  for (const k of [2, 0.5]) if (within(bpm * k, range)) return bpm * k;
+  return null;
+}
+
+/**
+ * The BPM a listener sees for a track, in the convention they play it in.
+ * Order: the range of a playlist the track is in or suggested for (padded by
+ * the mixing tolerance), then the working range of the genre it sounds like;
+ * at each, the reading as measured (or its flagged alternative) if it sits in
+ * range, else x2 or x1/2 if that lands in it; else the reading as measured.
+ * `settled` is false only for a reading flagged "87 or 174" that nothing settled.
+ * @param {object} record  a stored AudioRecord
+ * @param {{ playlistRange?: {lo: number, hi: number}|[number, number]|null, genres?: Array<string|[string, number]> }} [ctx]
+ *        genres: ontology slugs, most specific first
+ * @returns {{ bpm: number, from: 'measured'|'playlist'|'genre', conf: number, settled: boolean, alt: number|null } | null}
+ */
+function displayTempo(record, { playlistRange = null, genres = [] } = {}) {
+  const t = tempoOf(record);
+  if (!t) return null;
+  const cands = t.alt ? [t.bpm, t.alt] : [t.bpm];
+  const stages = [];
+  const pr = Array.isArray(playlistRange) ? playlistRange : playlistRange ? [playlistRange.lo, playlistRange.hi] : null;
+  if (pr && pr[0] > 0 && pr[1] >= pr[0]) stages.push(['playlist', [[pr[0] * (1 - MIX_TOLERANCE), pr[1] * (1 + MIX_TOLERANCE)]]]);
+  const gr = [];
+  for (const g of genres ?? []) { const r = tempoRangeOf(Array.isArray(g) ? g[0] : g); if (r) gr.push(r); }
+  if (gr.length) stages.push(['genre', gr]);
+  const out = (bpm, from, settled) => ({ bpm: +bpm.toFixed(1), from, conf: t.conf, settled, alt: settled ? null : t.alt });
+  for (const [from, ranges] of stages) {
+    for (const c of cands) if (ranges.some(r => within(c, r))) return out(c, c === t.bpm ? 'measured' : from, true);
+    for (const c of cands) for (const r of ranges) { const f = foldIntoRange(c, r); if (f) return out(f, from, true); }
+  }
+  return out(t.bpm, 'measured', !t.alt);
+}
+
+/**
+ * SOUND-ENGINE-PLAN T3: one sure BPM, or "BPM unknown" with the reason.
+ * Sure means confidence at or above BPM_MIN_CONF and the octave settled.
+ * `why`: 'no-audio' (never heard), 'no-beat' (no steady pulse in the preview),
+ * 'octave' (87 or 174, nothing settled it), 'unsure' (a pulse, not reliable).
+ * @returns {{ state: 'sure', bpm: number, from: string, conf: number } | { state: 'unknown', why: string }}
+ */
+function tempoShown(record, ctx = {}) {
+  if (!record || record.miss) return { state: 'unknown', why: 'no-audio' };
+  const t = tempoOf(record);
+  if (!t || t.conf < BPM_NO_BEAT_CONF) return { state: 'unknown', why: 'no-beat' };
+  if (t.conf < BPM_MIN_CONF) return { state: 'unknown', why: 'unsure' };
+  const d = displayTempo(record, ctx);
+  if (!d.settled) return { state: 'unknown', why: 'octave' };
+  return { state: 'sure', bpm: d.bpm, from: d.from, conf: d.conf };
+}
+
+/** The words behind each "BPM unknown" (shown on tap or hover). */
+const TEMPO_UNKNOWN_TEXT = Object.freeze({
+  'no-audio': 'Not heard yet: no preview on Deezer',
+  'no-beat': 'The beat wasn\u2019t clear in the 30 s preview',
+  'octave': 'Could be half or double: file it to a playlist and it will settle',
+  'unsure': 'A pulse, but the reading isn\u2019t reliable enough to show',
+});
+return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith, BPM_MIN_CONF, BPM_NO_BEAT_CONF, foldIntoRange, displayTempo, tempoShown, TEMPO_UNKNOWN_TEXT };
+})();
 /* ---- web/audio/dsp-view.mjs ---- */
 __mod["web/audio/dsp-view.mjs"] = (function () {
+const { tempoShown } = __mod["core/audio/match.mjs"];
 // AudioRecord.dsp → the BPM/key part of web/ui/sound.mjs's SoundVM (WP-D4).
 //
 // Measured 2026-11-14 on 400 tracks of the Beatport EDM Key Dataset
@@ -5524,6 +6590,8 @@ const BPM_UI_DEFAULT = true;        // tempo alone — on, measured above
 /** Tempo shown by default only at or above this confidence (86% within ±1 BPM there). */
 const BPM_MIN_CONF = 0.3;
 const DSP_UI_KEY = 'bf_audio_dsp';
+
+
 
 /** The default key display: only readings at or above KEY_MIN_CONF. Off only when the override says '0'. */
 const KEY_UI_DEFAULT = true;
@@ -5563,17 +6631,25 @@ function keyShown(ls = globalThis.localStorage) {
  * @param {{ show?: boolean, bpm?: boolean, key?: boolean }} [o]  show: everything (default dspShown());
  *        bpm: tempo alone at BPM_MIN_CONF (default bpmShown());
  *        key: the key alone, only at KEY_MIN_CONF (default keyShown())
- * @returns {{ bpm?: number, bpmAlt?: number, bpmConf?: number, key?: string, camelot?: string, keyConf?: number } | null}
+ *        ctx: { playlistRange?, genres? } the track sits in (match.mjs displayTempo), so the BPM is the one
+ *        every other surface shows (SOUND-ENGINE-PLAN T2/T3); without it, the reading folded by nothing
+ * @returns {{ bpm?: number, bpmUnknown?: string, bpmConf?: number, key?: string, camelot?: string, keyConf?: number } | null}
  */
-function dspSoundVM(record, { show = dspShown(), bpm = bpmShown(), key = keyShown() } = {}) {
+function dspSoundVM(record, { show = dspShown(), bpm = bpmShown(), key = keyShown(), ctx = null } = {}) {
   if (!show && !bpm && !key) return null;
   const d = record && !record.miss ? record.dsp : null;
   if (!d || typeof d !== 'object') return null;
   const vm = {};
-  if ((show || bpm) && Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= (show ? MIN_SHOW_CONF : BPM_MIN_CONF)) {
+  if (show && Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= MIN_SHOW_CONF) {
+    // The checking view: every reading, as measured.
     vm.bpm = Math.round(d.bpm);
     vm.bpmConf = d.bpmConf;
     if (d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0) vm.bpmAlt = Math.round(d.bpmAlt);
+  } else if (bpm && !show) {
+    // One sure BPM, or "BPM unknown" with the reason (T3); never a raw reading or a pair.
+    const t = tempoShown(record, ctx ?? {});
+    if (t.state === 'sure') { vm.bpm = Math.round(t.bpm); vm.bpmConf = t.conf; }
+    else vm.bpmUnknown = t.why;
   }
   if ((show || key) && typeof d.key === 'string' && d.key && (d.keyConf ?? 0) >= (show ? MIN_SHOW_CONF : KEY_MIN_CONF)) {
     vm.key = d.key;

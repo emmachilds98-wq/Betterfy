@@ -25,6 +25,8 @@ export const BPM_UI_DEFAULT = true;        // tempo alone — on, measured above
 export const BPM_MIN_CONF = 0.3;
 export const DSP_UI_KEY = 'bf_audio_dsp';
 
+import { tempoShown } from '../../core/audio/match.mjs';
+
 /** The default key display: only readings at or above KEY_MIN_CONF. Off only when the override says '0'. */
 export const KEY_UI_DEFAULT = true;
 /** A key is shown (and used for mixing) only at or above this; equal to match.mjs's KEY_MIN_CONF. */
@@ -63,17 +65,25 @@ export function keyShown(ls = globalThis.localStorage) {
  * @param {{ show?: boolean, bpm?: boolean, key?: boolean }} [o]  show: everything (default dspShown());
  *        bpm: tempo alone at BPM_MIN_CONF (default bpmShown());
  *        key: the key alone, only at KEY_MIN_CONF (default keyShown())
- * @returns {{ bpm?: number, bpmAlt?: number, bpmConf?: number, key?: string, camelot?: string, keyConf?: number } | null}
+ *        ctx: { playlistRange?, genres? } the track sits in (match.mjs displayTempo), so the BPM is the one
+ *        every other surface shows (SOUND-ENGINE-PLAN T2/T3); without it, the reading folded by nothing
+ * @returns {{ bpm?: number, bpmUnknown?: string, bpmConf?: number, key?: string, camelot?: string, keyConf?: number } | null}
  */
-export function dspSoundVM(record, { show = dspShown(), bpm = bpmShown(), key = keyShown() } = {}) {
+export function dspSoundVM(record, { show = dspShown(), bpm = bpmShown(), key = keyShown(), ctx = null } = {}) {
   if (!show && !bpm && !key) return null;
   const d = record && !record.miss ? record.dsp : null;
   if (!d || typeof d !== 'object') return null;
   const vm = {};
-  if ((show || bpm) && Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= (show ? MIN_SHOW_CONF : BPM_MIN_CONF)) {
+  if (show && Number.isFinite(d.bpm) && d.bpm > 0 && (d.bpmConf ?? 0) >= MIN_SHOW_CONF) {
+    // The checking view: every reading, as measured.
     vm.bpm = Math.round(d.bpm);
     vm.bpmConf = d.bpmConf;
     if (d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0) vm.bpmAlt = Math.round(d.bpmAlt);
+  } else if (bpm && !show) {
+    // One sure BPM, or "BPM unknown" with the reason (T3); never a raw reading or a pair.
+    const t = tempoShown(record, ctx ?? {});
+    if (t.state === 'sure') { vm.bpm = Math.round(t.bpm); vm.bpmConf = t.conf; }
+    else vm.bpmUnknown = t.why;
   }
   if ((show || key) && typeof d.key === 'string' && d.key && (d.keyConf ?? 0) >= (show ? MIN_SHOW_CONF : KEY_MIN_CONF)) {
     vm.key = d.key;

@@ -133,3 +133,53 @@ export async function fetchPreview(url, { fetch }) {
     return { miss: MISS.FAILED, detail: String(e?.message ?? e) };
   }
 }
+
+/** Stands in for a preview URL when the answer comes from the cache; never a real, signed URL. */
+export const CACHED_PREVIEW = 'preview-cache:';
+
+/**
+ * One download per record for all top-ups (SOUND-ENGINE-PLAN L3). The four
+ * top-ups (tempo/key, CLAP, Beat This, key v4) each looked a record up and
+ * downloaded its preview again; this wraps `lookup` and `fetchPreview` so the
+ * second and later ask for the same ISRC in a run is answered from the raw
+ * (still compressed) windows kept briefly in memory. Only the audio bytes and
+ * Deezer's id are kept, never the signed URL, and callers get fresh copies
+ * because decoding detaches the buffer it is given. `max` records are kept
+ * (oldest out first); `max` 0 passes everything straight through. Make one
+ * per run and `clear()` it when the run ends.
+ *
+ * @param {{ lookup: Function, fetchPreview: Function, max?: number }} deps
+ */
+export function createPreviewCache({ lookup, fetchPreview, max = 64 }) {
+  const kept = new Map();   // isrc -> { found (no url), got }
+  const urls = new Map();   // the url of a lookup just answered -> { isrc, found }
+  const stats = { lookups: 0, downloads: 0, hits: 0 };
+  const copy = got => ({ ...got, buffers: got.buffers.map(b => b.slice(0)) });
+  return {
+    stats,
+    clear() { kept.clear(); urls.clear(); },
+    async lookup(isrc, o) {
+      const e = max > 0 ? kept.get(isrc) : null;
+      if (e) { kept.delete(isrc); kept.set(isrc, e); stats.hits++; return { ...e.found, previewUrl: CACHED_PREVIEW + isrc }; }
+      stats.lookups++;
+      const r = await lookup(isrc, o);
+      if (max > 0 && r && !r.miss && r.previewUrl) urls.set(r.previewUrl, { isrc, found: r });
+      return r;
+    },
+    async fetchPreview(url) {
+      if (typeof url === 'string' && url.startsWith(CACHED_PREVIEW)) {
+        const e = kept.get(url.slice(CACHED_PREVIEW.length));
+        return e ? copy(e.got) : { miss: MISS.FAILED, detail: 'cache' };
+      }
+      const got = await fetchPreview(url);
+      stats.downloads++;
+      const k = urls.get(url); urls.delete(url);
+      if (max > 0 && k && got && !got.miss && Array.isArray(got.buffers)) {
+        const { previewUrl, ...found } = k.found;
+        kept.set(k.isrc, { found, got: copy(got) });
+        while (kept.size > max) kept.delete(kept.keys().next().value);
+      }
+      return got;
+    },
+  };
+}
