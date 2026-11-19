@@ -137,12 +137,50 @@ export function filedNeighbours(trackId, index, membership, { k = 12, exclude = 
   });
 }
 
-/** A record's usable tempo: { bpm, alt, conf } or null. */
+/** Deezer and a measured tempo "agree" within this many BPM (SOUND-ENGINE-PLAN T4). */
+export const DEEZER_BPM_TOL = 2;
+const DEEZER_RAISE_CONF = 0.3;
+const DEEZER_MIN_CONF = 0.15;
+
+/** Deezer's own BPM stored beside a record (`source.deezerBpm`, T4), or null. */
+export function deezerBpmOf(record) {
+  const b = Number(record?.source?.deezerBpm);
+  return Number.isFinite(b) && b > 0 ? b : null;
+}
+
+/**
+ * How Deezer's BPM sits against a record's measured reading, before any
+ * second opinion is applied: 'agree' (within DEEZER_BPM_TOL of the reading or
+ * its flagged alternative), 'differ', or null when either is missing.
+ */
+export function deezerAgreement(record) {
+  const dz = deezerBpmOf(record), d = record && !record.miss ? record.dsp : null;
+  if (!dz || !d || !(d.bpm > 0)) return null;
+  const cands = [d.bpm, ...(d.octaveAmbiguous && d.bpmAlt > 0 ? [d.bpmAlt] : [])];
+  return cands.some(c => Math.abs(c - dz) <= DEEZER_BPM_TOL) ? 'agree' : 'differ';
+}
+
+/**
+ * A record's usable tempo: { bpm, alt, conf, deezer? } or null.
+ * Deezer's BPM is a second opinion (T4), never a source on its own: it needs
+ * a measured reading with a pulse (conf >= 0.15). It settles a flagged
+ * "87 or 174" when it equals one candidate, and where it agrees within 2 BPM
+ * it raises the confidence to at least 0.3. When it differs the measured
+ * reading stands, untouched.
+ */
 export function tempoOf(record) {
   const d = record && !record.miss ? record.dsp : null;
   if (!d || !Number.isFinite(d.bpm) || d.bpm <= 0) return null;
-  return { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
-           conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+  let t = { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
+            conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+  const dz = deezerBpmOf(record);
+  if (dz && t.conf >= DEEZER_MIN_CONF) {
+    const near = c => Math.abs(c - dz) <= DEEZER_BPM_TOL;
+    if (near(t.bpm)) t = { ...t, alt: null, conf: Math.max(t.conf, DEEZER_RAISE_CONF), deezer: 'agree' };
+    else if (t.alt && near(t.alt)) t = { bpm: t.alt, alt: null, conf: Math.max(t.conf, DEEZER_RAISE_CONF), deezer: 'agree' };
+    else t = { ...t, deezer: 'differ' };
+  }
+  return t;
 }
 
 /**

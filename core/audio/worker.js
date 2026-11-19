@@ -101,7 +101,7 @@ export async function analyseOne(deps, track, fetched = undefined) {
   const { windows, sliced } = got;
   got = null; // drop the compressed audio
 
-  const res = await analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+  const res = await analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, ...(found.deezerBpm > 0 ? { deezerBpm: found.deezerBpm } : {}), windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
   if (res.record && clap48) res.record = await addClap(deps.clap, res.record, clap48);
   return res;
 }
@@ -146,7 +146,9 @@ export async function fillDsp(deps, record, track = {}) {
   try { dsp = await deps.dsp(parts); } catch { dsp = null; }   // await: Beat This's dsp is async
   parts = null; // drop the audio
   if (!dsp) return { skip: 'nothing-measured' };
-  return { record: { ...record, dsp } };
+  // T4: records heard before get Deezer's BPM at their next top-up.
+  const source = found.deezerBpm > 0 && record.source ? { ...record.source, deezerBpm: found.deezerBpm } : record.source;
+  return { record: { ...record, dsp, ...(source ? { source } : {}) } };
 }
 
 async function decodeAll(deps, buffers) {

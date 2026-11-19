@@ -1252,7 +1252,7 @@ async function analyseOne(deps, track, fetched = undefined) {
   const { windows, sliced } = got;
   got = null; // drop the compressed audio
 
-  const res = await analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+  const res = await analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, ...(found.deezerBpm > 0 ? { deezerBpm: found.deezerBpm } : {}), windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
   if (res.record && clap48) res.record = await addClap(deps.clap, res.record, clap48);
   return res;
 }
@@ -1297,7 +1297,9 @@ async function fillDsp(deps, record, track = {}) {
   try { dsp = await deps.dsp(parts); } catch { dsp = null; }   // await: Beat This's dsp is async
   parts = null; // drop the audio
   if (!dsp) return { skip: 'nothing-measured' };
-  return { record: { ...record, dsp } };
+  // T4: records heard before get Deezer's BPM at their next top-up.
+  const source = found.deezerBpm > 0 && record.source ? { ...record.source, deezerBpm: found.deezerBpm } : record.source;
+  return { record: { ...record, dsp, ...(source ? { source } : {}) } };
 }
 
 async function decodeAll(deps, buffers) {
@@ -1770,7 +1772,9 @@ async function lookup(isrc, { jsonp, spotifyDurationMs } = {}) {
   if (spotifyDurationMs != null && !identityOk(durationMs, spotifyDurationMs)) return { miss: MISS.IDENTITY, detail: 'duration' };
   const readable = json.readable !== false;
   if (!readable || !json.preview) return { miss: MISS.NO_PREVIEW, detail: readable ? 'no preview' : 'not readable' };
-  return { deezerId: json.id, previewUrl: json.preview, durationMs, readable };
+  // T4: Deezer's own BPM, when it states one (0 means none); a second opinion only.
+  const bpm = Number(json.bpm);
+  return { deezerId: json.id, previewUrl: json.preview, durationMs, readable, ...(bpm > 0 && bpm < 400 ? { deezerBpm: +bpm.toFixed(1) } : {}) };
 }
 
 /** Deezer reports whole seconds, so ±3 s is the tolerance (§4.1). */
@@ -6427,12 +6431,50 @@ function filedNeighbours(trackId, index, membership, { k = 12, exclude = null } 
   });
 }
 
-/** A record's usable tempo: { bpm, alt, conf } or null. */
+/** Deezer and a measured tempo "agree" within this many BPM (SOUND-ENGINE-PLAN T4). */
+const DEEZER_BPM_TOL = 2;
+const DEEZER_RAISE_CONF = 0.3;
+const DEEZER_MIN_CONF = 0.15;
+
+/** Deezer's own BPM stored beside a record (`source.deezerBpm`, T4), or null. */
+function deezerBpmOf(record) {
+  const b = Number(record?.source?.deezerBpm);
+  return Number.isFinite(b) && b > 0 ? b : null;
+}
+
+/**
+ * How Deezer's BPM sits against a record's measured reading, before any
+ * second opinion is applied: 'agree' (within DEEZER_BPM_TOL of the reading or
+ * its flagged alternative), 'differ', or null when either is missing.
+ */
+function deezerAgreement(record) {
+  const dz = deezerBpmOf(record), d = record && !record.miss ? record.dsp : null;
+  if (!dz || !d || !(d.bpm > 0)) return null;
+  const cands = [d.bpm, ...(d.octaveAmbiguous && d.bpmAlt > 0 ? [d.bpmAlt] : [])];
+  return cands.some(c => Math.abs(c - dz) <= DEEZER_BPM_TOL) ? 'agree' : 'differ';
+}
+
+/**
+ * A record's usable tempo: { bpm, alt, conf, deezer? } or null.
+ * Deezer's BPM is a second opinion (T4), never a source on its own: it needs
+ * a measured reading with a pulse (conf >= 0.15). It settles a flagged
+ * "87 or 174" when it equals one candidate, and where it agrees within 2 BPM
+ * it raises the confidence to at least 0.3. When it differs the measured
+ * reading stands, untouched.
+ */
 function tempoOf(record) {
   const d = record && !record.miss ? record.dsp : null;
   if (!d || !Number.isFinite(d.bpm) || d.bpm <= 0) return null;
-  return { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
-           conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+  let t = { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
+            conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+  const dz = deezerBpmOf(record);
+  if (dz && t.conf >= DEEZER_MIN_CONF) {
+    const near = c => Math.abs(c - dz) <= DEEZER_BPM_TOL;
+    if (near(t.bpm)) t = { ...t, alt: null, conf: Math.max(t.conf, DEEZER_RAISE_CONF), deezer: 'agree' };
+    else if (t.alt && near(t.alt)) t = { bpm: t.alt, alt: null, conf: Math.max(t.conf, DEEZER_RAISE_CONF), deezer: 'agree' };
+    else t = { ...t, deezer: 'differ' };
+  }
+  return t;
 }
 
 /**
@@ -6559,7 +6601,7 @@ const TEMPO_UNKNOWN_TEXT = Object.freeze({
   'octave': 'Could be half or double: file it to a playlist and it will settle',
   'unsure': 'A pulse, but the reading isn\u2019t reliable enough to show',
 });
-return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith, BPM_MIN_CONF, BPM_NO_BEAT_CONF, foldIntoRange, displayTempo, tempoShown, TEMPO_UNKNOWN_TEXT };
+return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, DEEZER_BPM_TOL, deezerBpmOf, deezerAgreement, tempoOf, tempoRelation, mixesWith, BPM_MIN_CONF, BPM_NO_BEAT_CONF, foldIntoRange, displayTempo, tempoShown, TEMPO_UNKNOWN_TEXT };
 })();
 /* ---- web/audio/dsp-view.mjs ---- */
 __mod["web/audio/dsp-view.mjs"] = (function () {

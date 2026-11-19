@@ -204,6 +204,7 @@ function identifyHTML(a, p, esc) {
       <div><span>Tracks scored</span><b class="mono">${a.scored.toLocaleString()}</b></div>
       ${a.tempo != null ? `<div><span>Tempo fits the playlist's genre</span><b class="mono">${p(a.tempo)} of ${a.tempoJudged.toLocaleString()}</b></div>` : ''}
       ${a.bpm?.heard ? `<div><span>BPM known on</span><b class="mono">${p(a.bpm.known)} of ${a.bpm.heard.toLocaleString()} heard</b></div>` : ''}
+      ${a.bpm?.deezer?.both ? `<div><span>BPM from Deezer</span><b class="mono">agrees on ${p(a.bpm.deezer.rate)} of ${a.bpm.deezer.both.toLocaleString()}</b></div>` : ''}
       ${a.bpm?.judged ? `<div><span>BPM inside its playlist's genre range</span><b class="mono">${p(a.bpm.inRangeRaw)} as read, ${p(a.bpm.inRangeShown)} as shown</b></div>` : ''}
       ${a.byGenre.map(g => `<div><span>${esc(g.name)}</span><b class="mono">${g.right} of ${g.n}</b></div>`).join('')}
     </div>`;
@@ -518,6 +519,7 @@ function audioLines(v, pc, maestScoreText) {
       ...(v.identify.bpm?.heard ? [`BPM known on ${pc(v.identify.bpm.known)} of ${v.identify.bpm.heard} heard tracks`
         + (Object.keys(v.identify.bpm.why).length ? ` (unknown: ${Object.entries(v.identify.bpm.why).map(([k, n]) => `${n} ${k}`).join(', ')})` : '')
         + (v.identify.bpm.judged ? `; BPM inside its playlist's genre range ${pc(v.identify.bpm.inRangeRaw)} as read, ${pc(v.identify.bpm.inRangeShown)} as shown, ${v.identify.bpm.moved} moved` : '')] : []),
+      ...(v.identify.bpm?.deezer?.both ? [`BPM from Deezer: agrees on ${pc(v.identify.bpm.deezer.rate)} of ${v.identify.bpm.deezer.both} tracks that have both`] : []),
       `By genre: ${v.identify.byGenre.map(g => `${g.name} ${g.right}/${g.n}`).join(', ')}`,
     ] : []),
   ];

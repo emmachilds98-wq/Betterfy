@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-2347">
+<meta name="bf-build" content="2026-11-19-0011">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -2073,7 +2073,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-2347</span>
+    <span class="mono">build 2026-11-19-0011</span>
   </p>
 
   <div class="feat">
@@ -2166,7 +2166,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-2347</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-19-0011</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2244,7 +2244,7 @@ main:focus{outline:none}
         <button class="uhhead" type="button" id="uh-about-h" data-uhtoggle="about" aria-expanded="false" aria-controls="uh-about-b">
           <span class="uht"><b>About &amp; updates</b><span class="uhs"></span></span><span class="chev" aria-hidden="true"></span></button>
         <div class="uhbody" id="uh-about-b" role="region" aria-labelledby="uh-about-h" hidden>
-          <p class="hint">Betterfy, build 2026-11-18-2347. <span id="sheetWho" class="mono"></span></p>
+          <p class="hint">Betterfy, build 2026-11-19-0011. <span id="sheetWho" class="mono"></span></p>
           <div class="rowbtns"><button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button></div>
           <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, which read as "get the latest
                Betterfy". It is not: it re-reads every playlist from Spotify, hundreds of calls against a
@@ -7065,6 +7065,7 @@ function identifyHTML(a, p, esc) {
       <div><span>Tracks scored</span><b class="mono">${a.scored.toLocaleString()}</b></div>
       ${a.tempo != null ? `<div><span>Tempo fits the playlist's genre</span><b class="mono">${p(a.tempo)} of ${a.tempoJudged.toLocaleString()}</b></div>` : ''}
       ${a.bpm?.heard ? `<div><span>BPM known on</span><b class="mono">${p(a.bpm.known)} of ${a.bpm.heard.toLocaleString()} heard</b></div>` : ''}
+      ${a.bpm?.deezer?.both ? `<div><span>BPM from Deezer</span><b class="mono">agrees on ${p(a.bpm.deezer.rate)} of ${a.bpm.deezer.both.toLocaleString()}</b></div>` : ''}
       ${a.bpm?.judged ? `<div><span>BPM inside its playlist's genre range</span><b class="mono">${p(a.bpm.inRangeRaw)} as read, ${p(a.bpm.inRangeShown)} as shown</b></div>` : ''}
       ${a.byGenre.map(g => `<div><span>${esc(g.name)}</span><b class="mono">${g.right} of ${g.n}</b></div>`).join('')}
     </div>`;
@@ -7117,7 +7118,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock, hear
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-2347`,
+    `Betterfy engine score — build 2026-11-19-0011`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7377,6 +7378,7 @@ function audioLines(v, pc, maestScoreText) {
       ...(v.identify.bpm?.heard ? [`BPM known on ${pc(v.identify.bpm.known)} of ${v.identify.bpm.heard} heard tracks`
         + (Object.keys(v.identify.bpm.why).length ? ` (unknown: ${Object.entries(v.identify.bpm.why).map(([k, n]) => `${n} ${k}`).join(', ')})` : '')
         + (v.identify.bpm.judged ? `; BPM inside its playlist's genre range ${pc(v.identify.bpm.inRangeRaw)} as read, ${pc(v.identify.bpm.inRangeShown)} as shown, ${v.identify.bpm.moved} moved` : '')] : []),
+      ...(v.identify.bpm?.deezer?.both ? [`BPM from Deezer: agrees on ${pc(v.identify.bpm.deezer.rate)} of ${v.identify.bpm.deezer.both} tracks that have both`] : []),
       `By genre: ${v.identify.byGenre.map(g => `${g.name} ${g.right}/${g.n}`).join(', ')}`,
     ] : []),
   ];
@@ -11382,12 +11384,50 @@ function filedNeighbours(trackId, index, membership, { k = 12, exclude = null } 
   });
 }
 
-/** A record's usable tempo: { bpm, alt, conf } or null. */
+/** Deezer and a measured tempo "agree" within this many BPM (SOUND-ENGINE-PLAN T4). */
+const DEEZER_BPM_TOL = 2;
+const DEEZER_RAISE_CONF = 0.3;
+const DEEZER_MIN_CONF = 0.15;
+
+/** Deezer's own BPM stored beside a record (`source.deezerBpm`, T4), or null. */
+function deezerBpmOf(record) {
+  const b = Number(record?.source?.deezerBpm);
+  return Number.isFinite(b) && b > 0 ? b : null;
+}
+
+/**
+ * How Deezer's BPM sits against a record's measured reading, before any
+ * second opinion is applied: 'agree' (within DEEZER_BPM_TOL of the reading or
+ * its flagged alternative), 'differ', or null when either is missing.
+ */
+function deezerAgreement(record) {
+  const dz = deezerBpmOf(record), d = record && !record.miss ? record.dsp : null;
+  if (!dz || !d || !(d.bpm > 0)) return null;
+  const cands = [d.bpm, ...(d.octaveAmbiguous && d.bpmAlt > 0 ? [d.bpmAlt] : [])];
+  return cands.some(c => Math.abs(c - dz) <= DEEZER_BPM_TOL) ? 'agree' : 'differ';
+}
+
+/**
+ * A record's usable tempo: { bpm, alt, conf, deezer? } or null.
+ * Deezer's BPM is a second opinion (T4), never a source on its own: it needs
+ * a measured reading with a pulse (conf >= 0.15). It settles a flagged
+ * "87 or 174" when it equals one candidate, and where it agrees within 2 BPM
+ * it raises the confidence to at least 0.3. When it differs the measured
+ * reading stands, untouched.
+ */
 function tempoOf(record) {
   const d = record && !record.miss ? record.dsp : null;
   if (!d || !Number.isFinite(d.bpm) || d.bpm <= 0) return null;
-  return { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
-           conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+  let t = { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
+            conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+  const dz = deezerBpmOf(record);
+  if (dz && t.conf >= DEEZER_MIN_CONF) {
+    const near = c => Math.abs(c - dz) <= DEEZER_BPM_TOL;
+    if (near(t.bpm)) t = { ...t, alt: null, conf: Math.max(t.conf, DEEZER_RAISE_CONF), deezer: 'agree' };
+    else if (t.alt && near(t.alt)) t = { bpm: t.alt, alt: null, conf: Math.max(t.conf, DEEZER_RAISE_CONF), deezer: 'agree' };
+    else t = { ...t, deezer: 'differ' };
+  }
+  return t;
 }
 
 /**
@@ -11514,7 +11554,7 @@ const TEMPO_UNKNOWN_TEXT = Object.freeze({
   'octave': 'Could be half or double: file it to a playlist and it will settle',
   'unsure': 'A pulse, but the reading isn\u2019t reliable enough to show',
 });
-return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith, BPM_MIN_CONF, BPM_NO_BEAT_CONF, foldIntoRange, displayTempo, tempoShown, TEMPO_UNKNOWN_TEXT };
+return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, DEEZER_BPM_TOL, deezerBpmOf, deezerAgreement, tempoOf, tempoRelation, mixesWith, BPM_MIN_CONF, BPM_NO_BEAT_CONF, foldIntoRange, displayTempo, tempoShown, TEMPO_UNKNOWN_TEXT };
 })();
 /* ---- web/screens/shuffle.mjs ---- */
 __mod["web/screens/shuffle.mjs"] = (function () {
@@ -12636,7 +12676,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-2347';
+const BUILD = '2026-11-19-0011';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -12974,7 +13014,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-2347', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-19-0011', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -13797,7 +13837,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-2347');
+    const w = new Worker('reports-worker.js?v=2026-11-19-0011');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -17612,7 +17652,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-2347';
+    s.src = 'engine.js?v=2026-11-19-0011';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -17634,7 +17674,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-2347');
+    const w = new Worker('engine-worker.js?v=2026-11-19-0011');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -18389,7 +18429,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-2347';
+    s.src = 'audio.js?v=2026-11-19-0011';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -18443,7 +18483,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-2347', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-19-0011', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -19841,7 +19881,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-2347', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-19-0011', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
