@@ -26,7 +26,7 @@ const ANALYSE = { running: false, pending: false, stage: null, tags: [0, 0], lis
 function analyseGapCount() {
   if (typeof LIB === 'undefined' || !LIB) return 0;
   const ids = new Set();
-  const gap = id => (TAGS[id]?.tags?.length ?? 0) < REASK_TAG_FLOOR || TAGS[id]?.source === 'wikidata';
+  const gap = id => (TAGS[id]?.tags?.length ?? 0) < REASK_TAG_FLOOR || /^(wikidata|musicbrainz)$/.test(TAGS[id]?.source);
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && gap(a.id)) ids.add(a.id);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && gap(a.id)) ids.add(a.id);
   return ids.size;

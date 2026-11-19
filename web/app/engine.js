@@ -632,7 +632,7 @@ const engineValidate = guard(async () => {
                                                     opts: { folds: 5, limit: VALIDATE_N, collect: true,
                                                             genreGraph: true, soundFirst: true, fitParts: true, sources: true } }); }
     catch { done = null; }
-    const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge };
+    const extra = { bridgeStats, bridgeErr, bridgeMs, bridgeOff: !useBridge, wikidataKnows: typeof wikidataKnows === 'function' ? wikidataKnows() : null };
     if (done?.result?.mine) {
       ENG.val = { ...done.result, ...extra, ms: Math.round(performance.now() - t1), where: 'worker' };
     } else {
