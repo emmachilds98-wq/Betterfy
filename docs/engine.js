@@ -4374,12 +4374,50 @@ function filedNeighbours(trackId, index, membership, { k = 12, exclude = null } 
   });
 }
 
-/** A record's usable tempo: { bpm, alt, conf } or null. */
+/** Deezer and a measured tempo "agree" within this many BPM (SOUND-ENGINE-PLAN T4). */
+const DEEZER_BPM_TOL = 2;
+const DEEZER_RAISE_CONF = 0.3;
+const DEEZER_MIN_CONF = 0.15;
+
+/** Deezer's own BPM stored beside a record (`source.deezerBpm`, T4), or null. */
+function deezerBpmOf(record) {
+  const b = Number(record?.source?.deezerBpm);
+  return Number.isFinite(b) && b > 0 ? b : null;
+}
+
+/**
+ * How Deezer's BPM sits against a record's measured reading, before any
+ * second opinion is applied: 'agree' (within DEEZER_BPM_TOL of the reading or
+ * its flagged alternative), 'differ', or null when either is missing.
+ */
+function deezerAgreement(record) {
+  const dz = deezerBpmOf(record), d = record && !record.miss ? record.dsp : null;
+  if (!dz || !d || !(d.bpm > 0)) return null;
+  const cands = [d.bpm, ...(d.octaveAmbiguous && d.bpmAlt > 0 ? [d.bpmAlt] : [])];
+  return cands.some(c => Math.abs(c - dz) <= DEEZER_BPM_TOL) ? 'agree' : 'differ';
+}
+
+/**
+ * A record's usable tempo: { bpm, alt, conf, deezer? } or null.
+ * Deezer's BPM is a second opinion (T4), never a source on its own: it needs
+ * a measured reading with a pulse (conf >= 0.15). It settles a flagged
+ * "87 or 174" when it equals one candidate, and where it agrees within 2 BPM
+ * it raises the confidence to at least 0.3. When it differs the measured
+ * reading stands, untouched.
+ */
 function tempoOf(record) {
   const d = record && !record.miss ? record.dsp : null;
   if (!d || !Number.isFinite(d.bpm) || d.bpm <= 0) return null;
-  return { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
-           conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+  let t = { bpm: d.bpm, alt: d.octaveAmbiguous && Number.isFinite(d.bpmAlt) && d.bpmAlt > 0 ? d.bpmAlt : null,
+            conf: Number.isFinite(d.bpmConf) ? d.bpmConf : 0 };
+  const dz = deezerBpmOf(record);
+  if (dz && t.conf >= DEEZER_MIN_CONF) {
+    const near = c => Math.abs(c - dz) <= DEEZER_BPM_TOL;
+    if (near(t.bpm)) t = { ...t, alt: null, conf: Math.max(t.conf, DEEZER_RAISE_CONF), deezer: 'agree' };
+    else if (t.alt && near(t.alt)) t = { bpm: t.alt, alt: null, conf: Math.max(t.conf, DEEZER_RAISE_CONF), deezer: 'agree' };
+    else t = { ...t, deezer: 'differ' };
+  }
+  return t;
 }
 
 /**
@@ -4506,7 +4544,7 @@ const TEMPO_UNKNOWN_TEXT = Object.freeze({
   'octave': 'Could be half or double: file it to a playlist and it will settle',
   'unsure': 'A pulse, but the reading isn\u2019t reliable enough to show',
 });
-return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, tempoOf, tempoRelation, mixesWith, BPM_MIN_CONF, BPM_NO_BEAT_CONF, foldIntoRange, displayTempo, tempoShown, TEMPO_UNKNOWN_TEXT };
+return { MATCH_VERSION, MIX_TOLERANCE, MIX_MIN_CONF, KEY_MIN_CONF, KEY_RANK_BONUS, keyOfRecord, keyFit, nearest, playlistConcepts, genreMembership, filedNeighbours, DEEZER_BPM_TOL, deezerBpmOf, deezerAgreement, tempoOf, tempoRelation, mixesWith, BPM_MIN_CONF, BPM_NO_BEAT_CONF, foldIntoRange, displayTempo, tempoShown, TEMPO_UNKNOWN_TEXT };
 })();
 /* ---- core/intrinsic/tempo.mjs ---- */
 __mod["core/intrinsic/tempo.mjs"] = (function () {
@@ -9303,7 +9341,7 @@ const { styleHints } = __mod["core/sources/audio-vocab.mjs"];
 const { GENRE_INDEX, lineageOf } = __mod["core/ontology/index.mjs"];
 const { tempoFit, resolveOctave, tempoRangeOf } = __mod["core/ontology/tempo.mjs"];
 const { hybridOf } = __mod["core/audio/sections.mjs"];
-const { tempoOf, filedNeighbours, genreMembership, displayTempo } = __mod["core/audio/match.mjs"];
+const { tempoOf, filedNeighbours, genreMembership, displayTempo, deezerAgreement } = __mod["core/audio/match.mjs"];
 const { audioIndex } = __mod["core/intrinsic/audio.mjs"];
 const { conceptLabel } = __mod["core/recommend/gaps.mjs"];
 // What a heard track is: genre, sub-genre and tempo, with how sure, and why.
@@ -9530,7 +9568,7 @@ function identifyAccuracy({ index, membership, k = 12, limit = 600, weights = SO
     return pids.some(p => membership.playlists.get(p)?.concepts?.length);
   }).sort().slice(0, limit);
   const tally = { scored: 0, genre: 0, specific: 0, model: { genre: 0, specific: 0 }, tempo: 0, tempoJudged: 0,
-                  bpmHeard: 0, bpmKnown: 0, bpmWhy: {}, bpmJudged: 0, bpmInRawRange: 0, bpmInShownRange: 0, bpmMoved: 0 };
+                  bpmHeard: 0, dzBoth: 0, dzAgree: 0, bpmKnown: 0, bpmWhy: {}, bpmJudged: 0, bpmInRawRange: 0, bpmInShownRange: 0, bpmMoved: 0 };
   const byGenre = new Map();
   const judge = (res, truth) => {
     if (!res?.genre) return { genre: false, specific: false };
@@ -9555,6 +9593,7 @@ function identifyAccuracy({ index, membership, k = 12, limit = 600, weights = SO
     }
     // T2/T3: how many tracks show a sure BPM, why the rest do not, and how many readings the fold moved into range.
     tally.bpmHeard++;
+    { const ag = deezerAgreement(row.rec); if (ag) { tally.dzBoth++; if (ag === 'agree') tally.dzAgree++; } }
     const sure = res?.bpm && res.bpm.conf >= TEMPO_CONF && res.bpm.settled !== false;
     if (sure) {
       tally.bpmKnown++;
@@ -9582,7 +9621,8 @@ function identifyAccuracy({ index, membership, k = 12, limit = 600, weights = SO
     modelOnly: { genre: rate(tally.model.genre, tally.scored), specific: rate(tally.model.specific, tally.scored) },
     tempo: rate(tally.tempo, tally.tempoJudged), tempoJudged: tally.tempoJudged,
     bpm: { heard: tally.bpmHeard, known: rate(tally.bpmKnown, tally.bpmHeard), why: tally.bpmWhy, judged: tally.bpmJudged,
-           inRangeRaw: rate(tally.bpmInRawRange, tally.bpmJudged), inRangeShown: rate(tally.bpmInShownRange, tally.bpmJudged), moved: tally.bpmMoved },
+           inRangeRaw: rate(tally.bpmInRawRange, tally.bpmJudged), inRangeShown: rate(tally.bpmInShownRange, tally.bpmJudged), moved: tally.bpmMoved,
+           deezer: { both: tally.dzBoth, agree: tally.dzAgree, rate: rate(tally.dzAgree, tally.dzBoth) } },
     byGenre: [...byGenre.values()].sort((a, b) => b.n - a.n).slice(0, 8),
     version: IDENTIFY_VERSION,
   };
