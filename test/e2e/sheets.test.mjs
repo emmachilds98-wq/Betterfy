@@ -60,7 +60,7 @@ test('Settings is one list of collapsible sections in a fixed order, Listening o
   await page.waitForSelector('#settingsPanel.open');
   await page.waitForSelector('#uh-sources-h');
   const heads = () => page.$$eval('#settingsPanel .uhhead', els => els.map(e => ({ id: e.dataset.uhtoggle, open: e.getAttribute('aria-expanded') === 'true', line: e.querySelector('.uhs').textContent.trim() })));
-  const order = ['engine', 'sources', 'helpers', 'data', 'history', 'appearance', 'about'];
+  const order = ['engine', 'sources', 'helpers', 'data', 'requests', 'history', 'appearance', 'about'];
   let hs = await heads();
   assert.deepEqual(hs.map(h => h.id), order);
   assert.deepEqual(hs.filter(h => h.open).map(h => h.id), ['sources'], 'only the most used one is open to begin with');
