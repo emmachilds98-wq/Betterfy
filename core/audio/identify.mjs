@@ -29,7 +29,7 @@ import { styleHints } from '../sources/audio-vocab.mjs';
 import { GENRE_INDEX, lineageOf } from '../ontology/index.mjs';
 import { tempoFit, resolveOctave, tempoRangeOf } from '../ontology/tempo.mjs';
 import { hybridOf } from './sections.mjs';
-import { tempoOf, filedNeighbours, genreMembership, displayTempo } from './match.mjs';
+import { tempoOf, filedNeighbours, genreMembership, displayTempo, deezerAgreement } from './match.mjs';
 import { audioIndex } from '../intrinsic/audio.mjs';
 import { conceptLabel } from '../recommend/gaps.mjs';
 
@@ -223,7 +223,7 @@ export function identifyAccuracy({ index, membership, k = 12, limit = 600, weigh
     return pids.some(p => membership.playlists.get(p)?.concepts?.length);
   }).sort().slice(0, limit);
   const tally = { scored: 0, genre: 0, specific: 0, model: { genre: 0, specific: 0 }, tempo: 0, tempoJudged: 0,
-                  bpmHeard: 0, bpmKnown: 0, bpmWhy: {}, bpmJudged: 0, bpmInRawRange: 0, bpmInShownRange: 0, bpmMoved: 0 };
+                  bpmHeard: 0, dzBoth: 0, dzAgree: 0, bpmKnown: 0, bpmWhy: {}, bpmJudged: 0, bpmInRawRange: 0, bpmInShownRange: 0, bpmMoved: 0 };
   const byGenre = new Map();
   const judge = (res, truth) => {
     if (!res?.genre) return { genre: false, specific: false };
@@ -248,6 +248,7 @@ export function identifyAccuracy({ index, membership, k = 12, limit = 600, weigh
     }
     // T2/T3: how many tracks show a sure BPM, why the rest do not, and how many readings the fold moved into range.
     tally.bpmHeard++;
+    { const ag = deezerAgreement(row.rec); if (ag) { tally.dzBoth++; if (ag === 'agree') tally.dzAgree++; } }
     const sure = res?.bpm && res.bpm.conf >= TEMPO_CONF && res.bpm.settled !== false;
     if (sure) {
       tally.bpmKnown++;
@@ -275,7 +276,8 @@ export function identifyAccuracy({ index, membership, k = 12, limit = 600, weigh
     modelOnly: { genre: rate(tally.model.genre, tally.scored), specific: rate(tally.model.specific, tally.scored) },
     tempo: rate(tally.tempo, tally.tempoJudged), tempoJudged: tally.tempoJudged,
     bpm: { heard: tally.bpmHeard, known: rate(tally.bpmKnown, tally.bpmHeard), why: tally.bpmWhy, judged: tally.bpmJudged,
-           inRangeRaw: rate(tally.bpmInRawRange, tally.bpmJudged), inRangeShown: rate(tally.bpmInShownRange, tally.bpmJudged), moved: tally.bpmMoved },
+           inRangeRaw: rate(tally.bpmInRawRange, tally.bpmJudged), inRangeShown: rate(tally.bpmInShownRange, tally.bpmJudged), moved: tally.bpmMoved,
+           deezer: { both: tally.dzBoth, agree: tally.dzAgree, rate: rate(tally.dzAgree, tally.dzBoth) } },
     byGenre: [...byGenre.values()].sort((a, b) => b.n - a.n).slice(0, 8),
     version: IDENTIFY_VERSION,
   };

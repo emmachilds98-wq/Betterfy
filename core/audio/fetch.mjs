@@ -48,7 +48,9 @@ export async function lookup(isrc, { jsonp, spotifyDurationMs } = {}) {
   if (spotifyDurationMs != null && !identityOk(durationMs, spotifyDurationMs)) return { miss: MISS.IDENTITY, detail: 'duration' };
   const readable = json.readable !== false;
   if (!readable || !json.preview) return { miss: MISS.NO_PREVIEW, detail: readable ? 'no preview' : 'not readable' };
-  return { deezerId: json.id, previewUrl: json.preview, durationMs, readable };
+  // T4: Deezer's own BPM, when it states one (0 means none); a second opinion only.
+  const bpm = Number(json.bpm);
+  return { deezerId: json.id, previewUrl: json.preview, durationMs, readable, ...(bpm > 0 && bpm < 400 ? { deezerBpm: +bpm.toFixed(1) } : {}) };
 }
 
 /** Deezer reports whole seconds, so ±3 s is the tolerance (§4.1). */
