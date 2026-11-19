@@ -1249,14 +1249,14 @@ or after it.
 | U2 | WebGPU | S3 | M | Not started | | ≥ 3× model step |
 | U3 | Second preview source | S3 | K | Not started | | ≥ 30% of misses heard |
 | U4 | Unheard tracks by artist sound | S3 | E | Not started | | +3 on those tracks |
-| F1 | Deezer name lookup for ISRC misses | S2b | K | Not started | | ≥ 97% same track; ≥ 25% of misses heard |
-| F2 | Hear the leftovers first | S1c | M | Not started | | 100% of under-12 members; ≥ 60% never-filed artists at 3 heard |
+| F1 | Deezer name lookup for ISRC misses | S2b | K | Built | Built (F1 branch): `core/audio/namematch.mjs` + `lookupByName` in `fetch.mjs`; side fields `source.kind 'deezer-name'` + `source.match`, `nameTried` on misses; funnel "Found by search". Fixture-measured only; the 200-track real-library bar is still open. | ≥ 97% same track; ≥ 25% of misses heard |
+| F2 | Hear the leftovers first | S1c | M | Built | Built: `leftovers` option of `audioQueue` (page passes it): small-playlist tier only; the never-filed-artist tier is tier 2 itself (their tracks are all unfiled liked songs). Bars read in the page. | 100% of under-12 members; ≥ 60% never-filed artists at 3 heard |
 | H1 | More heads on the same embedding | S2 | E | Not started | | chips 1 → 3 of 8; +1 top-1 |
 | H2 | Rhythm fingerprint | S2 | E | Not started | | +3 top-1 on the scene set |
 | H3 | Similarity ear | S3 | E, M | Not started | | +3 scene set; +1 on Score |
 | K1 | "Key unknown"; whole preview for unsure keys | S1c | U, E | Not started | | sure keys 85% → 90% |
 | G2 | Artist genre from its own sound | S2b | E | Not started | | ≥ 85% family agreement; +15 coverage |
-| G3 | MusicBrainz genres via ListenBrainz | S1c | K | Not started | | +10 coverage |
+| G3 | MusicBrainz genres via ListenBrainz | S1c | K | Built with BUILD-8 W1 (one thread, one queue in keyless.js), awaiting a run on the owner's account | | +10 coverage; core/sources/listenbrainz.mjs tagsFrom/tagsUrl, 25 MBIDs per GET, curated genres preferred, MBIDs from Wikidata only |
 | G4 | Deezer album genre and label | S1c | K | Not started | | +2 family top-1 or +15 coverage |
 | D2 | DnB sub-genres by sound | S2b | E | Not started | | 110/199 at ≥ 90% |
 | B2 | Mixed playlists, sound side | S3 | E | Not started | | +5 recall where it applies |

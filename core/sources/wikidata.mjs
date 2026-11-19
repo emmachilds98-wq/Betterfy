@@ -133,3 +133,74 @@ export function genreTags(labels, { max = 6 } = {}) {
   }
   return out;
 }
+
+/* ---------- what to ask, and what to ask again (BUILD-8 W1) ---------- */
+
+/** An empty Wikidata answer is a verdict for this long, not forever: items gain
+ *  genres and Spotify links over time. A batch that was never answered (429) is
+ *  never written down at all, so it is simply asked again on the next run. */
+export const STALE_EMPTY_MS = 45 * 24 * 60 * 60 * 1000;
+
+/**
+ * Which of these artist ids to ask Wikidata about now: never asked, or asked
+ * and empty long enough ago to be worth another look. An artist with genres
+ * already from Wikidata is left alone; entries from other sources are not
+ * Wikidata's to redo. `cached` is tags_extra: id -> { source, tags, checkedAt }.
+ */
+export function wikidataTodo(ids, cached = {}, now = Date.now()) {
+  return [...new Set(ids)].filter(id => {
+    const e = cached?.[id];
+    if (!e || e.source !== 'wikidata') return true;
+    return !(e.tags?.length) && now - (e.checkedAt ?? 0) > STALE_EMPTY_MS;
+  });
+}
+
+/* ---------- artists with no Spotify link: exact name, with proof ---------- */
+
+/** Names per query; each is a label lookup, so smaller than the id batches. */
+export const NAME_BATCH = 100;
+
+const cleanName = n => String(n ?? '').trim().replace(/\s+/g, ' ');
+const nameOk = n => n.length >= 2 && n.length <= 80 && !/["\\{}]/.test(n);
+export const nameKey = n => cleanName(n).toLowerCase();
+
+/** The query for one batch of names. Only items that carry a MusicBrainz artist
+ *  id (so a musical artist, not a film or a town of the same name) and at least
+ *  one genre come back. Names with quotes or braces are dropped, not escaped. */
+export function nameQuery(names) {
+  const vals = [...new Set(names.map(cleanName).filter(nameOk))].map(n => `"${n}"@en`).join(' ');
+  return `SELECT ?n ?a ?gl WHERE { VALUES ?n { ${vals} } ?a rdfs:label ?n . ?a wdt:P434 ?mbid . `
+    + `?a wdt:P136 ?g . ?g rdfs:label ?gl FILTER(lang(?gl) = "en") }`;
+}
+
+export const nameRequest = names => ({
+  url: ENDPOINT,
+  init: {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/sparql-results+json' },
+    body: new URLSearchParams({ query: nameQuery(names), format: 'json' }).toString(),
+  },
+});
+
+/**
+ * name (lower-cased) -> genre labels, only for names that matched exactly ONE
+ * item. Two musicians who share a name are not told apart, so neither gets
+ * genres: a wrong genre is worse than none, and the name is only a way to find
+ * the item.
+ * @returns {{answered: true, genres: Map<string, string[]>}|{answered: false}}
+ */
+export function genresByName(json) {
+  const rows = json?.results?.bindings;
+  if (!Array.isArray(rows)) return { answered: false };
+  const items = new Map(), genres = new Map();
+  for (const b of rows) {
+    const n = nameKey(b?.n?.value), a = b?.a?.value, g = String(b?.gl?.value ?? '').trim();
+    if (!n || !a || !g) continue;
+    if (!items.has(n)) items.set(n, new Set());
+    items.get(n).add(a);
+    if (!genres.has(n)) genres.set(n, []);
+    if (!genres.get(n).includes(g)) genres.get(n).push(g);
+  }
+  for (const [n, set] of items) if (set.size !== 1) genres.delete(n);
+  return { answered: true, genres };
+}

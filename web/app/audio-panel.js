@@ -67,16 +67,17 @@ async function audioTracks() {
   // before File can place by sound or offer an "also fits" chip (core/intrinsic/mood.mjs).
   const targets = Object.entries(CFG ?? {}).filter(([, c]) => c.target || c.axis === 'mood' || c.axis === 'context').map(([id]) => id);
   const isMirror = p => isMirrorPlaylist(p);
-  const store = AUDIO.records ?? new Map();
+  // F1: an ISRC miss stored before the name search existed is asked once more (nameTried marks the ones that had it).
+  const store = new Map([...(AUDIO.records ?? new Map())].filter(([, r]) => !(r?.miss === 'NOT_ON_DEEZER' && !r.nameTried && r.isrc)));
   // The last Score run's weakest playlists (core/intrinsic/weak.mjs): their tracks are heard next.
   const focus = (typeof weakSaved === 'function' ? weakSaved()?.rows ?? [] : []).map(d => d.id);
   const allowed = A.scopeIds(LIB, { scope: set.scope, listening, targets, isMirror, focus });
-  const ids = A.audioQueue(LIB, { listening, store, mel: A.MEL_VERSION, targets, isMirror, focus })
+  const ids = A.audioQueue(LIB, { listening, store, mel: A.MEL_VERSION, targets, isMirror, focus, leftovers: true })
     .filter(id => !allowed || allowed.has(id));
   const byId = new Map();
   for (const t of LIB.liked ?? []) byId.set(t.id, t);
   for (const p of LIB.playlists ?? []) for (const t of p.tracks ?? []) if (!byId.has(t.id)) byId.set(t.id, t);
-  return ids.map(id => byId.get(id)).filter(Boolean).map(t => ({ id: t.id, isrc: t.isrc ?? null, durationMs: t.duration_ms }));
+  return ids.map(id => byId.get(id)).filter(Boolean).map(t => ({ id: t.id, isrc: t.isrc ?? null, durationMs: t.duration_ms, title: t.name, artists: (t.artists ?? []).map(a => a?.name).filter(Boolean) }));
 }
 
 /* Listening is on by default, so "is this Wi-Fi?" can't be a question every

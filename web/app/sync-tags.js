@@ -104,7 +104,7 @@ async function enrichMissing({ quiet = false, onProgress = null } = {}) {
   // answered still gets a real second look rather than staying thin forever.
   // Genres filled from Wikidata are a stand-in for crowd tags, not a
   // replacement: with a key, Last.fm is still asked about those artists.
-  const gap = id => (TAGS[id]?.tags?.length ?? 0) < REASK_TAG_FLOOR || TAGS[id]?.source === 'wikidata';
+  const gap = id => (TAGS[id]?.tags?.length ?? 0) < REASK_TAG_FLOOR || /^(wikidata|musicbrainz)$/.test(TAGS[id]?.source);
   const names = new Map();
   for (const p of LIB.playlists) for (const t of p.tracks) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
   for (const t of LIB.liked) for (const a of t.artists ?? []) if (a.id && gap(a.id)) names.set(a.id, a.name);
@@ -129,7 +129,7 @@ async function enrichMissing({ quiet = false, onProgress = null } = {}) {
     // again yet. A real, well-tagged answer is never re-asked — there's no
     // upside — and a thin or empty one only gets a second look after
     // REASK_AFTER_MS, so a re-run mostly costs no requests at all.
-    if (cached[id] && cached[id].source !== 'wikidata' && !worthReasking(cached[id])) { TAGS[id] = cached[id]; if (cached[id].tags?.length) done++; else blank++; continue; }
+    if (cached[id] && !/^(wikidata|musicbrainz)$/.test(cached[id].source) && !worthReasking(cached[id])) { TAGS[id] = cached[id]; if (cached[id].tags?.length) done++; else blank++; continue; }
     let tags = [];
     // "Last.fm has nothing for this artist" and "that request failed" are the
     // same empty array, and only the first is an answer worth keeping. Caching
@@ -163,7 +163,7 @@ async function enrichMissing({ quiet = false, onProgress = null } = {}) {
     }
 
     // An empty Last.fm answer does not throw away genres Wikidata already gave.
-    const keepWikidata = answered && !tags.length && cached[id]?.source === 'wikidata' && cached[id].tags?.length;
+    const keepWikidata = answered && !tags.length && /^(wikidata|musicbrainz)$/.test(cached[id]?.source) && cached[id].tags?.length;
     if (answered && !keepWikidata) { cached[id] = { tags, checkedAt: Date.now() }; TAGS[id] = { tags }; done++; }
     if (done && done % 25 === 0) { await idb.set('tags_extra', cached); if (!quiet) stage(`Fetching genre tags… ${done} of ${todo.length}`, done/todo.length); }
   }

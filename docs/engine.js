@@ -2447,7 +2447,7 @@ const relatedUrl = (id, limit = RELATED_LIMIT) => `${API}/artist/${encodeURIComp
 
 /** Only these URLs may be fetched through the page's JSONP frame. A script tag
  *  runs whatever it is given, so the host is pinned rather than trusted. */
-const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_-]*)?$/i.test(String(url));
+const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_%-]*)?$/i.test(String(url));
 
 /**
  * What a Deezer error body means for the cache.
@@ -2835,7 +2835,7 @@ function unpackEmbedding({ s, q }) {
  * @param {Float32Array} a.activations
  * @param {Float32Array} a.embeddings
  * @param {number} a.patches
- * @param {object} a.source        { kind: 'deezer-isrc', deezerId, windows: [[startByte, bytes]...], seconds }
+ * @param {object} a.source        { kind: 'deezer-isrc' | 'deezer-name' (F1; then also `match`), deezerId, windows: [[startByte, bytes]...], seconds }
  * @param {string} a.mel           MEL_VERSION used
  * @param {object} [a.heads]       optional head outputs, see HEADS in docs/AUDIO-BUILD-PLAN.md
  * @param {object} [a.dsp]         optional { bpm, bpmConf, key, keyConf, loudness, energy }
@@ -6306,8 +6306,79 @@ function fitCalibration(rows, opts = {}) {
     }
     if (Object.keys(byLevel).length) out.byLevel = byLevel;
   }
+  // Build 8 I2: the same idea for any pocket a row names (`pockets`, see
+  // pocketKeys): fitted on only that pocket's rows, kept when it earns a tau.
+  // Whether they are USED is decided on held-out rows in calibrationReport.
+  if (opts.pockets !== false && usable.some(r => r.pockets?.length)) {
+    const groups = new Map();
+    for (const r of usable) for (const k of r.pockets ?? []) {
+      if (opts.pocketAllow && !opts.pocketAllow.has(k)) continue;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(r);
+    }
+    const pockets = {};
+    for (const [k, mine] of groups) {
+      if (mine.length < minConfident) continue;
+      const c = fitCalibration(mine, { ...opts, target: opts.agreeTarget ?? DEFAULTS.agreeTarget, byLevel: false, pockets: false });
+      if (c.tau != null) pockets[k] = { T: c.T, tau: c.tau, n: c.n, confidentN: c.confidentN, confidentRight: c.confidentRight };
+    }
+    if (Object.keys(pockets).length) out.pockets = pockets;
+  }
   return out;
 }
+
+/**
+ * Build 8 I2 (docs/BUILD-8-PLAN.md): pockets. A pocket is a group of tracks
+ * the account can name WITHOUT knowing the answer, so "Sure" can be fitted
+ * inside it (Mondrian calibration) instead of over everyone at once:
+ *   sit:filed | sit:fresh       the artist is already filed / never filed
+ *   fam:<family>                the leading playlist's family
+ *   size:small | mid | large    the leading playlist's size
+ *   agree:<level>|sit:<s>       how the sources line up, within a situation
+ * Most specific first: a card is credited to the first pocket that vouches.
+ * Anything not given is left out.
+ */
+function pocketKeys({ sit = null, fam = null, size = null, agree = null } = {}) {
+  const out = [];
+  if (agree && agree !== 'split' && sit) out.push(`agree:${agree}|sit:${sit}`);
+  if (fam) out.push(`fam:${fam}`);
+  if (size) out.push(`size:${size}`);
+  if (sit) out.push(`sit:${sit}`);
+  return out;
+}
+
+/** Size band of a playlist by its track count. */
+const sizeBand = n => (n < 25 ? 'small' : n < 80 ? 'mid' : 'large');
+
+/**
+ * Put `pockets` on held-out rows (copied). Context, all optional:
+ *   fresh(id)   true when the track's artist was never filed
+ *   famOf(pl)   the family of a playlist id
+ *   sizeOf(pl)  the playlist's track count
+ * Reads the row's own lead playlist (its top score), never its truth.
+ */
+function withPockets(rows, { fresh = null, famOf = null, sizeOf = null } = {}) {
+  return (rows ?? []).map(r => {
+    const lead = r.scores?.[0]?.[0] ?? null;
+    const n = lead != null && sizeOf ? sizeOf(lead) : null;
+    const pockets = pocketKeys({
+      sit: fresh ? (fresh(r.id) ? 'fresh' : 'filed') : null,
+      fam: lead != null && famOf ? famOf(lead) ?? null : null,
+      size: Number.isFinite(n) ? sizeBand(n) : null,
+      agree: r.agree ?? null,
+    });
+    return { ...r, pockets };
+  });
+}
+
+/**
+ * What pocket-earned Sure must do on held-out rows: every Sure card together
+ * (pockets included) right at least `minPrecision` of the time on at least
+ * `minN` cards covering at least `coverage` of tracks, and each pocket used
+ * right at least `minPrecision` on at least `minN` cards of its own. The same
+ * bar as AGREE_GATE and the plan's (ENGINE-REVIEW): grouping changes, strictness does not.
+ */
+const POCKET_GATE = Object.freeze({ minPrecision: 0.95, minN: 20, coverage: 0.25 });
 
 /** The agreement levels that may earn their own "confident" (agree.mjs LEVELS minus `split`). */
 const AGREE_LEVELS = Object.freeze(['agree', 'single']);
@@ -6339,6 +6410,13 @@ function decide(scores, cal, opts = {}) {
     const pl = softmax(scores, lv.T)[0][1];
     if (pl >= lv.tau) return { kind: 'confident', playlists: [lead], p: r(pl), via: 'agree' };
   }
+  // Build 8 I2: a pocket this track belongs to that earned its own threshold.
+  for (const k of Array.isArray(opts.pockets) ? opts.pockets : []) {
+    const pk = cal.pockets?.[k];
+    if (!pk || pk.tau == null) continue;
+    const pl = softmax(scores, pk.T)[0][1];
+    if (pl >= pk.tau) return { kind: 'confident', playlists: [lead], p: r(pl), via: 'pocket', pocket: k };
+  }
   const set = top.filter(([, q]) => q >= cal.pmin && q > 0).map(([id]) => id);
   if (set.length >= 1 && set.length <= maxChoices) return { kind: 'choose', playlists: set, p: r(p) };
   return { kind: 'unsure', playlists: [], p: r(p) };
@@ -6347,16 +6425,21 @@ function decide(scores, cal, opts = {}) {
 /** How the decisions did on rows they were not fitted on. */
 function evaluate(rows, cal, opts = {}) {
   const out = { n: 0, confident: { n: 0, right: 0 }, choose: { n: 0, contains: 0, size: 0 }, unsure: { n: 0 },
-                agree: { n: 0, right: 0 }, levels: {} };
+                agree: { n: 0, right: 0 }, pocket: { n: 0, right: 0, byKey: {} }, levels: {} };
   for (const r of rows ?? []) {
     if (!r?.scores?.length || !r.truth?.length) continue;
     out.n++;
     if (r.agree) out.levels[r.agree] = (out.levels[r.agree] ?? 0) + 1;
-    const d = decide(r.scores, cal, r.agree ? { ...opts, agree: r.agree } : opts);
+    const d = decide(r.scores, cal, { ...opts, ...(r.agree ? { agree: r.agree } : {}), ...(r.pockets?.length ? { pockets: r.pockets } : {}) });
     if (d.kind === 'confident') {
       const ok = inTruth(r, d.playlists[0]);
       out.confident.n++; if (ok) out.confident.right++;
       if (d.via === 'agree') { out.agree.n++; if (ok) out.agree.right++; }
+      if (d.via === 'pocket') {
+        out.pocket.n++; if (ok) out.pocket.right++;
+        const b = out.pocket.byKey[d.pocket] ??= { n: 0, right: 0 };
+        b.n++; if (ok) b.right++;
+      }
     }
     else if (d.kind === 'choose') {
       out.choose.n++; out.choose.size += d.playlists.length;
@@ -6389,7 +6472,8 @@ function calibrationReport(rows, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
   const usable = (rows ?? []).filter(r => r?.id && r.scores?.length && r.truth?.length);
   const hasLevels = usable.some(r => r.agree);
-  let run = crossCheck(usable, o);
+  let run = crossCheck(usable, { ...o, pockets: false });
+  let oBase = { ...o };
   let agree = null;
   if (hasLevels) {
     // The agreement gate (AGREE_GATE): cards made "Sure" only by agreement,
@@ -6407,14 +6491,42 @@ function calibrationReport(rows, opts = {}) {
       : `held-out precision ${Math.round(precision * 100)}%, ${Math.round(AGREE_GATE.minPrecision * 100)}% needed`;
     const levels = Object.fromEntries(Object.entries(run.levels).map(([k, v]) => [k, rate(v, run.checked.n)]));
     agree = { use, n, right: precision, share: rate(n, run.checked.n), why, levels };
-    if (!use) run = crossCheck(usable, { ...o, byLevel: false });
+    if (!use) { oBase = { ...o, byLevel: false }; run = crossCheck(usable, { ...oBase, pockets: false }); }
     // Every Sure card together (by margin or by agreement), as File shows them.
     agree.sure = { share: run.checked.confidentShare, right: run.checked.confidentRight, n: run.checked.confidentN };
+  }
+  // Build 8 I2: pockets, on top of whatever the agreement stage settled on.
+  let pockets = null;
+  if (usable.some(r => r.pockets?.length)) {
+    const before = { n: run.checked.confidentN, right: run.checked.confidentRight, share: run.checked.confidentShare };
+    const G = POCKET_GATE;
+    const probe = crossCheck(usable, oBase);
+    const keep = Object.entries(probe.pocketSure.byKey)
+      .filter(([, v]) => v.n >= G.minN && v.right / v.n >= G.minPrecision).map(([k]) => k);
+    if (!keep.length) {
+      pockets = { use: false, keys: [], before, why: probe.pocketSure.n
+        ? `no pocket was right ${Math.round(G.minPrecision * 100)}% on ${G.minN} held-out cards`
+        : 'no pocket earned a threshold of its own', share: before.share, right: before.right, n: before.n };
+    } else {
+      const fin = crossCheck(usable, { ...oBase, pocketAllow: new Set(keep) });
+      const c = fin.checked;
+      const keys = Object.entries(fin.pocketSure.byKey).map(([key, v]) => ({ key, n: v.n, right: rate(v.right, v.n) }))
+        .sort((a, b) => b.n - a.n || (a.key < b.key ? -1 : 1));
+      const pass = fin.pocketSure.n > 0 && c.confidentN >= G.minN && c.confidentRight != null
+        && c.confidentRight >= G.minPrecision && c.confidentShare != null && c.confidentShare >= G.coverage;
+      const pc = x => `${Math.round((x ?? 0) * 100)}%`;
+      const why = pass ? null
+        : fin.pocketSure.n === 0 ? 'no held-out card was earned by a pocket'
+        : c.confidentRight == null || c.confidentRight < G.minPrecision ? `Sure right ${pc(c.confidentRight)}, ${pc(G.minPrecision)} needed`
+        : `Sure on ${pc(c.confidentShare)} of tracks, ${pc(G.coverage)} needed`;
+      pockets = { use: pass, keys, before, why, share: c.confidentShare, right: c.confidentRight, n: c.confidentN };
+      if (pass) run = fin;
+    }
   }
   const { checked, cal } = run;
   const holds = checked.confidentN >= o.minConfident && checked.confidentRight != null
     ? checked.confidentRight >= o.target - 0.03 : null;
-  return { version: CALIBRATE_VERSION, cal, checked, holds, target: o.target, ...(agree ? { agree } : {}) };
+  return { version: CALIBRATE_VERSION, cal, checked, holds, target: o.target, ...(agree ? { agree } : {}), ...(pockets ? { pockets } : {}) };
 }
 
 /** Fit on one half, check on the other, both ways, pooled; plus the fit on everything. */
@@ -6440,10 +6552,46 @@ function crossCheck(usable, o) {
   };
   const levels = {};
   for (const e of [ea, eb]) for (const [k, v] of Object.entries(e.levels)) levels[k] = (levels[k] ?? 0) + v;
+  const byKey = {};
+  for (const e of [ea, eb]) for (const [k, v] of Object.entries(e.pocket.byKey)) {
+    const b = byKey[k] ??= { n: 0, right: 0 };
+    b.n += v.n; b.right += v.right;
+  }
   return { checked, cal: fitCalibration(usable, o), levels,
-           agreeSure: { n: ea.agree.n + eb.agree.n, right: ea.agree.right + eb.agree.right } };
+           agreeSure: { n: ea.agree.n + eb.agree.n, right: ea.agree.right + eb.agree.right },
+           pocketSure: { n: ea.pocket.n + eb.pocket.n, right: ea.pocket.right + eb.pocket.right, byKey } };
 }
-return { CALIBRATE_VERSION, DEFAULTS, BIN, scoresOf, softmax, TEMPERATURES, fitTemperature, isotonic, wilsonLower, fitCalibration, AGREE_LEVELS, AGREE_GATE, decide, evaluate, calibrationReport };
+
+/** A pocket key in words. `nameOf` can rename a family. */
+function pocketLabel(key, nameOf = x => x) {
+  const one = k => {
+    const [kind, v] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)];
+    if (kind === 'sit') return v === 'fresh' ? 'never-filed artists' : 'filed artists';
+    if (kind === 'fam') return String(nameOf(v));
+    if (kind === 'size') return `${v} playlists`;
+    if (kind === 'agree') return v === 'agree' ? 'sources agree' : 'one source';
+    return k;
+  };
+  return String(key).split('|').map(one).join(', ');
+}
+
+/**
+ * Score line for I2, from a calibrationReport's `pockets`:
+ *   "Sure earned: pockets X, Y — Z% of tracks at P%."
+ * or, when none cleared the bar, how close it got. '' when pockets were not tried.
+ */
+function pocketsLine(report, nameOf) {
+  const p = report?.pockets;
+  if (!p) return '';
+  const pc = x => `${Math.round((x ?? 0) * 100)}%`;
+  if (p.use) {
+    const names = p.keys.slice(0, 3).map(k => pocketLabel(k.key, nameOf)).join('; ');
+    return `Sure earned: pockets ${names} — ${pc(p.share)} of tracks at ${pc(p.right)}.`;
+  }
+  const close = p.n ? ` Closest: ${pc(p.share)} of tracks at ${pc(p.right)}.` : '';
+  return `Sure earned: none yet (${p.why}).${close}`;
+}
+return { CALIBRATE_VERSION, DEFAULTS, BIN, scoresOf, softmax, TEMPERATURES, fitTemperature, isotonic, wilsonLower, fitCalibration, pocketKeys, sizeBand, withPockets, POCKET_GATE, AGREE_LEVELS, AGREE_GATE, decide, evaluate, calibrationReport, pocketLabel, pocketsLine };
 })();
 /* ---- core/intrinsic/agree.mjs ---- */
 __mod["core/intrinsic/agree.mjs"] = (function () {
@@ -7433,7 +7581,39 @@ function similarFrom(json, { limit = SIMILAR_LIMIT } = {}) {
     .slice(0, limit);
   return { answered: true, similar };
 }
-return { LISTENBRAINZ, ENDPOINT, ALGORITHM, SIMILAR_LIMIT, isMbid, similarUrl, similarFrom };
+
+/* ---------- artist tags: MusicBrainz's genres, through ListenBrainz (SOUND-ENGINE G3) ----------
+ * `/1/metadata/artist/?inc=tag` answers many MBIDs in one GET, CORS-open, with
+ * X-RateLimit-* headers exposed (probed 2026-11-19: limit 30, reset in ~5 s). No
+ * MusicBrainz call from the page, so no User-Agent it cannot set. */
+const TAGS_ENDPOINT = 'https://api.listenbrainz.org/1/metadata/artist/';
+/** MBIDs per request. */
+const TAGS_BATCH = 25;
+const tagsUrl = mbids =>
+  `${TAGS_ENDPOINT}?${new URLSearchParams({ artist_mbids: [...new Set(mbids)].filter(isMbid).join(','), inc: 'tag' })}`;
+
+/**
+ * mbid -> [[tag, 0-100]], strongest first. MusicBrainz's curated genres
+ * (`genre_mbid` set) are used when an artist has any; free tags only otherwise.
+ * An MBID the answer does not mention is absent (unknown, not empty).
+ * @returns {Map<string, Array<[string, number]>>|null} null when the answer is not the expected shape
+ */
+function tagsFrom(json, { max = 6 } = {}) {
+  if (!Array.isArray(json)) return null;
+  const out = new Map();
+  for (const a of json) {
+    const mbid = String(a?.artist_mbid ?? a?.mbid ?? '').toLowerCase();
+    if (!isMbid(mbid)) continue;
+    const all = (a?.tag?.artist ?? []).filter(t => t?.tag && Number(t.count) > 0);
+    const curated = all.filter(t => t.genre_mbid);
+    const use = (curated.length ? curated : all).map(t => [String(t.tag).trim().toLowerCase(), Number(t.count)])
+      .sort((x, y) => y[1] - x[1]).slice(0, max);
+    const top = use[0]?.[1] || 1;
+    out.set(mbid, use.map(([n, c]) => [n, Math.max(40, Math.round(100 * c / top))]));
+  }
+  return out;
+}
+return { LISTENBRAINZ, ENDPOINT, ALGORITHM, SIMILAR_LIMIT, isMbid, similarUrl, similarFrom, TAGS_ENDPOINT, TAGS_BATCH, tagsUrl, tagsFrom };
 })();
 /* ---- core/sources/wikidata.mjs ---- */
 __mod["core/sources/wikidata.mjs"] = (function () {
@@ -7572,7 +7752,78 @@ function genreTags(labels, { max = 6 } = {}) {
   }
   return out;
 }
-return { WIKIDATA, ENDPOINT, BATCH, isSpotifyId, mbidQuery, mbidRequest, mbidsFrom, genreQuery, genreRequest, genresFrom, genreTags };
+
+/* ---------- what to ask, and what to ask again (BUILD-8 W1) ---------- */
+
+/** An empty Wikidata answer is a verdict for this long, not forever: items gain
+ *  genres and Spotify links over time. A batch that was never answered (429) is
+ *  never written down at all, so it is simply asked again on the next run. */
+const STALE_EMPTY_MS = 45 * 24 * 60 * 60 * 1000;
+
+/**
+ * Which of these artist ids to ask Wikidata about now: never asked, or asked
+ * and empty long enough ago to be worth another look. An artist with genres
+ * already from Wikidata is left alone; entries from other sources are not
+ * Wikidata's to redo. `cached` is tags_extra: id -> { source, tags, checkedAt }.
+ */
+function wikidataTodo(ids, cached = {}, now = Date.now()) {
+  return [...new Set(ids)].filter(id => {
+    const e = cached?.[id];
+    if (!e || e.source !== 'wikidata') return true;
+    return !(e.tags?.length) && now - (e.checkedAt ?? 0) > STALE_EMPTY_MS;
+  });
+}
+
+/* ---------- artists with no Spotify link: exact name, with proof ---------- */
+
+/** Names per query; each is a label lookup, so smaller than the id batches. */
+const NAME_BATCH = 100;
+
+const cleanName = n => String(n ?? '').trim().replace(/\s+/g, ' ');
+const nameOk = n => n.length >= 2 && n.length <= 80 && !/["\\{}]/.test(n);
+const nameKey = n => cleanName(n).toLowerCase();
+
+/** The query for one batch of names. Only items that carry a MusicBrainz artist
+ *  id (so a musical artist, not a film or a town of the same name) and at least
+ *  one genre come back. Names with quotes or braces are dropped, not escaped. */
+function nameQuery(names) {
+  const vals = [...new Set(names.map(cleanName).filter(nameOk))].map(n => `"${n}"@en`).join(' ');
+  return `SELECT ?n ?a ?gl WHERE { VALUES ?n { ${vals} } ?a rdfs:label ?n . ?a wdt:P434 ?mbid . `
+    + `?a wdt:P136 ?g . ?g rdfs:label ?gl FILTER(lang(?gl) = "en") }`;
+}
+
+const nameRequest = names => ({
+  url: ENDPOINT,
+  init: {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/sparql-results+json' },
+    body: new URLSearchParams({ query: nameQuery(names), format: 'json' }).toString(),
+  },
+});
+
+/**
+ * name (lower-cased) -> genre labels, only for names that matched exactly ONE
+ * item. Two musicians who share a name are not told apart, so neither gets
+ * genres: a wrong genre is worse than none, and the name is only a way to find
+ * the item.
+ * @returns {{answered: true, genres: Map<string, string[]>}|{answered: false}}
+ */
+function genresByName(json) {
+  const rows = json?.results?.bindings;
+  if (!Array.isArray(rows)) return { answered: false };
+  const items = new Map(), genres = new Map();
+  for (const b of rows) {
+    const n = nameKey(b?.n?.value), a = b?.a?.value, g = String(b?.gl?.value ?? '').trim();
+    if (!n || !a || !g) continue;
+    if (!items.has(n)) items.set(n, new Set());
+    items.get(n).add(a);
+    if (!genres.has(n)) genres.set(n, []);
+    if (!genres.get(n).includes(g)) genres.get(n).push(g);
+  }
+  for (const [n, set] of items) if (set.size !== 1) genres.delete(n);
+  return { answered: true, genres };
+}
+return { WIKIDATA, ENDPOINT, BATCH, isSpotifyId, mbidQuery, mbidRequest, mbidsFrom, genreQuery, genreRequest, genresFrom, genreTags, STALE_EMPTY_MS, wikidataTodo, NAME_BATCH, nameKey, nameQuery, nameRequest, genresByName };
 })();
 /* ---- core/intrinsic/bridge-fetch.mjs ---- */
 __mod["core/intrinsic/bridge-fetch.mjs"] = (function () {
@@ -9754,7 +10005,9 @@ function familyAccuracy(rows, families, opts = {}) {
     const truth = new Set(r.truth);
     if (truth.has(r.scores[0][0])) flat++;
     const fr = familyRow(r, families, T);
-    famRows.push({ id: r.id, scores: asScores(fr.fams), truth: fr.truth });
+    // I2: the situation pockets (not the playlist-bound ones) carry over to the family level.
+    const pk = (r.pockets ?? []).filter(k => k.startsWith('sit:') || k.includes('|sit:'));
+    famRows.push({ id: r.id, scores: asScores(fr.fams), truth: fr.truth, ...(pk.length ? { pockets: pk } : {}) });
     if (!fr.truth.includes(fr.fams[0][0])) continue;
     fam++;
     // Inside the family it chose: the best-scoring playlist of that family.
@@ -9839,7 +10092,8 @@ function decideCard(scores, cal, famCal, families, opts = {}) {
   if (!famCal || !families || !scores?.length || !cal) return flat;
   const fr = familyRow({ scores }, families, cal.T);
   const lead = fr.fams[0];
-  const fd = decide(asScores(fr.fams), famCal);
+  const pk = (opts.pockets ?? []).filter(k => k.startsWith('sit:') || k.includes('|sit:'));
+  const fd = decide(asScores(fr.fams), famCal, pk.length ? { pockets: pk } : {});
   if (fd.kind !== 'confident' || fd.playlists[0] !== lead[0]) return flat;
   // Inside the family: its playlists in score order, the top two offered.
   const inside = scores.filter(([id]) => famOf(families, id) === lead[0]).map(([id]) => id);
@@ -11679,6 +11933,40 @@ function soundProposals({ lib, targets, records = null, index = null, learned = 
            heard: heard.length, version: AUDIO_GAPS_VERSION };
 }
 return { AUDIO_GAPS_VERSION, SOUND, soundPlaylists, tightGroups, soundProposals };
+})();
+/* ---- core/sources/mb-web.mjs ---- */
+__mod["core/sources/mb-web.mjs"] = (function () {
+const { isMbid, tagsUrl, tagsFrom, TAGS_BATCH } = __mod["core/sources/listenbrainz.mjs"];
+// MusicBrainz's artist genres, asked from the page (BUILD-8 W1, SOUND-ENGINE G3). A
+// bonus source: the listener's own artists that already hold an MBID (Wikidata's
+// exact Spotify-id link) and no tags at all. Probe, 2026-11-19: musicbrainz.org/ws/2
+// answers a browser GET (access-control-allow-origin: *) but wants a User-Agent a page
+// cannot set and allows 1 request/s, so the page asks ListenBrainz instead, which
+// serves the same MusicBrainz tags, many MBIDs per GET, CORS-open, rate-limit headers
+// exposed. Never by name. Pure here: what to ask. The queue and storage are web/app/keyless.js.
+
+
+const MB_SPACING_MS = 1500;
+const MB_REST_MS = 10 * 60 * 1000;
+/** Per visit, so a big library fills over several opens instead of one long one. */
+const MB_PER_RUN = 150;
+const STALE_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** MBIDs worth asking: have one, no tags yet, not asked (or asked empty long ago).
+ *  `order` ids come most-listened first; the cap keeps a run short. */
+function mbTodo(order, { mbidOf, hasTags, cached = {}, now = Date.now(), cap = MB_PER_RUN } = {}) {
+  const out = [];
+  for (const id of order) {
+    if (out.length >= cap) break;
+    const mbid = mbidOf(id);
+    if (!isMbid(mbid) || hasTags(id)) continue;
+    const e = cached[id];
+    if (e?.source === 'musicbrainz' && (e.tags?.length || now - (e.checkedAt ?? 0) < STALE_MS)) continue;
+    out.push([id, mbid]);
+  }
+  return out;
+}
+return { MB_SPACING_MS, MB_REST_MS, MB_PER_RUN, STALE_MS, mbTodo, isMbid, tagsUrl, tagsFrom, TAGS_BATCH };
 })();
 /* ---- core/audio/misfit.mjs ---- */
 __mod["core/audio/misfit.mjs"] = (function () {
@@ -15475,6 +15763,7 @@ globalThis["BetterfyGaps"] = __mod["core/recommend/gaps.mjs"];
 globalThis["BetterfyDescribe"] = __mod["core/playlists/describe.mjs"];
 globalThis["BetterfyAudioGaps"] = __mod["core/recommend/audio-gaps.mjs"];
 globalThis["BetterfyWikidata"] = __mod["core/sources/wikidata.mjs"];
+globalThis["BetterfyMbWeb"] = __mod["core/sources/mb-web.mjs"];
 globalThis["BetterfyMatch"] = __mod["core/audio/match.mjs"];
 globalThis["BetterfyIdentify"] = __mod["core/audio/identify.mjs"];
 globalThis["BetterfyMisfit"] = __mod["core/audio/misfit.mjs"];

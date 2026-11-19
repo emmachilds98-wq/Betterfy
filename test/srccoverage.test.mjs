@@ -30,7 +30,7 @@ test('each source is counted only for what it answered about this account', () =
 });
 
 test('no artists, no data: zeros, never a division by zero', () => {
-  assert.deepEqual(artistCoverage({}), { total: 0, shared: 0, deezer: 0, wikidata: 0, deezerAsked: 0, wikidataAsked: 0,
+  assert.deepEqual(artistCoverage({}), { total: 0, shared: 0, deezer: 0, wikidata: 0, musicbrainz: 0, deezerAsked: 0, wikidataAsked: 0,
     sharedPct: 0, deezerPct: 0, wikidataPct: 0 });
 });
 

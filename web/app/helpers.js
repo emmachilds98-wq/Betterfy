@@ -24,7 +24,7 @@ function helpersState() {
     listening: { artists: LISTENING_CACHE?.recentlyActive?.size ?? 0 },
     cov,
     lfm: { key: !!lfmKey(), own: !!LS.getItem('bf_lfm') },
-    bridge: { on: typeof bridgeOn === 'function' ? bridgeOn() : true, ...(br ?? {}),
+    bridge: { on: typeof bridgeOn === 'function' ? bridgeOn() : true, ...(br ?? {}), wikidataWas: (typeof wikidataKnows === 'function' ? wikidataKnows()?.was : null) ?? null,
               ...(typeof bridgeWarmState === 'function' ? { warm: bridgeWarmState() } : {}) },
     audio, deep,
     // S1: the last Score run's verdict on sound and the blend (app/blend.js routeKeep).

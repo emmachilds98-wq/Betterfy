@@ -41,7 +41,7 @@ export function decisionHtml(d, esc) {
 function calibLine(label, rep, pc) {
   const c = rep?.checked;
   if (!c?.n) return null;
-  const conf = rep.cal?.tau != null && c.confidentN
+  const conf = (rep.cal?.tau != null || rep.cal?.byLevel || rep.cal?.pockets) && c.confidentN
     ? `confident ${pc(c.confidentShare)} of tracks, right ${pc(c.confidentRight)}` : 'confident: none earned yet';
   return `${label}: ${conf}; short list ${pc(c.chooseShare)} (avg ${c.chooseSize ?? '—'}), held it ${pc(c.chooseContains)}; `
     + `not sure ${pc(c.unsureShare)}${rep.holds === true ? '; holds' : rep.holds === false ? "; doesn't hold yet" : ''}`;
@@ -272,6 +272,8 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     v.weakLine || null,
     ENG.pairs?.length ? `Can't tell apart: ${ENG.pairs.length} pair${ENG.pairs.length === 1 ? '' : 's'}` : null,
     v.mine.neverFiled ? `Never-filed artists: ${v.mine.neverFiled.scored} tracks, top-1 ${pc(v.mine.neverFiled.top1)}` : null,
+    v.wikidataKnows ? `Wikidata knows ${v.wikidataKnows.pct}%${Number.isFinite(v.wikidataKnows.was) ? ` (was ${v.wikidataKnows.was}%)` : ''} of your artists`
+      + (v.wikidataKnows.musicbrainz ? `; MusicBrainz genres for ${v.wikidataKnows.musicbrainz}` : '') : null,
     ...bridgeLines(v, pc),
     ...blendLines(v, pc),
     ...audioLines(v, pc, maestScoreText),
@@ -283,6 +285,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     v.confusionLine || null,
     ...(v.moodLine ? [v.moodLine] : []),
     ...(v.agreeLine ? [v.agreeLine] : []),
+    ...(v.pocketsLine ? [v.pocketsLine] : []),
     ...(v.pairsLine ? [v.pairsLine] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),

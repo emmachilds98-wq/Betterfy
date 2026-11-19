@@ -43,7 +43,7 @@ export const relatedUrl = (id, limit = RELATED_LIMIT) => `${API}/artist/${encode
 
 /** Only these URLs may be fetched through the page's JSONP frame. A script tag
  *  runs whatever it is given, so the host is pinned rather than trusted. */
-export const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_-]*)?$/i.test(String(url));
+export const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_%-]*)?$/i.test(String(url));
 
 /**
  * What a Deezer error body means for the cache.
