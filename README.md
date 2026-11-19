@@ -116,6 +116,17 @@ index), so a retry costs only the piece in flight. A playlist is recorded as
 empty only when Spotify refused *that playlist*, and then without a snapshot
 id, so the next read asks again.
 
+**Spending the shared quota less (2026-11-19).** The page counts what it sends
+to Spotify each day, by kind, in Settings › Spotify requests. The same GET in
+flight twice is sent once. Discover's track searches are kept for two weeks
+(`spc:` in IndexedDB, slimmed, capped at 400). Release Radar reuses
+Discover's top-artists and recently-played answers instead of asking again.
+Its automatic start spends at most 300 requests a day (900 when started by
+hand) and carries on from where it stopped the next day. Its account check
+runs once per account and then monthly, not on every build. The player bar
+does not poll while the page is hidden, and remembers the playback device for
+two minutes.
+
 **When the browser refuses storage.** Blocked cookies, a locked-down private
 window or an in-app web view can throw on `localStorage` or refuse IndexedDB.
 All storage goes through shims that fall back to memory and never throw, so

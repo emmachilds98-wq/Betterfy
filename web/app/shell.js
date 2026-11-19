@@ -38,6 +38,7 @@ function uhSnapshot() {
   } catch { snap.listening = {}; }
   try { snap.helpers = SCREEN_MODS.helpers.helperSummary(helperRowsNow(), HELPERS.checks); } catch { snap.helpers = ''; }
   snap.data = { playlists: LIB?.playlists?.length ?? 0 };
+  snap.requests = typeof spStats === 'function' ? spStats() : {};
   snap.history = { count: Array.isArray(S.history) ? S.history.length : null };
   snap.appearance = { mode: T?.mode, accent: $('#accentName')?.textContent || null };
   snap.about = { build: typeof BUILD === 'string' ? BUILD : '' };
@@ -138,6 +139,7 @@ function uhBody(id) {
     case 'helpers': return SCREEN_MODS.sources.sourcesHTML(ctx('sources'));
     case 'data': { const c = ctx('sources'); return c.DATA_KEYS ? SCREEN_MODS.sources.yourDataHTML({ ...c, bare: true }) : ''; }
     case 'history': return strip(SCREEN_MODS.history.view(ctx('history')));
+    case 'requests': return SCREEN_MODS.settings.requestsHTML(spStats(), { ownApp: !!LS.getItem('bf_client_id'), esc });
     default: return '';
   }
 }

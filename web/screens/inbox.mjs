@@ -400,7 +400,10 @@ export function view(ctx) {
     : best ? `File in ${esc(best.name)}` : 'Pick a playlist below';
   // Say whichever of the two is actually available to the hand on the device.
   const touch = matchMedia('(hover:none) and (pointer:coarse)').matches;
-  const how = touch
+  // Only while getting started (the first five filed): after that it is a
+  // sentence read on every card by someone who already knows it.
+  const learning = typeof ctx.onbState === 'function' ? !!ctx.onbState() : true;
+  const how = touch && learning
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
     : '';
 

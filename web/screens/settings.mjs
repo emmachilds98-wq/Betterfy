@@ -13,6 +13,7 @@ export const SECTIONS = [
   { id: 'sources', title: 'Listening', mod: 'sources' },
   { id: 'helpers', title: 'What’s helping your picks', mod: 'sources' },
   { id: 'data', title: 'Your data', mod: 'sources' },
+  { id: 'requests', title: 'Spotify requests' },
   { id: 'history', title: 'History', mod: 'history' },
   { id: 'appearance', title: 'Appearance', fixed: true },
   { id: 'about', title: 'About & updates', fixed: true },
@@ -55,6 +56,26 @@ export function dataSummary({ playlists = 0 } = {}) {
   return `Kept on this device${playlists ? ` · ${num(playlists)} playlists to back up` : ''}`;
 }
 
+/** "212 today · 40 saved": what this device asked Spotify for today. */
+export function requestsSummary({ n = 0, saved = 0, limited = 0 } = {}) {
+  if (!n && !saved) return 'None today';
+  return `${num(n)} today${saved ? ` · ${num(saved)} saved` : ''}${limited ? ` · slowed ${num(limited)}×` : ''}`;
+}
+
+const KIND_WORDS = { 'me/tracks': 'Liked songs', 'playlists/items': 'Playlist tracks', 'me/playlists': 'Your playlists',
+  'artists/albums': 'Release radar', 'albums/tracks': 'Release radar (track lists)', search: 'Searches',
+  'me/player': 'Player', 'me/top': 'Top artists & tracks', me: 'Your account', 'me/library': 'Saving & liking',
+  playlists: 'Playlist changes' };
+
+/** The section's body: today's count by kind, and which Spotify app the page signs in with. */
+export function requestsHTML({ n = 0, saved = 0, limited = 0, kinds = {} } = {}, { ownApp = false, esc = x => String(x ?? '') } = {}) {
+  const rows = Object.entries(kinds).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    .map(([k, v]) => `<li><span>${esc(KIND_WORDS[k] ?? k)}</span><b>${num(v)}</b></li>`).join('');
+  return `<p class="hint">Every account using ${ownApp ? 'your own Spotify app' : 'the shared Betterfy app'} spends from one Spotify request budget. Betterfy remembers answers so it asks less: ${num(saved)} request${saved === 1 ? '' : 's'} saved today.</p>
+    ${rows ? `<ul class="reqlist">${rows}</ul>` : '<p class="hint">Nothing sent today yet.</p>'}
+    ${limited ? `<p class="hint">Spotify asked Betterfy to slow down ${num(limited)} time${limited === 1 ? '' : 's'} today.</p>` : ''}`;
+}
+
 export function historySummary({ count = null } = {}) {
   return Number.isFinite(count) && count > 0
     ? `${num(count)} thing${count === 1 ? '' : 's'} Betterfy wrote to Spotify, each with undo`
@@ -74,7 +95,7 @@ export function aboutSummary({ build = '' } = {}) {
 export function sectionSummaries(s = {}) {
   return {
     engine: scoreSummary(s.score), sources: listeningSummary(s.listening), helpers: s.helpers ?? '',
-    data: dataSummary(s.data), history: historySummary(s.history),
+    data: dataSummary(s.data), requests: requestsSummary(s.requests), history: historySummary(s.history),
     appearance: appearanceSummary(s.appearance), about: aboutSummary(s.about),
   };
 }

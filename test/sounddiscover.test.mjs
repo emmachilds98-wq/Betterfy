@@ -292,6 +292,8 @@ test('without a key, candidates come from the cached neighbour lookups and Spoti
       return { tracks: { items: [] } };
     },
   });
+  // Discover's searches go through the kept-answer wrapper (auth.js spCached).
+  p.spCached = url => p.sp(url); p.SEARCH_TTL = 0; p.slimTracks = x => x;
   vm.runInContext('var BRIDGE_KEY = "bridge-raw";', p);
   const owned = new Set(['owned act']);
   const out = await p.discoverKeyless(null, new Map([['Seed One', 3], ['Seed Two', 1]]), owned, new Set());

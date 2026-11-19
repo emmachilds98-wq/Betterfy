@@ -515,3 +515,25 @@ test('a quota-exceeded 429 still leaves the read resumable, like any other retry
   const lib = await app.syncLibrary(false, () => {});
   assert.equal(lib.playlists.length, 3, 'the retry (nth=2) is past the one quota-exceeded response and succeeds');
 });
+
+// The app's quota is shared by every account, so the page asks once where it can.
+test('the same GET in flight twice is one request, and the meter counts what was sent', async () => {
+  const app = load(LIB);
+  const [a, b] = await Promise.all([app.sp('/me'), app.sp('/me')]);
+  assert.equal(a.id, 'emma'); assert.equal(b.id, 'emma');
+  assert.equal(app.exact('/me'), 1, 'one request for both callers');
+  const st = own(app.spStats());
+  assert.equal(st.n, 1); assert.equal(st.saved, 1); assert.equal(st.kinds.me, 1);
+  await app.sp('/me');
+  assert.equal(app.exact('/me'), 2, 'once settled, a later call asks again');
+});
+
+test('spCached keeps a slimmed answer and does not ask again inside its ttl', async () => {
+  const app = load(LIB);
+  const slim = r => ({ who: r.id });
+  assert.deepEqual(own(await app.spCached('/me', { slim })), { who: 'emma' });
+  assert.deepEqual(own(await app.spCached('/me', { slim })), { who: 'emma' });
+  assert.equal(app.exact('/me'), 1);
+  await app.spCached('/me', { slim, ttl: 0 });
+  assert.equal(app.exact('/me'), 2, 'past its ttl it asks again');
+});

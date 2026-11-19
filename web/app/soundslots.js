@@ -133,7 +133,8 @@ function soundNote(t, picks) {
   if (SOUND.status === 'working') return `<p class="why sndnote" style="margin-top:12px">Learning how your playlists sound…</p>`;
   if (SOUND.status === 'error') return `<p class="why sndnote" style="margin-top:12px">Couldn’t learn how your playlists sound: ${esc(SOUND.err)}. Picks are from tags.</p>`;
   const rec = AUDIO.records?.get(t.id);
-  if (!rec) return `<p class="why sndnote" style="margin-top:12px">Not heard yet. Picks are from tags until it is.</p>`;
+  // Not heard yet: the top pick's own line already says so ("· not heard yet").
+  if (!rec) return '';
   if (rec.miss) return `<p class="why sndnote" style="margin-top:12px">Couldn’t be heard (no preview), so picks are from tags.</p>`;
   if (SOUND.status === 'ready' && !SOUND.space) return `<p class="why sndnote" style="margin-top:12px">Not enough of your genre playlists heard yet to compare against. Picks are from tags.</p>`;
   return '';

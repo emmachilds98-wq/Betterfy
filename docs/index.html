@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-19-0036">
+<meta name="bf-build" content="2026-11-19-0404">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -1763,6 +1763,39 @@ main:focus{outline:none}
     main[data-view="tidy"] .rows > :not(.row), main[data-view="tidy"] .rows > .row:only-child,
     main[data-view="tidy"] .rows > .row:has(table){grid-column:1 / -1}
   }
+
+/* ---------- phone tidy-up (2026-11-19) ----------
+   File's picks were three tall rows with a number badge, a 62px bar and a
+   reason wrapped to three lines: on a 390px phone pick 3 sat under File/Skip.
+   One line of reason, a narrower score column and a smaller badge keep all
+   three in view. Tidy's rows lose their wide thumbnail gutter. */
+@media (max-width:820px){
+  .swipecard .pick{gap:10px; padding:10px 12px; border-radius:14px}
+  .swipecard .pickw .pick{padding-right:34px}
+  .swipecard .pick .k{width:22px; height:22px; font-size:12px; border-radius:7px}
+  .swipecard .pick .nm{font-size:15px}
+  .swipecard .pick .ax, .swipecard .pick .ax.evline{font-size:12.5px; line-height:1.3;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+  .swipecard .pick .rt{gap:4px}
+  .swipecard .pick .bar{width:40px; height:4px}
+  .swipecard .pickw .nope{top:50%; transform:translateY(-50%); right:4px}
+  .swipecard .famline{margin:14px 0 -6px; font-size:14px}
+  .counter.filecount{margin:0 0 10px}
+  .today .status{row-gap:2px}
+
+  main[data-view="tidy"] .row{gap:10px}
+  main[data-view="tidy"] .row .thumb, main[data-view="tidy"] .row .art{width:44px; height:44px; flex:none; align-self:flex-start; font-size:18px}
+  main[data-view="tidy"] .row .why{font-size:13px}
+  table.cmp{font-size:13px}
+  table.cmp th, table.cmp td{padding-right:8px}
+}
+@media (max-width:820px){
+  .plsugg-head{flex-wrap:nowrap; align-items:center; gap:10px}
+  .plsugg-head h2{min-width:0}
+  .plsugg-head .b{flex:none; white-space:nowrap}
+  .plrow .plmeta{flex-wrap:nowrap; white-space:nowrap; overflow:hidden}
+  .plrow .placts, .plline .placts{flex:none}
+}
 /* "What's helping your picks" (web/screens/helpers.mjs): every source and engine part,
    on or off, at the top of the Settings sheet and of Sources. */
   .helpers{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-3); padding:12px 14px; margin:0 0 16px}
@@ -1844,6 +1877,12 @@ main:focus{outline:none}
     .lp-opt{min-height:44px}
     .lp-opt input[type=checkbox]{width:19px; height:19px}
   }
+
+  /* Spotify requests: today's count by kind. */
+  .reqlist{list-style:none; margin:8px 0; padding:0}
+  .reqlist li{display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-top:1px solid var(--line); font-size:14px}
+  .reqlist li:first-child{border-top:0}
+  .reqlist b{font-variant-numeric:tabular-nums}
 /* Merge and split (BUILD-6 F4): the wizard drawn into the playlist sheet (lists.mjs wizardHTML). */
   .wiz .wizpart{border:1px solid var(--line); border-radius:var(--r-3); padding:12px 12px 10px; background:var(--surface-2)}
   .wiz .wizname input{flex:1; min-width:0}
@@ -2073,7 +2112,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-19-0036</span>
+    <span class="mono">build 2026-11-19-0404</span>
   </p>
 
   <div class="feat">
@@ -2166,7 +2205,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-19-0036</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-19-0404</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2244,7 +2283,7 @@ main:focus{outline:none}
         <button class="uhhead" type="button" id="uh-about-h" data-uhtoggle="about" aria-expanded="false" aria-controls="uh-about-b">
           <span class="uht"><b>About &amp; updates</b><span class="uhs"></span></span><span class="chev" aria-hidden="true"></span></button>
         <div class="uhbody" id="uh-about-b" role="region" aria-labelledby="uh-about-h" hidden>
-          <p class="hint">Betterfy, build 2026-11-19-0036. <span id="sheetWho" class="mono"></span></p>
+          <p class="hint">Betterfy, build 2026-11-19-0404. <span id="sheetWho" class="mono"></span></p>
           <div class="rowbtns"><button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button></div>
           <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, which read as "get the latest
                Betterfy". It is not: it re-reads every playlist from Spotify, hundreds of calls against a
@@ -5444,7 +5483,7 @@ const STOP_WORDS = {
   'rate-limit': 'Spotify asked for a pause',
   'signed-out': 'the Spotify sign-in stopped working',
   offline: 'the connection dropped',
-  budget: 'it reached its request budget',
+  budget: 'it reached today’s request budget',
   aborted: 'you stopped it',
 };
 
@@ -5465,6 +5504,7 @@ function statusLine(R, now = Date.now()) {
   if (!ix) return { text: 'Not started', complete: false };
   if (R.stopped || ix.stopped) {
     const st = R.stopped ?? ix.stopped;
+    if (st.why === 'budget') return { text: `${n(ix.done)} of ${n(ix.total)} checked · the rest carry on tomorrow (daily request budget)`, complete: false };
     const msg = R.err ? ` (${R.err})` : '';
     return { text: `Stopped after ${n(ix.done)} of ${n(ix.total)} checks: ${STOP_WORDS[st.why] ?? 'it stopped'}${msg}. Start again picks up where it stopped.`,
              complete: false, warn: true };
@@ -5711,7 +5751,8 @@ function statusParts(ctx) {
   // count is inside it); otherwise listening speaks for itself, and nothing at
   // all is said about it until it has run.
   // The first analysis waits for the whole read, so it has nothing to say until then.
-  const analysing = reading ? '' : ctx.analyseLine?.() ?? '';
+  // "Starting…" says nothing a listener can use: the part waits until there is a count.
+  const analysing = reading ? '' : (l => (l === 'Starting…' ? '' : l))(ctx.analyseLine?.() ?? '');
   const listen = typeof listenStatus === 'function' ? listenStatus() : '';
   if (analysing) parts.push({ key: 'analyse', text: analysing });
   else if (listen) parts.push({ key: 'listen', text: listen, act: 'openlisten' });
@@ -6500,7 +6541,10 @@ function view(ctx) {
     : best ? `File in ${esc(best.name)}` : 'Pick a playlist below';
   // Say whichever of the two is actually available to the hand on the device.
   const touch = matchMedia('(hover:none) and (pointer:coarse)').matches;
-  const how = touch
+  // Only while getting started (the first five filed): after that it is a
+  // sentence read on every card by someone who already knows it.
+  const learning = typeof ctx.onbState === 'function' ? !!ctx.onbState() : true;
+  const how = touch && learning
     ? `Tap to pick one or more, swipe <b>right</b> to file, <b>left</b> to skip.`
     : '';
 
@@ -7118,7 +7162,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock, hear
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-19-0036`,
+    `Betterfy engine score — build 2026-11-19-0404`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -8525,8 +8569,8 @@ function secDupes(c) {
   if (!exact.length && !clash.length) return `${lede}
     ${emptyState('No repeats', 'None of your playlists has the same track in it twice, as the same recording or as a different cut.')}`;
   return `${lede}
-    ${exact.length ? sec('The same recording, twice', exact, 'Both copies are the same recording, on two releases. Removing one loses nothing.', 'dupes-exact') : ''}
-    ${clash.length ? sec('Version clashes', clash, 'Genuinely different cuts in one playlist. Differing values are marked.', 'dupes-clash') : ''}`;
+    ${exact.length ? sec('The same recording, twice', exact, 'Same recording on two releases. Removing one loses nothing.', 'dupes-exact') : ''}
+    ${clash.length ? sec('Version clashes', clash, 'Different cuts. What differs is marked.', 'dupes-clash') : ''}`;
 }
 
 /** Why a cross-filed row is ranked where it is: the reading behind its suspicion. */
@@ -9285,6 +9329,7 @@ const SECTIONS = [
   { id: 'sources', title: 'Listening', mod: 'sources' },
   { id: 'helpers', title: 'What’s helping your picks', mod: 'sources' },
   { id: 'data', title: 'Your data', mod: 'sources' },
+  { id: 'requests', title: 'Spotify requests' },
   { id: 'history', title: 'History', mod: 'history' },
   { id: 'appearance', title: 'Appearance', fixed: true },
   { id: 'about', title: 'About & updates', fixed: true },
@@ -9327,6 +9372,26 @@ function dataSummary({ playlists = 0 } = {}) {
   return `Kept on this device${playlists ? ` · ${num(playlists)} playlists to back up` : ''}`;
 }
 
+/** "212 today · 40 saved": what this device asked Spotify for today. */
+function requestsSummary({ n = 0, saved = 0, limited = 0 } = {}) {
+  if (!n && !saved) return 'None today';
+  return `${num(n)} today${saved ? ` · ${num(saved)} saved` : ''}${limited ? ` · slowed ${num(limited)}×` : ''}`;
+}
+
+const KIND_WORDS = { 'me/tracks': 'Liked songs', 'playlists/items': 'Playlist tracks', 'me/playlists': 'Your playlists',
+  'artists/albums': 'Release radar', 'albums/tracks': 'Release radar (track lists)', search: 'Searches',
+  'me/player': 'Player', 'me/top': 'Top artists & tracks', me: 'Your account', 'me/library': 'Saving & liking',
+  playlists: 'Playlist changes' };
+
+/** The section's body: today's count by kind, and which Spotify app the page signs in with. */
+function requestsHTML({ n = 0, saved = 0, limited = 0, kinds = {} } = {}, { ownApp = false, esc = x => String(x ?? '') } = {}) {
+  const rows = Object.entries(kinds).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    .map(([k, v]) => `<li><span>${esc(KIND_WORDS[k] ?? k)}</span><b>${num(v)}</b></li>`).join('');
+  return `<p class="hint">Every account using ${ownApp ? 'your own Spotify app' : 'the shared Betterfy app'} spends from one Spotify request budget. Betterfy remembers answers so it asks less: ${num(saved)} request${saved === 1 ? '' : 's'} saved today.</p>
+    ${rows ? `<ul class="reqlist">${rows}</ul>` : '<p class="hint">Nothing sent today yet.</p>'}
+    ${limited ? `<p class="hint">Spotify asked Betterfy to slow down ${num(limited)} time${limited === 1 ? '' : 's'} today.</p>` : ''}`;
+}
+
 function historySummary({ count = null } = {}) {
   return Number.isFinite(count) && count > 0
     ? `${num(count)} thing${count === 1 ? '' : 's'} Betterfy wrote to Spotify, each with undo`
@@ -9346,7 +9411,7 @@ function aboutSummary({ build = '' } = {}) {
 function sectionSummaries(s = {}) {
   return {
     engine: scoreSummary(s.score), sources: listeningSummary(s.listening), helpers: s.helpers ?? '',
-    data: dataSummary(s.data), history: historySummary(s.history),
+    data: dataSummary(s.data), requests: requestsSummary(s.requests), history: historySummary(s.history),
     appearance: appearanceSummary(s.appearance), about: aboutSummary(s.about),
   };
 }
@@ -9358,7 +9423,7 @@ function sectionHTML({ id, title, summary, open, body = '', mod = null, esc = x 
       <span class="uht"><b>${esc(title)}</b><span class="uhs">${esc(summary)}</span></span><span class="chev" aria-hidden="true"></span>
     </button>${open ? `<div class="uhbody" id="uh-${esc(id)}-b" role="region" aria-labelledby="uh-${esc(id)}-h"${mod ? ` data-uh="${esc(mod)}"` : ''}>${body}</div>` : ''}</div>`;
 }
-return { SECTIONS, OPEN_BY_DEFAULT, plainProblem, listeningSummary, scoreSummary, dataSummary, historySummary, appearanceSummary, aboutSummary, sectionSummaries, sectionHTML };
+return { SECTIONS, OPEN_BY_DEFAULT, plainProblem, listeningSummary, scoreSummary, dataSummary, requestsSummary, requestsHTML, historySummary, appearanceSummary, aboutSummary, sectionSummaries, sectionHTML };
 })();
 /* ---- core/playlists/mergesplit.mjs ---- */
 __mod["core/playlists/mergesplit.mjs"] = (function () {
@@ -9802,6 +9867,9 @@ function scoreCardHTML(c, now = Date.now()) {
   if (!info) return '';
   const { esc } = c, pc = x => `${Math.round(x * 100)}%`, sum = info.score;
   const has = Number.isFinite(sum?.top1);
+  // Before the first run there is nothing to show, and the run starts by itself:
+  // Settings › Your score says so. Library leads with the playlists instead.
+  if (!has && !info.running) return '';
   const days = has && Number.isFinite(sum.at) ? Math.floor((now - sum.at) / 864e5) : null;
   const when = days == null ? '' : days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
   const head = info.running ? 'Scoring…'
@@ -9864,7 +9932,7 @@ function namesListHTML(c) {
   if (!rows.length) return '';
   return `<section class="plsugg plnames" aria-labelledby="plname-h">
       <div class="plsugg-head"><h2 id="plname-h">Names that could say more</h2></div>
-      <p class="hint">Suggested from the music in each, written the way you name playlists. Tap a name to change it before saving; undo from History.</p>
+      <p class="hint">From the music in each, in your naming style. Tap to edit first.</p>
       <div class="plrows">${rows.slice(0, 3).map(r => `<div class="plline"><button class="plrow" type="button" data-act="lnameedit" data-pl="${esc(r.id)}" data-name="${esc(r.best.name)}" data-why="${esc(r.best.why)}" aria-haspopup="dialog" aria-label="${esc(`Edit the name for ${r.name}, starting from ${r.best.name}`)}">
         <span class="plmain"><span class="ttl">${esc(r.name)}</span>
           <span class="plmeta"><span class="plname-to">→ ${esc(r.best.name)}</span>${r.vague ? '' : ` · ${esc(r.why)}`}</span></span></button>
@@ -10357,7 +10425,7 @@ function view(c) {
   const ticks = genreTickSuggestions(rows.map(p => ({ ...p, mirror: c.isMirrorPlaylist?.({ id: p.id, name: p.name }) })), mixes, id => c.LISTS_SOUND.profile(id));
   const ticksHTML = ticks.length ? `<section class="plsugg" aria-labelledby="pltick-h">
       <div class="plsugg-head"><h2 id="pltick-h">These look like genre playlists</h2>
-        <button class="b sm p" data-act="ltickall">Mark all ${ticks.length} as genre</button></div>
+        <button class="b sm p" data-act="ltickall" aria-label="Mark all ${ticks.length} as genre">Mark all ${ticks.length}</button></div>
       <div class="plrows">${ticks.slice(0, 5).map(t => `<div class="plrow"><span class="plmain"><span class="ttl">${esc(t.name)}</span>
         <span class="plmeta">${esc(t.why)}</span></span><button class="b sm" data-act="ltick" data-pl="${esc(t.id)}">Genre</button></div>`).join('')}</div>
     </section>` : '';
@@ -10372,7 +10440,7 @@ function view(c) {
   for (const o of twins.slice(0, 3)) noteShown(c, o.key);
   const twinsHTML = twins.length ? `<section class="plsugg" aria-labelledby="pltwin-h">
       <div class="plsugg-head"><h2 id="pltwin-h">Playlists that sound the same</h2></div>
-      <p class="hint">The engine can’t tell these apart by the music in them. Merging makes one new playlist; both stay as they are.</p>
+      <p class="hint">Hard to tell apart by sound. Merging makes a new playlist and keeps both.</p>
       <div class="plrows">${twins.slice(0, 3).map(o => `<div class="plrow"><span class="plmain"><span class="ttl">${esc(o.a.name)}</span>
         <span class="plmeta">and ${esc(o.b.name)}</span></span>
         <button class="b sm p" data-act="wizmerge" data-a="${esc(o.a.id)}" data-b="${esc(o.b.id)}">Merge…</button>
@@ -12641,7 +12709,7 @@ initSettingsPanel();
 initSheet();
 bindAppGestures();
 
-const DEFAULT_CLIENT_ID = '93cc948547fd40a1b438530854e864dc';
+const DEFAULT_CLIENT_ID = '118c6473efc644b1a24c7cacb5252048';
 // Blank unless whoever built this page opted in: no stranger's inbox is baked
 // into a fork of this repo by default. Shown as a "Request access" mailto
 // alongside "use your own Spotify app" wherever that hint appears.
@@ -12680,7 +12748,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-19-0036';
+const BUILD = '2026-11-19-0404';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -13018,7 +13086,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-19-0036', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-19-0404', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -13039,14 +13107,100 @@ function expireToken() {
 
 const NET_LOST = 'Lost the connection to Spotify. Nothing read so far is lost — this picks up where it stopped.';
 
+/* ---------- the request meter, and asking once ----------
+ * Spotify's quota belongs to the app, not the listener, so every request any
+ * account makes is spent from one budget. Two cheap rules keep that budget for
+ * the work that needs it: the same GET in flight twice is one request (a screen
+ * and a background job asking for the same page at once), and the page keeps a
+ * count of what it actually sent today, by kind, shown in Settings › Spotify
+ * requests, so a screen that suddenly costs a lot is visible rather than guessed. */
+const CALLS_KEY = 'bf_calls';
+const today = () => new Date().toISOString().slice(0, 10);
+let CALLS = (() => {
+  try { const c = JSON.parse(LS.getItem(CALLS_KEY) || 'null'); if (c?.day === today()) return c; } catch {}
+  return { day: today(), n: 0, kinds: {}, saved: 0, limited: 0 };
+})();
+let callsSaveTimer = null;
+function callsSave() {
+  if (callsSaveTimer) return;
+  callsSaveTimer = setTimeout(() => { callsSaveTimer = null; try { LS.setItem(CALLS_KEY, JSON.stringify(CALLS)); } catch {} }, 2000);
+}
+/** What a path is, for the meter: `/me/top/artists?…` -> `me/top`, `/playlists/x/items` -> `playlists/items`. */
+function callKind(url) {
+  const p = url.replace(/^https:\/\/api\.spotify\.com\/v1\//, '').split('?')[0].split('/');
+  if (p[0] === 'me') return 'me' + (p[1] ? '/' + p[1] : '');
+  return p[0] + (p[2] ? '/' + p[2] : '');
+}
+function callCount(url, field = 'n') {
+  if (CALLS.day !== today()) CALLS = { day: today(), n: 0, kinds: {}, saved: 0, limited: 0 };
+  if (field === 'n') { const k = callKind(url); CALLS.kinds[k] = (CALLS.kinds[k] ?? 0) + 1; }
+  CALLS[field] = (CALLS[field] ?? 0) + 1;
+  callsSave();
+}
+/** Today's count, for Settings: `{ day, n, kinds, saved, limited }`. */
+function spStats() { return CALLS.day === today() ? CALLS : { day: today(), n: 0, kinds: {}, saved: 0, limited: 0 }; }
+
+const inflight = new Map();   // GET url -> its pending promise
+
 async function sp(path, opts = {}) {
   const url = path.startsWith('http') ? path : 'https://api.spotify.com/v1' + path;
+  if (opts.method && opts.method !== 'GET') return spSend(url, opts);
+  const was = inflight.get(url);
+  if (was) { callCount(url, 'saved'); return was; }
+  const p = spSend(url, opts).finally(() => inflight.delete(url));
+  inflight.set(url, p);
+  return p;
+}
+
+/* A kept answer, for reads whose answer barely moves (a search for an artist's
+ * tracks, an album's track list): kept in IndexedDB under `spc:` for `ttl` ms,
+ * slimmed by `slim` first so only what the caller uses is stored. A failure is
+ * never kept, so the next call simply asks again. The family is capped: past
+ * SPC_MAX entries the oldest go. */
+const SPC_MAX = 400;
+let spcIndex = null;    // { [path]: at } — loaded once
+async function spcLoad() {
+  if (spcIndex) return spcIndex;
+  try { spcIndex = (await idb.get('spc_index')) ?? {}; } catch { spcIndex = {}; }
+  return spcIndex;
+}
+async function spCached(path, { ttl = 7 * 864e5, slim = x => x } = {}) {
+  const idx = await spcLoad();
+  const at = idx[path];
+  if (at && Date.now() - at < ttl) {
+    try { const v = await idb.get('spc:' + path); if (v !== undefined && v !== null) { callCount(path, 'saved'); return v; } } catch {}
+  }
+  const v = slim(await sp(path));
+  try {
+    await idb.set('spc:' + path, v);
+    idx[path] = Date.now();
+    const keys = Object.keys(idx);
+    if (keys.length > SPC_MAX) {
+      keys.sort((a, b) => idx[a] - idx[b]);
+      for (const k of keys.slice(0, keys.length - SPC_MAX)) { delete idx[k]; await idb.del('spc:' + k); }
+    }
+    await idb.set('spc_index', idx);
+  } catch { /* not kept: asked again next time */ }
+  return v;
+}
+
+/** A search's tracks, cut down to what Discover and the swap checks read. */
+const slimTracks = r => ({ tracks: { items: (r?.tracks?.items ?? []).map(t => ({
+  id: t.id, name: t.name, duration_ms: t.duration_ms, uri: t.uri, popularity: t.popularity,
+  external_ids: t.external_ids?.isrc ? { isrc: t.external_ids.isrc } : undefined,
+  artists: (t.artists ?? []).map(a => ({ id: a.id, name: a.name })),
+  album: t.album && { id: t.album.id, name: t.album.name, release_date: t.album.release_date,
+    album_type: t.album.album_type, images: (t.album.images ?? []).slice(-2) },
+})) } });
+
+async function spSend(url, opts = {}) {
   let held = 0;      // ms of 429 already sat through quietly, this call
   let soft = 0;      // dropped / hung / 5xx attempts, this call
   let back = 1000;   // and how long to wait before the next of those
   let reauthed = false;
   for (let i = 0; ; i++) {
     await pace();
+    callCount(url);
     let res;
     try {
       res = await fetchDeadline(url, { ...opts, headers:{ authorization:'Bearer ' + await token(),
@@ -13062,6 +13216,7 @@ async function sp(path, opts = {}) {
       setGap(gap * 2); await sleep(back); back *= 2; continue;
     }
     if (res.status === 429) {
+      callCount(url, 'limited');
       const after = (+res.headers.get('retry-after') || 0) * 1000;
       // A quota-exceeded 429 carries a reason Spotify only added recently: the
       // app's whole request budget for the period is gone, not a busy moment,
@@ -13841,7 +13996,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-19-0036');
+    const w = new Worker('reports-worker.js?v=2026-11-19-0404');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -14452,7 +14607,10 @@ function playerRun() {
     }
     // Four seconds while something is moving; a slow heartbeat when it is not,
     // so a card left open on screen does not quietly spend the rate budget.
-    if (Date.now() - PLAYER.lastPoll > (PLAYER.playing ? 4000 : 15000)) playerPoll();
+    // Never while the page is in the background: nobody is watching the bar,
+    // and a phone with the app left open used to poll all afternoon.
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (Date.now() - PLAYER.lastPoll > (PLAYER.playing ? 5000 : 20000)) playerPoll();
   }, 250);
   if (Date.now() - PLAYER.lastPoll > 4000) playerPoll(); else playerPaint();
 }
@@ -14499,11 +14657,29 @@ async function playFrom(id, dur = 0) {
   } catch (e) { toast(e.message); }
 }
 
-async function playTrack(id) {
+/* The device a track was last sent to, for two minutes: playing card after card
+ * used to ask for the device list before every one. A device that has gone
+ * since answers the play with a 404, and only then is the list asked again. */
+let lastDevice = null;
+const DEVICE_KEEP = 120000;
+async function pickDevice(fresh = false) {
+  if (!fresh && lastDevice && Date.now() - lastDevice.at < DEVICE_KEEP) return lastDevice.dev;
   const d = await sp('/me/player/devices');
-  const dev = (d.devices??[]).find(x=>x.is_active) ?? (d.devices??[])[0];
-  if (!dev) throw new Error('No open Spotify device — open Spotify and try again.');
-  await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body:JSON.stringify({ uris:['spotify:track:'+id] }) });
+  const dev = (d?.devices??[]).find(x=>x.is_active) ?? (d?.devices??[])[0];
+  if (!dev) { lastDevice = null; throw new Error('No open Spotify device — open Spotify and try again.'); }
+  lastDevice = { dev, at: Date.now() };
+  return dev;
+}
+async function playTrack(id) {
+  const body = JSON.stringify({ uris:['spotify:track:'+id] });
+  let dev = await pickDevice();
+  try { await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body }); }
+  catch (e) {
+    if (e?.status !== 404 || !lastDevice) throw e;
+    dev = await pickDevice(true);
+    await sp(`/me/player/play?device_id=${dev.id}`, { method:'PUT', body });
+  }
+  lastDevice = { dev, at: Date.now() };
   return dev.name;
 }
 
@@ -14707,7 +14883,8 @@ function soundNote(t, picks) {
   if (SOUND.status === 'working') return `<p class="why sndnote" style="margin-top:12px">Learning how your playlists sound…</p>`;
   if (SOUND.status === 'error') return `<p class="why sndnote" style="margin-top:12px">Couldn’t learn how your playlists sound: ${esc(SOUND.err)}. Picks are from tags.</p>`;
   const rec = AUDIO.records?.get(t.id);
-  if (!rec) return `<p class="why sndnote" style="margin-top:12px">Not heard yet. Picks are from tags until it is.</p>`;
+  // Not heard yet: the top pick's own line already says so ("· not heard yet").
+  if (!rec) return '';
   if (rec.miss) return `<p class="why sndnote" style="margin-top:12px">Couldn’t be heard (no preview), so picks are from tags.</p>`;
   if (SOUND.status === 'ready' && !SOUND.space) return `<p class="why sndnote" style="margin-top:12px">Not enough of your genre playlists heard yet to compare against. Picks are from tags.</p>`;
   return '';
@@ -15447,6 +15624,10 @@ async function listeningSeeds() {
 // IndexedDB with a TTL for exactly that reason. /me/top/tracks (three windows)
 // rides on the same cache; an entry cached before it existed simply has none.
 const LISTENING_TTL = 4 * 60 * 60 * 1000;
+/* Searches Discover makes to find a pick on Spotify: a track's search answer
+ * hardly moves in a fortnight, and a second Discover run on the same seeds used
+ * to spend the same thirty to sixty searches again (auth.js spCached). */
+const SEARCH_TTL = 14 * 864e5;
 async function fetchListeningRaw() {
   const cached = await idb.get('listening_raw');
   if (cached && Date.now() - cached.at < LISTENING_TTL) return cached.data;
@@ -15456,7 +15637,8 @@ async function fetchListeningRaw() {
   for (const [range, weight] of [['short_term', 3], ['medium_term', 2], ['long_term', 1.5]]) {
     try {
       const r = await sp(`/me/top/artists?limit=50&time_range=${range}`);
-      topWindows.push({ range, weight, items: (r?.items ?? []).map(a => a.name) });
+      topWindows.push({ range, weight, items: (r?.items ?? []).map(a => a.name),
+                        ids: (r?.items ?? []).map(a => ({ id: a.id, name: a.name })) });
     } catch { anyFailure = true; }
   }
   // Same windows and weights as the artists. Its own failure is not fatal and
@@ -15468,14 +15650,15 @@ async function fetchListeningRaw() {
       topTracks.push({ range, weight, items: (r?.items ?? []).map(t => t.id).filter(Boolean) });
     } catch { anyFailure = true; }
   }
-  let recentArtists = [], recentTracks = [];
+  let recentArtists = [], recentTracks = [], recentWho = [];
   try {
     const r = await sp('/me/player/recently-played?limit=50');
     recentArtists = (r?.items ?? []).flatMap(p => (p.track?.artists ?? []).map(a => a.name));
+    recentWho = (r?.items ?? []).map(p => ({ artists: (p.track?.artists ?? []).map(a => ({ id: a.id, name: a.name })) }));
     recentTracks = (r?.items ?? []).map(p => p.track?.id).filter(Boolean);
   } catch { anyFailure = true; }
 
-  const data = { topWindows, recentArtists, topTracks, recentTracks };
+  const data = { topWindows, recentArtists, topTracks, recentTracks, recentWho };
   // A genuine failure keeps no cache, so the next call asks Spotify again
   // rather than freezing a partial or empty answer for the whole TTL — the
   // same principle syncLibrary already applies to a playlist Spotify refused.
@@ -15708,7 +15891,7 @@ async function discRun(seedPlaylistId, quiet, append = false) {
   for (const o of out) {
     try {
       // The keyless path found its track on Spotify already.
-      const hit = o.hit ?? (await sp(`/search?q=${encodeURIComponent(`artist:${o.artist} track:${o.track}`)}&type=track&limit=1`)).tracks?.items?.[0];
+      const hit = o.hit ?? (await spCached(`/search?q=${encodeURIComponent(`artist:${o.artist} track:${o.track}`)}&type=track&limit=1`, { ttl: SEARCH_TTL, slim: slimTracks })).tracks?.items?.[0];
       delete o.hit;
       if (hit) {
         o.id = hit.id; o.album = hit.album?.name; o.released = hit.album?.release_date;
@@ -15833,7 +16016,7 @@ async function discoverKeyless(src, weights, ownedArtist, ownedTrack) {
     if (out.length >= 30) break;
     discStage(`Finding ${c.name} on Spotify…`, 0.7 + out.length / 120);
     let r;
-    try { r = await sp(`/search?q=${encodeURIComponent(`artist:${c.name}`)}&type=track&limit=10`); } catch { continue; }
+    try { r = await spCached(`/search?q=${encodeURIComponent(`artist:${c.name}`)}&type=track&limit=10`, { ttl: SEARCH_TTL, slim: slimTracks }); } catch { continue; }
     const hit = D.pickTrack(r?.tracks?.items ?? [], c.name,
       { isOwnedTrack: h => ownedTrack.has(norm(h.artists?.[0]?.name ?? '') + '|' + norm(h.name)) });
     if (hit) out.push({ artist: c.name, track: hit.name, via: c.via, hit });
@@ -16111,21 +16294,31 @@ function radarPaint(now = false) {
 
 /** Top artists (three windows) and recently played, with ids: the listening half of the artist set. */
 async function radarListening() {
+  // The same four reads Discover's listening seeds make, so they come from the
+  // same kept answer (discover-engine.js fetchListeningRaw, a 4-hour TTL)
+  // rather than being asked again. Only an answer kept before ids were kept
+  // falls back to asking.
+  let raw = null;
+  try { raw = await fetchListeningRaw(); } catch { raw = null; }
   const top = {};
   for (const range of ['short_term', 'medium_term', 'long_term']) {
+    const w = raw?.topWindows?.find(x => x.range === range);
+    if (w?.ids) { top[range] = w.ids; continue; }
     try { top[range] = ((await sp(`/me/top/artists?limit=50&time_range=${range}`))?.items ?? []).map(a => ({ id: a.id, name: a.name })); }
     catch { top[range] = []; }
   }
-  let recent = [];
-  try { recent = ((await sp('/me/player/recently-played?limit=50'))?.items ?? []).map(p => ({ artists: p.track?.artists ?? [] })); }
-  catch { /* the library alone still makes a radar */ }
+  let recent = raw?.recentWho ?? null;
+  if (!recent) {
+    try { recent = ((await sp('/me/player/recently-played?limit=50'))?.items ?? []).map(p => ({ artists: p.track?.artists ?? [] })); }
+    catch { recent = []; /* the library alone still makes a radar */ }
+  }
   let weights;
   try { weights = (await getListening())?.weights; } catch { weights = undefined; }
   return { top, recent, weights };
 }
 
 /** Run a sync now. `deep`: `{ ids, years }` reads those artists further back ("older on demand"). */
-async function radarStart({ deep = null } = {}) {
+async function radarStart({ deep = null, byHand = !!deep } = {}) {
   if (RADAR.running || !LIB) return;
   RADAR.running = true; RADAR.stopped = null; RADAR.err = null; RADAR.progress = null;
   RADAR.ctl = new AbortController();
@@ -16156,6 +16349,7 @@ async function radarStart({ deep = null } = {}) {
     // reissue on what is stored (no request) before reading anything new.
     try { await BR.rescore(kv, LIB); } catch { /* the sync re-judges what it touches anyway */ }
     const r = await BR.syncRadar({ lib: LIB, artists, store: kv, get: path => sp(path), signal: RADAR.ctl.signal, deep,
+      maxRequests: byHand ? RADAR_HAND : Math.max(20, RADAR_DAY - radarSpentToday()),
       onProgress: p => { RADAR.progress = p; radarPaint(); } });
     RADAR.stopped = r.stopped;
     if (r.stopped && r.stopped.why !== 'aborted' && r.stopped.why !== 'budget') RADAR.err = r.stopped.message || null;
@@ -16186,6 +16380,16 @@ function radarStop({ byHand = true } = {}) {
  * first read a start only asks about artists due a check, so it is cheap. */
 const RADAR_OFF_KEY = 'bf_radar';
 const RADAR_AUTO_DELAY_MS = 90_000;
+const RADAR_PROBE_EVERY = 30 * 864e5;
+/* A request budget. The radar is by far the page's biggest spender (three
+ * requests per artist per group, a thousand artists on a big library), and it
+ * used to start by itself on every visit with no ceiling, all of it from the
+ * app's one shared quota. Now a start by itself spends at most what is left of
+ * RADAR_DAY today (counted by auth.js's meter, so reloads cannot reset it), and
+ * one by hand at most RADAR_HAND; a stop for budget is a pause, and the next
+ * start carries on with the artists still due, most listened first. */
+const RADAR_DAY = 300, RADAR_HAND = 900;
+const radarSpentToday = () => { const k = spStats().kinds; return (k['artists/albums'] ?? 0) + (k['albums/tracks'] ?? 0); };
 const radarAutoOff = () => { try { return LS.getItem(RADAR_OFF_KEY) === 'off'; } catch { return false; } };
 
 /** Start it. By hand, it also turns the automatic start back on. Resolves true once a read ran. */
@@ -16198,7 +16402,7 @@ async function radarGo({ byHand = false } = {}) {
     await radarProbe();
     if (radarHeld()) return false;
   }
-  await radarStart();
+  await radarStart({ byHand });
   return true;
 }
 
@@ -16208,6 +16412,7 @@ async function radarAuto({ delay = RADAR_AUTO_DELAY_MS } = {}) {
   if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return false;
   if (delay) await new Promise(r => setTimeout(r, delay));
   if (radarAutoOff() || RADAR.running) return false;
+  if (radarSpentToday() >= RADAR_DAY) return false;
   // The account check first, once per account per build; a refused route stops here.
   await radarProbeAuto();
   return radarGo();
@@ -16230,7 +16435,13 @@ function radarProbeAuto() {
       await radarLoad();
       await engineLoad();
       const BR = globalThis.BetterfyRadar;
-      if (!BR?.probeDue?.(RADAR.check, { account: radarAccount(), build: BUILD })) return;
+      // Once per account, then once a month: it used to run again on every new
+      // build, and builds ship most days, so it was seven reads a day for an
+      // answer that only changes when Spotify changes the API.
+      if (!BR?.probeDue) return;
+      const kept = RADAR.check;
+      const monthOld = !Number.isFinite(kept?.at) || Date.now() - kept.at > RADAR_PROBE_EVERY;
+      if (!BR.probeDue(kept, { account: radarAccount(), build: kept?.build ?? '' }) && !monthOld) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
         await new Promise(r => document.addEventListener('visibilitychange', function f() {
           if (document.visibilityState !== 'hidden') { document.removeEventListener('visibilitychange', f); r(); }
@@ -17784,7 +17995,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-19-0036';
+    s.src = 'engine.js?v=2026-11-19-0404';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -17806,7 +18017,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-19-0036');
+    const w = new Worker('engine-worker.js?v=2026-11-19-0404');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -18608,7 +18819,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-19-0036';
+    s.src = 'audio.js?v=2026-11-19-0404';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -18662,7 +18873,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-19-0036', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-19-0404', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -20061,7 +20272,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-19-0036', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-19-0404', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;
@@ -20811,7 +21022,7 @@ Object.assign(SCREEN_CTX, {
   inbox: () => ({ S, R, LIB, CFG, FB, TAGS, esc, filePicks, soundWarm, artHTML, ICON_PLAY, mmss, trackChip,
                   tagChips, trackStrip, soundIdHTML, soundNote, pickEvidence, pickBand, pickBacked,
                   addTracks, landedIn, logAction, getLog, undoAction, newGroup, recordAccept, forgetAccept, recordSkip, recordReject,
-                  fileBand, fileSure, fileOrderKick, teachHTML, teachAct,
+                  fileBand, fileSure, fileOrderKick, teachHTML, teachAct, onbState,
                   // The sound-label question under the card (U3, web/app/audio.js).
                   labelAskHTML: ids => (typeof labelAskHTML === 'function' ? labelAskHTML(ids) : ''),
                   labelAskAct: el => (typeof labelAskAct === 'function' ? labelAskAct(el) : undefined),
@@ -20870,6 +21081,7 @@ const DATA_KEYS = [
   { where:'local', key:'bf_autoconnect', name:'Reconnect without a tap', group:'Signing in', why:'Remembers that you signed in here, so the next visit reconnects without a tap.' },
   { where:'local', key:'bf_client_id', name:'Your own Spotify app', group:'Signing in', why:'Your own Spotify app\'s client ID, only if you set one up under "use your own Spotify app".' },
   { where:'local', key:'bf_setup', name:'"Own Spotify app" panel open', group:'Signing in', why:'Keeps the "use your own Spotify app" panel open once you have opened it.' },
+  { where:'local', key:'bf_calls', name:'Spotify requests today', group:'Signing in', why:'A count of the requests this device sent to Spotify today, by kind, shown in Settings so the shared request budget is visible. Starts again each day.' },
   { where:'local', key:'bf_gap', name:'Request pace', group:'Signing in', why:'How far apart to space requests to Spotify, learned from its rate limits, so the next visit starts at a safe pace.' },
   { where:'local', key:'bf_ratelimit_streak', name:'Rate-limit count', group:'Signing in', why:'How many visits in a row hit Spotify\'s rate limit, to know when to suggest your own Spotify app.' },
   { where:'local', key:'__bf_probe', name:'Storage check', group:'Signing in', why:'A test write made and removed at once on load, to find out whether this browser allows storage at all.' },
@@ -20880,6 +21092,8 @@ const DATA_KEYS = [
   { where:'idb', key:'actions', name:'History', group:'Your library', why:'History: every change Betterfy made to your Spotify playlists, with what is needed to undo it.' },
   { where:'idb', key:'offline_queue', name:'Waiting to send (offline)', group:'Your library', why:'Decisions you made with no connection (filings, removals, unlikes), kept until the page is next open and online and then sent to Spotify once each. Empty the rest of the time. The page itself is kept for offline use in the browser\'s cache under "betterfy-shell-<build>".' },
   { where:'idb', key:'feedback', name:'Skips and turn-downs', group:'Your library', why:'Tracks you skipped or turned down for a playlist, and filings you accepted, so the same suggestion is not made again.' },
+  { where:'idb', key:'spc:', prefix:true, name:'Kept Spotify searches', group:'Your library', why:'Answers to Spotify searches Discover made to find its picks (track names, artists, covers), kept for two weeks so the same search is not asked again.' },
+  { where:'idb', key:'spc_index', name:'Kept searches: when', group:'Your library', why:'When each kept Spotify search was made, so old ones are asked again and the oldest are dropped past 400.' },
   { where:'idb', key:'listening_raw', name:'What you play (top artists, recent)', group:'Your library', why:'Your top artists and recently played tracks from Spotify, used to put what you actually play first.' },
   { where:'local', key:'bf_axes', name:'Playlist types', group:'Your library', why:'What kind of playlist each one is (genre, mood, occasion...), as you set it.' },
   { where:'local', key:'bf_allsongs', name:'All Songs playlist', group:'Your library', why:'The id of the "all songs" playlist Betterfy keeps for you, so it updates that one instead of making another.' },
@@ -21314,6 +21528,7 @@ function uhSnapshot() {
   } catch { snap.listening = {}; }
   try { snap.helpers = SCREEN_MODS.helpers.helperSummary(helperRowsNow(), HELPERS.checks); } catch { snap.helpers = ''; }
   snap.data = { playlists: LIB?.playlists?.length ?? 0 };
+  snap.requests = typeof spStats === 'function' ? spStats() : {};
   snap.history = { count: Array.isArray(S.history) ? S.history.length : null };
   snap.appearance = { mode: T?.mode, accent: $('#accentName')?.textContent || null };
   snap.about = { build: typeof BUILD === 'string' ? BUILD : '' };
@@ -21414,6 +21629,7 @@ function uhBody(id) {
     case 'helpers': return SCREEN_MODS.sources.sourcesHTML(ctx('sources'));
     case 'data': { const c = ctx('sources'); return c.DATA_KEYS ? SCREEN_MODS.sources.yourDataHTML({ ...c, bare: true }) : ''; }
     case 'history': return strip(SCREEN_MODS.history.view(ctx('history')));
+    case 'requests': return SCREEN_MODS.settings.requestsHTML(spStats(), { ownApp: !!LS.getItem('bf_client_id'), esc });
     default: return '';
   }
 }

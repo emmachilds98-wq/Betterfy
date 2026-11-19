@@ -116,7 +116,7 @@ const STOP_WORDS = {
   'rate-limit': 'Spotify asked for a pause',
   'signed-out': 'the Spotify sign-in stopped working',
   offline: 'the connection dropped',
-  budget: 'it reached its request budget',
+  budget: 'it reached today’s request budget',
   aborted: 'you stopped it',
 };
 
@@ -137,6 +137,7 @@ export function statusLine(R, now = Date.now()) {
   if (!ix) return { text: 'Not started', complete: false };
   if (R.stopped || ix.stopped) {
     const st = R.stopped ?? ix.stopped;
+    if (st.why === 'budget') return { text: `${n(ix.done)} of ${n(ix.total)} checked · the rest carry on tomorrow (daily request budget)`, complete: false };
     const msg = R.err ? ` (${R.err})` : '';
     return { text: `Stopped after ${n(ix.done)} of ${n(ix.total)} checks: ${STOP_WORDS[st.why] ?? 'it stopped'}${msg}. Start again picks up where it stopped.`,
              complete: false, warn: true };
