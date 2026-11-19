@@ -554,7 +554,7 @@ and B1 (add-only until the lane's package merges).
 | --- | --- | --- | --- | --- | --- | --- |
 | A1, A2, A5 | Mix-ups by family, playlist precision, counts that fill | 0 | M | Built | | display only; A3, A4, A6, A7 not started |
 | I1 | Family first on its confident part | 1 | E | Merged, switches itself on at the next Score run | #199 | bar: confident ≥ 95% at ≥ 25% on ≥ 20 tracks; D4 = yes (family-level Sure offered) |
-| I2 | Sure earned in pockets | 1 | E | Not started | | bar: Sure ≥ 95% at ≥ 25% of tracks |
+| I2 | Sure earned in pockets | 1 | E | Built, awaiting PR and the owner's Score run; switches itself on per account when the held-out bar clears | | bar: Sure ≥ 95% at ≥ 25% of tracks, ≥ 20 held-out per pocket. Pockets: situation (filed / never filed), lead family, lead playlist size, agreement within a situation; fitted per pocket at the same strictness (`calibrate.mjs` `POCKET_GATE`, `pocketsLine`). Fixture (test/pockets.test.mjs): Sure 0% of tracks without pockets, 41% at 99% with. Selection of pockets and the final check use the same held-out half-swap, so the real number is the owner's next Score run ("Sure earned: pockets X, Y — Z% of tracks at P%"). Family cards get situation pockets only; never auto-files |
 | N1 | Never-filed artists | 2 | E | Not started | | bar: +3 top-1 on 205 tracks |
 | S2 | Small playlists | 2 | E, U | Not started | | bar: +10 recall on the under-12 group |
 | D1 | Drum & Bass named | 2 | E | Tempo part built as SOUND-ENGINE T1 (awaiting Score run); (b) library naming not started | | bar: 77/199 → 110/199 at ≥ 90% |

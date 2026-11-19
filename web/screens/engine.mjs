@@ -41,7 +41,7 @@ export function decisionHtml(d, esc) {
 function calibLine(label, rep, pc) {
   const c = rep?.checked;
   if (!c?.n) return null;
-  const conf = rep.cal?.tau != null && c.confidentN
+  const conf = (rep.cal?.tau != null || rep.cal?.byLevel || rep.cal?.pockets) && c.confidentN
     ? `confident ${pc(c.confidentShare)} of tracks, right ${pc(c.confidentRight)}` : 'confident: none earned yet';
   return `${label}: ${conf}; short list ${pc(c.chooseShare)} (avg ${c.chooseSize ?? '—'}), held it ${pc(c.chooseContains)}; `
     + `not sure ${pc(c.unsureShare)}${rep.holds === true ? '; holds' : rep.holds === false ? "; doesn't hold yet" : ''}`;
@@ -282,6 +282,7 @@ export function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBloc
     v.confusionLine || null,
     ...(v.moodLine ? [v.moodLine] : []),
     ...(v.agreeLine ? [v.agreeLine] : []),
+    ...(v.pocketsLine ? [v.pocketsLine] : []),
     ...(v.pairsLine ? [v.pairsLine] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),

@@ -105,7 +105,9 @@ export function familyAccuracy(rows, families, opts = {}) {
     const truth = new Set(r.truth);
     if (truth.has(r.scores[0][0])) flat++;
     const fr = familyRow(r, families, T);
-    famRows.push({ id: r.id, scores: asScores(fr.fams), truth: fr.truth });
+    // I2: the situation pockets (not the playlist-bound ones) carry over to the family level.
+    const pk = (r.pockets ?? []).filter(k => k.startsWith('sit:') || k.includes('|sit:'));
+    famRows.push({ id: r.id, scores: asScores(fr.fams), truth: fr.truth, ...(pk.length ? { pockets: pk } : {}) });
     if (!fr.truth.includes(fr.fams[0][0])) continue;
     fam++;
     // Inside the family it chose: the best-scoring playlist of that family.
@@ -190,7 +192,8 @@ export function decideCard(scores, cal, famCal, families, opts = {}) {
   if (!famCal || !families || !scores?.length || !cal) return flat;
   const fr = familyRow({ scores }, families, cal.T);
   const lead = fr.fams[0];
-  const fd = decide(asScores(fr.fams), famCal);
+  const pk = (opts.pockets ?? []).filter(k => k.startsWith('sit:') || k.includes('|sit:'));
+  const fd = decide(asScores(fr.fams), famCal, pk.length ? { pockets: pk } : {});
   if (fd.kind !== 'confident' || fd.playlists[0] !== lead[0]) return flat;
   // Inside the family: its playlists in score order, the top two offered.
   const inside = scores.filter(([id]) => famOf(families, id) === lead[0]).map(([id]) => id);

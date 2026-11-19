@@ -11,7 +11,7 @@
 <meta name="description" content="Find duplicates, catch misfiled tracks and empty your liked-songs backlog across a large Spotify library.">
 <!-- Read back over the network by the update check, to tell whether the copy in
      this browser is the one currently published. Keep the name and quoting. -->
-<meta name="bf-build" content="2026-11-18-2347">
+<meta name="bf-build" content="2026-11-19-0020">
 <!-- Matched to the page background rather than the accent, so the iOS status
      bar blends into the app instead of sitting on a coloured strip. Kept in
      sync with the chosen theme at runtime by applyTheme(). -->
@@ -2073,7 +2073,7 @@ main:focus{outline:none}
          that exists. -->
     <a href="?setup">Use your own Spotify app</a>
     <span class="dot">·</span>
-    <span class="mono">build 2026-11-18-2347</span>
+    <span class="mono">build 2026-11-19-0020</span>
   </p>
 
   <div class="feat">
@@ -2166,7 +2166,7 @@ main:focus{outline:none}
          and so invisible — until something calls setListen() with a ListenVM. -->
     <div class="listenslot" id="listenSlot"></div>
     <div class="railfoot">
-      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-18-2347</span>
+      <span class="mono" style="font-size:10.5px; color:var(--ink-3)">build 2026-11-19-0020</span>
     </div>
   </aside>
   <main id="main" tabindex="-1"></main>
@@ -2244,7 +2244,7 @@ main:focus{outline:none}
         <button class="uhhead" type="button" id="uh-about-h" data-uhtoggle="about" aria-expanded="false" aria-controls="uh-about-b">
           <span class="uht"><b>About &amp; updates</b><span class="uhs"></span></span><span class="chev" aria-hidden="true"></span></button>
         <div class="uhbody" id="uh-about-b" role="region" aria-labelledby="uh-about-h" hidden>
-          <p class="hint">Betterfy, build 2026-11-18-2347. <span id="sheetWho" class="mono"></span></p>
+          <p class="hint">Betterfy, build 2026-11-19-0020. <span id="sheetWho" class="mono"></span></p>
           <div class="rowbtns"><button class="b" id="btnUpdate" type="button" title="Check for a newer version of Betterfy">Check for updates</button></div>
           <!-- Re-sync used to be a ⟳ sitting next to ⬇ Check for updates, which read as "get the latest
                Betterfy". It is not: it re-reads every playlist from Spotify, hundreds of calls against a
@@ -6902,7 +6902,7 @@ function decisionHtml(d, esc) {
 function calibLine(label, rep, pc) {
   const c = rep?.checked;
   if (!c?.n) return null;
-  const conf = rep.cal?.tau != null && c.confidentN
+  const conf = (rep.cal?.tau != null || rep.cal?.byLevel || rep.cal?.pockets) && c.confidentN
     ? `confident ${pc(c.confidentShare)} of tracks, right ${pc(c.confidentRight)}` : 'confident: none earned yet';
   return `${label}: ${conf}; short list ${pc(c.chooseShare)} (avg ${c.chooseSize ?? '—'}), held it ${pc(c.chooseContains)}; `
     + `not sure ${pc(c.unsureShare)}${rep.holds === true ? '; holds' : rep.holds === false ? "; doesn't hold yet" : ''}`;
@@ -7117,7 +7117,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock, hear
   if (!v || v.error) return '';
   const pc = x => x == null ? '—' : Math.round(x * 100) + '%';
   const lines = [
-    `Betterfy engine score — build 2026-11-18-2347`,
+    `Betterfy engine score — build 2026-11-19-0020`,
     `Library: ${LIB.playlists.length} playlists, ${(LIB.liked ?? []).length} liked songs`,
     r ? `Rung: ${r.name} — ${r.reason}` : null,
     r ? `Destinations ${r.destinations}, artists with neighbours ${r.artistsConnected}, in 2+ playlists ${pc(r.connectedShare)}` : null,
@@ -7143,6 +7143,7 @@ function summary({ ENG, LIB, maestScoreText, measureLines, TUNE, tuneBlock, hear
     v.confusionLine || null,
     ...(v.moodLine ? [v.moodLine] : []),
     ...(v.agreeLine ? [v.agreeLine] : []),
+    ...(v.pocketsLine ? [v.pocketsLine] : []),
     ...(v.pairsLine ? [v.pairsLine] : []),
     fillLine(v.fill, pc),
     teachLine(v.teach, pc),
@@ -12636,7 +12637,7 @@ const autoConnectDue = () => standalone()
  * signed in. The build stamp is baked into a meta tag at build time; the check
  * re-fetches the page over the network and compares the two stamps. */
 
-const BUILD = '2026-11-18-2347';
+const BUILD = '2026-11-19-0020';
 
 async function publishedBuild() {
   // Cache-busted *and* no-store: this has to be what the server holds right
@@ -12974,7 +12975,7 @@ const NET_TRIES = 3;         // a dropped, hung or 5xx call is just asked again
 async function fetchTags() {
   for (let i = 0; ; i++) {
     try {
-      const r = await fetchDeadline('tags.json?v=2026-11-18-2347', {}, 45000);
+      const r = await fetchDeadline('tags.json?v=2026-11-19-0020', {}, 45000);
       if (!r.ok) throw new Error(String(r.status));
       return await r.json();
     } catch {
@@ -13797,7 +13798,7 @@ function reportsWorker() {
   if (REPORTS_WORKER !== null) return REPORTS_WORKER;
   try {
     if (typeof Worker !== 'function') return REPORTS_WORKER = false;
-    const w = new Worker('reports-worker.js?v=2026-11-18-2347');
+    const w = new Worker('reports-worker.js?v=2026-11-19-0020');
     w.onmessage = e => {
       const wait = REPORTS_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -17612,7 +17613,7 @@ function engineLoad() {
   return ENGINE_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyIntrinsic) return ok(true);
     const s = document.createElement('script');
-    s.src = 'engine.js?v=2026-11-18-2347';
+    s.src = 'engine.js?v=2026-11-19-0020';
     s.onload = () => globalThis.BetterfyIntrinsic ? ok(true)
       : bad(new Error('engine.js loaded but defined nothing'));
     s.onerror = () => { ENGINE_JS = null; bad(new Error('could not fetch engine.js')); };
@@ -17634,7 +17635,7 @@ function engineWorker() {
   if (ENGINE_WORKER !== null) return ENGINE_WORKER;
   try {
     if (typeof Worker !== 'function') return ENGINE_WORKER = false;
-    const w = new Worker('engine-worker.js?v=2026-11-18-2347');
+    const w = new Worker('engine-worker.js?v=2026-11-19-0020');
     w.onmessage = e => {
       const wait = ENGINE_WAIT.get(e.data?.id);
       if (!wait) return;
@@ -17844,9 +17845,49 @@ function engineFamilyFit(rows) {
   const gate = BetterfyFamily.familyGate(acc);
   const use = gate.use;
   const cal = BetterfyFamily.fitFamilyCalibration(acc.rows);
+  // I2: situation pockets are used at the family level only when they held out.
+  if (cal && !acc.sure?.pockets?.use) delete cal.pockets;
   const summary = { n: acc.n, family: acc.family, within: acc.within, flat: acc.flat, families: acc.families,
                     sure: acc.sure?.checked ?? null, holds: acc.sure?.holds ?? null, use, by: gate.by, why: gate.why };
   return { summary, keep: { use, cal, family: acc.family, families: acc.families } };
+}
+
+/**
+ * Build 8 I2: a function that puts `pockets` on held-out rows. Situation needs
+ * the never-filed set (computed once over every row id given); family and size
+ * come from the account's own playlists. Returns the rows unchanged when the
+ * pieces are not loaded.
+ */
+function enginePocketer(rowLists) {
+  if (typeof BetterfyCalibrate === 'undefined' || !BetterfyCalibrate.withPockets) return rows => rows;
+  let fresh = null;
+  try {
+    const ids = new Set();
+    for (const rows of rowLists) for (const r of rows ?? []) if (r?.id) ids.add(r.id);
+    if (typeof BetterfyBlendScore !== 'undefined' && BetterfyBlendScore.neverFiledIds && ids.size) {
+      const nf = BetterfyBlendScore.neverFiledIds(LIB, [...ids], { folds: 5, targets: engineTargets(), isMirror: isMirrorPlaylist });
+      fresh = id => nf.has(id);
+    }
+  } catch { fresh = null; }
+  const ctx = { fresh, famOf: engineLeadFamily(), sizeOf: engineSizeOf() };
+  return rows => (rows ? BetterfyCalibrate.withPockets(rows, ctx) : rows);
+}
+const engineLeadFamily = () => { const m = typeof BetterfyFamily !== 'undefined' ? engineFamiliesMemo() : null; return m ? id => m.get(id) : null; };
+function engineSizeOf() {
+  const sizes = new Map((LIB?.playlists ?? []).map(p => [p.id, p.tracks?.length ?? 0]));
+  return id => sizes.get(id);
+}
+/** The pocket keys one live card belongs to (same names as Score's held-out rows). */
+function enginePocketKeys(raw, scores, agreeLevel) {
+  if (typeof BetterfyCalibrate === 'undefined' || !BetterfyCalibrate.pocketKeys) return [];
+  const filed = typeof blendFiledArtists === 'function' ? blendFiledArtists() : null;
+  const lead = scores?.[0]?.[0] ?? null, fam = engineLeadFamily();
+  const n = lead != null ? engineSizeOf()(lead) : null;
+  return BetterfyCalibrate.pocketKeys({
+    sit: filed && raw ? ((raw.artists ?? []).some(a => a?.id && filed.has(a.id)) ? 'filed' : 'fresh') : null,
+    fam: lead != null && fam ? fam(lead) ?? null : null,
+    size: Number.isFinite(n) ? BetterfyCalibrate.sizeBand(n) : null,
+    agree: agreeLevel ?? null });
 }
 
 /** Fit from a score run's rows, keep it, and drop the rows: they are only for this. */
@@ -17873,8 +17914,12 @@ async function engineCalibrate(v) {
   const drop = [...(ENG.space?.bridge ? [] : ['similar']), ...(tagTops ? [] : ['tags'])];
   const withAgree = (rows, ...from) => agreeOn && rows
     ? BetterfyAgree.withAgreement(rows, BetterfyAgree.srcByIdOf(...from), tagTops, { drop }) : rows;
-  const base = BetterfyCalibrate.calibrationReport(withAgree(baseRows, mine.rows));
-  const bridge = bridgeRows ? BetterfyCalibrate.calibrationReport(withAgree(bridgeRows, mine.withBridge?.rows)) : null;
+  // Build 8 I2: pockets (situation, family, size) put on the same rows, so
+  // "Sure" can be earned inside a pocket. Without the pieces: as before.
+  const withPk = enginePocketer([baseRows, bridgeRows, mine.withAudio?.rows, ...Object.values(mine.withAudio?.arms ?? {}).map(a => a.rows)]);
+  const report = rows => BetterfyCalibrate.calibrationReport(withPk(rows));
+  const base = report(withAgree(baseRows, mine.rows));
+  const bridge = bridgeRows ? report(withAgree(bridgeRows, mine.withBridge?.rows)) : null;
   // WP-C1: which ear this run chose. The first ear unless a second ear passed
   // the gate and beat it; its calibration then comes from that ear's rows.
   const choice = mine.withAudio?.choice ?? null;
@@ -17883,7 +17928,9 @@ async function engineCalibrate(v) {
   // Calibrated on the engine that will place: the chosen ear, or the first ear with its nearest tracks.
   const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows
     : near ? mine.withAudio.arms?.near?.rows : mine.withAudio?.rows;
-  const audio = soundRows ? BetterfyCalibrate.calibrationReport(withAgree(soundRows, soundRows)) : null;
+  const audio = soundRows ? report(withAgree(soundRows, soundRows)) : null;
+  { const pk = audio?.pockets ?? base?.pockets;
+    if (pk) v.pocketsLine = BetterfyCalibrate.pocketsLine({ pockets: pk }); }
   const agreeRep = audio?.agree ?? base?.agree ?? null;
   if (agreeOn && agreeRep) v.agreeLine = BetterfyAgree.agreeLine(audio?.agree ? audio : base);
   delete v.tagTops;
@@ -17955,7 +18002,8 @@ function engineDecorate() {
     const agree = useCal?.byLevel && typeof BetterfyAgree !== 'undefined'
       ? BetterfyAgree.agreement(scores[0]?.[0] ?? null,
           BetterfyAgree.sourceTops(full.results ?? [], { tags: engineTagScores(raw) })) : null;
-    const dopts = agree ? { agree: agree.level } : {};
+    const keys = useCal?.pockets ? enginePocketKeys(raw, scores, agree?.level) : [];
+    const dopts = { ...(agree ? { agree: agree.level } : {}), ...(keys.length ? { pockets: keys } : {}) };
     // Family first, once this account's Score run earned it: commit to the
     // family and ask only which playlist inside it.
     const fam = ENG.calib?.family?.use ? ENG.calib.family : null;
@@ -18389,7 +18437,7 @@ function audioLoad() {
   return AUDIO_JS ??= new Promise((ok, bad) => {
     if (globalThis.BetterfyAudio) return ok(true);
     const s = document.createElement('script');
-    s.src = 'audio.js?v=2026-11-18-2347';
+    s.src = 'audio.js?v=2026-11-19-0020';
     s.onload = () => globalThis.BetterfyAudio ? ok(true) : bad(new Error('audio.js loaded but defined nothing'));
     s.onerror = () => bad(new Error('could not fetch audio.js'));
     document.head.appendChild(s);
@@ -18443,7 +18491,7 @@ let AUDIO_EARS = null;
 function audioEars() {
   return AUDIO_EARS ??= (async () => {
     const A = BetterfyAudio;
-    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-18-2347', { type: 'module' });
+    AUDIO.worker = new Worker('audio-worker.js?v=2026-11-19-0020', { type: 'module' });
     const w = A.createWorkerEar(AUDIO.worker, { modelUrl: audioModelUrl(AUDIO_MODEL_FILE), ortBase: ORT_BASE,
       headUrls: Object.fromEntries(Object.entries(AUDIO_HEAD_FILES).map(([k, f]) => [k, audioModelUrl(f)])) });
     AUDIO.wear = w; // CLAP (WP-C2) loads into this same Worker
@@ -19841,7 +19889,7 @@ async function maestStart({ quiet = false } = {}) {
     fetchPreview: url => A.fetchPreview(url, { fetch: (u, init) => fetch(u, init) }),
     decode: buf => A.decodeTo16k(buf),
     loadMaest: async () => {
-      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-18-2347', { type: 'module' }),
+      const w = A.createWorkerMaest(new Worker('maest-worker.js?v=2026-11-19-0020', { type: 'module' }),
         { modelUrl: audioModelUrl(A.MAEST_FILE), ortBase: ORT_BASE });
       try { await w.ready; } catch (e) { w.release(); throw e; }
       return w;

@@ -6268,8 +6268,79 @@ function fitCalibration(rows, opts = {}) {
     }
     if (Object.keys(byLevel).length) out.byLevel = byLevel;
   }
+  // Build 8 I2: the same idea for any pocket a row names (`pockets`, see
+  // pocketKeys): fitted on only that pocket's rows, kept when it earns a tau.
+  // Whether they are USED is decided on held-out rows in calibrationReport.
+  if (opts.pockets !== false && usable.some(r => r.pockets?.length)) {
+    const groups = new Map();
+    for (const r of usable) for (const k of r.pockets ?? []) {
+      if (opts.pocketAllow && !opts.pocketAllow.has(k)) continue;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(r);
+    }
+    const pockets = {};
+    for (const [k, mine] of groups) {
+      if (mine.length < minConfident) continue;
+      const c = fitCalibration(mine, { ...opts, target: opts.agreeTarget ?? DEFAULTS.agreeTarget, byLevel: false, pockets: false });
+      if (c.tau != null) pockets[k] = { T: c.T, tau: c.tau, n: c.n, confidentN: c.confidentN, confidentRight: c.confidentRight };
+    }
+    if (Object.keys(pockets).length) out.pockets = pockets;
+  }
   return out;
 }
+
+/**
+ * Build 8 I2 (docs/BUILD-8-PLAN.md): pockets. A pocket is a group of tracks
+ * the account can name WITHOUT knowing the answer, so "Sure" can be fitted
+ * inside it (Mondrian calibration) instead of over everyone at once:
+ *   sit:filed | sit:fresh       the artist is already filed / never filed
+ *   fam:<family>                the leading playlist's family
+ *   size:small | mid | large    the leading playlist's size
+ *   agree:<level>|sit:<s>       how the sources line up, within a situation
+ * Most specific first: a card is credited to the first pocket that vouches.
+ * Anything not given is left out.
+ */
+function pocketKeys({ sit = null, fam = null, size = null, agree = null } = {}) {
+  const out = [];
+  if (agree && agree !== 'split' && sit) out.push(`agree:${agree}|sit:${sit}`);
+  if (fam) out.push(`fam:${fam}`);
+  if (size) out.push(`size:${size}`);
+  if (sit) out.push(`sit:${sit}`);
+  return out;
+}
+
+/** Size band of a playlist by its track count. */
+const sizeBand = n => (n < 25 ? 'small' : n < 80 ? 'mid' : 'large');
+
+/**
+ * Put `pockets` on held-out rows (copied). Context, all optional:
+ *   fresh(id)   true when the track's artist was never filed
+ *   famOf(pl)   the family of a playlist id
+ *   sizeOf(pl)  the playlist's track count
+ * Reads the row's own lead playlist (its top score), never its truth.
+ */
+function withPockets(rows, { fresh = null, famOf = null, sizeOf = null } = {}) {
+  return (rows ?? []).map(r => {
+    const lead = r.scores?.[0]?.[0] ?? null;
+    const n = lead != null && sizeOf ? sizeOf(lead) : null;
+    const pockets = pocketKeys({
+      sit: fresh ? (fresh(r.id) ? 'fresh' : 'filed') : null,
+      fam: lead != null && famOf ? famOf(lead) ?? null : null,
+      size: Number.isFinite(n) ? sizeBand(n) : null,
+      agree: r.agree ?? null,
+    });
+    return { ...r, pockets };
+  });
+}
+
+/**
+ * What pocket-earned Sure must do on held-out rows: every Sure card together
+ * (pockets included) right at least `minPrecision` of the time on at least
+ * `minN` cards covering at least `coverage` of tracks, and each pocket used
+ * right at least `minPrecision` on at least `minN` cards of its own. The same
+ * bar as AGREE_GATE and the plan's (ENGINE-REVIEW): grouping changes, strictness does not.
+ */
+const POCKET_GATE = Object.freeze({ minPrecision: 0.95, minN: 20, coverage: 0.25 });
 
 /** The agreement levels that may earn their own "confident" (agree.mjs LEVELS minus `split`). */
 const AGREE_LEVELS = Object.freeze(['agree', 'single']);
@@ -6301,6 +6372,13 @@ function decide(scores, cal, opts = {}) {
     const pl = softmax(scores, lv.T)[0][1];
     if (pl >= lv.tau) return { kind: 'confident', playlists: [lead], p: r(pl), via: 'agree' };
   }
+  // Build 8 I2: a pocket this track belongs to that earned its own threshold.
+  for (const k of Array.isArray(opts.pockets) ? opts.pockets : []) {
+    const pk = cal.pockets?.[k];
+    if (!pk || pk.tau == null) continue;
+    const pl = softmax(scores, pk.T)[0][1];
+    if (pl >= pk.tau) return { kind: 'confident', playlists: [lead], p: r(pl), via: 'pocket', pocket: k };
+  }
   const set = top.filter(([, q]) => q >= cal.pmin && q > 0).map(([id]) => id);
   if (set.length >= 1 && set.length <= maxChoices) return { kind: 'choose', playlists: set, p: r(p) };
   return { kind: 'unsure', playlists: [], p: r(p) };
@@ -6309,16 +6387,21 @@ function decide(scores, cal, opts = {}) {
 /** How the decisions did on rows they were not fitted on. */
 function evaluate(rows, cal, opts = {}) {
   const out = { n: 0, confident: { n: 0, right: 0 }, choose: { n: 0, contains: 0, size: 0 }, unsure: { n: 0 },
-                agree: { n: 0, right: 0 }, levels: {} };
+                agree: { n: 0, right: 0 }, pocket: { n: 0, right: 0, byKey: {} }, levels: {} };
   for (const r of rows ?? []) {
     if (!r?.scores?.length || !r.truth?.length) continue;
     out.n++;
     if (r.agree) out.levels[r.agree] = (out.levels[r.agree] ?? 0) + 1;
-    const d = decide(r.scores, cal, r.agree ? { ...opts, agree: r.agree } : opts);
+    const d = decide(r.scores, cal, { ...opts, ...(r.agree ? { agree: r.agree } : {}), ...(r.pockets?.length ? { pockets: r.pockets } : {}) });
     if (d.kind === 'confident') {
       const ok = inTruth(r, d.playlists[0]);
       out.confident.n++; if (ok) out.confident.right++;
       if (d.via === 'agree') { out.agree.n++; if (ok) out.agree.right++; }
+      if (d.via === 'pocket') {
+        out.pocket.n++; if (ok) out.pocket.right++;
+        const b = out.pocket.byKey[d.pocket] ??= { n: 0, right: 0 };
+        b.n++; if (ok) b.right++;
+      }
     }
     else if (d.kind === 'choose') {
       out.choose.n++; out.choose.size += d.playlists.length;
@@ -6351,7 +6434,8 @@ function calibrationReport(rows, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
   const usable = (rows ?? []).filter(r => r?.id && r.scores?.length && r.truth?.length);
   const hasLevels = usable.some(r => r.agree);
-  let run = crossCheck(usable, o);
+  let run = crossCheck(usable, { ...o, pockets: false });
+  let oBase = { ...o };
   let agree = null;
   if (hasLevels) {
     // The agreement gate (AGREE_GATE): cards made "Sure" only by agreement,
@@ -6369,14 +6453,42 @@ function calibrationReport(rows, opts = {}) {
       : `held-out precision ${Math.round(precision * 100)}%, ${Math.round(AGREE_GATE.minPrecision * 100)}% needed`;
     const levels = Object.fromEntries(Object.entries(run.levels).map(([k, v]) => [k, rate(v, run.checked.n)]));
     agree = { use, n, right: precision, share: rate(n, run.checked.n), why, levels };
-    if (!use) run = crossCheck(usable, { ...o, byLevel: false });
+    if (!use) { oBase = { ...o, byLevel: false }; run = crossCheck(usable, { ...oBase, pockets: false }); }
     // Every Sure card together (by margin or by agreement), as File shows them.
     agree.sure = { share: run.checked.confidentShare, right: run.checked.confidentRight, n: run.checked.confidentN };
+  }
+  // Build 8 I2: pockets, on top of whatever the agreement stage settled on.
+  let pockets = null;
+  if (usable.some(r => r.pockets?.length)) {
+    const before = { n: run.checked.confidentN, right: run.checked.confidentRight, share: run.checked.confidentShare };
+    const G = POCKET_GATE;
+    const probe = crossCheck(usable, oBase);
+    const keep = Object.entries(probe.pocketSure.byKey)
+      .filter(([, v]) => v.n >= G.minN && v.right / v.n >= G.minPrecision).map(([k]) => k);
+    if (!keep.length) {
+      pockets = { use: false, keys: [], before, why: probe.pocketSure.n
+        ? `no pocket was right ${Math.round(G.minPrecision * 100)}% on ${G.minN} held-out cards`
+        : 'no pocket earned a threshold of its own', share: before.share, right: before.right, n: before.n };
+    } else {
+      const fin = crossCheck(usable, { ...oBase, pocketAllow: new Set(keep) });
+      const c = fin.checked;
+      const keys = Object.entries(fin.pocketSure.byKey).map(([key, v]) => ({ key, n: v.n, right: rate(v.right, v.n) }))
+        .sort((a, b) => b.n - a.n || (a.key < b.key ? -1 : 1));
+      const pass = fin.pocketSure.n > 0 && c.confidentN >= G.minN && c.confidentRight != null
+        && c.confidentRight >= G.minPrecision && c.confidentShare != null && c.confidentShare >= G.coverage;
+      const pc = x => `${Math.round((x ?? 0) * 100)}%`;
+      const why = pass ? null
+        : fin.pocketSure.n === 0 ? 'no held-out card was earned by a pocket'
+        : c.confidentRight == null || c.confidentRight < G.minPrecision ? `Sure right ${pc(c.confidentRight)}, ${pc(G.minPrecision)} needed`
+        : `Sure on ${pc(c.confidentShare)} of tracks, ${pc(G.coverage)} needed`;
+      pockets = { use: pass, keys, before, why, share: c.confidentShare, right: c.confidentRight, n: c.confidentN };
+      if (pass) run = fin;
+    }
   }
   const { checked, cal } = run;
   const holds = checked.confidentN >= o.minConfident && checked.confidentRight != null
     ? checked.confidentRight >= o.target - 0.03 : null;
-  return { version: CALIBRATE_VERSION, cal, checked, holds, target: o.target, ...(agree ? { agree } : {}) };
+  return { version: CALIBRATE_VERSION, cal, checked, holds, target: o.target, ...(agree ? { agree } : {}), ...(pockets ? { pockets } : {}) };
 }
 
 /** Fit on one half, check on the other, both ways, pooled; plus the fit on everything. */
@@ -6402,10 +6514,46 @@ function crossCheck(usable, o) {
   };
   const levels = {};
   for (const e of [ea, eb]) for (const [k, v] of Object.entries(e.levels)) levels[k] = (levels[k] ?? 0) + v;
+  const byKey = {};
+  for (const e of [ea, eb]) for (const [k, v] of Object.entries(e.pocket.byKey)) {
+    const b = byKey[k] ??= { n: 0, right: 0 };
+    b.n += v.n; b.right += v.right;
+  }
   return { checked, cal: fitCalibration(usable, o), levels,
-           agreeSure: { n: ea.agree.n + eb.agree.n, right: ea.agree.right + eb.agree.right } };
+           agreeSure: { n: ea.agree.n + eb.agree.n, right: ea.agree.right + eb.agree.right },
+           pocketSure: { n: ea.pocket.n + eb.pocket.n, right: ea.pocket.right + eb.pocket.right, byKey } };
 }
-return { CALIBRATE_VERSION, DEFAULTS, BIN, scoresOf, softmax, TEMPERATURES, fitTemperature, isotonic, wilsonLower, fitCalibration, AGREE_LEVELS, AGREE_GATE, decide, evaluate, calibrationReport };
+
+/** A pocket key in words. `nameOf` can rename a family. */
+function pocketLabel(key, nameOf = x => x) {
+  const one = k => {
+    const [kind, v] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)];
+    if (kind === 'sit') return v === 'fresh' ? 'never-filed artists' : 'filed artists';
+    if (kind === 'fam') return String(nameOf(v));
+    if (kind === 'size') return `${v} playlists`;
+    if (kind === 'agree') return v === 'agree' ? 'sources agree' : 'one source';
+    return k;
+  };
+  return String(key).split('|').map(one).join(', ');
+}
+
+/**
+ * Score line for I2, from a calibrationReport's `pockets`:
+ *   "Sure earned: pockets X, Y — Z% of tracks at P%."
+ * or, when none cleared the bar, how close it got. '' when pockets were not tried.
+ */
+function pocketsLine(report, nameOf) {
+  const p = report?.pockets;
+  if (!p) return '';
+  const pc = x => `${Math.round((x ?? 0) * 100)}%`;
+  if (p.use) {
+    const names = p.keys.slice(0, 3).map(k => pocketLabel(k.key, nameOf)).join('; ');
+    return `Sure earned: pockets ${names} — ${pc(p.share)} of tracks at ${pc(p.right)}.`;
+  }
+  const close = p.n ? ` Closest: ${pc(p.share)} of tracks at ${pc(p.right)}.` : '';
+  return `Sure earned: none yet (${p.why}).${close}`;
+}
+return { CALIBRATE_VERSION, DEFAULTS, BIN, scoresOf, softmax, TEMPERATURES, fitTemperature, isotonic, wilsonLower, fitCalibration, pocketKeys, sizeBand, withPockets, POCKET_GATE, AGREE_LEVELS, AGREE_GATE, decide, evaluate, calibrationReport, pocketLabel, pocketsLine };
 })();
 /* ---- core/intrinsic/agree.mjs ---- */
 __mod["core/intrinsic/agree.mjs"] = (function () {
@@ -9714,7 +9862,9 @@ function familyAccuracy(rows, families, opts = {}) {
     const truth = new Set(r.truth);
     if (truth.has(r.scores[0][0])) flat++;
     const fr = familyRow(r, families, T);
-    famRows.push({ id: r.id, scores: asScores(fr.fams), truth: fr.truth });
+    // I2: the situation pockets (not the playlist-bound ones) carry over to the family level.
+    const pk = (r.pockets ?? []).filter(k => k.startsWith('sit:') || k.includes('|sit:'));
+    famRows.push({ id: r.id, scores: asScores(fr.fams), truth: fr.truth, ...(pk.length ? { pockets: pk } : {}) });
     if (!fr.truth.includes(fr.fams[0][0])) continue;
     fam++;
     // Inside the family it chose: the best-scoring playlist of that family.
@@ -9799,7 +9949,8 @@ function decideCard(scores, cal, famCal, families, opts = {}) {
   if (!famCal || !families || !scores?.length || !cal) return flat;
   const fr = familyRow({ scores }, families, cal.T);
   const lead = fr.fams[0];
-  const fd = decide(asScores(fr.fams), famCal);
+  const pk = (opts.pockets ?? []).filter(k => k.startsWith('sit:') || k.includes('|sit:'));
+  const fd = decide(asScores(fr.fams), famCal, pk.length ? { pockets: pk } : {});
   if (fd.kind !== 'confident' || fd.playlists[0] !== lead[0]) return flat;
   // Inside the family: its playlists in score order, the top two offered.
   const inside = scores.filter(([id]) => famOf(families, id) === lead[0]).map(([id]) => id);
