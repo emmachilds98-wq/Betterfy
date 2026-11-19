@@ -12,19 +12,20 @@ import { MISS } from './record.mjs';
  * @returns {{ total: number, withIsrc: number, onDeezer: number, hasPreview: number, downloaded: number, heard: number,
  *             misses: Record<string, number>, waiting: number }}
  *   `misses` counts NO_ISRC, NOT_ON_DEEZER, NO_PREVIEW, IDENTITY and TOO_SHORT;
- *   `waiting` is tracks with an ISRC not tried yet (or only failed this session).
+ *   `foundBySearch` is heard tracks whose ISRC missed and Deezer's name search found (F1,
+ *   source.kind 'deezer-name'); `waiting` is tracks with an ISRC not tried yet (or only failed this session).
  *   Each stage is the tracks still in after the ones turned away before it.
  */
 export function hearingFunnel(tracks, records) {
   const misses = { [MISS.NO_ISRC]: 0, [MISS.NOT_ON_DEEZER]: 0, [MISS.NO_PREVIEW]: 0, [MISS.IDENTITY]: 0, [MISS.TOO_SHORT]: 0 };
   const seen = new Set();
-  let total = 0, heard = 0, waiting = 0;
+  let total = 0, heard = 0, waiting = 0, foundBySearch = 0;
   for (const t of tracks ?? []) {
     if (!t?.id || seen.has(t.id)) continue;
     seen.add(t.id);
     total++;
     const r = records?.get?.(t.id);
-    if (r && !r.miss) { heard++; continue; }
+    if (r && !r.miss) { heard++; if (r.source?.kind === 'deezer-name') foundBySearch++; continue; }
     if (r?.miss === MISS.NO_ISRC || (!r && !t.isrc)) { misses[MISS.NO_ISRC]++; continue; }
     if (r?.miss && r.miss in misses) { misses[r.miss]++; continue; }
     waiting++;
@@ -33,7 +34,7 @@ export function hearingFunnel(tracks, records) {
   const onDeezer = withIsrc - waiting - misses[MISS.NOT_ON_DEEZER];
   const hasPreview = onDeezer - misses[MISS.NO_PREVIEW] - misses[MISS.IDENTITY];
   // A usable preview is downloaded as soon as the track is tried; a clip too short to hear is lost after that.
-  return { total, withIsrc, onDeezer, hasPreview, downloaded: hasPreview, heard, misses, waiting };
+  return { total, withIsrc, onDeezer, hasPreview, downloaded: hasPreview, heard, misses, waiting, foundBySearch };
 }
 
 const n = x => Number(x).toLocaleString('en-US');
@@ -52,7 +53,8 @@ export function funnelText(f) {
   add(f.waiting, 'not tried yet');
   const tail = parts.length ? ` ${cap(parts.join(', '))}.` : '';
   if (!f.heard) return `Nothing heard yet.${tail}`;
-  return `Heard ${n(f.heard)} of ${n(f.total)}.${tail}`;
+  const by = f.foundBySearch > 0 ? ` Found by search: ${n(f.foundBySearch)}.` : '';
+  return `Heard ${n(f.heard)} of ${n(f.total)}.${by}${tail}`;
 }
 
 /** The stages in order: [label, count]. */

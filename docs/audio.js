@@ -102,7 +102,7 @@ function unpackEmbedding({ s, q }) {
  * @param {Float32Array} a.activations
  * @param {Float32Array} a.embeddings
  * @param {number} a.patches
- * @param {object} a.source        { kind: 'deezer-isrc', deezerId, windows: [[startByte, bytes]...], seconds }
+ * @param {object} a.source        { kind: 'deezer-isrc' | 'deezer-name' (F1; then also `match`), deezerId, windows: [[startByte, bytes]...], seconds }
  * @param {string} a.mel           MEL_VERSION used
  * @param {object} [a.heads]       optional head outputs, see HEADS in docs/AUDIO-BUILD-PLAN.md
  * @param {object} [a.dsp]         optional { bpm, bpmConf, key, keyConf, loudness, energy }
@@ -1191,11 +1191,14 @@ async function fetchTrack(deps, track) {
   const id = track?.id;
   if (!id) throw new Error('analyseOne needs a track id');
   const isrc = track.isrc || null;
-  const miss = reason => ({ result: { miss: makeMiss({ id, isrc, reason, at: now() }) } });
+  // `nameTried` (side field): an ISRC miss that also had the name search (F1), so the page can re-ask older ones once.
+  const miss = reason => ({ result: { miss: { ...makeMiss({ id, isrc, reason, at: now() }), ...(reason === MISS.NOT_ON_DEEZER && track.title && track.artists?.length ? { nameTried: true } : {}) } } });
   const failed = (stage, detail) => ({ result: { failed: { id, stage, detail: String(detail ?? '') } } });
   if (!isrc) return miss(MISS.NO_ISRC);
   let found;
-  try { found = await deps.lookup(isrc, { spotifyDurationMs: track.durationMs }); }
+  // F1: title and artists let an ISRC miss try Deezer's own search (strictly matched, fetch.mjs).
+  const byName = track.title && track.artists?.length ? { title: track.title, artists: track.artists } : {};
+  try { found = await deps.lookup(isrc, { spotifyDurationMs: track.durationMs, ...byName }); }
   catch (e) { return failed('lookup', e?.message ?? e); }
   if (found?.miss) return CACHEABLE_MISS.has(found.miss) ? miss(found.miss) : failed('lookup', found.detail ?? found.miss);
   const got = await deps.fetchPreview(found.previewUrl).catch(e => ({ miss: MISS.FAILED, detail: e?.message ?? e }));
@@ -1252,7 +1255,7 @@ async function analyseOne(deps, track, fetched = undefined) {
   const { windows, sliced } = got;
   got = null; // drop the compressed audio
 
-  const res = await analyseSamples(deps, { id, isrc, samples, parts, source: { kind: 'deezer-isrc', deezerId: found.deezerId, ...(found.deezerBpm > 0 ? { deezerBpm: found.deezerBpm } : {}), windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
+  const res = await analyseSamples(deps, { id, isrc, samples, parts, source: { kind: found.by === 'name' ? 'deezer-name' : 'deezer-isrc', deezerId: found.deezerId, ...(found.by === 'name' ? { match: found.match } : {}), ...(found.deezerBpm > 0 ? { deezerBpm: found.deezerBpm } : {}), windows, seconds: +(samples.length / SAMPLE_RATE).toFixed(2), ...(sliced ? { sliced: true } : {}) } });
   if (res.record && clap48) res.record = await addClap(deps.clap, res.record, clap48);
   return res;
 }
@@ -1648,7 +1651,7 @@ const relatedUrl = (id, limit = RELATED_LIMIT) => `${API}/artist/${encodeURIComp
 
 /** Only these URLs may be fetched through the page's JSONP frame. A script tag
  *  runs whatever it is given, so the host is pinned rather than trusted. */
-const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_-]*)?$/i.test(String(url));
+const isDeezerApiUrl = url => /^https:\/\/api\.deezer\.com\/[a-z0-9/:._-]+(\?[a-z0-9=&_%-]*)?$/i.test(String(url));
 
 /**
  * What a Deezer error body means for the cache.
@@ -1718,10 +1721,104 @@ function relatedFrom(json, { limit = RELATED_LIMIT } = {}) {
 }
 return { DEEZER, API, RELATED_LIMIT, isrcUrl, relatedUrl, isDeezerApiUrl, errorKind, normName, artistFromIsrc, relatedFrom };
 })();
+/* ---- core/audio/namematch.mjs ---- */
+__mod["core/audio/namematch.mjs"] = (function () {
+// F1 (docs/SOUND-ENGINE-PLAN.md): when the ISRC is not on Deezer, look the
+// track up there by artist and title instead, and accept only a result that is
+// plainly the same recording. Phase 0 saw a loose name match pick the wrong
+// track 1 time in 19, so every test here is a way to say no:
+//   - the artist is identical after folding case, accents and punctuation (any
+//     one of the Spotify track's credited artists; "A & B" is not "A");
+//   - the title is identical after dropping only the suffixes that do not
+//     change the recording ("(Original Mix)", "(feat. X)", "- Remastered 2011");
+//     a remix, live, acoustic, edit or instrumental stays in the title, so it
+//     must be on both sides or neither;
+//   - the duration is within +/-1 s (Deezer states whole seconds), tighter than
+//     the ISRC path's 3 s because there is no ISRC to vouch for it;
+//   - more than one *different* recording passing all three is ambiguous, and
+//     ambiguous is a no.
+// Pure: no network. fetch.mjs lookup() sends the query and calls pickByName().
+
+/** Deezer duration vs Spotify duration when matching by name. */
+const NAME_TOLERANCE_MS = 1000;
+
+/** Words that make a recording another one. Both sides must agree on this set. */
+const VERSION_WORDS = /\b(remix|mix|live|acoustic|instrumental|karaoke|cover|tribute|edit|version|demo|vip|bootleg|mashup|rework|dub|sped up|slowed|reverb|session|unplugged|reprise|medley|a cappella|acapella)\b/g;
+/** Suffixes that name the same recording and are dropped before comparing. */
+const SAME_RECORDING = /\s*[([-]\s*(original mix|original version|album version|full length version|remaster(ed)?( \d{4})?|\d{4} remaster(ed)?( version)?|mono|stereo)\s*[)\]]?\s*$/i;
+const FEAT = /\s*[([]\s*(feat\.?|ft\.?|featuring|with)\s[^)\]]*[)\]]|\s+-\s+(feat\.?|ft\.?|featuring)\s.*$/ig;
+
+/** Title with only the harmless decorations removed, original case kept (the query uses it). */
+function cleanTitle(s) {
+  let t = String(s ?? '').replace(FEAT, '').trim();
+  for (let i = 0; i < 2; i++) t = t.replace(SAME_RECORDING, '').trim();
+  return t;
+}
+
+/** Fold case, accents, "&", punctuation and spacing. */
+function fold(s) {
+  return String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/&/g, ' and ').replace(/[^a-z0-9Ѐ-ӿ぀-ヿ一-鿿]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+const normTitle = s => fold(cleanTitle(s));
+const normArtist = s => fold(s);
+
+const versionTags = s => new Set(String(s).match(VERSION_WORDS) ?? []);
+const sameSet = (a, b) => a.size === b.size && [...a].every(x => b.has(x));
+
+/**
+ * Is this Deezer search hit the Spotify track? Returns the reason it is not, or null.
+ * @param {{ title: string, artists: string[], durationMs?: number }} want
+ * @param {object} hit  a Deezer track object from /search
+ */
+function rejectReason(want, hit) {
+  if (!hit?.id || !hit.title) return 'malformed';
+  const names = (want.artists ?? []).map(normArtist).filter(Boolean);
+  if (!names.length || !names.includes(normArtist(hit.artist?.name))) return 'artist';
+  const full = hit.title_version && !String(hit.title).toLowerCase().includes(String(hit.title_version).toLowerCase())
+    ? `${hit.title} ${hit.title_version}` : hit.title;
+  const a = normTitle(want.title), b = normTitle(full);
+  if (!a || a !== b) return 'title';
+  if (!sameSet(versionTags(a), versionTags(b))) return 'version';
+  const ms = Number(hit.duration) * 1000;
+  if (!Number.isFinite(want.durationMs) || !(ms > 0)) return 'duration';
+  if (Math.abs(ms - want.durationMs) > NAME_TOLERANCE_MS) return 'duration';
+  return null;
+}
+
+/**
+ * The one hit that is the same recording, or `{ none: true }`. Hits with no
+ * preview are dropped last, so "same track but no clip" is told apart from "not
+ * found". Passing hits of different durations are different recordings, so the
+ * answer is ambiguous and refused.
+ * @returns {{ hit: object, deltaMs: number } | { none: true, ambiguous?: boolean, noPreview?: boolean }}
+ */
+function pickByName(want, hits) {
+  const ok = (Array.isArray(hits) ? hits : []).filter(h => rejectReason(want, h) === null);
+  if (!ok.length) return { none: true };
+  const usable = ok.filter(h => h.preview && h.readable !== false);
+  if (!usable.length) return { none: true, noPreview: true };
+  // Re-issues of one master share a duration to the second; others are other recordings.
+  if (new Set(usable.map(h => Number(h.duration))).size > 1) return { none: true, ambiguous: true };
+  const hit = usable[0];
+  return { hit, deltaMs: Math.abs(Number(hit.duration) * 1000 - want.durationMs) };
+}
+
+/** Percent-encode everything, including the characters encodeURIComponent leaves (! ' ( ) * ~ .). */
+const enc = s => encodeURIComponent(s).replace(/[!'()*~.]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+
+/** `search?q=artist:"…" track:"…"`, quotes dropped from the values. */
+function searchUrl(artist, title, api = 'https://api.deezer.com') {
+  const q = `artist:"${String(artist).replace(/"/g, ' ').trim()}" track:"${cleanTitle(title).replace(/"/g, ' ').trim()}"`;
+  return `${api}/search?q=${enc(q)}&limit=15`;
+}
+return { NAME_TOLERANCE_MS, cleanTitle, fold, normTitle, normArtist, rejectReason, pickByName, searchUrl };
+})();
 /* ---- core/audio/fetch.mjs ---- */
 __mod["core/audio/fetch.mjs"] = (function () {
 const { MISS } = __mod["core/audio/record.mjs"];
 const { isrcUrl, errorKind } = __mod["core/sources/deezer.mjs"];
+const { pickByName, searchUrl } = __mod["core/audio/namematch.mjs"];
 // Deezer preview lookup and partial download (WP-A1).
 //
 // Spotify gives the ISRC; Deezer's `track/isrc:` answers with a 30-second
@@ -1743,6 +1840,7 @@ const { isrcUrl, errorKind } = __mod["core/sources/deezer.mjs"];
 
 
 
+
 const FETCH_VERSION = '1.0.0';
 /** One window: ~10 s of a 128 kbps preview. */
 const WINDOW_BYTES = 165000;
@@ -1754,17 +1852,19 @@ const normIsrc = s => String(s ?? '').replace(/-/g, '').toUpperCase();
 /**
  * Look a track up on Deezer by ISRC.
  * @param {string} isrc
- * @param {{ jsonp: (url: string) => Promise<object>, spotifyDurationMs?: number }} deps
+ * @param {{ jsonp: (url: string) => Promise<object>, spotifyDurationMs?: number, title?: string, artists?: string[] }} deps
+ *   `title` and `artists` (F1) switch on the second try: only when the ISRC is not on Deezer, search by name and
+ *   accept a strictly matched hit (core/audio/namematch.mjs); the answer then says `by: 'name'`.
  * @returns {Promise<{ deezerId: number, previewUrl: string, durationMs: number, readable: boolean }
  *                  | { miss: string, detail?: string }>}
  */
-async function lookup(isrc, { jsonp, spotifyDurationMs } = {}) {
+async function lookup(isrc, { jsonp, spotifyDurationMs, title, artists } = {}) {
   if (!isrc) return { miss: MISS.NO_ISRC };
   let json;
   try { json = await jsonp(isrcUrl(isrc)); }
   catch (e) { return { miss: MISS.FAILED, detail: String(e?.message ?? e) }; }
   const err = errorKind(json);
-  if (err === 'none') return { miss: MISS.NOT_ON_DEEZER };
+  if (err === 'none') return title && artists?.length ? lookupByName({ title, artists, durationMs: spotifyDurationMs }, { jsonp }) : { miss: MISS.NOT_ON_DEEZER };
   if (err) return { miss: MISS.FAILED, detail: err };          // quota or error: ask again later
   if (!json || typeof json !== 'object' || !json.id) return { miss: MISS.FAILED, detail: 'malformed' };
   if (json.isrc && normIsrc(json.isrc) !== normIsrc(isrc)) return { miss: MISS.IDENTITY, detail: 'isrc' };
@@ -1775,6 +1875,29 @@ async function lookup(isrc, { jsonp, spotifyDurationMs } = {}) {
   // T4: Deezer's own BPM, when it states one (0 means none); a second opinion only.
   const bpm = Number(json.bpm);
   return { deezerId: json.id, previewUrl: json.preview, durationMs, readable, ...(bpm > 0 && bpm < 400 ? { deezerBpm: +bpm.toFixed(1) } : {}) };
+}
+
+/**
+ * F1: the same lookup by artist and title, for an ISRC Deezer does not know.
+ * No accepted match is the same NOT_ON_DEEZER an ISRC miss gives (cached the
+ * same way); a failed search is FAILED, so it is asked again later.
+ * @returns {Promise<{ deezerId, previewUrl, durationMs, readable, by: 'name', match: { title, artist, deltaMs } } | { miss: string, detail?: string }>}
+ */
+async function lookupByName({ title, artists, durationMs }, { jsonp }) {
+  const none = { miss: MISS.NOT_ON_DEEZER };
+  if (!title || !artists?.length || !Number.isFinite(durationMs)) return none;
+  let json;
+  try { json = await jsonp(searchUrl(artists[0], title)); }
+  catch (e) { return { miss: MISS.FAILED, detail: String(e?.message ?? e) }; }
+  const err = errorKind(json);
+  if (err === 'none') return none;
+  if (err) return { miss: MISS.FAILED, detail: err };
+  if (!json || !Array.isArray(json.data)) return { miss: MISS.FAILED, detail: 'malformed' };
+  const r = pickByName({ title, artists, durationMs }, json.data);
+  if (r.none) return none;
+  const h = r.hit;
+  return { deezerId: h.id, previewUrl: h.preview, durationMs: Number(h.duration) * 1000, readable: true, by: 'name',
+           match: { title: String(h.title), artist: String(h.artist?.name ?? ''), deltaMs: r.deltaMs } };
 }
 
 /** Deezer reports whole seconds, so ±3 s is the tolerance (§4.1). */
@@ -1909,7 +2032,7 @@ function createPreviewCache({ lookup, fetchPreview, max = 64 }) {
     },
   };
 }
-return { FETCH_VERSION, WINDOW_BYTES, IDENTITY_TOLERANCE_MS, lookup, identityOk, windows, fetchWindows, totalFromContentRange, fetchPreview, CACHED_PREVIEW, createPreviewCache };
+return { FETCH_VERSION, WINDOW_BYTES, IDENTITY_TOLERANCE_MS, lookup, lookupByName, identityOk, windows, fetchWindows, totalFromContentRange, fetchPreview, CACHED_PREVIEW, createPreviewCache };
 })();
 /* ---- core/audio/dsp/tempo.mjs ---- */
 __mod["core/audio/dsp/tempo.mjs"] = (function () {
@@ -5181,6 +5304,8 @@ const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 //      Tracks already heard or queued above count toward a playlist's cap.
 //   5. Everything else.
 //
+// F2 adds a tier after the unfiled songs: members of small playlists.
+//
 // Inside every tier, most-listened artists first (profile.mjs byListening,
 // stable), so the weighting is the same one the tag-gap fetch uses.
 //
@@ -5197,6 +5322,9 @@ const { mirrorPredicate } = __mod["core/playlists/mirror.mjs"];
 
 /** Tracks per weak playlist heard ahead of the rest (tier 2b): all of a small one. */
 const FOCUS_MAX = 60;
+
+/** F2: a playlist with fewer heard members than this has all its members heard next. */
+const SMALL_HEARD = 12;
 
 /** listeningWeights() gives the library floor at most this much per artist. */
 const LIBRARY_FLOOR_MAX = 1;
@@ -5217,12 +5345,14 @@ const LIBRARY_FLOOR_MAX = 1;
  * @param {(p: object) => boolean} [o.isMirror]  extra playlists the caller knows are mirrors
  * @param {Iterable<string>} [o.focus]       playlist ids whose members are heard next after the
  *        unfiled liked songs: the Score run's weakest playlists (weak.mjs), up to FOCUS_MAX tracks each
+ * @param {boolean} [o.leftovers]  F2: after the unfiled songs, hear every member of a playlist with under
+ *        SMALL_HEARD heard members (off by default so existing callers keep their order; the page turns it on)
  * @param {number} [o.now]                   for isCurrent()'s miss TTL
  * @returns {string[]} Spotify track ids, most urgent first
  */
 function audioQueue(lib, { listening = null, filedIds = null, untaggedArtistIds = null, store = null,
                                   budget = Infinity, exemplarsPerPlaylist = 20, mel, targets = null,
-                                  isMirror = null, focus = null, now = Date.now() } = {}) {
+                                  isMirror = null, focus = null, leftovers = false, now = Date.now() } = {}) {
   const limit = Number.isFinite(budget) ? Math.max(0, Math.floor(budget)) : Infinity;
   if (limit === 0) return [];
 
@@ -5282,6 +5412,19 @@ function audioQueue(lib, { listening = null, filedIds = null, untaggedArtistIds 
     if (take(mine)) return out;
   }
 
+  // 2c. F2, hear the leftovers first: every member of a playlist with under
+  // SMALL_HEARD heard members (small playlists have too few heard tracks to
+  // learn a sound from). The plan's second F2 tier, tracks of never-filed
+  // artists, is tier 2 itself: an artist with nothing filed has only unfiled
+  // liked songs, and all of those are already queued first.
+  const small = [];
+  if (leftovers) for (const p of playlists) {
+    const own = [];
+    for (const t of p.tracks ?? []) { const x = tracks.get(t?.id); if (x && !own.includes(x)) own.push(x); }
+    if (own.length && own.filter(t => heard(t.id)).length < SMALL_HEARD) small.push(...own);
+  }
+  if (take(ordered(small))) return out;
+
   // 3. Untagged artists.
   const untagged = new Set(untaggedArtistIds ?? []);
   if (untagged.size && take(ordered(all.filter(t => (t.artists ?? []).some(a => a?.id && untagged.has(a.id))))))
@@ -5316,7 +5459,7 @@ function spread(list, n) {
   const step = list.length / n;
   return Array.from({ length: n }, (_, i) => list[Math.floor(i * step)]);
 }
-return { FOCUS_MAX, audioQueue };
+return { FOCUS_MAX, SMALL_HEARD, audioQueue };
 })();
 /* ---- core/audio/heads.mjs ---- */
 __mod["core/audio/heads.mjs"] = (function () {
@@ -8206,19 +8349,20 @@ const { MISS } = __mod["core/audio/record.mjs"];
  * @returns {{ total: number, withIsrc: number, onDeezer: number, hasPreview: number, downloaded: number, heard: number,
  *             misses: Record<string, number>, waiting: number }}
  *   `misses` counts NO_ISRC, NOT_ON_DEEZER, NO_PREVIEW, IDENTITY and TOO_SHORT;
- *   `waiting` is tracks with an ISRC not tried yet (or only failed this session).
+ *   `foundBySearch` is heard tracks whose ISRC missed and Deezer's name search found (F1,
+ *   source.kind 'deezer-name'); `waiting` is tracks with an ISRC not tried yet (or only failed this session).
  *   Each stage is the tracks still in after the ones turned away before it.
  */
 function hearingFunnel(tracks, records) {
   const misses = { [MISS.NO_ISRC]: 0, [MISS.NOT_ON_DEEZER]: 0, [MISS.NO_PREVIEW]: 0, [MISS.IDENTITY]: 0, [MISS.TOO_SHORT]: 0 };
   const seen = new Set();
-  let total = 0, heard = 0, waiting = 0;
+  let total = 0, heard = 0, waiting = 0, foundBySearch = 0;
   for (const t of tracks ?? []) {
     if (!t?.id || seen.has(t.id)) continue;
     seen.add(t.id);
     total++;
     const r = records?.get?.(t.id);
-    if (r && !r.miss) { heard++; continue; }
+    if (r && !r.miss) { heard++; if (r.source?.kind === 'deezer-name') foundBySearch++; continue; }
     if (r?.miss === MISS.NO_ISRC || (!r && !t.isrc)) { misses[MISS.NO_ISRC]++; continue; }
     if (r?.miss && r.miss in misses) { misses[r.miss]++; continue; }
     waiting++;
@@ -8227,7 +8371,7 @@ function hearingFunnel(tracks, records) {
   const onDeezer = withIsrc - waiting - misses[MISS.NOT_ON_DEEZER];
   const hasPreview = onDeezer - misses[MISS.NO_PREVIEW] - misses[MISS.IDENTITY];
   // A usable preview is downloaded as soon as the track is tried; a clip too short to hear is lost after that.
-  return { total, withIsrc, onDeezer, hasPreview, downloaded: hasPreview, heard, misses, waiting };
+  return { total, withIsrc, onDeezer, hasPreview, downloaded: hasPreview, heard, misses, waiting, foundBySearch };
 }
 
 const n = x => Number(x).toLocaleString('en-US');
@@ -8246,7 +8390,8 @@ function funnelText(f) {
   add(f.waiting, 'not tried yet');
   const tail = parts.length ? ` ${cap(parts.join(', '))}.` : '';
   if (!f.heard) return `Nothing heard yet.${tail}`;
-  return `Heard ${n(f.heard)} of ${n(f.total)}.${tail}`;
+  const by = f.foundBySearch > 0 ? ` Found by search: ${n(f.foundBySearch)}.` : '';
+  return `Heard ${n(f.heard)} of ${n(f.total)}.${by}${tail}`;
 }
 
 /** The stages in order: [label, count]. */
