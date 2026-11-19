@@ -252,9 +252,49 @@ function engineFamilyFit(rows) {
   const gate = BetterfyFamily.familyGate(acc);
   const use = gate.use;
   const cal = BetterfyFamily.fitFamilyCalibration(acc.rows);
+  // I2: situation pockets are used at the family level only when they held out.
+  if (cal && !acc.sure?.pockets?.use) delete cal.pockets;
   const summary = { n: acc.n, family: acc.family, within: acc.within, flat: acc.flat, families: acc.families,
                     sure: acc.sure?.checked ?? null, holds: acc.sure?.holds ?? null, use, by: gate.by, why: gate.why };
   return { summary, keep: { use, cal, family: acc.family, families: acc.families } };
+}
+
+/**
+ * Build 8 I2: a function that puts `pockets` on held-out rows. Situation needs
+ * the never-filed set (computed once over every row id given); family and size
+ * come from the account's own playlists. Returns the rows unchanged when the
+ * pieces are not loaded.
+ */
+function enginePocketer(rowLists) {
+  if (typeof BetterfyCalibrate === 'undefined' || !BetterfyCalibrate.withPockets) return rows => rows;
+  let fresh = null;
+  try {
+    const ids = new Set();
+    for (const rows of rowLists) for (const r of rows ?? []) if (r?.id) ids.add(r.id);
+    if (typeof BetterfyBlendScore !== 'undefined' && BetterfyBlendScore.neverFiledIds && ids.size) {
+      const nf = BetterfyBlendScore.neverFiledIds(LIB, [...ids], { folds: 5, targets: engineTargets(), isMirror: isMirrorPlaylist });
+      fresh = id => nf.has(id);
+    }
+  } catch { fresh = null; }
+  const ctx = { fresh, famOf: engineLeadFamily(), sizeOf: engineSizeOf() };
+  return rows => (rows ? BetterfyCalibrate.withPockets(rows, ctx) : rows);
+}
+const engineLeadFamily = () => { const m = typeof BetterfyFamily !== 'undefined' ? engineFamiliesMemo() : null; return m ? id => m.get(id) : null; };
+function engineSizeOf() {
+  const sizes = new Map((LIB?.playlists ?? []).map(p => [p.id, p.tracks?.length ?? 0]));
+  return id => sizes.get(id);
+}
+/** The pocket keys one live card belongs to (same names as Score's held-out rows). */
+function enginePocketKeys(raw, scores, agreeLevel) {
+  if (typeof BetterfyCalibrate === 'undefined' || !BetterfyCalibrate.pocketKeys) return [];
+  const filed = typeof blendFiledArtists === 'function' ? blendFiledArtists() : null;
+  const lead = scores?.[0]?.[0] ?? null, fam = engineLeadFamily();
+  const n = lead != null ? engineSizeOf()(lead) : null;
+  return BetterfyCalibrate.pocketKeys({
+    sit: filed && raw ? ((raw.artists ?? []).some(a => a?.id && filed.has(a.id)) ? 'filed' : 'fresh') : null,
+    fam: lead != null && fam ? fam(lead) ?? null : null,
+    size: Number.isFinite(n) ? BetterfyCalibrate.sizeBand(n) : null,
+    agree: agreeLevel ?? null });
 }
 
 /** Fit from a score run's rows, keep it, and drop the rows: they are only for this. */
@@ -281,8 +321,12 @@ async function engineCalibrate(v) {
   const drop = [...(ENG.space?.bridge ? [] : ['similar']), ...(tagTops ? [] : ['tags'])];
   const withAgree = (rows, ...from) => agreeOn && rows
     ? BetterfyAgree.withAgreement(rows, BetterfyAgree.srcByIdOf(...from), tagTops, { drop }) : rows;
-  const base = BetterfyCalibrate.calibrationReport(withAgree(baseRows, mine.rows));
-  const bridge = bridgeRows ? BetterfyCalibrate.calibrationReport(withAgree(bridgeRows, mine.withBridge?.rows)) : null;
+  // Build 8 I2: pockets (situation, family, size) put on the same rows, so
+  // "Sure" can be earned inside a pocket. Without the pieces: as before.
+  const withPk = enginePocketer([baseRows, bridgeRows, mine.withAudio?.rows, ...Object.values(mine.withAudio?.arms ?? {}).map(a => a.rows)]);
+  const report = rows => BetterfyCalibrate.calibrationReport(withPk(rows));
+  const base = report(withAgree(baseRows, mine.rows));
+  const bridge = bridgeRows ? report(withAgree(bridgeRows, mine.withBridge?.rows)) : null;
   // WP-C1: which ear this run chose. The first ear unless a second ear passed
   // the gate and beat it; its calibration then comes from that ear's rows.
   const choice = mine.withAudio?.choice ?? null;
@@ -291,7 +335,9 @@ async function engineCalibrate(v) {
   // Calibrated on the engine that will place: the chosen ear, or the first ear with its nearest tracks.
   const soundRows = choice && choice.ear !== 'effnet' ? mine.withAudio.arms?.[choice.ear]?.rows
     : near ? mine.withAudio.arms?.near?.rows : mine.withAudio?.rows;
-  const audio = soundRows ? BetterfyCalibrate.calibrationReport(withAgree(soundRows, soundRows)) : null;
+  const audio = soundRows ? report(withAgree(soundRows, soundRows)) : null;
+  { const pk = audio?.pockets ?? base?.pockets;
+    if (pk) v.pocketsLine = BetterfyCalibrate.pocketsLine({ pockets: pk }); }
   const agreeRep = audio?.agree ?? base?.agree ?? null;
   if (agreeOn && agreeRep) v.agreeLine = BetterfyAgree.agreeLine(audio?.agree ? audio : base);
   delete v.tagTops;
@@ -363,7 +409,8 @@ function engineDecorate() {
     const agree = useCal?.byLevel && typeof BetterfyAgree !== 'undefined'
       ? BetterfyAgree.agreement(scores[0]?.[0] ?? null,
           BetterfyAgree.sourceTops(full.results ?? [], { tags: engineTagScores(raw) })) : null;
-    const dopts = agree ? { agree: agree.level } : {};
+    const keys = useCal?.pockets ? enginePocketKeys(raw, scores, agree?.level) : [];
+    const dopts = { ...(agree ? { agree: agree.level } : {}), ...(keys.length ? { pockets: keys } : {}) };
     // Family first, once this account's Score run earned it: commit to the
     // family and ask only which playlist inside it.
     const fam = ENG.calib?.family?.use ? ENG.calib.family : null;
